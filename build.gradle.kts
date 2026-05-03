@@ -1,7 +1,7 @@
 plugins {
-    kotlin("jvm") version "2.1.0"
+    alias(libs.plugins.kotlin.jvm)
     application
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.1"
+    alias(libs.plugins.ktlint)
 }
 
 group = "com.qkt"
@@ -16,9 +16,9 @@ repositories {
 }
 
 dependencies {
-    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
-    testImplementation("org.assertj:assertj-core:3.27.0")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 application {
