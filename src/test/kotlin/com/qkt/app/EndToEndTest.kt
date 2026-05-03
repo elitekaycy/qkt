@@ -5,6 +5,7 @@ import com.qkt.bus.EventBus
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
+import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
@@ -28,6 +29,7 @@ import com.qkt.risk.RiskRule
 import com.qkt.risk.rules.MaxPositionSize
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -87,7 +89,7 @@ class EndToEndTest {
                 tick: Tick,
                 emit: (Signal) -> Unit,
             ) {
-                if (tick.symbol == symbol) emit(Signal.Buy(symbol, 1.0))
+                if (tick.symbol == symbol) emit(Signal.Buy(symbol, Money.of("1")))
             }
         }
 
@@ -95,12 +97,12 @@ class EndToEndTest {
     fun `single strategy buy on every tick produces a fill`() {
         wirePipeline(listOf(buyEveryTick("XAUUSD")))
 
-        engine.onTick(Tick("XAUUSD", 2400.5, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.5"), 999L))
 
         assertThat(trades).hasSize(1)
         assertThat(trades[0].symbol).isEqualTo("XAUUSD")
         assertThat(trades[0].side).isEqualTo(Side.BUY)
-        assertThat(trades[0].price).isEqualTo(2400.5)
+        assertThat(trades[0].price).isEqualByComparingTo(Money.of("2400.5"))
     }
 
     @Test
@@ -111,12 +113,12 @@ class EndToEndTest {
                     tick: Tick,
                     emit: (Signal) -> Unit,
                 ) {
-                    emit(Signal.Buy("BTCUSD", 1.0))
+                    emit(Signal.Buy("BTCUSD", Money.of("1")))
                 }
             }
         wirePipeline(listOf(emitForUnknown))
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 999L))
 
         assertThat(trades).isEmpty()
     }
@@ -145,7 +147,7 @@ class EndToEndTest {
             }
         wirePipeline(listOf(a, b))
 
-        val tick = Tick("XAUUSD", 2400.0, 999L)
+        val tick = Tick("XAUUSD", Money.of("2400.0"), 999L)
         engine.onTick(tick)
 
         assertThat(seenByA).containsExactly(tick)
@@ -160,13 +162,13 @@ class EndToEndTest {
                     tick: Tick,
                     emit: (Signal) -> Unit,
                 ) {
-                    emit(Signal.Buy("XAUUSD", 1.0))
-                    emit(Signal.Sell("XAUUSD", 1.0))
+                    emit(Signal.Buy("XAUUSD", Money.of("1")))
+                    emit(Signal.Sell("XAUUSD", Money.of("1")))
                 }
             }
         wirePipeline(listOf(emitTwo), captureOrders = true)
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 999L))
 
         assertThat(orders.map { it.id }).containsExactly("ORD-0", "ORD-1")
     }
@@ -179,37 +181,38 @@ class EndToEndTest {
                     tick: Tick,
                     emit: (Signal) -> Unit,
                 ) {
-                    emit(Signal.Buy("XAUUSD", 1.0))
-                    emit(Signal.Buy("XAUUSD", 2.0))
+                    emit(Signal.Buy("XAUUSD", Money.of("1")))
+                    emit(Signal.Buy("XAUUSD", Money.of("2")))
                 }
             }
         wirePipeline(listOf(emitTwoBuys))
 
-        engine.onTick(Tick("XAUUSD", 2400.5, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.5"), 999L))
 
         assertThat(trades).hasSize(2)
-        assertThat(trades.map { it.price }).containsExactly(2400.5, 2400.5)
+        assertThat(trades[0].price).isEqualByComparingTo(Money.of("2400.5"))
+        assertThat(trades[1].price).isEqualByComparingTo(Money.of("2400.5"))
     }
 
     @Test
     fun `cross-symbol strategy emits signal for symbol B from tick of symbol A`() {
-        tracker.update("XAUUSD", 2400.0)
+        tracker.update("XAUUSD", Money.of("2400.0"))
         val watchEurTradeGold =
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
                     emit: (Signal) -> Unit,
                 ) {
-                    if (tick.symbol == "EURUSD") emit(Signal.Buy("XAUUSD", 1.0))
+                    if (tick.symbol == "EURUSD") emit(Signal.Buy("XAUUSD", Money.of("1")))
                 }
             }
         wirePipeline(listOf(watchEurTradeGold))
 
-        engine.onTick(Tick("EURUSD", 1.0921, 999L))
+        engine.onTick(Tick("EURUSD", Money.of("1.0921"), 999L))
 
         assertThat(trades).hasSize(1)
         assertThat(trades[0].symbol).isEqualTo("XAUUSD")
-        assertThat(trades[0].price).isEqualTo(2400.0)
+        assertThat(trades[0].price).isEqualByComparingTo(Money.of("2400.0"))
     }
 
     @Test
@@ -219,9 +222,9 @@ class EndToEndTest {
         bus.subscribe<CandleEvent> { captured.add(it.candle) }
         wirePipeline(emptyList())
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 0L))
-        engine.onTick(Tick("XAUUSD", 2401.0, 30_000L))
-        engine.onTick(Tick("XAUUSD", 2402.0, 75_000L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 0L))
+        engine.onTick(Tick("XAUUSD", Money.of("2401.0"), 30_000L))
+        engine.onTick(Tick("XAUUSD", Money.of("2402.0"), 75_000L))
 
         assertThat(captured).hasSize(1)
         assertThat(captured[0].symbol).isEqualTo("XAUUSD")
@@ -230,7 +233,7 @@ class EndToEndTest {
 
     @Test
     fun `strategy receiving onCandle can emit a signal that fills`() {
-        tracker.update("XAUUSD", 2400.0)
+        tracker.update("XAUUSD", Money.of("2400.0"))
         CandleAggregator(bus, TimeWindow.ONE_MINUTE)
         val candleStrategy =
             object : Strategy {
@@ -244,13 +247,13 @@ class EndToEndTest {
                     candle: Candle,
                     emit: (Signal) -> Unit,
                 ) {
-                    emit(Signal.Buy(candle.symbol, 1.0))
+                    emit(Signal.Buy(candle.symbol, Money.of("1")))
                 }
             }
         wirePipeline(listOf(candleStrategy))
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 30_000L))
-        engine.onTick(Tick("XAUUSD", 2400.5, 75_000L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 30_000L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.5"), 75_000L))
 
         assertThat(trades).hasSize(1)
         assertThat(trades[0].symbol).isEqualTo("XAUUSD")
@@ -279,8 +282,8 @@ class EndToEndTest {
         CandleAggregator(bus, TimeWindow.ONE_MINUTE)
         wirePipeline(listOf(orderingStrategy))
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 30_000L))
-        engine.onTick(Tick("XAUUSD", 2401.0, 75_000L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 30_000L))
+        engine.onTick(Tick("XAUUSD", Money.of("2401.0"), 75_000L))
 
         assertThat(sequence).containsExactly(
             "onTick(30000)",
@@ -291,14 +294,14 @@ class EndToEndTest {
 
     @Test
     fun `risk approved order produces a fill and updates positions`() {
-        val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = 5.0))
+        val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = Money.of("5")))
         val strategy = buyEveryTick("XAUUSD")
         wirePipeline(listOf(strategy), rules = rules)
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 999L))
 
         assertThat(trades).hasSize(1)
-        assertThat(positions.positionFor("XAUUSD")?.quantity).isEqualTo(1.0)
+        assertThat(positions.positionFor("XAUUSD")?.quantity).isEqualByComparingTo(Money.of("1"))
     }
 
     @Test
@@ -306,11 +309,11 @@ class EndToEndTest {
         val rejections = mutableListOf<RiskRejectedEvent>()
         bus.subscribe<RiskRejectedEvent> { rejections.add(it) }
 
-        val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = 0.5))
+        val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = Money.of("0.5")))
         val strategy = buyEveryTick("XAUUSD")
         wirePipeline(listOf(strategy), rules = rules)
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 999L))
 
         assertThat(trades).isEmpty()
         assertThat(rejections).hasSize(1)
@@ -320,16 +323,17 @@ class EndToEndTest {
 
     @Test
     fun `position tracker is updated before subsequent FILLED log read`() {
-        val seenPositions = mutableListOf<Double?>()
+        val seenPositions = mutableListOf<BigDecimal?>()
         val strategy = buyEveryTick("XAUUSD")
         wirePipeline(listOf(strategy))
         bus.subscribe<TradeEvent> { e ->
             seenPositions.add(positions.positionFor(e.trade.symbol)?.quantity)
         }
 
-        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.0"), 999L))
 
         assertThat(trades).hasSize(1)
-        assertThat(seenPositions).containsExactly(1.0)
+        assertThat(seenPositions).hasSize(1)
+        assertThat(seenPositions[0]).isEqualByComparingTo(Money.of("1"))
     }
 }

@@ -1,10 +1,12 @@
 package com.qkt.candles
 
 import com.qkt.bus.EventBus
+import com.qkt.common.Money
 import com.qkt.events.CandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import java.math.BigDecimal
 
 class CandleAggregator(
     private val bus: EventBus,
@@ -39,7 +41,7 @@ class CandleAggregator(
             high = tick.price,
             low = tick.price,
             close = tick.price,
-            volume = tick.volume ?: 0.0,
+            volume = tick.volume ?: Money.ZERO,
             startTime = start,
             endTime = end,
         )
@@ -47,11 +49,11 @@ class CandleAggregator(
 
     private class MutableCandle(
         val symbol: String,
-        val open: Double,
-        var high: Double,
-        var low: Double,
-        var close: Double,
-        var volume: Double,
+        val open: BigDecimal,
+        var high: BigDecimal,
+        var low: BigDecimal,
+        var close: BigDecimal,
+        var volume: BigDecimal,
         val startTime: Long,
         val endTime: Long,
     ) {
@@ -59,7 +61,7 @@ class CandleAggregator(
             if (tick.price > high) high = tick.price
             if (tick.price < low) low = tick.price
             close = tick.price
-            if (tick.volume != null) volume += tick.volume
+            if (tick.volume != null) volume = volume.add(tick.volume)
         }
 
         fun toCandle(): Candle = Candle(symbol, open, high, low, close, volume, startTime, endTime)

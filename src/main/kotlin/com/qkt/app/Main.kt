@@ -4,6 +4,7 @@ import com.qkt.broker.MockBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
+import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
@@ -46,12 +47,12 @@ fun main() {
 
     val strategies: List<Strategy> =
         listOf(
-            EveryNthTickBuyStrategy("XAUUSD", n = 10, size = 1.0),
+            EveryNthTickBuyStrategy("XAUUSD", n = 10, size = Money.of("1")),
         )
 
     val rules: List<RiskRule> =
         listOf(
-            MaxPositionSize(symbol = "XAUUSD", maxQty = 3.0),
+            MaxPositionSize(symbol = "XAUUSD", maxQty = Money.of("3")),
         )
     val riskEngine = RiskEngine(rules, positions)
 
@@ -80,7 +81,7 @@ fun main() {
 
     bus.subscribe<TradeEvent> { e ->
         val t = e.trade
-        val pos = positions.positionFor(t.symbol)?.quantity ?: 0.0
+        val pos = positions.positionFor(t.symbol)?.quantity ?: Money.ZERO
         log.info("FILLED: {} {} {} @ {} (position: {})", t.side, t.quantity, t.symbol, t.price, pos)
     }
 
@@ -107,7 +108,7 @@ fun main() {
     val feed =
         MockTickFeed(
             symbol = "XAUUSD",
-            startPrice = 2400.0,
+            startPrice = Money.of("2400"),
             count = 100,
             clock = clock,
             tickIntervalMs = 1_000L,

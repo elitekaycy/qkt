@@ -1,15 +1,17 @@
 package com.qkt.strategy
 
+import com.qkt.common.Money
 import com.qkt.marketdata.Tick
+import java.math.BigDecimal
 
 class EveryNthTickBuyStrategy(
     private val symbol: String,
     private val n: Int = 10,
-    private val size: Double = 1.0,
+    private val size: BigDecimal = Money.of("1"),
 ) : Strategy {
     init {
         require(n > 0) { "n must be > 0: $n" }
-        require(size > 0.0) { "size must be > 0: $size" }
+        require(size.signum() > 0) { "size must be > 0: $size" }
     }
 
     private var counter = 0

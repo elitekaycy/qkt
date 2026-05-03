@@ -1,8 +1,10 @@
 package com.qkt.marketdata
 
+import java.math.BigDecimal
+
 data class Tick(
     val symbol: String,
-    val price: Double,
+    val price: BigDecimal,
     val timestamp: Long,
-    val volume: Double? = null,
+    val volume: BigDecimal? = null,
 )

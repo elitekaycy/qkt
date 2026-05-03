@@ -2,10 +2,12 @@ package com.qkt.engine
 
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
+import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.events.TickEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -18,12 +20,13 @@ class EngineTest {
 
     @Test
     fun `onTick updates priceTracker before publishing TickEvent`() {
-        val seenPrices = mutableListOf<Double?>()
+        val seenPrices = mutableListOf<BigDecimal?>()
         bus.subscribe<TickEvent> { seenPrices.add(tracker.lastPrice("XAUUSD")) }
 
-        engine.onTick(Tick("XAUUSD", 2400.5, 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("2400.5"), 999L))
 
-        assertThat(seenPrices).containsExactly(2400.5)
+        assertThat(seenPrices).hasSize(1)
+        assertThat(seenPrices[0]).isEqualByComparingTo(Money.of("2400.5"))
     }
 
     @Test
@@ -31,7 +34,7 @@ class EngineTest {
         val received = mutableListOf<Tick>()
         bus.subscribe<TickEvent> { received.add(it.tick) }
 
-        val tick = Tick("XAUUSD", 2400.0, 999L)
+        val tick = Tick("XAUUSD", Money.of("2400.0"), 999L)
         engine.onTick(tick)
 
         assertThat(received).containsExactly(tick)

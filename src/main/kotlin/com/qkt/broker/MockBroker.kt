@@ -11,7 +11,7 @@ class MockBroker(
     private val priceProvider: MarketPriceProvider,
 ) : Broker {
     override fun execute(order: Order): Trade? {
-        require(order.quantity > 0.0) { "Order quantity must be > 0: $order" }
+        require(order.quantity.signum() > 0) { "Order quantity must be > 0: $order" }
         val fillPrice =
             when (order.type) {
                 OrderType.MARKET -> priceProvider.lastPrice(order.symbol) ?: return null
