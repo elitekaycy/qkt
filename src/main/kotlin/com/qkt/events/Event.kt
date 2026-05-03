@@ -35,6 +35,13 @@ data class OrderEvent(
     override val sequenceId: Long = 0L,
 ) : Event()
 
+data class RiskRejectedEvent(
+    val order: Order,
+    val reason: String,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event()
+
 data class TradeEvent(
     val trade: Trade,
     override val timestamp: Long = 0L,

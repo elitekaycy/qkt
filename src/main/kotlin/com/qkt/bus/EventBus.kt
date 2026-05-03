@@ -5,6 +5,7 @@ import com.qkt.common.SequenceGenerator
 import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
@@ -41,6 +42,7 @@ class EventBus(
             is CandleEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is SignalEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is OrderEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is RiskRejectedEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is TradeEvent -> event.copy(timestamp = ts, sequenceId = seq)
         }
     }
