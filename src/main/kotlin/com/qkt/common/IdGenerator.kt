@@ -11,3 +11,13 @@ class SequentialIdGenerator(
 
     override fun next(): String = "$prefix-${counter++}"
 }
+
+interface SequenceGenerator {
+    fun next(): Long
+}
+
+class MonotonicSequenceGenerator : SequenceGenerator {
+    private var counter = 0L
+
+    override fun next(): Long = counter++
+}
