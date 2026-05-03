@@ -29,9 +29,10 @@ class RuleTest {
     }
 
     @Test
-    fun `lt is true when left less than right`() {
-        val rule = stub(Money.of("3")) lt stub(Money.of("4"))
-        assertThat(rule.evaluate()).isTrue()
+    fun `lt is true when left less than right and false otherwise`() {
+        assertThat((stub(Money.of("3")) lt stub(Money.of("4"))).evaluate()).isTrue()
+        assertThat((stub(Money.of("10")) lt stub(Money.of("5"))).evaluate()).isFalse()
+        assertThat((stub(Money.of("5")) lt stub(Money.of("5"))).evaluate()).isFalse()
     }
 
     @Test
@@ -47,25 +48,35 @@ class RuleTest {
     }
 
     @Test
-    fun `and combines rules`() {
+    fun `threshold lt overload compares against BigDecimal`() {
+        assertThat((stub(Money.of("3")) lt Money.of("5")).evaluate()).isTrue()
+        assertThat((stub(Money.of("10")) lt Money.of("5")).evaluate()).isFalse()
+    }
+
+    @Test
+    fun `and is true only when both rules are true`() {
         val tt = stub(Money.of("10")) gt stub(Money.of("5"))
         val ff = stub(Money.of("1")) gt stub(Money.of("5"))
         assertThat((tt and tt).evaluate()).isTrue()
         assertThat((tt and ff).evaluate()).isFalse()
+        assertThat((ff and ff).evaluate()).isFalse()
     }
 
     @Test
-    fun `or combines rules`() {
+    fun `or is true when at least one rule is true`() {
         val tt = stub(Money.of("10")) gt stub(Money.of("5"))
         val ff = stub(Money.of("1")) gt stub(Money.of("5"))
         assertThat((tt or ff).evaluate()).isTrue()
+        assertThat((tt or tt).evaluate()).isTrue()
         assertThat((ff or ff).evaluate()).isFalse()
     }
 
     @Test
     fun `not inverts a rule`() {
         val tt = stub(Money.of("10")) gt stub(Money.of("5"))
+        val ff = stub(Money.of("1")) gt stub(Money.of("5"))
         assertThat((!tt).evaluate()).isFalse()
+        assertThat((!ff).evaluate()).isTrue()
     }
 
     @Test
@@ -74,6 +85,11 @@ class RuleTest {
         val ready = stub(Money.of("5"))
         assertThat((notReady gt ready).evaluate()).isFalse()
         assertThat((ready gt notReady).evaluate()).isFalse()
+        assertThat((notReady lt ready).evaluate()).isFalse()
+        assertThat((ready lt notReady).evaluate()).isFalse()
+        assertThat((notReady eq ready).evaluate()).isFalse()
+        assertThat((ready eq notReady).evaluate()).isFalse()
         assertThat((notReady gt Money.of("5")).evaluate()).isFalse()
+        assertThat((notReady lt Money.of("5")).evaluate()).isFalse()
     }
 }
