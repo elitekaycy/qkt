@@ -11,6 +11,7 @@ import com.qkt.common.SystemClock
 import com.qkt.engine.Engine
 import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
@@ -18,6 +19,11 @@ import com.qkt.execution.Order
 import com.qkt.execution.OrderType
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.MockTickFeed
+import com.qkt.positions.PositionTracker
+import com.qkt.risk.Decision
+import com.qkt.risk.RiskEngine
+import com.qkt.risk.RiskRule
+import com.qkt.risk.rules.MaxPositionSize
 import com.qkt.strategy.EveryNthTickBuyStrategy
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
@@ -30,6 +36,7 @@ fun main() {
     val ids = SequentialIdGenerator()
     val sequencer = MonotonicSequenceGenerator()
     val priceTracker = MarketPriceTracker()
+    val positions = PositionTracker()
 
     val bus = EventBus(clock, sequencer)
     val broker = MockBroker(clock, priceTracker)
@@ -42,6 +49,12 @@ fun main() {
             EveryNthTickBuyStrategy("XAUUSD", n = 10, size = 1.0),
         )
 
+    val rules: List<RiskRule> =
+        listOf(
+            MaxPositionSize(symbol = "XAUUSD", maxQty = 3.0),
+        )
+    val riskEngine = RiskEngine(rules, positions)
+
     strategies.forEach { strategy ->
         bus.subscribe<TickEvent> { e ->
             strategy.onTick(e.tick) { signal -> bus.publish(SignalEvent(signal)) }
@@ -52,16 +65,28 @@ fun main() {
     }
 
     bus.subscribe<SignalEvent> { e ->
-        bus.publish(OrderEvent(e.signal.toOrder(ids.next(), clock.now())))
+        val order = e.signal.toOrder(ids.next(), clock.now())
+        when (val decision = riskEngine.approve(order)) {
+            is Decision.Approve -> bus.publish(OrderEvent(order))
+            is Decision.Reject -> bus.publish(RiskRejectedEvent(order, decision.reason))
+        }
     }
 
     bus.subscribe<OrderEvent> { e ->
         broker.execute(e.order)?.let { bus.publish(TradeEvent(it)) }
     }
 
+    bus.subscribe<TradeEvent> { e -> positions.apply(e.trade) }
+
     bus.subscribe<TradeEvent> { e ->
         val t = e.trade
-        log.info("FILLED: {} {} {} @ {}", t.side, t.quantity, t.symbol, t.price)
+        val pos = positions.positionFor(t.symbol)?.quantity ?: 0.0
+        log.info("FILLED: {} {} {} @ {} (position: {})", t.side, t.quantity, t.symbol, t.price, pos)
+    }
+
+    bus.subscribe<RiskRejectedEvent> { e ->
+        val o = e.order
+        log.info("REJECTED: {} {} {} ({})", o.side, o.quantity, o.symbol, e.reason)
     }
 
     bus.subscribe<CandleEvent> { e ->

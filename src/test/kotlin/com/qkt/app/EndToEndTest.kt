@@ -11,6 +11,7 @@ import com.qkt.common.Side
 import com.qkt.engine.Engine
 import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
@@ -20,6 +21,11 @@ import com.qkt.execution.Trade
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.positions.PositionTracker
+import com.qkt.risk.Decision
+import com.qkt.risk.RiskEngine
+import com.qkt.risk.RiskRule
+import com.qkt.risk.rules.MaxPositionSize
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import org.assertj.core.api.Assertions.assertThat
@@ -30,6 +36,7 @@ class EndToEndTest {
     private val ids = SequentialIdGenerator()
     private val sequencer = MonotonicSequenceGenerator()
     private val tracker = MarketPriceTracker()
+    private val positions = PositionTracker()
     private val bus = EventBus(clock, sequencer)
     private val broker = MockBroker(clock, tracker)
     private val engine = Engine(bus, tracker)
@@ -39,7 +46,10 @@ class EndToEndTest {
     private fun wirePipeline(
         strategies: List<Strategy>,
         captureOrders: Boolean = false,
+        rules: List<RiskRule> = emptyList(),
     ) {
+        val riskEngine = RiskEngine(rules, positions)
+        bus.subscribe<TradeEvent> { e -> positions.apply(e.trade) }
         strategies.forEach { s ->
             bus.subscribe<TickEvent> { e ->
                 s.onTick(e.tick) { sig -> bus.publish(SignalEvent(sig)) }
@@ -51,7 +61,10 @@ class EndToEndTest {
         bus.subscribe<SignalEvent> { e ->
             val order = e.signal.toOrder(ids.next(), clock.now())
             if (captureOrders) orders.add(order)
-            bus.publish(OrderEvent(order))
+            when (val decision = riskEngine.approve(order)) {
+                is Decision.Approve -> bus.publish(OrderEvent(order))
+                is Decision.Reject -> bus.publish(RiskRejectedEvent(order, decision.reason))
+            }
         }
         bus.subscribe<OrderEvent> { e ->
             broker.execute(e.order)?.let { bus.publish(TradeEvent(it)) }
@@ -274,5 +287,49 @@ class EndToEndTest {
             "onCandle(0)",
             "onTick(75000)",
         )
+    }
+
+    @Test
+    fun `risk approved order produces a fill and updates positions`() {
+        val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = 5.0))
+        val strategy = buyEveryTick("XAUUSD")
+        wirePipeline(listOf(strategy), rules = rules)
+
+        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+
+        assertThat(trades).hasSize(1)
+        assertThat(positions.positionFor("XAUUSD")?.quantity).isEqualTo(1.0)
+    }
+
+    @Test
+    fun `risk rejected order publishes RiskRejectedEvent and skips broker`() {
+        val rejections = mutableListOf<RiskRejectedEvent>()
+        bus.subscribe<RiskRejectedEvent> { rejections.add(it) }
+
+        val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = 0.5))
+        val strategy = buyEveryTick("XAUUSD")
+        wirePipeline(listOf(strategy), rules = rules)
+
+        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+
+        assertThat(trades).isEmpty()
+        assertThat(rejections).hasSize(1)
+        assertThat(rejections[0].order.symbol).isEqualTo("XAUUSD")
+        assertThat(rejections[0].reason).contains("MaxPositionSize")
+    }
+
+    @Test
+    fun `position tracker is updated before subsequent FILLED log read`() {
+        val seenPositions = mutableListOf<Double?>()
+        val strategy = buyEveryTick("XAUUSD")
+        wirePipeline(listOf(strategy))
+        bus.subscribe<TradeEvent> { e ->
+            seenPositions.add(positions.positionFor(e.trade.symbol)?.quantity)
+        }
+
+        engine.onTick(Tick("XAUUSD", 2400.0, 999L))
+
+        assertThat(trades).hasSize(1)
+        assertThat(seenPositions).containsExactly(1.0)
     }
 }
