@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Pre-push hook: runs scripts/precheck.sh.
+# Skip with: git push --no-verify (only when you have a good reason).
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if [ ! -x "$REPO_ROOT/scripts/precheck.sh" ]; then
+    echo "pre-push: $REPO_ROOT/scripts/precheck.sh missing or not executable" >&2
+    exit 1
+fi
+
+exec "$REPO_ROOT/scripts/precheck.sh"

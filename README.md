@@ -31,6 +31,12 @@ Local pre-push helper:
 ./scripts/precheck.sh
 ```
 
+After cloning, wire up the git hook so `precheck.sh` runs automatically before every push:
+
+```bash
+./scripts/install-hooks.sh
+```
+
 ## Layout
 
 ```
