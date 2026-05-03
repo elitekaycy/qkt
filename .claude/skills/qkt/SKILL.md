@@ -67,6 +67,7 @@ Subject only. **No body. No footer. No `Co-Authored-By` lines. No AI references 
 | `refactor` | Internal restructuring with no behavior change |
 | `docs` | Documentation, specs, plans, README, comments |
 | `test` | Adding or updating tests without changing production code |
+| `style` | Formatting-only changes (whitespace, ktlint auto-format, indent). No behavior change |
 | `build` | Build config, Gradle, dependencies, wrapper |
 | `chore` | Tooling, scripts, CI, hooks, formatters |
 | `merge` | Merge commits (see below) |
