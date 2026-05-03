@@ -6,6 +6,7 @@ import com.qkt.common.Side
 import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
@@ -86,6 +87,27 @@ class EventBusTest {
         assertThat(received[0].timestamp).isEqualTo(7777L)
         assertThat(received[0].sequenceId).isEqualTo(0L)
         assertThat(received[0].candle.symbol).isEqualTo("XAUUSD")
+    }
+
+    @Test
+    fun `bus stamps RiskRejectedEvent on publish`() {
+        val bus = newBus()
+        val received = mutableListOf<RiskRejectedEvent>()
+        bus.subscribe<RiskRejectedEvent> { received.add(it) }
+
+        clock.time = 8888L
+        bus.publish(
+            RiskRejectedEvent(
+                order = Order("ORD-9", "XAUUSD", Side.BUY, 1.0, OrderType.MARKET, null, 1000L),
+                reason = "test rejection",
+            ),
+        )
+
+        assertThat(received).hasSize(1)
+        assertThat(received[0].timestamp).isEqualTo(8888L)
+        assertThat(received[0].sequenceId).isEqualTo(0L)
+        assertThat(received[0].order.id).isEqualTo("ORD-9")
+        assertThat(received[0].reason).isEqualTo("test rejection")
     }
 
     @Test
