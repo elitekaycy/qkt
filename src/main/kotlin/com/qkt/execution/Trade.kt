@@ -8,5 +8,5 @@ data class Trade(
     val price: Double,
     val quantity: Double,
     val side: Side,
-    val timestamp: Long
+    val timestamp: Long,
 )

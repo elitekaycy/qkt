@@ -7,7 +7,10 @@ interface MarketPriceProvider {
 class MarketPriceTracker : MarketPriceProvider {
     private val prices = mutableMapOf<String, Double>()
 
-    fun update(symbol: String, price: Double) {
+    fun update(
+        symbol: String,
+        price: Double,
+    ) {
         prices[symbol] = price
     }
 

@@ -8,5 +8,5 @@ data class Candle(
     val close: Double,
     val volume: Double,
     val startTime: Long,
-    val endTime: Long
+    val endTime: Long,
 )

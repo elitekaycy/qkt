@@ -6,9 +6,11 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class EveryNthTickBuyStrategyTest {
-
-    private fun tick(symbol: String = "XAUUSD", price: Double = 2400.0, ts: Long = 0L) =
-        Tick(symbol, price, ts)
+    private fun tick(
+        symbol: String = "XAUUSD",
+        price: Double = 2400.0,
+        ts: Long = 0L,
+    ) = Tick(symbol, price, ts)
 
     @Test
     fun `emits no signal on first n minus 1 ticks`() {

@@ -18,9 +18,8 @@ class Engine(
     private val clock: Clock,
     private val idGenerator: IdGenerator,
     private val priceTracker: MarketPriceTracker,
-    private val onTrade: (Trade) -> Unit = {}
+    private val onTrade: (Trade) -> Unit = {},
 ) {
-
     fun onTick(tick: Tick) {
         priceTracker.update(tick.symbol, tick.price)
         strategy.onTick(tick) { signal -> route(signal) }
@@ -32,8 +31,12 @@ class Engine(
         onTrade(trade)
     }
 
-    private fun Signal.toOrder(id: String, ts: Long): Order = when (this) {
-        is Signal.Buy  -> Order(id, symbol, Side.BUY,  size, OrderType.MARKET, null, ts)
-        is Signal.Sell -> Order(id, symbol, Side.SELL, size, OrderType.MARKET, null, ts)
-    }
+    private fun Signal.toOrder(
+        id: String,
+        ts: Long,
+    ): Order =
+        when (this) {
+            is Signal.Buy -> Order(id, symbol, Side.BUY, size, OrderType.MARKET, null, ts)
+            is Signal.Sell -> Order(id, symbol, Side.SELL, size, OrderType.MARKET, null, ts)
+        }
 }

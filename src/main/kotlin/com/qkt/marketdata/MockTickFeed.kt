@@ -8,9 +8,8 @@ class MockTickFeed(
     private val startPrice: Double,
     private val count: Int,
     private val clock: Clock,
-    private val random: Random = Random(seed = 42L)
+    private val random: Random = Random(seed = 42L),
 ) : TickFeed {
-
     init {
         require(count >= 0) { "count must be >= 0: $count" }
         require(startPrice > 0.0) { "startPrice must be > 0: $startPrice" }

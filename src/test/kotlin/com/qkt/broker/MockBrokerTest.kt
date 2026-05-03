@@ -10,7 +10,6 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class MockBrokerTest {
-
     private val clock = FixedClock(time = 1000L)
     private val tracker = MarketPriceTracker()
     private val broker = MockBroker(clock, tracker)
@@ -20,7 +19,7 @@ class MockBrokerTest {
         symbol: String = "XAUUSD",
         side: Side = Side.BUY,
         qty: Double = 1.0,
-        ts: Long = 1000L
+        ts: Long = 1000L,
     ) = Order(id, symbol, side, qty, OrderType.MARKET, null, ts)
 
     @Test

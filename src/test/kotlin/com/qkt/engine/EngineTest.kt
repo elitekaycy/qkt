@@ -16,7 +16,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class EngineTest {
-
     private val clock = FixedClock(time = 1000L)
     private val ids = SequentialIdGenerator(prefix = "ORD")
     private val tracker = MarketPriceTracker()
@@ -24,18 +23,22 @@ class EngineTest {
     private fun engineWith(
         strategy: Strategy,
         broker: Broker = MockBroker(clock, tracker),
-        trades: MutableList<Trade> = mutableListOf()
+        trades: MutableList<Trade> = mutableListOf(),
     ): Pair<Engine, MutableList<Trade>> =
         Engine(strategy, broker, clock, ids, tracker, onTrade = { trades.add(it) }) to trades
 
     @Test
     fun `updates price tracker before strategy sees the tick`() {
         val seenPrices = mutableListOf<Double?>()
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) {
-                seenPrices.add(tracker.lastPrice("XAUUSD"))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    seenPrices.add(tracker.lastPrice("XAUUSD"))
+                }
             }
-        }
         val (engine, _) = engineWith(strategy)
         engine.onTick(Tick("XAUUSD", 2400.5, 1000L))
         assertThat(seenPrices).containsExactly(2400.5)
@@ -44,9 +47,15 @@ class EngineTest {
     @Test
     fun `forwards tick to strategy`() {
         val seen = mutableListOf<Tick>()
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) { seen.add(tick) }
-        }
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    seen.add(tick)
+                }
+            }
         val (engine, _) = engineWith(strategy)
         val tick = Tick("XAUUSD", 2400.0, 1000L)
         engine.onTick(tick)
@@ -55,15 +64,23 @@ class EngineTest {
 
     @Test
     fun `converts Buy signal to MARKET BUY order`() {
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) {
-                emit(Signal.Buy("XAUUSD", 2.0))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("XAUUSD", 2.0))
+                }
             }
-        }
         val orders = mutableListOf<Order>()
-        val capturingBroker = object : Broker {
-            override fun execute(order: Order): Trade? { orders.add(order); return null }
-        }
+        val capturingBroker =
+            object : Broker {
+                override fun execute(order: Order): Trade? {
+                    orders.add(order)
+                    return null
+                }
+            }
         val (engine, _) = engineWith(strategy, capturingBroker)
         engine.onTick(Tick("XAUUSD", 2400.0, 1000L))
         assertThat(orders).hasSize(1)
@@ -79,15 +96,23 @@ class EngineTest {
 
     @Test
     fun `converts Sell signal to MARKET SELL order`() {
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) {
-                emit(Signal.Sell("XAUUSD", 3.0))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Sell("XAUUSD", 3.0))
+                }
             }
-        }
         val orders = mutableListOf<Order>()
-        val capturingBroker = object : Broker {
-            override fun execute(order: Order): Trade? { orders.add(order); return null }
-        }
+        val capturingBroker =
+            object : Broker {
+                override fun execute(order: Order): Trade? {
+                    orders.add(order)
+                    return null
+                }
+            }
         val (engine, _) = engineWith(strategy, capturingBroker)
         engine.onTick(Tick("XAUUSD", 2400.0, 1000L))
         assertThat(orders).hasSize(1)
@@ -98,11 +123,15 @@ class EngineTest {
     @Test
     fun `routes order to broker and forwards trade to onTrade`() {
         tracker.update("XAUUSD", 2400.5)
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) {
-                emit(Signal.Buy("XAUUSD", 1.0))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("XAUUSD", 1.0))
+                }
             }
-        }
         val (engine, trades) = engineWith(strategy)
         engine.onTick(Tick("XAUUSD", 2400.5, 1000L))
         assertThat(trades).hasSize(1)
@@ -111,11 +140,15 @@ class EngineTest {
 
     @Test
     fun `skips onTrade when broker returns null`() {
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) {
-                emit(Signal.Buy("BTCUSD", 1.0))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("BTCUSD", 1.0))
+                }
             }
-        }
         val (engine, trades) = engineWith(strategy)
         engine.onTick(Tick("XAUUSD", 2400.0, 1000L))
         assertThat(trades).isEmpty()
@@ -123,16 +156,24 @@ class EngineTest {
 
     @Test
     fun `assigns sequential ids to multiple signals from one tick`() {
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) {
-                emit(Signal.Buy("XAUUSD", 1.0))
-                emit(Signal.Sell("XAUUSD", 1.0))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("XAUUSD", 1.0))
+                    emit(Signal.Sell("XAUUSD", 1.0))
+                }
             }
-        }
         val orders = mutableListOf<Order>()
-        val capturingBroker = object : Broker {
-            override fun execute(order: Order): Trade? { orders.add(order); return null }
-        }
+        val capturingBroker =
+            object : Broker {
+                override fun execute(order: Order): Trade? {
+                    orders.add(order)
+                    return null
+                }
+            }
         val (engine, _) = engineWith(strategy, capturingBroker)
         engine.onTick(Tick("XAUUSD", 2400.0, 1000L))
         assertThat(orders.map { it.id }).containsExactly("ORD-0", "ORD-1")
@@ -141,12 +182,16 @@ class EngineTest {
     @Test
     fun `multiple signals all fill at same tracker price`() {
         tracker.update("XAUUSD", 2400.5)
-        val strategy = object : Strategy {
-            override fun onTick(tick: Tick, emit: (Signal) -> Unit) {
-                emit(Signal.Buy("XAUUSD", 1.0))
-                emit(Signal.Buy("XAUUSD", 2.0))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("XAUUSD", 1.0))
+                    emit(Signal.Buy("XAUUSD", 2.0))
+                }
             }
-        }
         val (engine, trades) = engineWith(strategy)
         engine.onTick(Tick("XAUUSD", 2400.5, 1000L))
         assertThat(trades.map { it.price }).containsExactly(2400.5, 2400.5)

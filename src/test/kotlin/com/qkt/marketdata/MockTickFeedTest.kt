@@ -1,13 +1,12 @@
 package com.qkt.marketdata
 
 import com.qkt.common.FixedClock
+import kotlin.random.Random
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
-import kotlin.random.Random
 
 class MockTickFeedTest {
-
     @Test
     fun `next returns count ticks then null`() {
         val feed = MockTickFeed("XAUUSD", startPrice = 2400.0, count = 3, clock = FixedClock(1000L))

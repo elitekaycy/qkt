@@ -9,5 +9,5 @@ data class Order(
     val quantity: Double,
     val type: OrderType,
     val price: Double? = null,
-    val timestamp: Long
+    val timestamp: Long,
 )

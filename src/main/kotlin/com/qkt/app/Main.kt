@@ -9,15 +9,20 @@ import com.qkt.marketdata.MockTickFeed
 import com.qkt.strategy.EveryNthTickBuyStrategy
 
 fun main() {
-    val clock        = SystemClock()
-    val ids          = SequentialIdGenerator()
+    val clock = SystemClock()
+    val ids = SequentialIdGenerator()
     val priceTracker = MarketPriceTracker()
-    val strategy     = EveryNthTickBuyStrategy("XAUUSD", n = 10, size = 1.0)
-    val broker       = MockBroker(clock, priceTracker)
-    val engine       = Engine(
-        strategy, broker, clock, ids, priceTracker,
-        onTrade = { t -> println("FILLED: ${t.side} ${t.quantity} ${t.symbol} @ ${t.price}") }
-    )
+    val strategy = EveryNthTickBuyStrategy("XAUUSD", n = 10, size = 1.0)
+    val broker = MockBroker(clock, priceTracker)
+    val engine =
+        Engine(
+            strategy,
+            broker,
+            clock,
+            ids,
+            priceTracker,
+            onTrade = { t -> println("FILLED: ${t.side} ${t.quantity} ${t.symbol} @ ${t.price}") },
+        )
     val feed = MockTickFeed("XAUUSD", startPrice = 2400.0, count = 100, clock = clock)
 
     while (true) {
