@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm") version "2.1.0"
     application
+    id("org.jlleitschuh.gradle.ktlint") version "12.1.1"
 }
 
 group = "com.qkt"
@@ -34,4 +35,11 @@ tasks.test {
 
 kotlin {
     jvmToolchain(21)
+}
+
+ktlint {
+    version.set("1.5.0")
+    verbose.set(true)
+    outputToConsole.set(true)
+    enableExperimentalRules.set(false)
 }
