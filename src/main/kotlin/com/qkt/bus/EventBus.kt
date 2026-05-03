@@ -2,6 +2,7 @@ package com.qkt.bus
 
 import com.qkt.common.Clock
 import com.qkt.common.SequenceGenerator
+import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
 import com.qkt.events.SignalEvent
@@ -37,6 +38,7 @@ class EventBus(
         val seq = sequencer.next()
         return when (event) {
             is TickEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is CandleEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is SignalEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is OrderEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is TradeEvent -> event.copy(timestamp = ts, sequenceId = seq)
