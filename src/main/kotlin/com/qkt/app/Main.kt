@@ -2,11 +2,14 @@ package com.qkt.app
 
 import com.qkt.broker.MockBroker
 import com.qkt.bus.EventBus
+import com.qkt.candles.CandleAggregator
+import com.qkt.candles.TimeWindow
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
 import com.qkt.engine.Engine
+import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
@@ -32,6 +35,8 @@ fun main() {
     val broker = MockBroker(clock, priceTracker)
     val engine = Engine(bus, priceTracker)
 
+    CandleAggregator(bus, TimeWindow.ONE_MINUTE)
+
     val strategies: List<Strategy> =
         listOf(
             EveryNthTickBuyStrategy("XAUUSD", n = 10, size = 1.0),
@@ -40,6 +45,9 @@ fun main() {
     strategies.forEach { strategy ->
         bus.subscribe<TickEvent> { e ->
             strategy.onTick(e.tick) { signal -> bus.publish(SignalEvent(signal)) }
+        }
+        bus.subscribe<CandleEvent> { e ->
+            strategy.onCandle(e.candle) { signal -> bus.publish(SignalEvent(signal)) }
         }
     }
 
@@ -56,7 +64,29 @@ fun main() {
         log.info("FILLED: {} {} {} @ {}", t.side, t.quantity, t.symbol, t.price)
     }
 
-    val feed = MockTickFeed("XAUUSD", startPrice = 2400.0, count = 100, clock = clock)
+    bus.subscribe<CandleEvent> { e ->
+        val c = e.candle
+        log.info(
+            "CANDLE: {} O={} H={} L={} C={} V={} [{}, {})",
+            c.symbol,
+            c.open,
+            c.high,
+            c.low,
+            c.close,
+            c.volume,
+            c.startTime,
+            c.endTime,
+        )
+    }
+
+    val feed =
+        MockTickFeed(
+            symbol = "XAUUSD",
+            startPrice = 2400.0,
+            count = 100,
+            clock = clock,
+            tickIntervalMs = 1_000L,
+        )
     while (true) {
         val tick = feed.next() ?: break
         engine.onTick(tick)

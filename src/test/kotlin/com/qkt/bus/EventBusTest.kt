@@ -3,6 +3,7 @@ package com.qkt.bus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
 import com.qkt.events.SignalEvent
@@ -10,6 +11,7 @@ import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.Order
 import com.qkt.execution.OrderType
+import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
 import org.assertj.core.api.Assertions.assertThat
@@ -56,6 +58,34 @@ class EventBusTest {
         bus.publish(TickEvent(tick()))
 
         assertThat(received[0].timestamp).isEqualTo(12345L)
+    }
+
+    @Test
+    fun `bus stamps CandleEvent on publish`() {
+        val bus = newBus()
+        val received = mutableListOf<CandleEvent>()
+        bus.subscribe<CandleEvent> { received.add(it) }
+
+        clock.time = 7777L
+        bus.publish(
+            CandleEvent(
+                Candle(
+                    "XAUUSD",
+                    open = 100.0,
+                    high = 101.0,
+                    low = 99.0,
+                    close = 100.5,
+                    volume = 12.0,
+                    startTime = 0L,
+                    endTime = 60_000L,
+                ),
+            ),
+        )
+
+        assertThat(received).hasSize(1)
+        assertThat(received[0].timestamp).isEqualTo(7777L)
+        assertThat(received[0].sequenceId).isEqualTo(0L)
+        assertThat(received[0].candle.symbol).isEqualTo("XAUUSD")
     }
 
     @Test
