@@ -1,12 +1,14 @@
 package com.qkt.marketdata
 
+import java.math.BigDecimal
+
 data class Candle(
     val symbol: String,
-    val open: Double,
-    val high: Double,
-    val low: Double,
-    val close: Double,
-    val volume: Double,
+    val open: BigDecimal,
+    val high: BigDecimal,
+    val low: BigDecimal,
+    val close: BigDecimal,
+    val volume: BigDecimal,
     val startTime: Long,
     val endTime: Long,
 )

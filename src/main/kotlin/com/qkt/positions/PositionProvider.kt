@@ -1,7 +1,9 @@
 package com.qkt.positions
 
+import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.Trade
+import java.math.BigDecimal
 
 interface PositionProvider {
     fun positionFor(symbol: String): Position?
@@ -12,15 +14,50 @@ interface PositionProvider {
 class PositionTracker : PositionProvider {
     private val positions = mutableMapOf<String, Position>()
 
-    fun apply(trade: Trade) {
-        val current = positions[trade.symbol]?.quantity ?: 0.0
-        val delta = if (trade.side == Side.BUY) trade.quantity else -trade.quantity
-        val next = current + delta
-        if (next == 0.0) {
-            positions.remove(trade.symbol)
-        } else {
-            positions[trade.symbol] = Position(trade.symbol, next)
+    fun apply(trade: Trade): BigDecimal {
+        val current = positions[trade.symbol]
+        val signedTradeQty =
+            if (trade.side == Side.BUY) trade.quantity else trade.quantity.negate()
+
+        if (current == null) {
+            positions[trade.symbol] = Position(trade.symbol, signedTradeQty, trade.price)
+            return Money.ZERO
         }
+
+        val currentQty = current.quantity
+        val currentAvg = current.avgEntryPrice
+        val sameDirection = currentQty.signum() == signedTradeQty.signum()
+
+        if (sameDirection) {
+            val totalQty = currentQty.add(signedTradeQty)
+            val newAvg =
+                currentAvg
+                    .multiply(currentQty.abs())
+                    .add(trade.price.multiply(trade.quantity))
+                    .divide(totalQty.abs(), Money.CONTEXT)
+                    .setScale(Money.SCALE, Money.ROUNDING)
+            positions[trade.symbol] = Position(trade.symbol, totalQty, newAvg)
+            return Money.ZERO
+        }
+
+        val closingQty = currentQty.abs().min(trade.quantity)
+        val priceDiff =
+            if (currentQty.signum() > 0) {
+                trade.price.subtract(currentAvg)
+            } else {
+                currentAvg.subtract(trade.price)
+            }
+        val realized = closingQty.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
+
+        val remainingQty = currentQty.add(signedTradeQty)
+        when {
+            remainingQty.signum() == 0 -> positions.remove(trade.symbol)
+            remainingQty.signum() == currentQty.signum() ->
+                positions[trade.symbol] = Position(trade.symbol, remainingQty, currentAvg)
+            else ->
+                positions[trade.symbol] = Position(trade.symbol, remainingQty, trade.price)
+        }
+        return realized
     }
 
     override fun positionFor(symbol: String): Position? = positions[symbol]

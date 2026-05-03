@@ -1,10 +1,12 @@
 package com.qkt.risk
 
+import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.Order
 import com.qkt.execution.OrderType
 import com.qkt.positions.PositionProvider
 import com.qkt.positions.PositionTracker
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -14,7 +16,7 @@ class RiskEngineTest {
     private fun order(
         symbol: String = "XAUUSD",
         side: Side = Side.BUY,
-        qty: Double = 1.0,
+        qty: BigDecimal = Money.of("1"),
     ) = Order("ORD-0", symbol, side, qty, OrderType.MARKET, null, 1000L)
 
     private fun approveAlways() =

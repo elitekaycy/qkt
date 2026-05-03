@@ -1,6 +1,7 @@
 package com.qkt.bus
 
 import com.qkt.common.FixedClock
+import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.CandleEvent
@@ -15,6 +16,7 @@ import com.qkt.execution.OrderType
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -27,7 +29,7 @@ class EventBusTest {
 
     private fun tick(
         symbol: String = "XAUUSD",
-        price: Double = 2400.0,
+        price: BigDecimal = Money.of("2400.0"),
     ) = Tick(symbol, price, 999L)
 
     @Test
@@ -42,7 +44,7 @@ class EventBusTest {
         val received = mutableListOf<TickEvent>()
         bus.subscribe<TickEvent> { received.add(it) }
 
-        val event = TickEvent(tick("XAUUSD", 2400.5))
+        val event = TickEvent(tick("XAUUSD", Money.of("2400.5")))
         bus.publish(event)
 
         assertThat(received).hasSize(1)
@@ -72,11 +74,11 @@ class EventBusTest {
             CandleEvent(
                 Candle(
                     "XAUUSD",
-                    open = 100.0,
-                    high = 101.0,
-                    low = 99.0,
-                    close = 100.5,
-                    volume = 12.0,
+                    open = Money.of("100.0"),
+                    high = Money.of("101.0"),
+                    low = Money.of("99.0"),
+                    close = Money.of("100.5"),
+                    volume = Money.of("12.0"),
                     startTime = 0L,
                     endTime = 60_000L,
                 ),
@@ -98,7 +100,7 @@ class EventBusTest {
         clock.time = 8888L
         bus.publish(
             RiskRejectedEvent(
-                order = Order("ORD-9", "XAUUSD", Side.BUY, 1.0, OrderType.MARKET, null, 1000L),
+                order = Order("ORD-9", "XAUUSD", Side.BUY, Money.of("1"), OrderType.MARKET, null, 1000L),
                 reason = "test rejection",
             ),
         )
@@ -118,7 +120,7 @@ class EventBusTest {
         bus.subscribe<SignalEvent> { received.add(it) }
 
         bus.publish(TickEvent(tick()))
-        bus.publish(SignalEvent(Signal.Buy("XAUUSD", 1.0)))
+        bus.publish(SignalEvent(Signal.Buy("XAUUSD", Money.of("1"))))
         bus.publish(TickEvent(tick()))
 
         assertThat(received.map { it.sequenceId }).containsExactly(0L, 1L, 2L)
@@ -157,7 +159,7 @@ class EventBusTest {
         val sequence = mutableListOf<String>()
         bus.subscribe<TickEvent> {
             sequence.add("tick-A-start")
-            bus.publish(SignalEvent(Signal.Buy("XAUUSD", 1.0)))
+            bus.publish(SignalEvent(Signal.Buy("XAUUSD", Money.of("1"))))
             sequence.add("tick-A-end")
         }
         bus.subscribe<TickEvent> { sequence.add("tick-B") }
@@ -202,7 +204,7 @@ class EventBusTest {
         bus.subscribe<OrderEvent> { orderHandlers.add("o2") }
         bus.subscribe<TradeEvent> { tradeHandlers.add("tr1") }
 
-        bus.publish(OrderEvent(Order("ORD-0", "XAUUSD", Side.BUY, 1.0, OrderType.MARKET, null, 1000L)))
+        bus.publish(OrderEvent(Order("ORD-0", "XAUUSD", Side.BUY, Money.of("1"), OrderType.MARKET, null, 1000L)))
 
         assertThat(tickHandlers).isEmpty()
         assertThat(orderHandlers).containsExactly("o1", "o2")
