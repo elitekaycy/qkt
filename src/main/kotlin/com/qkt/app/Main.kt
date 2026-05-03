@@ -2,25 +2,16 @@ package com.qkt.app
 
 import com.qkt.broker.MockBroker
 import com.qkt.bus.EventBus
-import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
 import com.qkt.engine.Engine
-import com.qkt.events.CandleEvent
-import com.qkt.events.OrderEvent
-import com.qkt.events.RiskRejectedEvent
-import com.qkt.events.SignalEvent
-import com.qkt.events.TickEvent
-import com.qkt.events.TradeEvent
-import com.qkt.execution.toOrder
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.MockTickFeed
 import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
-import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.rules.MaxPositionSize
@@ -37,90 +28,71 @@ fun main() {
     val priceTracker = MarketPriceTracker()
     val positions = PositionTracker()
     val pnl = PnLCalculator(positions, priceTracker)
-
     val bus = EventBus(clock, sequencer)
     val broker = MockBroker(clock, priceTracker)
     val engine = Engine(bus, priceTracker)
-
-    CandleAggregator(bus, TimeWindow.ONE_MINUTE)
 
     val strategies: List<Strategy> =
         listOf(
             EveryNthTickBuyStrategy("XAUUSD", n = 10, size = Money.of("1")),
         )
-
     val rules: List<RiskRule> =
         listOf(
             MaxPositionSize(symbol = "XAUUSD", maxQty = Money.of("3")),
         )
     val riskEngine = RiskEngine(rules, positions)
 
-    strategies.forEach { strategy ->
-        bus.subscribe<TickEvent> { e ->
-            strategy.onTick(e.tick) { signal -> bus.publish(SignalEvent(signal)) }
-        }
-        bus.subscribe<CandleEvent> { e ->
-            strategy.onCandle(e.candle) { signal -> bus.publish(SignalEvent(signal)) }
-        }
-    }
-
-    bus.subscribe<SignalEvent> { e ->
-        val order = e.signal.toOrder(ids.next(), clock.now())
-        when (val decision = riskEngine.approve(order)) {
-            is Decision.Approve -> bus.publish(OrderEvent(order))
-            is Decision.Reject -> bus.publish(RiskRejectedEvent(order, decision.reason))
-        }
-    }
-
-    bus.subscribe<OrderEvent> { e ->
-        broker.execute(e.order)?.let { bus.publish(TradeEvent(it)) }
-    }
-
-    bus.subscribe<TradeEvent> { e ->
-        val realized = positions.apply(e.trade)
-        pnl.recordRealized(realized)
-    }
-
-    bus.subscribe<TradeEvent> { e ->
-        val t = e.trade
-        val pos = positions.positionFor(t.symbol)?.quantity ?: Money.ZERO
-        log.info(
-            "FILLED: {} {} {} @ {} (position: {}, realized: {}, unrealized: {})",
-            t.side,
-            t.quantity.stripTrailingZeros().toPlainString(),
-            t.symbol,
-            t.price.stripTrailingZeros().toPlainString(),
-            pos.stripTrailingZeros().toPlainString(),
-            pnl.realizedTotal().setScale(2, Money.ROUNDING),
-            pnl.unrealizedTotal().setScale(2, Money.ROUNDING),
+    val pipeline =
+        TradingPipeline(
+            clock = clock,
+            ids = ids,
+            sequencer = sequencer,
+            priceTracker = priceTracker,
+            positions = positions,
+            pnl = pnl,
+            bus = bus,
+            broker = broker,
+            engine = engine,
+            strategies = strategies,
+            riskEngine = riskEngine,
+            candleWindow = TimeWindow.ONE_MINUTE,
+            onFilled = { trade, _ ->
+                val pos = positions.positionFor(trade.symbol)?.quantity ?: Money.ZERO
+                log.info(
+                    "FILLED: {} {} {} @ {} (position: {}, realized: {}, unrealized: {})",
+                    trade.side,
+                    trade.quantity.stripTrailingZeros().toPlainString(),
+                    trade.symbol,
+                    trade.price.stripTrailingZeros().toPlainString(),
+                    pos.stripTrailingZeros().toPlainString(),
+                    pnl.realizedTotal().setScale(2, Money.ROUNDING),
+                    pnl.unrealizedTotal().setScale(2, Money.ROUNDING),
+                )
+            },
+            onRejected = { e ->
+                val o = e.order
+                log.info(
+                    "REJECTED: {} {} {} ({})",
+                    o.side,
+                    o.quantity.stripTrailingZeros().toPlainString(),
+                    o.symbol,
+                    e.reason,
+                )
+            },
+            onCandle = { c ->
+                log.info(
+                    "CANDLE: {} O={} H={} L={} C={} V={} [{}, {})",
+                    c.symbol,
+                    c.open.stripTrailingZeros().toPlainString(),
+                    c.high.stripTrailingZeros().toPlainString(),
+                    c.low.stripTrailingZeros().toPlainString(),
+                    c.close.stripTrailingZeros().toPlainString(),
+                    c.volume.stripTrailingZeros().toPlainString(),
+                    c.startTime,
+                    c.endTime,
+                )
+            },
         )
-    }
-
-    bus.subscribe<RiskRejectedEvent> { e ->
-        val o = e.order
-        log.info(
-            "REJECTED: {} {} {} ({})",
-            o.side,
-            o.quantity.stripTrailingZeros().toPlainString(),
-            o.symbol,
-            e.reason,
-        )
-    }
-
-    bus.subscribe<CandleEvent> { e ->
-        val c = e.candle
-        log.info(
-            "CANDLE: {} O={} H={} L={} C={} V={} [{}, {})",
-            c.symbol,
-            c.open.stripTrailingZeros().toPlainString(),
-            c.high.stripTrailingZeros().toPlainString(),
-            c.low.stripTrailingZeros().toPlainString(),
-            c.close.stripTrailingZeros().toPlainString(),
-            c.volume.stripTrailingZeros().toPlainString(),
-            c.startTime,
-            c.endTime,
-        )
-    }
 
     val feed =
         MockTickFeed(
@@ -132,7 +104,7 @@ fun main() {
         )
     while (true) {
         val tick = feed.next() ?: break
-        engine.onTick(tick)
+        pipeline.ingest(tick)
     }
     log.info("Done.")
 }
