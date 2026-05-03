@@ -110,7 +110,7 @@ Example: `merge: phase 1 trading engine`. Always use `--no-ff` so the merge comm
 
 ### Forbidden
 
-- Anything containing `🤖`, `✨`, or any other emoji.
+- Any emoji (robot, sparkle, check-mark, anything graphical).
 - `Co-Authored-By: Claude` or any other AI attribution.
 - "Generated with", "Created by", or any tool-attribution footer.
 - WIP commits in `main`. Squash or fix-up before merging.
