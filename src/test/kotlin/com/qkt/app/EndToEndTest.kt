@@ -17,11 +17,12 @@ import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.Order
-import com.qkt.execution.OrderType
 import com.qkt.execution.Trade
+import com.qkt.execution.toOrder
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
@@ -44,6 +45,7 @@ class EndToEndTest {
     private val engine = Engine(bus, tracker)
     private val trades = mutableListOf<Trade>()
     private val orders = mutableListOf<Order>()
+    private val pnl = PnLCalculator(positions, tracker)
 
     private fun wirePipeline(
         strategies: List<Strategy>,
@@ -51,7 +53,10 @@ class EndToEndTest {
         rules: List<RiskRule> = emptyList(),
     ) {
         val riskEngine = RiskEngine(rules, positions)
-        bus.subscribe<TradeEvent> { e -> positions.apply(e.trade) }
+        bus.subscribe<TradeEvent> { e ->
+            val realized = positions.apply(e.trade)
+            pnl.recordRealized(realized)
+        }
         strategies.forEach { s ->
             bus.subscribe<TickEvent> { e ->
                 s.onTick(e.tick) { sig -> bus.publish(SignalEvent(sig)) }
@@ -73,15 +78,6 @@ class EndToEndTest {
         }
         bus.subscribe<TradeEvent> { e -> trades.add(e.trade) }
     }
-
-    private fun Signal.toOrder(
-        id: String,
-        ts: Long,
-    ): Order =
-        when (this) {
-            is Signal.Buy -> Order(id, symbol, Side.BUY, size, OrderType.MARKET, null, ts)
-            is Signal.Sell -> Order(id, symbol, Side.SELL, size, OrderType.MARKET, null, ts)
-        }
 
     private fun buyEveryTick(symbol: String) =
         object : Strategy {
@@ -335,5 +331,57 @@ class EndToEndTest {
         assertThat(trades).hasSize(1)
         assertThat(seenPositions).hasSize(1)
         assertThat(seenPositions[0]).isEqualByComparingTo(Money.of("1"))
+    }
+
+    @Test
+    fun `realized PnL accumulates after a closing trade`() {
+        val sellAfterBuy =
+            object : Strategy {
+                private var bought = false
+
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    if (!bought) {
+                        emit(Signal.Buy("XAUUSD", Money.of("1")))
+                        bought = true
+                    } else {
+                        emit(Signal.Sell("XAUUSD", Money.of("1")))
+                    }
+                }
+            }
+        wirePipeline(listOf(sellAfterBuy))
+
+        engine.onTick(Tick("XAUUSD", Money.of("100"), 999L))
+        engine.onTick(Tick("XAUUSD", Money.of("120"), 1000L))
+
+        assertThat(trades).hasSize(2)
+        assertThat(pnl.realizedTotal()).isEqualByComparingTo(Money.of("20"))
+    }
+
+    @Test
+    fun `unrealized PnL is visible after an open position`() {
+        val buyOnce =
+            object : Strategy {
+                private var done = false
+
+                override fun onTick(
+                    tick: Tick,
+                    emit: (Signal) -> Unit,
+                ) {
+                    if (!done) {
+                        emit(Signal.Buy("XAUUSD", Money.of("2")))
+                        done = true
+                    }
+                }
+            }
+        wirePipeline(listOf(buyOnce))
+
+        engine.onTick(Tick("XAUUSD", Money.of("100"), 999L))
+        assertThat(pnl.unrealizedFor("XAUUSD")).isEqualByComparingTo(Money.ZERO)
+
+        engine.onTick(Tick("XAUUSD", Money.of("110"), 1000L))
+        assertThat(pnl.unrealizedFor("XAUUSD")).isEqualByComparingTo(Money.of("20"))
     }
 }
