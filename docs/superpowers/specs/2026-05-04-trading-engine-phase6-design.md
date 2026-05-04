@@ -34,7 +34,7 @@ A complete data subsystem. Concrete deliverables:
 
 6. **`TickFeed : AutoCloseable`** — lifecycle widening; existing impls add no-op `close()`.
 
-7. **Multi-symbol-aware `CandleAggregator`** — internal `Map<String, InProgressCandle>`, no API change. Fixes the latent Phase 5 bug where multi-symbol input mashed into one OHLC. Single-symbol behavior unchanged.
+7. **`CandleAggregator` regression tests** — verifies the existing per-symbol `Map<String, MutableCandle>` (already shipped in Phase 2b) handles cross-symbol scenarios correctly. No code change to the aggregator itself.
 
 8. **`IndicatorMap<T>(factory)`** — ergonomic per-symbol indicator wiring. `rsiMap.get("XAUUSD").update(close)`.
 
@@ -78,7 +78,7 @@ End state: 167 → ~242 tests, all green. `./gradlew run` output unchanged (Main
 |---|---|---|
 | D1 | **Engine core stays single-threaded synchronous.** No coroutines in Phase 6. | Determinism, single-writer state mutation, single coherent strategy view per event. Coroutines deferred to Phase 8 at the IO boundary. LMAX Disruptor / Aeron pattern. |
 | D2 | **Multi-symbol via k-way merge for backtest.** Live multiplex deferred to Phase 8. | Backtest = global timestamp-sorted stream from N feeds. Live = parallel ingestion → channel → single-threaded core. Same engine consumer. |
-| D3 | **`CandleAggregator` becomes multi-symbol-aware** internally. No API change. | Per-symbol `Map<String, InProgressCandle>`. Single-symbol tests pass unchanged. Fixes latent bug where Phase 5 mashed all symbols into one OHLC. |
+| D3 | **`CandleAggregator` is already multi-symbol-aware** (`Map<String, MutableCandle>` keyed by `tick.symbol`, present since Phase 2b). Phase 6 adds regression tests for cross-symbol scenarios; no refactor. | Verified by reading current implementation. Earlier brainstorm assumption of a "latent bug" was wrong. |
 | D4 | **`IndicatorMap<T>` helper** for ergonomic per-symbol indicator wiring. | Strategies that hold "RSI on gold + EMA on silver + VWAP on EURUSD" don't write 30 lines of `when (symbol)` boilerplate. Optional — Phase 5 strategies still own indicators directly. |
 | D5 | **`Tick` extended with optional `bid`, `ask`, `bidVolume`, `askVolume`.** `price` stays canonical. | Dukascopy and most quote feeds are bid/ask-native. Adding optional fields gives quote-aware strategies access without breaking trade-only strategies. Existing 167 tests unchanged. |
 | D6 | **No `MultiSymbolStrategy` base class.** Strategies stay free to organize state however they want. | Avoids inheritance trap. `IndicatorMap<T>` covers the common case via composition. |
@@ -200,10 +200,13 @@ No new top-level packages outside `com.qkt.marketdata.{store, history}`. No cycl
 **Modified:**
 - `marketdata/Tick.kt` — adds 4 nullable fields + `mid`/`spread` accessors.
 - `marketdata/TickFeed.kt` — extends `AutoCloseable`.
-- `marketdata/HistoricalTickFeed.kt` — adds `fromCsv` factory.
-- `candles/CandleAggregator.kt` — internal `Map<String, InProgressCandle>` (no external API change).
-- `app/Backtest.kt` — adds `fromStore(...)` factory (additive).
-- `build.gradle.kts` + `gradle/libs.versions.toml` — add `kotlinx-serialization-json`.
+- `marketdata/HistoricalTickFeed.kt` — adds `fromCsv` factory + no-op `close()`.
+- `app/Backtest.kt` — primary constructor switches to `feed: TickFeed`; secondary constructor with `ticks: List<Tick>` wraps in `HistoricalTickFeed` for backward compat. Adds `fromStore(...)` factory.
+- `app/TradingPipeline.kt` — may need minor adjustment if it references `feed` lifecycle (verified during implementation).
+- `build.gradle.kts` + `gradle/libs.versions.toml` — add `kotlinx-serialization-json` + serialization Kotlin plugin.
+
+**Unchanged from spec assumption:**
+- `candles/CandleAggregator.kt` — already multi-symbol-aware; only adds regression tests.
 
 **New:**
 - `common/TimeRange.kt`, `common/TimeContext.kt`.
@@ -242,7 +245,7 @@ src/main/kotlin/com/qkt/
 ├── broker/                                      # unchanged
 ├── bus/                                         # unchanged
 ├── candles/
-│   ├── CandleAggregator.kt                      # MODIFIED — Map<String, InProgressCandle>
+│   ├── CandleAggregator.kt                      # unchanged (already multi-symbol)
 │   └── TimeWindow.kt                            # unchanged
 ├── common/
 │   ├── Money.kt                                 # unchanged
