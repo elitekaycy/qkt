@@ -2,6 +2,7 @@ package com.qkt.indicators.catalog
 
 import com.qkt.common.Money
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class SMATest {
@@ -35,5 +36,11 @@ class SMATest {
         val sma = SMA(5)
         repeat(5) { sma.update(Money.of("7")) }
         assertThat(sma.value()).isEqualByComparingTo(Money.of("7"))
+    }
+
+    @Test
+    fun `rejects non-positive period`() {
+        assertThatThrownBy { SMA(0) }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { SMA(-1) }.isInstanceOf(IllegalArgumentException::class.java)
     }
 }
