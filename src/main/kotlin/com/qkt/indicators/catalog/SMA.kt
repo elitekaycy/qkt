@@ -29,7 +29,8 @@ class SMA(
 
     override fun value(): BigDecimal? {
         if (!isReady) return null
-        return sum.divide(BigDecimal(period), Money.CONTEXT)
+        return sum
+            .divide(BigDecimal(period), Money.CONTEXT)
             .setScale(Money.SCALE, Money.ROUNDING)
     }
 }
