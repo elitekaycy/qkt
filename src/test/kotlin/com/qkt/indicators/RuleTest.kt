@@ -36,9 +36,9 @@ class RuleTest {
     }
 
     @Test
-    fun `eq is true when values compare equal regardless of scale`() {
-        val rule = stub(BigDecimal("5.00")) eq stub(BigDecimal("5"))
-        assertThat(rule.evaluate()).isTrue()
+    fun `eq is true when values compare equal regardless of scale and false otherwise`() {
+        assertThat((stub(BigDecimal("5.00")) eq stub(BigDecimal("5"))).evaluate()).isTrue()
+        assertThat((stub(Money.of("5")) eq stub(Money.of("6"))).evaluate()).isFalse()
     }
 
     @Test
