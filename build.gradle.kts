@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
     application
     alias(libs.plugins.ktlint)
 }
@@ -17,6 +18,7 @@ repositories {
 
 dependencies {
     implementation(libs.slf4j.api)
+    implementation(libs.kotlinx.serialization.json)
     runtimeOnly(libs.slf4j.simple)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
