@@ -1,5 +1,7 @@
 package com.qkt.marketdata.store
 
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import com.qkt.marketdata.ConcatenatedTickFeed
 import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.MergingTickFeed
@@ -14,7 +16,8 @@ import java.time.ZoneOffset
 class DefaultDataStore(
     override val root: Path,
     private val fetcher: DataFetcher? = null,
-    private val manifestStore: ManifestStore = ManifestStore(root),
+    private val clock: Clock = SystemClock(),
+    private val manifestStore: ManifestStore = ManifestStore(root, clock),
 ) : DataStore {
     override fun manifest(symbol: String): Manifest = manifestStore.read(symbol)
 
@@ -39,8 +42,9 @@ class DefaultDataStore(
         val perSymbol =
             request.symbols.map { sym ->
                 val days = daysCovering(fromMs, toMs)
-                val feeds = days.mapNotNull { dayFile(sym, it) }.map { CsvTickFeed(it) }
-                ConcatenatedTickFeed(feeds)
+                val factories: List<() -> TickFeed> =
+                    days.mapNotNull { dayFile(sym, it) }.map { path -> { CsvTickFeed(path) } }
+                ConcatenatedTickFeed(factories)
             }
         val merged: TickFeed = if (perSymbol.size == 1) perSymbol[0] else MergingTickFeed(perSymbol)
         return RangeClippedTickFeed(merged, fromMs = fromMs, toMs = toMs)
@@ -166,7 +170,9 @@ class DefaultDataStore(
     }
 
     companion object {
-        fun fromEnv(fetcher: DataFetcher? = null): DefaultDataStore =
-            DefaultDataStore(root = DataRoot.resolve(), fetcher = fetcher)
+        fun fromEnv(
+            fetcher: DataFetcher? = null,
+            clock: Clock = SystemClock(),
+        ): DefaultDataStore = DefaultDataStore(root = DataRoot.resolve(), fetcher = fetcher, clock = clock)
     }
 }

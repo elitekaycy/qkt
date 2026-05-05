@@ -1,5 +1,7 @@
 package com.qkt.marketdata.store
 
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -9,6 +11,7 @@ import kotlinx.serialization.json.Json
 
 class ManifestStore(
     private val root: Path,
+    private val clock: Clock = SystemClock(),
 ) {
     private val json =
         Json {
@@ -42,7 +45,7 @@ class ManifestStore(
         Files.createDirectories(symDir)
         val target = symDir.resolve("manifest.json")
         val tmp = symDir.resolve("manifest.json.tmp")
-        val updated = manifest.copy(lastUpdated = Instant.now().toString())
+        val updated = manifest.copy(lastUpdated = Instant.ofEpochMilli(clock.now()).toString())
         Files.writeString(tmp, json.encodeToString(updated))
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
