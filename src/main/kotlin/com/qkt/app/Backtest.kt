@@ -14,6 +14,8 @@ import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.store.DataRequest
+import com.qkt.marketdata.store.DataStore
 import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.RiskEngine
@@ -113,5 +115,25 @@ class Backtest(
         return BigDecimal(wins)
             .divide(BigDecimal(closing.size), Money.CONTEXT)
             .setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    companion object {
+        fun fromStore(
+            strategies: List<Strategy>,
+            rules: List<RiskRule> = emptyList(),
+            store: DataStore,
+            request: DataRequest,
+            candleWindow: TimeWindow? = null,
+        ): Backtest {
+            val feed = store.openFeed(request)
+            val initialTimestamp = request.from?.toEpochMilli() ?: 0L
+            return Backtest(
+                strategies = strategies,
+                rules = rules,
+                feed = feed,
+                candleWindow = candleWindow,
+                initialTimestamp = initialTimestamp,
+            )
+        }
     }
 }
