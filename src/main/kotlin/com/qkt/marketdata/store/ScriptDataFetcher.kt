@@ -7,6 +7,13 @@ import java.time.LocalDate
 class ScriptDataFetcher(
     private val script: Path,
 ) : DataFetcher {
+    init {
+        require(Files.exists(script)) {
+            "ScriptDataFetcher: script not found at $script (working dir: ${Path.of("").toAbsolutePath()}); " +
+                "supply an absolute path"
+        }
+    }
+
     override fun fetch(
         symbol: String,
         day: LocalDate,
@@ -27,8 +34,6 @@ class ScriptDataFetcher(
     }
 
     companion object {
-        private val DEFAULT_DUKASCOPY: Path = Path.of("scripts/fetch-dukascopy.sh")
-
-        fun dukascopy(scriptPath: Path = DEFAULT_DUKASCOPY): ScriptDataFetcher = ScriptDataFetcher(scriptPath)
+        fun dukascopy(scriptPath: Path): ScriptDataFetcher = ScriptDataFetcher(scriptPath)
     }
 }
