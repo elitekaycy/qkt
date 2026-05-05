@@ -68,6 +68,7 @@ class DefaultDataStore(
                             .map { it.fileName.toString() }
                             .filter { it.endsWith(".csv") || it.endsWith(".csv.gz") }
                             .map { it.removeSuffix(".gz").removeSuffix(".csv") }
+                            .distinct()
                             .sorted()
                             .toList()
                     }
