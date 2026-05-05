@@ -44,13 +44,17 @@ A live runtime sharing the existing pipeline. Concrete deliverables:
 
 8. **`TradingCalendar` + `SessionAnchor`** — session boundary primitives. Built-in calendars: `fxDefault()` (24/5 Sunday 17:00 NY → Friday 17:00 NY), `nyse()` (9:30–16:00 ET with US holidays), `crypto()` (24/7), `custom(spec)`. Used by session-anchored indicators and by strategies that gate on time-of-day.
 
-9. **`SessionAnchoredIndicator<T>`** — base class for indicators that need both historical seed and live updates within the current anchor window. Examples: `PreviousDayHigh`, `SessionHigh(start = "18:00")`, `RollingDayLow`. Internally queries the injected `MarketSource` for prior-anchor data on first hit, caches per anchor, folds live ticks for the current anchor.
+9. **`TimeMark` + `TimeRange.of(...)`** — generic point-in-time primitives. `TimeMark` names a single time point (`Now`, `Absolute(Instant)`, `AtSessionAnchor(anchor, timeOfDay?)`, `RelativeToNow(duration)`). `TimeRange.of(from, to, clock, calendar)` resolves two marks into a concrete range. Composable: mix absolute + relative + session-anchored freely (`from = "2024-01-15", to = "yesterday at 10:00 NYSE"` works).
 
-10. **`SessionContext`** — bundle injected into strategies that opt in. Exposes `mode: Mode (BACKTEST | LIVE)`, `clock: Clock`, `calendar: TradingCalendar`, `source: MarketSource`. The default `Strategy.onTick(tick, emit)` ignores it; mode-aware strategies override `Strategy.onTickWithContext(tick, ctx, emit)`. The DSL compiler exposes `mode`, `now()`, `in_session(...)` etc. as built-in symbols backed by `SessionContext`.
+10. **`RangeAggregateIndicator<T>`** — base machinery for any indicator that reduces over a `TimeRange` of bars. Constructor takes `(symbol, window, rangeSpec: () -> TimeRange, reduce: (Sequence<Candle>) -> T?, source, refreshOn)`. `RefreshTrigger` is configurable: `OnSessionRollover`, `OnTimeOfDay(time)`, `EveryNTicks(n)`, `Once`. Uses `MarketSource.bars(symbol, window, range)` for data; cached per refresh key.
 
-11. **Phase 6 naming refactor** — `marketdata.history` and `marketdata.store` package contents reorganize into `marketdata.source` (the `MarketSource` interface and its implementations), `marketdata.store` (unchanged: cache + manifest), and `marketdata.live` (WS plumbing). `HistoricalDataProvider` interface deletes; `StoreHistoricalDataProvider` renames to `LocalMarketSource`. `DataRequest` renames to `MarketRequest`. `Reductions` moves to `marketdata.source` package.
+11. **`SessionAnchoredIndicator<T>`** — sugar over `RangeAggregateIndicator<T>`. Hard-codes `rangeSpec` from a `(SessionAnchor, TradingCalendar)` pair and `refreshOn` to `OnSessionRollover`. Concrete instances ship: `PreviousDayHigh`, `PreviousDayLow`, `SessionHigh(anchor)`, `SessionLow(anchor)`. Power users drop down to `RangeAggregateIndicator` for non-session ranges.
 
-12. **Sample session-anchored strategy** — `BreakoutOfYesterdayHighStrategy` to exercise the new `SessionAnchoredIndicator` machinery in tests and as a worked example for users.
+12. **`SessionContext`** — bundle injected into strategies that opt in. Exposes `mode: Mode (BACKTEST | LIVE)`, `clock: Clock`, `calendar: TradingCalendar`, `source: MarketSource`. The default `Strategy.onTick(tick, emit)` ignores it; mode-aware strategies override `Strategy.onTickWithContext(tick, ctx, emit)`. The DSL compiler exposes `mode`, `now()`, `in_session(...)` etc. as built-in symbols backed by `SessionContext`.
+
+13. **Phase 6 naming refactor** — `marketdata.history` and `marketdata.store` package contents reorganize into `marketdata.source` (the `MarketSource` interface and its implementations), `marketdata.store` (unchanged: cache + manifest), and `marketdata.live` (WS plumbing). `HistoricalDataProvider` interface deletes; `StoreHistoricalDataProvider` renames to `LocalMarketSource`. `DataRequest` renames to `MarketRequest`. `Reductions` moves to `marketdata.source` package.
+
+14. **Sample strategies** — (a) `BreakoutOfYesterdayHighStrategy` exercises `SessionAnchoredIndicator`. (b) `RollingHighBreakoutStrategy` exercises `RangeAggregateIndicator` over a non-session window (e.g. trailing 3 days). Both work identically in backtest and live.
 
 ## 3. Out of scope (deferred)
 
@@ -103,6 +107,20 @@ TradingView's WS protocol is implemented directly in Kotlin using OkHttp's WebSo
 **Why:** Bar history is universally available across vendors (TV, Local, future Binance). Tick history is rare (only Local in Phase 7 — TV doesn't expose it; Binance does but specialised). Defaulting to bars means any vendor works for warmup out of the box. The bar-close-as-synthetic-tick approximation is acceptable for warmup because warmup runs are not allowed to emit trading signals (D6).
 
 **How to apply:** `WarmupSpec.Bars(window, count)` is the canonical form. Strategies needing tick-precision warmup (rare) can set `WarmupSpec.Ticks(...)` — only honored if the source advertises `MarketSourceCapability.TICKS`, otherwise falls back to bars with a warning.
+
+**Live bar aggregation post-warmup:** After warmup, live mode does NOT use `MarketSource.bars(...)` for steady-state candle generation. Instead, live `quote_session` ticks flow into qkt's existing `CandleAggregator(window)` (Phase 2b machinery) which buckets ticks into candles in real time. So a live `SMA(20)` over M5 closes works as: warmup → `source.bars(M5)` for the trailing 20 bars; steady-state → live ticks → `CandleAggregator(M5)` → `SMA` updated on each emitted `CandleEvent`. The `bars()` call is one-shot at warmup, not a recurring poll.
+
+### D11. Multi-symbol scales via WS multiplexing; multi-vendor via fan-in queue; no coroutines
+
+Single vendor, many symbols: ONE WebSocket connection holds ONE `quote_session` subscribed to N symbols. The vendor (TV) interleaves all per-symbol updates onto the same socket. Adding more symbols changes nothing about the threading model; the protocol multiplexes.
+
+Multi-vendor live (e.g. TV for FX + future Binance for crypto): each vendor's `liveTicks(...)` returns a `LiveTickFeed` whose internal reader thread (typically OkHttp's WS callback thread) pushes into a SHARED fan-in queue owned by `LiveSession`. The engine drains the one queue. Ticks arrive in **arrival order across vendors**, not timestamp order — network jitter makes cross-vendor timestamp ordering unreliable, and waiting for "all vendors to deliver tick T before processing T+1" reintroduces the latency live trading is supposed to eliminate.
+
+No coroutines anywhere in the live ingestion path. The engine is deterministic and synchronous; OkHttp's network callbacks handle the async I/O at the boundary; the bounded queue handles the handoff. Coroutines would buy nothing and add failure modes.
+
+**Why:** Determinism stays a backtest-only invariant. In live, "process ticks as they arrive" is the right semantic, and the simpler threading model (N reader threads → 1 queue → 1 engine thread) is enough for any realistic strategy load. Phase 6's `MergingTickFeed` (timestamp-sorted k-way merge) stays in use for backtest; live uses arrival-order fan-in.
+
+**How to apply:** `LiveSession` constructs the shared queue and passes it (or a callback to enqueue into it) to each vendor source's `liveTicks(...)`. Per-vendor tick counters and disconnection events surface separately on `LiveSessionHandle` so strategies can observe per-source health if they want.
 
 ### D6. Strategies do not see warmup ticks
 
@@ -354,29 +372,137 @@ interface Strategy {
 }
 ```
 
-### 7.6 `SessionAnchoredIndicator`
+### 7.6 `SessionAnchoredIndicator` (sugar over §7.7)
+
+`SessionAnchoredIndicator<T>` is a thin specialization of `RangeAggregateIndicator<T>` (§7.7). Hard-codes the `rangeSpec` from `(SessionAnchor, TradingCalendar)` and `refreshOn` to `OnSessionRollover`. Power users who need non-session ranges drop down to `RangeAggregateIndicator` directly.
 
 ```kotlin
 abstract class SessionAnchoredIndicator<T>(
-    protected val anchor: SessionAnchor,
-    protected val calendar: TradingCalendar,
-    protected val source: MarketSource,
-) : Indicator<Tick> {
-    protected abstract fun reduce(seed: Sequence<Tick>): T?
-    protected abstract fun fold(current: T?, tick: Tick): T?
+    anchor: SessionAnchor,
+    calendar: TradingCalendar,
+    symbol: String,
+    window: TimeWindow,
+    source: MarketSource,
+    clock: Clock,
+    reduce: (Sequence<Candle>) -> T?,
+) : RangeAggregateIndicator<T>(
+    symbol = symbol,
+    window = window,
+    rangeSpec = { calendar.rangeFor(anchor, calendar.anchorEpochFor(anchor, clock.now())) },
+    reduce = reduce,
+    source = source,
+    clock = clock,
+    refreshOn = RefreshTrigger.OnAnchorRollover(anchor, calendar),
+)
 
-    private var anchorEpoch: Long = Long.MIN_VALUE
-    private var cached: T? = null
+class PreviousDayHigh(symbol: String, calendar: TradingCalendar, source: MarketSource, clock: Clock)
+    : SessionAnchoredIndicator<BigDecimal>(
+        SessionAnchor.PreviousDay, calendar, symbol, TimeWindow.ONE_MINUTE, source, clock,
+        reduce = { it.maxOfOrNull { c -> c.high } },
+    )
 
-    override fun update(tick: Tick) { /* see body */ }
-    override fun value(): T? = cached
+class SessionHigh(
+    symbol: String, anchor: SessionAnchor, calendar: TradingCalendar, source: MarketSource, clock: Clock,
+) : SessionAnchoredIndicator<BigDecimal>(
+        anchor, calendar, symbol, TimeWindow.ONE_MINUTE, source, clock,
+        reduce = { it.maxOfOrNull { c -> c.high } },
+    )
+```
+
+### 7.7 `TimeMark` + `TimeRange.of(...)` + `RangeAggregateIndicator`
+
+The generic primitives that `SessionAnchoredIndicator` is built on. Strategies use these directly when they need a custom range (absolute, relative, or mixed).
+
+```kotlin
+sealed class TimeMark {
+    object Now : TimeMark()
+    data class Absolute(val instant: Instant) : TimeMark()
+    data class AtSessionAnchor(
+        val anchor: SessionAnchor,
+        val timeOfDay: LocalTime? = null,    // null = anchor's natural boundary (e.g. session start)
+    ) : TimeMark()
+    data class RelativeToNow(val offset: java.time.Duration) : TimeMark()    // negative for past, positive future
 }
 
-class PreviousDayHigh(symbol: String, calendar: TradingCalendar, source: MarketSource)
-    : SessionAnchoredIndicator<BigDecimal>(...)
+fun TimeRange.Companion.of(
+    from: TimeMark,
+    to: TimeMark,
+    clock: Clock,
+    calendar: TradingCalendar,
+): TimeRange   // resolves both marks; throws if from >= to or to > clock.now() (look-ahead guard)
 
-class SessionHigh(symbol: String, anchor: SessionAnchor, calendar: TradingCalendar, source: MarketSource)
-    : SessionAnchoredIndicator<BigDecimal>(...)
+sealed class RefreshTrigger {
+    object Once : RefreshTrigger()
+    data class EveryNTicks(val n: Int) : RefreshTrigger()
+    data class OnAnchorRollover(val anchor: SessionAnchor, val calendar: TradingCalendar) : RefreshTrigger()
+    object OnSessionRollover : RefreshTrigger()    // shorthand for current-session anchor
+    data class OnTimeOfDay(val time: LocalTime) : RefreshTrigger()
+}
+
+open class RangeAggregateIndicator<T>(
+    private val symbol: String,
+    private val window: TimeWindow,
+    private val rangeSpec: () -> TimeRange,
+    private val reduce: (Sequence<Candle>) -> T?,
+    private val source: MarketSource,
+    private val clock: Clock,
+    private val refreshOn: RefreshTrigger,
+) : Indicator<Tick> {
+    private var cached: T? = null
+    private var lastRefreshKey: Long = Long.MIN_VALUE
+
+    override fun update(tick: Tick) {
+        val key = refreshKey(tick)
+        if (key != lastRefreshKey) {
+            cached = reduce(source.bars(symbol, window, rangeSpec()))
+            lastRefreshKey = key
+        }
+    }
+
+    override fun value(): T? = cached
+    override val isReady: Boolean get() = cached != null
+    override val warmupBars: Int = 0    // backfill is in rangeSpec, not warmup
+}
+```
+
+**Bar resolution semantics.** `MarketSource.bars(symbol, window, range)` is pass-through to the vendor; no client-side aggregation in Phase 7. Each implementation declares its supported windows:
+
+| Source | Supported `TimeWindow` values |
+|---|---|
+| `LocalMarketSource` | Any (aggregates from cached ticks) |
+| `TradingViewMarketSource` | 1s, 5s, 15s, 30s, 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M |
+| (future) `BinanceMarketSource` | 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M |
+
+Unsupported window → `UnsupportedDataException("$source does not support window $window for bars; supported: [...]")`. Client-side downsampling (e.g. fetch native 1m, aggregate to 13s) is deferred to a future `BarAggregator` utility (out of scope for Phase 7).
+
+**Usage examples:**
+
+```kotlin
+// "yesterday's session high between 10:00 and 18:00 NYSE"
+val rangeYesterday = TimeRange.of(
+    from = TimeMark.AtSessionAnchor(PreviousDay, LocalTime.of(10, 0)),
+    to = TimeMark.AtSessionAnchor(PreviousDay, LocalTime.of(18, 0)),
+    clock = ctx.clock, calendar = ctx.calendar,
+)
+val highYesterday = ctx.source.bars("EURUSD", ONE_MINUTE, rangeYesterday)
+    .maxOfOrNull { it.high }
+
+// "rolling 3-day high, refreshed on session rollover"
+val rolling3DayHigh = RangeAggregateIndicator(
+    symbol = "EURUSD",
+    window = TimeWindow.ONE_HOUR,
+    rangeSpec = {
+        TimeRange.of(
+            TimeMark.RelativeToNow(Duration.ofDays(-3)),
+            TimeMark.Now,
+            ctx.clock, ctx.calendar,
+        )
+    },
+    reduce = { it.maxOfOrNull { c -> c.high } },
+    source = ctx.source,
+    clock = ctx.clock,
+    refreshOn = RefreshTrigger.OnSessionRollover,
+)
 ```
 
 ## 8. Backtest impact
@@ -433,14 +559,18 @@ Phase 7 ships when:
 - [ ] `IndicatorWarmer` + `Warmable` mixin + `WarmupSpec` ship; warmup runs `pipeline.ingestForWarmup(...)` (NOT `pipeline.ingest(...)`); strategies do not see warmup ticks.
 - [ ] `TradingCalendar` interface ships with `fxDefault()`, `nyse()`, `crypto()`, `custom(spec)` factories.
 - [ ] `SessionAnchor` sealed type ships with `PreviousDay`, `CurrentSession`, `PreviousSession`, `Rolling(duration)`, `Custom(spec)` variants.
-- [ ] `SessionAnchoredIndicator<T>` base class ships; `PreviousDayHigh` and `SessionHigh` sample indicators ship.
+- [ ] `TimeMark` sealed type ships with `Now`, `Absolute`, `AtSessionAnchor`, `RelativeToNow` variants. `TimeRange.of(from, to, clock, calendar)` resolves marks; rejects inverted ranges and look-ahead.
+- [ ] `RangeAggregateIndicator<T>` base class ships with configurable `RefreshTrigger` (`Once`, `EveryNTicks`, `OnAnchorRollover`, `OnSessionRollover`, `OnTimeOfDay`).
+- [ ] `SessionAnchoredIndicator<T>` ships as a thin specialization of `RangeAggregateIndicator`; `PreviousDayHigh`, `PreviousDayLow`, `SessionHigh`, `SessionLow` concrete indicators ship.
+- [ ] Per-source supported-window declarations: `TradingViewMarketSource` exposes its supported `TimeWindow` set; querying with an unsupported window throws `UnsupportedDataException`.
 - [ ] `SessionContext` + `Mode` enum ship; `Strategy.onTickWithContext` default-implementation bridges to `onTick`; existing strategies compile unchanged.
 - [ ] Phase 6 names refactored: `HistoricalDataProvider` deleted, `StoreHistoricalDataProvider` → `LocalMarketSource`, `DataRequest` → `MarketRequest`, `DataCapability` → `MarketSourceCapability`. Packages reorganized into `marketdata.source` / `marketdata.store` / `marketdata.live`.
 - [ ] `Backtest.fromStore` retains compatibility (deprecated thin wrapper); `Backtest.fromSource(source, request, ...)` is the new ergonomic entry point.
 - [ ] Backtest gains `warmupSpec` and `calendar` parameters (defaulted).
-- [ ] `BreakoutOfYesterdayHighStrategy` sample exists and exercises the session-anchored path.
+- [ ] `BreakoutOfYesterdayHighStrategy` sample exists and exercises the session-anchored path; `RollingHighBreakoutStrategy` sample exists and exercises a non-session `RangeAggregateIndicator`.
+- [ ] Multi-vendor fan-in: `LiveSession` accepts a `CompositeMarketSource` and demonstrably routes per-symbol live subscriptions to the right vendor; tick arrival into the engine is in arrival order across vendors.
 - [ ] All existing 264+ tests continue to pass (rename-driven changes only).
-- [ ] New tests cover: `MarketSource` capability advertisement and unsupported-capability errors, `LocalMarketSource` end-to-end against sample fixtures, `TradingViewMarketSource` against a recorded WS fixture (offline test), `LiveTickFeed` push→pull adapter (queue overflow, ordering, close), `IndicatorWarmer` (warmup ticks bypass strategies), `TradingCalendar` boundary cases, `SessionAnchoredIndicator` switching across anchors, `LiveSession` start/stop lifecycle.
+- [ ] New tests cover: `MarketSource` capability advertisement and unsupported-capability errors, `LocalMarketSource` end-to-end against sample fixtures, `TradingViewMarketSource` against a recorded WS fixture (offline test), `LiveTickFeed` push→pull adapter (queue overflow, ordering, close), `IndicatorWarmer` (warmup ticks bypass strategies), `TradingCalendar` boundary cases, `SessionAnchoredIndicator` switching across anchors, `RangeAggregateIndicator` with each `RefreshTrigger` flavor, `TimeMark` resolution edge cases (DST, custom session, look-ahead rejection), `LiveSession` start/stop lifecycle, multi-vendor fan-in queue ordering.
 - [ ] Live demo: a minimal main runs `LiveSession` against TV with EURUSD + XAUUSD + BTCUSD, receives ticks, simulates fills via `MockBroker`, prints trades to stdout. Documented in README.
 - [ ] No new runtime dependencies beyond OkHttp (already a transitive JVM standard) and the existing `kotlinx-serialization-json`.
 - [ ] `./gradlew run` (the existing demo) still produces identical output.
@@ -470,12 +600,13 @@ Phase 7 ships when:
 Executed via `superpowers:writing-plans` after spec approval. Estimated decomposition (refined in the plan doc):
 
 - Group A: rename refactor (Phase 6 → Phase 7 names), no behavior change. ~5 small commits.
-- Group B: `MarketSource` umbrella, `LocalMarketSource`, `CompositeMarketSource`. ~6 commits.
-- Group C: `LiveTickFeed` + bounded queue + `LiveSession` runtime + handle. ~5 commits.
-- Group D: `TradingViewWebSocket` + `QuoteSession` + `ChartSession` + `TradingViewMarketSource`. ~8 commits.
-- Group E: `IndicatorWarmer` + `WarmupSpec` + `Warmable` + pipeline split (`ingest` / `ingestForWarmup`). ~4 commits.
-- Group F: `TradingCalendar` + `SessionAnchor` + `SessionAnchoredIndicator` + `PreviousDayHigh` + `SessionHigh`. ~5 commits.
-- Group G: `SessionContext` + `Mode` + `Strategy.onTickWithContext` + `BreakoutOfYesterdayHighStrategy` sample. ~3 commits.
-- Group H: README, live demo, smoke tests, determinism test. ~3 commits.
+- Group B: `MarketSource` umbrella, `LocalMarketSource`, `CompositeMarketSource`, supported-window declarations. ~6 commits.
+- Group C: `TimeMark` + `TimeRange.of(...)` + `TradingCalendar` + `SessionAnchor`. ~5 commits. Mode-agnostic; lands before live runtime.
+- Group D: `RangeAggregateIndicator` + `RefreshTrigger` + `SessionAnchoredIndicator` (sugar) + `PreviousDayHigh` + `SessionHigh`. ~5 commits.
+- Group E: `LiveTickFeed` + bounded queue + `LiveSession` runtime + handle + multi-vendor fan-in. ~6 commits.
+- Group F: `TradingViewWebSocket` + `QuoteSession` + `ChartSession` + `TradingViewMarketSource`. ~8 commits.
+- Group G: `IndicatorWarmer` + `WarmupSpec` + `Warmable` + pipeline split (`ingest` / `ingestForWarmup`) + Backtest warmup integration. ~4 commits.
+- Group H: `SessionContext` + `Mode` + `Strategy.onTickWithContext` + sample strategies (`BreakoutOfYesterdayHighStrategy`, `RollingHighBreakoutStrategy`). ~3 commits.
+- Group I: README, live demo, smoke tests, determinism test, final verification. ~3 commits.
 
-Total: ~40 commits, similar shape to Phase 6. Each group is independently testable; Groups A–B can land first as a rename PR if helpful.
+Total: ~45 commits, similar shape to Phase 6. Each group is independently testable. Groups A–D are mode-agnostic and can land before any live code touches the runtime.
