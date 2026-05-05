@@ -27,7 +27,8 @@ class ScriptDataFetcher(
     }
 
     companion object {
-        fun dukascopy(scriptPath: Path = Path.of("scripts/fetch-dukascopy.sh")): ScriptDataFetcher =
-            ScriptDataFetcher(scriptPath)
+        private val DEFAULT_DUKASCOPY: Path = Path.of("scripts/fetch-dukascopy.sh")
+
+        fun dukascopy(scriptPath: Path = DEFAULT_DUKASCOPY): ScriptDataFetcher = ScriptDataFetcher(scriptPath)
     }
 }
