@@ -48,4 +48,18 @@ class WarmupSpecTest {
         val widest = listOf(small, medium, large).maxByOrNull { it.windowMs(now) }
         assertThat(widest).isEqualTo(large)
     }
+
+    @Test
+    fun `strategy can implement Strategy and Warmable`() {
+        val s =
+            object : Strategy, Warmable {
+                override val warmup: WarmupSpec = WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 10)
+
+                override fun onTick(
+                    tick: com.qkt.marketdata.Tick,
+                    emit: (Signal) -> Unit,
+                ) {}
+            }
+        assertThat(s.warmup).isEqualTo(WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 10))
+    }
 }
