@@ -1,5 +1,6 @@
 package com.qkt.marketdata.store
 
+import com.qkt.marketdata.source.MarketRequest
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -64,7 +65,7 @@ class DefaultDataStoreTest {
         writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
         val store = DefaultDataStore(root = dir)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("X"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-16T00:00:00Z"),
@@ -80,7 +81,7 @@ class DefaultDataStoreTest {
     fun `openFeed with no fetcher and missing days throws clear error`() {
         val store = DefaultDataStore(root = dir, fetcher = null)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("X"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-16T00:00:00Z"),
@@ -110,7 +111,7 @@ class DefaultDataStoreTest {
             }
         val store = DefaultDataStore(root = dir, fetcher = fetcher)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("X"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-17T00:00:00Z"),
@@ -132,7 +133,7 @@ class DefaultDataStoreTest {
         writeManifest("B", listOf("2024-01-15" to "2024-01-16"))
         val store = DefaultDataStore(root = dir)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("A", "B"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-16T00:00:00Z"),
@@ -153,7 +154,7 @@ class DefaultDataStoreTest {
         writeManifest("A", listOf("2024-01-15" to "2024-01-16"))
         writeManifest("B", listOf("2024-01-15" to "2024-01-17"))
         val store = DefaultDataStore(root = dir)
-        val request = DataRequest(symbols = listOf("A", "B"))
+        val request = MarketRequest(symbols = listOf("A", "B"))
         store.openFeed(request).use { feed ->
             val collected = generateSequence { feed.next() }.toList()
             assertThat(collected.map { it.timestamp }).containsExactly(day15, day15)
@@ -164,7 +165,7 @@ class DefaultDataStoreTest {
     @Test
     fun `openFeed with null from and to and empty cache throws clear error`() {
         val store = DefaultDataStore(root = dir)
-        val request = DataRequest(symbols = listOf("A", "B"))
+        val request = MarketRequest(symbols = listOf("A", "B"))
         assertThatThrownBy { store.openFeed(request) }
             .hasMessageContaining("no cached data")
     }
@@ -183,7 +184,7 @@ class DefaultDataStoreTest {
         writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
         val store = DefaultDataStore(root = dir)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("X"),
                 from = Instant.parse("2024-01-15T10:00:00Z"),
                 to = Instant.parse("2024-01-15T17:00:00Z"),
@@ -201,7 +202,7 @@ class DefaultDataStoreTest {
         writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
         val store = DefaultDataStore(root = dir)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("X"),
                 from = Instant.parse("2024-02-01T00:00:00Z"),
             )
@@ -215,7 +216,7 @@ class DefaultDataStoreTest {
         writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
         val store = DefaultDataStore(root = dir)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("X"),
                 to = Instant.parse("2023-12-01T00:00:00Z"),
             )
@@ -241,7 +242,7 @@ class DefaultDataStoreTest {
             }
         val store = DefaultDataStore(root = dir, fetcher = fetcher)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("X"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-17T00:00:00Z"),

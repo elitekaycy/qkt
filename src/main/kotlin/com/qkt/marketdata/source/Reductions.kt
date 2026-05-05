@@ -1,4 +1,4 @@
-package com.qkt.marketdata.history
+package com.qkt.marketdata.source
 
 import com.qkt.indicators.Indicator
 import com.qkt.marketdata.Candle

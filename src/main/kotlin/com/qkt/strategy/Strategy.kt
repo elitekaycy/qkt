@@ -9,6 +9,14 @@ interface Strategy {
         emit: (Signal) -> Unit,
     )
 
+    fun onTickWithContext(
+        tick: Tick,
+        ctx: SessionContext,
+        emit: (Signal) -> Unit,
+    ) {
+        onTick(tick, emit)
+    }
+
     fun onCandle(
         candle: Candle,
         emit: (Signal) -> Unit,

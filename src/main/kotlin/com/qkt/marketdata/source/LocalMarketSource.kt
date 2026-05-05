@@ -1,4 +1,4 @@
-package com.qkt.marketdata.history
+package com.qkt.marketdata.source
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
@@ -7,22 +7,25 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.store.DataStore
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-class StoreHistoricalDataProvider(
+class LocalMarketSource(
     private val store: DataStore,
     private val clock: Clock,
-) : HistoricalDataProvider {
-    override val capabilities: Set<DataCapability> =
-        setOf(
-            DataCapability.TICKS,
-            DataCapability.CANDLES_INTRADAY,
-            DataCapability.CANDLES_DAILY,
-        )
+) : MarketSource {
+    override val name: String = "Local"
+    override val capabilities: Set<MarketSourceCapability> =
+        setOf(MarketSourceCapability.BARS, MarketSourceCapability.TICKS)
+
+    override fun supports(symbol: String): Boolean = true
+
+    override fun liveTicks(symbols: List<String>): TickFeed =
+        throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName!!)
 
     override fun ticks(
         symbol: String,
@@ -48,7 +51,7 @@ class StoreHistoricalDataProvider(
         }
     }
 
-    override fun candles(
+    override fun bars(
         symbol: String,
         window: TimeWindow,
         range: TimeRange,

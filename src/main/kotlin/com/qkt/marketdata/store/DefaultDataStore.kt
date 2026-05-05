@@ -7,6 +7,7 @@ import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.RangeClippedTickFeed
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.source.MarketRequest
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -35,8 +36,8 @@ class DefaultDataStore(
         }
     }
 
-    override fun openFeed(request: DataRequest): TickFeed {
-        val (fromMs, toMs) = resolveRange(request)
+    override fun openFeed(request: MarketRequest): TickFeed {
+        val (fromMs, toMs) = resolveRangeMs(request)
         materializeMissing(request.symbols, fromMs, toMs)
 
         val perSymbol =
@@ -50,8 +51,13 @@ class DefaultDataStore(
         return RangeClippedTickFeed(merged, fromMs = fromMs, toMs = toMs)
     }
 
-    override fun prefetch(request: DataRequest) {
-        val (fromMs, toMs) = resolveRange(request)
+    override fun resolveRange(request: MarketRequest): Pair<Instant, Instant> {
+        val (fromMs, toMs) = resolveRangeMs(request)
+        return Instant.ofEpochMilli(fromMs) to Instant.ofEpochMilli(toMs)
+    }
+
+    override fun prefetch(request: MarketRequest) {
+        val (fromMs, toMs) = resolveRangeMs(request)
         materializeMissing(request.symbols, fromMs, toMs)
     }
 
@@ -95,14 +101,14 @@ class DefaultDataStore(
         }
     }
 
-    private fun resolveRange(request: DataRequest): Pair<Long, Long> {
+    private fun resolveRangeMs(request: MarketRequest): Pair<Long, Long> {
         val (from, to) =
             if (request.from != null && request.to != null) {
                 request.from to request.to
             } else {
                 val ranges = request.symbols.map { manifestStore.read(it).ranges }
                 check(ranges.all { it.isNotEmpty() }) {
-                    "no cached data for symbols ${request.symbols}; specify DataRequest(symbols, from, to) to trigger a fetch"
+                    "no cached data for symbols ${request.symbols}; specify MarketRequest(symbols, from, to) to trigger a fetch"
                 }
                 val earliest = ranges.maxOf { LocalDate.parse(it.first().from) }
                 val latest = ranges.minOf { LocalDate.parse(it.last().to) }

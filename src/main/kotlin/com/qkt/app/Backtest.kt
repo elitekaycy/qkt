@@ -7,19 +7,29 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
+import com.qkt.common.TimeRange
+import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.TickEvent
 import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
-import com.qkt.marketdata.store.DataRequest
+import com.qkt.marketdata.source.LocalMarketSource
+import com.qkt.marketdata.source.MarketRequest
+import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.marketdata.source.NullMarketSource
+import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.DataStore
 import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
+import com.qkt.strategy.Mode
+import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 
@@ -29,6 +39,8 @@ class Backtest(
     private val feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
+    private val source: MarketSource = NullMarketSource,
+    private val calendar: TradingCalendar = TradingCalendar.crypto(),
 ) {
     constructor(
         strategies: List<Strategy>,
@@ -61,6 +73,14 @@ class Backtest(
         var peakEquity: BigDecimal = Money.ZERO
         var maxDrawdown: BigDecimal = Money.ZERO
 
+        val ctx =
+            SessionContext(
+                mode = Mode.BACKTEST,
+                clock = clock,
+                calendar = calendar,
+                source = source,
+            )
+
         val pipeline =
             TradingPipeline(
                 clock = clock,
@@ -74,6 +94,7 @@ class Backtest(
                 engine = engine,
                 strategies = strategies,
                 riskEngine = riskEngine,
+                sessionContext = ctx,
                 candleWindow = candleWindow,
                 onFilled = { trade, realized -> tradeRecords.add(TradeRecord(trade, realized)) },
                 onRejected = { e -> rejections.add(e) },
@@ -122,17 +143,44 @@ class Backtest(
             strategies: List<Strategy>,
             rules: List<RiskRule> = emptyList(),
             store: DataStore,
-            request: DataRequest,
+            request: MarketRequest,
             candleWindow: TimeWindow? = null,
         ): Backtest {
-            val feed = store.openFeed(request)
-            val initialTimestamp = request.from?.toEpochMilli() ?: 0L
+            val (from, to) = store.resolveRange(request)
+            val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
+            return fromSource(
+                strategies = strategies,
+                rules = rules,
+                source = LocalMarketSource(store, FixedClock(time = to.toEpochMilli())),
+                request = resolved,
+                candleWindow = candleWindow,
+            )
+        }
+
+        fun fromSource(
+            strategies: List<Strategy>,
+            rules: List<RiskRule> = emptyList(),
+            source: MarketSource,
+            request: MarketRequest,
+            candleWindow: TimeWindow? = null,
+        ): Backtest {
+            require(MarketSourceCapability.TICKS in source.capabilities) {
+                "Backtest requires a MarketSource that supports TICKS; ${source.name} has ${source.capabilities}"
+            }
+            val from = request.from ?: error("Backtest.fromSource requires explicit MarketRequest.from")
+            val to = request.to ?: error("Backtest.fromSource requires explicit MarketRequest.to")
+            val range = TimeRange(from, to)
+            val perSymbolFeeds: List<TickFeed> =
+                request.symbols.map { sym -> SequenceTickFeed(source.ticks(sym, range)) }
+            val feed: TickFeed =
+                if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
             return Backtest(
                 strategies = strategies,
                 rules = rules,
                 feed = feed,
                 candleWindow = candleWindow,
-                initialTimestamp = initialTimestamp,
+                initialTimestamp = from.toEpochMilli(),
+                source = source,
             )
         }
     }

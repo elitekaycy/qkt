@@ -1,7 +1,9 @@
 package com.qkt.marketdata.store
 
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.source.MarketRequest
 import java.nio.file.Path
+import java.time.Instant
 import java.time.LocalDate
 
 interface DataStore {
@@ -14,9 +16,11 @@ interface DataStore {
         day: LocalDate,
     ): Path?
 
-    fun openFeed(request: DataRequest): TickFeed
+    fun openFeed(request: MarketRequest): TickFeed
 
-    fun prefetch(request: DataRequest)
+    fun resolveRange(request: MarketRequest): Pair<Instant, Instant>
+
+    fun prefetch(request: MarketRequest)
 
     fun rebuildManifests()
 }
