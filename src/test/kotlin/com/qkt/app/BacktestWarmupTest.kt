@@ -129,4 +129,33 @@ class BacktestWarmupTest {
 
         assertThat(strategy.ticks).isEqualTo(1)
     }
+
+    @Test
+    fun `Bars warmup backtest is deterministic across two runs`() {
+        val request =
+            MarketRequest(
+                symbols = listOf("X"),
+                from = Instant.ofEpochMilli(day15),
+                to = Instant.ofEpochMilli(day15 + 60_000L),
+            )
+
+        fun runOnce(): BacktestResult {
+            val src = seedSource()
+            return Backtest
+                .fromSource(
+                    strategies = listOf(CountingStrategy()),
+                    source = src,
+                    request = request,
+                    warmupSpec = WarmupSpec.Bars(TimeWindow.ONE_MINUTE, count = 30),
+                ).run()
+        }
+
+        val a = runOnce()
+        val b = runOnce()
+        assertThat(a.tradeCount).isEqualTo(b.tradeCount)
+        assertThat(a.totalPnL).isEqualByComparingTo(b.totalPnL)
+        assertThat(a.realizedTotal).isEqualByComparingTo(b.realizedTotal)
+        assertThat(a.unrealizedTotal).isEqualByComparingTo(b.unrealizedTotal)
+        assertThat(a.maxDrawdown).isEqualByComparingTo(b.maxDrawdown)
+    }
 }
