@@ -29,5 +29,7 @@ interface TradingCalendar {
         fun crypto(): TradingCalendar = CryptoCalendar
 
         fun fxDefault(): TradingCalendar = FxCalendar
+
+        fun nyse(): TradingCalendar = NyseCalendar
     }
 }
