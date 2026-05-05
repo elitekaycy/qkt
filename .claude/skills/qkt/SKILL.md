@@ -195,23 +195,42 @@ Every meaningful feature follows this lifecycle:
 2. **Plan** → produces an **implementation plan** at `docs/superpowers/plans/YYYY-MM-DD-<topic>.md`.
 3. **Implement** → tasks from the plan executed in order, each ending in a commit.
 4. **Merge** → into `main` via PR with the description template above.
+5. **Phase changelog** → upon merging the phase, write a user-facing **phase changelog** at `docs/phases/phase-<N>-<topic>.md`. This is the developer-facing complement to the spec: the spec is forward-looking ("what we will build, why"); the changelog is backward-looking ("here's what's now available, here are all the ways to use it").
 
-Specs document **what** and **why**. Plans document **how**, in bite-sized tasks. Both are committed to git alongside the code they describe.
+Specs document **what** and **why**. Plans document **how**, in bite-sized tasks. Phase changelogs document **how to use**, with worked examples. All three are committed to git alongside the code they describe.
 
-The `docs/` tree:
+### Phase changelog requirements
+
+Every phase changelog at `docs/phases/phase-<N>-<topic>.md` MUST contain:
+
+1. **Summary** — 2–4 sentence overview of what the phase shipped and why it matters.
+2. **What's new** — bullet list of every new public type, function, package, or capability. One line each. Reads like API release notes.
+3. **Migration from previous phase** — if anything renamed, deprecated, or changed signature, list the before/after with a one-liner showing the textual change. Empty section is fine if no migration.
+4. **Usage cookbook** — the heart of the document. Multiple worked, copy-pasteable examples covering **all the major ways** the new capabilities can be used in a strategy. Each example includes a short title, a sentence of context, and runnable Kotlin (or DSL once Phase 8 lands). Cover the common case, the power-user case, and at least one composition example showing how the new feature combines with capabilities from earlier phases. **Indicators-style phases** require examples for: simple usage, multi-symbol usage via `IndicatorMap`, composition with other indicators, custom subclass example.
+5. **Testing patterns** — how the new capabilities are typically tested. Show the canonical fake or fixture and one realistic assertion.
+6. **Known limitations** — what didn't ship that a reader might expect to find. Cross-link to backlog items or future phases.
+7. **References** — link to the spec, the plan, and the merge commit SHA(s).
+
+Aim for 200–500 lines per changelog. Less if the phase was small; more if it shipped a large surface area. The audience is a future contributor (or end user) who has never read the spec or plan and needs to understand what they can do with the engine today.
+
+### `docs/` tree
 
 ```
 docs/
 ├── superpowers/
 │   ├── specs/        # design specs, one per feature
 │   └── plans/        # implementation plans, one per feature
+├── phases/           # per-phase changelogs (user-facing, post-merge)
+│   ├── phase-1-engine-mvp.md
+│   ├── phase-2-event-bus.md
+│   ├── ...
 ├── architecture.md   # high-level system architecture (overview, refs specs)
 ├── phase2-backlog.md # carried-over items per phase
 ├── phase3-backlog.md
 ├── ...
 ```
 
-Bug fixes do not require a spec or plan unless the bug reveals a design flaw. In that case, the fix lands behind a refactor spec.
+Bug fixes do not require a spec, plan, or changelog unless the bug reveals a design flaw. In that case, the fix lands behind a refactor spec, and the affected phase changelog gets a follow-up entry.
 
 ---
 
