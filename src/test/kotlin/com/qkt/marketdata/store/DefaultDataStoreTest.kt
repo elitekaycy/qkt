@@ -196,6 +196,34 @@ class DefaultDataStoreTest {
     }
 
     @Test
+    fun `partial null from to with from beyond cache latest throws clear error`() {
+        writeDay("X", "2024-01-15", listOf(day15 to "100"))
+        writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
+        val store = DefaultDataStore(root = dir)
+        val request =
+            DataRequest(
+                symbols = listOf("X"),
+                from = Instant.parse("2024-02-01T00:00:00Z"),
+            )
+        assertThatThrownBy { store.openFeed(request) }
+            .hasMessageContaining("resolved range is empty")
+    }
+
+    @Test
+    fun `partial null from to with to before cache earliest throws clear error`() {
+        writeDay("X", "2024-01-15", listOf(day15 to "100"))
+        writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
+        val store = DefaultDataStore(root = dir)
+        val request =
+            DataRequest(
+                symbols = listOf("X"),
+                to = Instant.parse("2023-12-01T00:00:00Z"),
+            )
+        assertThatThrownBy { store.openFeed(request) }
+            .hasMessageContaining("resolved range is empty")
+    }
+
+    @Test
     fun `prefetch fills missing days without opening feed`() {
         var fetched = 0
         val fetcher =

@@ -110,6 +110,10 @@ class DefaultDataStore(
                 }
                 val resolvedFrom = request.from ?: earliest.atStartOfDay(ZoneOffset.UTC).toInstant()
                 val resolvedTo = request.to ?: latest.atStartOfDay(ZoneOffset.UTC).toInstant()
+                check(resolvedFrom < resolvedTo) {
+                    "resolved range is empty for symbols ${request.symbols}: from=$resolvedFrom to=$resolvedTo " +
+                        "(request.from=${request.from}, request.to=${request.to}, cached earliest=$earliest, cached latest=$latest)"
+                }
                 resolvedFrom to resolvedTo
             }
         return from.toEpochMilli() to to.toEpochMilli()
