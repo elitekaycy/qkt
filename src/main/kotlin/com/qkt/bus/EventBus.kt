@@ -9,6 +9,7 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
+import com.qkt.events.WarmupTickEvent
 import kotlin.reflect.KClass
 import org.slf4j.LoggerFactory
 
@@ -39,6 +40,7 @@ class EventBus(
         val seq = sequencer.next()
         return when (event) {
             is TickEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is WarmupTickEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is CandleEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is SignalEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is OrderEvent -> event.copy(timestamp = ts, sequenceId = seq)

@@ -17,6 +17,12 @@ data class TickEvent(
     override val sequenceId: Long = 0L,
 ) : Event()
 
+data class WarmupTickEvent(
+    val tick: Tick,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event()
+
 data class CandleEvent(
     val candle: Candle,
     override val timestamp: Long = 0L,

@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Money
 import com.qkt.events.CandleEvent
 import com.qkt.events.TickEvent
+import com.qkt.events.WarmupTickEvent
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
@@ -16,6 +17,7 @@ class CandleAggregator(
 
     init {
         bus.subscribe<TickEvent> { event -> handle(event.tick) }
+        bus.subscribe<WarmupTickEvent> { event -> handle(event.tick) }
     }
 
     private fun handle(tick: Tick) {
