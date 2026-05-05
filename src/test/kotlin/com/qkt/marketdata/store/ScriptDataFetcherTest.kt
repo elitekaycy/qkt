@@ -59,8 +59,15 @@ class ScriptDataFetcherTest {
     }
 
     @Test
-    fun `companion dukascopy points at scripts dir`() {
-        val fetcher = ScriptDataFetcher.dukascopy()
+    fun `companion dukascopy wraps the supplied script path`() {
+        val script = writeScript("dukascopy.sh", "exit 0")
+        val fetcher = ScriptDataFetcher.dukascopy(script)
         assertThat(fetcher).isNotNull
+    }
+
+    @Test
+    fun `nonexistent script path fails fast at construction`() {
+        assertThatThrownBy { ScriptDataFetcher(dir.resolve("missing.sh")) }
+            .hasMessageContaining("script not found")
     }
 }

@@ -77,9 +77,11 @@ npm install -g dukascopy-node
 
 Then wire the fetcher when constructing your store:
 
+`ScriptDataFetcher.dukascopy(...)` requires an absolute path to the bundled script. Use `Path.of(System.getProperty("user.dir"), "scripts/fetch-dukascopy.sh")` if you run from the qkt repo root, or hard-code the absolute path to your installed copy.
+
 ```kotlin
 val store = DefaultDataStore.fromEnv(
-    fetcher = ScriptDataFetcher.dukascopy(),
+    fetcher = ScriptDataFetcher.dukascopy(Path.of("/path/to/qkt/scripts/fetch-dukascopy.sh")),
 )
 val backtest = Backtest.fromStore(
     strategies = listOf(MyStrategy()),

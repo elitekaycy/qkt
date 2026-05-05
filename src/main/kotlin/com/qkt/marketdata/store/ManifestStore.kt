@@ -29,7 +29,10 @@ class ManifestStore(
             try {
                 json.decodeFromString<Manifest>(text)
             } catch (e: Exception) {
-                error("corrupt manifest at $path: ${e.message}; run ./gradlew rebuildManifest to recover")
+                error(
+                    "corrupt manifest at $path: ${e.message}; " +
+                        "recover via DefaultDataStore.fromEnv().rebuildManifests()",
+                )
             }
         require(manifest.schemaVersion == 1) {
             "unsupported manifest schemaVersion at $path: ${manifest.schemaVersion}; expected 1"
