@@ -1,4 +1,4 @@
-package com.qkt.marketdata.history
+package com.qkt.marketdata.source
 
 import com.qkt.common.Money
 import com.qkt.indicators.catalog.SMA
