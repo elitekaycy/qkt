@@ -7,7 +7,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import java.util.concurrent.atomic.AtomicBoolean
 
-class InMemoryMarketSource(
+open class InMemoryMarketSource(
     override val name: String = "InMemory",
 ) : MarketSource {
     override val capabilities: Set<MarketSourceCapability> =

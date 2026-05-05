@@ -31,7 +31,9 @@ import com.qkt.risk.RiskRule
 import com.qkt.strategy.Mode
 import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.WarmupSpec
 import java.math.BigDecimal
+import java.time.Instant
 
 class Backtest(
     private val strategies: List<Strategy>,
@@ -41,6 +43,8 @@ class Backtest(
     private val initialTimestamp: Long = 0L,
     private val source: MarketSource = NullMarketSource,
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
+    private val warmupSpec: WarmupSpec = WarmupSpec.None,
+    private val symbols: List<String> = emptyList(),
 ) {
     constructor(
         strategies: List<Strategy>,
@@ -100,6 +104,14 @@ class Backtest(
                 onRejected = { e -> rejections.add(e) },
                 onCandle = {},
             )
+
+        if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && symbols.isNotEmpty()) {
+            IndicatorWarmer(source, pipeline).warmup(
+                symbols = symbols,
+                spec = warmupSpec,
+                now = Instant.ofEpochMilli(initialTimestamp),
+            )
+        }
 
         bus.subscribe<TickEvent> {
             val equity = pnl.totalPnL()
@@ -163,6 +175,7 @@ class Backtest(
             source: MarketSource,
             request: MarketRequest,
             candleWindow: TimeWindow? = null,
+            warmupSpec: WarmupSpec = WarmupSpec.None,
         ): Backtest {
             require(MarketSourceCapability.TICKS in source.capabilities) {
                 "Backtest requires a MarketSource that supports TICKS; ${source.name} has ${source.capabilities}"
@@ -181,6 +194,8 @@ class Backtest(
                 candleWindow = candleWindow,
                 initialTimestamp = from.toEpochMilli(),
                 source = source,
+                warmupSpec = warmupSpec,
+                symbols = request.symbols,
             )
         }
     }
