@@ -164,4 +164,24 @@ class CsvTickFeedTest {
             assertThatThrownBy { feed.next() }.hasMessageContaining("negative")
         }
     }
+
+    @Test
+    fun `bad header releases file handle so file can be re-read`() {
+        val path = writeCsv("a.csv", "wrong,header\n1,X")
+        assertThatThrownBy { CsvTickFeed(path) }.hasMessageContaining("unexpected header")
+        Files.writeString(path, "$header\n1000,X,100,,,,,")
+        CsvTickFeed(path).use { feed ->
+            assertThat(feed.next()!!.timestamp).isEqualTo(1000L)
+        }
+    }
+
+    @Test
+    fun `empty file releases file handle`() {
+        val path = writeCsv("a.csv", "")
+        assertThatThrownBy { CsvTickFeed(path) }.hasMessageContaining("empty CSV")
+        Files.writeString(path, "$header\n1000,X,100,,,,,")
+        CsvTickFeed(path).use { feed ->
+            assertThat(feed.next()!!.timestamp).isEqualTo(1000L)
+        }
+    }
 }

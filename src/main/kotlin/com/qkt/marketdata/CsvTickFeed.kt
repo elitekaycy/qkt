@@ -16,9 +16,14 @@ class CsvTickFeed(
     private var lastTimestamp: Long = Long.MIN_VALUE
 
     init {
-        val header = reader.readLine() ?: error("empty CSV: $path")
-        require(header == EXPECTED_HEADER) {
-            "unexpected header at $path:1: got '$header', expected '$EXPECTED_HEADER'"
+        try {
+            val header = reader.readLine() ?: error("empty CSV: $path")
+            require(header == EXPECTED_HEADER) {
+                "unexpected header at $path:1: got '$header', expected '$EXPECTED_HEADER'"
+            }
+        } catch (t: Throwable) {
+            runCatching { reader.close() }
+            throw t
         }
     }
 
