@@ -1,8 +1,11 @@
 package com.qkt.marketdata
 
 import com.qkt.common.Money
+import java.nio.file.Files
+import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class HistoricalTickFeedTest {
     @Test
@@ -33,6 +36,20 @@ class HistoricalTickFeedTest {
         feed.next()
         assertThat(feed.next()).isNull()
         assertThat(feed.next()).isNull()
+        assertThat(feed.next()).isNull()
+    }
+
+    @Test
+    fun `fromCsv eager loads a CSV into a list backed feed`(
+        @TempDir dir: Path,
+    ) {
+        val header = "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume"
+        val csv = "$header\n1000,X,100,1,,,,\n2000,X,101,1,,,,"
+        val path = dir.resolve("a.csv")
+        Files.writeString(path, csv)
+        val feed = HistoricalTickFeed.fromCsv(path)
+        assertThat(feed.next()!!.timestamp).isEqualTo(1000L)
+        assertThat(feed.next()!!.timestamp).isEqualTo(2000L)
         assertThat(feed.next()).isNull()
     }
 }

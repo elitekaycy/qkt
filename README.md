@@ -63,6 +63,56 @@ Single-threaded event-driven pipeline. Every component is deterministic given it
 
 Read the Phase 1 design doc at `docs/superpowers/specs/2026-05-03-trading-engine-phase1-design.md` for the full picture.
 
+## Getting real data
+
+Phase 6 ships a content-addressable on-disk data store at `~/.qkt/data/` (override via the `QKT_DATA_HOME` environment variable). Strategies query this store via `Backtest.fromStore(...)` or directly via `DataStore.openFeed(...)`. The store is empty on first install — populate it by either:
+
+### Option 1: Auto-fetch via the bundled bash script (Dukascopy)
+
+Requires Node.js 18+ and `dukascopy-node`:
+
+```bash
+npm install -g dukascopy-node
+```
+
+Then wire the fetcher when constructing your store:
+
+```kotlin
+val store = DefaultDataStore.fromEnv(
+    fetcher = ScriptDataFetcher.dukascopy(),
+)
+val backtest = Backtest.fromStore(
+    strategies = listOf(MyStrategy()),
+    rules = listOf(MaxPositionSize("EURUSD", Money.of("3"))),
+    store = store,
+    request = DataRequest(
+        symbols = listOf("EURUSD"),
+        from = Instant.parse("2024-01-15T00:00:00Z"),
+        to = Instant.parse("2024-01-22T00:00:00Z"),
+    ),
+).run()
+```
+
+The store will fetch missing days lazily on first run and cache them locally. Subsequent runs over the same range hit the cache and never touch the network.
+
+### Option 2: Bring your own data
+
+Drop CSV files matching the qkt schema into `~/.qkt/data/symbols/{SYMBOL}/{YYYY-MM-DD}.csv` (or `.csv.gz`). Schema:
+
+```
+timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume
+```
+
+Then call `DefaultDataStore.fromEnv().rebuildManifests()` to populate manifests from the file list.
+
+### Option 3: Sample data
+
+The repo ships a tiny fixture set at `data/sample/symbols/` that mirrors the production layout. Point a store at it for tests and demos:
+
+```kotlin
+val store = DefaultDataStore(root = Path.of("data/sample"))
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Conventions are codified in `.claude/skills/qkt/SKILL.md` — read it before opening a PR.

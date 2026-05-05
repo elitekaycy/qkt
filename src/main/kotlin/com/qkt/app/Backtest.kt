@@ -13,6 +13,9 @@ import com.qkt.events.TickEvent
 import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.store.DataRequest
+import com.qkt.marketdata.store.DataStore
 import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.RiskEngine
@@ -23,10 +26,24 @@ import java.math.BigDecimal
 class Backtest(
     private val strategies: List<Strategy>,
     private val rules: List<RiskRule> = emptyList(),
-    private val ticks: List<Tick>,
+    private val feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
 ) {
+    constructor(
+        strategies: List<Strategy>,
+        rules: List<RiskRule> = emptyList(),
+        ticks: List<Tick>,
+        candleWindow: TimeWindow? = null,
+        initialTimestamp: Long = 0L,
+    ) : this(
+        strategies = strategies,
+        rules = rules,
+        feed = HistoricalTickFeed(ticks),
+        candleWindow = candleWindow,
+        initialTimestamp = initialTimestamp,
+    )
+
     fun run(): BacktestResult {
         val clock = FixedClock(time = initialTimestamp)
         val ids = SequentialIdGenerator()
@@ -70,11 +87,12 @@ class Backtest(
             if (drawdown > maxDrawdown) maxDrawdown = drawdown
         }
 
-        val feed = HistoricalTickFeed(ticks)
-        while (true) {
-            val tick = feed.next() ?: break
-            clock.time = tick.timestamp
-            pipeline.ingest(tick)
+        feed.use { f ->
+            while (true) {
+                val tick = f.next() ?: break
+                clock.time = tick.timestamp
+                pipeline.ingest(tick)
+            }
         }
 
         return BacktestResult(
@@ -97,5 +115,25 @@ class Backtest(
         return BigDecimal(wins)
             .divide(BigDecimal(closing.size), Money.CONTEXT)
             .setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    companion object {
+        fun fromStore(
+            strategies: List<Strategy>,
+            rules: List<RiskRule> = emptyList(),
+            store: DataStore,
+            request: DataRequest,
+            candleWindow: TimeWindow? = null,
+        ): Backtest {
+            val feed = store.openFeed(request)
+            val initialTimestamp = request.from?.toEpochMilli() ?: 0L
+            return Backtest(
+                strategies = strategies,
+                rules = rules,
+                feed = feed,
+                candleWindow = candleWindow,
+                initialTimestamp = initialTimestamp,
+            )
+        }
     }
 }

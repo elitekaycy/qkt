@@ -1,5 +1,7 @@
 package com.qkt.marketdata
 
-interface TickFeed {
+interface TickFeed : AutoCloseable {
     fun next(): Tick?
+
+    override fun close() {}
 }
