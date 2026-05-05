@@ -23,6 +23,7 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
+import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 
@@ -38,6 +39,7 @@ class TradingPipeline(
     val engine: Engine,
     val strategies: List<Strategy>,
     val riskEngine: RiskEngine,
+    val sessionContext: SessionContext,
     val candleWindow: TimeWindow? = null,
     val onFilled: (Trade, BigDecimal) -> Unit = { _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
@@ -48,7 +50,7 @@ class TradingPipeline(
 
         strategies.forEach { strategy ->
             bus.subscribe<TickEvent> { e ->
-                strategy.onTick(e.tick) { sig -> bus.publish(SignalEvent(sig)) }
+                strategy.onTickWithContext(e.tick, sessionContext) { sig -> bus.publish(SignalEvent(sig)) }
             }
             bus.subscribe<CandleEvent> { e ->
                 strategy.onCandle(e.candle) { sig -> bus.publish(SignalEvent(sig)) }

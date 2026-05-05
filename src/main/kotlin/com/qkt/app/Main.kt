@@ -7,15 +7,19 @@ import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
+import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.MockTickFeed
+import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.rules.MaxPositionSize
 import com.qkt.strategy.EveryNthTickBuyStrategy
+import com.qkt.strategy.Mode
+import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Strategy
 import org.slf4j.LoggerFactory
 
@@ -55,6 +59,13 @@ fun main() {
             engine = engine,
             strategies = strategies,
             riskEngine = riskEngine,
+            sessionContext =
+                SessionContext(
+                    mode = Mode.BACKTEST,
+                    clock = clock,
+                    calendar = TradingCalendar.crypto(),
+                    source = NullMarketSource,
+                ),
             candleWindow = TimeWindow.ONE_MINUTE,
             onFilled = { trade, _ ->
                 val pos = positions.positionFor(trade.symbol)?.quantity ?: Money.ZERO
