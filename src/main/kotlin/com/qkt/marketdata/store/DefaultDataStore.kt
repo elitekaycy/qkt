@@ -37,7 +37,7 @@ class DefaultDataStore(
     }
 
     override fun openFeed(request: MarketRequest): TickFeed {
-        val (fromMs, toMs) = resolveRange(request)
+        val (fromMs, toMs) = resolveRangeMs(request)
         materializeMissing(request.symbols, fromMs, toMs)
 
         val perSymbol =
@@ -51,8 +51,13 @@ class DefaultDataStore(
         return RangeClippedTickFeed(merged, fromMs = fromMs, toMs = toMs)
     }
 
+    override fun resolveRange(request: MarketRequest): Pair<Instant, Instant> {
+        val (fromMs, toMs) = resolveRangeMs(request)
+        return Instant.ofEpochMilli(fromMs) to Instant.ofEpochMilli(toMs)
+    }
+
     override fun prefetch(request: MarketRequest) {
-        val (fromMs, toMs) = resolveRange(request)
+        val (fromMs, toMs) = resolveRangeMs(request)
         materializeMissing(request.symbols, fromMs, toMs)
     }
 
@@ -96,7 +101,7 @@ class DefaultDataStore(
         }
     }
 
-    private fun resolveRange(request: MarketRequest): Pair<Long, Long> {
+    private fun resolveRangeMs(request: MarketRequest): Pair<Long, Long> {
         val (from, to) =
             if (request.from != null && request.to != null) {
                 request.from to request.to
