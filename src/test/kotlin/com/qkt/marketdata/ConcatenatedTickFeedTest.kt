@@ -11,7 +11,7 @@ class ConcatenatedTickFeedTest {
     fun `streams feeds end to end`() {
         val a = HistoricalTickFeed(listOf(tick(1L), tick(2L)))
         val b = HistoricalTickFeed(listOf(tick(3L)))
-        val cat = ConcatenatedTickFeed(listOf(a, b))
+        val cat = ConcatenatedTickFeed(listOf({ a }, { b }))
         val ts = generateSequence { cat.next() }.toList().map { it.timestamp }
         assertThat(ts).containsExactly(1L, 2L, 3L)
     }
@@ -58,11 +58,33 @@ class ConcatenatedTickFeedTest {
                     closedB = true
                 }
             }
-        val cat = ConcatenatedTickFeed(listOf(a, b))
+        val cat = ConcatenatedTickFeed(listOf({ a }, { b }))
         assertThat(cat.next()!!.timestamp).isEqualTo(1L)
         assertThat(cat.next()!!.timestamp).isEqualTo(2L)
         assertThat(cat.next()).isNull()
         assertThat(closedA).isTrue()
         assertThat(closedB).isTrue()
+    }
+
+    @Test
+    fun `factories invoked lazily one at a time`() {
+        var openedA = 0
+        var openedB = 0
+        val factoryA: () -> TickFeed = {
+            openedA++
+            HistoricalTickFeed(listOf(tick(1L)))
+        }
+        val factoryB: () -> TickFeed = {
+            openedB++
+            HistoricalTickFeed(listOf(tick(2L)))
+        }
+        val cat = ConcatenatedTickFeed(listOf(factoryA, factoryB))
+        assertThat(openedA).isEqualTo(0)
+        assertThat(openedB).isEqualTo(0)
+        cat.next()
+        assertThat(openedA).isEqualTo(1)
+        assertThat(openedB).isEqualTo(0)
+        cat.next()
+        assertThat(openedB).isEqualTo(1)
     }
 }

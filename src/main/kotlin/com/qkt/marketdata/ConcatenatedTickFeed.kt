@@ -1,21 +1,26 @@
 package com.qkt.marketdata
 
 class ConcatenatedTickFeed(
-    private val feeds: List<TickFeed>,
+    private val factories: List<() -> TickFeed>,
 ) : TickFeed {
     private var index = 0
+    private var current: TickFeed? = null
 
     override fun next(): Tick? {
-        while (index < feeds.size) {
-            val tick = feeds[index].next()
+        while (index < factories.size) {
+            val feed = current ?: factories[index]().also { current = it }
+            val tick = feed.next()
             if (tick != null) return tick
-            feeds[index].close()
+            runCatching { feed.close() }
+            current = null
             index++
         }
         return null
     }
 
     override fun close() {
-        for (i in index until feeds.size) runCatching { feeds[i].close() }
+        current?.let { runCatching { it.close() } }
+        current = null
+        index = factories.size
     }
 }
