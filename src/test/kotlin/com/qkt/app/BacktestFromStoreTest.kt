@@ -1,7 +1,7 @@
 package com.qkt.app
 
 import com.qkt.common.Money
-import com.qkt.marketdata.store.DataRequest
+import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.strategy.EveryNthTickBuyStrategy
 import java.nio.file.Path
@@ -16,7 +16,7 @@ class BacktestFromStoreTest {
     fun `fromStore wires DataStore end to end against sample data`() {
         val store = DefaultDataStore(root = sample)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("EURUSD"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-17T00:00:00Z"),
@@ -36,7 +36,7 @@ class BacktestFromStoreTest {
     fun `fromStore over multiple symbols interleaves trades by timestamp`() {
         val store = DefaultDataStore(root = sample)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("EURUSD", "XAUUSD"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-17T00:00:00Z"),
@@ -60,7 +60,7 @@ class BacktestFromStoreTest {
     fun `running same backtest twice produces identical result`() {
         val store = DefaultDataStore(root = sample)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("EURUSD"),
                 from = Instant.parse("2024-01-15T00:00:00Z"),
                 to = Instant.parse("2024-01-16T00:00:00Z"),
@@ -84,7 +84,7 @@ class BacktestFromStoreTest {
     @Test
     fun `fromStore with null from to runs over intersection of cached ranges`() {
         val store = DefaultDataStore(root = sample)
-        val request = DataRequest(symbols = listOf("EURUSD"))
+        val request = MarketRequest(symbols = listOf("EURUSD"))
         val result =
             Backtest
                 .fromStore(
@@ -100,7 +100,7 @@ class BacktestFromStoreTest {
     fun `BTCUSD empty Saturday produces no fills for that day`() {
         val store = DefaultDataStore(root = sample)
         val request =
-            DataRequest(
+            MarketRequest(
                 symbols = listOf("BTCUSD"),
                 from = Instant.parse("2024-01-16T00:00:00Z"),
                 to = Instant.parse("2024-01-17T00:00:00Z"),

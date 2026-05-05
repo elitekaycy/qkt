@@ -14,7 +14,7 @@ import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
-import com.qkt.marketdata.store.DataRequest
+import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.store.DataStore
 import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
@@ -122,7 +122,7 @@ class Backtest(
             strategies: List<Strategy>,
             rules: List<RiskRule> = emptyList(),
             store: DataStore,
-            request: DataRequest,
+            request: MarketRequest,
             candleWindow: TimeWindow? = null,
         ): Backtest {
             val feed = store.openFeed(request)
