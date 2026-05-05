@@ -27,5 +27,7 @@ interface TradingCalendar {
 
     companion object {
         fun crypto(): TradingCalendar = CryptoCalendar
+
+        fun fxDefault(): TradingCalendar = FxCalendar
     }
 }
