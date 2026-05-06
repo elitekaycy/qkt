@@ -9,7 +9,7 @@ import com.qkt.events.BrokerEvent
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class BybitStateRecoveryTest {
+class BybitSpotStateRecoveryTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
 
     private fun emptyOpenOrdersResponse() = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
@@ -28,7 +28,7 @@ class BybitStateRecoveryTest {
         bus.subscribe<BrokerEvent.OrderCancelled> { emitted.add(it) }
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -53,11 +53,11 @@ class BybitStateRecoveryTest {
 
         val knownOrders =
             mapOf(
-                "c1" to BybitStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
-                "c2" to BybitStateRecovery.ManagedOrderView("c2", "BYBIT_SPOT:BTCUSDT", Side.SELL),
+                "c1" to BybitSpotStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
+                "c2" to BybitSpotStateRecovery.ManagedOrderView("c2", "BYBIT_SPOT:BTCUSDT", Side.SELL),
             )
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -84,10 +84,10 @@ class BybitStateRecoveryTest {
 
         val knownOrders =
             mapOf(
-                "c1" to BybitStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
+                "c1" to BybitSpotStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
             )
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -112,7 +112,7 @@ class BybitStateRecoveryTest {
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -141,7 +141,7 @@ class BybitStateRecoveryTest {
 
         val seenExecIds = mutableSetOf("e1")
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -155,13 +155,84 @@ class BybitStateRecoveryTest {
     }
 
     @Test
+    fun `reconcile follows nextPageCursor across multiple execution-list pages`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
+        client.responses["/v5/account/wallet-balance"] = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+        client.responsesByPredicate.add(
+            { path: String, body: String -> path == "/v5/execution/list" && !body.contains("\"cursor\"") } to
+                """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c1","orderId":"a","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"e1","category":"spot"}],"nextPageCursor":"page2"}}""",
+        )
+        client.responsesByPredicate.add(
+            { path: String, body: String -> path == "/v5/execution/list" && body.contains("\"cursor\":\"page2\"") } to
+                """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c2","orderId":"b","symbol":"BTCUSDT","side":"Sell","execPrice":"81000","execQty":"0.01","execId":"e2","category":"spot"}],"nextPageCursor":""}}""",
+        )
+
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+
+        BybitSpotStateRecovery(
+            transport = client,
+            bus = bus,
+            clock = FixedClock(0L),
+            getKnownOrders = { emptyMap() },
+            lastFillTimeProvider = { 0L },
+            seenExecIds = mutableSetOf(),
+        ).reconcile()
+
+        assertThat(fills).hasSize(2)
+        assertThat(fills.map { it.clientOrderId }).containsExactly("c1", "c2")
+    }
+
+    @Test
+    fun `reconcile caps execution pagination at MAX_EXECUTIONS_PER_RECONCILE`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
+        client.responses["/v5/account/wallet-balance"] = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+        val pageCounter =
+            java.util.concurrent.atomic
+                .AtomicInteger()
+        client.dynamicResponses.add(
+            { path: String, _: String -> path == "/v5/execution/list" } to {
+                val n = pageCounter.incrementAndGet()
+                buildString {
+                    append("""{"retCode":0,"retMsg":"OK","result":{"list":[""")
+                    for (i in 1..50) {
+                        if (i > 1) append(",")
+                        append(
+                            """{"orderLinkId":"c-$n-$i","orderId":"o","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"e-$n-$i","category":"spot"}""",
+                        )
+                    }
+                    append("""],"nextPageCursor":"more"}}""")
+                }
+            },
+        )
+
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+
+        BybitSpotStateRecovery(
+            transport = client,
+            bus = bus,
+            clock = FixedClock(0L),
+            getKnownOrders = { emptyMap() },
+            lastFillTimeProvider = { 0L },
+            seenExecIds = mutableSetOf(),
+        ).reconcile()
+
+        assertThat(fills.size).isEqualTo(BybitSpotStateRecovery.MAX_EXECUTIONS_PER_RECONCILE)
+    }
+
+    @Test
     fun `reconcile uses startTime equal to lastFillTime minus 60s`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
         client.responses["/v5/execution/list"] = emptyExecutionsResponse()
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),
@@ -184,7 +255,7 @@ class BybitStateRecoveryTest {
             """{"retCode":0,"retMsg":"OK","result":{"list":[{"accountType":"UNIFIED","coin":[{"coin":"BTC","walletBalance":"0.5"},{"coin":"USDT","walletBalance":"30000"}]}]}}"""
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),
@@ -211,7 +282,7 @@ class BybitStateRecoveryTest {
         bus.subscribe<BrokerEvent.BalancesUpdated> { received.add(it) }
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_234_567L),
@@ -235,7 +306,7 @@ class BybitStateRecoveryTest {
             """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),
@@ -258,7 +329,7 @@ class BybitStateRecoveryTest {
             """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),

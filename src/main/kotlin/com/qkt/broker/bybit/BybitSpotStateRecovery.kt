@@ -1,5 +1,6 @@
 package com.qkt.broker.bybit
 
+import com.qkt.broker.BrokerStateRecovery
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
@@ -10,15 +11,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
-class BybitStateRecovery(
+class BybitSpotStateRecovery(
     private val transport: BybitTransport,
     private val bus: EventBus,
     private val clock: Clock,
     private val getKnownOrders: () -> Map<String, ManagedOrderView>,
     private val lastFillTimeProvider: () -> Long,
     private val seenExecIds: MutableSet<String>,
-) {
-    private val log = LoggerFactory.getLogger(BybitStateRecovery::class.java)
+) : BrokerStateRecovery {
+    private val log = LoggerFactory.getLogger(BybitSpotStateRecovery::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
 
@@ -28,7 +29,7 @@ class BybitStateRecovery(
         val side: Side,
     )
 
-    fun reconcile() {
+    override fun reconcile() {
         synchronized(lock) {
             runCatching { reconcileOpenOrders() }
                 .onFailure { log.warn("Open-orders reconcile failed: {}", it.message) }
@@ -40,7 +41,11 @@ class BybitStateRecovery(
     }
 
     private fun reconcileBalances() {
-        val response = transport.postSigned("/v5/account/wallet-balance", """{"accountType":"UNIFIED"}""")
+        val response =
+            transport.postSigned(
+                "/v5/account/wallet-balance",
+                """{"accountType":"${transport.accountType}"}""",
+            )
         val parsed = BybitBalanceTranslator.parseWalletBalance(response)
         transport.updateBalances(parsed)
         bus.publish(
@@ -75,26 +80,48 @@ class BybitStateRecovery(
 
     private fun reconcileExecutions() {
         val startTime = (lastFillTimeProvider() - 60_000L).coerceAtLeast(0L)
-        val body = """{"category":"spot","startTime":$startTime,"limit":50}"""
-        val response = transport.postSigned("/v5/execution/list", body)
-        val tree = json.parseToJsonElement(response).jsonObject
-        if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
-        val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
-        for (entry in list) {
-            val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
-            if (!seenExecIds.add(exec.execId)) continue
-            val qktSymbol = BybitSymbol.toQkt(category = "spot", bare = exec.bareSymbol)
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    clientOrderId = exec.clientOrderId,
-                    brokerOrderId = exec.brokerOrderId,
-                    symbol = qktSymbol,
-                    side = exec.side,
-                    price = exec.price,
-                    quantity = exec.quantity,
-                    timestamp = clock.now(),
-                ),
-            )
+        var cursor = ""
+        var totalProcessed = 0
+        val cap = MAX_EXECUTIONS_PER_RECONCILE
+        while (totalProcessed < cap) {
+            val body =
+                if (cursor.isEmpty()) {
+                    """{"category":"spot","startTime":$startTime,"limit":50}"""
+                } else {
+                    """{"category":"spot","startTime":$startTime,"limit":50,"cursor":"$cursor"}"""
+                }
+            val response = transport.postSigned("/v5/execution/list", body)
+            val tree = json.parseToJsonElement(response).jsonObject
+            if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
+            val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
+            for (entry in list) {
+                val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
+                if (!seenExecIds.add(exec.execId)) continue
+                val qktSymbol = BybitSymbol.toQkt(category = "spot", bare = exec.bareSymbol)
+                bus.publish(
+                    BrokerEvent.OrderFilled(
+                        clientOrderId = exec.clientOrderId,
+                        brokerOrderId = exec.brokerOrderId,
+                        symbol = qktSymbol,
+                        side = exec.side,
+                        price = exec.price,
+                        quantity = exec.quantity,
+                        timestamp = clock.now(),
+                    ),
+                )
+                totalProcessed++
+                if (totalProcessed >= cap) return
+            }
+            cursor = tree["result"]
+                ?.jsonObject
+                ?.get("nextPageCursor")
+                ?.jsonPrimitive
+                ?.content ?: ""
+            if (cursor.isEmpty() || list.isEmpty()) break
         }
+    }
+
+    companion object {
+        const val MAX_EXECUTIONS_PER_RECONCILE: Int = 200
     }
 }

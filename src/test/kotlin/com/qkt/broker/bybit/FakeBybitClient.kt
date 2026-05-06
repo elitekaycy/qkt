@@ -13,11 +13,17 @@ class FakeBybitClient : BybitTransport {
 
     val responses: MutableMap<String, String> = mutableMapOf()
 
+    val responsesByPredicate: MutableList<Pair<(String, String) -> Boolean, String>> = mutableListOf()
+
+    val dynamicResponses: MutableList<Pair<(String, String) -> Boolean, () -> String>> = mutableListOf()
+
     private val topicListeners: MutableMap<String, MutableList<(JsonObject) -> Unit>> = mutableMapOf()
     private val disconnectListeners: MutableList<(String) -> Unit> = mutableListOf()
     private val onReconnectListeners: MutableList<() -> Unit> = mutableListOf()
 
     override var isConnected: Boolean = true
+
+    override var accountType: String = "UNIFIED"
 
     private var balancesCache: Map<String, BigDecimal> = emptyMap()
 
@@ -33,6 +39,10 @@ class FakeBybitClient : BybitTransport {
         jsonBody: String,
     ): String {
         posts.add(Posted(path, jsonBody))
+        val dynMatched = dynamicResponses.firstOrNull { it.first(path, jsonBody) }
+        if (dynMatched != null) return dynMatched.second()
+        val matched = responsesByPredicate.firstOrNull { it.first(path, jsonBody) }
+        if (matched != null) return matched.second
         return responses[path]
             ?: """{"retCode":0,"retMsg":"OK","result":{}}"""
     }

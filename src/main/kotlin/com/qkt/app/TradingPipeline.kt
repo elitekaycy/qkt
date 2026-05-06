@@ -75,6 +75,9 @@ class TradingPipeline(
         bus.subscribe<OrderEvent> { e ->
             orderManager.submit(e.request)
         }
+        bus.subscribe<BrokerEvent.PositionReconciled> { e ->
+            positions.reset(e.symbol, e.newQty, e.newAvgPx)
+        }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             val realized = positions.applyFill(e)
             pnl.recordRealized(realized)

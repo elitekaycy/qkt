@@ -93,6 +93,46 @@ class BrokerEventTest {
     }
 
     @Test
+    fun `PositionReconciled round-trips through the EventBus`() {
+        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+        val received = mutableListOf<BrokerEvent.PositionReconciled>()
+        bus.subscribe<BrokerEvent.PositionReconciled> { received.add(it) }
+
+        bus.publish(
+            BrokerEvent.PositionReconciled(
+                symbol = "BYBIT_LINEAR:BTCUSDT",
+                oldQty = BigDecimal("0.4"),
+                newQty = BigDecimal("0.5"),
+                oldAvgPx = BigDecimal("79000"),
+                newAvgPx = BigDecimal("80000"),
+                source = "BYBIT_LINEAR",
+                reason = "periodic reconcile",
+            ),
+        )
+
+        assertThat(received).hasSize(1)
+        assertThat(received.single().symbol).isEqualTo("BYBIT_LINEAR:BTCUSDT")
+        assertThat(received.single().oldQty).isEqualByComparingTo(BigDecimal("0.4"))
+    }
+
+    @Test
+    fun `PositionReconciled allows null old fields for new positions`() {
+        val event =
+            BrokerEvent.PositionReconciled(
+                symbol = "BYBIT_LINEAR:ETHUSDT",
+                oldQty = null,
+                newQty = BigDecimal("1.0"),
+                oldAvgPx = null,
+                newAvgPx = BigDecimal("3000"),
+                source = "BYBIT_LINEAR",
+                reason = "broker reports new position",
+            )
+
+        assertThat(event.oldQty).isNull()
+        assertThat(event.oldAvgPx).isNull()
+    }
+
+    @Test
     fun `OrderEvent marker is reachable from order variants`() {
         val accepted: BrokerEvent.OrderEvent =
             BrokerEvent.OrderAccepted(clientOrderId = "c1", brokerOrderId = "b1")

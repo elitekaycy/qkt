@@ -10,7 +10,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 object BybitOrderTranslator {
-    fun toCreateBody(request: OrderRequest): String {
+    fun toCreateBody(
+        request: OrderRequest,
+        reduceOnly: Boolean = false,
+    ): String {
         val parsed = BybitSymbol.parse(request.symbol)
         val side = if (request.side == Side.BUY) "Buy" else "Sell"
         val tif = mapTif(request.timeInForce)
@@ -61,6 +64,10 @@ object BybitOrderTranslator {
         }
         sb.append("\"timeInForce\":\"$tif\",")
         sb.append("\"orderLinkId\":\"${request.id}\"")
+        if (parsed.category == "linear") {
+            sb.append(",\"positionIdx\":0")
+            if (reduceOnly) sb.append(",\"reduceOnly\":true")
+        }
         sb.append("}")
         return sb.toString()
     }

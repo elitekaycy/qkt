@@ -9,6 +9,7 @@ import com.qkt.common.Clock
 import com.qkt.common.net.PeriodicReconciler
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
+import com.qkt.positions.PositionProvider
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicLong
@@ -19,15 +20,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
-class BybitSpotBroker(
+class BybitLinearBroker(
     private val transport: BybitTransport,
     private val bus: EventBus,
     private val clock: Clock,
+    private val positionProvider: PositionProvider,
     private val recoveryWindowMs: Long = 5 * 60_000L,
     private val pollIntervalMs: Long = 30_000L,
     pollExecutor: ScheduledExecutorService? = null,
 ) : Broker {
-    private val log = LoggerFactory.getLogger(BybitSpotBroker::class.java)
+    private val log = LoggerFactory.getLogger(BybitLinearBroker::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val symbolByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
@@ -37,7 +39,7 @@ class BybitSpotBroker(
 
     private val reconciler: PeriodicReconciler
 
-    override val name: String = "BybitSpot"
+    override val name: String = "BybitLinear"
 
     override val capabilities: Set<OrderTypeCapability> =
         setOf(
@@ -49,23 +51,23 @@ class BybitSpotBroker(
             OrderTypeCapability.MODIFY,
         )
 
-    override fun supports(symbol: String): Boolean = symbol.startsWith("BYBIT_SPOT:")
+    override fun supports(symbol: String): Boolean = symbol.startsWith("BYBIT_LINEAR:")
 
     init {
         transport.subscribe("order") { frame -> onOrderFrame(frame) }
         transport.subscribe("execution") { frame -> onExecutionFrame(frame) }
 
         val recovery =
-            BybitSpotStateRecovery(
+            BybitLinearStateRecovery(
                 transport = transport,
                 bus = bus,
                 clock = clock,
+                positionProvider = positionProvider,
                 getKnownOrders = { knownOrders.toMap() },
                 lastFillTimeProvider = lastFillTime::get,
                 seenExecIds = seenExecIds,
             )
         transport.onReconnect { recovery.reconcile() }
-
         recovery.reconcile()
 
         reconciler =
@@ -103,7 +105,7 @@ class BybitSpotBroker(
                 clientOrderId = request.id,
                 brokerOrderId = null,
                 accepted = false,
-                rejectReason = "BybitSpotBroker does not support symbol ${request.symbol}",
+                rejectReason = "BybitLinearBroker does not support symbol ${request.symbol}",
             )
         }
         val body = BybitOrderTranslator.toCreateBody(request)
@@ -120,12 +122,7 @@ class BybitSpotBroker(
                         timestamp = clock.now(),
                     ),
                 )
-                return SubmitAck(
-                    clientOrderId = request.id,
-                    brokerOrderId = null,
-                    accepted = false,
-                    rejectReason = e.message ?: "transport failure",
-                )
+                return SubmitAck(request.id, null, accepted = false, rejectReason = e.message ?: "transport failure")
             }
         val ack = parseSubmitResponse(request.id, response)
         if (ack.accepted) {
@@ -159,7 +156,7 @@ class BybitSpotBroker(
                 ?: return SubmitAck(orderId, null, accepted = false, rejectReason = "unknown orderId $orderId")
         val parsed = BybitSymbol.parse(symbol)
         val sb = StringBuilder("{")
-        sb.append("\"category\":\"${parsed.category}\",")
+        sb.append("\"category\":\"linear\",")
         sb.append("\"symbol\":\"${parsed.bare}\",")
         sb.append("\"orderLinkId\":\"$orderId\"")
         if (changes.newQuantity != null) sb.append(",\"qty\":\"${changes.newQuantity.toPlainString()}\"")
@@ -191,12 +188,7 @@ class BybitSpotBroker(
                     timestamp = clock.now(),
                 ),
             )
-            return SubmitAck(
-                clientOrderId = clientOrderId,
-                brokerOrderId = null,
-                accepted = false,
-                rejectReason = "$retCode: $retMsg",
-            )
+            return SubmitAck(clientOrderId, null, accepted = false, rejectReason = "$retCode: $retMsg")
         }
         val brokerOrderId =
             tree["result"]
@@ -204,59 +196,59 @@ class BybitSpotBroker(
                 ?.get("orderId")
                 ?.jsonPrimitive
                 ?.content
-        return SubmitAck(
-            clientOrderId = clientOrderId,
-            brokerOrderId = brokerOrderId,
-            accepted = true,
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = clientOrderId,
+                brokerOrderId = brokerOrderId,
+                timestamp = clock.now(),
+            ),
         )
+        return SubmitAck(clientOrderId, brokerOrderId, accepted = true)
     }
 
     private fun onOrderFrame(frame: JsonObject) {
-        val data = frame["data"]?.jsonArray ?: return
-        for (entry in data) {
-            val obj = entry.jsonObject
-            val clientOrderId = obj["orderLinkId"]?.jsonPrimitive?.content ?: continue
-            val brokerOrderId = obj["orderId"]?.jsonPrimitive?.content
-            val status = obj["orderStatus"]?.jsonPrimitive?.content ?: continue
-            val now = clock.now()
-            when (status) {
+        val list = frame["data"]?.jsonArray ?: return
+        for (entry in list) {
+            val parsed = BybitOrderTranslator.parseOpenOrder(entry.jsonObject)
+            val qktSymbol = "BYBIT_LINEAR:${parsed.bareSymbol}"
+            when (parsed.status) {
                 "New" ->
                     bus.publish(
                         BrokerEvent.OrderAccepted(
-                            clientOrderId = clientOrderId,
-                            brokerOrderId = brokerOrderId,
-                            timestamp = now,
+                            clientOrderId = parsed.clientOrderId,
+                            brokerOrderId = parsed.brokerOrderId,
+                            timestamp = clock.now(),
                         ),
                     )
                 "Cancelled" ->
                     bus.publish(
                         BrokerEvent.OrderCancelled(
-                            clientOrderId = clientOrderId,
-                            brokerOrderId = brokerOrderId,
-                            reason = "broker cancel",
-                            timestamp = now,
+                            clientOrderId = parsed.clientOrderId,
+                            brokerOrderId = parsed.brokerOrderId,
+                            reason = "WS-reported cancel",
+                            timestamp = clock.now(),
                         ),
                     )
                 "Rejected" ->
                     bus.publish(
                         BrokerEvent.OrderRejected(
-                            clientOrderId = clientOrderId,
-                            brokerOrderId = brokerOrderId,
-                            reason = obj["rejectReason"]?.jsonPrimitive?.content ?: "broker rejected",
-                            timestamp = now,
+                            clientOrderId = parsed.clientOrderId,
+                            brokerOrderId = parsed.brokerOrderId,
+                            reason = "WS-reported reject",
+                            timestamp = clock.now(),
                         ),
                     )
-                else -> log.debug("Bybit order frame status={} (no event)", status)
             }
+            symbolByClientOrderId[parsed.clientOrderId] = qktSymbol
         }
     }
 
     private fun onExecutionFrame(frame: JsonObject) {
-        val data = frame["data"]?.jsonArray ?: return
-        for (entry in data) {
+        val list = frame["data"]?.jsonArray ?: return
+        for (entry in list) {
             val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
             if (!seenExecIds.add(exec.execId)) continue
-            val qktSymbol = BybitSymbol.toQkt(category = "spot", bare = exec.bareSymbol)
+            val qktSymbol = "BYBIT_LINEAR:${exec.bareSymbol}"
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = exec.clientOrderId,

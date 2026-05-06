@@ -61,4 +61,16 @@ sealed interface BrokerEvent : Event {
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : BrokerEvent
+
+    data class PositionReconciled(
+        val symbol: String,
+        val oldQty: BigDecimal?,
+        val newQty: BigDecimal,
+        val oldAvgPx: BigDecimal?,
+        val newAvgPx: BigDecimal,
+        val source: String,
+        val reason: String,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
 }
