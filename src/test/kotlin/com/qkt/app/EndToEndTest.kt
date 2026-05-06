@@ -75,7 +75,7 @@ class EndToEndTest {
                 s.onTick(e.tick, testSessionContext()) { sig -> bus.publish(SignalEvent(sig)) }
             }
             bus.subscribe<CandleEvent> { e ->
-                s.onCandle(e.candle) { sig -> bus.publish(SignalEvent(sig)) }
+                s.onCandle(e.candle, testSessionContext()) { sig -> bus.publish(SignalEvent(sig)) }
             }
         }
         bus.subscribe<SignalEvent> { e ->
@@ -262,6 +262,7 @@ class EndToEndTest {
 
                 override fun onCandle(
                     candle: Candle,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {
                     emit(Signal.Buy(candle.symbol, Money.of("1")))
@@ -292,6 +293,7 @@ class EndToEndTest {
 
                 override fun onCandle(
                     candle: Candle,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {
                     sequence.add("onCandle(${candle.startTime})")
