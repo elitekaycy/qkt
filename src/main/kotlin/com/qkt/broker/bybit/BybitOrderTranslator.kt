@@ -1,9 +1,13 @@
 package com.qkt.broker.bybit
 
+import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
+import java.math.BigDecimal
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 object BybitOrderTranslator {
     fun toCreateBody(request: OrderRequest): String {
@@ -84,4 +88,58 @@ object BybitOrderTranslator {
         val price: String,
         val direction: Int,
     )
+
+    data class ParsedOpenOrder(
+        val clientOrderId: String,
+        val brokerOrderId: String?,
+        val bareSymbol: String,
+        val side: Side,
+        val status: String,
+    )
+
+    data class ParsedExecution(
+        val execId: String,
+        val clientOrderId: String,
+        val brokerOrderId: String?,
+        val bareSymbol: String,
+        val side: Side,
+        val price: BigDecimal,
+        val quantity: BigDecimal,
+    )
+
+    fun parseOpenOrder(json: JsonObject): ParsedOpenOrder {
+        val sideStr = json["side"]?.jsonPrimitive?.content ?: error("missing side: $json")
+        return ParsedOpenOrder(
+            clientOrderId = json["orderLinkId"]?.jsonPrimitive?.content ?: error("missing orderLinkId: $json"),
+            brokerOrderId = json["orderId"]?.jsonPrimitive?.content,
+            bareSymbol = json["symbol"]?.jsonPrimitive?.content ?: error("missing symbol: $json"),
+            side = if (sideStr == "Buy") Side.BUY else Side.SELL,
+            status = json["orderStatus"]?.jsonPrimitive?.content ?: error("missing orderStatus: $json"),
+        )
+    }
+
+    fun parseExecution(json: JsonObject): ParsedExecution {
+        val sideStr = json["side"]?.jsonPrimitive?.content ?: error("missing side: $json")
+        return ParsedExecution(
+            execId = json["execId"]?.jsonPrimitive?.content ?: error("missing execId: $json"),
+            clientOrderId = json["orderLinkId"]?.jsonPrimitive?.content ?: error("missing orderLinkId: $json"),
+            brokerOrderId = json["orderId"]?.jsonPrimitive?.content,
+            bareSymbol = json["symbol"]?.jsonPrimitive?.content ?: error("missing symbol: $json"),
+            side = if (sideStr == "Buy") Side.BUY else Side.SELL,
+            price =
+                json["execPrice"]
+                    ?.jsonPrimitive
+                    ?.content
+                    ?.toBigDecimal()
+                    ?.setScale(Money.SCALE, Money.ROUNDING)
+                    ?: error("missing execPrice: $json"),
+            quantity =
+                json["execQty"]
+                    ?.jsonPrimitive
+                    ?.content
+                    ?.toBigDecimal()
+                    ?.setScale(Money.SCALE, Money.ROUNDING)
+                    ?: error("missing execQty: $json"),
+        )
+    }
 }

@@ -5,6 +5,8 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -143,5 +145,37 @@ class BybitOrderTranslatorTest {
 
         val req2 = req1.copy(id = "c8", timeInForce = TimeInForce.FOK)
         assertThat(BybitOrderTranslator.toCreateBody(req2)).contains("\"timeInForce\":\"FOK\"")
+    }
+
+    @Test
+    fun `parseOpenOrder extracts orderLinkId orderId symbol side and status`() {
+        val json =
+            Json
+                .parseToJsonElement(
+                    """{"orderLinkId":"c1","orderId":"abc-123","symbol":"BTCUSDT","side":"Buy","orderStatus":"New","category":"spot"}""",
+                ).jsonObject
+        val parsed = BybitOrderTranslator.parseOpenOrder(json)
+        assertThat(parsed.clientOrderId).isEqualTo("c1")
+        assertThat(parsed.brokerOrderId).isEqualTo("abc-123")
+        assertThat(parsed.bareSymbol).isEqualTo("BTCUSDT")
+        assertThat(parsed.side).isEqualTo(Side.BUY)
+        assertThat(parsed.status).isEqualTo("New")
+    }
+
+    @Test
+    fun `parseExecution extracts execId price qty and orderLinkId`() {
+        val json =
+            Json
+                .parseToJsonElement(
+                    """{"orderLinkId":"c1","orderId":"abc-123","symbol":"BTCUSDT","side":"Buy","execPrice":"79998.5","execQty":"0.01","execId":"exec-99","category":"spot"}""",
+                ).jsonObject
+        val parsed = BybitOrderTranslator.parseExecution(json)
+        assertThat(parsed.execId).isEqualTo("exec-99")
+        assertThat(parsed.clientOrderId).isEqualTo("c1")
+        assertThat(parsed.brokerOrderId).isEqualTo("abc-123")
+        assertThat(parsed.bareSymbol).isEqualTo("BTCUSDT")
+        assertThat(parsed.side).isEqualTo(Side.BUY)
+        assertThat(parsed.price).isEqualByComparingTo(Money.of("79998.5"))
+        assertThat(parsed.quantity).isEqualByComparingTo(Money.of("0.01"))
     }
 }

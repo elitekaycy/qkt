@@ -273,7 +273,7 @@ class BybitSpotBrokerTest {
         val frame =
             Json
                 .parseToJsonElement(
-                    """{"topic":"execution","data":[{"orderLinkId":"c1","orderId":"abc-123","symbol":"BTCUSDT","side":"Buy","execPrice":"79998.5","execQty":"0.01","category":"spot"}]}""",
+                    """{"topic":"execution","data":[{"orderLinkId":"c1","orderId":"abc-123","symbol":"BTCUSDT","side":"Buy","execPrice":"79998.5","execQty":"0.01","execId":"e-1","category":"spot"}]}""",
                 ).jsonObject
         client.emitWsFrame("execution", frame)
 
