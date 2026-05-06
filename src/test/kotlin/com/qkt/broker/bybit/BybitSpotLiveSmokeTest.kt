@@ -1,8 +1,8 @@
 package com.qkt.broker.bybit
 
 import com.qkt.bus.EventBus
-import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Money
+import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
 import com.qkt.events.BrokerEvent

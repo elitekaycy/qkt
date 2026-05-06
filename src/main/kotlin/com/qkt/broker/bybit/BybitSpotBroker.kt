@@ -140,7 +140,11 @@ class BybitSpotBroker(
             )
         }
         val brokerOrderId =
-            tree["result"]?.jsonObject?.get("orderId")?.jsonPrimitive?.content
+            tree["result"]
+                ?.jsonObject
+                ?.get("orderId")
+                ?.jsonPrimitive
+                ?.content
         return SubmitAck(
             clientOrderId = clientOrderId,
             brokerOrderId = brokerOrderId,
