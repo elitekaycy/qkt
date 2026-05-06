@@ -116,4 +116,20 @@ class LiveTickFeedTest {
 
         assertThat(feed.droppedTicks.get()).isEqualTo(2L)
     }
+
+    @Test
+    fun `next returns null after source disconnects and queue drains`() {
+        val src = FakeSource()
+        val feed = LiveTickFeed(src, queueCapacity = 10, pollIntervalMs = 25)
+        src.onTick!!(tick("X", 1L, "100"))
+        src.onTick!!(tick("X", 2L, "101"))
+        src.onDisconnect!!()
+
+        val first = feed.next()
+        val second = feed.next()
+        val third = feed.next()
+        assertThat(first?.timestamp).isEqualTo(1L)
+        assertThat(second?.timestamp).isEqualTo(2L)
+        assertThat(third).isNull()
+    }
 }
