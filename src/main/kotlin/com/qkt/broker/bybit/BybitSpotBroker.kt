@@ -6,9 +6,11 @@ import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
+import com.qkt.common.net.PeriodicReconciler
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -22,6 +24,8 @@ class BybitSpotBroker(
     private val bus: EventBus,
     private val clock: Clock,
     private val recoveryWindowMs: Long = 5 * 60_000L,
+    private val pollIntervalMs: Long = 30_000L,
+    pollExecutor: ScheduledExecutorService? = null,
 ) : Broker {
     private val log = LoggerFactory.getLogger(BybitSpotBroker::class.java)
     private val json = Json { ignoreUnknownKeys = true }
@@ -30,6 +34,8 @@ class BybitSpotBroker(
     private val knownOrders: MutableMap<String, BybitStateRecovery.ManagedOrderView> = ConcurrentHashMap()
     private val seenExecIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
+
+    private val reconciler: PeriodicReconciler
 
     override val name: String = "BybitSpot"
 
@@ -59,6 +65,23 @@ class BybitSpotBroker(
                 seenExecIds = seenExecIds,
             )
         transport.onReconnect { recovery.reconcile() }
+
+        recovery.reconcile()
+
+        reconciler =
+            if (pollExecutor != null) {
+                PeriodicReconciler(
+                    intervalMs = pollIntervalMs,
+                    action = { recovery.reconcile() },
+                    executor = pollExecutor,
+                )
+            } else {
+                PeriodicReconciler(
+                    intervalMs = pollIntervalMs,
+                    action = { recovery.reconcile() },
+                )
+            }
+        reconciler.start()
 
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             symbolByClientOrderId.remove(e.clientOrderId)
@@ -247,5 +270,9 @@ class BybitSpotBroker(
             )
             lastFillTime.set(clock.now())
         }
+    }
+
+    fun close() {
+        reconciler.stop()
     }
 }
