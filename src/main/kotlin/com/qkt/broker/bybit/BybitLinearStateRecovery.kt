@@ -47,13 +47,14 @@ class BybitLinearStateRecovery(
         val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
         val openOrderIds = list.mapNotNull { it.jsonObject["orderLinkId"]?.jsonPrimitive?.content }.toSet()
         val known = getKnownOrders()
-        for ((id, _) in known) {
+        for ((id, view) in known) {
             if (id !in openOrderIds) {
                 bus.publish(
                     BrokerEvent.OrderCancelled(
                         clientOrderId = id,
                         brokerOrderId = null,
                         reason = "recovered: not in open list",
+                        strategyId = view.strategyId,
                         timestamp = clock.now(),
                     ),
                 )
@@ -81,6 +82,7 @@ class BybitLinearStateRecovery(
                 val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
                 if (!seenExecIds.add(exec.execId)) continue
                 val qktSymbol = "BYBIT_LINEAR:${exec.bareSymbol}"
+                val strategyId = getKnownOrders()[exec.clientOrderId]?.strategyId ?: ""
                 bus.publish(
                     BrokerEvent.OrderFilled(
                         clientOrderId = exec.clientOrderId,
@@ -89,6 +91,7 @@ class BybitLinearStateRecovery(
                         side = exec.side,
                         price = exec.price,
                         quantity = exec.quantity,
+                        strategyId = strategyId,
                         timestamp = clock.now(),
                     ),
                 )

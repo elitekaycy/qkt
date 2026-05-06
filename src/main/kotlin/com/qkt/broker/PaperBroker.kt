@@ -42,6 +42,7 @@ class PaperBroker(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
                 brokerOrderId = request.id,
+                strategyId = request.strategyId,
                 timestamp = clock.now(),
             ),
         )
@@ -61,6 +62,7 @@ class PaperBroker(
     }
 
     override fun cancel(orderId: String) {
+        val match = working.firstOrNull { it.id == orderId }
         val removed = working.removeAll { it.id == orderId }
         if (removed) {
             bus.publish(
@@ -68,6 +70,7 @@ class PaperBroker(
                     clientOrderId = orderId,
                     brokerOrderId = orderId,
                     reason = "user cancel",
+                    strategyId = match?.strategyId ?: "",
                     timestamp = clock.now(),
                 ),
             )
@@ -91,12 +94,13 @@ class PaperBroker(
                     clientOrderId = req.id,
                     brokerOrderId = req.id,
                     reason = "no price",
+                    strategyId = req.strategyId,
                     timestamp = clock.now(),
                 ),
             )
             return
         }
-        publishFill(req.id, req.symbol, req.side, px, req.quantity)
+        publishFill(req.id, req.symbol, req.side, px, req.quantity, req.strategyId)
     }
 
     private fun fillFromTrigger(
@@ -117,7 +121,7 @@ class PaperBroker(
                 is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
                 else -> error("PaperBroker fillFromTrigger received unexpected type: ${req::class.simpleName}")
             }
-        publishFill(req.id, req.symbol, side, fillPrice, qty)
+        publishFill(req.id, req.symbol, side, fillPrice, qty, req.strategyId)
     }
 
     private fun publishFill(
@@ -126,6 +130,7 @@ class PaperBroker(
         side: Side,
         price: BigDecimal,
         qty: BigDecimal,
+        strategyId: String,
     ) {
         bus.publish(
             BrokerEvent.OrderFilled(
@@ -135,6 +140,7 @@ class PaperBroker(
                 side = side,
                 price = price.setScale(Money.SCALE, Money.ROUNDING),
                 quantity = qty,
+                strategyId = strategyId,
                 timestamp = clock.now(),
             ),
         )

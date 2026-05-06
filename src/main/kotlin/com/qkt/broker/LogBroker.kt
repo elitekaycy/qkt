@@ -12,6 +12,8 @@ class LogBroker(
 ) : Broker {
     private val log = LoggerFactory.getLogger(LogBroker::class.java)
 
+    private val strategyByOrderId: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
+
     override val name: String = "Log"
 
     override val capabilities: Set<OrderTypeCapability> =
@@ -25,10 +27,12 @@ class LogBroker(
 
     override fun submit(request: OrderRequest): SubmitAck {
         log.info("ORDER: {}", request)
+        strategyByOrderId[request.id] = request.strategyId
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
                 brokerOrderId = request.id,
+                strategyId = request.strategyId,
                 timestamp = clock.now(),
             ),
         )
@@ -46,6 +50,7 @@ class LogBroker(
                 clientOrderId = orderId,
                 brokerOrderId = orderId,
                 reason = "user cancel",
+                strategyId = strategyByOrderId.remove(orderId) ?: "",
                 timestamp = clock.now(),
             ),
         )
