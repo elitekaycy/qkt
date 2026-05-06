@@ -74,6 +74,18 @@ class PositionTracker : PositionProvider {
         return realized
     }
 
+    fun reset(
+        symbol: String,
+        qty: BigDecimal,
+        avgPx: BigDecimal,
+    ) {
+        if (qty.signum() == 0) {
+            positions.remove(symbol)
+        } else {
+            positions[symbol] = Position(symbol, qty, avgPx)
+        }
+    }
+
     override fun positionFor(symbol: String): Position? = positions[symbol]
 
     override fun allPositions(): Map<String, Position> = positions.toMap()
