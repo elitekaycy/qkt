@@ -17,6 +17,7 @@ class LiveTickFeed(
 
     private val queue: LinkedBlockingQueue<Tick> = LinkedBlockingQueue(queueCapacity)
     private val closed: AtomicBoolean = AtomicBoolean(false)
+    private val sourceDisconnected: AtomicBoolean = AtomicBoolean(false)
 
     val droppedTicks: AtomicLong = AtomicLong(0)
 
@@ -30,7 +31,10 @@ class LiveTickFeed(
                 }
             },
             onError = { t -> log.warn("LiveTickFeed source error: ${t.message}", t) },
-            onDisconnect = { log.warn("LiveTickFeed source disconnected") },
+            onDisconnect = {
+                log.warn("LiveTickFeed source disconnected")
+                sourceDisconnected.set(true)
+            },
         )
     }
 
@@ -38,6 +42,7 @@ class LiveTickFeed(
         while (!closed.get()) {
             val t = queue.poll(pollIntervalMs, TimeUnit.MILLISECONDS)
             if (t != null) return t
+            if (sourceDisconnected.get()) return null
         }
         return queue.poll()
     }

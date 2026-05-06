@@ -60,7 +60,9 @@ sealed class TradingViewFrame {
                 } catch (e: Exception) {
                     throw TradingViewProtocolException("Cannot parse frame: $payload", e)
                 }
-            val obj = tree.jsonObject
+            val obj =
+                tree as? JsonObject
+                    ?: throw TradingViewProtocolException("Frame is not a JSON object: $payload")
             val method =
                 obj["m"]?.jsonPrimitive?.content
                     ?: throw TradingViewProtocolException("Frame missing 'm' field: $payload")

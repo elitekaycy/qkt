@@ -67,3 +67,10 @@ tasks.register<JavaExec>("runLiveDemo") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.qkt.app.LiveDemoKt")
 }
+
+tasks.register<JavaExec>("runMaxAudit") {
+    group = "application"
+    description = "End-to-end live audit across asset classes (FX, gold, crypto, stocks)"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.qkt.app.MaxAuditKt")
+}
