@@ -9,7 +9,7 @@ import com.qkt.events.BrokerEvent
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class BybitStateRecoveryTest {
+class BybitSpotStateRecoveryTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
 
     private fun emptyOpenOrdersResponse() = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
@@ -28,7 +28,7 @@ class BybitStateRecoveryTest {
         bus.subscribe<BrokerEvent.OrderCancelled> { emitted.add(it) }
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -53,11 +53,11 @@ class BybitStateRecoveryTest {
 
         val knownOrders =
             mapOf(
-                "c1" to BybitStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
-                "c2" to BybitStateRecovery.ManagedOrderView("c2", "BYBIT_SPOT:BTCUSDT", Side.SELL),
+                "c1" to BybitSpotStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
+                "c2" to BybitSpotStateRecovery.ManagedOrderView("c2", "BYBIT_SPOT:BTCUSDT", Side.SELL),
             )
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -84,10 +84,10 @@ class BybitStateRecoveryTest {
 
         val knownOrders =
             mapOf(
-                "c1" to BybitStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
+                "c1" to BybitSpotStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
             )
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -112,7 +112,7 @@ class BybitStateRecoveryTest {
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -141,7 +141,7 @@ class BybitStateRecoveryTest {
 
         val seenExecIds = mutableSetOf("e1")
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
@@ -161,7 +161,7 @@ class BybitStateRecoveryTest {
         client.responses["/v5/execution/list"] = emptyExecutionsResponse()
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),
@@ -184,7 +184,7 @@ class BybitStateRecoveryTest {
             """{"retCode":0,"retMsg":"OK","result":{"list":[{"accountType":"UNIFIED","coin":[{"coin":"BTC","walletBalance":"0.5"},{"coin":"USDT","walletBalance":"30000"}]}]}}"""
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),
@@ -211,7 +211,7 @@ class BybitStateRecoveryTest {
         bus.subscribe<BrokerEvent.BalancesUpdated> { received.add(it) }
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_234_567L),
@@ -235,7 +235,7 @@ class BybitStateRecoveryTest {
             """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),
@@ -258,7 +258,7 @@ class BybitStateRecoveryTest {
             """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = client,
                 bus = newBus(),
                 clock = FixedClock(0L),

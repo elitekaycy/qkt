@@ -31,7 +31,7 @@ class BybitSpotBroker(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val symbolByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
-    private val knownOrders: MutableMap<String, BybitStateRecovery.ManagedOrderView> = ConcurrentHashMap()
+    private val knownOrders: MutableMap<String, BybitSpotStateRecovery.ManagedOrderView> = ConcurrentHashMap()
     private val seenExecIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
 
@@ -56,7 +56,7 @@ class BybitSpotBroker(
         transport.subscribe("execution") { frame -> onExecutionFrame(frame) }
 
         val recovery =
-            BybitStateRecovery(
+            BybitSpotStateRecovery(
                 transport = transport,
                 bus = bus,
                 clock = clock,
@@ -131,7 +131,7 @@ class BybitSpotBroker(
         if (ack.accepted) {
             symbolByClientOrderId[request.id] = request.symbol
             knownOrders[request.id] =
-                BybitStateRecovery.ManagedOrderView(
+                BybitSpotStateRecovery.ManagedOrderView(
                     clientOrderId = request.id,
                     symbol = request.symbol,
                     side = request.side,

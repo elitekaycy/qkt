@@ -1,5 +1,6 @@
 package com.qkt.broker.bybit
 
+import com.qkt.broker.BrokerStateRecovery
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
@@ -10,15 +11,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
-class BybitStateRecovery(
+class BybitSpotStateRecovery(
     private val transport: BybitTransport,
     private val bus: EventBus,
     private val clock: Clock,
     private val getKnownOrders: () -> Map<String, ManagedOrderView>,
     private val lastFillTimeProvider: () -> Long,
     private val seenExecIds: MutableSet<String>,
-) {
-    private val log = LoggerFactory.getLogger(BybitStateRecovery::class.java)
+) : BrokerStateRecovery {
+    private val log = LoggerFactory.getLogger(BybitSpotStateRecovery::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
 
@@ -28,7 +29,7 @@ class BybitStateRecovery(
         val side: Side,
     )
 
-    fun reconcile() {
+    override fun reconcile() {
         synchronized(lock) {
             runCatching { reconcileOpenOrders() }
                 .onFailure { log.warn("Open-orders reconcile failed: {}", it.message) }
