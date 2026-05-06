@@ -36,6 +36,10 @@ class BybitConnectException(
 interface BybitTransport {
     val isConnected: Boolean
 
+    val balances: Map<String, java.math.BigDecimal>
+
+    fun updateBalances(snapshot: Map<String, java.math.BigDecimal>)
+
     fun postSigned(
         path: String,
         jsonBody: String,
@@ -120,6 +124,15 @@ class BybitClient(
         )
 
     override val isConnected: Boolean get() = connected.get()
+
+    private val balancesRef: AtomicReference<Map<String, java.math.BigDecimal>> = AtomicReference(emptyMap())
+
+    override val balances: Map<String, java.math.BigDecimal>
+        get() = balancesRef.get()
+
+    override fun updateBalances(snapshot: Map<String, java.math.BigDecimal>) {
+        balancesRef.set(snapshot.toMap())
+    }
 
     override fun onReconnect(handler: () -> Unit) {
         onReconnectListeners.add(handler)
