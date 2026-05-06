@@ -1,6 +1,6 @@
 package com.qkt.risk.rules
 
-import com.qkt.execution.Order
+import com.qkt.execution.OrderRequest
 import com.qkt.positions.PositionProvider
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskRule
@@ -13,10 +13,10 @@ class MaxOpenPositions(
     }
 
     override fun evaluate(
-        order: Order,
+        request: OrderRequest,
         positions: PositionProvider,
     ): Decision {
-        val openingNew = positions.positionFor(order.symbol) == null
+        val openingNew = positions.positionFor(request.symbol) == null
         if (!openingNew) return Decision.Approve
         val currentCount = positions.allPositions().size
         return if (currentCount < maxCount) {

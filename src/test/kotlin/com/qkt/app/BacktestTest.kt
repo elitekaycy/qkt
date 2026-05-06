@@ -112,7 +112,7 @@ class BacktestTest {
 
         assertThat(result.trades).isEmpty()
         assertThat(result.rejections).hasSize(1)
-        assertThat(result.rejections[0].order.symbol).isEqualTo("XAUUSD")
+        assertThat(result.rejections[0].request.symbol).isEqualTo("XAUUSD")
         assertThat(result.rejections[0].reason).contains("MaxPositionSize")
         assertThat(result.tradeCount).isEqualTo(0)
     }

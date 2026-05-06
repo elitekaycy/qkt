@@ -1,6 +1,6 @@
 package com.qkt.app
 
-import com.qkt.broker.MockBroker
+import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
@@ -33,7 +33,7 @@ fun main() {
     val positions = PositionTracker()
     val pnl = PnLCalculator(positions, priceTracker)
     val bus = EventBus(clock, sequencer)
-    val broker = MockBroker(clock, priceTracker)
+    val broker = PaperBroker(bus, clock, priceTracker)
     val engine = Engine(bus, priceTracker)
 
     val strategies: List<Strategy> =
@@ -81,12 +81,12 @@ fun main() {
                 )
             },
             onRejected = { e ->
-                val o = e.order
+                val r = e.request
                 log.info(
                     "REJECTED: {} {} {} ({})",
-                    o.side,
-                    o.quantity.stripTrailingZeros().toPlainString(),
-                    o.symbol,
+                    r.side,
+                    r.quantity.stripTrailingZeros().toPlainString(),
+                    r.symbol,
                     e.reason,
                 )
             },

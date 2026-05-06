@@ -1,6 +1,6 @@
 package com.qkt.app
 
-import com.qkt.broker.MockBroker
+import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
@@ -10,15 +10,16 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.engine.Engine
+import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
-import com.qkt.execution.Order
+import com.qkt.execution.OrderRequest
 import com.qkt.execution.Trade
-import com.qkt.execution.toOrder
+import com.qkt.execution.toOrderRequest
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
@@ -41,10 +42,10 @@ class EndToEndTest {
     private val tracker = MarketPriceTracker()
     private val positions = PositionTracker()
     private val bus = EventBus(clock, sequencer)
-    private val broker = MockBroker(clock, tracker)
+    private val broker = PaperBroker(bus, clock, tracker)
     private val engine = Engine(bus, tracker)
     private val trades = mutableListOf<Trade>()
-    private val orders = mutableListOf<Order>()
+    private val orders = mutableListOf<OrderRequest>()
     private val pnl = PnLCalculator(positions, tracker)
 
     private fun wirePipeline(
@@ -53,9 +54,19 @@ class EndToEndTest {
         rules: List<RiskRule> = emptyList(),
     ) {
         val riskEngine = RiskEngine(rules, positions)
-        bus.subscribe<TradeEvent> { e ->
-            val realized = positions.apply(e.trade)
+        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            val trade =
+                Trade(
+                    orderId = e.clientOrderId,
+                    symbol = e.symbol,
+                    price = e.price,
+                    quantity = e.quantity,
+                    side = e.side,
+                    timestamp = e.timestamp,
+                )
+            val realized = positions.apply(trade)
             pnl.recordRealized(realized)
+            bus.publish(TradeEvent(trade))
         }
         strategies.forEach { s ->
             bus.subscribe<TickEvent> { e ->
@@ -66,15 +77,15 @@ class EndToEndTest {
             }
         }
         bus.subscribe<SignalEvent> { e ->
-            val order = e.signal.toOrder(ids.next(), clock.now())
-            if (captureOrders) orders.add(order)
-            when (val decision = riskEngine.approve(order)) {
-                is Decision.Approve -> bus.publish(OrderEvent(order))
-                is Decision.Reject -> bus.publish(RiskRejectedEvent(order, decision.reason))
+            val request = e.signal.toOrderRequest(ids.next(), clock.now())
+            if (captureOrders) orders.add(request)
+            when (val decision = riskEngine.approve(request)) {
+                is Decision.Approve -> bus.publish(OrderEvent(request))
+                is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
             }
         }
         bus.subscribe<OrderEvent> { e ->
-            broker.execute(e.order)?.let { bus.publish(TradeEvent(it)) }
+            broker.submit(e.request)
         }
         bus.subscribe<TradeEvent> { e -> trades.add(e.trade) }
     }
@@ -313,7 +324,7 @@ class EndToEndTest {
 
         assertThat(trades).isEmpty()
         assertThat(rejections).hasSize(1)
-        assertThat(rejections[0].order.symbol).isEqualTo("XAUUSD")
+        assertThat(rejections[0].request.symbol).isEqualTo("XAUUSD")
         assertThat(rejections[0].reason).contains("MaxPositionSize")
     }
 

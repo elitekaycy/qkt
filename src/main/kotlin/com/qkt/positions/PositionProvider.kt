@@ -2,6 +2,7 @@ package com.qkt.positions
 
 import com.qkt.common.Money
 import com.qkt.common.Side
+import com.qkt.events.BrokerEvent
 import com.qkt.execution.Trade
 import java.math.BigDecimal
 
@@ -13,6 +14,19 @@ interface PositionProvider {
 
 class PositionTracker : PositionProvider {
     private val positions = mutableMapOf<String, Position>()
+
+    fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal {
+        val trade =
+            Trade(
+                orderId = event.clientOrderId,
+                symbol = event.symbol,
+                price = event.price,
+                quantity = event.quantity,
+                side = event.side,
+                timestamp = event.timestamp,
+            )
+        return apply(trade)
+    }
 
     fun apply(trade: Trade): BigDecimal {
         val current = positions[trade.symbol]
