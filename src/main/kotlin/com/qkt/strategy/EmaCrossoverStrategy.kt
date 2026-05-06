@@ -33,6 +33,7 @@ class EmaCrossoverStrategy(
 
     override fun onCandle(
         candle: Candle,
+        ctx: SessionContext,
         emit: (Signal) -> Unit,
     ) {
         if (candle.symbol != symbol) return

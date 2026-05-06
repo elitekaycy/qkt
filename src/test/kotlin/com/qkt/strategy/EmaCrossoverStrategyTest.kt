@@ -28,7 +28,7 @@ class EmaCrossoverStrategyTest {
     ): List<Signal> {
         val signals = mutableListOf<Signal>()
         closes.forEachIndexed { i, c ->
-            strategy.onCandle(candle(c, ts = i.toLong())) { signals.add(it) }
+            strategy.onCandle(candle(c, ts = i.toLong()), testSessionContext()) { signals.add(it) }
         }
         return signals
     }

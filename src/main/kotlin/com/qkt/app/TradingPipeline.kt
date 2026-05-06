@@ -62,7 +62,7 @@ class TradingPipeline(
                 strategy.onTick(e.tick, sessionContext) { sig -> bus.publish(SignalEvent(sig)) }
             }
             bus.subscribe<CandleEvent> { e ->
-                strategy.onCandle(e.candle) { sig -> bus.publish(SignalEvent(sig)) }
+                strategy.onCandle(e.candle, sessionContext) { sig -> bus.publish(SignalEvent(sig)) }
             }
         }
         bus.subscribe<SignalEvent> { e ->

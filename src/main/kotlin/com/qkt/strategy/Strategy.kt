@@ -12,6 +12,7 @@ interface Strategy {
 
     fun onCandle(
         candle: Candle,
+        ctx: SessionContext,
         emit: (Signal) -> Unit,
     ) {}
 }
