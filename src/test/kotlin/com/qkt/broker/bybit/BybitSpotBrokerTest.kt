@@ -22,7 +22,7 @@ class BybitSpotBrokerTest {
     @Test
     fun `name capabilities and supports`() {
         val client = FakeBybitClient()
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
         assertThat(broker.name).isEqualTo("BybitSpot")
         assertThat(broker.capabilities).contains(
             OrderTypeCapability.MARKET,
@@ -41,7 +41,7 @@ class BybitSpotBrokerTest {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc-123","orderLinkId":"c1"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
 
         val ack =
             broker.submit(
@@ -67,7 +67,7 @@ class BybitSpotBrokerTest {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc-456","orderLinkId":"c2"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
 
         val ack =
             broker.submit(
@@ -94,7 +94,7 @@ class BybitSpotBrokerTest {
         val bus = newBus()
         val rejects = mutableListOf<BrokerEvent.OrderRejected>()
         bus.subscribe<BrokerEvent.OrderRejected> { e -> rejects.add(e) }
-        val broker = BybitSpotBroker(client, bus, FixedClock(0L))
+        val broker = BybitSpotBroker(client, bus, FixedClock(0L)).also { client.posts.clear() }
 
         val ack =
             broker.submit(
@@ -119,7 +119,7 @@ class BybitSpotBrokerTest {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc-stop","orderLinkId":"c-stop"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
 
         broker.submit(
             OrderRequest.Stop(
@@ -142,7 +142,7 @@ class BybitSpotBrokerTest {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
 
         broker.submit(
             OrderRequest.StopLimit(
@@ -167,7 +167,7 @@ class BybitSpotBrokerTest {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
 
         broker.submit(
             OrderRequest.IfTouched(
@@ -193,7 +193,7 @@ class BybitSpotBrokerTest {
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c1"}}"""
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c1"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
         broker.submit(
             OrderRequest.Limit(
                 id = "c1",
@@ -218,7 +218,7 @@ class BybitSpotBrokerTest {
     @Test
     fun `cancel of unknown order is a no-op`() {
         val client = FakeBybitClient()
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
         broker.cancel("does-not-exist")
         assertThat(client.posts).isEmpty()
     }
@@ -291,7 +291,7 @@ class BybitSpotBrokerTest {
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c1"}}"""
         client.responses["/v5/order/amend"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c1"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L))
+        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
 
         broker.submit(
             OrderRequest.Limit(

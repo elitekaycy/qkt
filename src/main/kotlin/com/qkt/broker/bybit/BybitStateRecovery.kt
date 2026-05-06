@@ -20,6 +20,7 @@ class BybitStateRecovery(
 ) {
     private val log = LoggerFactory.getLogger(BybitStateRecovery::class.java)
     private val json = Json { ignoreUnknownKeys = true }
+    private val lock = Any()
 
     data class ManagedOrderView(
         val clientOrderId: String,
@@ -28,10 +29,27 @@ class BybitStateRecovery(
     )
 
     fun reconcile() {
-        runCatching { reconcileOpenOrders() }
-            .onFailure { log.warn("Open-orders reconcile failed: {}", it.message) }
-        runCatching { reconcileExecutions() }
-            .onFailure { log.warn("Executions reconcile failed: {}", it.message) }
+        synchronized(lock) {
+            runCatching { reconcileOpenOrders() }
+                .onFailure { log.warn("Open-orders reconcile failed: {}", it.message) }
+            runCatching { reconcileExecutions() }
+                .onFailure { log.warn("Executions reconcile failed: {}", it.message) }
+            runCatching { reconcileBalances() }
+                .onFailure { log.warn("Balances reconcile failed: {}", it.message) }
+        }
+    }
+
+    private fun reconcileBalances() {
+        val response = transport.postSigned("/v5/account/wallet-balance", """{"accountType":"UNIFIED"}""")
+        val parsed = BybitBalanceTranslator.parseWalletBalance(response)
+        transport.updateBalances(parsed)
+        bus.publish(
+            BrokerEvent.BalancesUpdated(
+                balances = parsed,
+                source = "BYBIT_SPOT",
+                timestamp = clock.now(),
+            ),
+        )
     }
 
     private fun reconcileOpenOrders() {

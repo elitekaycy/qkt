@@ -1,7 +1,11 @@
 package com.qkt.events
 
+import com.qkt.bus.EventBus
+import com.qkt.common.FixedClock
 import com.qkt.common.Money
+import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -68,5 +72,30 @@ class BrokerEventTest {
                 reason = "user cancel",
             )
         assertThat(e.reason).isEqualTo("user cancel")
+    }
+
+    @Test
+    fun `BalancesUpdated round-trips through the EventBus`() {
+        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+        val received = mutableListOf<BrokerEvent.BalancesUpdated>()
+        bus.subscribe<BrokerEvent.BalancesUpdated> { received.add(it) }
+
+        bus.publish(
+            BrokerEvent.BalancesUpdated(
+                balances = mapOf("BTC" to BigDecimal("0.5"), "USDT" to BigDecimal("30000")),
+                source = "BYBIT_SPOT",
+            ),
+        )
+
+        assertThat(received).hasSize(1)
+        assertThat(received.single().source).isEqualTo("BYBIT_SPOT")
+        assertThat(received.single().balances["BTC"]).isEqualByComparingTo(BigDecimal("0.5"))
+    }
+
+    @Test
+    fun `OrderEvent marker is reachable from order variants`() {
+        val accepted: BrokerEvent.OrderEvent =
+            BrokerEvent.OrderAccepted(clientOrderId = "c1", brokerOrderId = "b1")
+        assertThat(accepted.clientOrderId).isEqualTo("c1")
     }
 }

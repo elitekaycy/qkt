@@ -31,7 +31,7 @@ class LogBrokerTest {
     @Test
     fun `submit emits OrderAccepted and returns accepted=true`() {
         val bus = newBus()
-        val received = mutableListOf<BrokerEvent>()
+        val received = mutableListOf<BrokerEvent.OrderAccepted>()
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> received.add(e) }
         val b = LogBroker(bus, FixedClock(time = 100L))
 

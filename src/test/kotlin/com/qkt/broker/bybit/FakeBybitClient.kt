@@ -1,5 +1,6 @@
 package com.qkt.broker.bybit
 
+import java.math.BigDecimal
 import kotlinx.serialization.json.JsonObject
 
 class FakeBybitClient : BybitTransport {
@@ -17,6 +18,15 @@ class FakeBybitClient : BybitTransport {
     private val onReconnectListeners: MutableList<() -> Unit> = mutableListOf()
 
     override var isConnected: Boolean = true
+
+    private var balancesCache: Map<String, BigDecimal> = emptyMap()
+
+    override val balances: Map<String, BigDecimal>
+        get() = balancesCache
+
+    override fun updateBalances(snapshot: Map<String, BigDecimal>) {
+        balancesCache = snapshot.toMap()
+    }
 
     override fun postSigned(
         path: String,

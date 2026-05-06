@@ -174,4 +174,106 @@ class BybitStateRecoveryTest {
         val executionPost = client.posts.first { it.path == "/v5/execution/list" }
         assertThat(executionPost.body).contains("\"startTime\":940000")
     }
+
+    @Test
+    fun `reconcile fetches wallet balance and writes it to the transport cache`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
+        client.responses["/v5/execution/list"] = emptyExecutionsResponse()
+        client.responses["/v5/account/wallet-balance"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[{"accountType":"UNIFIED","coin":[{"coin":"BTC","walletBalance":"0.5"},{"coin":"USDT","walletBalance":"30000"}]}]}}"""
+
+        val recovery =
+            BybitStateRecovery(
+                transport = client,
+                bus = newBus(),
+                clock = FixedClock(0L),
+                getKnownOrders = { emptyMap() },
+                lastFillTimeProvider = { 0L },
+                seenExecIds = mutableSetOf(),
+            )
+        recovery.reconcile()
+
+        assertThat(client.balances).containsOnlyKeys("BTC", "USDT")
+        assertThat(client.balances["BTC"]).isEqualByComparingTo(java.math.BigDecimal("0.5"))
+    }
+
+    @Test
+    fun `reconcile publishes BalancesUpdated event with source BYBIT_SPOT`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
+        client.responses["/v5/execution/list"] = emptyExecutionsResponse()
+        client.responses["/v5/account/wallet-balance"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[{"accountType":"UNIFIED","coin":[{"coin":"BTC","walletBalance":"0.5"}]}]}}"""
+
+        val bus = newBus()
+        val received = mutableListOf<BrokerEvent.BalancesUpdated>()
+        bus.subscribe<BrokerEvent.BalancesUpdated> { received.add(it) }
+
+        val recovery =
+            BybitStateRecovery(
+                transport = client,
+                bus = bus,
+                clock = FixedClock(1_234_567L),
+                getKnownOrders = { emptyMap() },
+                lastFillTimeProvider = { 0L },
+                seenExecIds = mutableSetOf(),
+            )
+        recovery.reconcile()
+
+        assertThat(received).hasSize(1)
+        assertThat(received.single().source).isEqualTo("BYBIT_SPOT")
+        assertThat(received.single().balances).containsKey("BTC")
+    }
+
+    @Test
+    fun `reconcile sends accountType UNIFIED in wallet-balance request body`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
+        client.responses["/v5/execution/list"] = emptyExecutionsResponse()
+        client.responses["/v5/account/wallet-balance"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+
+        val recovery =
+            BybitStateRecovery(
+                transport = client,
+                bus = newBus(),
+                clock = FixedClock(0L),
+                getKnownOrders = { emptyMap() },
+                lastFillTimeProvider = { 0L },
+                seenExecIds = mutableSetOf(),
+            )
+        recovery.reconcile()
+
+        val balancePost = client.posts.first { it.path == "/v5/account/wallet-balance" }
+        assertThat(balancePost.body).contains("\"accountType\":\"UNIFIED\"")
+    }
+
+    @Test
+    fun `concurrent calls to reconcile are serialized`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
+        client.responses["/v5/execution/list"] = emptyExecutionsResponse()
+        client.responses["/v5/account/wallet-balance"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+
+        val recovery =
+            BybitStateRecovery(
+                transport = client,
+                bus = newBus(),
+                clock = FixedClock(0L),
+                getKnownOrders = { emptyMap() },
+                lastFillTimeProvider = { 0L },
+                seenExecIds = mutableSetOf(),
+            )
+
+        val threads =
+            (1..8).map {
+                Thread { recovery.reconcile() }
+            }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+
+        assertThat(client.posts).hasSize(24)
+    }
 }
