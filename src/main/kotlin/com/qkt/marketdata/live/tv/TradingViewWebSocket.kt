@@ -16,12 +16,25 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import org.slf4j.LoggerFactory
 
+interface TradingViewWebSocketLike {
+    fun addListener(listener: TradingViewListener)
+
+    fun removeListener(listener: TradingViewListener)
+
+    fun send(
+        method: String,
+        params: List<Any>,
+    )
+
+    fun close()
+}
+
 class TradingViewWebSocket(
     private val url: String = DEFAULT_URL,
     private val origin: String = DEFAULT_ORIGIN,
     private val authToken: String = ANONYMOUS_TOKEN,
     private val client: OkHttpClient = defaultClient(),
-) {
+) : TradingViewWebSocketLike {
     private val log = LoggerFactory.getLogger(TradingViewWebSocket::class.java)
 
     private val listeners: MutableList<TradingViewListener> = CopyOnWriteArrayList()
@@ -29,11 +42,11 @@ class TradingViewWebSocket(
     private val closed: AtomicBoolean = AtomicBoolean(false)
     private val buffer = StringBuilder()
 
-    fun addListener(listener: TradingViewListener) {
+    override fun addListener(listener: TradingViewListener) {
         listeners.add(listener)
     }
 
-    fun removeListener(listener: TradingViewListener) {
+    override fun removeListener(listener: TradingViewListener) {
         listeners.remove(listener)
     }
 
@@ -49,7 +62,7 @@ class TradingViewWebSocket(
         socket.set(webSocket)
     }
 
-    fun send(
+    override fun send(
         method: String,
         params: List<Any>,
     ) {
@@ -63,7 +76,7 @@ class TradingViewWebSocket(
         ws.send(framed)
     }
 
-    fun close() {
+    override fun close() {
         if (closed.compareAndSet(false, true)) {
             socket.get()?.close(1000, "client close")
         }
