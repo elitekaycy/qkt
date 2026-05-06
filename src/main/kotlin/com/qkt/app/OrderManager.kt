@@ -113,8 +113,63 @@ class OrderManager(
 
             is OrderRequest.OTO -> submitOto(request)
 
+            is OrderRequest.Bracket ->
+                if (OrderTypeCapability.BRACKET in broker.capabilities) {
+                    submitToBroker(request)
+                } else {
+                    submitBracketFallback(request)
+                }
+
             else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
         }
+
+    private fun submitBracketFallback(req: OrderRequest.Bracket): SubmitAck {
+        val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
+        val tp =
+            OrderRequest.Limit(
+                id = "${req.id}-tp",
+                symbol = req.symbol,
+                side = exitSide,
+                quantity = req.quantity,
+                limitPrice = req.takeProfit,
+                timeInForce = req.timeInForce,
+                timestamp = clock.now(),
+            )
+        val sl =
+            OrderRequest.Stop(
+                id = "${req.id}-sl",
+                symbol = req.symbol,
+                side = exitSide,
+                quantity = req.quantity,
+                stopPrice = req.stopLoss,
+                timeInForce = req.timeInForce,
+                timestamp = clock.now(),
+            )
+        val oco =
+            OrderRequest.StandaloneOCO(
+                id = "${req.id}-oco",
+                symbol = req.symbol,
+                side = exitSide,
+                quantity = req.quantity,
+                leg1 = tp,
+                leg2 = sl,
+                timeInForce = req.timeInForce,
+                timestamp = clock.now(),
+            )
+        val oto =
+            OrderRequest.OTO(
+                id = req.id,
+                symbol = req.symbol,
+                side = req.side,
+                quantity = req.quantity,
+                parent = req.entry,
+                children = listOf(oco),
+                timeInForce = req.timeInForce,
+                timestamp = clock.now(),
+            )
+        orders.remove(req.id)
+        return submit(oto)
+    }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
         update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
