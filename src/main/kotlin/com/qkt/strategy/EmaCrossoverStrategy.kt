@@ -26,14 +26,14 @@ class EmaCrossoverStrategy(
 
     override fun onTick(
         tick: Tick,
-        ctx: SessionContext,
+        ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
     }
 
     override fun onCandle(
         candle: Candle,
-        ctx: SessionContext,
+        ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
         if (candle.symbol != symbol) return

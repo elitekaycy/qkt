@@ -6,13 +6,13 @@ import com.qkt.marketdata.Tick
 interface Strategy {
     fun onTick(
         tick: Tick,
-        ctx: SessionContext,
+        ctx: StrategyContext,
         emit: (Signal) -> Unit,
     )
 
     fun onCandle(
         candle: Candle,
-        ctx: SessionContext,
+        ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {}
 }

@@ -4,9 +4,9 @@ import com.qkt.common.Money
 import com.qkt.marketdata.Tick
 import com.qkt.risk.RiskRule
 import com.qkt.risk.rules.MaxPositionSize
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -23,7 +23,7 @@ class BacktestTest {
     ) = object : Strategy {
         override fun onTick(
             t: Tick,
-            ctx: SessionContext,
+            ctx: StrategyContext,
             emit: (Signal) -> Unit,
         ) {
             emit(Signal.Buy(symbol, Money.of(size)))
@@ -38,7 +38,7 @@ class BacktestTest {
 
         override fun onTick(
             t: Tick,
-            ctx: SessionContext,
+            ctx: StrategyContext,
             emit: (Signal) -> Unit,
         ) {
             when (step++) {
@@ -71,7 +71,7 @@ class BacktestTest {
     fun `single buy produces one trade and zero realized`() {
         val result =
             Backtest(
-                strategies = listOf(buyEveryTickStrategy("XAUUSD", "1")),
+                strategies = listOf("test" to buyEveryTickStrategy("XAUUSD", "1")),
                 ticks = listOf(tick("XAUUSD", "100", 1L)),
             ).run()
 
@@ -86,7 +86,7 @@ class BacktestTest {
     fun `buy then sell produces realized PnL and increments win rate`() {
         val result =
             Backtest(
-                strategies = listOf(buyThenSellStrategy("XAUUSD", "1")),
+                strategies = listOf("test" to buyThenSellStrategy("XAUUSD", "1")),
                 ticks =
                     listOf(
                         tick("XAUUSD", "100", 1L),
@@ -108,7 +108,7 @@ class BacktestTest {
         val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = Money.of("0.5")))
         val result =
             Backtest(
-                strategies = listOf(buyEveryTickStrategy("XAUUSD", "1")),
+                strategies = listOf("test" to buyEveryTickStrategy("XAUUSD", "1")),
                 rules = rules,
                 ticks = listOf(tick("XAUUSD", "100", 1L)),
             ).run()
@@ -126,20 +126,21 @@ class BacktestTest {
             Backtest(
                 strategies =
                     listOf(
-                        object : Strategy {
-                            private var done = false
+                        "test" to
+                            object : Strategy {
+                                private var done = false
 
-                            override fun onTick(
-                                t: Tick,
-                                ctx: SessionContext,
-                                emit: (Signal) -> Unit,
-                            ) {
-                                if (!done) {
-                                    emit(Signal.Buy("XAUUSD", Money.of("1")))
-                                    done = true
+                                override fun onTick(
+                                    t: Tick,
+                                    ctx: StrategyContext,
+                                    emit: (Signal) -> Unit,
+                                ) {
+                                    if (!done) {
+                                        emit(Signal.Buy("XAUUSD", Money.of("1")))
+                                        done = true
+                                    }
                                 }
-                            }
-                        },
+                            },
                     ),
                 ticks =
                     listOf(
@@ -157,7 +158,7 @@ class BacktestTest {
         val rules = listOf<RiskRule>(MaxPositionSize("XAUUSD", maxQty = Money.of("2")))
         val result =
             Backtest(
-                strategies = listOf(buyEveryTickStrategy("XAUUSD", "1")),
+                strategies = listOf("test" to buyEveryTickStrategy("XAUUSD", "1")),
                 rules = rules,
                 ticks =
                     listOf(

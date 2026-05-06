@@ -10,8 +10,9 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.strategy.Mode
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
+import com.qkt.strategy.StrategyContext
+import com.qkt.strategy.testStrategyContext
 import java.time.Duration
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
@@ -49,8 +50,8 @@ class RollingHighBreakoutStrategyTest {
             ): Sequence<Candle> = sequenceOf(candle(rangeHigh, range.from.toEpochMilli()))
         }
 
-    private fun ctx(rangeHigh: String): SessionContext =
-        SessionContext(
+    private fun ctx(rangeHigh: String): StrategyContext =
+        testStrategyContext(
             mode = Mode.BACKTEST,
             clock = FixedClock(time = now.toEpochMilli()),
             calendar = TradingCalendar.crypto(),

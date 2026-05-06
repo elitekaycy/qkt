@@ -102,7 +102,7 @@ private fun phaseStrategy(
     val strategy = MaxAuditStrategy(symbols)
     val handle =
         LiveSession(
-            strategies = listOf(strategy),
+            strategies = listOf("max-audit" to strategy),
             rules = symbols.map { MaxPositionSize(it, Money.of("1")) },
             source = source,
             symbols = symbols,

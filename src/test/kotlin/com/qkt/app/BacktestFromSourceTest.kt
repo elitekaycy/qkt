@@ -29,7 +29,10 @@ class BacktestFromSourceTest {
         val viaSource =
             Backtest
                 .fromSource(
-                    strategies = listOf(EveryNthTickBuyStrategy(symbol = "EURUSD", n = 2, size = Money.of("1"))),
+                    strategies =
+                        listOf(
+                            "test" to EveryNthTickBuyStrategy(symbol = "EURUSD", n = 2, size = Money.of("1")),
+                        ),
                     source = source,
                     request = request,
                 ).run()
@@ -37,7 +40,10 @@ class BacktestFromSourceTest {
         val viaStore =
             Backtest
                 .fromStore(
-                    strategies = listOf(EveryNthTickBuyStrategy(symbol = "EURUSD", n = 2, size = Money.of("1"))),
+                    strategies =
+                        listOf(
+                            "test" to EveryNthTickBuyStrategy(symbol = "EURUSD", n = 2, size = Money.of("1")),
+                        ),
                     store = store,
                     request = request,
                 ).run()

@@ -16,11 +16,12 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.pnl.PnLCalculator
+import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.strategy.Mode
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
@@ -34,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
 class LiveSession(
-    private val strategies: List<Strategy>,
+    private val strategies: List<Pair<String, Strategy>>,
     private val rules: List<RiskRule> = emptyList(),
     private val source: MarketSource,
     private val symbols: List<String>,
@@ -52,20 +53,14 @@ class LiveSession(
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
         val pnl = PnLCalculator(positions, priceTracker)
+        val strategyPositions = StrategyPositionTracker()
+        val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val riskEngine = RiskEngine(rules, positions)
 
         val trades: MutableList<Trade> = CopyOnWriteArrayList()
-
-        val ctx =
-            SessionContext(
-                mode = Mode.LIVE,
-                clock = clock,
-                calendar = calendar,
-                source = source,
-            )
 
         val pipeline =
             TradingPipeline(
@@ -75,12 +70,16 @@ class LiveSession(
                 priceTracker = priceTracker,
                 positions = positions,
                 pnl = pnl,
+                strategyPositions = strategyPositions,
+                strategyPnL = strategyPnL,
                 bus = bus,
                 broker = broker,
                 engine = engine,
                 strategies = strategies,
                 riskEngine = riskEngine,
-                sessionContext = ctx,
+                mode = Mode.LIVE,
+                calendar = calendar,
+                source = source,
                 candleWindow = candleWindow,
                 onFilled = { trade, _ -> trades.add(trade) },
             )
@@ -91,6 +90,7 @@ class LiveSession(
         val effectiveWarmup =
             warmupOverride
                 ?: strategies
+                    .map { it.second }
                     .filterIsInstance<Warmable>()
                     .maxByOrNull { it.warmup.windowMs(now) }
                     ?.warmup

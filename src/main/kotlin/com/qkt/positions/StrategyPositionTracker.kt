@@ -79,11 +79,9 @@ class StrategyPositionTracker {
         symbol: String,
     ): Position? = byStrategy[strategyId]?.get(symbol)
 
-    fun positionsFor(strategyId: String): Map<String, Position> =
-        byStrategy[strategyId]?.toMap() ?: emptyMap()
+    fun positionsFor(strategyId: String): Map<String, Position> = byStrategy[strategyId]?.toMap() ?: emptyMap()
 
-    fun allByStrategy(): Map<String, Map<String, Position>> =
-        byStrategy.mapValues { it.value.toMap() }
+    fun allByStrategy(): Map<String, Map<String, Position>> = byStrategy.mapValues { it.value.toMap() }
 
     fun driftFor(
         symbol: String,

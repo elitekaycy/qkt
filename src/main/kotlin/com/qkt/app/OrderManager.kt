@@ -14,9 +14,9 @@ import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.TrailMode
-import com.qkt.execution.withStrategyId
 import com.qkt.execution.TriggerType
 import com.qkt.execution.isTerminal
+import com.qkt.execution.withStrategyId
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal

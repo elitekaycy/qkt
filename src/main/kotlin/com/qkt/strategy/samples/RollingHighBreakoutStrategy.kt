@@ -7,9 +7,9 @@ import com.qkt.common.TimeMark
 import com.qkt.common.TimeRange
 import com.qkt.indicators.range.RangeAggregateIndicator
 import com.qkt.marketdata.Tick
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
 import java.math.BigDecimal
@@ -39,7 +39,7 @@ class RollingHighBreakoutStrategy(
 
     override fun onTick(
         tick: Tick,
-        ctx: SessionContext,
+        ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
         if (tick.symbol != symbol) return

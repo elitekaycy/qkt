@@ -8,9 +8,9 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSourceCapability
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.WarmupSpec
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
@@ -40,7 +40,7 @@ class BacktestWarmupTest {
 
         override fun onTick(
             tick: Tick,
-            ctx: SessionContext,
+            ctx: StrategyContext,
             emit: (Signal) -> Unit,
         ) {
             ticks++
@@ -93,7 +93,7 @@ class BacktestWarmupTest {
         val a =
             Backtest
                 .fromSource(
-                    strategies = listOf(CountingStrategy()),
+                    strategies = listOf("test" to CountingStrategy()),
                     source = src,
                     request = request,
                     warmupSpec = WarmupSpec.None,
@@ -101,7 +101,7 @@ class BacktestWarmupTest {
         val b =
             Backtest
                 .fromSource(
-                    strategies = listOf(CountingStrategy()),
+                    strategies = listOf("test" to CountingStrategy()),
                     source = src,
                     request = request,
                     warmupSpec = WarmupSpec.None,
@@ -123,7 +123,7 @@ class BacktestWarmupTest {
 
         Backtest
             .fromSource(
-                strategies = listOf(strategy),
+                strategies = listOf("test" to strategy),
                 source = src,
                 request = request,
                 warmupSpec = WarmupSpec.Bars(TimeWindow.ONE_MINUTE, count = 30),
@@ -145,7 +145,7 @@ class BacktestWarmupTest {
             val src = seedSource()
             return Backtest
                 .fromSource(
-                    strategies = listOf(CountingStrategy()),
+                    strategies = listOf("test" to CountingStrategy()),
                     source = src,
                     request = request,
                     warmupSpec = WarmupSpec.Bars(TimeWindow.ONE_MINUTE, count = 30),
