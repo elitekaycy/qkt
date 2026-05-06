@@ -93,4 +93,131 @@ sealed interface OrderRequest {
             }
         }
     }
+
+    data class TrailingStop(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val trailAmount: BigDecimal,
+        val trailMode: TrailMode,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(trailAmount.signum() > 0) { "trailAmount must be > 0: $trailAmount" }
+            if (trailMode == TrailMode.PERCENT) {
+                require(trailAmount <= BigDecimal("100")) {
+                    "PERCENT trailAmount must be <= 100: $trailAmount"
+                }
+            }
+        }
+    }
+
+    data class TrailingStopLimit(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val trailAmount: BigDecimal,
+        val trailMode: TrailMode,
+        val limitOffset: BigDecimal,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(trailAmount.signum() > 0) { "trailAmount must be > 0: $trailAmount" }
+            require(limitOffset.signum() >= 0) { "limitOffset must be >= 0: $limitOffset" }
+        }
+    }
+
+    data class StandaloneOCO(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val leg1: OrderRequest,
+        val leg2: OrderRequest,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+        }
+    }
+
+    data class OTO(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val parent: OrderRequest,
+        val children: List<OrderRequest>,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(children.isNotEmpty()) { "OTO must have at least one child" }
+        }
+    }
+
+    data class Bracket(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val entry: OrderRequest,
+        val takeProfit: BigDecimal,
+        val stopLoss: BigDecimal,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(takeProfit.signum() > 0) { "takeProfit must be > 0: $takeProfit" }
+            require(stopLoss.signum() > 0) { "stopLoss must be > 0: $stopLoss" }
+            require(takeProfit.compareTo(stopLoss) != 0) {
+                "takeProfit and stopLoss must differ: tp=$takeProfit sl=$stopLoss"
+            }
+        }
+    }
+
+    data class ScaleOut(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val basis: OrderRequest,
+        val legs: List<ScaleOutLeg>,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(legs.isNotEmpty()) { "ScaleOut requires at least one leg" }
+            val totalFraction = legs.fold(BigDecimal.ZERO) { acc, l -> acc + l.fraction }
+            require(totalFraction <= BigDecimal.ONE) {
+                "ScaleOut total fraction exceeds 1.0: $totalFraction"
+            }
+        }
+    }
+
+    data class TimeExit(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val target: OrderRequest,
+        val deadline: java.time.Instant,
+        val onExpiry: ExpiryAction,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+        }
+    }
 }

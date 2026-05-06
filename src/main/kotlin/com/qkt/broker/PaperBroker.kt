@@ -46,6 +46,7 @@ class PaperBroker(
             is OrderRequest.StopLimit, is OrderRequest.IfTouched,
             ->
                 working.add(request)
+            else -> error("PaperBroker received unexpected order type: ${request::class.simpleName}")
         }
         return SubmitAck(
             clientOrderId = request.id,
@@ -109,6 +110,7 @@ class PaperBroker(
                         Triple(req.limitPrice!!, req.side, req.quantity)
                     }
                 is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
+                else -> error("PaperBroker fillFromTrigger received unexpected type: ${req::class.simpleName}")
             }
         publishFill(req.id, req.symbol, side, fillPrice, qty)
     }
@@ -147,5 +149,6 @@ class PaperBroker(
             is OrderRequest.IfTouched ->
                 if (req.side == Side.BUY) tickPrice <= req.triggerPrice else tickPrice >= req.triggerPrice
             is OrderRequest.Market -> false
+            else -> false
         }
 }
