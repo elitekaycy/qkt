@@ -87,7 +87,11 @@ class TradingViewChartSession(
         row: JsonObject,
     ): Candle {
         val v = row["v"]?.jsonArray ?: error("timescale_update row missing v: $row")
-        val timeSeconds = v[0].jsonPrimitive.content.toLong()
+        val timeSeconds =
+            v[0]
+                .jsonPrimitive.content
+                .toBigDecimal()
+                .toLong()
         val open = v[1].jsonPrimitive.content.toBigDecimal()
         val high = v[2].jsonPrimitive.content.toBigDecimal()
         val low = v[3].jsonPrimitive.content.toBigDecimal()
