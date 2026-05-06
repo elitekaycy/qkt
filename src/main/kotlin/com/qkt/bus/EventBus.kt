@@ -6,6 +6,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
+import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
@@ -54,6 +55,8 @@ class EventBus(
             is BrokerEvent.OrderCancelled -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.BalancesUpdated -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.PositionReconciled -> event.copy(timestamp = ts, sequenceId = seq)
+            is RiskEvent.Halted -> event.copy(timestamp = ts, sequenceId = seq)
+            is RiskEvent.Resumed -> event.copy(timestamp = ts, sequenceId = seq)
         }
     }
 }
