@@ -41,7 +41,11 @@ class BybitSpotStateRecovery(
     }
 
     private fun reconcileBalances() {
-        val response = transport.postSigned("/v5/account/wallet-balance", """{"accountType":"UNIFIED"}""")
+        val response =
+            transport.postSigned(
+                "/v5/account/wallet-balance",
+                """{"accountType":"${transport.accountType}"}""",
+            )
         val parsed = BybitBalanceTranslator.parseWalletBalance(response)
         transport.updateBalances(parsed)
         bus.publish(

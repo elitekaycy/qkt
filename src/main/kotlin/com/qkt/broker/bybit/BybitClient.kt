@@ -33,10 +33,20 @@ class BybitConnectException(
     message: String,
 ) : RuntimeException(message)
 
+class BybitRateLimitException(
+    message: String,
+) : RuntimeException(message)
+
+private class RateLimitSignal(
+    val resetAtMs: Long,
+) : RuntimeException()
+
 interface BybitTransport {
     val isConnected: Boolean
 
     val balances: Map<String, java.math.BigDecimal>
+
+    val accountType: String
 
     fun updateBalances(snapshot: Map<String, java.math.BigDecimal>)
 
@@ -60,6 +70,7 @@ class BybitClient(
     apiSecret: String? = null,
     testnet: Boolean? = null,
     recvWindowMs: Long? = null,
+    accountType: String? = null,
     private val httpClient: OkHttpClient = defaultHttpClient(),
     private val clock: Clock = SystemClock(),
     private val wsFactory: (Request, WebSocketListener) -> WebSocket =
@@ -86,6 +97,13 @@ class BybitClient(
         recvWindowMs
             ?: System.getenv("BYBIT_RECV_WINDOW_MS")?.toLongOrNull()
             ?: 5_000L
+
+    private val resolvedAccountType: String =
+        accountType
+            ?: System.getenv("BYBIT_ACCOUNT_TYPE")
+            ?: "UNIFIED"
+
+    override val accountType: String get() = resolvedAccountType
 
     private val signer = BybitSigner(resolvedApiSecret)
 
@@ -142,20 +160,36 @@ class BybitClient(
         path: String,
         jsonBody: String,
     ): String {
-        var attempt = 0
-        val maxAttempts = 3
+        val maxConnectionAttempts = 3
+        val maxRateLimitSleepMs = 5_000L
+        var rateLimitRetried = false
+        var connectionAttempt = 0
         var lastEx: Exception? = null
-        while (attempt < maxAttempts) {
-            attempt++
+
+        while (connectionAttempt < maxConnectionAttempts) {
+            connectionAttempt++
             try {
                 return doPostSignedOnce(path, jsonBody)
+            } catch (e: RateLimitSignal) {
+                if (rateLimitRetried) {
+                    throw BybitRateLimitException("Rate limit not cleared after retry; path=$path")
+                }
+                val sleepMs = (e.resetAtMs - clock.now()).coerceAtLeast(0L)
+                if (sleepMs > maxRateLimitSleepMs) {
+                    throw BybitRateLimitException(
+                        "Rate limit reset in ${sleepMs}ms exceeds cap ${maxRateLimitSleepMs}ms; path=$path",
+                    )
+                }
+                Thread.sleep(sleepMs)
+                rateLimitRetried = true
+                connectionAttempt--
             } catch (e: BybitApiException) {
                 throw e
             } catch (e: Exception) {
                 lastEx = e
-                log.warn("postSigned attempt {} for {} failed: {}", attempt, path, e.message)
-                if (attempt < maxAttempts) {
-                    Thread.sleep(transportRetryDelayMs(attempt))
+                log.warn("postSigned attempt {} for {} failed: {}", connectionAttempt, path, e.message)
+                if (connectionAttempt < maxConnectionAttempts) {
+                    Thread.sleep(transportRetryDelayMs(connectionAttempt))
                 }
             }
         }
@@ -183,6 +217,10 @@ class BybitClient(
                 .build()
 
         httpClient.newCall(req).execute().use { resp ->
+            if (resp.code == 429) {
+                val resetAtMs = resp.header("X-Bapi-Limit-Reset-Timestamp")?.toLongOrNull() ?: 0L
+                throw RateLimitSignal(resetAtMs)
+            }
             val body = resp.body?.string() ?: error("empty Bybit response (HTTP ${resp.code})")
             if (!resp.isSuccessful) {
                 throw BybitApiException(retCode = resp.code, retMsg = "HTTP ${resp.code}: $body")

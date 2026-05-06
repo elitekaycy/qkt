@@ -23,6 +23,8 @@ class FakeBybitClient : BybitTransport {
 
     override var isConnected: Boolean = true
 
+    override var accountType: String = "UNIFIED"
+
     private var balancesCache: Map<String, BigDecimal> = emptyMap()
 
     override val balances: Map<String, BigDecimal>
