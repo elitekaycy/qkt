@@ -2,6 +2,7 @@ package com.qkt.bus
 
 import com.qkt.common.Clock
 import com.qkt.common.SequenceGenerator
+import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
@@ -46,6 +47,11 @@ class EventBus(
             is OrderEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is RiskRejectedEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is TradeEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.OrderAccepted -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.OrderRejected -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.OrderFilled -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.OrderPartiallyFilled -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.OrderCancelled -> event.copy(timestamp = ts, sequenceId = seq)
         }
     }
 }
