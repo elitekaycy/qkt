@@ -19,6 +19,7 @@ repositories {
 dependencies {
     implementation(libs.slf4j.api)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
     runtimeOnly(libs.slf4j.simple)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
@@ -30,7 +31,19 @@ application {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        val included =
+            (project.findProperty("includeTags") as String?)
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+        if (included.isEmpty()) {
+            excludeTags("e2e")
+        } else {
+            includeTags(*included.toTypedArray())
+        }
+    }
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true
