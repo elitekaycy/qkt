@@ -53,6 +53,7 @@ class EventBus(
             is BrokerEvent.OrderPartiallyFilled -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.OrderCancelled -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.BalancesUpdated -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.PositionReconciled -> event.copy(timestamp = ts, sequenceId = seq)
         }
     }
 }
