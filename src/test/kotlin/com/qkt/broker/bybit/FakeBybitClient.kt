@@ -14,6 +14,9 @@ class FakeBybitClient : BybitTransport {
 
     private val topicListeners: MutableMap<String, MutableList<(JsonObject) -> Unit>> = mutableMapOf()
     private val disconnectListeners: MutableList<(String) -> Unit> = mutableListOf()
+    private val onReconnectListeners: MutableList<() -> Unit> = mutableListOf()
+
+    override var isConnected: Boolean = true
 
     override fun postSigned(
         path: String,
@@ -35,6 +38,10 @@ class FakeBybitClient : BybitTransport {
         disconnectListeners.add(handler)
     }
 
+    override fun onReconnect(handler: () -> Unit) {
+        onReconnectListeners.add(handler)
+    }
+
     fun emitWsFrame(
         topic: String,
         json: JsonObject,
@@ -43,6 +50,12 @@ class FakeBybitClient : BybitTransport {
     }
 
     fun emitDisconnect(reason: String) {
+        isConnected = false
         disconnectListeners.forEach { it(reason) }
+    }
+
+    fun fireOnReconnect() {
+        isConnected = true
+        onReconnectListeners.forEach { it() }
     }
 }

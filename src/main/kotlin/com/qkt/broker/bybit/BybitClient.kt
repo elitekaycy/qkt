@@ -2,10 +2,14 @@ package com.qkt.broker.bybit
 
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
+import com.qkt.common.net.ExponentialBackoff
+import com.qkt.common.net.ReconnectSupervisor
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -25,7 +29,13 @@ class BybitApiException(
     val retMsg: String,
 ) : RuntimeException("Bybit retCode=$retCode retMsg=$retMsg")
 
+class BybitConnectException(
+    message: String,
+) : RuntimeException(message)
+
 interface BybitTransport {
+    val isConnected: Boolean
+
     fun postSigned(
         path: String,
         jsonBody: String,
@@ -37,6 +47,8 @@ interface BybitTransport {
     )
 
     fun onDisconnect(handler: (String) -> Unit)
+
+    fun onReconnect(handler: () -> Unit)
 }
 
 class BybitClient(
@@ -46,6 +58,8 @@ class BybitClient(
     recvWindowMs: Long? = null,
     private val httpClient: OkHttpClient = defaultHttpClient(),
     private val clock: Clock = SystemClock(),
+    private val wsFactory: (Request, WebSocketListener) -> WebSocket =
+        { req, listener -> httpClient.newWebSocket(req, listener) },
 ) : BybitTransport {
     private val log = LoggerFactory.getLogger(BybitClient::class.java)
 
@@ -84,6 +98,7 @@ class BybitClient(
     private val wsRef: AtomicReference<WebSocket?> = AtomicReference(null)
     private val topicListeners: MutableMap<String, MutableList<(JsonObject) -> Unit>> = mutableMapOf()
     private val onDisconnectListeners: MutableList<(String) -> Unit> = CopyOnWriteArrayList()
+    private val onReconnectListeners: MutableList<() -> Unit> = CopyOnWriteArrayList()
     private val pingExecutor: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { r ->
             Thread(r, "bybit-ws-ping").apply { isDaemon = true }
@@ -91,7 +106,50 @@ class BybitClient(
     private val json = Json { ignoreUnknownKeys = true }
     private val pendingSubscribeTopics: MutableSet<String> = mutableSetOf()
 
+    private val connected: AtomicBoolean = AtomicBoolean(false)
+    private val hasEverConnected: AtomicBoolean = AtomicBoolean(false)
+
+    @Volatile
+    private var authLatch: CountDownLatch? = null
+
+    private val supervisor: ReconnectSupervisor =
+        ReconnectSupervisor(
+            backoff = ExponentialBackoff(initialMs = 1_000L, capMs = 60_000L),
+            attemptReconnect = { attemptReconnect() },
+            onReconnected = { fireOnReconnect() },
+        )
+
+    override val isConnected: Boolean get() = connected.get()
+
+    override fun onReconnect(handler: () -> Unit) {
+        onReconnectListeners.add(handler)
+    }
+
     override fun postSigned(
+        path: String,
+        jsonBody: String,
+    ): String {
+        var attempt = 0
+        val maxAttempts = 3
+        var lastEx: Exception? = null
+        while (attempt < maxAttempts) {
+            attempt++
+            try {
+                return doPostSignedOnce(path, jsonBody)
+            } catch (e: BybitApiException) {
+                throw e
+            } catch (e: Exception) {
+                lastEx = e
+                log.warn("postSigned attempt {} for {} failed: {}", attempt, path, e.message)
+                if (attempt < maxAttempts) {
+                    Thread.sleep(transportRetryDelayMs(attempt))
+                }
+            }
+        }
+        throw lastEx ?: error("postSigned exhausted retries with no captured exception")
+    }
+
+    private fun doPostSignedOnce(
         path: String,
         jsonBody: String,
     ): String {
@@ -120,6 +178,13 @@ class BybitClient(
         }
     }
 
+    private fun transportRetryDelayMs(attempt: Int): Long =
+        when (attempt) {
+            1 -> 500L
+            2 -> 1_000L
+            else -> 2_000L
+        }
+
     override fun subscribe(
         topic: String,
         listener: (JsonObject) -> Unit,
@@ -137,52 +202,88 @@ class BybitClient(
     fun connect() {
         if (wsRef.get() != null) return
 
+        authLatch = CountDownLatch(1)
         val req = Request.Builder().url(wsPrivateUrl).build()
-        val ws =
-            httpClient.newWebSocket(
-                req,
-                object : WebSocketListener() {
-                    override fun onOpen(
-                        webSocket: WebSocket,
-                        response: Response,
-                    ) {
-                        sendAuth(webSocket)
-                    }
-
-                    override fun onMessage(
-                        webSocket: WebSocket,
-                        text: String,
-                    ) {
-                        onWsMessage(text)
-                    }
-
-                    override fun onFailure(
-                        webSocket: WebSocket,
-                        t: Throwable,
-                        response: Response?,
-                    ) {
-                        log.warn("Bybit WS onFailure: {}", t.message)
-                        onWsDisconnect("failure: ${t.message}")
-                    }
-
-                    override fun onClosed(
-                        webSocket: WebSocket,
-                        code: Int,
-                        reason: String,
-                    ) {
-                        log.info("Bybit WS onClosed: code={} reason={}", code, reason)
-                        onWsDisconnect("closed: $code $reason")
-                    }
-                },
-            )
+        val ws = wsFactory(req, makeWsListener())
         wsRef.set(ws)
         startPingScheduler()
+
+        runCatching {
+            authLatch!!.await(10_000L, TimeUnit.MILLISECONDS)
+        }
+        if (connected.get()) {
+            hasEverConnected.set(true)
+        } else {
+            wsRef.getAndSet(null)?.close(1000, "initial connect failed")
+            pingExecutor.shutdownNow()
+            throw BybitConnectException(
+                "Initial Bybit connect failed within 10s (auth ack not received). " +
+                    "Check BYBIT_API_KEY / BYBIT_API_SECRET and BYBIT_TESTNET flag.",
+            )
+        }
     }
 
     fun close() {
+        supervisor.abort()
         pingExecutor.shutdownNow()
         wsRef.getAndSet(null)?.close(1000, "client close")
+        connected.set(false)
     }
+
+    private fun attemptReconnect(): Boolean {
+        try {
+            authLatch = CountDownLatch(1)
+            val req = Request.Builder().url(wsPrivateUrl).build()
+            val ws = wsFactory(req, makeWsListener())
+            wsRef.set(ws)
+            val authed = authLatch!!.await(10_000L, TimeUnit.MILLISECONDS)
+            return authed && connected.get()
+        } catch (e: Exception) {
+            log.warn("attemptReconnect threw: {}", e.message)
+            return false
+        }
+    }
+
+    private fun makeWsListener(): WebSocketListener =
+        object : WebSocketListener() {
+            override fun onOpen(
+                webSocket: WebSocket,
+                response: Response,
+            ) {
+                sendAuth(webSocket)
+            }
+
+            override fun onMessage(
+                webSocket: WebSocket,
+                text: String,
+            ) {
+                onWsMessage(text)
+            }
+
+            override fun onFailure(
+                webSocket: WebSocket,
+                t: Throwable,
+                response: Response?,
+            ) {
+                log.warn("Bybit WS onFailure: {}", t.message)
+                connected.set(false)
+                wsRef.set(null)
+                onWsDisconnect("failure: ${t.message}")
+                if (hasEverConnected.get()) supervisor.scheduleReconnect()
+            }
+
+            override fun onClosed(
+                webSocket: WebSocket,
+                code: Int,
+                reason: String,
+            ) {
+                log.info("Bybit WS onClosed: code={} reason={}", code, reason)
+                connected.set(false)
+                wsRef.set(null)
+                onWsDisconnect("closed: $code $reason")
+                if (hasEverConnected.get()) supervisor.scheduleReconnect()
+            }
+        }
 
     private fun sendAuth(ws: WebSocket) {
         val expires = clock.now() + 10_000
@@ -208,14 +309,26 @@ class BybitClient(
             }
         }
         val op = tree["op"]?.jsonPrimitive?.content
+        if (op == "auth") {
+            val success = tree["success"]?.jsonPrimitive?.content?.toBoolean() ?: false
+            if (success) {
+                connected.set(true)
+                authLatch?.countDown()
+            } else {
+                log.warn("Bybit auth failed: {}", text)
+            }
+        }
         if (op != null) {
             log.debug("Bybit WS op response: {}", text)
         }
     }
 
     private fun onWsDisconnect(reason: String) {
-        wsRef.set(null)
         onDisconnectListeners.forEach { runCatching { it(reason) } }
+    }
+
+    private fun fireOnReconnect() {
+        onReconnectListeners.forEach { runCatching { it() } }
     }
 
     private fun startPingScheduler() {
