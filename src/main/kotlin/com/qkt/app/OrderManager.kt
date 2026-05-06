@@ -9,6 +9,7 @@ import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
+import com.qkt.execution.ExpiryAction
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
@@ -37,6 +38,10 @@ class OrderManager(
     private val siblings: MutableMap<String, List<String>> = mutableMapOf()
 
     private val pendingChildren: MutableMap<String, List<OrderRequest>> = mutableMapOf()
+
+    private val scaleOutLegs: MutableMap<String, Pair<OrderRequest.ScaleOut, BigDecimal>> = mutableMapOf()
+
+    private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
@@ -120,8 +125,60 @@ class OrderManager(
                     submitBracketFallback(request)
                 }
 
+            is OrderRequest.ScaleOut -> submitScaleOut(request)
+
+            is OrderRequest.TimeExit -> submitTimeExit(request)
+
             else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
         }
+
+    private fun submitScaleOut(req: OrderRequest.ScaleOut): SubmitAck {
+        val now = clock.now()
+        update(req.id) {
+            it.copy(
+                state = OrderState.WORKING,
+                childClientOrderIds = listOf(req.basis.id),
+                lastUpdatedAt = now,
+            )
+        }
+        track(
+            ManagedOrder(
+                id = req.basis.id,
+                request = req.basis,
+                state = OrderState.CREATED,
+                parentClientOrderId = req.id,
+                createdAt = now,
+                lastUpdatedAt = now,
+            ),
+        )
+        scaleOutLegs[req.basis.id] = req to req.basis.quantity
+        dispatch(req.basis)
+        return SubmitAck(req.id, req.id, accepted = true)
+    }
+
+    private fun submitTimeExit(req: OrderRequest.TimeExit): SubmitAck {
+        val now = clock.now()
+        update(req.id) {
+            it.copy(
+                state = OrderState.WORKING,
+                childClientOrderIds = listOf(req.target.id),
+                lastUpdatedAt = now,
+            )
+        }
+        track(
+            ManagedOrder(
+                id = req.target.id,
+                request = req.target,
+                state = OrderState.CREATED,
+                parentClientOrderId = req.id,
+                createdAt = now,
+                lastUpdatedAt = now,
+            ),
+        )
+        timeExits[req.id] = req
+        dispatch(req.target)
+        return SubmitAck(req.id, req.id, accepted = true)
+    }
 
     private fun submitBracketFallback(req: OrderRequest.Bracket): SubmitAck {
         val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
@@ -317,6 +374,27 @@ class OrderManager(
             )
         }
         pendingChildren.remove(e.clientOrderId)?.forEach { dispatch(it) }
+        scaleOutLegs.remove(e.clientOrderId)?.let { (scaleReq, basisQty) ->
+            val exitSide = if (scaleReq.side == Side.BUY) Side.SELL else Side.BUY
+            scaleReq.legs.forEachIndexed { idx, leg ->
+                val legQty =
+                    basisQty
+                        .multiply(leg.fraction)
+                        .setScale(Money.SCALE, Money.ROUNDING)
+                val legReq =
+                    OrderRequest.IfTouched(
+                        id = "${scaleReq.id}-leg-$idx",
+                        symbol = scaleReq.symbol,
+                        side = exitSide,
+                        quantity = legQty,
+                        triggerPrice = leg.priceTarget,
+                        onTrigger = TriggerType.MARKET,
+                        timeInForce = scaleReq.timeInForce,
+                        timestamp = clock.now(),
+                    )
+                submit(legReq)
+            }
+        }
         siblings[e.clientOrderId]?.forEach { sibId ->
             val sib = orders[sibId] ?: return@forEach
             if (!sib.state.isTerminal) cancel(sibId)
@@ -331,11 +409,20 @@ class OrderManager(
 
     private fun evaluateTriggers(tick: Tick) {
         lastObservedPrice[tick.symbol] = tick.price
-        // Update trailing HWMs first so trigger evaluation sees fresh levels.
         for (managed in orders.values.toList()) {
             if (managed.state != OrderState.PENDING) continue
             if (managed.request.symbol != tick.symbol) continue
             updateTrailingHwm(managed, tick.price)
+        }
+
+        val now = clock.now()
+        val expired =
+            timeExits.values
+                .filter { now >= it.deadline.toEpochMilli() }
+                .toList()
+        for (te in expired) {
+            timeExits.remove(te.id)
+            handleTimeExitExpiry(te)
         }
 
         val triggered: List<ManagedOrder> =
@@ -346,6 +433,34 @@ class OrderManager(
                 .toList()
         for (managed in triggered) {
             fireFallbackTrigger(managed, tick.price)
+        }
+    }
+
+    private fun handleTimeExitExpiry(te: OrderRequest.TimeExit) {
+        val target = orders[te.target.id] ?: return
+        when (te.onExpiry) {
+            ExpiryAction.CANCEL -> {
+                if (!target.state.isTerminal) cancel(te.target.id)
+                update(te.id) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
+            }
+            ExpiryAction.CLOSE_AT_MARKET -> {
+                if (target.state == OrderState.FILLED) {
+                    val exitSide = if (te.target.side == Side.BUY) Side.SELL else Side.BUY
+                    val closing =
+                        OrderRequest.Market(
+                            id = "${te.id}-close",
+                            symbol = te.symbol,
+                            side = exitSide,
+                            quantity = te.target.quantity,
+                            timeInForce = te.timeInForce,
+                            timestamp = clock.now(),
+                        )
+                    submit(closing)
+                } else if (!target.state.isTerminal) {
+                    cancel(te.target.id)
+                }
+                update(te.id) { it.copy(state = OrderState.FILLED, lastUpdatedAt = clock.now()) }
+            }
         }
     }
 
