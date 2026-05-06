@@ -115,6 +115,59 @@ The repo ships a tiny fixture set at `data/sample/symbols/` that mirrors the pro
 val store = DefaultDataStore(root = Path.of("data/sample"))
 ```
 
+## Live trading (TradingView)
+
+Phase 7 ships a live runtime alongside the historical backtest. The first vendor is TradingView via WebSocket, anonymous mode (no login required, free-tier symbol coverage). Live ticks feed the same `TradingPipeline` your backtest uses; the only difference is the `TickFeed` (live) and the `Clock` (system time).
+
+### Run the bundled demo
+
+```bash
+./gradlew runLiveDemo
+```
+
+The demo connects to TradingView, subscribes to `OANDA:EURUSD`, `OANDA:XAUUSD`, and `BINANCE:BTCUSDT`, runs `BreakoutOfYesterdayHighStrategy` against EURUSD, and prints fills via the existing `MockBroker` to stdout. Press Ctrl-C to stop.
+
+### Construct a LiveSession in your own code
+
+```kotlin
+import com.qkt.app.LiveSession
+import com.qkt.candles.TimeWindow
+import com.qkt.common.SystemClock
+import com.qkt.common.TradingCalendar
+import com.qkt.marketdata.live.tv.TradingViewMarketSource
+import com.qkt.strategy.samples.BreakoutOfYesterdayHighStrategy
+
+fun main() {
+    val source = TradingViewMarketSource.connect()
+    val handle =
+        LiveSession(
+            strategies = listOf(BreakoutOfYesterdayHighStrategy("OANDA:EURUSD")),
+            source = source,
+            symbols = listOf("OANDA:EURUSD"),
+            candleWindow = TimeWindow.ONE_MINUTE,
+            clock = SystemClock(),
+            calendar = TradingCalendar.fxDefault(),
+        ).start()
+    handle.awaitTermination(java.time.Duration.ofMinutes(10))
+}
+```
+
+### Run the live smoke test (manual)
+
+The smoke test connects to real TradingView and asserts that at least one tick arrives within 30 seconds. Tagged `@Tag("e2e")` and excluded from the default `./gradlew test` run.
+
+```bash
+./gradlew test -PincludeTags=e2e
+```
+
+### TradingView vendor constraints
+
+- **Anonymous mode only.** Logged-in / premium symbol coverage and higher rate limits are not implemented in Phase 7. See `docs/phases/phase-7-live-runtime.md` for the deferred-work list.
+- **No tick history.** TradingView does not expose historical ticks. `TradingViewMarketSource.ticks(...)` throws `UnsupportedDataException`. Use bar history via `bars(...)` for warmup.
+- **Symbol form is `EXCHANGE:SYMBOL`.** TV does not accept bare symbols (`EURUSD`). Use `OANDA:EURUSD`, `BINANCE:BTCUSDT`, etc. The `TradingViewMarketSource.supports(symbol)` check rejects symbols that do not match the form.
+- **Rate limits apply.** The anonymous quote-session subscribes to a few dozen symbols comfortably. For larger universes, use `CompositeMarketSource` to route per-asset-class to dedicated vendors (e.g. Binance for crypto, OANDA for FX).
+- **Paper trading only.** All fills go through `MockBroker`, which fills at the latest in-process price. Real-broker integrations land in Phase 7d / 8 behind a `LiveBroker` interface.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Conventions are codified in `.claude/skills/qkt/SKILL.md` — read it before opening a PR.
