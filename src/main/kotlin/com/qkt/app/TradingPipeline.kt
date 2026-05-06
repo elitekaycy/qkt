@@ -1,7 +1,6 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
-import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
@@ -51,6 +50,8 @@ class TradingPipeline(
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
+    val orderManager: OrderManager = OrderManager(broker, bus, priceTracker, clock)
+
     init {
         if (candleWindow != null) CandleAggregator(bus, candleWindow)
 
@@ -72,7 +73,7 @@ class TradingPipeline(
             }
         }
         bus.subscribe<OrderEvent> { e ->
-            broker.submit(e.request)
+            orderManager.submit(e.request)
         }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             val realized = positions.applyFill(e)
@@ -112,7 +113,6 @@ class TradingPipeline(
 
     fun ingest(tick: Tick) {
         engine.onTick(tick)
-        if (broker is PaperBroker) broker.onTick(tick)
     }
 
     fun ingestForWarmup(tick: Tick) {

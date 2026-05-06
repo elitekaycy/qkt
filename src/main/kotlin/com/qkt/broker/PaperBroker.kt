@@ -5,6 +5,7 @@ import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TriggerType
 import com.qkt.marketdata.MarketPriceProvider
@@ -20,6 +21,10 @@ class PaperBroker(
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
+
+    init {
+        bus.subscribe<TickEvent> { e -> onTick(e.tick) }
+    }
 
     override val name: String = "Paper"
 
