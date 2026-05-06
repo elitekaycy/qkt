@@ -7,6 +7,10 @@ interface Broker {
     val name: String
     val capabilities: Set<OrderTypeCapability>
 
+    fun capabilitiesFor(symbol: String): Set<OrderTypeCapability> = capabilities
+
+    fun supports(symbol: String): Boolean = true
+
     fun submit(request: OrderRequest): SubmitAck
 
     fun cancel(orderId: String)
