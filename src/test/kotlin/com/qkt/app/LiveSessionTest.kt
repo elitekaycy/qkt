@@ -7,9 +7,9 @@ import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
 import java.time.Duration
@@ -41,7 +41,7 @@ class LiveSessionTest {
 
         override fun onTick(
             tick: Tick,
-            ctx: SessionContext,
+            ctx: StrategyContext,
             emit: (Signal) -> Unit,
         ) {
             seen.add(tick)
@@ -62,7 +62,7 @@ class LiveSessionTest {
         val clock = FixedClock(time = now.toEpochMilli())
         val session =
             LiveSession(
-                strategies = listOf(strategy),
+                strategies = listOf("test" to strategy),
                 rules = emptyList(),
                 source = src,
                 symbols = listOf("X"),
@@ -114,7 +114,7 @@ class LiveSessionTest {
 
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {}
             }
@@ -124,7 +124,7 @@ class LiveSessionTest {
 
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {}
             }
@@ -132,7 +132,7 @@ class LiveSessionTest {
         val seenWarmup = mutableListOf<Tick>()
         val session =
             LiveSession(
-                strategies = listOf(small, large),
+                strategies = listOf("small" to small, "large" to large),
                 rules = emptyList(),
                 source = src,
                 symbols = listOf("X"),
@@ -164,7 +164,7 @@ class LiveSessionTest {
 
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {}
             }
@@ -172,7 +172,7 @@ class LiveSessionTest {
         val seenWarmup = mutableListOf<Tick>()
         val session =
             LiveSession(
-                strategies = listOf(warm),
+                strategies = listOf("warm" to warm),
                 rules = emptyList(),
                 source = src,
                 symbols = listOf("X"),
@@ -201,7 +201,7 @@ class LiveSessionTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     emit(Signal.Buy("X", Money.of("1")))
@@ -209,7 +209,7 @@ class LiveSessionTest {
             }
         val handle =
             LiveSession(
-                strategies = listOf(strategy),
+                strategies = listOf("test" to strategy),
                 rules = emptyList(),
                 source = src,
                 symbols = listOf("X"),

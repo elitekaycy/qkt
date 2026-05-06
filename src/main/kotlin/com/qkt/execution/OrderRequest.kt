@@ -7,6 +7,7 @@ enum class TriggerType { MARKET, LIMIT }
 
 sealed interface OrderRequest {
     val id: String
+    val strategyId: String
     val symbol: String
     val side: Side
     val quantity: BigDecimal
@@ -20,6 +21,7 @@ sealed interface OrderRequest {
         override val quantity: BigDecimal,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -34,6 +36,7 @@ sealed interface OrderRequest {
         val limitPrice: BigDecimal,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -49,6 +52,7 @@ sealed interface OrderRequest {
         val stopPrice: BigDecimal,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -65,6 +69,7 @@ sealed interface OrderRequest {
         val limitPrice: BigDecimal,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -83,6 +88,7 @@ sealed interface OrderRequest {
         val limitPrice: BigDecimal? = null,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -103,6 +109,7 @@ sealed interface OrderRequest {
         val trailMode: TrailMode,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -125,6 +132,7 @@ sealed interface OrderRequest {
         val limitOffset: BigDecimal,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -142,6 +150,7 @@ sealed interface OrderRequest {
         val leg2: OrderRequest,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -157,6 +166,7 @@ sealed interface OrderRequest {
         val children: List<OrderRequest>,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -174,6 +184,7 @@ sealed interface OrderRequest {
         val stopLoss: BigDecimal,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -194,6 +205,7 @@ sealed interface OrderRequest {
         val legs: List<ScaleOutLeg>,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -215,9 +227,26 @@ sealed interface OrderRequest {
         val onExpiry: ExpiryAction,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
+        override val strategyId: String = "",
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
         }
     }
 }
+
+fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
+    when (this) {
+        is OrderRequest.Market -> copy(strategyId = strategyId)
+        is OrderRequest.Limit -> copy(strategyId = strategyId)
+        is OrderRequest.Stop -> copy(strategyId = strategyId)
+        is OrderRequest.StopLimit -> copy(strategyId = strategyId)
+        is OrderRequest.IfTouched -> copy(strategyId = strategyId)
+        is OrderRequest.TrailingStop -> copy(strategyId = strategyId)
+        is OrderRequest.TrailingStopLimit -> copy(strategyId = strategyId)
+        is OrderRequest.StandaloneOCO -> copy(strategyId = strategyId)
+        is OrderRequest.OTO -> copy(strategyId = strategyId)
+        is OrderRequest.Bracket -> copy(strategyId = strategyId)
+        is OrderRequest.ScaleOut -> copy(strategyId = strategyId)
+        is OrderRequest.TimeExit -> copy(strategyId = strategyId)
+    }

@@ -29,10 +29,10 @@ import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.rules.MaxPositionSize
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
-import com.qkt.strategy.testSessionContext
+import com.qkt.strategy.StrategyContext
+import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -72,10 +72,10 @@ class EndToEndTest {
         }
         strategies.forEach { s ->
             bus.subscribe<TickEvent> { e ->
-                s.onTick(e.tick, testSessionContext()) { sig -> bus.publish(SignalEvent(sig)) }
+                s.onTick(e.tick, testStrategyContext()) { sig -> bus.publish(SignalEvent(sig)) }
             }
             bus.subscribe<CandleEvent> { e ->
-                s.onCandle(e.candle, testSessionContext()) { sig -> bus.publish(SignalEvent(sig)) }
+                s.onCandle(e.candle, testStrategyContext()) { sig -> bus.publish(SignalEvent(sig)) }
             }
         }
         bus.subscribe<SignalEvent> { e ->
@@ -96,7 +96,7 @@ class EndToEndTest {
         object : Strategy {
             override fun onTick(
                 tick: Tick,
-                ctx: SessionContext,
+                ctx: StrategyContext,
                 emit: (Signal) -> Unit,
             ) {
                 if (tick.symbol == symbol) emit(Signal.Buy(symbol, Money.of("1")))
@@ -121,7 +121,7 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     emit(Signal.Buy("BTCUSD", Money.of("1")))
@@ -142,7 +142,7 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     seenByA.add(tick)
@@ -152,7 +152,7 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     seenByB.add(tick)
@@ -173,7 +173,7 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     emit(Signal.Buy("XAUUSD", Money.of("1")))
@@ -193,7 +193,7 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     emit(Signal.Buy("XAUUSD", Money.of("1")))
@@ -216,7 +216,7 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     if (tick.symbol == "EURUSD") emit(Signal.Buy("XAUUSD", Money.of("1")))
@@ -255,14 +255,14 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                 }
 
                 override fun onCandle(
                     candle: Candle,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     emit(Signal.Buy(candle.symbol, Money.of("1")))
@@ -285,7 +285,7 @@ class EndToEndTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     sequence.add("onTick(${tick.timestamp})")
@@ -293,7 +293,7 @@ class EndToEndTest {
 
                 override fun onCandle(
                     candle: Candle,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     sequence.add("onCandle(${candle.startTime})")
@@ -365,7 +365,7 @@ class EndToEndTest {
 
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     if (!bought) {
@@ -393,7 +393,7 @@ class EndToEndTest {
 
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     if (!done) {

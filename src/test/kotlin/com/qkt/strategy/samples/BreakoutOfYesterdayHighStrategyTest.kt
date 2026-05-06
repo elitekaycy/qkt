@@ -10,9 +10,10 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.strategy.Mode
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
+import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.testStrategyContext
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -59,8 +60,8 @@ class BreakoutOfYesterdayHighStrategyTest {
             }
         }
 
-    private fun ctx(): SessionContext =
-        SessionContext(
+    private fun ctx(): StrategyContext =
+        testStrategyContext(
             mode = Mode.BACKTEST,
             clock = FixedClock(time = day15.toEpochMilli()),
             calendar = TradingCalendar.crypto(),

@@ -19,9 +19,9 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.WarmupSpec
 import java.time.Duration
 import java.time.Instant
@@ -32,24 +32,19 @@ class IndicatorWarmerTest {
     private val now = Instant.parse("2024-01-15T15:00:00Z")
     private val candleStart = Instant.parse("2024-01-15T14:00:00Z").toEpochMilli()
 
-    private fun newPipeline(strategies: List<Strategy>): TradingPipeline {
+    private fun newPipeline(strategies: List<Pair<String, Strategy>>): TradingPipeline {
         val clock = FixedClock(time = now.toEpochMilli())
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
         val pnl = PnLCalculator(positions, priceTracker)
+        val strategyPositions = com.qkt.positions.StrategyPositionTracker()
+        val strategyPnL = com.qkt.pnl.StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
-        val ctx =
-            SessionContext(
-                mode = Mode.BACKTEST,
-                clock = clock,
-                calendar = TradingCalendar.crypto(),
-                source = NullMarketSource,
-            )
         return TradingPipeline(
             clock = clock,
             ids = ids,
@@ -57,12 +52,16 @@ class IndicatorWarmerTest {
             priceTracker = priceTracker,
             positions = positions,
             pnl = pnl,
+            strategyPositions = strategyPositions,
+            strategyPnL = strategyPnL,
             bus = bus,
             broker = broker,
             engine = engine,
             strategies = strategies,
             riskEngine = riskEngine,
-            sessionContext = ctx,
+            mode = Mode.BACKTEST,
+            calendar = TradingCalendar.crypto(),
+            source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
         )
     }
@@ -147,13 +146,13 @@ class IndicatorWarmerTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     seen.add(tick)
                 }
             }
-        val pipeline = newPipeline(listOf(strategy))
+        val pipeline = newPipeline(listOf("test" to strategy))
 
         IndicatorWarmer(source, pipeline)
             .warmup(listOf("X"), WarmupSpec.Bars(TimeWindow.ONE_MINUTE, count = 2), now)

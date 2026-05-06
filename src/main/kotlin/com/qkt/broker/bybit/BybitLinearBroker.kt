@@ -33,6 +33,7 @@ class BybitLinearBroker(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val symbolByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
+    private val strategyByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
     private val knownOrders: MutableMap<String, BybitSpotStateRecovery.ManagedOrderView> = ConcurrentHashMap()
     private val seenExecIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
@@ -87,14 +88,17 @@ class BybitLinearBroker(
 
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             symbolByClientOrderId.remove(e.clientOrderId)
+            strategyByClientOrderId.remove(e.clientOrderId)
             knownOrders.remove(e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             symbolByClientOrderId.remove(e.clientOrderId)
+            strategyByClientOrderId.remove(e.clientOrderId)
             knownOrders.remove(e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             symbolByClientOrderId.remove(e.clientOrderId)
+            strategyByClientOrderId.remove(e.clientOrderId)
             knownOrders.remove(e.clientOrderId)
         }
     }
@@ -119,12 +123,14 @@ class BybitLinearBroker(
                         clientOrderId = request.id,
                         brokerOrderId = null,
                         reason = e.message ?: "transport failure",
+                        strategyId = request.strategyId,
                         timestamp = clock.now(),
                     ),
                 )
                 return SubmitAck(request.id, null, accepted = false, rejectReason = e.message ?: "transport failure")
             }
-        val ack = parseSubmitResponse(request.id, response)
+        strategyByClientOrderId[request.id] = request.strategyId
+        val ack = parseSubmitResponse(request.id, response, request.strategyId)
         if (ack.accepted) {
             symbolByClientOrderId[request.id] = request.symbol
             knownOrders[request.id] =
@@ -132,7 +138,10 @@ class BybitLinearBroker(
                     clientOrderId = request.id,
                     symbol = request.symbol,
                     side = request.side,
+                    strategyId = request.strategyId,
                 )
+        } else {
+            strategyByClientOrderId.remove(request.id)
         }
         return ack
     }
@@ -154,6 +163,7 @@ class BybitLinearBroker(
         val symbol =
             symbolByClientOrderId[orderId]
                 ?: return SubmitAck(orderId, null, accepted = false, rejectReason = "unknown orderId $orderId")
+        val strategyId = strategyByClientOrderId[orderId] ?: ""
         val parsed = BybitSymbol.parse(symbol)
         val sb = StringBuilder("{")
         sb.append("\"category\":\"linear\",")
@@ -169,12 +179,13 @@ class BybitLinearBroker(
             } catch (e: Exception) {
                 return SubmitAck(orderId, null, accepted = false, rejectReason = e.message ?: "transport failure")
             }
-        return parseSubmitResponse(orderId, response)
+        return parseSubmitResponse(orderId, response, strategyId)
     }
 
     private fun parseSubmitResponse(
         clientOrderId: String,
         responseBody: String,
+        strategyId: String,
     ): SubmitAck {
         val tree = json.parseToJsonElement(responseBody).jsonObject
         val retCode = tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: -1
@@ -185,6 +196,7 @@ class BybitLinearBroker(
                     clientOrderId = clientOrderId,
                     brokerOrderId = null,
                     reason = "$retCode: $retMsg",
+                    strategyId = strategyId,
                     timestamp = clock.now(),
                 ),
             )
@@ -200,6 +212,7 @@ class BybitLinearBroker(
             BrokerEvent.OrderAccepted(
                 clientOrderId = clientOrderId,
                 brokerOrderId = brokerOrderId,
+                strategyId = strategyId,
                 timestamp = clock.now(),
             ),
         )
@@ -211,12 +224,14 @@ class BybitLinearBroker(
         for (entry in list) {
             val parsed = BybitOrderTranslator.parseOpenOrder(entry.jsonObject)
             val qktSymbol = "BYBIT_LINEAR:${parsed.bareSymbol}"
+            val strategyId = strategyByClientOrderId[parsed.clientOrderId] ?: ""
             when (parsed.status) {
                 "New" ->
                     bus.publish(
                         BrokerEvent.OrderAccepted(
                             clientOrderId = parsed.clientOrderId,
                             brokerOrderId = parsed.brokerOrderId,
+                            strategyId = strategyId,
                             timestamp = clock.now(),
                         ),
                     )
@@ -226,6 +241,7 @@ class BybitLinearBroker(
                             clientOrderId = parsed.clientOrderId,
                             brokerOrderId = parsed.brokerOrderId,
                             reason = "WS-reported cancel",
+                            strategyId = strategyId,
                             timestamp = clock.now(),
                         ),
                     )
@@ -235,6 +251,7 @@ class BybitLinearBroker(
                             clientOrderId = parsed.clientOrderId,
                             brokerOrderId = parsed.brokerOrderId,
                             reason = "WS-reported reject",
+                            strategyId = strategyId,
                             timestamp = clock.now(),
                         ),
                     )
@@ -249,11 +266,13 @@ class BybitLinearBroker(
             val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
             if (!seenExecIds.add(exec.execId)) continue
             val qktSymbol = "BYBIT_LINEAR:${exec.bareSymbol}"
+            val strategyId = strategyByClientOrderId[exec.clientOrderId] ?: ""
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = exec.clientOrderId,
                     brokerOrderId = exec.brokerOrderId,
                     symbol = qktSymbol,
+                    strategyId = strategyId,
                     side = exec.side,
                     price = exec.price,
                     quantity = exec.quantity,

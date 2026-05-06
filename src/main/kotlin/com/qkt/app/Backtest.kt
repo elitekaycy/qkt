@@ -25,18 +25,19 @@ import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.DataStore
 import com.qkt.pnl.PnLCalculator
+import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.strategy.Mode
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
 import java.math.BigDecimal
 import java.time.Instant
 
 class Backtest(
-    private val strategies: List<Strategy>,
+    private val strategies: List<Pair<String, Strategy>>,
     private val rules: List<RiskRule> = emptyList(),
     private val feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
@@ -47,7 +48,7 @@ class Backtest(
     private val symbols: List<String> = emptyList(),
 ) {
     constructor(
-        strategies: List<Strategy>,
+        strategies: List<Pair<String, Strategy>>,
         rules: List<RiskRule> = emptyList(),
         ticks: List<Tick>,
         candleWindow: TimeWindow? = null,
@@ -67,6 +68,8 @@ class Backtest(
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
         val pnl = PnLCalculator(positions, priceTracker)
+        val strategyPositions = StrategyPositionTracker()
+        val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
@@ -77,14 +80,6 @@ class Backtest(
         var peakEquity: BigDecimal = Money.ZERO
         var maxDrawdown: BigDecimal = Money.ZERO
 
-        val ctx =
-            SessionContext(
-                mode = Mode.BACKTEST,
-                clock = clock,
-                calendar = calendar,
-                source = source,
-            )
-
         val pipeline =
             TradingPipeline(
                 clock = clock,
@@ -93,12 +88,16 @@ class Backtest(
                 priceTracker = priceTracker,
                 positions = positions,
                 pnl = pnl,
+                strategyPositions = strategyPositions,
+                strategyPnL = strategyPnL,
                 bus = bus,
                 broker = broker,
                 engine = engine,
                 strategies = strategies,
                 riskEngine = riskEngine,
-                sessionContext = ctx,
+                mode = Mode.BACKTEST,
+                calendar = calendar,
+                source = source,
                 candleWindow = candleWindow,
                 onFilled = { trade, realized -> tradeRecords.add(TradeRecord(trade, realized)) },
                 onRejected = { e -> rejections.add(e) },
@@ -152,7 +151,7 @@ class Backtest(
 
     companion object {
         fun fromStore(
-            strategies: List<Strategy>,
+            strategies: List<Pair<String, Strategy>>,
             rules: List<RiskRule> = emptyList(),
             store: DataStore,
             request: MarketRequest,
@@ -170,7 +169,7 @@ class Backtest(
         }
 
         fun fromSource(
-            strategies: List<Strategy>,
+            strategies: List<Pair<String, Strategy>>,
             rules: List<RiskRule> = emptyList(),
             source: MarketSource,
             request: MarketRequest,

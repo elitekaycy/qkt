@@ -24,7 +24,10 @@ class BacktestFromStoreTest {
         val result =
             Backtest
                 .fromStore(
-                    strategies = listOf(EveryNthTickBuyStrategy(symbol = "EURUSD", n = 3, size = Money.of("1"))),
+                    strategies =
+                        listOf(
+                            "test" to EveryNthTickBuyStrategy(symbol = "EURUSD", n = 3, size = Money.of("1")),
+                        ),
                     rules = emptyList(),
                     store = store,
                     request = request,
@@ -46,8 +49,8 @@ class BacktestFromStoreTest {
                 .fromStore(
                     strategies =
                         listOf(
-                            EveryNthTickBuyStrategy(symbol = "EURUSD", n = 1),
-                            EveryNthTickBuyStrategy(symbol = "XAUUSD", n = 1),
+                            "eur" to EveryNthTickBuyStrategy(symbol = "EURUSD", n = 1),
+                            "xau" to EveryNthTickBuyStrategy(symbol = "XAUUSD", n = 1),
                         ),
                     rules = emptyList(),
                     store = store,
@@ -69,7 +72,7 @@ class BacktestFromStoreTest {
         fun runOnce() =
             Backtest
                 .fromStore(
-                    strategies = listOf(EveryNthTickBuyStrategy(symbol = "EURUSD", n = 2)),
+                    strategies = listOf("test" to EveryNthTickBuyStrategy(symbol = "EURUSD", n = 2)),
                     rules = emptyList(),
                     store = store,
                     request = request,
@@ -88,7 +91,7 @@ class BacktestFromStoreTest {
         val result =
             Backtest
                 .fromStore(
-                    strategies = listOf(EveryNthTickBuyStrategy(symbol = "EURUSD", n = 1)),
+                    strategies = listOf("test" to EveryNthTickBuyStrategy(symbol = "EURUSD", n = 1)),
                     rules = emptyList(),
                     store = store,
                     request = request,
@@ -108,7 +111,7 @@ class BacktestFromStoreTest {
         val result =
             Backtest
                 .fromStore(
-                    strategies = listOf(EveryNthTickBuyStrategy(symbol = "BTCUSD", n = 1)),
+                    strategies = listOf("test" to EveryNthTickBuyStrategy(symbol = "BTCUSD", n = 1)),
                     rules = emptyList(),
                     store = store,
                     request = request,

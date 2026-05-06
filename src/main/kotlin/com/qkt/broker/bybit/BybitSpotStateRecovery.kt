@@ -27,6 +27,7 @@ class BybitSpotStateRecovery(
         val clientOrderId: String,
         val symbol: String,
         val side: Side,
+        val strategyId: String = "",
     )
 
     override fun reconcile() {
@@ -64,13 +65,14 @@ class BybitSpotStateRecovery(
         val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
         val openOrderIds = list.mapNotNull { it.jsonObject["orderLinkId"]?.jsonPrimitive?.content }.toSet()
         val known = getKnownOrders()
-        for ((id, _) in known) {
+        for ((id, view) in known) {
             if (id !in openOrderIds) {
                 bus.publish(
                     BrokerEvent.OrderCancelled(
                         clientOrderId = id,
                         brokerOrderId = null,
                         reason = "recovered: not in open list",
+                        strategyId = view.strategyId,
                         timestamp = clock.now(),
                     ),
                 )
@@ -98,6 +100,7 @@ class BybitSpotStateRecovery(
                 val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
                 if (!seenExecIds.add(exec.execId)) continue
                 val qktSymbol = BybitSymbol.toQkt(category = "spot", bare = exec.bareSymbol)
+                val strategyId = getKnownOrders()[exec.clientOrderId]?.strategyId ?: ""
                 bus.publish(
                     BrokerEvent.OrderFilled(
                         clientOrderId = exec.clientOrderId,
@@ -106,6 +109,7 @@ class BybitSpotStateRecovery(
                         side = exec.side,
                         price = exec.price,
                         quantity = exec.quantity,
+                        strategyId = strategyId,
                         timestamp = clock.now(),
                     ),
                 )

@@ -16,6 +16,7 @@ import com.qkt.execution.OrderState
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
 import com.qkt.execution.isTerminal
+import com.qkt.execution.withStrategyId
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
@@ -191,6 +192,7 @@ class OrderManager(
                 limitPrice = req.takeProfit,
                 timeInForce = req.timeInForce,
                 timestamp = clock.now(),
+                strategyId = req.strategyId,
             )
         val sl =
             OrderRequest.Stop(
@@ -201,6 +203,7 @@ class OrderManager(
                 stopPrice = req.stopLoss,
                 timeInForce = req.timeInForce,
                 timestamp = clock.now(),
+                strategyId = req.strategyId,
             )
         val oco =
             OrderRequest.StandaloneOCO(
@@ -212,6 +215,7 @@ class OrderManager(
                 leg2 = sl,
                 timeInForce = req.timeInForce,
                 timestamp = clock.now(),
+                strategyId = req.strategyId,
             )
         val oto =
             OrderRequest.OTO(
@@ -219,10 +223,11 @@ class OrderManager(
                 symbol = req.symbol,
                 side = req.side,
                 quantity = req.quantity,
-                parent = req.entry,
+                parent = req.entry.withStrategyId(req.strategyId),
                 children = listOf(oco),
                 timeInForce = req.timeInForce,
                 timestamp = clock.now(),
+                strategyId = req.strategyId,
             )
         orders.remove(req.id)
         return submit(oto)

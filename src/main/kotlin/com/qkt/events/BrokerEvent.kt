@@ -7,11 +7,13 @@ sealed interface BrokerEvent : Event {
     sealed interface OrderEvent : BrokerEvent {
         val clientOrderId: String
         val brokerOrderId: String?
+        val strategyId: String
     }
 
     data class OrderAccepted(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
+        override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : OrderEvent
@@ -20,6 +22,7 @@ sealed interface BrokerEvent : Event {
         override val clientOrderId: String,
         override val brokerOrderId: String?,
         val reason: String,
+        override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : OrderEvent
@@ -31,6 +34,7 @@ sealed interface BrokerEvent : Event {
         val side: Side,
         val price: BigDecimal,
         val quantity: BigDecimal,
+        override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : OrderEvent
@@ -43,6 +47,7 @@ sealed interface BrokerEvent : Event {
         val price: BigDecimal,
         val quantity: BigDecimal,
         val cumulativeFilled: BigDecimal,
+        override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : OrderEvent
@@ -51,6 +56,7 @@ sealed interface BrokerEvent : Event {
         override val clientOrderId: String,
         override val brokerOrderId: String?,
         val reason: String,
+        override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : OrderEvent

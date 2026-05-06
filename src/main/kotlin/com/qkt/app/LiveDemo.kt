@@ -19,9 +19,9 @@ fun main() {
 
     val source = TradingViewMarketSource.connect(clock = SystemClock())
 
-    val strategies: List<Strategy> =
+    val strategies: List<Pair<String, Strategy>> =
         listOf(
-            BreakoutOfYesterdayHighStrategy("OANDA:EURUSD", size = Money.of("1")),
+            "breakout-eurusd" to BreakoutOfYesterdayHighStrategy("OANDA:EURUSD", size = Money.of("1")),
         )
     val rules: List<RiskRule> =
         listOf(

@@ -13,13 +13,14 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.MockTickFeed
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
+import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.rules.MaxPositionSize
 import com.qkt.strategy.EveryNthTickBuyStrategy
 import com.qkt.strategy.Mode
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Strategy
 import org.slf4j.LoggerFactory
 
@@ -36,15 +37,17 @@ fun main() {
     val broker = PaperBroker(bus, clock, priceTracker)
     val engine = Engine(bus, priceTracker)
 
-    val strategies: List<Strategy> =
+    val strategies: List<Pair<String, Strategy>> =
         listOf(
-            EveryNthTickBuyStrategy("XAUUSD", n = 10, size = Money.of("1")),
+            "every-nth-buy" to EveryNthTickBuyStrategy("XAUUSD", n = 10, size = Money.of("1")),
         )
     val rules: List<RiskRule> =
         listOf(
             MaxPositionSize(symbol = "XAUUSD", maxQty = Money.of("3")),
         )
     val riskEngine = RiskEngine(rules, positions)
+    val strategyPositions = StrategyPositionTracker()
+    val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
 
     val pipeline =
         TradingPipeline(
@@ -54,18 +57,16 @@ fun main() {
             priceTracker = priceTracker,
             positions = positions,
             pnl = pnl,
+            strategyPositions = strategyPositions,
+            strategyPnL = strategyPnL,
             bus = bus,
             broker = broker,
             engine = engine,
             strategies = strategies,
             riskEngine = riskEngine,
-            sessionContext =
-                SessionContext(
-                    mode = Mode.BACKTEST,
-                    clock = clock,
-                    calendar = TradingCalendar.crypto(),
-                    source = NullMarketSource,
-                ),
+            mode = Mode.BACKTEST,
+            calendar = TradingCalendar.crypto(),
+            source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
             onFilled = { trade, _ ->
                 val pos = positions.positionFor(trade.symbol)?.quantity ?: Money.ZERO

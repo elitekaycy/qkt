@@ -31,6 +31,7 @@ class BybitSpotBroker(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val symbolByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
+    private val strategyByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
     private val knownOrders: MutableMap<String, BybitSpotStateRecovery.ManagedOrderView> = ConcurrentHashMap()
     private val seenExecIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
@@ -85,14 +86,17 @@ class BybitSpotBroker(
 
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             symbolByClientOrderId.remove(e.clientOrderId)
+            strategyByClientOrderId.remove(e.clientOrderId)
             knownOrders.remove(e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             symbolByClientOrderId.remove(e.clientOrderId)
+            strategyByClientOrderId.remove(e.clientOrderId)
             knownOrders.remove(e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             symbolByClientOrderId.remove(e.clientOrderId)
+            strategyByClientOrderId.remove(e.clientOrderId)
             knownOrders.remove(e.clientOrderId)
         }
     }
@@ -117,6 +121,7 @@ class BybitSpotBroker(
                         clientOrderId = request.id,
                         brokerOrderId = null,
                         reason = e.message ?: "transport failure",
+                        strategyId = request.strategyId,
                         timestamp = clock.now(),
                     ),
                 )
@@ -127,7 +132,8 @@ class BybitSpotBroker(
                     rejectReason = e.message ?: "transport failure",
                 )
             }
-        val ack = parseSubmitResponse(request.id, response)
+        strategyByClientOrderId[request.id] = request.strategyId
+        val ack = parseSubmitResponse(request.id, response, request.strategyId)
         if (ack.accepted) {
             symbolByClientOrderId[request.id] = request.symbol
             knownOrders[request.id] =
@@ -135,7 +141,10 @@ class BybitSpotBroker(
                     clientOrderId = request.id,
                     symbol = request.symbol,
                     side = request.side,
+                    strategyId = request.strategyId,
                 )
+        } else {
+            strategyByClientOrderId.remove(request.id)
         }
         return ack
     }
@@ -157,6 +166,7 @@ class BybitSpotBroker(
         val symbol =
             symbolByClientOrderId[orderId]
                 ?: return SubmitAck(orderId, null, accepted = false, rejectReason = "unknown orderId $orderId")
+        val strategyId = strategyByClientOrderId[orderId] ?: ""
         val parsed = BybitSymbol.parse(symbol)
         val sb = StringBuilder("{")
         sb.append("\"category\":\"${parsed.category}\",")
@@ -172,12 +182,13 @@ class BybitSpotBroker(
             } catch (e: Exception) {
                 return SubmitAck(orderId, null, accepted = false, rejectReason = e.message ?: "transport failure")
             }
-        return parseSubmitResponse(orderId, response)
+        return parseSubmitResponse(orderId, response, strategyId)
     }
 
     private fun parseSubmitResponse(
         clientOrderId: String,
         responseBody: String,
+        strategyId: String,
     ): SubmitAck {
         val tree = json.parseToJsonElement(responseBody).jsonObject
         val retCode = tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: -1
@@ -188,6 +199,7 @@ class BybitSpotBroker(
                     clientOrderId = clientOrderId,
                     brokerOrderId = null,
                     reason = "$retCode: $retMsg",
+                    strategyId = strategyId,
                     timestamp = clock.now(),
                 ),
             )
@@ -219,12 +231,14 @@ class BybitSpotBroker(
             val brokerOrderId = obj["orderId"]?.jsonPrimitive?.content
             val status = obj["orderStatus"]?.jsonPrimitive?.content ?: continue
             val now = clock.now()
+            val strategyId = strategyByClientOrderId[clientOrderId] ?: ""
             when (status) {
                 "New" ->
                     bus.publish(
                         BrokerEvent.OrderAccepted(
                             clientOrderId = clientOrderId,
                             brokerOrderId = brokerOrderId,
+                            strategyId = strategyId,
                             timestamp = now,
                         ),
                     )
@@ -234,6 +248,7 @@ class BybitSpotBroker(
                             clientOrderId = clientOrderId,
                             brokerOrderId = brokerOrderId,
                             reason = "broker cancel",
+                            strategyId = strategyId,
                             timestamp = now,
                         ),
                     )
@@ -243,6 +258,7 @@ class BybitSpotBroker(
                             clientOrderId = clientOrderId,
                             brokerOrderId = brokerOrderId,
                             reason = obj["rejectReason"]?.jsonPrimitive?.content ?: "broker rejected",
+                            strategyId = strategyId,
                             timestamp = now,
                         ),
                     )
@@ -257,6 +273,7 @@ class BybitSpotBroker(
             val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
             if (!seenExecIds.add(exec.execId)) continue
             val qktSymbol = BybitSymbol.toQkt(category = "spot", bare = exec.bareSymbol)
+            val strategyId = strategyByClientOrderId[exec.clientOrderId] ?: ""
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = exec.clientOrderId,
@@ -265,6 +282,7 @@ class BybitSpotBroker(
                     side = exec.side,
                     price = exec.price,
                     quantity = exec.quantity,
+                    strategyId = strategyId,
                     timestamp = clock.now(),
                 ),
             )

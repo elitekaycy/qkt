@@ -16,15 +16,15 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
-import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class TradingPipelineWarmupSplitTest {
     private fun newPipeline(
-        strategies: List<Strategy>,
+        strategies: List<Pair<String, Strategy>>,
         onCandle: (com.qkt.marketdata.Candle) -> Unit = {},
     ): TradingPipeline {
         val clock = FixedClock(time = 0L)
@@ -33,17 +33,12 @@ class TradingPipelineWarmupSplitTest {
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
         val pnl = PnLCalculator(positions, priceTracker)
+        val strategyPositions = com.qkt.positions.StrategyPositionTracker()
+        val strategyPnL = com.qkt.pnl.StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
-        val ctx =
-            SessionContext(
-                mode = Mode.BACKTEST,
-                clock = clock,
-                calendar = TradingCalendar.crypto(),
-                source = NullMarketSource,
-            )
         return TradingPipeline(
             clock = clock,
             ids = ids,
@@ -51,12 +46,16 @@ class TradingPipelineWarmupSplitTest {
             priceTracker = priceTracker,
             positions = positions,
             pnl = pnl,
+            strategyPositions = strategyPositions,
+            strategyPnL = strategyPnL,
             bus = bus,
             broker = broker,
             engine = engine,
             strategies = strategies,
             riskEngine = riskEngine,
-            sessionContext = ctx,
+            mode = Mode.BACKTEST,
+            calendar = TradingCalendar.crypto(),
+            source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
             onCandle = onCandle,
         )
@@ -69,13 +68,13 @@ class TradingPipelineWarmupSplitTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     seen.add(tick)
                 }
             }
-        val pipeline = newPipeline(listOf(strategy))
+        val pipeline = newPipeline(listOf("test" to strategy))
 
         pipeline.ingestForWarmup(Tick("X", Money.of("100"), 1_000L))
         pipeline.ingestForWarmup(Tick("X", Money.of("101"), 2_000L))
@@ -105,13 +104,13 @@ class TradingPipelineWarmupSplitTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
-                    ctx: SessionContext,
+                    ctx: StrategyContext,
                     emit: (Signal) -> Unit,
                 ) {
                     seen.add(tick)
                 }
             }
-        val pipeline = newPipeline(listOf(strategy))
+        val pipeline = newPipeline(listOf("test" to strategy))
 
         pipeline.ingestForWarmup(Tick("X", Money.of("100"), 1_000L))
         pipeline.ingest(Tick("X", Money.of("100"), 2_000L))
