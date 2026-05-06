@@ -92,21 +92,21 @@ class OrderManager(
             is OrderRequest.Market, is OrderRequest.Limit -> submitToBroker(request)
 
             is OrderRequest.Stop ->
-                if (OrderTypeCapability.STOP in broker.capabilities) {
+                if (OrderTypeCapability.STOP in broker.capabilitiesFor(request.symbol)) {
                     submitToBroker(request)
                 } else {
                     holdPending(request)
                 }
 
             is OrderRequest.StopLimit ->
-                if (OrderTypeCapability.STOP_LIMIT in broker.capabilities) {
+                if (OrderTypeCapability.STOP_LIMIT in broker.capabilitiesFor(request.symbol)) {
                     submitToBroker(request)
                 } else {
                     holdPending(request)
                 }
 
             is OrderRequest.IfTouched ->
-                if (OrderTypeCapability.IF_TOUCHED in broker.capabilities) {
+                if (OrderTypeCapability.IF_TOUCHED in broker.capabilitiesFor(request.symbol)) {
                     submitToBroker(request)
                 } else {
                     holdPending(request)
@@ -119,7 +119,7 @@ class OrderManager(
             is OrderRequest.OTO -> submitOto(request)
 
             is OrderRequest.Bracket ->
-                if (OrderTypeCapability.BRACKET in broker.capabilities) {
+                if (OrderTypeCapability.BRACKET in broker.capabilitiesFor(request.symbol)) {
                     submitToBroker(request)
                 } else {
                     submitBracketFallback(request)
