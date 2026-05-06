@@ -39,7 +39,7 @@ tasks.test {
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
         if (included.isEmpty()) {
-            excludeTags("e2e")
+            excludeTags("e2e", "e2e-live")
         } else {
             includeTags(*included.toTypedArray())
         }
