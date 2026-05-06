@@ -5,6 +5,7 @@ import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TriggerType
 import com.qkt.marketdata.MarketPriceProvider
@@ -20,6 +21,10 @@ class PaperBroker(
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
+
+    init {
+        bus.subscribe<TickEvent> { e -> onTick(e.tick) }
+    }
 
     override val name: String = "Paper"
 
@@ -46,6 +51,7 @@ class PaperBroker(
             is OrderRequest.StopLimit, is OrderRequest.IfTouched,
             ->
                 working.add(request)
+            else -> error("PaperBroker received unexpected order type: ${request::class.simpleName}")
         }
         return SubmitAck(
             clientOrderId = request.id,
@@ -109,6 +115,7 @@ class PaperBroker(
                         Triple(req.limitPrice!!, req.side, req.quantity)
                     }
                 is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
+                else -> error("PaperBroker fillFromTrigger received unexpected type: ${req::class.simpleName}")
             }
         publishFill(req.id, req.symbol, side, fillPrice, qty)
     }
@@ -147,5 +154,6 @@ class PaperBroker(
             is OrderRequest.IfTouched ->
                 if (req.side == Side.BUY) tickPrice <= req.triggerPrice else tickPrice >= req.triggerPrice
             is OrderRequest.Market -> false
+            else -> false
         }
 }

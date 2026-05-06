@@ -1,0 +1,68 @@
+package com.qkt.broker
+
+import com.qkt.bus.EventBus
+import com.qkt.common.Clock
+import com.qkt.events.BrokerEvent
+import com.qkt.execution.OrderRequest
+import java.math.BigDecimal
+
+class FakeBroker(
+    private val bus: EventBus,
+    private val clock: Clock,
+    override val capabilities: Set<OrderTypeCapability>,
+) : Broker {
+    override val name: String = "Fake"
+
+    val submits: MutableList<OrderRequest> = mutableListOf()
+    val cancels: MutableList<String> = mutableListOf()
+
+    var emitAcceptOnSubmit: Boolean = true
+
+    override fun submit(request: OrderRequest): SubmitAck {
+        submits.add(request)
+        if (emitAcceptOnSubmit) {
+            bus.publish(
+                BrokerEvent.OrderAccepted(
+                    clientOrderId = request.id,
+                    brokerOrderId = request.id,
+                    timestamp = clock.now(),
+                ),
+            )
+        }
+        return SubmitAck(
+            clientOrderId = request.id,
+            brokerOrderId = request.id,
+            accepted = true,
+        )
+    }
+
+    override fun cancel(orderId: String) {
+        cancels.add(orderId)
+        bus.publish(
+            BrokerEvent.OrderCancelled(
+                clientOrderId = orderId,
+                brokerOrderId = orderId,
+                reason = "user cancel",
+                timestamp = clock.now(),
+            ),
+        )
+    }
+
+    fun emitFill(
+        request: OrderRequest,
+        price: BigDecimal,
+        quantity: BigDecimal = request.quantity,
+    ) {
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = request.id,
+                brokerOrderId = request.id,
+                symbol = request.symbol,
+                side = request.side,
+                price = price,
+                quantity = quantity,
+                timestamp = clock.now(),
+            ),
+        )
+    }
+}
