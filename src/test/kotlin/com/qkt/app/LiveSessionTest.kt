@@ -7,6 +7,7 @@ import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
+import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
@@ -40,6 +41,7 @@ class LiveSessionTest {
 
         override fun onTick(
             tick: Tick,
+            ctx: SessionContext,
             emit: (Signal) -> Unit,
         ) {
             seen.add(tick)
@@ -112,6 +114,7 @@ class LiveSessionTest {
 
                 override fun onTick(
                     tick: Tick,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {}
             }
@@ -121,6 +124,7 @@ class LiveSessionTest {
 
                 override fun onTick(
                     tick: Tick,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {}
             }
@@ -160,6 +164,7 @@ class LiveSessionTest {
 
                 override fun onTick(
                     tick: Tick,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {}
             }
@@ -196,6 +201,7 @@ class LiveSessionTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {
                     emit(Signal.Buy("X", Money.of("1")))

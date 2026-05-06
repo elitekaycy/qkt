@@ -26,6 +26,7 @@ class EmaCrossoverStrategy(
 
     override fun onTick(
         tick: Tick,
+        ctx: SessionContext,
         emit: (Signal) -> Unit,
     ) {
     }

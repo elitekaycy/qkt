@@ -72,7 +72,7 @@ class BreakoutOfYesterdayHighStrategyTest {
         val emitted = mutableListOf<Signal>()
         val strategy = BreakoutOfYesterdayHighStrategy(symbol = "X", size = Money.of("1"))
 
-        strategy.onTickWithContext(
+        strategy.onTick(
             tick = Tick("X", Money.of("116"), day15.toEpochMilli()),
             ctx = ctx(),
             emit = { emitted.add(it) },
@@ -86,7 +86,7 @@ class BreakoutOfYesterdayHighStrategyTest {
         val emitted = mutableListOf<Signal>()
         val strategy = BreakoutOfYesterdayHighStrategy(symbol = "X")
 
-        strategy.onTickWithContext(
+        strategy.onTick(
             tick = Tick("X", Money.of("113"), day15.toEpochMilli()),
             ctx = ctx(),
             emit = { emitted.add(it) },
@@ -100,13 +100,13 @@ class BreakoutOfYesterdayHighStrategyTest {
         val emitted = mutableListOf<Signal>()
         val strategy = BreakoutOfYesterdayHighStrategy(symbol = "X")
 
-        strategy.onTickWithContext(Tick("X", Money.of("116"), day15.toEpochMilli()), ctx(), { emitted.add(it) })
-        strategy.onTickWithContext(
+        strategy.onTick(Tick("X", Money.of("116"), day15.toEpochMilli()), ctx(), { emitted.add(it) })
+        strategy.onTick(
             Tick("X", Money.of("117"), day15.toEpochMilli() + 1_000L),
             ctx(),
             { emitted.add(it) },
         )
-        strategy.onTickWithContext(
+        strategy.onTick(
             Tick("X", Money.of("118"), day15.toEpochMilli() + 2_000L),
             ctx(),
             { emitted.add(it) },

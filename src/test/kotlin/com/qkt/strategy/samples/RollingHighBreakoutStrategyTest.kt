@@ -61,7 +61,7 @@ class RollingHighBreakoutStrategyTest {
     fun `emits Buy when price exceeds rolling window high`() {
         val emitted = mutableListOf<Signal>()
         val strategy = RollingHighBreakoutStrategy(symbol = "X")
-        strategy.onTickWithContext(
+        strategy.onTick(
             tick = Tick("X", Money.of("130"), now.toEpochMilli()),
             ctx = ctx("125"),
             emit = { emitted.add(it) },
@@ -73,7 +73,7 @@ class RollingHighBreakoutStrategyTest {
     fun `does not emit when price is below rolling window high`() {
         val emitted = mutableListOf<Signal>()
         val strategy = RollingHighBreakoutStrategy(symbol = "X")
-        strategy.onTickWithContext(
+        strategy.onTick(
             tick = Tick("X", Money.of("120"), now.toEpochMilli()),
             ctx = ctx("125"),
             emit = { emitted.add(it) },
@@ -86,8 +86,8 @@ class RollingHighBreakoutStrategyTest {
         val emitted = mutableListOf<Signal>()
         val strategy = RollingHighBreakoutStrategy(symbol = "X", lookback = Duration.ofDays(3))
         val context = ctx("125")
-        strategy.onTickWithContext(Tick("X", Money.of("130"), now.toEpochMilli()), context, { emitted.add(it) })
-        strategy.onTickWithContext(
+        strategy.onTick(Tick("X", Money.of("130"), now.toEpochMilli()), context, { emitted.add(it) })
+        strategy.onTick(
             Tick("X", Money.of("131"), now.toEpochMilli() + 1_000L),
             context,
             { emitted.add(it) },

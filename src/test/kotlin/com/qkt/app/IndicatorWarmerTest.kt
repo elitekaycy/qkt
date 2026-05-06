@@ -147,6 +147,7 @@ class IndicatorWarmerTest {
             object : Strategy {
                 override fun onTick(
                     tick: Tick,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {
                     seen.add(tick)

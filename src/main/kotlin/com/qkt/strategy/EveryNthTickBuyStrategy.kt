@@ -18,6 +18,7 @@ class EveryNthTickBuyStrategy(
 
     override fun onTick(
         tick: Tick,
+        ctx: SessionContext,
         emit: (Signal) -> Unit,
     ) {
         if (tick.symbol != symbol) return

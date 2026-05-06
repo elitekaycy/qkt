@@ -34,12 +34,6 @@ class MaxAuditStrategy(
 
     override fun onTick(
         tick: Tick,
-        emit: (Signal) -> Unit,
-    ) {
-    }
-
-    override fun onTickWithContext(
-        tick: Tick,
         ctx: SessionContext,
         emit: (Signal) -> Unit,
     ) {

@@ -8,6 +8,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.SymbolPattern
+import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import java.time.Duration
@@ -23,6 +24,7 @@ class LiveSessionMultiVendorTest {
 
         override fun onTick(
             tick: Tick,
+            ctx: SessionContext,
             emit: (Signal) -> Unit,
         ) {
             seen.add(tick)
