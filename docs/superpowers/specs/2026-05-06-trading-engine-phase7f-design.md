@@ -216,6 +216,14 @@ Internally, the supervisor's `attemptReconnect` lambda performs:
 
 Internal flag `hasEverConnected: Boolean` distinguishes the two.
 
+**Initial-connect failure behavior is fail-fast, not retry.** If `client.connect()` fails on the very first attempt — bad credentials, host unreachable, auth rejected, etc. — the call **throws**. The supervisor does NOT schedule retries on the initial failure. Reasoning: bad credentials should surface immediately to the operator, not silently retry forever generating log noise. Retries are only for "I was running and the network blipped" scenarios, which are characterized by `hasEverConnected = true`.
+
+Concretely:
+- `connect()` blocks for up to 10s waiting for auth-ack.
+- On success: `connected = true`, `hasEverConnected = true`. Returns normally.
+- On timeout or auth failure: throws `BybitConnectException("initial connect failed: ...")`.
+- The supervisor's reconnect loop is only engaged from `onFailure`/`onClosed` callbacks AFTER `hasEverConnected = true`. If the WS dies during the initial connect attempt's auth phase, the failure path goes straight to throwing.
+
 ### 6.4 `postSigned` transport retry
 
 ```kotlin
@@ -345,7 +353,8 @@ class BybitStateRecovery(
 - Open orders says Z is working.
 - Z cancels.
 - Execution query has nothing for Z (no fill).
-- Engine still thinks Z is working. **Recovery doesn't catch this.** On next reconnect, the same logic catches it because Z will be missing from the open-orders query at that point. Window of error: until next reconnect. Acceptable for 7f.
+- Engine still thinks Z is working. **Recovery doesn't catch this within the same cycle.** On next reconnect, Z is missing from the open-orders query → emit `OrderCancelled`. Window of error: until next reconnect. Acceptable for 7f.
+- **Phase 7g closes this gap** with periodic REST polling of order/position state (independent of reconnect cycles). The 7f architecture is forward-compatible: the same `BybitStateRecovery.reconcile()` can be triggered on a timer in 7g without changing its contract.
 
 **Race 4: orderLinkId on a brand-new order that just got submitted.**
 - Submit returns ack with `accepted=true, brokerOrderId=X`.
@@ -355,7 +364,9 @@ class BybitStateRecovery(
 
 ### 7.4 `lastFillTime` tracking
 
-`BybitSpotBroker` maintains an `AtomicLong lastFillTime` set on every `OrderFilled` it emits (live or recovery). On startup it's `clock.now() - SOMETHING_REASONABLE` — say 5 minutes — which means the first reconcile pulls executions from 5 minutes ago, then later reconciles pull from the most recent fill. This bounds the execution query window.
+`BybitSpotBroker` maintains an `AtomicLong lastFillTime` set on every `OrderFilled` it emits (live or recovery). On startup it's `clock.now() - recoveryWindowMs`, where `recoveryWindowMs` is a constructor parameter defaulting to 5 minutes. The first reconcile pulls executions from `recoveryWindowMs` ago; later reconciles pull from the most recent fill (minus the 60s safety margin in `BybitStateRecovery`).
+
+The default 5 min balances "covers any reasonable WS gap" against "doesn't pull years of history on a long-idle broker". Configurable so users tune to their fill cadence: high-frequency strategies tighten to 30s, sparse strategies widen to 1h.
 
 ---
 
@@ -368,10 +379,11 @@ class BybitSpotBroker(
     private val transport: BybitTransport,
     private val bus: EventBus,
     private val clock: Clock,
+    private val recoveryWindowMs: Long = 5 * 60_000L,
 ) : Broker {
     // existing fields ...
 
-    private val lastFillTime = AtomicLong(clock.now() - 5 * 60_000L)
+    private val lastFillTime = AtomicLong(clock.now() - recoveryWindowMs)
     private val seenExecIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     private val recovery = BybitStateRecovery(
@@ -559,13 +571,13 @@ Estimated scope: ~700 LOC production new, ~600 LOC tests. About the size of Phas
 
 5. **Recovery query failure handling.** If `/v5/order/realtime` itself fails (e.g., Bybit API outage), we log and skip step 2. Step 3 (execution list) still runs. If both fail, recovery is a no-op for this reconnect cycle. Next reconnect retries; until then engine view is stale. Document.
 
-6. **`lastFillTime` initial value.** On broker construction, set to `clock.now() - 5 * 60_000` (5 minutes). Means the first recovery query (if it happens before any live fills) pulls 5 minutes of history. Reasonable bound; won't pull years of data.
+6. **`lastFillTime` initial value.** Resolved to a `recoveryWindowMs: Long = 5 * 60_000L` constructor parameter on `BybitSpotBroker`. Default 5 min; tunable per strategy.
 
 7. **Bybit's execution query time-range max.** Bybit allows querying executions up to 7 days back, max 50/page. We pull 50 max per recovery — for normal use this is plenty (a strategy submitting 50 fills during a brief WS gap is unusual). Phase 7g adds pagination if needed.
 
 8. **`abort()` during pending reconnect.** Cancels the scheduled task; supervisor goes idle. `client.close()` calls `abort()`.
 
-9. **Initial connect failure.** If `client.connect()` fails on the very first try (e.g., bad credentials), should we retry? The current design says: yes, supervisor schedules retries indefinitely. Alternative: throw on initial connect failure, only retry on disconnects from a successful state. The design prefers indefinite retries — bad credentials are usually noticed when no events flow, and the retry log gives a clear signal.
+9. **Initial connect failure.** Resolved: **throw on initial connect failure** (see §6.3). Supervisor only engages after `hasEverConnected = true`. Bad credentials surface immediately; no infinite retry loop hiding operator errors.
 
 10. **No interaction with `OrderManager`.** OrderManager is unchanged. State recovery emits events into the bus; OrderManager's existing subscriptions handle them as if they were live broker events. The contract is the same.
 
