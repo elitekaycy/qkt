@@ -36,6 +36,8 @@ class OrderManager(
 
     private val siblings: MutableMap<String, List<String>> = mutableMapOf()
 
+    private val pendingChildren: MutableMap<String, List<OrderRequest>> = mutableMapOf()
+
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> onRejected(e) }
@@ -109,12 +111,51 @@ class OrderManager(
 
             is OrderRequest.StandaloneOCO -> submitOco(request)
 
+            is OrderRequest.OTO -> submitOto(request)
+
             else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
         }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
         update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
         return broker.submit(request)
+    }
+
+    private fun submitOto(req: OrderRequest.OTO): SubmitAck {
+        val now = clock.now()
+        val childIds = req.children.map { it.id }
+        update(req.id) {
+            it.copy(
+                state = OrderState.WORKING,
+                childClientOrderIds = listOf(req.parent.id) + childIds,
+                lastUpdatedAt = now,
+            )
+        }
+        track(
+            ManagedOrder(
+                id = req.parent.id,
+                request = req.parent,
+                state = OrderState.CREATED,
+                parentClientOrderId = req.id,
+                createdAt = now,
+                lastUpdatedAt = now,
+            ),
+        )
+        for (child in req.children) {
+            track(
+                ManagedOrder(
+                    id = child.id,
+                    request = child,
+                    state = OrderState.CREATED,
+                    parentClientOrderId = req.id,
+                    createdAt = now,
+                    lastUpdatedAt = now,
+                ),
+            )
+        }
+        pendingChildren[req.parent.id] = req.children
+        dispatch(req.parent)
+        return SubmitAck(req.id, req.id, accepted = true)
     }
 
     private fun submitOco(req: OrderRequest.StandaloneOCO): SubmitAck {
@@ -220,6 +261,7 @@ class OrderManager(
                 lastUpdatedAt = clock.now(),
             )
         }
+        pendingChildren.remove(e.clientOrderId)?.forEach { dispatch(it) }
         siblings[e.clientOrderId]?.forEach { sibId ->
             val sib = orders[sibId] ?: return@forEach
             if (!sib.state.isTerminal) cancel(sibId)
