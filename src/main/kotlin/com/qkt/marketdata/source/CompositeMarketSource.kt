@@ -31,14 +31,18 @@ class CompositeMarketSource(
         routes.firstOrNull { (pat, _) -> pat.matches(symbol) }?.second ?: fallback
 
     override fun liveTicks(symbols: List<String>): TickFeed {
+        if (symbols.isEmpty()) {
+            throw UnsupportedDataException(
+                MarketSourceCapability.LIVE_TICKS,
+                "CompositeMarketSource: no symbols supplied",
+            )
+        }
         val grouped = symbols.groupBy { sourceFor(it) }
         if (grouped.size == 1) {
             return grouped.keys.first().liveTicks(symbols)
         }
-        throw UnsupportedDataException(
-            MarketSourceCapability.LIVE_TICKS,
-            "CompositeMarketSource cannot fan-in live feeds in Phase 7a; planned for Phase 7b",
-        )
+        val perVendor: List<TickFeed> = grouped.map { (vendor, syms) -> vendor.liveTicks(syms) }
+        return FanInTickFeed(perVendor)
     }
 
     override fun bars(
@@ -51,4 +55,28 @@ class CompositeMarketSource(
         symbol: String,
         range: TimeRange,
     ): Sequence<Tick> = sourceFor(symbol).ticks(symbol, range)
+}
+
+private class FanInTickFeed(
+    private val feeds: List<TickFeed>,
+) : TickFeed {
+    private val cursor: java.util.ArrayDeque<TickFeed> = java.util.ArrayDeque(feeds)
+
+    override fun next(): Tick? {
+        while (cursor.isNotEmpty()) {
+            val first = cursor.peekFirst()
+            val t = first.next()
+            if (t != null) {
+                cursor.removeFirst()
+                cursor.addLast(first)
+                return t
+            }
+            cursor.removeFirst()
+        }
+        return null
+    }
+
+    override fun close() {
+        feeds.forEach { runCatching { it.close() } }
+    }
 }

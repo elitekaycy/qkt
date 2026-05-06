@@ -14,6 +14,7 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
+import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
 import com.qkt.execution.toOrder
 import com.qkt.marketdata.Candle
@@ -48,6 +49,8 @@ class TradingPipeline(
     init {
         if (candleWindow != null) CandleAggregator(bus, candleWindow)
 
+        bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick.symbol, e.tick.price) }
+
         strategies.forEach { strategy ->
             bus.subscribe<TickEvent> { e ->
                 strategy.onTickWithContext(e.tick, sessionContext) { sig -> bus.publish(SignalEvent(sig)) }
@@ -77,5 +80,9 @@ class TradingPipeline(
 
     fun ingest(tick: Tick) {
         engine.onTick(tick)
+    }
+
+    fun ingestForWarmup(tick: Tick) {
+        bus.publish(WarmupTickEvent(tick))
     }
 }
