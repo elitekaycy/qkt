@@ -12,11 +12,9 @@ import org.junit.jupiter.api.Test
 class BybitStateRecoveryTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
 
-    private fun emptyOpenOrdersResponse() =
-        """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+    private fun emptyOpenOrdersResponse() = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
 
-    private fun emptyExecutionsResponse() =
-        """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+    private fun emptyExecutionsResponse() = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
 
     @Test
     fun `reconcile with empty Bybit state and empty engine state emits nothing`() {

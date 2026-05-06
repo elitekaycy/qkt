@@ -44,7 +44,8 @@ class ReconnectSupervisorTest {
 
                 override fun submit(task: Runnable): Future<*> = NoOpFuture
 
-                override fun <T> invokeAll(tasks: MutableCollection<out Callable<T>>): MutableList<Future<T>> = mutableListOf()
+                override fun <T> invokeAll(tasks: MutableCollection<out Callable<T>>): MutableList<Future<T>> =
+                    mutableListOf()
 
                 override fun <T> invokeAll(
                     tasks: MutableCollection<out Callable<T>>,
