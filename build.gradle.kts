@@ -60,3 +60,10 @@ ktlint {
     outputToConsole.set(true)
     enableExperimentalRules.set(false)
 }
+
+tasks.register<JavaExec>("runLiveDemo") {
+    group = "application"
+    description = "Run the live TradingView demo"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.qkt.app.LiveDemoKt")
+}
