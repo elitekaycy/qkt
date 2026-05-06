@@ -1,6 +1,6 @@
 package com.qkt.app
 
-import com.qkt.broker.MockBroker
+import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
@@ -40,7 +40,7 @@ class IndicatorWarmerTest {
         val positions = PositionTracker()
         val pnl = PnLCalculator(positions, priceTracker)
         val bus = EventBus(clock, sequencer)
-        val broker = MockBroker(clock, priceTracker)
+        val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
         val ctx =

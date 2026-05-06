@@ -2,7 +2,7 @@ package com.qkt.risk.rules
 
 import com.qkt.common.Money
 import com.qkt.common.Side
-import com.qkt.execution.Order
+import com.qkt.execution.OrderRequest
 import com.qkt.positions.PositionProvider
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskRule
@@ -17,13 +17,13 @@ class MaxPositionSize(
     }
 
     override fun evaluate(
-        order: Order,
+        request: OrderRequest,
         positions: PositionProvider,
     ): Decision {
-        if (order.symbol != symbol) return Decision.Approve
+        if (request.symbol != symbol) return Decision.Approve
         val current = positions.positionFor(symbol)?.quantity ?: Money.ZERO
         val projected =
-            if (order.side == Side.BUY) current.add(order.quantity) else current.subtract(order.quantity)
+            if (request.side == Side.BUY) current.add(request.quantity) else current.subtract(request.quantity)
         return if (projected.abs().compareTo(maxQty) <= 0) {
             Decision.Approve
         } else {

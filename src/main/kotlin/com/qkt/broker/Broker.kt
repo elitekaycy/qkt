@@ -1,8 +1,24 @@
 package com.qkt.broker
 
-import com.qkt.execution.Order
-import com.qkt.execution.Trade
+import com.qkt.execution.OrderRequest
+import java.math.BigDecimal
 
 interface Broker {
-    fun execute(order: Order): Trade?
+    val name: String
+    val capabilities: Set<OrderTypeCapability>
+
+    fun submit(request: OrderRequest): SubmitAck
+
+    fun cancel(orderId: String)
+
+    fun modify(
+        orderId: String,
+        changes: OrderModification,
+    ): SubmitAck = throw UnsupportedOperationException("$name does not support modify")
 }
+
+data class OrderModification(
+    val newQuantity: BigDecimal? = null,
+    val newLimitPrice: BigDecimal? = null,
+    val newStopPrice: BigDecimal? = null,
+)

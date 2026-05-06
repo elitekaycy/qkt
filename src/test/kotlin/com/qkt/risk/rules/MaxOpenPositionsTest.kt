@@ -2,8 +2,8 @@ package com.qkt.risk.rules
 
 import com.qkt.common.Money
 import com.qkt.common.Side
-import com.qkt.execution.Order
-import com.qkt.execution.OrderType
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.Decision
@@ -19,7 +19,14 @@ class MaxOpenPositionsTest {
         symbol: String,
         side: Side = Side.BUY,
         qty: BigDecimal = Money.of("1"),
-    ) = Order("ORD-0", symbol, side, qty, OrderType.MARKET, null, 1000L)
+    ) = OrderRequest.Market(
+        id = "ORD-0",
+        symbol = symbol,
+        side = side,
+        quantity = qty,
+        timeInForce = TimeInForce.GTC,
+        timestamp = 1000L,
+    )
 
     private fun fill(
         symbol: String,

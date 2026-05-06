@@ -11,8 +11,8 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
-import com.qkt.execution.Order
-import com.qkt.execution.OrderType
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
@@ -100,7 +100,15 @@ class EventBusTest {
         clock.time = 8888L
         bus.publish(
             RiskRejectedEvent(
-                order = Order("ORD-9", "XAUUSD", Side.BUY, Money.of("1"), OrderType.MARKET, null, 1000L),
+                request =
+                    OrderRequest.Market(
+                        id = "ORD-9",
+                        symbol = "XAUUSD",
+                        side = Side.BUY,
+                        quantity = Money.of("1"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 1000L,
+                    ),
                 reason = "test rejection",
             ),
         )
@@ -108,7 +116,7 @@ class EventBusTest {
         assertThat(received).hasSize(1)
         assertThat(received[0].timestamp).isEqualTo(8888L)
         assertThat(received[0].sequenceId).isEqualTo(0L)
-        assertThat(received[0].order.id).isEqualTo("ORD-9")
+        assertThat(received[0].request.id).isEqualTo("ORD-9")
         assertThat(received[0].reason).isEqualTo("test rejection")
     }
 
@@ -204,7 +212,18 @@ class EventBusTest {
         bus.subscribe<OrderEvent> { orderHandlers.add("o2") }
         bus.subscribe<TradeEvent> { tradeHandlers.add("tr1") }
 
-        bus.publish(OrderEvent(Order("ORD-0", "XAUUSD", Side.BUY, Money.of("1"), OrderType.MARKET, null, 1000L)))
+        bus.publish(
+            OrderEvent(
+                OrderRequest.Market(
+                    id = "ORD-0",
+                    symbol = "XAUUSD",
+                    side = Side.BUY,
+                    quantity = Money.of("1"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1000L,
+                ),
+            ),
+        )
 
         assertThat(tickHandlers).isEmpty()
         assertThat(orderHandlers).containsExactly("o1", "o2")

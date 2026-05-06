@@ -1,11 +1,11 @@
 package com.qkt.risk
 
-import com.qkt.execution.Order
+import com.qkt.execution.OrderRequest
 import com.qkt.positions.PositionProvider
 
 interface RiskRule {
     fun evaluate(
-        order: Order,
+        request: OrderRequest,
         positions: PositionProvider,
     ): Decision
 }

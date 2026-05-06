@@ -2,8 +2,8 @@ package com.qkt.risk
 
 import com.qkt.common.Money
 import com.qkt.common.Side
-import com.qkt.execution.Order
-import com.qkt.execution.OrderType
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.positions.PositionProvider
 import com.qkt.positions.PositionTracker
 import java.math.BigDecimal
@@ -17,12 +17,19 @@ class RiskEngineTest {
         symbol: String = "XAUUSD",
         side: Side = Side.BUY,
         qty: BigDecimal = Money.of("1"),
-    ) = Order("ORD-0", symbol, side, qty, OrderType.MARKET, null, 1000L)
+    ) = OrderRequest.Market(
+        id = "ORD-0",
+        symbol = symbol,
+        side = side,
+        quantity = qty,
+        timeInForce = TimeInForce.GTC,
+        timestamp = 1000L,
+    )
 
     private fun approveAlways() =
         object : RiskRule {
             override fun evaluate(
-                order: Order,
+                request: OrderRequest,
                 positions: PositionProvider,
             ): Decision = Decision.Approve
         }
@@ -30,7 +37,7 @@ class RiskEngineTest {
     private fun rejectAlways(reason: String) =
         object : RiskRule {
             override fun evaluate(
-                order: Order,
+                request: OrderRequest,
                 positions: PositionProvider,
             ): Decision = Decision.Reject(reason)
         }
