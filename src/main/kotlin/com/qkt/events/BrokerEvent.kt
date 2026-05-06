@@ -4,15 +4,17 @@ import com.qkt.common.Side
 import java.math.BigDecimal
 
 sealed interface BrokerEvent : Event {
-    val clientOrderId: String
-    val brokerOrderId: String?
+    sealed interface OrderEvent : BrokerEvent {
+        val clientOrderId: String
+        val brokerOrderId: String?
+    }
 
     data class OrderAccepted(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
-    ) : BrokerEvent
+    ) : OrderEvent
 
     data class OrderRejected(
         override val clientOrderId: String,
@@ -20,7 +22,7 @@ sealed interface BrokerEvent : Event {
         val reason: String,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
-    ) : BrokerEvent
+    ) : OrderEvent
 
     data class OrderFilled(
         override val clientOrderId: String,
@@ -31,7 +33,7 @@ sealed interface BrokerEvent : Event {
         val quantity: BigDecimal,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
-    ) : BrokerEvent
+    ) : OrderEvent
 
     data class OrderPartiallyFilled(
         override val clientOrderId: String,
@@ -43,12 +45,19 @@ sealed interface BrokerEvent : Event {
         val cumulativeFilled: BigDecimal,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
-    ) : BrokerEvent
+    ) : OrderEvent
 
     data class OrderCancelled(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
         val reason: String,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : OrderEvent
+
+    data class BalancesUpdated(
+        val balances: Map<String, BigDecimal>,
+        val source: String,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : BrokerEvent
