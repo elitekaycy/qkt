@@ -34,6 +34,8 @@ class OrderManager(
 
     private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
 
+    private val siblings: MutableMap<String, List<String>> = mutableMapOf()
+
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> onRejected(e) }
@@ -105,12 +107,45 @@ class OrderManager(
 
             is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> holdPending(request)
 
+            is OrderRequest.StandaloneOCO -> submitOco(request)
+
             else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
         }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
         update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
         return broker.submit(request)
+    }
+
+    private fun submitOco(req: OrderRequest.StandaloneOCO): SubmitAck {
+        val now = clock.now()
+        update(req.id) {
+            it.copy(
+                state = OrderState.WORKING,
+                groupId = req.id,
+                childClientOrderIds = listOf(req.leg1.id, req.leg2.id),
+                lastUpdatedAt = now,
+            )
+        }
+        for (leg in listOf(req.leg1, req.leg2)) {
+            track(
+                ManagedOrder(
+                    id = leg.id,
+                    request = leg,
+                    state = OrderState.CREATED,
+                    parentClientOrderId = req.id,
+                    groupId = req.id,
+                    createdAt = now,
+                    lastUpdatedAt = now,
+                ),
+            )
+        }
+        siblings[req.leg1.id] = listOf(req.leg2.id)
+        siblings[req.leg2.id] = listOf(req.leg1.id)
+
+        dispatch(req.leg1)
+        dispatch(req.leg2)
+        return SubmitAck(req.id, req.id, accepted = true)
     }
 
     private fun holdPending(request: OrderRequest): SubmitAck {
@@ -184,6 +219,10 @@ class OrderManager(
                 avgFillPrice = blendAvg(it.avgFillPrice, it.cumulativeFilledQuantity, e.price, e.quantity),
                 lastUpdatedAt = clock.now(),
             )
+        }
+        siblings[e.clientOrderId]?.forEach { sibId ->
+            val sib = orders[sibId] ?: return@forEach
+            if (!sib.state.isTerminal) cancel(sibId)
         }
     }
 
