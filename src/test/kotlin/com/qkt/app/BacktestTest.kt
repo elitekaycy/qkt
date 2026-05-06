@@ -4,6 +4,7 @@ import com.qkt.common.Money
 import com.qkt.marketdata.Tick
 import com.qkt.risk.RiskRule
 import com.qkt.risk.rules.MaxPositionSize
+import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import org.assertj.core.api.Assertions.assertThat
@@ -22,6 +23,7 @@ class BacktestTest {
     ) = object : Strategy {
         override fun onTick(
             t: Tick,
+            ctx: SessionContext,
             emit: (Signal) -> Unit,
         ) {
             emit(Signal.Buy(symbol, Money.of(size)))
@@ -36,6 +38,7 @@ class BacktestTest {
 
         override fun onTick(
             t: Tick,
+            ctx: SessionContext,
             emit: (Signal) -> Unit,
         ) {
             when (step++) {
@@ -128,6 +131,7 @@ class BacktestTest {
 
                             override fun onTick(
                                 t: Tick,
+                                ctx: SessionContext,
                                 emit: (Signal) -> Unit,
                             ) {
                                 if (!done) {

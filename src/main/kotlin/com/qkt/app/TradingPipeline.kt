@@ -59,7 +59,7 @@ class TradingPipeline(
 
         strategies.forEach { strategy ->
             bus.subscribe<TickEvent> { e ->
-                strategy.onTickWithContext(e.tick, sessionContext) { sig -> bus.publish(SignalEvent(sig)) }
+                strategy.onTick(e.tick, sessionContext) { sig -> bus.publish(SignalEvent(sig)) }
             }
             bus.subscribe<CandleEvent> { e ->
                 strategy.onCandle(e.candle) { sig -> bus.publish(SignalEvent(sig)) }

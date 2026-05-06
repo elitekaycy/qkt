@@ -57,6 +57,7 @@ class WarmupSpecTest {
 
                 override fun onTick(
                     tick: com.qkt.marketdata.Tick,
+                    ctx: SessionContext,
                     emit: (Signal) -> Unit,
                 ) {}
             }

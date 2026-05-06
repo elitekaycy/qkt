@@ -18,7 +18,7 @@ class EveryNthTickBuyStrategyTest {
     fun `emits no signal on first n minus 1 ticks`() {
         val signals = mutableListOf<Signal>()
         val strategy = EveryNthTickBuyStrategy("XAUUSD", n = 10)
-        repeat(9) { strategy.onTick(tick()) { signals.add(it) } }
+        repeat(9) { strategy.onTick(tick(), testSessionContext()) { signals.add(it) } }
         assertThat(signals).isEmpty()
     }
 
@@ -26,7 +26,7 @@ class EveryNthTickBuyStrategyTest {
     fun `emits Buy on the nth tick`() {
         val signals = mutableListOf<Signal>()
         val strategy = EveryNthTickBuyStrategy("XAUUSD", n = 10, size = Money.of("1"))
-        repeat(10) { strategy.onTick(tick()) { signals.add(it) } }
+        repeat(10) { strategy.onTick(tick(), testSessionContext()) { signals.add(it) } }
         assertThat(signals).hasSize(1)
         assertThat(signals[0]).isEqualTo(Signal.Buy("XAUUSD", Money.of("1")))
     }
@@ -35,7 +35,7 @@ class EveryNthTickBuyStrategyTest {
     fun `emits Buy on every nth tick`() {
         val signals = mutableListOf<Signal>()
         val strategy = EveryNthTickBuyStrategy("XAUUSD", n = 5, size = Money.of("2"))
-        repeat(15) { strategy.onTick(tick()) { signals.add(it) } }
+        repeat(15) { strategy.onTick(tick(), testSessionContext()) { signals.add(it) } }
         assertThat(signals).hasSize(3)
         assertThat(signals).allMatch { it == Signal.Buy("XAUUSD", Money.of("2")) }
     }
@@ -44,8 +44,8 @@ class EveryNthTickBuyStrategyTest {
     fun `ignores ticks for non-target symbol`() {
         val signals = mutableListOf<Signal>()
         val strategy = EveryNthTickBuyStrategy("XAUUSD", n = 1)
-        strategy.onTick(tick("EURUSD")) { signals.add(it) }
-        strategy.onTick(tick("GBPUSD")) { signals.add(it) }
+        strategy.onTick(tick("EURUSD"), testSessionContext()) { signals.add(it) }
+        strategy.onTick(tick("GBPUSD"), testSessionContext()) { signals.add(it) }
         assertThat(signals).isEmpty()
     }
 

@@ -8,6 +8,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.strategy.SessionContext
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
@@ -39,6 +40,7 @@ class BacktestWarmupTest {
 
         override fun onTick(
             tick: Tick,
+            ctx: SessionContext,
             emit: (Signal) -> Unit,
         ) {
             ticks++

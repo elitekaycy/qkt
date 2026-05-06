@@ -39,13 +39,6 @@ class RollingHighBreakoutStrategy(
 
     override fun onTick(
         tick: Tick,
-        emit: (Signal) -> Unit,
-    ) {
-        // mode-aware path drives this strategy; default no-op when ctx is unavailable.
-    }
-
-    override fun onTickWithContext(
-        tick: Tick,
         ctx: SessionContext,
         emit: (Signal) -> Unit,
     ) {
