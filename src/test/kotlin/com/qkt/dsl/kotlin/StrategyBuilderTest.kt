@@ -1,7 +1,7 @@
 package com.qkt.dsl.kotlin
 
-import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreamDecl
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 

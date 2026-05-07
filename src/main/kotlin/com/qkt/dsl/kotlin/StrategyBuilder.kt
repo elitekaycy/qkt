@@ -6,8 +6,8 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
-import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.WhenThen
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty

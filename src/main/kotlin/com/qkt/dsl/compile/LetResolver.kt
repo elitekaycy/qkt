@@ -9,8 +9,8 @@ import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
-import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.InList
+import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
@@ -19,7 +19,9 @@ import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnaryOp
 
-class LetResolver(lets: List<LetDecl>) {
+class LetResolver(
+    lets: List<LetDecl>,
+) {
     private val table: Map<String, ExprAst> = lets.associate { it.name to it.expr }
 
     init {

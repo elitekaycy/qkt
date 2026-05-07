@@ -4,9 +4,13 @@ import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 
 sealed interface Value {
-    data class Num(val v: BigDecimal) : Value
+    data class Num(
+        val v: BigDecimal,
+    ) : Value
 
-    data class Bool(val v: Boolean) : Value
+    data class Bool(
+        val v: Boolean,
+    ) : Value
 
     data object Undefined : Value
 }

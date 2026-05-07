@@ -4,9 +4,13 @@ import java.math.BigDecimal
 
 sealed interface ExprAst
 
-data class NumLit(val value: BigDecimal) : ExprAst
+data class NumLit(
+    val value: BigDecimal,
+) : ExprAst
 
-data class BoolLit(val value: Boolean) : ExprAst
+data class BoolLit(
+    val value: Boolean,
+) : ExprAst
 
 data class Ref(
     val name: String,
@@ -68,9 +72,13 @@ data class Aggregate(
     val window: Window,
 ) : ExprAst
 
-data class AccountRef(val field: String) : ExprAst
+data class AccountRef(
+    val field: String,
+) : ExprAst
 
-data class PositionRef(val stream: String) : ExprAst
+data class PositionRef(
+    val stream: String,
+) : ExprAst
 
 data class StateAccessor(
     val source: StateSource,

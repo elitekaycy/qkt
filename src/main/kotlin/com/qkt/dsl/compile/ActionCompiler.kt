@@ -9,7 +9,9 @@ import com.qkt.dsl.ast.SizeQty
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 
-class ActionCompiler(private val exprCompiler: ExprCompiler) {
+class ActionCompiler(
+    private val exprCompiler: ExprCompiler,
+) {
     fun compile(action: ActionAst): (EvalContext) -> Signal =
         when (action) {
             is Buy -> compileBuySell(action.stream, action.opts) { sym, qty -> Signal.Buy(sym, qty) }

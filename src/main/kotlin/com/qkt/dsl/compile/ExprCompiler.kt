@@ -14,7 +14,9 @@ import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import java.math.BigDecimal
 
-class ExprCompiler(private val bindings: IndicatorBinding.Bag = IndicatorBinding.Bag()) {
+class ExprCompiler(
+    private val bindings: IndicatorBinding.Bag = IndicatorBinding.Bag(),
+) {
     fun compile(expr: ExprAst): CompiledExpr =
         when (expr) {
             is NumLit -> CompiledExpr { Value.Num(expr.value) }

@@ -19,12 +19,18 @@ data class Sell(
     val opts: ActionOpts = ActionOpts(),
 ) : ActionAst
 
-data class Close(val stream: String) : ActionAst
+data class Close(
+    val stream: String,
+) : ActionAst
 
 data object CloseAll : ActionAst
 
-data class Cancel(val stream: String) : ActionAst
+data class Cancel(
+    val stream: String,
+) : ActionAst
 
 data object CancelAll : ActionAst
 
-data class Log(val message: String) : ActionAst
+data class Log(
+    val message: String,
+) : ActionAst
