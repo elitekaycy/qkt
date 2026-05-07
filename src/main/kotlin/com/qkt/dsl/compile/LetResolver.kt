@@ -9,6 +9,7 @@ import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.LetDecl
@@ -52,6 +53,7 @@ class LetResolver(
                     resolve(expr.elseExpr),
                 )
             is Aggregate -> Aggregate(expr.fn, resolve(expr.series), expr.window)
+            is FuncCall -> FuncCall(expr.name, expr.args.map { resolve(it) })
             is NumLit, is BoolLit, is StreamFieldRef, is AccountRef, is PositionRef, is StateAccessor -> expr
         }
 }

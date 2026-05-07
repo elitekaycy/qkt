@@ -84,3 +84,8 @@ data class StateAccessor(
     val source: StateSource,
     val key: String,
 ) : ExprAst
+
+data class FuncCall(
+    val name: String,
+    val args: List<ExprAst>,
+) : ExprAst
