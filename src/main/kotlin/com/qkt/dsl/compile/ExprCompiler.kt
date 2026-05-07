@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.common.Money
+import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
@@ -26,8 +27,26 @@ class ExprCompiler(
             is CmpOp -> compileCmp(expr)
             is StreamFieldRef -> compileStreamField(expr)
             is IndicatorCall -> compileIndicator(expr)
+            is AccountRef -> compileAccountRef(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileAccountRef(ref: AccountRef): CompiledExpr {
+        require(ref.field in setOf("realized_pnl", "unrealized_pnl", "total_pnl")) {
+            "Unsupported ACCOUNT field in 11c1: ${ref.field} (equity/balance/drawdown deferred — engine surface needs work)"
+        }
+        return CompiledExpr { ctx ->
+            val pnl = ctx.strategyContext.pnl
+            Value.Num(
+                when (ref.field) {
+                    "realized_pnl" -> pnl.realized()
+                    "unrealized_pnl" -> pnl.unrealizedTotal()
+                    "total_pnl" -> pnl.total()
+                    else -> error("unreachable")
+                },
+            )
+        }
+    }
 
     private fun compileIndicator(call: IndicatorCall): CompiledExpr {
         val binding = bindings.bind(call)
