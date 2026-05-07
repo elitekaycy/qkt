@@ -30,6 +30,7 @@ import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
+import com.qkt.risk.RiskState
 import com.qkt.strategy.Mode
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
@@ -73,7 +74,9 @@ class Backtest(
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
-        val riskEngine = RiskEngine(rules, positions)
+        val riskState = RiskState(pnl, strategyPnL, clock, bus)
+        riskState.warmupComplete = true
+        val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
 
         val tradeRecords = mutableListOf<TradeRecord>()
         val rejections = mutableListOf<RiskRejectedEvent>()
@@ -95,6 +98,7 @@ class Backtest(
                 engine = engine,
                 strategies = strategies,
                 riskEngine = riskEngine,
+                riskState = riskState,
                 mode = Mode.BACKTEST,
                 calendar = calendar,
                 source = source,

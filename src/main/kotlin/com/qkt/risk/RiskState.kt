@@ -39,8 +39,7 @@ class RiskState(
 
     fun isStrategyHalted(strategyId: String): Boolean = halted || strategyId in haltedStrategies
 
-    fun haltReasonFor(strategyId: String): String? =
-        if (halted) haltReason else haltedStrategies[strategyId]
+    fun haltReasonFor(strategyId: String): String? = if (halted) haltReason else haltedStrategies[strategyId]
 
     fun onTick() {
         equityTracker.update()

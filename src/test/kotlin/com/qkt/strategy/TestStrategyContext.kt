@@ -8,6 +8,8 @@ import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
+import com.qkt.risk.NoOpRiskView
+import com.qkt.risk.RiskView
 import java.math.BigDecimal
 
 private val emptySource =
@@ -44,6 +46,7 @@ fun testStrategyContext(
     source: MarketSource = emptySource,
     positions: StrategyPositionView = emptyPositions,
     pnl: StrategyPnLView = emptyPnL,
+    risk: RiskView = NoOpRiskView(),
 ): StrategyContext =
     StrategyContext(
         strategyId = strategyId,
@@ -53,4 +56,5 @@ fun testStrategyContext(
         source = source,
         positions = positions,
         pnl = pnl,
+        risk = risk,
     )

@@ -7,7 +7,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
 
-class DailyPnLTracker(private val clock: Clock) {
+class DailyPnLTracker(
+    private val clock: Clock,
+) {
     private val byStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
 
     @Volatile

@@ -42,6 +42,7 @@ class IndicatorWarmerTest {
         val strategyPositions = com.qkt.positions.StrategyPositionTracker()
         val strategyPnL = com.qkt.pnl.StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
+        val riskState = com.qkt.risk.RiskState(pnl, strategyPnL, clock, bus)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
@@ -59,6 +60,7 @@ class IndicatorWarmerTest {
             engine = engine,
             strategies = strategies,
             riskEngine = riskEngine,
+            riskState = riskState,
             mode = Mode.BACKTEST,
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,

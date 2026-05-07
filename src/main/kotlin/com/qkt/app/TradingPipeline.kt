@@ -51,6 +51,7 @@ class TradingPipeline(
     val engine: Engine,
     val strategies: List<Pair<String, Strategy>>,
     val riskEngine: RiskEngine,
+    val riskState: com.qkt.risk.RiskState,
     val mode: Mode,
     val calendar: TradingCalendar,
     val source: MarketSource,
@@ -85,6 +86,7 @@ class TradingPipeline(
                     source = source,
                     positions = StrategyPositionViewImpl(strategyPositions, strategyId),
                     pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
+                    risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                 )
             bus.subscribe<TickEvent> { e ->
                 strategy.onTick(e.tick, ctx) { sig ->
@@ -107,6 +109,10 @@ class TradingPipeline(
                 }
             }
         }
+        bus.subscribe<TickEvent> { _ ->
+            riskState.onTick()
+            riskEngine.evaluateHaltRules()
+        }
         bus.subscribe<OrderEvent> { e ->
             orderManager.submit(e.request)
         }
@@ -119,6 +125,8 @@ class TradingPipeline(
 
             val stratRealized = strategyPositions.applyFill(e)
             strategyPnL.recordRealized(e.strategyId, stratRealized)
+            riskState.onFill(e.strategyId, stratRealized)
+            riskEngine.evaluateHaltRules()
 
             val trade =
                 Trade(
@@ -149,6 +157,7 @@ class TradingPipeline(
 
             val stratRealized = strategyPositions.applyFill(asFill)
             strategyPnL.recordRealized(e.strategyId, stratRealized)
+            riskState.onFill(e.strategyId, stratRealized)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")

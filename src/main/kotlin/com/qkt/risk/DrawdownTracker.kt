@@ -3,7 +3,9 @@ package com.qkt.risk
 import com.qkt.common.Money
 import java.math.BigDecimal
 
-class DrawdownTracker(private val equityTracker: EquityTracker) {
+class DrawdownTracker(
+    private val equityTracker: EquityTracker,
+) {
     fun globalDrawdown(): BigDecimal {
         val peak = equityTracker.peakEquity()
         if (peak.signum() <= 0) return Money.ZERO

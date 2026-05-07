@@ -38,6 +38,7 @@ class TradingPipelineWarmupSplitTest {
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
+        val riskState = com.qkt.risk.RiskState(pnl, strategyPnL, clock, bus)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
         return TradingPipeline(
             clock = clock,
@@ -53,6 +54,7 @@ class TradingPipelineWarmupSplitTest {
             engine = engine,
             strategies = strategies,
             riskEngine = riskEngine,
+            riskState = riskState,
             mode = Mode.BACKTEST,
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,
