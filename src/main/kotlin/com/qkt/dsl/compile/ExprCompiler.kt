@@ -16,6 +16,8 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
+import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StreamFieldRef
@@ -27,29 +29,57 @@ import java.math.BigDecimal
 class ExprCompiler(
     private val bindings: IndicatorBinding.Bag = IndicatorBinding.Bag(),
 ) {
-    fun compile(expr: ExprAst): CompiledExpr =
+    fun compile(
+        expr: ExprAst,
+        ruleSymbol: String? = null,
+    ): CompiledExpr =
         when (expr) {
             is NumLit -> CompiledExpr { Value.Num(expr.value) }
             is BoolLit -> CompiledExpr { Value.Bool(expr.value) }
-            is BinaryOp -> compileBinary(expr)
-            is UnaryOp -> compileUnary(expr)
-            is CmpOp -> compileCmp(expr)
+            is BinaryOp -> compileBinary(expr, ruleSymbol)
+            is UnaryOp -> compileUnary(expr, ruleSymbol)
+            is CmpOp -> compileCmp(expr, ruleSymbol)
             is StreamFieldRef -> compileStreamField(expr)
             is IndicatorCall -> compileIndicator(expr)
             is AccountRef -> compileAccountRef(expr)
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
-            is Between -> compileBetween(expr)
-            is InList -> compileInList(expr)
-            is CaseWhen -> compileCaseWhen(expr)
-            is Crosses -> compileCrosses(expr)
-            is FuncCall -> compileFuncCall(expr)
+            is Between -> compileBetween(expr, ruleSymbol)
+            is InList -> compileInList(expr, ruleSymbol)
+            is CaseWhen -> compileCaseWhen(expr, ruleSymbol)
+            is Crosses -> compileCrosses(expr, ruleSymbol)
+            is FuncCall -> compileFuncCall(expr, ruleSymbol)
+            is Ref -> compileRef(expr, ruleSymbol)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
 
-    private fun compileFuncCall(call: FuncCall): CompiledExpr {
+    private fun compileRef(
+        ref: Ref,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val kind = ref.snapshot
+            ?: error("Bare Ref ${ref.name} should have been substituted by LetResolver")
+        val sym = ruleSymbol ?: error("Snapshot ref ${ref.name}@$kind requires rule symbol context")
+        return when (kind) {
+            is SnapshotTPast ->
+                CompiledExpr { ctx ->
+                    val v = ctx.snapshotStore.readRolling(sym, ref.name, kind.n)
+                    if (v == null) Value.Undefined else Value.Num(v)
+                }
+            else ->
+                CompiledExpr { ctx ->
+                    val v = ctx.snapshotStore.readSlot(sym, ref.name, kind)
+                    if (v == null) Value.Undefined else Value.Num(v)
+                }
+        }
+    }
+
+    private fun compileFuncCall(
+        call: FuncCall,
+        ruleSymbol: String?,
+    ): CompiledExpr {
         require(FuncRegistry.has(call.name)) { "Unknown function: ${call.name}" }
-        val args = call.args.map { compile(it) }
+        val args = call.args.map { compile(it, ruleSymbol) }
         return CompiledExpr { ctx ->
             val values = args.map { it.evaluate(ctx) }
             if (values.any { it !is Value.Num }) {
@@ -60,9 +90,12 @@ class ExprCompiler(
         }
     }
 
-    private fun compileCrosses(c: Crosses): CompiledExpr {
-        val l = compile(c.lhs)
-        val r = compile(c.rhs)
+    private fun compileCrosses(
+        c: Crosses,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val l = compile(c.lhs, ruleSymbol)
+        val r = compile(c.rhs, ruleSymbol)
         val state = CrossesState()
         return CompiledExpr { ctx ->
             val lv = l.evaluate(ctx)
@@ -76,9 +109,12 @@ class ExprCompiler(
         }
     }
 
-    private fun compileCaseWhen(expr: CaseWhen): CompiledExpr {
-        val branches = expr.branches.map { compile(it.first) to compile(it.second) }
-        val elseE = compile(expr.elseExpr)
+    private fun compileCaseWhen(
+        expr: CaseWhen,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val branches = expr.branches.map { compile(it.first, ruleSymbol) to compile(it.second, ruleSymbol) }
+        val elseE = compile(expr.elseExpr, ruleSymbol)
         return CompiledExpr { ctx ->
             var result: Value? = null
             for ((cond, body) in branches) {
@@ -92,9 +128,12 @@ class ExprCompiler(
         }
     }
 
-    private fun compileInList(expr: InList): CompiledExpr {
-        val v = compile(expr.v)
-        val members = expr.members.map { compile(it) }
+    private fun compileInList(
+        expr: InList,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val v = compile(expr.v, ruleSymbol)
+        val members = expr.members.map { compile(it, ruleSymbol) }
         return CompiledExpr { ctx ->
             val vv = v.evaluate(ctx)
             if (vv !is Value.Num) {
@@ -113,10 +152,13 @@ class ExprCompiler(
         }
     }
 
-    private fun compileBetween(b: Between): CompiledExpr {
-        val v = compile(b.v)
-        val lo = compile(b.lo)
-        val hi = compile(b.hi)
+    private fun compileBetween(
+        b: Between,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val v = compile(b.v, ruleSymbol)
+        val lo = compile(b.lo, ruleSymbol)
+        val hi = compile(b.hi, ruleSymbol)
         return CompiledExpr { ctx ->
             val vv = v.evaluate(ctx)
             val lov = lo.evaluate(ctx)
@@ -201,9 +243,12 @@ class ExprCompiler(
         }
     }
 
-    private fun compileBinary(op: BinaryOp): CompiledExpr {
-        val l = compile(op.lhs)
-        val r = compile(op.rhs)
+    private fun compileBinary(
+        op: BinaryOp,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val l = compile(op.lhs, ruleSymbol)
+        val r = compile(op.rhs, ruleSymbol)
         return when (op.op) {
             BinOp.ADD -> numericBinary(l, r) { a, b -> a.add(b, Money.CONTEXT) }
             BinOp.SUB -> numericBinary(l, r) { a, b -> a.subtract(b, Money.CONTEXT) }
@@ -236,8 +281,11 @@ class ExprCompiler(
             if (lv !is Value.Bool || rv !is Value.Bool) Value.Undefined else Value.Bool(op(lv.v, rv.v))
         }
 
-    private fun compileUnary(op: UnaryOp): CompiledExpr {
-        val a = compile(op.arg)
+    private fun compileUnary(
+        op: UnaryOp,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val a = compile(op.arg, ruleSymbol)
         return when (op.op) {
             UnOp.NEG ->
                 CompiledExpr { ctx ->
@@ -252,9 +300,12 @@ class ExprCompiler(
         }
     }
 
-    private fun compileCmp(op: CmpOp): CompiledExpr {
-        val l = compile(op.lhs)
-        val r = compile(op.rhs)
+    private fun compileCmp(
+        op: CmpOp,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val l = compile(op.lhs, ruleSymbol)
+        val r = compile(op.rhs, ruleSymbol)
         return CompiledExpr { ctx ->
             val lv = l.evaluate(ctx)
             val rv = r.evaluate(ctx)
