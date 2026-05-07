@@ -44,15 +44,24 @@ class SweepReportWriter(
         for (run in result.runs) {
             val r: PerformanceReport = run.result.global
             sb
-                .append(run.label).append(',')
-                .append(run.config.toString()).append(',')
-                .append(r.totalPnL.toPlainString()).append(',')
-                .append(r.sharpeRatio?.toPlainString() ?: "").append(',')
-                .append(r.maxDrawdown.toPlainString()).append(',')
-                .append(r.winRate.toPlainString()).append(',')
-                .append(r.tradeCount).append(',')
-                .append(r.profitFactor?.toPlainString() ?: "").append(',')
-                .append(r.calmarRatio?.toPlainString() ?: "").append('\n')
+                .append(run.label)
+                .append(',')
+                .append(run.config.toString())
+                .append(',')
+                .append(r.totalPnL.toPlainString())
+                .append(',')
+                .append(r.sharpeRatio?.toPlainString() ?: "")
+                .append(',')
+                .append(r.maxDrawdown.toPlainString())
+                .append(',')
+                .append(r.winRate.toPlainString())
+                .append(',')
+                .append(r.tradeCount)
+                .append(',')
+                .append(r.profitFactor?.toPlainString() ?: "")
+                .append(',')
+                .append(r.calmarRatio?.toPlainString() ?: "")
+                .append('\n')
         }
         return sb.toString()
     }
@@ -81,7 +90,11 @@ class SweepReportWriter(
         sb.append("\n    \"maxDrawdown\": ").append(ReportSerializer.jsonBigDecimal(r.maxDrawdown)).append(",")
         sb.append("\n    \"winRate\": ").append(ReportSerializer.jsonBigDecimal(r.winRate)).append(",")
         sb.append("\n    \"tradeCount\": ").append(r.tradeCount).append(",")
-        sb.append("\n    \"profitFactor\": ").append(ReportSerializer.jsonNullableBigDecimal(r.profitFactor)).append(",")
+        sb
+            .append(
+                "\n    \"profitFactor\": ",
+            ).append(ReportSerializer.jsonNullableBigDecimal(r.profitFactor))
+            .append(",")
         sb.append("\n    \"calmarRatio\": ").append(ReportSerializer.jsonNullableBigDecimal(r.calmarRatio))
         sb.append("\n  }")
         return sb.toString()

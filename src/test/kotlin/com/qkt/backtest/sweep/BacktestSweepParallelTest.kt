@@ -12,8 +12,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class BacktestSweepParallelTest {
-    private fun ticks(): List<Tick> =
-        (1..5).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
+    private fun ticks(): List<Tick> = (1..5).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
 
     private val noopStrategy =
         object : Strategy {
@@ -48,6 +47,7 @@ class BacktestSweepParallelTest {
     @Test
     fun `parallel and sequential produce equivalent results`() {
         val configs = listOf("a" to 1, "b" to 2, "c" to 3)
+
         fun build(p: Int) =
             BacktestSweep(
                 configs = configs,
@@ -66,8 +66,13 @@ class BacktestSweepParallelTest {
 
         assertThat(par.runs.map { it.label }).isEqualTo(seq.runs.map { it.label })
         for (i in seq.runs.indices) {
-            assertThat(par.runs[i].result.global.totalPnL)
-                .isEqualByComparingTo(seq.runs[i].result.global.totalPnL)
+            assertThat(
+                par.runs[i]
+                    .result.global.totalPnL,
+            ).isEqualByComparingTo(
+                seq.runs[i]
+                    .result.global.totalPnL,
+            )
         }
     }
 

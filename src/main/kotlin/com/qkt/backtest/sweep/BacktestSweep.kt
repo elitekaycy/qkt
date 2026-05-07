@@ -19,8 +19,7 @@ class BacktestSweep<C>(
         require(configs.all { it.first.isNotBlank() }) { "config labels must be non-blank" }
     }
 
-    fun run(): SweepResult<C> =
-        if (parallelism == 1) runSequential() else runParallel()
+    fun run(): SweepResult<C> = if (parallelism == 1) runSequential() else runParallel()
 
     private fun runSequential(): SweepResult<C> =
         SweepResult(

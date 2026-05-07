@@ -11,8 +11,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class BacktestSweepFailFastTest {
-    private fun ticks(): List<Tick> =
-        (1..3).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
+    private fun ticks(): List<Tick> = (1..3).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
 
     private val noopStrategy =
         object : Strategy {

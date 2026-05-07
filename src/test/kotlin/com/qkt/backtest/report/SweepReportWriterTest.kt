@@ -26,8 +26,7 @@ class SweepReportWriterTest {
             ) {}
         }
 
-    private fun ticks(): List<Tick> =
-        (1..5).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
+    private fun ticks(): List<Tick> = (1..5).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
 
     private fun bt(label: String): Backtest =
         Backtest(
