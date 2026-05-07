@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.StateAccessor
@@ -35,8 +36,30 @@ class ExprCompiler(
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
             is Between -> compileBetween(expr)
+            is InList -> compileInList(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileInList(expr: InList): CompiledExpr {
+        val v = compile(expr.v)
+        val members = expr.members.map { compile(it) }
+        return CompiledExpr { ctx ->
+            val vv = v.evaluate(ctx)
+            if (vv !is Value.Num) {
+                Value.Undefined
+            } else {
+                var hit = false
+                for (m in members) {
+                    val mv = m.evaluate(ctx)
+                    if (mv is Value.Num && mv.v.compareTo(vv.v) == 0) {
+                        hit = true
+                        break
+                    }
+                }
+                Value.Bool(hit)
+            }
+        }
+    }
 
     private fun compileBetween(b: Between): CompiledExpr {
         val v = compile(b.v)
