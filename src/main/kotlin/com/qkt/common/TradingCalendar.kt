@@ -27,8 +27,7 @@ interface TradingCalendar {
         anchorEpoch: Long,
     ): TimeRange
 
-    fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal =
-        error("tradingPeriodsPerYear not implemented for $name")
+    fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal = error("tradingPeriodsPerYear not implemented for $name")
 
     companion object {
         fun crypto(): TradingCalendar = CryptoCalendar

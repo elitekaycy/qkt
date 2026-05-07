@@ -32,8 +32,7 @@ class EquityCurveCollector(
 
     fun global(): List<EquitySample> = globalCurve.toList()
 
-    fun forStrategy(strategyId: String): List<EquitySample> =
-        perStrategy[strategyId]?.toList() ?: emptyList()
+    fun forStrategy(strategyId: String): List<EquitySample> = perStrategy[strategyId]?.toList() ?: emptyList()
 
     private fun sample(timestamp: Long) {
         val globalEquity: BigDecimal = pnl.realizedTotal().add(pnl.unrealizedTotal())
