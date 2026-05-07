@@ -7,12 +7,13 @@ import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 
-class ExprCompiler {
+class ExprCompiler(private val bindings: IndicatorBinding.Bag = IndicatorBinding.Bag()) {
     fun compile(expr: ExprAst): CompiledExpr =
         when (expr) {
             is NumLit -> CompiledExpr { Value.Num(expr.value) }
@@ -21,8 +22,17 @@ class ExprCompiler {
             is UnaryOp -> compileUnary(expr)
             is CmpOp -> compileCmp(expr)
             is StreamFieldRef -> compileStreamField(expr)
+            is IndicatorCall -> compileIndicator(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileIndicator(call: IndicatorCall): CompiledExpr {
+        val binding = bindings.bind(call)
+        return CompiledExpr {
+            val v = binding.indicator.value()
+            if (v == null || !binding.indicator.isReady) Value.Undefined else Value.Num(v)
+        }
+    }
 
     private fun compileStreamField(ref: StreamFieldRef): CompiledExpr {
         require(ref.field in setOf("close", "open", "high", "low", "volume", "price")) {
