@@ -149,4 +149,4 @@ The unsupported-AST boundary is also tested explicitly (`UnsupportedAstTest.kt`)
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md`
 - Plan: `docs/superpowers/plans/2026-05-07-trading-engine-phase11b.md`
-- Merge commit: TBD (filled in after merge to `main`).
+- Merge commit: `a167370`
