@@ -562,21 +562,41 @@ Each sub-phase ends with a working engine. Tests at the boundary of each sub-pha
 
 **Out of scope for 11b:** snapshots, `CASE WHEN`, `CROSSES`, aggregates, multiple streams, multiple timeframes, multiple brokers, limit/stop/bracket/OCO, sizing modes other than direct, `DEFAULTS`, `FOR EACH`, parser.
 
-### Phase 11c — Expressive core (~18 tasks)
+### Phase 11c — Expressive core
 
-**Goal:** Make the language expressive enough to write real strategies that don't just trade on a single moving-average crossover.
+The expressive-core phase is split into three sub-phases. Each ships independently. Together they cover the surface originally scoped to Phase 11c in earlier drafts of this spec.
+
+#### Phase 11c1 — Engine state, range, conditional, cross, indicator composition, stdlib math (~18 tasks)
+
+**Goal:** Make conditions expressive without yet introducing per-rule runtime state for snapshots and running aggregates.
 
 **Adds:**
-- Snapshot semantics (`@buy`, `@sell`, `@open`, `@T-N`).
-- `CROSSES ABOVE` / `CROSSES BELOW`.
-- `BETWEEN`, `IN`.
+- Engine state accessors backed by existing views: `ACCOUNT.realized_pnl`, `ACCOUNT.unrealized_pnl`, `ACCOUNT.total_pnl`, `POSITION.<sym>` (signed quantity), `POSITION_AVG_PRICE.<sym>`. (Equity/balance/drawdown/`OPEN_ORDERS.<sym>` deferred — they need engine-side surface that does not yet exist.)
+- `BETWEEN <lo> AND <hi>`, `IN [list]`.
 - `CASE WHEN ... THEN ... ELSE ... END`.
-- Running aggregates (`MIN`/`MAX`/`MEAN`/`SUM` `SINCE OPEN | T-N`).
-- Engine state accessors (`ACCOUNT.*`, `POSITION.*`, `POSITION_AVG_PRICE.*`, `OPEN_ORDERS.*`).
-- Indicator composition (`RSI(ATR(s, 14), 5)`).
-- Stdlib math (`ABS`, `MIN`, `MAX`, `LOG`, `SQRT`).
-- Logging action.
-- `CLOSE`, `CLOSE_ALL`, `CANCEL`, `CANCEL_ALL`.
+- `CROSSES ABOVE` / `CROSSES BELOW` with per-node previous-bar state.
+- Indicator composition (`RSI(ATR(s, 14), 5)` and similar).
+- Stdlib math: `ABS`, `SQRT`, `LOG` (single-arg), `MIN`, `MAX` (variadic, distinct from running-aggregate forms in 11c2).
+
+**Out of scope for 11c1:** snapshots, running aggregates (`SINCE OPEN`/`SINCE T-N`), new actions (`Log`, `CLOSE`, `CLOSE_ALL`, `CANCEL`, `CANCEL_ALL`), engine-side state surface for equity/balance/drawdown/open-orders.
+
+#### Phase 11c2 — Snapshots and running aggregates (~12 tasks)
+
+**Goal:** Stateful runtime — capture values at decision time, summarise series over windows.
+
+**Adds:**
+- Snapshot semantics (`@buy`, `@sell`, `@open`, `@T-N`) with a per-rule, per-symbol snapshot store.
+- Running aggregates: `MIN`/`MAX`/`MEAN`/`SUM` over a `SINCE OPEN` or `SINCE T-N` window. `SINCE OPEN` resets when a position opens on the relevant symbol; `SINCE T-N` is a trailing window of `N` candles.
+
+#### Phase 11c3 — New actions (~6 tasks)
+
+**Goal:** Round out the action surface beyond `BUY`/`SELL`.
+
+**Adds:**
+- `Log "<message>"` — emits a structured log entry via the engine's existing SLF4J logger.
+- `CLOSE <stream>` — flatten the position on `<stream>` (market order at full size, direction inferred from `POSITION.<sym>` sign).
+- `CLOSE_ALL` — flatten every open position.
+- `CANCEL <stream>` / `CANCEL_ALL` — surface working-order cancellation. (Cancellation requires broker-side support that may need engine work; if so, this slice is downsized to `CLOSE`/`CLOSE_ALL` only and the cancel actions defer to a later phase.)
 
 ### Phase 11d — Production order surface (~16 tasks)
 
