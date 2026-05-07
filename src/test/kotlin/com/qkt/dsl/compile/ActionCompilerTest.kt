@@ -44,16 +44,16 @@ class ActionCompilerTest {
                 stream = "btc",
                 opts = ActionOpts(sizing = SizeQty(NumLit(BigDecimal("2"))), orderType = Market),
             )
-        val sig = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
-        assertThat(sig).isEqualTo(Signal.Buy("BTCUSDT", BigDecimal("2")))
+        val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
+        assertThat(sigs).containsExactly(Signal.Buy("BTCUSDT", BigDecimal("2")))
     }
 
     @Test
     fun `SELL emits Signal Sell`() {
         val action =
             Sell(stream = "btc", opts = ActionOpts(sizing = SizeQty(NumLit(BigDecimal("3")))))
-        val sig = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
-        assertThat(sig).isEqualTo(Signal.Sell("BTCUSDT", BigDecimal("3")))
+        val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
+        assertThat(sigs).containsExactly(Signal.Sell("BTCUSDT", BigDecimal("3")))
     }
 
     @Test

@@ -159,8 +159,7 @@ private class CompiledStrategy(
 
         // 5. Rules
         for (rule in rules) {
-            val sig = rule.fire(ec, ctx) ?: continue
-            emit(sig)
+            for (sig in rule.fire(ec, ctx)) emit(sig)
         }
     }
 }

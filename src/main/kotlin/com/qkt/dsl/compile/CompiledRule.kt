@@ -9,7 +9,7 @@ import java.math.BigDecimal
 
 class CompiledRule(
     private val condition: CompiledExpr,
-    private val action: (EvalContext) -> Signal,
+    private val action: (EvalContext) -> List<Signal>,
     private val ruleSymbol: String,
     private val isBuy: Boolean,
     private val isSell: Boolean,
@@ -20,9 +20,9 @@ class CompiledRule(
     fun fire(
         ec: EvalContext,
         ctx: StrategyContext,
-    ): Signal? {
+    ): List<Signal> {
         val v = condition.evaluate(ec)
-        if (v !is Value.Bool || !v.v) return null
+        if (v !is Value.Bool || !v.v) return emptyList()
 
         val preFireQty =
             ctx.positions.positionFor(ruleSymbol)?.quantity ?: BigDecimal.ZERO

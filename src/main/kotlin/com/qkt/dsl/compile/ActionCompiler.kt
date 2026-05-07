@@ -12,7 +12,7 @@ import java.math.BigDecimal
 class ActionCompiler(
     private val exprCompiler: ExprCompiler,
 ) {
-    fun compile(action: ActionAst): (EvalContext) -> Signal =
+    fun compile(action: ActionAst): (EvalContext) -> List<Signal> =
         when (action) {
             is Buy -> compileBuySell(action.stream, action.opts) { sym, qty -> Signal.Buy(sym, qty) }
             is Sell -> compileBuySell(action.stream, action.opts) { sym, qty -> Signal.Sell(sym, qty) }
@@ -23,7 +23,7 @@ class ActionCompiler(
         stream: String,
         opts: ActionOpts,
         ctor: (String, BigDecimal) -> Signal,
-    ): (EvalContext) -> Signal {
+    ): (EvalContext) -> List<Signal> {
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING in 11b")
         require(sizing is SizeQty) { "Only direct quantity sizing is supported in 11b" }
         require(opts.orderType == null || opts.orderType == Market) {
@@ -37,7 +37,7 @@ class ActionCompiler(
             val symbol = ctx.streamSymbols[stream] ?: error("Unknown stream alias: $stream")
             val v = qtyExpr.evaluate(ctx)
             require(v is Value.Num) { "SIZING must be numeric, got $v" }
-            ctor(symbol, v.v)
+            listOf(ctor(symbol, v.v))
         }
     }
 }
