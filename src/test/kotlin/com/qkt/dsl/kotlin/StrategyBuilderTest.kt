@@ -43,4 +43,31 @@ class StrategyBuilderTest {
         val sum = btc.high - btc.low
         assertThat(sum).isInstanceOf(com.qkt.dsl.ast.BinaryOp::class.java)
     }
+
+    @Test
+    fun `LET delegate registers a LetDecl and produces a Ref`() {
+        val ast =
+            strategy("s", version = 1) {
+                val btc = stream("btc", broker = "BACKTEST", symbol = "BTCUSDT", every = "1m")
+                val fast by letting(ema(btc.close, period = 9))
+                assertThat(fast).isInstanceOf(com.qkt.dsl.ast.Ref::class.java)
+            }
+        assertThat(ast.lets).hasSize(1)
+        assertThat(ast.lets[0].name).isEqualTo("fast")
+    }
+
+    @Test
+    fun `rule block builds a WhenThen with Buy action`() {
+        val ast =
+            strategy("s", version = 1) {
+                val btc = stream("btc", broker = "BACKTEST", symbol = "BTCUSDT", every = "1m")
+                rule {
+                    whenever(btc.close gt 100.bd)
+                    then { buy(btc, qty = 1.bd) }
+                }
+            }
+        assertThat(ast.rules).hasSize(1)
+        val r = ast.rules[0] as com.qkt.dsl.ast.WhenThen
+        assertThat(r.action).isInstanceOf(com.qkt.dsl.ast.Buy::class.java)
+    }
 }

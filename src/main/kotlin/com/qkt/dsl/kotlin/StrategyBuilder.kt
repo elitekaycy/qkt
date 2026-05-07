@@ -1,10 +1,16 @@
 package com.qkt.dsl.kotlin
 
+import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ConstantDecl
+import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.LetDecl
+import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.WhenThen
+import kotlin.properties.ReadOnlyProperty
+import kotlin.reflect.KProperty
 
 @DslMarker
 annotation class QktDsl
@@ -29,6 +35,14 @@ class StrategyBuilder(
         return StreamRef(alias = alias)
     }
 
+    fun letting(expr: ExprAst): LetBindingProvider = LetBindingProvider(this, expr)
+
+    fun rule(block: RuleBuilder.() -> Unit) {
+        val rb = RuleBuilder()
+        rb.block()
+        addRule(rb.build())
+    }
+
     internal fun addRule(rule: RuleAst) {
         rules.add(rule)
     }
@@ -43,6 +57,40 @@ class StrategyBuilder(
             defaults = null,
             rules = rules.toList(),
         )
+}
+
+@QktDsl
+class RuleBuilder {
+    private var cond: ExprAst? = null
+    private var action: ActionAst? = null
+
+    fun whenever(c: ExprAst) {
+        cond = c
+    }
+
+    fun then(block: ActionScope.() -> ActionAst) {
+        action = ActionScope.block()
+    }
+
+    internal fun build(): WhenThen {
+        val c = cond ?: error("rule { ... } missing whenever(...)")
+        val a = action ?: error("rule { ... } missing then { ... }")
+        return WhenThen(c, a)
+    }
+}
+
+class LetBindingProvider(
+    private val builder: StrategyBuilder,
+    private val expr: ExprAst,
+) {
+    operator fun provideDelegate(
+        thisRef: Any?,
+        property: KProperty<*>,
+    ): ReadOnlyProperty<Any?, ExprAst> {
+        builder.lets.add(LetDecl(property.name, expr))
+        val ref = Ref(property.name)
+        return ReadOnlyProperty { _, _ -> ref }
+    }
 }
 
 fun strategy(
