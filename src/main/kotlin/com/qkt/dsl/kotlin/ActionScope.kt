@@ -3,7 +3,10 @@ package com.qkt.dsl.kotlin
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.Close
+import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
@@ -18,4 +21,10 @@ object ActionScope {
         stream: StreamRef,
         qty: ExprAst,
     ): ActionAst = Sell(stream.alias, ActionOpts(sizing = SizeQty(qty), orderType = Market))
+
+    fun log(message: String): ActionAst = Log(message)
+
+    fun closeStream(stream: StreamRef): ActionAst = Close(stream.alias)
+
+    fun closeAll(): ActionAst = CloseAll
 }

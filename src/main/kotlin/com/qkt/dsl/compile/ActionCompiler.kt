@@ -3,27 +3,81 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.Cancel
+import com.qkt.dsl.ast.CancelAll
+import com.qkt.dsl.ast.Close
+import com.qkt.dsl.ast.CloseAll
+import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 class ActionCompiler(
     private val exprCompiler: ExprCompiler,
+    private val strategyLogger: Logger = LoggerFactory.getLogger("com.qkt.dsl.strategy"),
 ) {
-    fun compile(action: ActionAst): (EvalContext) -> Signal =
+    fun compile(action: ActionAst): (EvalContext) -> List<Signal> =
         when (action) {
             is Buy -> compileBuySell(action.stream, action.opts) { sym, qty -> Signal.Buy(sym, qty) }
             is Sell -> compileBuySell(action.stream, action.opts) { sym, qty -> Signal.Sell(sym, qty) }
-            else -> error("Action ${action::class.simpleName} is not supported in 11b")
+            is Log -> compileLog(action)
+            is Close -> compileClose(action.stream)
+            is CloseAll -> compileCloseAll()
+            is Cancel ->
+                error(
+                    "CANCEL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
+                )
+            is CancelAll ->
+                error(
+                    "CANCEL_ALL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
+                )
+            else -> error("Action ${action::class.simpleName} is not supported in 11c3")
         }
+
+    private fun compileCloseAll(): (EvalContext) -> List<Signal> =
+        { ctx ->
+            val out = mutableListOf<Signal>()
+            for ((symbol, position) in ctx.strategyContext.positions.allPositions()) {
+                val qty = position.quantity
+                when {
+                    qty.signum() > 0 -> out.add(Signal.Sell(symbol, qty))
+                    qty.signum() < 0 -> out.add(Signal.Buy(symbol, qty.abs()))
+                }
+            }
+            out
+        }
+
+    private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> =
+        { ctx ->
+            val symbol = ctx.streamSymbols[streamAlias] ?: error("Unknown stream alias: $streamAlias")
+            val qty =
+                ctx.strategyContext.positions
+                    .positionFor(symbol)
+                    ?.quantity ?: BigDecimal.ZERO
+            when {
+                qty.signum() > 0 -> listOf(Signal.Sell(symbol, qty))
+                qty.signum() < 0 -> listOf(Signal.Buy(symbol, qty.abs()))
+                else -> emptyList()
+            }
+        }
+
+    private fun compileLog(log: Log): (EvalContext) -> List<Signal> {
+        val msg = log.message
+        return { _ ->
+            strategyLogger.info(msg)
+            emptyList()
+        }
+    }
 
     private fun compileBuySell(
         stream: String,
         opts: ActionOpts,
         ctor: (String, BigDecimal) -> Signal,
-    ): (EvalContext) -> Signal {
+    ): (EvalContext) -> List<Signal> {
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING in 11b")
         require(sizing is SizeQty) { "Only direct quantity sizing is supported in 11b" }
         require(opts.orderType == null || opts.orderType == Market) {
@@ -37,7 +91,7 @@ class ActionCompiler(
             val symbol = ctx.streamSymbols[stream] ?: error("Unknown stream alias: $stream")
             val v = qtyExpr.evaluate(ctx)
             require(v is Value.Num) { "SIZING must be numeric, got $v" }
-            ctor(symbol, v.v)
+            listOf(ctor(symbol, v.v))
         }
     }
 }

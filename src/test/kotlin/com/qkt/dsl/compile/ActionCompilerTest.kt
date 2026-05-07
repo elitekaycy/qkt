@@ -2,7 +2,6 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Buy
-import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
@@ -44,16 +43,16 @@ class ActionCompilerTest {
                 stream = "btc",
                 opts = ActionOpts(sizing = SizeQty(NumLit(BigDecimal("2"))), orderType = Market),
             )
-        val sig = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
-        assertThat(sig).isEqualTo(Signal.Buy("BTCUSDT", BigDecimal("2")))
+        val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
+        assertThat(sigs).containsExactly(Signal.Buy("BTCUSDT", BigDecimal("2")))
     }
 
     @Test
     fun `SELL emits Signal Sell`() {
         val action =
             Sell(stream = "btc", opts = ActionOpts(sizing = SizeQty(NumLit(BigDecimal("3")))))
-        val sig = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
-        assertThat(sig).isEqualTo(Signal.Sell("BTCUSDT", BigDecimal("3")))
+        val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
+        assertThat(sigs).containsExactly(Signal.Sell("BTCUSDT", BigDecimal("3")))
     }
 
     @Test
@@ -89,12 +88,5 @@ class ActionCompilerTest {
                 ),
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
-    }
-
-    @Test
-    fun `Close action is unsupported in 11b`() {
-        assertThatThrownBy {
-            ActionCompiler(ExprCompiler()).compile(Close("btc"))
-        }.isInstanceOf(IllegalStateException::class.java)
     }
 }

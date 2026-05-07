@@ -1,7 +1,12 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.Cancel
+import com.qkt.dsl.ast.CancelAll
+import com.qkt.dsl.ast.Close
+import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SnapshotOpen
@@ -21,7 +26,8 @@ class AstCompiler {
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
         val exprCompiler = ExprCompiler(bindings, aggregates)
-        val actionCompiler = ActionCompiler(exprCompiler)
+        val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
+        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger)
 
         val whenThens: List<WhenThen> =
             ast.rules.map {
@@ -46,13 +52,21 @@ class AstCompiler {
 
         val rules: List<CompiledRule> =
             whenThens.zip(resolvedConditions).map { (rule, cond) ->
-                val streamAlias =
+                val streamAlias: String? =
                     when (val a = rule.action) {
                         is Buy -> a.stream
                         is Sell -> a.stream
-                        else -> error("Action ${a::class.simpleName} not supported in 11c2")
+                        is Close -> a.stream
+                        is Cancel -> a.stream
+                        is CloseAll, is CancelAll, is Log -> null
                     }
-                val symbol = streamSymbols[streamAlias] ?: error("Unknown stream alias: $streamAlias")
+                val symbol =
+                    if (streamAlias != null) {
+                        streamSymbols[streamAlias] ?: error("Unknown stream alias: $streamAlias")
+                    } else {
+                        streamSymbols.values.firstOrNull()
+                            ?: error("Strategy must declare at least one stream")
+                    }
                 val compiledCond = exprCompiler.compile(cond, ruleSymbol = symbol)
                 val action = actionCompiler.compile(rule.action)
                 val isBuy = rule.action is Buy
@@ -159,8 +173,7 @@ private class CompiledStrategy(
 
         // 5. Rules
         for (rule in rules) {
-            val sig = rule.fire(ec, ctx) ?: continue
-            emit(sig)
+            for (sig in rule.fire(ec, ctx)) emit(sig)
         }
     }
 }
