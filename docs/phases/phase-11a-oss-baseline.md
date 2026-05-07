@@ -79,4 +79,4 @@ Phase 11a has no production tests. The CI workflow itself is the verification â€
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase11a-design.md`
 - Plan: `docs/superpowers/plans/2026-05-07-trading-engine-phase11a.md`
-- Merge commit: filled in at merge time.
+- Merge commit: `3094fae`
