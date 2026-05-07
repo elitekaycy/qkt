@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.common.Money
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
@@ -33,8 +34,25 @@ class ExprCompiler(
             is AccountRef -> compileAccountRef(expr)
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
+            is Between -> compileBetween(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileBetween(b: Between): CompiledExpr {
+        val v = compile(b.v)
+        val lo = compile(b.lo)
+        val hi = compile(b.hi)
+        return CompiledExpr { ctx ->
+            val vv = v.evaluate(ctx)
+            val lov = lo.evaluate(ctx)
+            val hiv = hi.evaluate(ctx)
+            if (vv !is Value.Num || lov !is Value.Num || hiv !is Value.Num) {
+                Value.Undefined
+            } else {
+                Value.Bool(vv.v >= lov.v && vv.v <= hiv.v)
+            }
+        }
+    }
 
     private fun compilePositionRef(ref: PositionRef): CompiledExpr =
         CompiledExpr { ctx ->
