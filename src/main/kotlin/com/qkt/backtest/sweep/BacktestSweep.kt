@@ -1,6 +1,9 @@
 package com.qkt.backtest.sweep
 
 import com.qkt.backtest.Backtest
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class BacktestSweep<C>(
     private val configs: List<Pair<String, C>>,
@@ -26,5 +29,25 @@ class BacktestSweep<C>(
             },
         )
 
-    private fun runParallel(): SweepResult<C> = error("parallel mode lands in Task 5")
+    private fun runParallel(): SweepResult<C> {
+        val poolSize = parallelism.coerceAtMost(configs.size)
+        val executor = Executors.newFixedThreadPool(poolSize)
+        try {
+            val futures =
+                configs.map { (label, config) ->
+                    executor.submit<SweepRun<C>> {
+                        SweepRun(label, config, backtestFactory(label, config).run())
+                    }
+                }
+            return try {
+                SweepResult(futures.map { it.get() })
+            } catch (e: ExecutionException) {
+                executor.shutdownNow()
+                throw e.cause ?: e
+            }
+        } finally {
+            executor.shutdown()
+            executor.awaitTermination(1, TimeUnit.MINUTES)
+        }
+    }
 }
