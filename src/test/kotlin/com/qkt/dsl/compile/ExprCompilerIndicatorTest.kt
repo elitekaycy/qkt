@@ -4,6 +4,7 @@ import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.marketdata.Candle
+import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -27,7 +28,12 @@ class ExprCompilerIndicatorTest {
                 1L,
             )
         val ctx =
-            EvalContext(candle = candle, streamSymbols = mapOf("btc" to "BTCUSDT"), lets = emptyMap())
+            EvalContext(
+                candle = candle,
+                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
         bindings.updateAll(ctx)
         assertThat(compiled.evaluate(ctx)).isEqualTo(Value.Undefined)
     }
@@ -50,7 +56,13 @@ class ExprCompilerIndicatorTest {
                     0L,
                     1L,
                 )
-            ctx = EvalContext(candle = c, streamSymbols = mapOf("btc" to "BTCUSDT"), lets = emptyMap())
+            ctx =
+                EvalContext(
+                    candle = c,
+                    streamSymbols = mapOf("btc" to "BTCUSDT"),
+                    lets = emptyMap(),
+                    strategyContext = testStrategyContext(),
+                )
             bindings.updateAll(ctx)
         }
         val v = compiled.evaluate(ctx!!) as Value.Num

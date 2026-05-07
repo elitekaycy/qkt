@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.marketdata.Candle
+import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 
 sealed interface Value {
@@ -19,6 +20,7 @@ class EvalContext(
     val candle: Candle,
     val streamSymbols: Map<String, String>,
     val lets: Map<String, BigDecimal>,
+    val strategyContext: StrategyContext,
 )
 
 fun interface CompiledExpr {

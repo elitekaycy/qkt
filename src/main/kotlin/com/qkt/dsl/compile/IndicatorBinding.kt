@@ -5,21 +5,29 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.stdlib.IndicatorInput
 import com.qkt.dsl.stdlib.IndicatorRegistry
+import com.qkt.dsl.stdlib.IndicatorSpec
 import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 
-class IndicatorBinding(
+class IndicatorBinding private constructor(
     val call: IndicatorCall,
     val indicator: IndicatorOutput,
-    val streamAlias: String,
-    val field: String?,
-    val inputKind: IndicatorInput,
+    private val streamAlias: String?,
+    private val field: String?,
+    private val inputKind: IndicatorInput,
+    private val source: IndicatorBinding?,
 ) {
     @Suppress("UNCHECKED_CAST")
     fun update(ctx: EvalContext) {
-        val symbol = ctx.streamSymbols[streamAlias] ?: error("Unknown stream alias: $streamAlias")
+        if (source != null) {
+            if (!source.indicator.isReady) return
+            val v = source.indicator.value() ?: return
+            (indicator as Indicator<BigDecimal>).update(v)
+            return
+        }
+        val symbol = ctx.streamSymbols[streamAlias!!] ?: error("Unknown stream alias: $streamAlias")
         if (ctx.candle.symbol != symbol) return
         when (inputKind) {
             IndicatorInput.NUMERIC_SERIES -> {
@@ -43,6 +51,30 @@ class IndicatorBinding(
         }
     }
 
+    companion object {
+        internal fun streamFed(
+            call: IndicatorCall,
+            indicator: IndicatorOutput,
+            streamAlias: String,
+            field: String?,
+            inputKind: IndicatorInput,
+        ): IndicatorBinding = IndicatorBinding(call, indicator, streamAlias, field, inputKind, source = null)
+
+        internal fun indicatorFed(
+            call: IndicatorCall,
+            indicator: IndicatorOutput,
+            source: IndicatorBinding,
+        ): IndicatorBinding =
+            IndicatorBinding(
+                call,
+                indicator,
+                streamAlias = null,
+                field = null,
+                inputKind = IndicatorInput.NUMERIC_SERIES,
+                source = source,
+            )
+    }
+
     class Bag {
         private val bindings: MutableList<IndicatorBinding> = mutableListOf()
 
@@ -55,32 +87,56 @@ class IndicatorBinding(
             val constArgs =
                 call.args.drop(1).map {
                     require(it is NumLit) {
-                        "Indicator ${call.name} non-series arg must be a numeric literal in 11b"
+                        "Indicator ${call.name} non-series arg must be a numeric literal"
                     }
                     it.value
                 }
-            val streamAlias: String
-            val field: String?
-            when (spec.inputKind) {
-                IndicatorInput.NUMERIC_SERIES -> {
-                    require(seriesArg is StreamFieldRef) {
-                        "Indicator ${call.name} series arg must be a stream field in 11b"
-                    }
-                    streamAlias = seriesArg.stream
-                    field = seriesArg.field
-                }
-                IndicatorInput.CANDLE_SERIES -> {
-                    require(seriesArg is StreamFieldRef && seriesArg.field == "candle") {
-                        "Indicator ${call.name} series arg must be the whole stream in 11b"
-                    }
-                    streamAlias = seriesArg.stream
-                    field = null
-                }
-            }
             val ind = IndicatorRegistry.create(call.name, constArgs)
-            val binding = IndicatorBinding(call, ind, streamAlias, field, spec.inputKind)
+            val binding =
+                when (seriesArg) {
+                    is StreamFieldRef -> bindStream(spec, call, seriesArg, ind)
+                    is IndicatorCall -> bindIndicator(spec, call, seriesArg, ind)
+                    else ->
+                        error(
+                            "Indicator ${call.name} series arg must be a stream field or another indicator call",
+                        )
+                }
             bindings.add(binding)
             return binding
+        }
+
+        private fun bindStream(
+            spec: IndicatorSpec,
+            call: IndicatorCall,
+            seriesArg: StreamFieldRef,
+            ind: IndicatorOutput,
+        ): IndicatorBinding =
+            when (spec.inputKind) {
+                IndicatorInput.NUMERIC_SERIES -> {
+                    require(seriesArg.field in setOf("close", "open", "high", "low", "volume", "price")) {
+                        "Indicator ${call.name} series field must be numeric: got ${seriesArg.field}"
+                    }
+                    streamFed(call, ind, seriesArg.stream, seriesArg.field, spec.inputKind)
+                }
+                IndicatorInput.CANDLE_SERIES -> {
+                    require(seriesArg.field == "candle") {
+                        "Indicator ${call.name} series arg must be the whole stream (use stream.candle or atr(stream))"
+                    }
+                    streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
+                }
+            }
+
+        private fun bindIndicator(
+            spec: IndicatorSpec,
+            call: IndicatorCall,
+            inner: IndicatorCall,
+            ind: IndicatorOutput,
+        ): IndicatorBinding {
+            require(spec.inputKind == IndicatorInput.NUMERIC_SERIES) {
+                "Indicator ${call.name} requires a candle series; cannot accept another indicator's output"
+            }
+            val innerBinding = bind(inner)
+            return indicatorFed(call, ind, innerBinding)
         }
 
         fun updateAll(ctx: EvalContext) {
