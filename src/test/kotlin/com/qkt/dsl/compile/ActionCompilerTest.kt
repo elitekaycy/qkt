@@ -2,7 +2,6 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Buy
-import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
@@ -91,10 +90,4 @@ class ActionCompilerTest {
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
-    @Test
-    fun `Close action is unsupported in 11b`() {
-        assertThatThrownBy {
-            ActionCompiler(ExprCompiler()).compile(Close("btc"))
-        }.isInstanceOf(IllegalStateException::class.java)
-    }
 }

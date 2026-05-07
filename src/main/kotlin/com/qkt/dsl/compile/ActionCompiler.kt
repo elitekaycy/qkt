@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.Sell
@@ -21,7 +22,19 @@ class ActionCompiler(
             is Buy -> compileBuySell(action.stream, action.opts) { sym, qty -> Signal.Buy(sym, qty) }
             is Sell -> compileBuySell(action.stream, action.opts) { sym, qty -> Signal.Sell(sym, qty) }
             is Log -> compileLog(action)
+            is Close -> compileClose(action.stream)
             else -> error("Action ${action::class.simpleName} is not supported in 11c3")
+        }
+
+    private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> =
+        { ctx ->
+            val symbol = ctx.streamSymbols[streamAlias] ?: error("Unknown stream alias: $streamAlias")
+            val qty = ctx.strategyContext.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            when {
+                qty.signum() > 0 -> listOf(Signal.Sell(symbol, qty))
+                qty.signum() < 0 -> listOf(Signal.Buy(symbol, qty.abs()))
+                else -> emptyList()
+            }
         }
 
     private fun compileLog(log: Log): (EvalContext) -> List<Signal> {

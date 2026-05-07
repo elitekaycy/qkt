@@ -41,4 +41,67 @@ class ActionCompilerExtensionsTest {
                 .invoke(ctx)
         assertThat(sigs).hasSize(1)
     }
+
+    @Test
+    fun `CLOSE on long emits Sell at full quantity`() {
+        val pos =
+            object : com.qkt.positions.StrategyPositionView {
+                override fun positionFor(symbol: String) =
+                    if (symbol == "BTCUSDT") {
+                        com.qkt.positions.Position("BTCUSDT", BigDecimal("2.5"), BigDecimal("100"))
+                    } else {
+                        null
+                    }
+
+                override fun allPositions() = mapOf("BTCUSDT" to positionFor("BTCUSDT")!!)
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+        val sigs =
+            ActionCompiler(ExprCompiler(), logger)
+                .compile(com.qkt.dsl.ast.Close("btc"))
+                .invoke(ec)
+        assertThat(sigs).containsExactly(com.qkt.strategy.Signal.Sell("BTCUSDT", BigDecimal("2.5")))
+    }
+
+    @Test
+    fun `CLOSE on short emits Buy at absolute quantity`() {
+        val pos =
+            object : com.qkt.positions.StrategyPositionView {
+                override fun positionFor(symbol: String) =
+                    if (symbol == "BTCUSDT") {
+                        com.qkt.positions.Position("BTCUSDT", BigDecimal("-1.5"), BigDecimal("100"))
+                    } else {
+                        null
+                    }
+
+                override fun allPositions() = mapOf("BTCUSDT" to positionFor("BTCUSDT")!!)
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+        val sigs =
+            ActionCompiler(ExprCompiler(), logger)
+                .compile(com.qkt.dsl.ast.Close("btc"))
+                .invoke(ec)
+        assertThat(sigs).containsExactly(com.qkt.strategy.Signal.Buy("BTCUSDT", BigDecimal("1.5")))
+    }
+
+    @Test
+    fun `CLOSE on flat emits no signals`() {
+        val sigs =
+            ActionCompiler(ExprCompiler(), logger)
+                .compile(com.qkt.dsl.ast.Close("btc"))
+                .invoke(ctx)
+        assertThat(sigs).isEmpty()
+    }
 }
