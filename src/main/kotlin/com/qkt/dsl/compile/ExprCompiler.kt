@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 
@@ -19,8 +20,32 @@ class ExprCompiler {
             is BinaryOp -> compileBinary(expr)
             is UnaryOp -> compileUnary(expr)
             is CmpOp -> compileCmp(expr)
+            is StreamFieldRef -> compileStreamField(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileStreamField(ref: StreamFieldRef): CompiledExpr {
+        require(ref.field in setOf("close", "open", "high", "low", "volume", "price")) {
+            "Unknown stream field for ${ref.stream}: ${ref.field}"
+        }
+        return CompiledExpr { ctx ->
+            val symbol = ctx.streamSymbols[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            if (ctx.candle.symbol != symbol) {
+                Value.Undefined
+            } else {
+                Value.Num(
+                    when (ref.field) {
+                        "close", "price" -> ctx.candle.close
+                        "open" -> ctx.candle.open
+                        "high" -> ctx.candle.high
+                        "low" -> ctx.candle.low
+                        "volume" -> ctx.candle.volume
+                        else -> error("unreachable")
+                    },
+                )
+            }
+        }
+    }
 
     private fun compileBinary(op: BinaryOp): CompiledExpr {
         val l = compile(op.lhs)
