@@ -11,6 +11,7 @@ import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.NumLit
@@ -20,6 +21,7 @@ import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
+import com.qkt.dsl.stdlib.FuncRegistry
 import java.math.BigDecimal
 
 class ExprCompiler(
@@ -41,8 +43,22 @@ class ExprCompiler(
             is InList -> compileInList(expr)
             is CaseWhen -> compileCaseWhen(expr)
             is Crosses -> compileCrosses(expr)
+            is FuncCall -> compileFuncCall(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileFuncCall(call: FuncCall): CompiledExpr {
+        require(FuncRegistry.has(call.name)) { "Unknown function: ${call.name}" }
+        val args = call.args.map { compile(it) }
+        return CompiledExpr { ctx ->
+            val values = args.map { it.evaluate(ctx) }
+            if (values.any { it !is Value.Num }) {
+                Value.Undefined
+            } else {
+                Value.Num(FuncRegistry.invoke(call.name, values.map { (it as Value.Num).v }))
+            }
+        }
+    }
 
     private fun compileCrosses(c: Crosses): CompiledExpr {
         val l = compile(c.lhs)
