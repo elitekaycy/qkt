@@ -16,5 +16,15 @@ class BacktestSweep<C>(
         require(configs.all { it.first.isNotBlank() }) { "config labels must be non-blank" }
     }
 
-    fun run(): SweepResult<C> = error("not yet implemented; see Tasks 4 + 5")
+    fun run(): SweepResult<C> =
+        if (parallelism == 1) runSequential() else runParallel()
+
+    private fun runSequential(): SweepResult<C> =
+        SweepResult(
+            configs.map { (label, config) ->
+                SweepRun(label, config, backtestFactory(label, config).run())
+            },
+        )
+
+    private fun runParallel(): SweepResult<C> = error("parallel mode lands in Task 5")
 }
