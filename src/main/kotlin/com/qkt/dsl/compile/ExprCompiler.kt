@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
+import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.ExprAst
@@ -37,8 +38,25 @@ class ExprCompiler(
             is StateAccessor -> compileStateAccessor(expr)
             is Between -> compileBetween(expr)
             is InList -> compileInList(expr)
+            is CaseWhen -> compileCaseWhen(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileCaseWhen(expr: CaseWhen): CompiledExpr {
+        val branches = expr.branches.map { compile(it.first) to compile(it.second) }
+        val elseE = compile(expr.elseExpr)
+        return CompiledExpr { ctx ->
+            var result: Value? = null
+            for ((cond, body) in branches) {
+                val cv = cond.evaluate(ctx)
+                if (cv is Value.Bool && cv.v) {
+                    result = body.evaluate(ctx)
+                    break
+                }
+            }
+            result ?: elseE.evaluate(ctx)
+        }
+    }
 
     private fun compileInList(expr: InList): CompiledExpr {
         val v = compile(expr.v)
