@@ -2,12 +2,10 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Buy
-import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
 import com.qkt.strategy.testStrategyContext
@@ -60,33 +58,5 @@ class ActionCompilerTest {
         assertThatThrownBy {
             ActionCompiler(ExprCompiler()).compile(Buy(stream = "btc", opts = ActionOpts()))
         }.isInstanceOf(IllegalStateException::class.java)
-    }
-
-    @Test
-    fun `non-quantity sizing is rejected in 11b`() {
-        assertThatThrownBy {
-            ActionCompiler(ExprCompiler()).compile(
-                Buy(
-                    stream = "btc",
-                    opts = ActionOpts(sizing = SizeRiskFrac(NumLit(BigDecimal("0.01")))),
-                ),
-            )
-        }.isInstanceOf(IllegalArgumentException::class.java)
-    }
-
-    @Test
-    fun `non-market order type is rejected in 11b`() {
-        assertThatThrownBy {
-            ActionCompiler(ExprCompiler()).compile(
-                Buy(
-                    stream = "btc",
-                    opts =
-                        ActionOpts(
-                            sizing = SizeQty(NumLit(BigDecimal.ONE)),
-                            orderType = Limit(NumLit(BigDecimal("100"))),
-                        ),
-                ),
-            )
-        }.isInstanceOf(IllegalArgumentException::class.java)
     }
 }
