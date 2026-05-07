@@ -1,10 +1,15 @@
 package com.qkt.dsl.kotlin
 
+import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CrossDir
+import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
@@ -43,3 +48,19 @@ infix fun ExprAst.and(other: ExprAst): ExprAst = BinaryOp(BinOp.AND, this, other
 infix fun ExprAst.or(other: ExprAst): ExprAst = BinaryOp(BinOp.OR, this, other)
 
 fun not(arg: ExprAst): ExprAst = UnaryOp(UnOp.NOT, arg)
+
+fun ExprAst.between(
+    lo: ExprAst,
+    hi: ExprAst,
+): ExprAst = Between(this, lo, hi)
+
+fun ExprAst.inList(vararg members: ExprAst): ExprAst = InList(this, members.toList())
+
+infix fun ExprAst.crossesAbove(other: ExprAst): ExprAst = Crosses(CrossDir.ABOVE, this, other)
+
+infix fun ExprAst.crossesBelow(other: ExprAst): ExprAst = Crosses(CrossDir.BELOW, this, other)
+
+fun caseWhen(
+    vararg branches: Pair<ExprAst, ExprAst>,
+    elseExpr: ExprAst,
+): ExprAst = CaseWhen(branches.toList(), elseExpr)
