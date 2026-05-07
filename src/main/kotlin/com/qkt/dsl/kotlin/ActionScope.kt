@@ -2,25 +2,96 @@ package com.qkt.dsl.kotlin
 
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
+import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
+import com.qkt.dsl.ast.OcoAst
+import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
+import com.qkt.dsl.ast.SizingAst
+import com.qkt.dsl.ast.TifAst
 
 object ActionScope {
     fun buy(
         stream: StreamRef,
         qty: ExprAst,
-    ): ActionAst = Buy(stream.alias, ActionOpts(sizing = SizeQty(qty), orderType = Market))
+        orderType: OrderTypeAst = Market,
+        tif: TifAst? = null,
+        bracket: BracketAst? = null,
+        oco: OcoAst? = null,
+    ): ActionAst =
+        Buy(
+            stream.alias,
+            ActionOpts(
+                sizing = SizeQty(qty),
+                orderType = orderType,
+                tif = tif,
+                bracket = bracket,
+                oco = oco,
+            ),
+        )
+
+    fun buy(
+        stream: StreamRef,
+        sizing: SizingAst,
+        orderType: OrderTypeAst = Market,
+        tif: TifAst? = null,
+        bracket: BracketAst? = null,
+        oco: OcoAst? = null,
+    ): ActionAst =
+        Buy(
+            stream.alias,
+            ActionOpts(
+                sizing = sizing,
+                orderType = orderType,
+                tif = tif,
+                bracket = bracket,
+                oco = oco,
+            ),
+        )
 
     fun sell(
         stream: StreamRef,
         qty: ExprAst,
-    ): ActionAst = Sell(stream.alias, ActionOpts(sizing = SizeQty(qty), orderType = Market))
+        orderType: OrderTypeAst = Market,
+        tif: TifAst? = null,
+        bracket: BracketAst? = null,
+        oco: OcoAst? = null,
+    ): ActionAst =
+        Sell(
+            stream.alias,
+            ActionOpts(
+                sizing = SizeQty(qty),
+                orderType = orderType,
+                tif = tif,
+                bracket = bracket,
+                oco = oco,
+            ),
+        )
+
+    fun sell(
+        stream: StreamRef,
+        sizing: SizingAst,
+        orderType: OrderTypeAst = Market,
+        tif: TifAst? = null,
+        bracket: BracketAst? = null,
+        oco: OcoAst? = null,
+    ): ActionAst =
+        Sell(
+            stream.alias,
+            ActionOpts(
+                sizing = sizing,
+                orderType = orderType,
+                tif = tif,
+                bracket = bracket,
+                oco = oco,
+            ),
+        )
 
     fun log(message: String): ActionAst = Log(message)
 
