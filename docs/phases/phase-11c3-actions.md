@@ -116,4 +116,4 @@ End-to-end equivalence tests for 11c3 are weaker than 11c1/11c2 — there's no c
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md` §7 Phase 11c3
 - Plan: `docs/superpowers/plans/2026-05-07-trading-engine-phase11c3.md`
-- Merge commit: TBD (filled in after merge to `main`).
+- Merge commit: `ba71eb3`
