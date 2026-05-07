@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.common.Money
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
@@ -28,6 +29,7 @@ import java.math.BigDecimal
 
 class ExprCompiler(
     private val bindings: IndicatorBinding.Bag = IndicatorBinding.Bag(),
+    private val aggregates: AggregateBinding.Bag = AggregateBinding.Bag(),
 ) {
     fun compile(
         expr: ExprAst,
@@ -50,8 +52,24 @@ class ExprCompiler(
             is Crosses -> compileCrosses(expr, ruleSymbol)
             is FuncCall -> compileFuncCall(expr, ruleSymbol)
             is Ref -> compileRef(expr, ruleSymbol)
+            is Aggregate -> compileAggregate(expr, ruleSymbol)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileAggregate(
+        agg: Aggregate,
+        ruleSymbol: String?,
+    ): CompiledExpr {
+        val sym = ruleSymbol ?: error("Aggregate requires rule symbol context")
+        val state = AggregateBinding.Bag.stateFor(agg.fn, agg.window)
+        val seriesEval = compile(agg.series, ruleSymbol)
+        val binding = AggregateBinding(seriesEval, agg.window, state, sym)
+        aggregates.add(binding)
+        return CompiledExpr {
+            val v = state.read()
+            if (v == null) Value.Undefined else Value.Num(v)
+        }
+    }
 
     private fun compileRef(
         ref: Ref,
