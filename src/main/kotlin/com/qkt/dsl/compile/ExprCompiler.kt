@@ -9,6 +9,7 @@ import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.InList
@@ -39,8 +40,25 @@ class ExprCompiler(
             is Between -> compileBetween(expr)
             is InList -> compileInList(expr)
             is CaseWhen -> compileCaseWhen(expr)
+            is Crosses -> compileCrosses(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
+
+    private fun compileCrosses(c: Crosses): CompiledExpr {
+        val l = compile(c.lhs)
+        val r = compile(c.rhs)
+        val state = CrossesState()
+        return CompiledExpr { ctx ->
+            val lv = l.evaluate(ctx)
+            val rv = r.evaluate(ctx)
+            if (lv !is Value.Num || rv !is Value.Num) {
+                Value.Undefined
+            } else {
+                val above = lv.v.compareTo(rv.v) > 0
+                state.update(above, c.direction)
+            }
+        }
+    }
 
     private fun compileCaseWhen(expr: CaseWhen): CompiledExpr {
         val branches = expr.branches.map { compile(it.first) to compile(it.second) }
