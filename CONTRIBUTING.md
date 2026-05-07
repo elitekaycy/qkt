@@ -76,6 +76,16 @@ Required sections:
 
 Merge with `--no-ff` and the merge commit message `merge: phase <N> <short-description>`. Delete the feature branch after merge.
 
+## Releases
+
+After a `merge: phase X ...` commit lands on main, the maintainer:
+
+1. Tags the merge commit: `git tag -a v0.X.Y -m "phase X — <description>"`.
+2. Pushes the tag: `git push origin v0.X.Y`.
+3. Creates a GitHub Release using the tag, with the corresponding `docs/phases/phase-<N>-<topic>.md` content as the release body.
+
+See `docs/release-process.md` for the full process and version-number conventions.
+
 ## Code style
 
 Headlines:
