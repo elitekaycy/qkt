@@ -104,4 +104,34 @@ class ActionCompilerExtensionsTest {
                 .invoke(ctx)
         assertThat(sigs).isEmpty()
     }
+
+    @Test
+    fun `CLOSE_ALL emits one signal per non-zero position`() {
+        val pos =
+            object : com.qkt.positions.StrategyPositionView {
+                override fun positionFor(symbol: String) = allPositions()[symbol]
+
+                override fun allPositions() =
+                    mapOf(
+                        "BTCUSDT" to com.qkt.positions.Position("BTCUSDT", BigDecimal("2"), BigDecimal("100")),
+                        "ETHUSDT" to com.qkt.positions.Position("ETHUSDT", BigDecimal("-3"), BigDecimal("50")),
+                        "ZERO" to com.qkt.positions.Position("ZERO", BigDecimal.ZERO, BigDecimal("10")),
+                    )
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+        val sigs =
+            ActionCompiler(ExprCompiler(), logger)
+                .compile(com.qkt.dsl.ast.CloseAll)
+                .invoke(ec)
+        assertThat(sigs).containsExactlyInAnyOrder(
+            com.qkt.strategy.Signal.Sell("BTCUSDT", BigDecimal("2")),
+            com.qkt.strategy.Signal.Buy("ETHUSDT", BigDecimal("3")),
+        )
+    }
 }
