@@ -1,6 +1,5 @@
 package com.qkt.backtest
 
-import com.qkt.app.TradeRecord
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.Trade

@@ -1,4 +1,4 @@
-package com.qkt.app
+package com.qkt.backtest
 
 import com.qkt.common.Money
 import com.qkt.marketdata.Tick
@@ -7,6 +7,7 @@ import com.qkt.risk.rules.MaxPositionSize
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -59,12 +60,12 @@ class BacktestTest {
         assertThat(result.trades).isEmpty()
         assertThat(result.rejections).isEmpty()
         assertThat(result.finalPositions).isEmpty()
-        assertThat(result.realizedTotal).isEqualByComparingTo(Money.ZERO)
-        assertThat(result.unrealizedTotal).isEqualByComparingTo(Money.ZERO)
-        assertThat(result.totalPnL).isEqualByComparingTo(Money.ZERO)
-        assertThat(result.tradeCount).isEqualTo(0)
-        assertThat(result.winRate).isEqualByComparingTo(Money.ZERO)
-        assertThat(result.maxDrawdown).isEqualByComparingTo(Money.ZERO)
+        assertThat(result.global.realizedTotal).isEqualByComparingTo(Money.ZERO)
+        assertThat(result.global.unrealizedTotal).isEqualByComparingTo(Money.ZERO)
+        assertThat(result.global.totalPnL).isEqualByComparingTo(Money.ZERO)
+        assertThat(result.global.tradeCount).isEqualTo(0)
+        assertThat(result.global.winRate).isEqualByComparingTo(Money.ZERO)
+        assertThat(result.global.maxDrawdown).isEqualByComparingTo(Money.ZERO)
     }
 
     @Test
@@ -77,8 +78,8 @@ class BacktestTest {
 
         assertThat(result.trades).hasSize(1)
         assertThat(result.trades[0].realized).isEqualByComparingTo(Money.ZERO)
-        assertThat(result.tradeCount).isEqualTo(1)
-        assertThat(result.winRate).isEqualByComparingTo(Money.ZERO)
+        assertThat(result.global.tradeCount).isEqualTo(1)
+        assertThat(result.global.winRate).isEqualByComparingTo(Money.ZERO)
         assertThat(result.finalPositions["XAUUSD"]?.quantity).isEqualByComparingTo(Money.of("1"))
     }
 
@@ -97,9 +98,9 @@ class BacktestTest {
         assertThat(result.trades).hasSize(2)
         assertThat(result.trades[0].realized).isEqualByComparingTo(Money.ZERO)
         assertThat(result.trades[1].realized).isEqualByComparingTo(Money.of("10"))
-        assertThat(result.tradeCount).isEqualTo(2)
-        assertThat(result.winRate).isEqualByComparingTo(Money.of("1"))
-        assertThat(result.realizedTotal).isEqualByComparingTo(Money.of("10"))
+        assertThat(result.global.tradeCount).isEqualTo(2)
+        assertThat(result.global.winRate).isEqualByComparingTo(Money.of("1"))
+        assertThat(result.global.realizedTotal).isEqualByComparingTo(Money.of("10"))
         assertThat(result.finalPositions).isEmpty()
     }
 
@@ -117,7 +118,7 @@ class BacktestTest {
         assertThat(result.rejections).hasSize(1)
         assertThat(result.rejections[0].request.symbol).isEqualTo("XAUUSD")
         assertThat(result.rejections[0].reason).contains("MaxPositionSize")
-        assertThat(result.tradeCount).isEqualTo(0)
+        assertThat(result.global.tradeCount).isEqualTo(0)
     }
 
     @Test
@@ -145,12 +146,14 @@ class BacktestTest {
                 ticks =
                     listOf(
                         tick("XAUUSD", "100", 1L),
-                        tick("XAUUSD", "90", 2L),
+                        tick("XAUUSD", "120", 2L),
                         tick("XAUUSD", "110", 3L),
                     ),
             ).run()
 
-        assertThat(result.maxDrawdown).isEqualByComparingTo(Money.of("10"))
+        // peak unrealized equity = +20 (price 120), then drops to +10 (price 110)
+        // fractional drawdown = (20 - 10) / 20 = 0.5
+        assertThat(result.global.maxDrawdown).isEqualByComparingTo(BigDecimal("0.5"))
     }
 
     @Test

@@ -1,4 +1,4 @@
-package com.qkt.app
+package com.qkt.backtest
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
@@ -106,8 +106,8 @@ class BacktestWarmupTest {
                     request = request,
                     warmupSpec = WarmupSpec.None,
                 ).run()
-        assertThat(a.tradeCount).isEqualTo(b.tradeCount)
-        assertThat(a.totalPnL).isEqualByComparingTo(b.totalPnL)
+        assertThat(a.global.tradeCount).isEqualTo(b.global.tradeCount)
+        assertThat(a.global.totalPnL).isEqualByComparingTo(b.global.totalPnL)
     }
 
     @Test
@@ -154,10 +154,10 @@ class BacktestWarmupTest {
 
         val a = runOnce()
         val b = runOnce()
-        assertThat(a.tradeCount).isEqualTo(b.tradeCount)
-        assertThat(a.totalPnL).isEqualByComparingTo(b.totalPnL)
-        assertThat(a.realizedTotal).isEqualByComparingTo(b.realizedTotal)
-        assertThat(a.unrealizedTotal).isEqualByComparingTo(b.unrealizedTotal)
-        assertThat(a.maxDrawdown).isEqualByComparingTo(b.maxDrawdown)
+        assertThat(a.global.tradeCount).isEqualTo(b.global.tradeCount)
+        assertThat(a.global.totalPnL).isEqualByComparingTo(b.global.totalPnL)
+        assertThat(a.global.realizedTotal).isEqualByComparingTo(b.global.realizedTotal)
+        assertThat(a.global.unrealizedTotal).isEqualByComparingTo(b.global.unrealizedTotal)
+        assertThat(a.global.maxDrawdown).isEqualByComparingTo(b.global.maxDrawdown)
     }
 }

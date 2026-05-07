@@ -1,6 +1,5 @@
 package com.qkt.backtest
 
-import com.qkt.app.TradeRecord
 import com.qkt.backtest.metrics.calmar
 import com.qkt.backtest.metrics.profitFactor
 import com.qkt.backtest.metrics.sharpe

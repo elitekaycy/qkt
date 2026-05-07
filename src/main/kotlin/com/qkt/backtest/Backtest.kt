@@ -1,5 +1,7 @@
-package com.qkt.app
+package com.qkt.backtest
 
+import com.qkt.app.IndicatorWarmer
+import com.qkt.app.TradingPipeline
 import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
@@ -11,7 +13,6 @@ import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
 import com.qkt.events.RiskRejectedEvent
-import com.qkt.events.TickEvent
 import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.MergingTickFeed
@@ -47,19 +48,32 @@ class Backtest(
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
     private val warmupSpec: WarmupSpec = WarmupSpec.None,
     private val symbols: List<String> = emptyList(),
+    cadence: SampleCadence? = null,
 ) {
+    private val cadence: SampleCadence =
+        cadence
+            ?: if (candleWindow != null) SampleCadence.CANDLE_CLOSE else SampleCadence.TICK
+
+    init {
+        require(this.cadence != SampleCadence.CANDLE_CLOSE || candleWindow != null) {
+            "SampleCadence.CANDLE_CLOSE requires candleWindow"
+        }
+    }
+
     constructor(
         strategies: List<Pair<String, Strategy>>,
         rules: List<RiskRule> = emptyList(),
         ticks: List<Tick>,
         candleWindow: TimeWindow? = null,
         initialTimestamp: Long = 0L,
+        cadence: SampleCadence? = null,
     ) : this(
         strategies = strategies,
         rules = rules,
         feed = HistoricalTickFeed(ticks),
         candleWindow = candleWindow,
         initialTimestamp = initialTimestamp,
+        cadence = cadence,
     )
 
     fun run(): BacktestResult {
@@ -80,8 +94,14 @@ class Backtest(
 
         val tradeRecords = mutableListOf<TradeRecord>()
         val rejections = mutableListOf<RiskRejectedEvent>()
-        var peakEquity: BigDecimal = Money.ZERO
-        var maxDrawdown: BigDecimal = Money.ZERO
+        val collector =
+            EquityCurveCollector(
+                cadence = cadence,
+                bus = bus,
+                pnl = pnl,
+                strategyPnL = strategyPnL,
+                strategyIds = strategies.map { it.first },
+            )
 
         val pipeline =
             TradingPipeline(
@@ -118,13 +138,6 @@ class Backtest(
             )
         }
 
-        bus.subscribe<TickEvent> {
-            val equity = pnl.totalPnL()
-            if (equity > peakEquity) peakEquity = equity
-            val drawdown = peakEquity.subtract(equity)
-            if (drawdown > maxDrawdown) maxDrawdown = drawdown
-        }
-
         feed.use { f ->
             while (true) {
                 val tick = f.next() ?: break
@@ -133,26 +146,49 @@ class Backtest(
             }
         }
 
+        val annualizationFactor = annualizationFactorFor(collector.global())
+        val globalReport =
+            ReportBuilder.buildGlobal(
+                trades = tradeRecords,
+                equityCurve = collector.global(),
+                finalRealized = pnl.realizedTotal(),
+                finalUnrealized = pnl.unrealizedTotal(),
+                annualizationFactor = annualizationFactor,
+            )
+        val perStrategy =
+            strategies.associate { (id, _) ->
+                id to
+                    ReportBuilder.buildPerStrategy(
+                        strategyId = id,
+                        trades = tradeRecords.filter { it.strategyId == id },
+                        equityCurve = collector.forStrategy(id),
+                        finalRealized = strategyPnL.realizedFor(id),
+                        finalUnrealized = strategyPnL.unrealizedTotalFor(id),
+                        annualizationFactor = annualizationFactor,
+                    )
+            }
+
         return BacktestResult(
             trades = tradeRecords.toList(),
             rejections = rejections.toList(),
             finalPositions = positions.allPositions(),
-            realizedTotal = pnl.realizedTotal(),
-            unrealizedTotal = pnl.unrealizedTotal(),
-            totalPnL = pnl.totalPnL(),
-            tradeCount = tradeRecords.size,
-            winRate = computeWinRate(tradeRecords),
-            maxDrawdown = maxDrawdown,
+            global = globalReport,
+            perStrategy = perStrategy,
+            cadence = cadence,
         )
     }
 
-    private fun computeWinRate(records: List<TradeRecord>): BigDecimal {
-        val closing = records.filter { it.realized.signum() != 0 }
-        if (closing.isEmpty()) return Money.ZERO
-        val wins = closing.count { it.realized.signum() > 0 }
-        return BigDecimal(wins)
-            .divide(BigDecimal(closing.size), Money.CONTEXT)
-            .setScale(Money.SCALE, Money.ROUNDING)
+    private fun annualizationFactorFor(curve: List<EquitySample>): BigDecimal {
+        if (cadence == SampleCadence.CANDLE_CLOSE && candleWindow != null) {
+            return calendar.tradingPeriodsPerYear(candleWindow)
+        }
+        if (curve.size < 2) return BigDecimal("252")
+        val spanMs = curve.last().timestamp - curve.first().timestamp
+        if (spanMs <= 0L) return BigDecimal("252")
+        val avgIntervalMs =
+            BigDecimal(spanMs).divide(BigDecimal(curve.size - 1), Money.CONTEXT)
+        val msPerYear = BigDecimal("31557600000")
+        return msPerYear.divide(avgIntervalMs, Money.CONTEXT)
     }
 
     companion object {
@@ -162,6 +198,7 @@ class Backtest(
             store: DataStore,
             request: MarketRequest,
             candleWindow: TimeWindow? = null,
+            cadence: SampleCadence? = null,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -171,6 +208,7 @@ class Backtest(
                 source = LocalMarketSource(store, FixedClock(time = to.toEpochMilli())),
                 request = resolved,
                 candleWindow = candleWindow,
+                cadence = cadence,
             )
         }
 
@@ -181,6 +219,7 @@ class Backtest(
             request: MarketRequest,
             candleWindow: TimeWindow? = null,
             warmupSpec: WarmupSpec = WarmupSpec.None,
+            cadence: SampleCadence? = null,
         ): Backtest {
             require(MarketSourceCapability.TICKS in source.capabilities) {
                 "Backtest requires a MarketSource that supports TICKS; ${source.name} has ${source.capabilities}"
@@ -201,6 +240,7 @@ class Backtest(
                 source = source,
                 warmupSpec = warmupSpec,
                 symbols = request.symbols,
+                cadence = cadence,
             )
         }
     }

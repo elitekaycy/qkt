@@ -1,4 +1,4 @@
-package com.qkt.app
+package com.qkt.backtest
 
 import com.qkt.common.Money
 import com.qkt.marketdata.source.MarketRequest
@@ -32,7 +32,7 @@ class BacktestFromStoreTest {
                     store = store,
                     request = request,
                 ).run()
-        assertThat(result.tradeCount).isGreaterThan(0)
+        assertThat(result.global.tradeCount).isGreaterThan(0)
     }
 
     @Test
@@ -56,7 +56,7 @@ class BacktestFromStoreTest {
                     store = store,
                     request = request,
                 ).run()
-        assertThat(result.tradeCount).isEqualTo(20)
+        assertThat(result.global.tradeCount).isEqualTo(20)
     }
 
     @Test
@@ -79,9 +79,9 @@ class BacktestFromStoreTest {
                 ).run()
         val a = runOnce()
         val b = runOnce()
-        assertThat(b.tradeCount).isEqualTo(a.tradeCount)
-        assertThat(b.totalPnL).isEqualByComparingTo(a.totalPnL)
-        assertThat(b.maxDrawdown).isEqualByComparingTo(a.maxDrawdown)
+        assertThat(b.global.tradeCount).isEqualTo(a.global.tradeCount)
+        assertThat(b.global.totalPnL).isEqualByComparingTo(a.global.totalPnL)
+        assertThat(b.global.maxDrawdown).isEqualByComparingTo(a.global.maxDrawdown)
     }
 
     @Test
@@ -96,7 +96,7 @@ class BacktestFromStoreTest {
                     store = store,
                     request = request,
                 ).run()
-        assertThat(result.tradeCount).isEqualTo(10)
+        assertThat(result.global.tradeCount).isEqualTo(10)
     }
 
     @Test
@@ -116,6 +116,6 @@ class BacktestFromStoreTest {
                     store = store,
                     request = request,
                 ).run()
-        assertThat(result.tradeCount).isEqualTo(0)
+        assertThat(result.global.tradeCount).isEqualTo(0)
     }
 }
