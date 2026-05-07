@@ -166,4 +166,4 @@ fun `writer emits expected files`(@TempDir dir: Path) {
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase10c-design.md`
 - Plan: `docs/superpowers/plans/2026-05-07-trading-engine-phase10c.md`
-- Merge commit: filled in at merge time.
+- Merge commit: `69a9493`
