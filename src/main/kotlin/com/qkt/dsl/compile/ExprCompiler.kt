@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
@@ -28,7 +29,15 @@ class ExprCompiler(
             is StreamFieldRef -> compileStreamField(expr)
             is IndicatorCall -> compileIndicator(expr)
             is AccountRef -> compileAccountRef(expr)
+            is PositionRef -> compilePositionRef(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
+        }
+
+    private fun compilePositionRef(ref: PositionRef): CompiledExpr =
+        CompiledExpr { ctx ->
+            val symbol = ctx.streamSymbols[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val qty = ctx.strategyContext.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            Value.Num(qty)
         }
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {
