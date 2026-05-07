@@ -56,7 +56,7 @@ class TradingPipeline(
     val calendar: TradingCalendar,
     val source: MarketSource,
     val candleWindow: TimeWindow? = null,
-    val onFilled: (Trade, BigDecimal) -> Unit = { _, _ -> },
+    val onFilled: (Trade, BigDecimal, String) -> Unit = { _, _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
 ) {
@@ -138,7 +138,7 @@ class TradingPipeline(
                     timestamp = e.timestamp,
                 )
             bus.publish(TradeEvent(trade))
-            onFilled(trade, realized)
+            onFilled(trade, realized, e.strategyId)
         }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
             val asFill =

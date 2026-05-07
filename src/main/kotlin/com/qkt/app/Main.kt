@@ -72,7 +72,7 @@ fun main() {
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
-            onFilled = { trade, _ ->
+            onFilled = { trade, _, _ ->
                 val pos = positions.positionFor(trade.symbol)?.quantity ?: Money.ZERO
                 log.info(
                     "FILLED: {} {} {} @ {} (position: {}, realized: {}, unrealized: {})",

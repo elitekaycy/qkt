@@ -6,4 +6,5 @@ import java.math.BigDecimal
 data class TradeRecord(
     val trade: Trade,
     val realized: BigDecimal,
+    val strategyId: String,
 )

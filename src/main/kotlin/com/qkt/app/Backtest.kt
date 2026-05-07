@@ -103,7 +103,9 @@ class Backtest(
                 calendar = calendar,
                 source = source,
                 candleWindow = candleWindow,
-                onFilled = { trade, realized -> tradeRecords.add(TradeRecord(trade, realized)) },
+                onFilled = { trade, realized, strategyId ->
+                    tradeRecords.add(TradeRecord(trade, realized, strategyId))
+                },
                 onRejected = { e -> rejections.add(e) },
                 onCandle = {},
             )
