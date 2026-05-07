@@ -27,7 +27,8 @@ class AstCompiler {
         val aggregates = AggregateBinding.Bag()
         val exprCompiler = ExprCompiler(bindings, aggregates)
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
-        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger)
+        val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
+        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids)
 
         val whenThens: List<WhenThen> =
             ast.rules.map {
