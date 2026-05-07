@@ -34,11 +34,13 @@ class LetResolver(
     fun resolve(expr: ExprAst): ExprAst =
         when (expr) {
             is Ref -> {
-                require(expr.snapshot == null) {
-                    "Snapshot references are not supported in 11b: ${expr.name}@${expr.snapshot}"
+                if (expr.snapshot != null) {
+                    if (!table.containsKey(expr.name)) error("Unknown LET reference: ${expr.name}")
+                    expr
+                } else {
+                    val target = table[expr.name] ?: error("Unknown reference: ${expr.name}")
+                    resolve(target)
                 }
-                val target = table[expr.name] ?: error("Unknown reference: ${expr.name}")
-                resolve(target)
             }
             is BinaryOp -> BinaryOp(expr.op, resolve(expr.lhs), resolve(expr.rhs))
             is UnaryOp -> UnaryOp(expr.op, resolve(expr.arg))
