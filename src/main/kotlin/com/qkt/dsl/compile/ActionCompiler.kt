@@ -3,6 +3,8 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.Cancel
+import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.Log
@@ -25,6 +27,14 @@ class ActionCompiler(
             is Log -> compileLog(action)
             is Close -> compileClose(action.stream)
             is CloseAll -> compileCloseAll()
+            is Cancel ->
+                error(
+                    "CANCEL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
+                )
+            is CancelAll ->
+                error(
+                    "CANCEL_ALL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
+                )
             else -> error("Action ${action::class.simpleName} is not supported in 11c3")
         }
 

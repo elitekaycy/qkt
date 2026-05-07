@@ -106,6 +106,22 @@ class ActionCompilerExtensionsTest {
     }
 
     @Test
+    fun `CANCEL is deferred with a clear message`() {
+        org.assertj.core.api.Assertions.assertThatThrownBy {
+            ActionCompiler(ExprCompiler(), logger).compile(com.qkt.dsl.ast.Cancel("btc"))
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("deferred")
+    }
+
+    @Test
+    fun `CANCEL_ALL is deferred with a clear message`() {
+        org.assertj.core.api.Assertions.assertThatThrownBy {
+            ActionCompiler(ExprCompiler(), logger).compile(com.qkt.dsl.ast.CancelAll)
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("deferred")
+    }
+
+    @Test
     fun `CLOSE_ALL emits one signal per non-zero position`() {
         val pos =
             object : com.qkt.positions.StrategyPositionView {
