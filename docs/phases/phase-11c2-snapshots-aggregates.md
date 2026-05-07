@@ -153,4 +153,4 @@ For unit tests of the runtime stores (`SnapshotStore`, `AggregateState`, `Positi
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md` §7 Phase 11c2
 - Plan: `docs/superpowers/plans/2026-05-07-trading-engine-phase11c2.md`
-- Merge commit: TBD (filled in after merge to `main`).
+- Merge commit: `0e37d46`
