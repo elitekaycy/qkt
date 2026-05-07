@@ -15,8 +15,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
 class BacktestReportWriterTest {
-    private fun ticks(): List<Tick> =
-        (1..5).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
+    private fun ticks(): List<Tick> = (1..5).map { i -> Tick("X", Money.of((100 + i).toString()), i * 60_000L) }
 
     @Test
     fun `writer produces result_json equity_csv trades_csv rejections_csv`(

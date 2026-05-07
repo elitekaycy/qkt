@@ -28,9 +28,7 @@ internal object ReportSerializer {
 
     fun jsonBigDecimal(v: BigDecimal): String = "\"${v.toPlainString()}\""
 
-    fun jsonNullableBigDecimal(v: BigDecimal?): String =
-        if (v == null) "null" else jsonBigDecimal(v)
+    fun jsonNullableBigDecimal(v: BigDecimal?): String = if (v == null) "null" else jsonBigDecimal(v)
 
-    fun isoUtc(epochMs: Long): String =
-        DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(epochMs))
+    fun isoUtc(epochMs: Long): String = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(epochMs))
 }

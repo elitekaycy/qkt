@@ -8,7 +8,9 @@ import com.qkt.events.RiskRejectedEvent
 import java.nio.file.Files
 import java.nio.file.Path
 
-class BacktestReportWriter(private val dir: Path) {
+class BacktestReportWriter(
+    private val dir: Path,
+) {
     private val safeId = Regex("[A-Za-z0-9_-]+")
 
     fun write(result: BacktestResult) {
@@ -30,7 +32,11 @@ class BacktestReportWriter(private val dir: Path) {
     private fun renderEquityCsv(curve: List<EquitySample>): String {
         val sb = StringBuilder("timestamp,equity\n")
         for (s in curve) {
-            sb.append(s.timestamp).append(',').append(s.equity.toPlainString()).append('\n')
+            sb
+                .append(s.timestamp)
+                .append(',')
+                .append(s.equity.toPlainString())
+                .append('\n')
         }
         return sb.toString()
     }
@@ -39,14 +45,22 @@ class BacktestReportWriter(private val dir: Path) {
         val sb = StringBuilder("timestamp,strategy,symbol,side,quantity,price,realized,brokerOrderId\n")
         for (r in trades) {
             sb
-                .append(r.trade.timestamp).append(',')
-                .append(r.strategyId).append(',')
-                .append(r.trade.symbol).append(',')
-                .append(r.trade.side).append(',')
-                .append(r.trade.quantity.toPlainString()).append(',')
-                .append(r.trade.price.toPlainString()).append(',')
-                .append(r.realized.toPlainString()).append(',')
-                .append(r.trade.orderId).append('\n')
+                .append(r.trade.timestamp)
+                .append(',')
+                .append(r.strategyId)
+                .append(',')
+                .append(r.trade.symbol)
+                .append(',')
+                .append(r.trade.side)
+                .append(',')
+                .append(r.trade.quantity.toPlainString())
+                .append(',')
+                .append(r.trade.price.toPlainString())
+                .append(',')
+                .append(r.realized.toPlainString())
+                .append(',')
+                .append(r.trade.orderId)
+                .append('\n')
         }
         return sb.toString()
     }
@@ -55,10 +69,14 @@ class BacktestReportWriter(private val dir: Path) {
         val sb = StringBuilder("timestamp,reason,strategy,symbol\n")
         for (e in rejections) {
             sb
-                .append(e.timestamp).append(',')
-                .append(e.reason).append(',')
-                .append(e.request.strategyId).append(',')
-                .append(e.request.symbol).append('\n')
+                .append(e.timestamp)
+                .append(',')
+                .append(e.reason)
+                .append(',')
+                .append(e.request.strategyId)
+                .append(',')
+                .append(e.request.symbol)
+                .append('\n')
         }
         return sb.toString()
     }
@@ -95,6 +113,7 @@ class BacktestReportWriter(private val dir: Path) {
     ): String {
         val pad = " ".repeat(indent)
         val sb = StringBuilder("{")
+
         fun field(
             name: String,
             value: String,
