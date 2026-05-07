@@ -64,9 +64,14 @@ class ActionCompilerExtensionsTest {
             )
         val sigs =
             ActionCompiler(ExprCompiler(), logger)
-                .compile(com.qkt.dsl.ast.Close("btc"))
-                .invoke(ec)
-        assertThat(sigs).containsExactly(com.qkt.strategy.Signal.Sell("BTCUSDT", BigDecimal("2.5")))
+                .compile(
+                    com.qkt.dsl.ast
+                        .Close("btc"),
+                ).invoke(ec)
+        assertThat(sigs).containsExactly(
+            com.qkt.strategy.Signal
+                .Sell("BTCUSDT", BigDecimal("2.5")),
+        )
     }
 
     @Test
@@ -91,33 +96,45 @@ class ActionCompilerExtensionsTest {
             )
         val sigs =
             ActionCompiler(ExprCompiler(), logger)
-                .compile(com.qkt.dsl.ast.Close("btc"))
-                .invoke(ec)
-        assertThat(sigs).containsExactly(com.qkt.strategy.Signal.Buy("BTCUSDT", BigDecimal("1.5")))
+                .compile(
+                    com.qkt.dsl.ast
+                        .Close("btc"),
+                ).invoke(ec)
+        assertThat(sigs).containsExactly(
+            com.qkt.strategy.Signal
+                .Buy("BTCUSDT", BigDecimal("1.5")),
+        )
     }
 
     @Test
     fun `CLOSE on flat emits no signals`() {
         val sigs =
             ActionCompiler(ExprCompiler(), logger)
-                .compile(com.qkt.dsl.ast.Close("btc"))
-                .invoke(ctx)
+                .compile(
+                    com.qkt.dsl.ast
+                        .Close("btc"),
+                ).invoke(ctx)
         assertThat(sigs).isEmpty()
     }
 
     @Test
     fun `CANCEL is deferred with a clear message`() {
-        org.assertj.core.api.Assertions.assertThatThrownBy {
-            ActionCompiler(ExprCompiler(), logger).compile(com.qkt.dsl.ast.Cancel("btc"))
-        }.isInstanceOf(IllegalStateException::class.java)
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                ActionCompiler(ExprCompiler(), logger).compile(
+                    com.qkt.dsl.ast
+                        .Cancel("btc"),
+                )
+            }.isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("deferred")
     }
 
     @Test
     fun `CANCEL_ALL is deferred with a clear message`() {
-        org.assertj.core.api.Assertions.assertThatThrownBy {
-            ActionCompiler(ExprCompiler(), logger).compile(com.qkt.dsl.ast.CancelAll)
-        }.isInstanceOf(IllegalStateException::class.java)
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                ActionCompiler(ExprCompiler(), logger).compile(com.qkt.dsl.ast.CancelAll)
+            }.isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("deferred")
     }
 
@@ -146,8 +163,10 @@ class ActionCompilerExtensionsTest {
                 .compile(com.qkt.dsl.ast.CloseAll)
                 .invoke(ec)
         assertThat(sigs).containsExactlyInAnyOrder(
-            com.qkt.strategy.Signal.Sell("BTCUSDT", BigDecimal("2")),
-            com.qkt.strategy.Signal.Buy("ETHUSDT", BigDecimal("3")),
+            com.qkt.strategy.Signal
+                .Sell("BTCUSDT", BigDecimal("2")),
+            com.qkt.strategy.Signal
+                .Buy("ETHUSDT", BigDecimal("3")),
         )
     }
 }

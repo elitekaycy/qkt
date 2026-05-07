@@ -12,9 +12,9 @@ import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.strategy.Signal
+import java.math.BigDecimal
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.math.BigDecimal
 
 class ActionCompiler(
     private val exprCompiler: ExprCompiler,
@@ -54,7 +54,10 @@ class ActionCompiler(
     private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> =
         { ctx ->
             val symbol = ctx.streamSymbols[streamAlias] ?: error("Unknown stream alias: $streamAlias")
-            val qty = ctx.strategyContext.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            val qty =
+                ctx.strategyContext.positions
+                    .positionFor(symbol)
+                    ?.quantity ?: BigDecimal.ZERO
             when {
                 qty.signum() > 0 -> listOf(Signal.Sell(symbol, qty))
                 qty.signum() < 0 -> listOf(Signal.Buy(symbol, qty.abs()))

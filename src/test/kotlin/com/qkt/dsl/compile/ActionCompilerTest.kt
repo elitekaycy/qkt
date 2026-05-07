@@ -89,5 +89,4 @@ class ActionCompilerTest {
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
-
 }
