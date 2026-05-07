@@ -12,8 +12,8 @@ import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
-import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.InList
+import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.StateAccessor
@@ -132,7 +132,10 @@ class ExprCompiler(
     private fun compilePositionRef(ref: PositionRef): CompiledExpr =
         CompiledExpr { ctx ->
             val symbol = ctx.streamSymbols[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
-            val qty = ctx.strategyContext.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            val qty =
+                ctx.strategyContext.positions
+                    .positionFor(symbol)
+                    ?.quantity ?: BigDecimal.ZERO
             Value.Num(qty)
         }
 
@@ -142,7 +145,10 @@ class ExprCompiler(
         }
         return CompiledExpr { ctx ->
             val symbol = ctx.streamSymbols[ref.key] ?: error("Unknown stream alias: ${ref.key}")
-            val price = ctx.strategyContext.positions.positionFor(symbol)?.avgEntryPrice ?: BigDecimal.ZERO
+            val price =
+                ctx.strategyContext.positions
+                    .positionFor(symbol)
+                    ?.avgEntryPrice ?: BigDecimal.ZERO
             Value.Num(price)
         }
     }

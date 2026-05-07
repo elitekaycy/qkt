@@ -38,7 +38,8 @@ class ExprCompilerStateTest {
     @Test
     fun `ACCOUNT realized_pnl reads from pnl view`() {
         val v =
-            ExprCompiler().compile(AccountRef("realized_pnl"))
+            ExprCompiler()
+                .compile(AccountRef("realized_pnl"))
                 .evaluate(ctxWithPnl(realized = BigDecimal("123.45"))) as Value.Num
         assertThat(v.v).isEqualByComparingTo("123.45")
     }
@@ -46,7 +47,8 @@ class ExprCompilerStateTest {
     @Test
     fun `ACCOUNT unrealized_pnl reads from pnl view`() {
         val v =
-            ExprCompiler().compile(AccountRef("unrealized_pnl"))
+            ExprCompiler()
+                .compile(AccountRef("unrealized_pnl"))
                 .evaluate(ctxWithPnl(unrealizedTotal = BigDecimal("7.5"))) as Value.Num
         assertThat(v.v).isEqualByComparingTo("7.5")
     }
@@ -54,7 +56,8 @@ class ExprCompilerStateTest {
     @Test
     fun `ACCOUNT total_pnl reads from pnl view`() {
         val v =
-            ExprCompiler().compile(AccountRef("total_pnl"))
+            ExprCompiler()
+                .compile(AccountRef("total_pnl"))
                 .evaluate(
                     ctxWithPnl(realized = BigDecimal("10"), unrealizedTotal = BigDecimal("5")),
                 ) as Value.Num
@@ -87,7 +90,12 @@ class ExprCompilerStateTest {
                 lets = emptyMap(),
                 strategyContext = testStrategyContext(positions = pos),
             )
-        val v = ExprCompiler().compile(com.qkt.dsl.ast.PositionRef("btc")).evaluate(ec) as Value.Num
+        val v =
+            ExprCompiler()
+                .compile(
+                    com.qkt.dsl.ast
+                        .PositionRef("btc"),
+                ).evaluate(ec) as Value.Num
         assertThat(v.v).isEqualByComparingTo("2.5")
     }
 
@@ -100,7 +108,12 @@ class ExprCompilerStateTest {
                 lets = emptyMap(),
                 strategyContext = testStrategyContext(),
             )
-        val v = ExprCompiler().compile(com.qkt.dsl.ast.PositionRef("btc")).evaluate(ec) as Value.Num
+        val v =
+            ExprCompiler()
+                .compile(
+                    com.qkt.dsl.ast
+                        .PositionRef("btc"),
+                ).evaluate(ec) as Value.Num
         assertThat(v.v).isEqualByComparingTo("0")
     }
 
@@ -114,7 +127,11 @@ class ExprCompilerStateTest {
                 strategyContext = testStrategyContext(),
             )
         assertThatThrownBy {
-            ExprCompiler().compile(com.qkt.dsl.ast.PositionRef("btc")).evaluate(ec)
+            ExprCompiler()
+                .compile(
+                    com.qkt.dsl.ast
+                        .PositionRef("btc"),
+                ).evaluate(ec)
         }.isInstanceOf(IllegalStateException::class.java)
     }
 
@@ -135,9 +152,11 @@ class ExprCompilerStateTest {
                 strategyContext = testStrategyContext(positions = pos),
             )
         val v =
-            ExprCompiler().compile(
-                com.qkt.dsl.ast.StateAccessor(com.qkt.dsl.ast.StateSource.POSITION_AVG_PRICE, "btc"),
-            ).evaluate(ec) as Value.Num
+            ExprCompiler()
+                .compile(
+                    com.qkt.dsl.ast
+                        .StateAccessor(com.qkt.dsl.ast.StateSource.POSITION_AVG_PRICE, "btc"),
+                ).evaluate(ec) as Value.Num
         assertThat(v.v).isEqualByComparingTo("105.50")
     }
 
@@ -145,7 +164,10 @@ class ExprCompilerStateTest {
     fun `OPEN_ORDERS state is rejected in 11c1`() {
         assertThatThrownBy {
             ExprCompiler()
-                .compile(com.qkt.dsl.ast.StateAccessor(com.qkt.dsl.ast.StateSource.OPEN_ORDERS, "btc"))
+                .compile(
+                    com.qkt.dsl.ast
+                        .StateAccessor(com.qkt.dsl.ast.StateSource.OPEN_ORDERS, "btc"),
+                )
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 }

@@ -23,7 +23,8 @@ class ExprCompilerFuncCallTest {
     @Test
     fun `ABS evaluates`() {
         val v =
-            ExprCompiler().compile(FuncCall("ABS", listOf(NumLit(BigDecimal("-7")))))
+            ExprCompiler()
+                .compile(FuncCall("ABS", listOf(NumLit(BigDecimal("-7")))))
                 .evaluate(ctx) as Value.Num
         assertThat(v.v).isEqualByComparingTo("7")
     }
@@ -31,12 +32,13 @@ class ExprCompilerFuncCallTest {
     @Test
     fun `MAX of three`() {
         val v =
-            ExprCompiler().compile(
-                FuncCall(
-                    "MAX",
-                    listOf(NumLit(BigDecimal("1")), NumLit(BigDecimal("9")), NumLit(BigDecimal("3"))),
-                ),
-            ).evaluate(ctx) as Value.Num
+            ExprCompiler()
+                .compile(
+                    FuncCall(
+                        "MAX",
+                        listOf(NumLit(BigDecimal("1")), NumLit(BigDecimal("9")), NumLit(BigDecimal("3"))),
+                    ),
+                ).evaluate(ctx) as Value.Num
         assertThat(v.v).isEqualByComparingTo("9")
     }
 
@@ -52,12 +54,13 @@ class ExprCompilerFuncCallTest {
                 strategyContext = testStrategyContext(),
             )
         val v =
-            ExprCompiler().compile(
-                FuncCall(
-                    "MAX",
-                    listOf(NumLit(BigDecimal("1")), StreamFieldRef("btc", "close")),
-                ),
-            ).evaluate(ec)
+            ExprCompiler()
+                .compile(
+                    FuncCall(
+                        "MAX",
+                        listOf(NumLit(BigDecimal("1")), StreamFieldRef("btc", "close")),
+                    ),
+                ).evaluate(ec)
         assertThat(v).isEqualTo(Value.Undefined)
     }
 }

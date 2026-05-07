@@ -58,8 +58,7 @@ class IndicatorBinding private constructor(
             streamAlias: String,
             field: String?,
             inputKind: IndicatorInput,
-        ): IndicatorBinding =
-            IndicatorBinding(call, indicator, streamAlias, field, inputKind, source = null)
+        ): IndicatorBinding = IndicatorBinding(call, indicator, streamAlias, field, inputKind, source = null)
 
         internal fun indicatorFed(
             call: IndicatorCall,

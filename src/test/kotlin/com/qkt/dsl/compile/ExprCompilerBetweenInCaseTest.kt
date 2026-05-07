@@ -26,16 +26,25 @@ class ExprCompilerBetweenInCaseTest {
     fun `BETWEEN includes endpoints`() {
         val ec = ExprCompiler()
         assertThat(
-            (ec.compile(Between(NumLit(BigDecimal("5")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
-                .evaluate(ctx) as Value.Bool).v,
+            (
+                ec
+                    .compile(Between(NumLit(BigDecimal("5")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
+                    .evaluate(ctx) as Value.Bool
+            ).v,
         ).isTrue()
         assertThat(
-            (ec.compile(Between(NumLit(BigDecimal("1")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
-                .evaluate(ctx) as Value.Bool).v,
+            (
+                ec
+                    .compile(Between(NumLit(BigDecimal("1")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
+                    .evaluate(ctx) as Value.Bool
+            ).v,
         ).isTrue()
         assertThat(
-            (ec.compile(Between(NumLit(BigDecimal("10")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
-                .evaluate(ctx) as Value.Bool).v,
+            (
+                ec
+                    .compile(Between(NumLit(BigDecimal("10")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
+                    .evaluate(ctx) as Value.Bool
+            ).v,
         ).isTrue()
     }
 
@@ -43,12 +52,18 @@ class ExprCompilerBetweenInCaseTest {
     fun `BETWEEN excludes outside`() {
         val ec = ExprCompiler()
         assertThat(
-            (ec.compile(Between(NumLit(BigDecimal("0")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
-                .evaluate(ctx) as Value.Bool).v,
+            (
+                ec
+                    .compile(Between(NumLit(BigDecimal("0")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
+                    .evaluate(ctx) as Value.Bool
+            ).v,
         ).isFalse()
         assertThat(
-            (ec.compile(Between(NumLit(BigDecimal("11")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
-                .evaluate(ctx) as Value.Bool).v,
+            (
+                ec
+                    .compile(Between(NumLit(BigDecimal("11")), NumLit(BigDecimal("1")), NumLit(BigDecimal("10"))))
+                    .evaluate(ctx) as Value.Bool
+            ).v,
         ).isFalse()
     }
 
