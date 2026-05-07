@@ -1,7 +1,9 @@
 package com.qkt.backtest
 
 import com.qkt.bus.EventBus
+import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.TickEvent
 import com.qkt.pnl.PnLProvider
 import com.qkt.pnl.StrategyPnL
 import java.math.BigDecimal
@@ -21,8 +23,10 @@ class EquityCurveCollector(
         when (cadence) {
             SampleCadence.CANDLE_CLOSE ->
                 bus.subscribe<CandleEvent> { e -> sample(e.candle.endTime) }
-            SampleCadence.TICK -> Unit
-            SampleCadence.FILL -> Unit
+            SampleCadence.TICK ->
+                bus.subscribe<TickEvent> { e -> sample(e.tick.timestamp) }
+            SampleCadence.FILL ->
+                bus.subscribe<BrokerEvent.OrderFilled> { e -> sample(e.timestamp) }
         }
     }
 
