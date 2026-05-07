@@ -5,6 +5,7 @@ import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.positions.StrategyPositionView
+import com.qkt.risk.RiskView
 
 data class StrategyContext(
     val strategyId: String,
@@ -14,4 +15,5 @@ data class StrategyContext(
     val source: MarketSource,
     val positions: StrategyPositionView,
     val pnl: StrategyPnLView,
+    val risk: RiskView,
 )

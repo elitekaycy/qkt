@@ -18,6 +18,7 @@ import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
+import com.qkt.risk.RiskState
 import com.qkt.risk.rules.MaxPositionSize
 import com.qkt.strategy.EveryNthTickBuyStrategy
 import com.qkt.strategy.Mode
@@ -45,9 +46,11 @@ fun main() {
         listOf(
             MaxPositionSize(symbol = "XAUUSD", maxQty = Money.of("3")),
         )
-    val riskEngine = RiskEngine(rules, positions)
     val strategyPositions = StrategyPositionTracker()
     val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
+    val riskState = RiskState(pnl, strategyPnL, clock, bus)
+    riskState.warmupComplete = true
+    val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
 
     val pipeline =
         TradingPipeline(
@@ -64,6 +67,7 @@ fun main() {
             engine = engine,
             strategies = strategies,
             riskEngine = riskEngine,
+            riskState = riskState,
             mode = Mode.BACKTEST,
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,

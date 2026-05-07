@@ -21,6 +21,7 @@ import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
+import com.qkt.risk.RiskState
 import com.qkt.strategy.Mode
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
@@ -58,7 +59,8 @@ class LiveSession(
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
-        val riskEngine = RiskEngine(rules, positions)
+        val riskState = RiskState(pnl, strategyPnL, clock, bus)
+        val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
 
         val trades: MutableList<Trade> = CopyOnWriteArrayList()
 
@@ -77,6 +79,7 @@ class LiveSession(
                 engine = engine,
                 strategies = strategies,
                 riskEngine = riskEngine,
+                riskState = riskState,
                 mode = Mode.LIVE,
                 calendar = calendar,
                 source = source,
@@ -96,6 +99,7 @@ class LiveSession(
                     ?.warmup
                 ?: WarmupSpec.None
         IndicatorWarmer(source, pipeline).warmup(symbols, effectiveWarmup, now)
+        riskState.warmupComplete = true
 
         val feed = source.liveTicks(symbols)
 
