@@ -598,19 +598,36 @@ The expressive-core phase is split into three sub-phases. Each ships independent
 - `CLOSE_ALL` — flatten every open position.
 - `CANCEL <stream>` / `CANCEL_ALL` — surface working-order cancellation. (Cancellation requires broker-side support that may need engine work; if so, this slice is downsized to `CLOSE`/`CLOSE_ALL` only and the cancel actions defer to a later phase.)
 
-### Phase 11d — Production order surface (~16 tasks)
+### Phase 11d — Production order surface
 
-**Goal:** Make the DSL usable for real trading by exposing the full order taxonomy.
+The production-order phase is split into two sub-phases. Each ships independently. Together they cover the surface originally scoped to Phase 11d in earlier drafts of this spec.
+
+#### Phase 11d1 — Order types, brackets, OCO, child prices, equity-free sizing (~16 tasks)
+
+**Goal:** Make the DSL usable for real trading on every order type the engine already supports.
 
 **Adds:**
-- `LIMIT`, `STOP`, `STOP-LIMIT`, `TRAILING BY`, `TRAILING PCT`.
-- `BRACKET { STOP LOSS, TAKE PROFIT }`.
-- `OCO { STOP, LIMIT }`.
-- Child-price modes: `AT`, `BY`, `PCT`, `RR`.
-- TIF (`GTC`, `IOC`, `FOK`, `DAY`, `GTD`).
-- Sizing modes: `USD` notional, `% OF EQUITY`, `% OF BALANCE`, `RISK <frac>`, `RISK $<amt>`, `POSITION.<sym>`.
-- `DEFAULTS` block with template inheritance into all actions.
-- Validation: `RISK` requires resolvable stop distance; compile-time error otherwise.
+- Order types: `LIMIT AT <expr>`, `STOP AT <expr>`, `STOP AT <s> LIMIT AT <l>`, `TRAILING BY <expr>`, `TRAILING PCT <expr>`. All map to the engine's existing `OrderRequest.{Limit, Stop, StopLimit, TrailingStop}` (with `TrailMode.PERCENT` for `TRAILING PCT`, scaled to 0-100).
+- `BRACKET { STOP LOSS ..., TAKE PROFIT ... }` — wraps an entry into `OrderRequest.Bracket`.
+- `OCO { STOP ..., LIMIT ... }` — two-leg `OrderRequest.StandaloneOCO`.
+- Child-price modes: `AT <abs-price>`, `BY <distance>` (from entry), `PCT <fraction>` (of entry), `RR <multiplier>` (multiple of stop distance for take-profit). Computed at fire time from the entry-price reference.
+- TIF: `GTC`, `IOC`, `FOK`, `DAY`. **`GTD` deferred** — the engine's `TimeInForce` enum has 4 variants; adding `GTD` requires engine work (a `Long`/`Instant` deadline field on the order surface). Treated like CANCEL: the AST exists (`Gtd(until)`), the compiler errors with "deferred — engine surface needs work".
+- Equity-free sizing modes: direct quantity (already from 11b), `<n> USD` notional (qty = usd / current price), `RISK $<amount>` (qty = amount / abs(entry - stop)), `POSITION.<sym>` (close-at-full-size).
+- Validation: `RISK $` requires a resolvable stop distance via `BRACKET.STOP LOSS` or DEFAULTS.
+
+**Out of scope for 11d1:** `% OF EQUITY` / `% OF BALANCE` / `RISK <fraction>` sizing (need engine equity surface), `DEFAULTS` block (lands with sizing in 11d2), `GTD` TIF.
+
+#### Phase 11d2 — Engine equity surface, percent-and-fraction sizing, DEFAULTS (~10 tasks)
+
+**Goal:** Ship the textbook "risk 1% per trade" workflow and the `DEFAULTS` block that makes long-form strategies readable.
+
+**Adds:**
+- Engine-side: `equity()` / `balance()` on `StrategyPnLView`. `Backtest` accepts a `startingBalance` parameter; the view computes `equity = startingBalance + total()` and `balance = startingBalance + realized()`.
+- DSL: `ACCOUNT.equity` and `ACCOUNT.balance` accessors (currently rejected as "deferred" in 11c1's compiler).
+- DSL sizing: `<frac>% OF EQUITY`, `<frac>% OF BALANCE`, `RISK <frac>` (fraction of equity at risk).
+- `DEFAULTS` block — strategy-level template; every action without an explicit `SIZING`, `STOP_LOSS`, `TAKE_PROFIT`, `TIF`, `ORDER_TYPE`, or `TRAILING` clause inherits from `DEFAULTS`.
+- Within-`DEFAULTS` `SYMBOL` placeholder bound at action-expansion time to the rule's stream.
+- Validation: `RISK <frac>` requires a resolvable stop distance.
 
 ### Phase 11e — Multi-timeframe and multi-broker (~10 tasks)
 
