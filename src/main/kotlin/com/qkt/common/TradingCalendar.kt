@@ -1,5 +1,7 @@
 package com.qkt.common
 
+import com.qkt.candles.TimeWindow
+import java.math.BigDecimal
 import java.time.Instant
 
 interface TradingCalendar {
@@ -24,6 +26,9 @@ interface TradingCalendar {
         anchor: SessionAnchor,
         anchorEpoch: Long,
     ): TimeRange
+
+    fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal =
+        error("tradingPeriodsPerYear not implemented for $name")
 
     companion object {
         fun crypto(): TradingCalendar = CryptoCalendar
