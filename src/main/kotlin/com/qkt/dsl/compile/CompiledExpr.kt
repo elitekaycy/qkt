@@ -21,6 +21,7 @@ class EvalContext(
     val streamSymbols: Map<String, String>,
     val lets: Map<String, BigDecimal>,
     val strategyContext: StrategyContext,
+    val snapshotStore: SnapshotStore = SnapshotStore(emptyMap()),
 )
 
 fun interface CompiledExpr {

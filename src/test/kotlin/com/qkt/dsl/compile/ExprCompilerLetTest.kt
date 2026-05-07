@@ -40,9 +40,16 @@ class ExprCompilerLetTest {
     }
 
     @Test
-    fun `snapshot references are rejected in 11b`() {
+    fun `snapshot references are kept intact`() {
         val lets = listOf(LetDecl("x", NumLit(BigDecimal.ONE)))
-        assertThatThrownBy { LetResolver(lets).resolve(Ref("x", snapshot = SnapshotOpen)) }
-            .isInstanceOf(IllegalArgumentException::class.java)
+        val expr = Ref("x", snapshot = SnapshotOpen)
+        val resolved = LetResolver(lets).resolve(expr)
+        assertThat(resolved).isEqualTo(Ref("x", snapshot = SnapshotOpen))
+    }
+
+    @Test
+    fun `snapshot reference to unknown LET is rejected`() {
+        assertThatThrownBy { LetResolver(emptyList()).resolve(Ref("missing", snapshot = SnapshotOpen)) }
+            .isInstanceOf(IllegalStateException::class.java)
     }
 }
