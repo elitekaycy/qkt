@@ -10,8 +10,8 @@ import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
-import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.InList
+import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref

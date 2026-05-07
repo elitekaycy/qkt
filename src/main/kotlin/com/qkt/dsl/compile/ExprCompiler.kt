@@ -75,8 +75,9 @@ class ExprCompiler(
         ref: Ref,
         ruleSymbol: String?,
     ): CompiledExpr {
-        val kind = ref.snapshot
-            ?: error("Bare Ref ${ref.name} should have been substituted by LetResolver")
+        val kind =
+            ref.snapshot
+                ?: error("Bare Ref ${ref.name} should have been substituted by LetResolver")
         val sym = ruleSymbol ?: error("Snapshot ref ${ref.name}@$kind requires rule symbol context")
         return when (kind) {
             is SnapshotTPast ->
