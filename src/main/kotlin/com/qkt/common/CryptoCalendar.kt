@@ -1,11 +1,20 @@
 package com.qkt.common
 
+import com.qkt.candles.TimeWindow
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 
 object CryptoCalendar : TradingCalendar {
     override val name: String = "crypto"
+
+    override fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal {
+        val minutesPerYear = BigDecimal("525960")
+        val windowMinutes =
+            BigDecimal(window.durationMs).divide(BigDecimal("60000"), Money.CONTEXT)
+        return minutesPerYear.divide(windowMinutes, Money.CONTEXT)
+    }
 
     override fun isInSession(
         symbol: String,

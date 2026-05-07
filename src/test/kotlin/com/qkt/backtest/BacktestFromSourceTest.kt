@@ -1,4 +1,4 @@
-package com.qkt.app
+package com.qkt.backtest
 
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -48,7 +48,7 @@ class BacktestFromSourceTest {
                     request = request,
                 ).run()
 
-        assertThat(viaSource.tradeCount).isEqualTo(viaStore.tradeCount)
-        assertThat(viaSource.totalPnL).isEqualByComparingTo(viaStore.totalPnL)
+        assertThat(viaSource.global.tradeCount).isEqualTo(viaStore.global.tradeCount)
+        assertThat(viaSource.global.totalPnL).isEqualByComparingTo(viaStore.global.totalPnL)
     }
 }

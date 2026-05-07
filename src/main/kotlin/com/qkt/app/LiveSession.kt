@@ -84,7 +84,7 @@ class LiveSession(
                 calendar = calendar,
                 source = source,
                 candleWindow = candleWindow,
-                onFilled = { trade, _ -> trades.add(trade) },
+                onFilled = { trade, _, _ -> trades.add(trade) },
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
