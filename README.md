@@ -1,177 +1,138 @@
 # qkt
 
-An event-driven trading engine in Kotlin, with a future SQL-like DSL for writing trading strategies.
+[![check](https://github.com/elitekaycy/qkt/actions/workflows/check.yml/badge.svg)](https://github.com/elitekaycy/qkt/actions/workflows/check.yml)
+
+An event-driven trading engine in Kotlin with backtest replay, parameter sweeps, attribution-aware risk, and a future SQL-like DSL.
 
 ## Status
 
-- **Phase 1** — Core engine MVP. Tick generation, strategy interface with callback-emit, signal-to-order conversion, mock broker, deterministic foundations. Shipped.
-- Phases 2–5 — event bus, risk engine, backtesting, DSL. Planned.
+Pre-1.0. Latest release: [`v0.10.1`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
-## What it does today
+See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-process.md`](docs/release-process.md) for versioning.
 
-```
-Tick → Engine → Strategy → Signal → Order → MockBroker → Trade
-```
+## Features
 
-A `MockTickFeed` produces 100 seeded random-walk ticks for `XAUUSD`. An `EveryNthTickBuyStrategy` emits a buy signal every 10 ticks. The `Engine` converts each signal into a `MARKET` order and routes it to a `MockBroker`, which fills at the latest tracked price. Filled trades print to stdout.
+- **Tick + candle pipeline** with a deterministic event bus ([phase 2a](docs/phases/), [phase 2b](docs/phases/)).
+- **Multi-strategy support** with per-strategy P&L attribution ([phase 8](docs/phases/phase-8-strategy-context-and-pnl-attribution.md)).
+- **Risk engine** — equity tracking, drawdown halts, daily loss halts, halt-as-state with operator-driven resume ([phase 9](docs/phases/phase-9-risk-engine.md)).
+- **Bybit Spot + Linear (USDT)** live trading with reconciliation, rate limiting, and connection resilience ([phase 7e–7h](docs/phases/)).
+- **Backtest replay engine** with full reporting: equity curves, Sharpe, Calmar, profit factor, win/loss stats ([phase 10](docs/phases/phase-10-backtest-reporting.md)).
+- **Parameter sweep harness** with sequential or fixed-pool parallel execution and ranked summary reports ([phase 10b](docs/phases/phase-10b-parameter-sweep.md)).
+- **TradingView live vendor** (anonymous, free-tier) for paper trading ([phase 7c](docs/phases/)).
+- **On-disk content-addressable data store** with Dukascopy auto-fetch and bring-your-own CSV ([phase 6](docs/phases/)).
 
-## Build and run
+## Quickstart
 
-Requirements: JDK 21 (Gradle's toolchain auto-provisions if not local).
+Requires JDK 21 (Gradle's toolchain auto-provisions if not local).
 
 ```bash
+git clone https://github.com/elitekaycy/qkt.git
+cd qkt
 ./gradlew build      # compile + test + assemble
-./gradlew test       # tests only
 ./gradlew run        # main application — prints fills, exits
 ```
 
-Local pre-push helper:
+A minimal in-process backtest:
+
+```kotlin
+import com.qkt.backtest.Backtest
+import com.qkt.candles.TimeWindow
+import com.qkt.common.Money
+import com.qkt.marketdata.Tick
+
+val ticks = (1..100).map { Tick("X", Money.of((100 + it).toString()), it * 60_000L) }
+val result = Backtest(
+    strategies = listOf("buy-and-hold" to MyStrategy()),
+    ticks = ticks,
+    candleWindow = TimeWindow.ONE_MINUTE,
+).run()
+
+println("Total P&L: ${result.global.totalPnL}")
+println("Sharpe: ${result.global.sharpeRatio}")
+println("Max drawdown: ${result.global.maxDrawdown}")
+```
+
+For real historical data via the Dukascopy fetcher or live trading via TradingView, see the relevant phase changelogs in [`docs/phases/`](docs/phases/).
+
+## Architecture
+
+```
+Tick → Engine → Strategy → Signal → Order → Broker → Trade
+```
+
+Single-threaded event-driven pipeline. Every component is deterministic given its inputs and seeds. `Clock`, `IdGenerator`, and `SequenceGenerator` are interfaces so backtest is a component swap, not a rewrite. State that is shared between producers and consumers is exposed via read-only interfaces — the type system enforces the read/write split.
+
+For depth, read the per-phase design specs in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+
+## Repository layout
+
+```
+src/main/kotlin/com/qkt/
+├── app/             entry points: Main, LiveSession, TradingPipeline, IndicatorWarmer
+├── backtest/        Backtest, BacktestResult, EquitySample, EquityCurveCollector,
+│                    PerformanceReport, ReportBuilder, SampleCadence, TradeRecord
+│   ├── metrics/     profitFactor, winLossStats, sharpe, calmar
+│   ├── report/      BacktestReportWriter, SweepReportWriter, ReportSerializer
+│   └── sweep/       BacktestSweep, SweepRun, SweepResult
+├── broker/          Broker, PaperBroker, BybitBroker, CompositeBroker
+├── bus/             EventBus
+├── candles/         CandleAggregator, TimeWindow
+├── common/          Clock, FixedClock, SystemClock, Money, Side, IdGenerator,
+│                    TradingCalendar (crypto, fx, NYSE), TimeRange, SessionAnchor
+├── engine/          Engine
+├── events/          Event, TickEvent, CandleEvent, SignalEvent, OrderEvent,
+│                    BrokerEvent (Filled, Rejected, Reconciled, ...), RiskEvent
+├── execution/       Order, OrderRequest, Trade, OrderType
+├── marketdata/      Tick, Candle, MarketSource, MarketPriceTracker, TickFeed
+│                    (Historical, Sequence, Merging), data store, vendors
+├── pnl/             PnLCalculator, StrategyPnL, PnLProvider, StrategyPnLView
+├── positions/       PositionTracker, StrategyPositionTracker, Position
+├── risk/            RiskEngine, RiskState, EquityTracker, DrawdownTracker,
+│                    DailyPnLTracker, RiskRule, HaltRule, RiskView, rules/
+└── strategy/        Strategy, StrategyContext, Signal, Mode, WarmupSpec, samples/
+```
+
+## Build, run, test
+
+```bash
+./gradlew build              # compile + test + ktlint + assemble
+./gradlew test               # tests only
+./gradlew run                # main application
+./gradlew runLiveDemo        # TradingView paper-trading demo
+./gradlew test -PincludeTags=e2e  # run live smoke tests (manual)
+./gradlew ktlintFormat       # auto-format
+```
+
+Pre-push helper:
 
 ```bash
 ./scripts/precheck.sh
 ```
 
-After cloning, wire up the git hook so `precheck.sh` runs automatically before every push:
+After cloning, install the git hook so precheck runs automatically before every push:
 
 ```bash
 ./scripts/install-hooks.sh
 ```
 
-## Layout
-
-```
-src/main/kotlin/com/qkt/
-├── common/        Side, Clock, IdGenerator
-├── marketdata/    Tick, Candle, TickFeed, MockTickFeed, MarketPriceProvider
-├── execution/     OrderType, Order, Trade
-├── strategy/      Signal, Strategy, EveryNthTickBuyStrategy
-├── broker/        Broker, MockBroker
-├── engine/        Engine
-└── app/           Main
-```
-
-```
-docs/
-├── superpowers/specs/        per-feature design specs
-├── superpowers/plans/        per-feature implementation plans
-└── phase<N>-backlog.md       carried-over items per phase
-```
-
-## Architecture
-
-Single-threaded event-driven pipeline. Every component is deterministic given its inputs and seeds. `Clock`, `IdGenerator`, and pull-model `TickFeed` are interfaces so backtesting in Phase 4 becomes a component swap, not a rewrite.
-
-Read the Phase 1 design doc at `docs/superpowers/specs/2026-05-03-trading-engine-phase1-design.md` for the full picture.
-
 ## Getting real data
 
-Phase 6 ships a content-addressable on-disk data store at `~/.qkt/data/` (override via the `QKT_DATA_HOME` environment variable). Strategies query this store via `Backtest.fromStore(...)` or directly via `DataStore.openFeed(...)`. The store is empty on first install — populate it by either:
+Phase 6 ships a content-addressable on-disk data store at `~/.qkt/data/` (override via the `QKT_DATA_HOME` environment variable). Strategies query this store via `Backtest.fromStore(...)` or directly via `DataStore.openFeed(...)`. The store is empty on first install — populate it via Dukascopy auto-fetch, bring-your-own CSV, or the bundled sample fixture. See the [phase 6 changelog](docs/phases/) for the full guide.
 
-### Option 1: Auto-fetch via the bundled bash script (Dukascopy)
+## Live trading
 
-Requires Node.js 18+ and `dukascopy-node`:
+Phase 7 ships a live runtime alongside the historical backtest. Vendors include TradingView (anonymous, free-tier) for market data and Bybit (Spot + Linear/USDT) for execution. Live ticks feed the same `TradingPipeline` your backtest uses; the only difference is the `TickFeed` (live) and the `Clock` (system time). See [`docs/phases/phase-7-live-runtime.md`](docs/phases/phase-7-live-runtime.md) and the Bybit phase changelogs for setup and constraints.
 
-```bash
-npm install -g dukascopy-node
-```
+## Documentation
 
-Then wire the fetcher when constructing your store:
-
-`ScriptDataFetcher.dukascopy(...)` requires an absolute path to the bundled script. Use `Path.of(System.getProperty("user.dir"), "scripts/fetch-dukascopy.sh")` if you run from the qkt repo root, or hard-code the absolute path to your installed copy.
-
-```kotlin
-val store = DefaultDataStore.fromEnv(
-    fetcher = ScriptDataFetcher.dukascopy(Path.of("/path/to/qkt/scripts/fetch-dukascopy.sh")),
-)
-val backtest = Backtest.fromStore(
-    strategies = listOf(MyStrategy()),
-    rules = listOf(MaxPositionSize("EURUSD", Money.of("3"))),
-    store = store,
-    request = DataRequest(
-        symbols = listOf("EURUSD"),
-        from = Instant.parse("2024-01-15T00:00:00Z"),
-        to = Instant.parse("2024-01-22T00:00:00Z"),
-    ),
-).run()
-```
-
-The store will fetch missing days lazily on first run and cache them locally. Subsequent runs over the same range hit the cache and never touch the network.
-
-### Option 2: Bring your own data
-
-Drop CSV files matching the qkt schema into `~/.qkt/data/symbols/{SYMBOL}/{YYYY-MM-DD}.csv` (or `.csv.gz`). Schema:
-
-```
-timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume
-```
-
-Then call `DefaultDataStore.fromEnv().rebuildManifests()` to populate manifests from the file list.
-
-### Option 3: Sample data
-
-The repo ships a tiny fixture set at `data/sample/symbols/` that mirrors the production layout. Point a store at it for tests and demos:
-
-```kotlin
-val store = DefaultDataStore(root = Path.of("data/sample"))
-```
-
-## Live trading (TradingView)
-
-Phase 7 ships a live runtime alongside the historical backtest. The first vendor is TradingView via WebSocket, anonymous mode (no login required, free-tier symbol coverage). Live ticks feed the same `TradingPipeline` your backtest uses; the only difference is the `TickFeed` (live) and the `Clock` (system time).
-
-### Run the bundled demo
-
-```bash
-./gradlew runLiveDemo
-```
-
-The demo connects to TradingView, subscribes to `OANDA:EURUSD`, `OANDA:XAUUSD`, and `BINANCE:BTCUSDT`, runs `BreakoutOfYesterdayHighStrategy` against EURUSD, and prints fills via the existing `MockBroker` to stdout. Press Ctrl-C to stop.
-
-### Construct a LiveSession in your own code
-
-```kotlin
-import com.qkt.app.LiveSession
-import com.qkt.candles.TimeWindow
-import com.qkt.common.SystemClock
-import com.qkt.common.TradingCalendar
-import com.qkt.marketdata.live.tv.TradingViewMarketSource
-import com.qkt.strategy.samples.BreakoutOfYesterdayHighStrategy
-
-fun main() {
-    val source = TradingViewMarketSource.connect()
-    val handle =
-        LiveSession(
-            strategies = listOf(BreakoutOfYesterdayHighStrategy("OANDA:EURUSD")),
-            source = source,
-            symbols = listOf("OANDA:EURUSD"),
-            candleWindow = TimeWindow.ONE_MINUTE,
-            clock = SystemClock(),
-            calendar = TradingCalendar.fxDefault(),
-        ).start()
-    handle.awaitTermination(java.time.Duration.ofMinutes(10))
-}
-```
-
-### Run the live smoke test (manual)
-
-The smoke test connects to real TradingView and asserts that at least one tick arrives within 30 seconds. Tagged `@Tag("e2e")` and excluded from the default `./gradlew test` run.
-
-```bash
-./gradlew test -PincludeTags=e2e
-```
-
-### TradingView vendor constraints
-
-- **Anonymous mode only.** Logged-in / premium symbol coverage and higher rate limits are not implemented in Phase 7. See `docs/phases/phase-7-live-runtime.md` for the deferred-work list.
-- **No tick history.** TradingView does not expose historical ticks. `TradingViewMarketSource.ticks(...)` throws `UnsupportedDataException`. Use bar history via `bars(...)` for warmup.
-- **Symbol form is `EXCHANGE:SYMBOL`.** TV does not accept bare symbols (`EURUSD`). Use `OANDA:EURUSD`, `BINANCE:BTCUSDT`, etc. The `TradingViewMarketSource.supports(symbol)` check rejects symbols that do not match the form.
-- **Rate limits apply.** The anonymous quote-session subscribes to a few dozen symbols comfortably. For larger universes, use `CompositeMarketSource` to route per-asset-class to dedicated vendors (e.g. Binance for crypto, OANDA for FX).
-- **Paper trading only.** All fills go through `MockBroker`, which fills at the latest in-process price. Real-broker integrations land in Phase 7d / 8 behind a `LiveBroker` interface.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Conventions are codified in `.claude/skills/qkt/SKILL.md` — read it before opening a PR.
+- [`docs/phases/`](docs/phases/) — per-phase changelogs (the authoritative "what's in qkt today" reference).
+- [`docs/superpowers/specs/`](docs/superpowers/specs/) — design specs per phase.
+- [`docs/superpowers/plans/`](docs/superpowers/plans/) — implementation plans per phase.
+- [`docs/release-process.md`](docs/release-process.md) — versioning and tagging policy.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute.
+- [`SECURITY.md`](SECURITY.md) — vulnerability disclosure.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — community standards.
 
 ## License
 
-TBD.
+Apache 2.0 — see [LICENSE](LICENSE).
