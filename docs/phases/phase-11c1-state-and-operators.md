@@ -211,4 +211,4 @@ End-to-end equivalence tests against hand-written strategies use the same `Backt
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md` §7 Phase 11c1
 - Plan: `docs/superpowers/plans/2026-05-07-trading-engine-phase11c1.md`
-- Merge commit: TBD (filled in after merge to `main`).
+- Merge commit: `64e2c9b`
