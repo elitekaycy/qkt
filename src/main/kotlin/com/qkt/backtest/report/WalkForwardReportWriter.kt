@@ -74,7 +74,11 @@ class WalkForwardReportWriter(
     private fun renderEquityCsv(curve: List<EquitySample>): String {
         val sb = StringBuilder("timestamp,equity\n")
         for (s in curve) {
-            sb.append(s.timestamp).append(',').append(s.equity.toPlainString()).append('\n')
+            sb
+                .append(s.timestamp)
+                .append(',')
+                .append(s.equity.toPlainString())
+                .append('\n')
         }
         return sb.toString()
     }
@@ -82,7 +86,11 @@ class WalkForwardReportWriter(
     private fun renderWinnerCountsCsv(counts: Map<String, Int>): String {
         val sb = StringBuilder("configLabel,winCount\n")
         for ((label, count) in counts.entries.sortedByDescending { it.value }) {
-            sb.append(label).append(',').append(count).append('\n')
+            sb
+                .append(label)
+                .append(',')
+                .append(count)
+                .append('\n')
         }
         return sb.toString()
     }
@@ -104,7 +112,11 @@ class WalkForwardReportWriter(
         sb.append(",\n  \"winnerCounts\": {")
         val entries = result.winnerCounts.entries.toList()
         for ((i, e) in entries.withIndex()) {
-            sb.append("\n    ").append(ReportSerializer.jsonString(e.key)).append(": ").append(e.value)
+            sb
+                .append("\n    ")
+                .append(ReportSerializer.jsonString(e.key))
+                .append(": ")
+                .append(e.value)
             if (i != entries.size - 1) sb.append(",")
         }
         if (entries.isNotEmpty()) sb.append("\n  ")
@@ -135,7 +147,11 @@ class WalkForwardReportWriter(
             .append(ReportSerializer.jsonString(fold.testRange.to.toString()))
             .append("},")
         sb.append("\n      \"winnerLabel\": ").append(ReportSerializer.jsonString(fold.winnerLabel)).append(",")
-        sb.append("\n      \"winnerConfig\": ").append(ReportSerializer.jsonString(fold.winnerConfig.toString())).append(",")
+        sb
+            .append(
+                "\n      \"winnerConfig\": ",
+            ).append(ReportSerializer.jsonString(fold.winnerConfig.toString()))
+            .append(",")
         sb.append("\n      \"trainScore\": ").append(ReportSerializer.jsonBigDecimal(fold.trainScore)).append(",")
         sb.append("\n      \"testTotalPnL\": ").append(ReportSerializer.jsonBigDecimal(r.totalPnL)).append(",")
         sb.append("\n      \"testMaxDrawdown\": ").append(ReportSerializer.jsonBigDecimal(r.maxDrawdown)).append(",")

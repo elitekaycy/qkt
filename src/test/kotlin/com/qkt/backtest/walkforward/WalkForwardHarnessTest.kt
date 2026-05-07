@@ -58,8 +58,16 @@ class WalkForwardHarnessTest {
         val result = harness.run()
 
         assertThat(result.folds).hasSize(4)
-        assertThat(result.folds.first().trainRange.from).isEqualTo(t0)
-        assertThat(result.folds.last().testRange.to).isEqualTo(t0.plus(Duration.ofDays(60)))
+        assertThat(
+            result.folds
+                .first()
+                .trainRange.from,
+        ).isEqualTo(t0)
+        assertThat(
+            result.folds
+                .last()
+                .testRange.to,
+        ).isEqualTo(t0.plus(Duration.ofDays(60)))
         assertThat(result.folds.all { it.winnerLabel in listOf("a", "b", "c") }).isTrue()
         assertThat(result.winnerCounts.values.sum()).isEqualTo(4)
         assertThat(result.concatenatedTestCurve).isNotEmpty()
