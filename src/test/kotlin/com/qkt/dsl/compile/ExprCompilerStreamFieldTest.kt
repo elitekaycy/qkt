@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.marketdata.Candle
+import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -20,7 +21,12 @@ class ExprCompilerStreamFieldTest {
             endTime = 60_000L,
         )
     private val ctx =
-        EvalContext(candle = candle, streamSymbols = mapOf("btc" to "BTCUSDT"), lets = emptyMap())
+        EvalContext(
+            candle = candle,
+            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            lets = emptyMap(),
+            strategyContext = testStrategyContext(),
+        )
 
     @Test
     fun `close maps to candle close`() {
@@ -60,7 +66,12 @@ class ExprCompilerStreamFieldTest {
     @Test
     fun `unknown stream alias is rejected at evaluation time`() {
         val noStream =
-            EvalContext(candle = candle, streamSymbols = emptyMap(), lets = emptyMap())
+            EvalContext(
+                candle = candle,
+                streamSymbols = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
         assertThatThrownBy {
             ExprCompiler().compile(StreamFieldRef("btc", "close")).evaluate(noStream)
         }.isInstanceOf(IllegalStateException::class.java)
@@ -70,7 +81,12 @@ class ExprCompilerStreamFieldTest {
     fun `mismatched candle symbol returns Undefined`() {
         val otherCandle = candle.copy(symbol = "GOLD")
         val otherCtx =
-            EvalContext(candle = otherCandle, streamSymbols = mapOf("btc" to "BTCUSDT"), lets = emptyMap())
+            EvalContext(
+                candle = otherCandle,
+                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
         val v = ExprCompiler().compile(StreamFieldRef("btc", "close")).evaluate(otherCtx)
         assertThat(v).isEqualTo(Value.Undefined)
     }

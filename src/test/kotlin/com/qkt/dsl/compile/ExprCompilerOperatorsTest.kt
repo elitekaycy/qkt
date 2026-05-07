@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.marketdata.Candle
+import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -17,7 +18,13 @@ import org.junit.jupiter.api.Test
 class ExprCompilerOperatorsTest {
     private val candle =
         Candle("X", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
-    private val ctx = EvalContext(candle = candle, streamSymbols = emptyMap(), lets = emptyMap())
+    private val ctx =
+        EvalContext(
+            candle = candle,
+            streamSymbols = emptyMap(),
+            lets = emptyMap(),
+            strategyContext = testStrategyContext(),
+        )
 
     @Test
     fun `addition`() {

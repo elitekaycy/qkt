@@ -44,7 +44,13 @@ private class CompiledStrategy(
         emit: (Signal) -> Unit,
     ) {
         if (candle.symbol !in streamSymbols.values) return
-        val ec = EvalContext(candle = candle, streamSymbols = streamSymbols, lets = emptyMap())
+        val ec =
+            EvalContext(
+                candle = candle,
+                streamSymbols = streamSymbols,
+                lets = emptyMap(),
+                strategyContext = ctx,
+            )
         bindings.updateAll(ec)
         for (rule in rules) {
             val sig = rule.fire(ec)

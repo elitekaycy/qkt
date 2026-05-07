@@ -11,6 +11,7 @@ import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
+import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -29,7 +30,12 @@ class ActionCompilerTest {
             1L,
         )
     private val ctx =
-        EvalContext(candle = candle, streamSymbols = mapOf("btc" to "BTCUSDT"), lets = emptyMap())
+        EvalContext(
+            candle = candle,
+            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            lets = emptyMap(),
+            strategyContext = testStrategyContext(),
+        )
 
     @Test
     fun `BUY emits Signal Buy with SizeQty`() {
