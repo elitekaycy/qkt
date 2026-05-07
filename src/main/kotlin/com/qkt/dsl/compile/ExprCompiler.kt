@@ -11,6 +11,8 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
+import com.qkt.dsl.ast.StateAccessor
+import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
@@ -30,6 +32,7 @@ class ExprCompiler(
             is IndicatorCall -> compileIndicator(expr)
             is AccountRef -> compileAccountRef(expr)
             is PositionRef -> compilePositionRef(expr)
+            is StateAccessor -> compileStateAccessor(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
 
@@ -39,6 +42,17 @@ class ExprCompiler(
             val qty = ctx.strategyContext.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
             Value.Num(qty)
         }
+
+    private fun compileStateAccessor(ref: StateAccessor): CompiledExpr {
+        require(ref.source == StateSource.POSITION_AVG_PRICE) {
+            "StateAccessor source ${ref.source} is not supported in 11c1"
+        }
+        return CompiledExpr { ctx ->
+            val symbol = ctx.streamSymbols[ref.key] ?: error("Unknown stream alias: ${ref.key}")
+            val price = ctx.strategyContext.positions.positionFor(symbol)?.avgEntryPrice ?: BigDecimal.ZERO
+            Value.Num(price)
+        }
+    }
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {
         require(ref.field in setOf("realized_pnl", "unrealized_pnl", "total_pnl")) {

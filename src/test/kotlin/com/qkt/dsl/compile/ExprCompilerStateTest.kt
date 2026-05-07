@@ -117,4 +117,35 @@ class ExprCompilerStateTest {
             ExprCompiler().compile(com.qkt.dsl.ast.PositionRef("btc")).evaluate(ec)
         }.isInstanceOf(IllegalStateException::class.java)
     }
+
+    @Test
+    fun `POSITION_AVG_PRICE reads avg entry price`() {
+        val pos =
+            object : com.qkt.positions.StrategyPositionView {
+                override fun positionFor(symbol: String) =
+                    com.qkt.positions.Position("BTCUSDT", BigDecimal("1"), BigDecimal("105.50"))
+
+                override fun allPositions() = emptyMap<String, com.qkt.positions.Position>()
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+        val v =
+            ExprCompiler().compile(
+                com.qkt.dsl.ast.StateAccessor(com.qkt.dsl.ast.StateSource.POSITION_AVG_PRICE, "btc"),
+            ).evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("105.50")
+    }
+
+    @Test
+    fun `OPEN_ORDERS state is rejected in 11c1`() {
+        assertThatThrownBy {
+            ExprCompiler()
+                .compile(com.qkt.dsl.ast.StateAccessor(com.qkt.dsl.ast.StateSource.OPEN_ORDERS, "btc"))
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
 }
