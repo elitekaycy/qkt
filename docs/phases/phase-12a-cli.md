@@ -171,4 +171,4 @@ try {
 - Phase 11f (parser, `Dsl.parseFile`): `docs/superpowers/specs/2026-05-08-trading-engine-phase11f-design.md`
 - Phase 11a (release process, GitHub Releases): `docs/superpowers/specs/2026-05-07-trading-engine-phase11a-design.md`
 - Architecture overview: `docs/architecture.md`
-- Merge commit: TBD
+- Merge commit: 2277c5a
