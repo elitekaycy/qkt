@@ -13,15 +13,13 @@ class CandleHub {
         val listeners: MutableList<(Candle) -> Unit>,
     )
 
-    private val slots: MutableMap<HubKey, Slot> = LinkedHashMap()
-    private var feedStarted: Boolean = false
+    private val slots: MutableMap<HubKey, Slot> = java.util.concurrent.ConcurrentHashMap()
 
     fun register(
         key: HubKey,
         retention: Int,
     ) {
         require(retention >= 1) { "retention must be >= 1: $retention" }
-        check(!feedStarted) { "CandleHub.register called after feed started: $key" }
         val existing = slots[key]
         if (existing != null) {
             existing.retention = maxOf(existing.retention, retention)
@@ -41,7 +39,6 @@ class CandleHub {
     }
 
     fun feed(tick: Tick) {
-        feedStarted = true
         for ((key, slot) in slots) {
             if (key.symbol == tick.symbol) slot.aggregator.onTick(tick)
         }

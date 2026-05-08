@@ -51,7 +51,7 @@ class StrategyHandle(
     class RealFactory(
         private val stateDir: StateDir,
         private val marketSourceProvider: (List<String>) -> MarketSource,
-        @Suppress("unused") private val candleHub: CandleHub? = null,
+        private val candleHub: CandleHub? = null,
         private val ringSize: Int = 1000,
         private val bind: String = "127.0.0.1",
     ) : Factory {
@@ -88,6 +88,7 @@ class StrategyHandle(
                     symbols = symbols,
                     candleWindow = candleWindow,
                     mdcStrategy = name,
+                    candleHub = candleHub,
                     onTrade = { trade, realized, _ ->
                         org.slf4j.MDC.put("strategy", name)
                         try {

@@ -30,11 +30,15 @@ class DaemonCommand(
 
     private fun startDaemon(): Int {
         val stateDir = StateDir.resolve(args.option("state-dir"))
+        val sharedHub =
+            com.qkt.dsl.compile
+                .CandleHub()
         val registry =
             StrategyRegistry(
                 StrategyHandle.RealFactory(
                     stateDir = stateDir,
                     marketSourceProvider = sourceFactory,
+                    candleHub = sharedHub,
                 ),
             )
         val startedAt = Instant.now()
