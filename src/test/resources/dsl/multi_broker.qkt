@@ -1,0 +1,14 @@
+STRATEGY mb VERSION 1
+
+SYMBOLS
+    btc  = BYBIT:BTCUSDT       EVERY 1m,
+    gold = INTERACTIVE:XAUUSD  EVERY 1m,
+    aapl = ALPACA:AAPL         EVERY 1m
+
+RULES
+    WHEN btc.close > 0
+    THEN BUY btc SIZING 1
+    WHEN gold.close > 0
+    THEN BUY gold SIZING 1
+    WHEN aapl.close > 0
+    THEN BUY aapl SIZING 1

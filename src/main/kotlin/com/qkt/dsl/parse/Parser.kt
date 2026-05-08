@@ -601,7 +601,7 @@ class Parser(
                 else -> break@loop
             }
         }
-        return ActionOpts(sizing, orderType, tif, bracket, oco)
+        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco)
     }
 
     internal fun parseDefaults(): DefaultsBlock {

@@ -1,0 +1,9 @@
+STRATEGY mtf VERSION 1
+
+SYMBOLS
+    btc    = BACKTEST:BTCUSDT EVERY 1m,
+    btc_h1 = BACKTEST:BTCUSDT EVERY 1h
+
+RULES
+    WHEN btc.close > 105 AND btc_h1.close > 100
+    THEN BUY btc SIZING 1
