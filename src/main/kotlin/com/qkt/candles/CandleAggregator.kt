@@ -9,25 +9,32 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 
-class CandleAggregator(
-    private val bus: EventBus,
+class CandleAggregator private constructor(
     private val window: TimeWindow,
+    private val emit: (Candle) -> Unit,
+    bus: EventBus?,
 ) {
+    constructor(bus: EventBus, window: TimeWindow) : this(
+        window = window,
+        emit = { c -> bus.publish(CandleEvent(c)) },
+        bus = bus,
+    )
+
     private val open = mutableMapOf<String, MutableCandle>()
 
     init {
-        bus.subscribe<TickEvent> { event -> handle(event.tick) }
-        bus.subscribe<WarmupTickEvent> { event -> handle(event.tick) }
+        bus?.subscribe<TickEvent> { event -> onTick(event.tick) }
+        bus?.subscribe<WarmupTickEvent> { event -> onTick(event.tick) }
     }
 
-    private fun handle(tick: Tick) {
+    fun onTick(tick: Tick) {
         val state = open[tick.symbol]
         if (state == null) {
             open[tick.symbol] = newState(tick)
             return
         }
         if (tick.timestamp >= state.endTime) {
-            bus.publish(CandleEvent(state.toCandle()))
+            emit(state.toCandle())
             open[tick.symbol] = newState(tick)
             return
         }
@@ -67,5 +74,12 @@ class CandleAggregator(
         }
 
         fun toCandle(): Candle = Candle(symbol, open, high, low, close, volume, startTime, endTime)
+    }
+
+    companion object {
+        fun standalone(
+            window: TimeWindow,
+            onClose: (Candle) -> Unit,
+        ): CandleAggregator = CandleAggregator(window = window, emit = onClose, bus = null)
     }
 }
