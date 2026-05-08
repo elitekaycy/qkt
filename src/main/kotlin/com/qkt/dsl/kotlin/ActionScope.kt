@@ -14,6 +14,7 @@ import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizingAst
+import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.TifAst
 
 object ActionScope {
@@ -24,6 +25,7 @@ object ActionScope {
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
+        stack: StackAst? = null,
     ): ActionAst =
         Buy(
             stream.alias,
@@ -33,6 +35,7 @@ object ActionScope {
                 tif = tif,
                 bracket = bracket,
                 oco = oco,
+                stack = stack,
             ),
         )
 
@@ -43,6 +46,7 @@ object ActionScope {
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
+        stack: StackAst? = null,
     ): ActionAst =
         Buy(
             stream.alias,
@@ -52,6 +56,7 @@ object ActionScope {
                 tif = tif,
                 bracket = bracket,
                 oco = oco,
+                stack = stack,
             ),
         )
 
@@ -62,6 +67,7 @@ object ActionScope {
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
+        stack: StackAst? = null,
     ): ActionAst =
         Sell(
             stream.alias,
@@ -71,6 +77,7 @@ object ActionScope {
                 tif = tif,
                 bracket = bracket,
                 oco = oco,
+                stack = stack,
             ),
         )
 
@@ -81,6 +88,7 @@ object ActionScope {
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
+        stack: StackAst? = null,
     ): ActionAst =
         Sell(
             stream.alias,
@@ -90,6 +98,7 @@ object ActionScope {
                 tif = tif,
                 bracket = bracket,
                 oco = oco,
+                stack = stack,
             ),
         )
 
@@ -105,6 +114,7 @@ object ActionScope {
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
+        stack: StackAst? = null,
     ): ActionAst =
         Buy(
             stream.alias,
@@ -114,6 +124,7 @@ object ActionScope {
                 tif = tif,
                 bracket = bracket,
                 oco = oco,
+                stack = stack,
             ),
         )
 
@@ -123,6 +134,7 @@ object ActionScope {
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
+        stack: StackAst? = null,
     ): ActionAst =
         Sell(
             stream.alias,
@@ -132,6 +144,7 @@ object ActionScope {
                 tif = tif,
                 bracket = bracket,
                 oco = oco,
+                stack = stack,
             ),
         )
 }
