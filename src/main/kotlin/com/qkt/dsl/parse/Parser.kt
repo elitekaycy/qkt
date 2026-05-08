@@ -5,11 +5,13 @@ import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
+import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import java.math.BigDecimal
@@ -154,9 +156,24 @@ class Parser(
                 advance()
                 NumLit(BigDecimal(t.lexeme))
             }
-            TokenKind.IDENT -> {
-                advance()
-                Ref(t.lexeme)
+            TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE -> {
+                val name = advance().lexeme
+                when {
+                    match(TokenKind.LPAREN) -> {
+                        val args = mutableListOf<ExprAst>()
+                        if (peek().kind != TokenKind.RPAREN) {
+                            args.add(parseExpr())
+                            while (match(TokenKind.COMMA)) args.add(parseExpr())
+                        }
+                        expect(TokenKind.RPAREN, "expected ')' after arguments")
+                        IndicatorCall(name, args)
+                    }
+                    match(TokenKind.DOT) -> {
+                        val field = expectFieldName().lexeme
+                        StreamFieldRef(name, field)
+                    }
+                    else -> Ref(name)
+                }
             }
             TokenKind.LPAREN -> {
                 advance()
@@ -218,6 +235,14 @@ class Parser(
     ): Token {
         if (peek().kind == kind) return advance()
         error("$msg, got '${peek().lexeme}'")
+    }
+
+    private fun expectFieldName(): Token {
+        val t = peek()
+        if (t.kind == TokenKind.IDENT || t.kind == TokenKind.OPEN || t.kind == TokenKind.CLOSE) {
+            return advance()
+        }
+        error("expected field name, got '${t.lexeme}'")
     }
 
     private fun error(msg: String): Nothing {
