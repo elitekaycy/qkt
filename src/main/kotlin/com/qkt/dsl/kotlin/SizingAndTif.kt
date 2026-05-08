@@ -17,11 +17,17 @@ fun riskAbs(amount: ExprAst): SizingAst = SizeRiskAbs(amount)
 
 fun positionFull(stream: StreamRef): SizingAst = SizePositionFull(stream.alias)
 
-fun pctEquity(frac: ExprAst): SizingAst = com.qkt.dsl.ast.SizePctEquity(frac)
+fun pctEquity(frac: ExprAst): SizingAst =
+    com.qkt.dsl.ast
+        .SizePctEquity(frac)
 
-fun pctBalance(frac: ExprAst): SizingAst = com.qkt.dsl.ast.SizePctBalance(frac)
+fun pctBalance(frac: ExprAst): SizingAst =
+    com.qkt.dsl.ast
+        .SizePctBalance(frac)
 
-fun riskFrac(frac: ExprAst): SizingAst = com.qkt.dsl.ast.SizeRiskFrac(frac)
+fun riskFrac(frac: ExprAst): SizingAst =
+    com.qkt.dsl.ast
+        .SizeRiskFrac(frac)
 
 val gtc: TifAst = Gtc
 val ioc: TifAst = Ioc

@@ -21,8 +21,7 @@ class StrategyPnL(
         startingBalanceByStrategy[strategyId] = balance.setScale(Money.SCALE, Money.ROUNDING)
     }
 
-    fun startingBalanceFor(strategyId: String): BigDecimal =
-        startingBalanceByStrategy[strategyId] ?: Money.ZERO
+    fun startingBalanceFor(strategyId: String): BigDecimal = startingBalanceByStrategy[strategyId] ?: Money.ZERO
 
     fun recordRealized(
         strategyId: String,

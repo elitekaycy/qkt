@@ -2,11 +2,9 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizePctEquity
 import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
@@ -65,5 +63,4 @@ class SizingCompilerTest {
         val s = compiler().compile(SizePositionFull("btc"), stopDistance = null)
         assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"))).isEqualByComparingTo("0")
     }
-
 }
