@@ -1,19 +1,35 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.AggFn
+import com.qkt.dsl.ast.Aggregate
+import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.BoolLit
+import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CrossDir
+import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.SinceOpen
+import com.qkt.dsl.ast.SinceTPast
+import com.qkt.dsl.ast.SnapshotBuy
+import com.qkt.dsl.ast.SnapshotKind
+import com.qkt.dsl.ast.SnapshotOpen
+import com.qkt.dsl.ast.SnapshotSell
+import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
+import com.qkt.dsl.ast.Window
 import java.math.BigDecimal
 
 class Parser(
@@ -116,12 +132,51 @@ class Parser(
                     TokenKind.NEQ -> Cmp.NE
                     else -> null
                 }
-            if (op == null) break
-            advance()
-            val rhs = parseAddExpr()
-            lhs = CmpOp(op, lhs, rhs)
+            if (op != null) {
+                advance()
+                val rhs = parseAddExpr()
+                lhs = CmpOp(op, lhs, rhs)
+                continue
+            }
+            when (k) {
+                TokenKind.BETWEEN -> {
+                    advance()
+                    val lo = parseAddExpr()
+                    expect(TokenKind.AND, "expected AND between BETWEEN bounds")
+                    val hi = parseAddExpr()
+                    lhs = Between(lhs, lo, hi)
+                }
+                TokenKind.IN -> {
+                    advance()
+                    expect(TokenKind.LBRACKET, "expected '[' after IN")
+                    val members = mutableListOf<ExprAst>()
+                    if (peek().kind != TokenKind.RBRACKET) {
+                        members.add(parseExpr())
+                        while (match(TokenKind.COMMA)) members.add(parseExpr())
+                    }
+                    expect(TokenKind.RBRACKET, "expected ']' to close IN list")
+                    lhs = InList(lhs, members)
+                }
+                TokenKind.CROSSES -> {
+                    advance()
+                    val dir =
+                        when (peek().kind) {
+                            TokenKind.ABOVE -> {
+                                advance()
+                                CrossDir.ABOVE
+                            }
+                            TokenKind.BELOW -> {
+                                advance()
+                                CrossDir.BELOW
+                            }
+                            else -> error("expected ABOVE or BELOW after CROSSES, got '${peek().lexeme}'")
+                        }
+                    val rhs = parseAddExpr()
+                    lhs = Crosses(dir, lhs, rhs)
+                }
+                else -> return lhs
+            }
         }
-        return lhs
     }
 
     private fun parseAddExpr(): ExprAst {
@@ -156,6 +211,20 @@ class Parser(
                 advance()
                 NumLit(BigDecimal(t.lexeme))
             }
+            TokenKind.STRING -> {
+                advance()
+                error("string literals are not allowed in expressions")
+            }
+            TokenKind.TRUE -> {
+                advance()
+                BoolLit(true)
+            }
+            TokenKind.FALSE -> {
+                advance()
+                BoolLit(false)
+            }
+            TokenKind.MAX, TokenKind.MIN, TokenKind.MEAN, TokenKind.SUM -> parseAggregate()
+            TokenKind.CASE -> parseCaseWhen()
             TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE -> {
                 val name = advance().lexeme
                 when {
@@ -172,6 +241,7 @@ class Parser(
                         val field = expectFieldName().lexeme
                         StreamFieldRef(name, field)
                     }
+                    match(TokenKind.AT_SIGN) -> Ref(name, parseSnapshotKind())
                     else -> Ref(name)
                 }
             }
@@ -183,6 +253,89 @@ class Parser(
             }
             else -> error("expected expression, got '${t.lexeme}'")
         }
+    }
+
+    private fun parseAggregate(): ExprAst {
+        val fnTok = advance()
+        val fn =
+            when (fnTok.kind) {
+                TokenKind.MAX -> AggFn.MAX
+                TokenKind.MIN -> AggFn.MIN
+                TokenKind.MEAN -> AggFn.MEAN
+                TokenKind.SUM -> AggFn.SUM
+                else -> error("unreachable")
+            }
+        expect(TokenKind.LPAREN, "expected '(' after ${fnTok.lexeme}")
+        val series = parseExpr()
+        expect(TokenKind.RPAREN, "expected ')' to close aggregate args")
+        expect(TokenKind.SINCE, "expected SINCE after aggregate")
+        val window = parseWindow()
+        return Aggregate(fn, series, window)
+    }
+
+    private fun parseWindow(): Window =
+        when (peek().kind) {
+            TokenKind.OPEN -> {
+                advance()
+                SinceOpen
+            }
+            TokenKind.T -> {
+                advance()
+                expect(TokenKind.MINUS, "expected '-' after T")
+                val n =
+                    expect(TokenKind.NUMBER, "expected positive integer after T-").lexeme.toIntOrNull()
+                        ?: error("expected positive integer after T-")
+                SinceTPast(n)
+            }
+            else -> error("expected OPEN or T-N for window, got '${peek().lexeme}'")
+        }
+
+    private fun parseSnapshotKind(): SnapshotKind {
+        val t = peek()
+        return when (t.kind) {
+            TokenKind.BUY -> {
+                advance()
+                SnapshotBuy
+            }
+            TokenKind.SELL -> {
+                advance()
+                SnapshotSell
+            }
+            TokenKind.OPEN -> {
+                advance()
+                SnapshotOpen
+            }
+            TokenKind.T -> {
+                advance()
+                expect(TokenKind.MINUS, "expected '-' after T")
+                val n =
+                    expect(TokenKind.NUMBER, "expected positive integer after T-").lexeme.toIntOrNull()
+                        ?: error("expected positive integer after T-")
+                SnapshotTPast(n)
+            }
+            else -> error("expected snapshot kind (buy/sell/open/T-N), got '${t.lexeme}'")
+        }
+    }
+
+    private fun parseCaseWhen(): ExprAst {
+        expect(TokenKind.CASE, "expected CASE")
+        val branches = mutableListOf<Pair<ExprAst, ExprAst>>()
+        while (peek().kind == TokenKind.WHEN) {
+            advance()
+            val cond = parseExpr()
+            expect(TokenKind.THEN, "expected THEN in CASE branch")
+            val body = parseExpr()
+            branches.add(cond to body)
+        }
+        if (branches.isEmpty()) error("CASE requires at least one WHEN branch")
+        val elseExpr =
+            if (match(TokenKind.ELSE)) {
+                parseExpr()
+            } else {
+                error("CASE requires an ELSE branch")
+            }
+        expect(TokenKind.END, "expected END to close CASE")
+        return CaseWhen(branches, elseExpr)
     }
 
     private fun parseSymbols(): List<StreamDecl> {
