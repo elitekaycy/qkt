@@ -211,4 +211,4 @@ Boot `Thread { runMain(arrayOf("run", fixture, "--port", "0")) }.start()`. Captu
 - Phase 12a (CLI binary): `docs/superpowers/specs/2026-05-08-trading-engine-phase12a-design.md`
 - jdk.httpserver: `com.sun.net.httpserver.HttpServer`
 - SSE spec: <https://html.spec.whatwg.org/multipage/server-sent-events.html>
-- Merge commit: TBD
+- Merge commit: 232e7b2
