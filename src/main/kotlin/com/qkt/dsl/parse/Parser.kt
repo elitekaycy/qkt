@@ -43,6 +43,7 @@ import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
@@ -71,6 +72,7 @@ import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
+import com.qkt.dsl.ast.WhenThen
 import com.qkt.dsl.ast.Window
 import java.math.BigDecimal
 
@@ -114,6 +116,13 @@ class Parser(
                 emptyList()
             }
 
+        val rules =
+            if (peek().kind == TokenKind.RULES) {
+                tryParse { parseRules() } ?: emptyList()
+            } else {
+                emptyList()
+            }
+
         if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
         return ParseResult.Success(
             StrategyAst(
@@ -123,7 +132,7 @@ class Parser(
                 constants = emptyList(),
                 lets = lets,
                 defaults = defaults,
-                rules = emptyList(),
+                rules = rules,
             ),
         )
     }
@@ -475,6 +484,48 @@ class Parser(
             }
             else -> error("expected child price (AT/BY/PCT/RR), got '${peek().lexeme}'")
         }
+
+    internal fun parseRules(): List<RuleAst> {
+        expect(TokenKind.RULES, "expected RULES")
+        val out = mutableListOf<RuleAst>()
+        while (peek().kind != TokenKind.EOF) {
+            when (peek().kind) {
+                TokenKind.WHEN -> tryParse { parseWhenThen() }?.let { out.add(it) }
+                TokenKind.FOR -> tryParse { parseForEach() }?.let { out.addAll(it) }
+                else -> {
+                    error("expected WHEN or FOR EACH in RULES, got '${peek().lexeme}'")
+                }
+            }
+        }
+        return out
+    }
+
+    private fun parseWhenThen(): WhenThen {
+        expect(TokenKind.WHEN, "expected WHEN")
+        val cond = parseExpr()
+        expect(TokenKind.THEN, "expected THEN after WHEN condition")
+        val action = parseAction()
+        return WhenThen(cond, action)
+    }
+
+    private fun parseForEach(): List<RuleAst> {
+        expect(TokenKind.FOR, "expected FOR")
+        expect(TokenKind.EACH, "expected EACH after FOR")
+        val iterVar = expect(TokenKind.IDENT, "expected iteration variable").lexeme
+        expect(TokenKind.IN, "expected IN after iteration variable")
+        expect(TokenKind.LBRACKET, "expected '[' to open stream alias list")
+        val aliases = mutableListOf<String>()
+        if (peek().kind != TokenKind.RBRACKET) {
+            aliases.add(expect(TokenKind.IDENT, "expected stream alias").lexeme)
+            while (match(TokenKind.COMMA)) {
+                aliases.add(expect(TokenKind.IDENT, "expected stream alias").lexeme)
+            }
+        }
+        expect(TokenKind.RBRACKET, "expected ']' to close stream alias list")
+        expect(TokenKind.DO, "expected DO after stream alias list")
+        val template = parseWhenThen()
+        return aliases.map { alias -> substituteIterVar(template, iterVar, alias) }
+    }
 
     internal fun parseAction(): ActionAst =
         when (peek().kind) {
