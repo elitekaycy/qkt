@@ -11,6 +11,7 @@ internal fun runMain(argv: Array<String>): Int {
             "parse" -> ParseCommand(args).run()
             "backtest" -> BacktestCommand(args).run()
             "run" -> RunCommand(args).run()
+            "deploy" -> DeployCommand(args).run()
             "--version", "-v" -> {
                 println("qkt ${BuildInfo.VERSION}")
                 ExitCodes.SUCCESS
