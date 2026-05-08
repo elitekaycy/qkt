@@ -162,4 +162,4 @@ For DEFAULTS merge logic, prefer the AST-level test (`DefaultsMergeTest`) — ve
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md` §7 Phase 11d2
 - Plan: `docs/superpowers/plans/2026-05-08-trading-engine-phase11d2.md`
-- Merge commit: TBD (filled in after merge to `main`).
+- Merge commit: `cdb7e65`
