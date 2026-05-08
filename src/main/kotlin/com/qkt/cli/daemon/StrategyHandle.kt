@@ -87,6 +87,7 @@ class StrategyHandle(
                     source = source,
                     symbols = symbols,
                     candleWindow = candleWindow,
+                    mdcStrategy = name,
                     onTrade = { trade, realized, _ ->
                         org.slf4j.MDC.put("strategy", name)
                         try {

@@ -22,6 +22,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.snakeyaml.engine)
     runtimeOnly(libs.logback.classic)
+    testImplementation(libs.logback.classic)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testRuntimeOnly(libs.junit.platform.launcher)

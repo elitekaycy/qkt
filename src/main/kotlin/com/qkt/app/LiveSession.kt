@@ -46,6 +46,7 @@ class LiveSession(
     private val clock: Clock = SystemClock(),
     private val calendar: TradingCalendar = TradingCalendar.fxDefault(),
     private val warmupOverride: WarmupSpec? = null,
+    private val mdcStrategy: String? = null,
     private val onWarmupTick: (Tick) -> Unit = {},
     private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
     private val onSignal: (Signal) -> Unit = {},
@@ -116,6 +117,7 @@ class LiveSession(
 
         val thread =
             Thread({
+                if (mdcStrategy != null) org.slf4j.MDC.put("strategy", mdcStrategy)
                 try {
                     while (running.get()) {
                         val tick = feed.next() ?: break
@@ -128,6 +130,7 @@ class LiveSession(
                     runCatching { feed.close() }
                     running.set(false)
                     terminated.countDown()
+                    if (mdcStrategy != null) org.slf4j.MDC.remove("strategy")
                 }
             }, "qkt-live-engine")
         thread.isDaemon = true
