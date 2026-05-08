@@ -1,11 +1,15 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.BinOp
+import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
+import com.qkt.dsl.ast.UnOp
+import com.qkt.dsl.ast.UnaryOp
 import java.math.BigDecimal
 
 class Parser(
@@ -67,7 +71,32 @@ class Parser(
         return out
     }
 
-    private fun parseExpr(): ExprAst = parsePrimary()
+    private fun parseExpr(): ExprAst = parseAddExpr()
+
+    private fun parseAddExpr(): ExprAst {
+        var lhs = parseMulExpr()
+        while (peek().kind == TokenKind.PLUS || peek().kind == TokenKind.MINUS) {
+            val op = if (advance().kind == TokenKind.PLUS) BinOp.ADD else BinOp.SUB
+            val rhs = parseMulExpr()
+            lhs = BinaryOp(op, lhs, rhs)
+        }
+        return lhs
+    }
+
+    private fun parseMulExpr(): ExprAst {
+        var lhs = parseUnaryExpr()
+        while (peek().kind == TokenKind.STAR || peek().kind == TokenKind.SLASH) {
+            val op = if (advance().kind == TokenKind.STAR) BinOp.MUL else BinOp.DIV
+            val rhs = parseUnaryExpr()
+            lhs = BinaryOp(op, lhs, rhs)
+        }
+        return lhs
+    }
+
+    private fun parseUnaryExpr(): ExprAst {
+        if (match(TokenKind.MINUS)) return UnaryOp(UnOp.NEG, parseUnaryExpr())
+        return parsePrimary()
+    }
 
     private fun parsePrimary(): ExprAst {
         val t = peek()
@@ -79,6 +108,12 @@ class Parser(
             TokenKind.IDENT -> {
                 advance()
                 Ref(t.lexeme)
+            }
+            TokenKind.LPAREN -> {
+                advance()
+                val e = parseExpr()
+                expect(TokenKind.RPAREN, "expected ')'")
+                e
             }
             else -> error("expected expression, got '${t.lexeme}'")
         }
