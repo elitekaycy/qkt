@@ -246,17 +246,23 @@ class ExprCompiler(
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
         return CompiledExpr { ctx ->
-            val symbol = ctx.streams[ref.stream]?.symbol ?: error("Unknown stream alias: ${ref.stream}")
-            if (ctx.candle.symbol != symbol) {
+            val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val candle =
+                if (ctx.candle.symbol == key.symbol) {
+                    ctx.candle
+                } else {
+                    ctx.hub.latest(key)
+                }
+            if (candle == null) {
                 Value.Undefined
             } else {
                 Value.Num(
                     when (ref.field) {
-                        "close", "price" -> ctx.candle.close
-                        "open" -> ctx.candle.open
-                        "high" -> ctx.candle.high
-                        "low" -> ctx.candle.low
-                        "volume" -> ctx.candle.volume
+                        "close", "price" -> candle.close
+                        "open" -> candle.open
+                        "high" -> candle.high
+                        "low" -> candle.low
+                        "volume" -> candle.volume
                         else -> error("unreachable")
                     },
                 )
