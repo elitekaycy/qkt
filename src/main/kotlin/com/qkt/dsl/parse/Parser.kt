@@ -8,15 +8,28 @@ import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.CaseWhen
+import com.qkt.dsl.ast.ChildAt
+import com.qkt.dsl.ast.ChildBy
+import com.qkt.dsl.ast.ChildPct
+import com.qkt.dsl.ast.ChildPriceAst
+import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.CrossDir
 import com.qkt.dsl.ast.Crosses
+import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.Fok
+import com.qkt.dsl.ast.Gtc
+import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.LetDecl
+import com.qkt.dsl.ast.Limit
+import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.SinceOpen
@@ -36,9 +49,14 @@ import com.qkt.dsl.ast.SnapshotSell
 import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.Stop
+import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TrailingBy
+import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.Window
@@ -352,6 +370,92 @@ class Parser(
             else -> error("expected snapshot kind (buy/sell/open/T-N), got '${t.lexeme}'")
         }
     }
+
+    internal fun parseOrderType(): OrderTypeAst =
+        when (peek().kind) {
+            TokenKind.MARKET -> {
+                advance()
+                Market
+            }
+            TokenKind.LIMIT -> {
+                advance()
+                expect(TokenKind.AT, "expected AT after LIMIT")
+                Limit(parseExpr())
+            }
+            TokenKind.STOP -> {
+                advance()
+                expect(TokenKind.AT, "expected AT after STOP")
+                val stopPrice = parseExpr()
+                if (peek().kind == TokenKind.LIMIT) {
+                    advance()
+                    expect(TokenKind.AT, "expected AT after LIMIT")
+                    StopLimit(stopPrice, parseExpr())
+                } else {
+                    Stop(stopPrice)
+                }
+            }
+            TokenKind.TRAILING -> {
+                advance()
+                when (peek().kind) {
+                    TokenKind.BY -> {
+                        advance()
+                        TrailingBy(parseExpr())
+                    }
+                    TokenKind.PCT -> {
+                        advance()
+                        TrailingPct(parseExpr())
+                    }
+                    else -> error("expected BY or PCT after TRAILING, got '${peek().lexeme}'")
+                }
+            }
+            else -> error("expected order type (MARKET/LIMIT/STOP/TRAILING), got '${peek().lexeme}'")
+        }
+
+    internal fun parseTif(): TifAst =
+        when (peek().kind) {
+            TokenKind.GTC -> {
+                advance()
+                Gtc
+            }
+            TokenKind.IOC -> {
+                advance()
+                Ioc
+            }
+            TokenKind.FOK -> {
+                advance()
+                Fok
+            }
+            TokenKind.DAY -> {
+                advance()
+                Day
+            }
+            TokenKind.GTD -> {
+                advance()
+                Gtd(parseExpr())
+            }
+            else -> error("expected TIF (GTC/IOC/FOK/DAY/GTD), got '${peek().lexeme}'")
+        }
+
+    internal fun parseChildPrice(): ChildPriceAst =
+        when (peek().kind) {
+            TokenKind.AT -> {
+                advance()
+                ChildAt(parseExpr())
+            }
+            TokenKind.BY -> {
+                advance()
+                ChildBy(parseExpr())
+            }
+            TokenKind.PCT -> {
+                advance()
+                ChildPct(parseExpr())
+            }
+            TokenKind.RR -> {
+                advance()
+                ChildRr(parseExpr())
+            }
+            else -> error("expected child price (AT/BY/PCT/RR), got '${peek().lexeme}'")
+        }
 
     internal fun parseSizing(): SizingAst {
         val k = peek().kind
