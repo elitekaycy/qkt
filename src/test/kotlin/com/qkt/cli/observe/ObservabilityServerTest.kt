@@ -233,7 +233,14 @@ class ObservabilityServerTest {
         val captured =
             java.util.concurrent.atomic
                 .AtomicReference<Boolean?>(null)
-        val s = server(onStop = { captured.set(it) })
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val s =
+            server(
+                onStop = {
+                    captured.set(it)
+                    latch.countDown()
+                },
+            )
         s.start()
         try {
             val req =
@@ -247,6 +254,7 @@ class ObservabilityServerTest {
             val body = resp.body!!.string()
             assertThat(body).contains("\"status\":\"accepted\"")
             assertThat(body).contains("\"action\":\"graceful_shutdown\"")
+            assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
             assertThat(captured.get()).isFalse()
         } finally {
             s.close()
@@ -258,7 +266,14 @@ class ObservabilityServerTest {
         val captured =
             java.util.concurrent.atomic
                 .AtomicReference<Boolean?>(null)
-        val s = server(onStop = { captured.set(it) })
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val s =
+            server(
+                onStop = {
+                    captured.set(it)
+                    latch.countDown()
+                },
+            )
         s.start()
         try {
             val req =
@@ -269,6 +284,7 @@ class ObservabilityServerTest {
                     .build()
             val resp = client.newCall(req).execute()
             assertThat(resp.code).isEqualTo(202)
+            assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
             assertThat(captured.get()).isTrue()
         } finally {
             s.close()
