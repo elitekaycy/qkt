@@ -41,6 +41,28 @@ class ControlClient(
         return readOrThrow(resp)
     }
 
+    fun stop(
+        name: String,
+        flatten: Boolean = false,
+        timeoutMs: Long? = null,
+    ): String {
+        val q =
+            buildList {
+                if (flatten) add("flatten=true")
+                if (timeoutMs != null) add("timeout=$timeoutMs")
+            }.joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
+        val resp =
+            http
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("${baseUrl()}/stop/$name$q")
+                        .post("".toRequestBody(JSON_MEDIA))
+                        .build(),
+                ).execute()
+        return readOrThrow(resp)
+    }
+
     fun deploy(
         name: String,
         file: Path,

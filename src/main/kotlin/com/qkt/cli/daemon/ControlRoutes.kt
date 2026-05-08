@@ -26,6 +26,7 @@ object ControlRoutes {
                     method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
                     method == "POST" && path == "/deploy" -> handleDeploy(ex, registry)
                     method == "GET" && path == "/list" -> handleList(ex, registry)
+                    method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, path)
                     else -> respond(ex, 404, """{"error":"not found"}""")
                 }
             } catch (e: Exception) {
@@ -57,6 +58,49 @@ object ControlRoutes {
                     """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state"}"""
             }
         respond(ex, 200, arr)
+    }
+
+    private fun handleStop(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        path: String,
+    ) {
+        val name = path.removePrefix("/stop/").trim('/').ifBlank { null }
+        if (name == null) {
+            return respond(ex, 400, """{"error":"missing strategy name in path"}""")
+        }
+        val handle = registry.get(name)
+        if (handle == null) {
+            return respond(ex, 404, """{"error":"unknown strategy: $name"}""")
+        }
+        // ?flatten=true and ?timeout=<ms> are accepted; flatten is a no-op in 12c paper mode.
+        val params = parseQuery(ex.requestURI.rawQuery)
+        if (params.containsKey("timeout")) {
+            val t = params["timeout"]?.toLongOrNull()
+            if (t == null || t < 0) {
+                return respond(ex, 400, """{"error":"invalid 'timeout' query param"}""")
+            }
+        }
+        if (params.containsKey("flatten")) {
+            val f = params["flatten"]
+            if (f != "true" && f != "false") {
+                return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
+            }
+        }
+        val trades = handle.tradeCount
+        registry.stop(name)
+        respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades}""")
+    }
+
+    private fun parseQuery(raw: String?): Map<String, String> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return raw
+            .split('&')
+            .mapNotNull { part ->
+                val i = part.indexOf('=')
+                if (i < 0) return@mapNotNull null
+                part.substring(0, i) to part.substring(i + 1)
+            }.toMap()
     }
 
     private fun handleDeploy(
