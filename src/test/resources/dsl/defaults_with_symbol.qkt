@@ -1,0 +1,15 @@
+STRATEGY ds VERSION 1
+
+DEFAULTS {
+    SIZING       = 1
+    STOP_LOSS    = BY ATR(SYMBOL, 14) * 2
+    TAKE_PROFIT  = RR 3
+    TIF          = GTC
+}
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+
+RULES
+    WHEN btc.close > 100
+    THEN BUY btc

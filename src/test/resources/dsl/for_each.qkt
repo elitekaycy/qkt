@@ -1,0 +1,11 @@
+STRATEGY fe VERSION 1
+
+SYMBOLS
+    btc  = BACKTEST:BTCUSDT EVERY 1m,
+    gold = BACKTEST:XAUUSD  EVERY 1m,
+    aapl = BACKTEST:AAPL    EVERY 1m
+
+RULES
+    FOR EACH s IN [btc, gold, aapl] DO
+        WHEN s.close > 0
+        THEN BUY s SIZING 1

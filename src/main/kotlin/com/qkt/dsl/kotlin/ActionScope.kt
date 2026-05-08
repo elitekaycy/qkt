@@ -98,4 +98,40 @@ object ActionScope {
     fun closeStream(stream: StreamRef): ActionAst = Close(stream.alias)
 
     fun closeAll(): ActionAst = CloseAll
+
+    fun buy(
+        stream: StreamRef,
+        orderType: OrderTypeAst = Market,
+        tif: TifAst? = null,
+        bracket: BracketAst? = null,
+        oco: OcoAst? = null,
+    ): ActionAst =
+        Buy(
+            stream.alias,
+            ActionOpts(
+                sizing = null,
+                orderType = orderType,
+                tif = tif,
+                bracket = bracket,
+                oco = oco,
+            ),
+        )
+
+    fun sell(
+        stream: StreamRef,
+        orderType: OrderTypeAst = Market,
+        tif: TifAst? = null,
+        bracket: BracketAst? = null,
+        oco: OcoAst? = null,
+    ): ActionAst =
+        Sell(
+            stream.alias,
+            ActionOpts(
+                sizing = null,
+                orderType = orderType,
+                tif = tif,
+                bracket = bracket,
+                oco = oco,
+            ),
+        )
 }

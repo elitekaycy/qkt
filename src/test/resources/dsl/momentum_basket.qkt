@@ -1,0 +1,27 @@
+-- Momentum basket: cross-asset entry rule with default risk/stop/RR.
+
+STRATEGY momentum_basket VERSION 1
+
+DEFAULTS {
+    SIZING       = 1
+    STOP_LOSS    = BY 5
+    TAKE_PROFIT  = RR 3
+    TIF          = GTC
+}
+
+SYMBOLS
+    btc    = BYBIT:BTCUSDT       EVERY 1m,
+    btc_h1 = BYBIT:BTCUSDT       EVERY 1h,
+    gold   = INTERACTIVE:XAUUSD  EVERY 15m,
+    aapl   = ALPACA:AAPL         EVERY 5m
+
+RULES
+    FOR EACH s IN [btc, gold, aapl] DO
+        WHEN s.close > 100
+        THEN BUY s
+
+    WHEN POSITION.btc > 0 AND btc_h1.close < 100
+    THEN SELL btc SIZING POSITION.btc
+
+    WHEN ACCOUNT.equity < 9500
+    THEN CLOSE_ALL

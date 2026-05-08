@@ -1,0 +1,60 @@
+package com.qkt.dsl.parse
+
+import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.SizeNotional
+import com.qkt.dsl.ast.SizePctBalance
+import com.qkt.dsl.ast.SizePctEquity
+import com.qkt.dsl.ast.SizePositionFull
+import com.qkt.dsl.ast.SizeQty
+import com.qkt.dsl.ast.SizeRiskAbs
+import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizingAst
+import java.math.BigDecimal
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+
+class ParserSizingTest {
+    private fun parseSizing(s: String): SizingAst = Parser(Lexer(s).tokenize()).parseSizing()
+
+    @Test
+    fun `qty with no suffix`() {
+        val r = parseSizing("1.5") as SizeQty
+        assertThat((r.expr as NumLit).value).isEqualTo(BigDecimal("1.5"))
+    }
+
+    @Test
+    fun `USD notional`() {
+        val r = parseSizing("100 USD")
+        assertThat(r).isInstanceOf(SizeNotional::class.java)
+    }
+
+    @Test
+    fun `pct equity`() {
+        val r = parseSizing("0.01 % OF EQUITY")
+        assertThat(r).isInstanceOf(SizePctEquity::class.java)
+    }
+
+    @Test
+    fun `pct balance`() {
+        val r = parseSizing("0.5 % OF BALANCE")
+        assertThat(r).isInstanceOf(SizePctBalance::class.java)
+    }
+
+    @Test
+    fun `risk frac`() {
+        val r = parseSizing("RISK 0.01")
+        assertThat(r).isInstanceOf(SizeRiskFrac::class.java)
+    }
+
+    @Test
+    fun `risk abs dollar`() {
+        val r = parseSizing("RISK \$ 100")
+        assertThat(r).isInstanceOf(SizeRiskAbs::class.java)
+    }
+
+    @Test
+    fun `position full`() {
+        val r = parseSizing("POSITION.btc") as SizePositionFull
+        assertThat(r.stream).isEqualTo("btc")
+    }
+}
