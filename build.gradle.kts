@@ -21,7 +21,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.snakeyaml.engine)
-    runtimeOnly(libs.slf4j.simple)
+    runtimeOnly(libs.logback.classic)
+    testImplementation(libs.logback.classic)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testRuntimeOnly(libs.junit.platform.launcher)
@@ -48,7 +49,7 @@ tasks.test {
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
         if (included.isEmpty()) {
-            excludeTags("e2e", "e2e-live")
+            excludeTags("e2e", "e2e-live", "dockerSmoke")
         } else {
             includeTags(*included.toTypedArray())
         }
@@ -56,6 +57,14 @@ tasks.test {
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true
+    }
+}
+
+tasks.register("dockerBuild") {
+    group = "distribution"
+    description = "Build the qkt Docker image at qkt:local"
+    doLast {
+        exec { commandLine("docker", "build", "-t", "qkt:local", ".") }
     }
 }
 

@@ -21,6 +21,18 @@ class Args(
         idx: Int,
         label: String,
     ): String = positional(idx) ?: throw ArgError("missing required argument: $label")
+
+    /**
+     * Returns the first sub-subcommand token: a positional immediately following the main subcommand
+     * that is not a flag (`--foo`) and not the value of a preceding `--foo` option.
+     *
+     * Used by commands like `qkt daemon stop` where the sub-subcommand must come before any options.
+     */
+    fun firstNonOption(): String? {
+        val first = rest.firstOrNull() ?: return null
+        if (first.startsWith("--")) return null
+        return first
+    }
 }
 
 class ArgError(

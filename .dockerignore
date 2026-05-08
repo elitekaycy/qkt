@@ -1,0 +1,11 @@
+build/
+.gradle/
+.git/
+.idea/
+*.iml
+out/
+.kotlin/
+.vscode/
+*.swp
+*.log
+local.properties

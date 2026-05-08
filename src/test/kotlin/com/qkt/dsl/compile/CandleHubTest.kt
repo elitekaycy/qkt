@@ -43,12 +43,14 @@ class CandleHubTest {
     }
 
     @Test
-    fun `register after feed throws`() {
+    fun `register after feed adds a new key`() {
         val hub = CandleHub()
         hub.register(key1m, retention = 5)
         hub.feed(tick("BTCUSDT", 0L))
-        assertThatThrownBy { hub.register(keyEth1m, retention = 5) }
-            .isInstanceOf(IllegalStateException::class.java)
+        // Daemon scope: late-registering a new key (e.g. when a second strategy deploys after
+        // ticks have started flowing) is allowed. The new key simply has no prior history.
+        hub.register(keyEth1m, retention = 5)
+        assertThat(hub.keys()).contains(key1m, keyEth1m)
     }
 
     @Test

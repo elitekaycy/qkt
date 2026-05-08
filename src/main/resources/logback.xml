@@ -1,0 +1,28 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="STRATEGY_FILE" class="ch.qos.logback.classic.sift.SiftingAppender">
+        <discriminator>
+            <key>strategy</key>
+            <defaultValue>main</defaultValue>
+        </discriminator>
+        <sift>
+            <appender name="FILE-${strategy}" class="ch.qos.logback.core.FileAppender">
+                <file>${QKT_STATE_DIR:-${user.home}/.local/state/qkt}/logs/${strategy}.log</file>
+                <encoder>
+                    <pattern>%d{ISO8601} [%level] %msg%n</pattern>
+                </encoder>
+                <append>true</append>
+            </appender>
+        </sift>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="STRATEGY_FILE"/>
+    </root>
+</configuration>

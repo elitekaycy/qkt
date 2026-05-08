@@ -1,0 +1,8 @@
+STRATEGY sample VERSION 1
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+
+RULES
+    WHEN btc.close > 100
+    THEN BUY btc SIZING 1
