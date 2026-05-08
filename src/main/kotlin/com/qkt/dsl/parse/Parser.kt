@@ -1,5 +1,6 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.AggFn
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
@@ -16,6 +17,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
@@ -24,6 +26,8 @@ import com.qkt.dsl.ast.SnapshotKind
 import com.qkt.dsl.ast.SnapshotOpen
 import com.qkt.dsl.ast.SnapshotSell
 import com.qkt.dsl.ast.SnapshotTPast
+import com.qkt.dsl.ast.StateAccessor
+import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
@@ -225,6 +229,30 @@ class Parser(
             }
             TokenKind.MAX, TokenKind.MIN, TokenKind.MEAN, TokenKind.SUM -> parseAggregate()
             TokenKind.CASE -> parseCaseWhen()
+            TokenKind.ACCOUNT -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after ACCOUNT")
+                AccountRef(expectFieldName().lexeme)
+            }
+            TokenKind.POSITION -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after POSITION")
+                PositionRef(expectFieldName().lexeme)
+            }
+            TokenKind.POSITION_AVG_PRICE -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after POSITION_AVG_PRICE")
+                StateAccessor(StateSource.POSITION_AVG_PRICE, expectFieldName().lexeme)
+            }
+            TokenKind.OPEN_ORDERS -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after OPEN_ORDERS")
+                StateAccessor(StateSource.OPEN_ORDERS, expectFieldName().lexeme)
+            }
+            TokenKind.SYMBOL -> {
+                advance()
+                Ref("__SYMBOL__")
+            }
             TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE -> {
                 val name = advance().lexeme
                 when {
@@ -392,10 +420,18 @@ class Parser(
 
     private fun expectFieldName(): Token {
         val t = peek()
-        if (t.kind == TokenKind.IDENT || t.kind == TokenKind.OPEN || t.kind == TokenKind.CLOSE) {
+        // After a '.', any IDENT or keyword-with-identifier-shaped lexeme is a valid field name.
+        if (t.kind == TokenKind.IDENT || isIdentLikeLexeme(t.lexeme)) {
             return advance()
         }
         error("expected field name, got '${t.lexeme}'")
+    }
+
+    private fun isIdentLikeLexeme(s: String): Boolean {
+        if (s.isEmpty()) return false
+        val first = s[0]
+        if (!(first.isLetter() || first == '_')) return false
+        return s.all { it.isLetterOrDigit() || it == '_' }
     }
 
     private fun error(msg: String): Nothing {
