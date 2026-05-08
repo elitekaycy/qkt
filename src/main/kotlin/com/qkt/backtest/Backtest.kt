@@ -230,6 +230,7 @@ class Backtest(
             request: MarketRequest,
             candleWindow: TimeWindow? = null,
             cadence: SampleCadence? = null,
+            startingBalance: BigDecimal = BigDecimal.ZERO,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -240,6 +241,7 @@ class Backtest(
                 request = resolved,
                 candleWindow = candleWindow,
                 cadence = cadence,
+                startingBalance = startingBalance,
             )
         }
 
@@ -251,6 +253,7 @@ class Backtest(
             candleWindow: TimeWindow? = null,
             warmupSpec: WarmupSpec = WarmupSpec.None,
             cadence: SampleCadence? = null,
+            startingBalance: BigDecimal = BigDecimal.ZERO,
         ): Backtest {
             require(MarketSourceCapability.TICKS in source.capabilities) {
                 "Backtest requires a MarketSource that supports TICKS; ${source.name} has ${source.capabilities}"
@@ -272,6 +275,7 @@ class Backtest(
                 warmupSpec = warmupSpec,
                 symbols = request.symbols,
                 cadence = cadence,
+                startingBalance = startingBalance,
             )
         }
     }

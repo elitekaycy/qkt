@@ -45,6 +45,7 @@ class LiveSession(
     private val calendar: TradingCalendar = TradingCalendar.fxDefault(),
     private val warmupOverride: WarmupSpec? = null,
     private val onWarmupTick: (Tick) -> Unit = {},
+    private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -84,7 +85,10 @@ class LiveSession(
                 calendar = calendar,
                 source = source,
                 candleWindow = candleWindow,
-                onFilled = { trade, _, _ -> trades.add(trade) },
+                onFilled = { trade, realized, strategyId ->
+                    trades.add(trade)
+                    onTrade(trade, realized, strategyId)
+                },
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
