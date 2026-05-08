@@ -1,6 +1,7 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreamDecl
 
 class Parser(
     private val tokens: List<Token>,
@@ -21,12 +22,19 @@ class Parser(
             synchronize()
         }
 
+        val streams =
+            if (peek().kind == TokenKind.SYMBOLS) {
+                tryParse { parseSymbols() } ?: emptyList()
+            } else {
+                emptyList()
+            }
+
         if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
         return ParseResult.Success(
             StrategyAst(
                 name = name,
                 version = version,
-                streams = emptyList(),
+                streams = streams,
                 constants = emptyList(),
                 lets = emptyList(),
                 defaults = null,
@@ -34,6 +42,38 @@ class Parser(
             ),
         )
     }
+
+    private fun parseSymbols(): List<StreamDecl> {
+        val out = mutableListOf<StreamDecl>()
+        expect(TokenKind.SYMBOLS, "expected SYMBOLS")
+        do {
+            val alias = expect(TokenKind.IDENT, "expected stream alias").lexeme
+            expect(TokenKind.EQ, "expected '=' after stream alias")
+            val broker = expect(TokenKind.IDENT, "expected broker prefix").lexeme
+            expect(TokenKind.COLON, "expected ':' between broker and symbol")
+            val symbol = expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
+            expect(TokenKind.EVERY, "expected EVERY")
+            val tfNum = expect(TokenKind.NUMBER, "expected timeframe count").lexeme
+            val tfUnit = expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
+            out.add(
+                StreamDecl(
+                    alias = alias,
+                    broker = broker,
+                    symbol = symbol,
+                    timeframe = "$tfNum$tfUnit",
+                ),
+            )
+        } while (match(TokenKind.COMMA))
+        return out
+    }
+
+    private inline fun <T> tryParse(block: () -> T): T? =
+        try {
+            block()
+        } catch (_: ParseException) {
+            synchronize()
+            null
+        }
 
     private fun peek(): Token = tokens[pos]
 
