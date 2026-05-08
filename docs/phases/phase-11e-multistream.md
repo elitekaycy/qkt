@@ -202,4 +202,4 @@ Tests that don't exercise cross-stream behaviour can rely on the default empty `
 - Plan: `docs/superpowers/plans/2026-05-08-trading-engine-phase11e.md`
 - Master spec (multi-stream, FOR EACH, broker prefix semantics): `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md`
 - Phase 7e (CompositeBroker): `docs/superpowers/specs/2026-05-06-trading-engine-phase7e-design.md`
-- Merge commit: TBD
+- Merge commit: 0ed2acf
