@@ -16,6 +16,7 @@ import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.UnaryOp
@@ -59,6 +60,8 @@ class LetResolver(
                 )
             is Aggregate -> Aggregate(expr.fn, resolve(expr.series), expr.window)
             is FuncCall -> FuncCall(expr.name, expr.args.map { resolve(it) })
-            is NumLit, is BoolLit, is StreamFieldRef, is AccountRef, is PositionRef, is StateAccessor -> expr
+            is NumLit, is BoolLit, is StreamFieldRef, is AccountRef,
+            is PositionRef, is StateAccessor, is StackEntryRef,
+            -> expr
         }
 }

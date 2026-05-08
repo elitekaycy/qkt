@@ -89,3 +89,5 @@ data class FuncCall(
     val name: String,
     val args: List<ExprAst>,
 ) : ExprAst
+
+data object StackEntryRef : ExprAst
