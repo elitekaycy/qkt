@@ -7,6 +7,7 @@ import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
+import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
@@ -29,6 +30,7 @@ import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
@@ -456,6 +458,54 @@ class Parser(
             }
             else -> error("expected child price (AT/BY/PCT/RR), got '${peek().lexeme}'")
         }
+
+    internal fun parseBracket(): BracketAst {
+        expect(TokenKind.LBRACE, "expected '{' to open BRACKET block")
+        var stopLoss: ChildPriceAst? = null
+        var takeProfit: ChildPriceAst? = null
+        do {
+            when (peek().kind) {
+                TokenKind.STOP -> {
+                    advance()
+                    expect(TokenKind.LOSS, "expected LOSS after STOP")
+                    stopLoss = parseChildPrice()
+                }
+                TokenKind.TAKE -> {
+                    advance()
+                    expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
+                    takeProfit = parseChildPrice()
+                }
+                else -> error("expected STOP LOSS or TAKE PROFIT in BRACKET, got '${peek().lexeme}'")
+            }
+        } while (match(TokenKind.COMMA))
+        expect(TokenKind.RBRACE, "expected '}' to close BRACKET block")
+        return BracketAst(stopLoss, takeProfit)
+    }
+
+    internal fun parseOco(): OcoAst {
+        expect(TokenKind.LBRACE, "expected '{' to open OCO block")
+        var stop: ChildPriceAst? = null
+        var limit: ChildPriceAst? = null
+        do {
+            when (peek().kind) {
+                TokenKind.STOP -> {
+                    advance()
+                    expect(TokenKind.AT, "expected AT after STOP in OCO")
+                    stop = ChildAt(parseExpr())
+                }
+                TokenKind.LIMIT -> {
+                    advance()
+                    expect(TokenKind.AT, "expected AT after LIMIT in OCO")
+                    limit = ChildAt(parseExpr())
+                }
+                else -> error("expected STOP AT or LIMIT AT in OCO, got '${peek().lexeme}'")
+            }
+        } while (match(TokenKind.COMMA))
+        expect(TokenKind.RBRACE, "expected '}' to close OCO block")
+        val s = stop ?: error("OCO requires a STOP AT child")
+        val l = limit ?: error("OCO requires a LIMIT AT child")
+        return OcoAst(s, l)
+    }
 
     internal fun parseSizing(): SizingAst {
         val k = peek().kind
