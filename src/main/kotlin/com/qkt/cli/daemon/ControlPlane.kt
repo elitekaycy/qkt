@@ -11,6 +11,7 @@ class ControlPlane(
     port: Int = 0,
     private val startedAt: Instant = Instant.now(),
     private val shutdownHook: () -> Unit = {},
+    private val stateDir: StateDir? = null,
 ) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(bind, port), 0)
 
@@ -18,8 +19,11 @@ class ControlPlane(
     val boundHost: String = bind
 
     init {
-        server.createContext("/", ControlRoutes.dispatch(registry, startedAt) { shutdownHook() })
-        server.executor = Executors.newFixedThreadPool(4)
+        server.createContext(
+            "/",
+            ControlRoutes.dispatch(registry, startedAt, stateDir) { shutdownHook() },
+        )
+        server.executor = Executors.newFixedThreadPool(8)
     }
 
     fun start() {

@@ -47,6 +47,7 @@ class DaemonCommand(
                 port = args.option("control-port")?.toIntOrNull() ?: 0,
                 startedAt = startedAt,
                 shutdownHook = { stopLatch.countDown() },
+                stateDir = stateDir,
             )
         plane.start()
         stateDir.writeControlPort(plane.boundPort)

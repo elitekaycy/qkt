@@ -15,6 +15,7 @@ internal fun runMain(argv: Array<String>): Int {
             "list" -> ListCommand(args).run()
             "stop" -> StopCommand(args).run()
             "daemon" -> DaemonCommand(args).run()
+            "logs" -> LogsCommand(args).run()
             "--version", "-v" -> {
                 println("qkt ${BuildInfo.VERSION}")
                 ExitCodes.SUCCESS

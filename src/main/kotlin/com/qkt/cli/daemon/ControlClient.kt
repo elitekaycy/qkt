@@ -41,6 +41,23 @@ class ControlClient(
         return readOrThrow(resp)
     }
 
+    fun logs(
+        name: String,
+        lines: Int? = null,
+        since: String? = null,
+        follow: Boolean = false,
+    ): okhttp3.Response {
+        val q =
+            buildList {
+                if (lines != null) add("lines=$lines")
+                if (since != null) add("since=$since")
+                if (follow) add("follow=true")
+            }.joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
+        return http
+            .newCall(Request.Builder().url("${baseUrl()}/logs/$name$q").build())
+            .execute()
+    }
+
     fun shutdown(): String {
         val resp =
             http
