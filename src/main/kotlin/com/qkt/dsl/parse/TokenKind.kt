@@ -77,7 +77,6 @@ enum class TokenKind {
     MIN,
     MEAN,
     SUM,
-    T,
 
     ACCOUNT,
     SYMBOL,

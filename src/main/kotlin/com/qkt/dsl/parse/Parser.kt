@@ -355,13 +355,14 @@ class Parser(
         return Aggregate(fn, series, window)
     }
 
-    private fun parseWindow(): Window =
-        when (peek().kind) {
-            TokenKind.OPEN -> {
+    private fun parseWindow(): Window {
+        val t = peek()
+        return when {
+            t.kind == TokenKind.OPEN -> {
                 advance()
                 SinceOpen
             }
-            TokenKind.T -> {
+            t.kind == TokenKind.IDENT && t.lexeme.equals("T", ignoreCase = true) -> {
                 advance()
                 expect(TokenKind.MINUS, "expected '-' after T")
                 val n =
@@ -369,25 +370,26 @@ class Parser(
                         ?: error("expected positive integer after T-")
                 SinceTPast(n)
             }
-            else -> error("expected OPEN or T-N for window, got '${peek().lexeme}'")
+            else -> error("expected OPEN or T-N for window, got '${t.lexeme}'")
         }
+    }
 
     private fun parseSnapshotKind(): SnapshotKind {
         val t = peek()
-        return when (t.kind) {
-            TokenKind.BUY -> {
+        return when {
+            t.kind == TokenKind.BUY -> {
                 advance()
                 SnapshotBuy
             }
-            TokenKind.SELL -> {
+            t.kind == TokenKind.SELL -> {
                 advance()
                 SnapshotSell
             }
-            TokenKind.OPEN -> {
+            t.kind == TokenKind.OPEN -> {
                 advance()
                 SnapshotOpen
             }
-            TokenKind.T -> {
+            t.kind == TokenKind.IDENT && t.lexeme.equals("T", ignoreCase = true) -> {
                 advance()
                 expect(TokenKind.MINUS, "expected '-' after T")
                 val n =
