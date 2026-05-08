@@ -35,6 +35,24 @@ If no phase changelog exists (phases 1-6 predate the convention), use `--notes "
 
 Mark as "Latest release" if it is.
 
+## Binary distribution (since Phase 12a)
+
+Phase 12a ships the `qkt` CLI binary via Gradle's `application` plugin. Each release should attach a tarball so users can install without building from source.
+
+```bash
+./gradlew distTar
+gh release upload v0.X.Y build/distributions/qkt-0.X.Y.tar
+```
+
+The release body should document install:
+
+```
+curl -L -o qkt.tar https://github.com/<owner>/<repo>/releases/download/v0.X.Y/qkt-0.X.Y.tar
+tar -xf qkt.tar
+export PATH="$PWD/qkt-0.X.Y/bin:$PATH"
+qkt --version
+```
+
 ## Hotfix policy
 
 Pre-1.0 hotfixes:
