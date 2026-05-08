@@ -26,6 +26,10 @@ class ExprCompilerStateTest {
                 override fun unrealizedTotal(): BigDecimal = unrealizedTotal
 
                 override fun total(): BigDecimal = realized.add(unrealizedTotal)
+
+                override fun equity(): BigDecimal = realized.add(unrealizedTotal)
+
+                override fun balance(): BigDecimal = realized
             }
         return EvalContext(
             candle = candle,

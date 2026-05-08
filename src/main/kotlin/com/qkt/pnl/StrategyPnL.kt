@@ -11,6 +11,18 @@ class StrategyPnL(
     private val prices: MarketPriceProvider,
 ) {
     private val realizedByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
+    private val startingBalanceByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
+
+    fun setStartingBalance(
+        strategyId: String,
+        balance: BigDecimal,
+    ) {
+        if (strategyId.isBlank()) return
+        startingBalanceByStrategy[strategyId] = balance.setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    fun startingBalanceFor(strategyId: String): BigDecimal =
+        startingBalanceByStrategy[strategyId] ?: Money.ZERO
 
     fun recordRealized(
         strategyId: String,
@@ -46,5 +58,15 @@ class StrategyPnL(
     fun totalFor(strategyId: String): BigDecimal =
         realizedFor(strategyId)
             .add(unrealizedTotalFor(strategyId))
+            .setScale(Money.SCALE, Money.ROUNDING)
+
+    fun equityFor(strategyId: String): BigDecimal =
+        startingBalanceFor(strategyId)
+            .add(totalFor(strategyId))
+            .setScale(Money.SCALE, Money.ROUNDING)
+
+    fun balanceFor(strategyId: String): BigDecimal =
+        startingBalanceFor(strategyId)
+            .add(realizedFor(strategyId))
             .setScale(Money.SCALE, Money.ROUNDING)
 }

@@ -10,6 +10,10 @@ interface StrategyPnLView {
     fun unrealizedTotal(): BigDecimal
 
     fun total(): BigDecimal
+
+    fun equity(): BigDecimal
+
+    fun balance(): BigDecimal
 }
 
 internal class StrategyPnLViewImpl(
@@ -23,4 +27,8 @@ internal class StrategyPnLViewImpl(
     override fun unrealizedTotal(): BigDecimal = pnl.unrealizedTotalFor(strategyId)
 
     override fun total(): BigDecimal = pnl.totalFor(strategyId)
+
+    override fun equity(): BigDecimal = pnl.equityFor(strategyId)
+
+    override fun balance(): BigDecimal = pnl.balanceFor(strategyId)
 }
