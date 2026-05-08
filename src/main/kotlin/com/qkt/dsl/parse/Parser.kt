@@ -618,7 +618,13 @@ class Parser(
                 else -> break@loop
             }
         }
-        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco, stack)
+        val finalStack = stack
+        if (sizing != null && finalStack is StackLayers) {
+            error(
+                "STACK layer-list cannot be combined with outer SIZING; specify size on each layer or remove the layer list",
+            )
+        }
+        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco, finalStack)
     }
 
     internal fun parseStackClause(): StackAst {

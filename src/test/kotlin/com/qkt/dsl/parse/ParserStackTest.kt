@@ -135,4 +135,57 @@ class ParserStackTest {
         val layerAt = layer2.at as com.qkt.dsl.ast.BinaryOp
         assertThat(layerAt.lhs).isEqualTo(com.qkt.dsl.ast.StackEntryRef)
     }
+
+    private fun parseFailure(src: String): ParseResult.Failure<*> {
+        val full =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+            RULES
+                $src
+            """.trimIndent()
+        val tokens = Lexer(full).tokenize()
+        val result = Parser(tokens).parseStrategy()
+        assertThat(result).isInstanceOf(ParseResult.Failure::class.java)
+        return result as ParseResult.Failure<*>
+    }
+
+    @Test
+    fun `WITHIN attaches to SPACING form`() {
+        val rule = parseRule("WHEN btc.close > 100 THEN BUY btc SIZING 0.1 STACK 3 SPACING 100 WITHIN 1h")
+        val stack = (rule.action as Buy).opts.stack as StackSpacing
+        assertThat(stack.within?.millis).isEqualTo(3_600_000L)
+    }
+
+    @Test
+    fun `WITHIN attaches to layer-list form`() {
+        val rule = parseRule("WHEN btc.close > 100 THEN BUY btc STACK [ 0.1, 0.2 AT entry + 100 ] WITHIN 30m")
+        val stack = (rule.action as Buy).opts.stack as StackLayers
+        assertThat(stack.within?.millis).isEqualTo(1_800_000L)
+    }
+
+    @Test
+    fun `outer SIZING with layer-list sizing is parse error`() {
+        val failure = parseFailure("WHEN btc.close > 100 THEN BUY btc SIZING 0.1 STACK [ 0.1, 0.2 AT entry + 100 ]")
+        assertThat(failure.errors.any { it.message.contains("outer SIZING") }).isTrue()
+    }
+
+    @Test
+    fun `STACK count zero is parse error`() {
+        val failure = parseFailure("WHEN btc.close > 100 THEN BUY btc SIZING 0.1 STACK 0 SPACING 100")
+        assertThat(failure.errors.any { it.message.contains("STACK count") }).isTrue()
+    }
+
+    @Test
+    fun `empty layer list is parse error`() {
+        val failure = parseFailure("WHEN btc.close > 100 THEN BUY btc STACK [ ]")
+        assertThat(failure.errors.any { it.message.contains("layer list") }).isTrue()
+    }
+
+    @Test
+    fun `layer two without AT is parse error`() {
+        val failure = parseFailure("WHEN btc.close > 100 THEN BUY btc STACK [ 0.1, 0.2 ]")
+        assertThat(failure.errors.any { it.message.contains("AT") }).isTrue()
+    }
 }
