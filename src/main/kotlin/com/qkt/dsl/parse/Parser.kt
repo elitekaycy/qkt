@@ -493,7 +493,9 @@ class Parser(
                 TokenKind.WHEN -> tryParse { parseWhenThen() }?.let { out.add(it) }
                 TokenKind.FOR -> tryParse { parseForEach() }?.let { out.addAll(it) }
                 else -> {
-                    error("expected WHEN or FOR EACH in RULES, got '${peek().lexeme}'")
+                    tryParse {
+                        error("expected WHEN or FOR EACH in RULES, got '${peek().lexeme}'")
+                    }
                 }
             }
         }
