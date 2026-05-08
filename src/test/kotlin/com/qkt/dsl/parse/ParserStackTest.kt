@@ -1,8 +1,12 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StackDirection
+import com.qkt.dsl.ast.StackEntryRef
+import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.WhenThen
 import java.math.BigDecimal
@@ -47,5 +51,41 @@ class ParserStackTest {
         val rule = parseRule("WHEN btc.close > 100 THEN BUY btc SIZING 0.1 STACK 3 SPACING 100 BELOW")
         val stack = (rule.action as Buy).opts.stack as StackSpacing
         assertThat(stack.direction).isEqualTo(StackDirection.BELOW)
+    }
+
+    @Test
+    fun `layer-list form parses with three layers`() {
+        val rule =
+            parseRule(
+                "WHEN btc.close > 100 THEN BUY btc " +
+                    "STACK [ 0.1, 0.2 AT entry + 100, 0.3 LIMIT AT entry + 200 ]",
+            )
+        val stack = (rule.action as Buy).opts.stack as StackLayers
+        assertThat(stack.layers).hasSize(3)
+        assertThat(stack.layers[0].at).isNull()
+        assertThat(stack.layers[0].orderType).isNull()
+        assertThat(stack.layers[1].at).isNotNull
+        assertThat(stack.layers[2].orderType).isInstanceOf(Limit::class.java)
+    }
+
+    @Test
+    fun `entry inside layer AT becomes StackEntryRef`() {
+        val rule =
+            parseRule(
+                "WHEN btc.close > 100 THEN BUY btc STACK [ 0.1, 0.2 AT entry + 100 ]",
+            )
+        val stack = (rule.action as Buy).opts.stack as StackLayers
+        val expr = stack.layers[1].at as BinaryOp
+        assertThat(expr.lhs).isEqualTo(StackEntryRef)
+    }
+
+    @Test
+    fun `trailing comma in layer-list is allowed`() {
+        val rule =
+            parseRule(
+                "WHEN btc.close > 100 THEN BUY btc STACK [ 0.1, 0.2 AT entry + 100, ]",
+            )
+        val stack = (rule.action as Buy).opts.stack as StackLayers
+        assertThat(stack.layers).hasSize(2)
     }
 }

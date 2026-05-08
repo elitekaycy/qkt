@@ -63,6 +63,8 @@ import com.qkt.dsl.ast.SnapshotSell
 import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackDirection
+import com.qkt.dsl.ast.StackEntryRef
+import com.qkt.dsl.ast.StackLayer
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
@@ -86,6 +88,7 @@ class Parser(
 ) {
     private var pos = 0
     private val errors = mutableListOf<ParseError>()
+    private var inStackLayerAt: Boolean = false
 
     fun parseStrategy(): ParseResult<StrategyAst> {
         var name = "_unparsed"
@@ -313,6 +316,10 @@ class Parser(
                 Ref("__SYMBOL__")
             }
             TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE -> {
+                if (inStackLayerAt && t.kind == TokenKind.IDENT && t.lexeme == "entry") {
+                    advance()
+                    return StackEntryRef
+                }
                 val name = advance().lexeme
                 when {
                     match(TokenKind.LPAREN) -> {
@@ -649,8 +656,46 @@ class Parser(
     }
 
     internal fun parseStackLayers(): StackLayers {
-        // implemented in Task 5
-        error("layer-list form not yet implemented")
+        expect(TokenKind.LBRACKET, "expected '[' to open layer list")
+        val layers = mutableListOf<StackLayer>()
+        if (peek().kind == TokenKind.RBRACKET) {
+            error("STACK layer list must not be empty")
+        }
+        layers.add(parseLayer(isFirst = true))
+        while (peek().kind == TokenKind.COMMA) {
+            advance()
+            if (peek().kind == TokenKind.RBRACKET) break
+            layers.add(parseLayer(isFirst = false))
+        }
+        expect(TokenKind.RBRACKET, "expected ']' to close layer list")
+        val within = if (peek().kind == TokenKind.WITHIN) parseWithin() else null
+        return StackLayers(layers, within)
+    }
+
+    internal fun parseLayer(isFirst: Boolean): StackLayer {
+        val sizing = parseSizing()
+        val orderType: OrderTypeAst? =
+            when (peek().kind) {
+                TokenKind.MARKET, TokenKind.LIMIT, TokenKind.STOP -> parseOrderType()
+                else -> null
+            }
+        val at: ExprAst? =
+            if (peek().kind == TokenKind.AT) {
+                advance()
+                inStackLayerAt = true
+                try {
+                    parseExpr()
+                } finally {
+                    inStackLayerAt = false
+                }
+            } else {
+                null
+            }
+        val hasPrice = at != null || (orderType != null && orderType !is Market)
+        if (!isFirst && !hasPrice) {
+            error("STACK layers after the first must have an AT clause")
+        }
+        return StackLayer(sizing, orderType, at)
     }
 
     internal fun parseWithin(): DurationAst {
