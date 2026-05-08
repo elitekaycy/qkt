@@ -66,17 +66,4 @@ class SizingCompilerTest {
         assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"))).isEqualByComparingTo("0")
     }
 
-    @Test
-    fun `SizePctEquity is deferred to 11d2`() {
-        assertThatThrownBy {
-            compiler().compile(SizePctEquity(NumLit(BigDecimal("0.01"))), stopDistance = null)
-        }.isInstanceOf(IllegalStateException::class.java).hasMessageContaining("deferred")
-    }
-
-    @Test
-    fun `SizeRiskFrac is deferred to 11d2`() {
-        assertThatThrownBy {
-            compiler().compile(SizeRiskFrac(NumLit(BigDecimal("0.01"))), stopDistance = BigDecimal("5"))
-        }.isInstanceOf(IllegalStateException::class.java).hasMessageContaining("deferred")
-    }
 }
