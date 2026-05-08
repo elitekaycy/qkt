@@ -1,31 +1,33 @@
 package com.qkt.cli
 
 fun main(argv: Array<String>) {
+    kotlin.system.exitProcess(runMain(argv))
+}
+
+internal fun runMain(argv: Array<String>): Int {
     val args = Args(argv)
-    val code =
-        try {
-            when (args.subcommand) {
-                "parse" -> ParseCommand(args).run()
-                "backtest" -> BacktestCommand(args).run()
-                "run" -> RunCommand(args).run()
-                "--version", "-v" -> {
-                    println("qkt ${BuildInfo.VERSION}")
-                    ExitCodes.SUCCESS
-                }
-                "--help", "help" -> {
-                    printHelp()
-                    ExitCodes.SUCCESS
-                }
-                else -> {
-                    System.err.println("qkt: unknown subcommand '${args.subcommand}'")
-                    ExitCodes.ARG_ERROR
-                }
+    return try {
+        when (args.subcommand) {
+            "parse" -> ParseCommand(args).run()
+            "backtest" -> BacktestCommand(args).run()
+            "run" -> RunCommand(args).run()
+            "--version", "-v" -> {
+                println("qkt ${BuildInfo.VERSION}")
+                ExitCodes.SUCCESS
             }
-        } catch (e: ArgError) {
-            System.err.println("qkt: error: ${e.message}")
-            ExitCodes.ARG_ERROR
+            "--help", "help" -> {
+                printHelp()
+                ExitCodes.SUCCESS
+            }
+            else -> {
+                System.err.println("qkt: unknown subcommand '${args.subcommand}'")
+                ExitCodes.ARG_ERROR
+            }
         }
-    kotlin.system.exitProcess(code)
+    } catch (e: ArgError) {
+        System.err.println("qkt: error: ${e.message}")
+        ExitCodes.ARG_ERROR
+    }
 }
 
 private fun printHelp() {
@@ -38,8 +40,8 @@ private fun printHelp() {
 
         SUBCOMMANDS
             parse <file>            parse and validate a .qkt file
-            backtest <file> ...     run a one-shot backtest (Phase 12a Task 5)
-            run <file> ...          run a strategy in foreground (Phase 12a Task 7)
+            backtest <file> ...     run a one-shot backtest
+            run <file> ...          run a strategy in foreground (paper-trading)
 
         SEE ALSO
             qkt --version
