@@ -10,6 +10,7 @@ import java.math.BigDecimal
 class CompiledRule(
     private val condition: CompiledExpr,
     private val action: (EvalContext) -> List<Signal>,
+    private val ruleAlias: String,
     private val ruleSymbol: String,
     private val isBuy: Boolean,
     private val isSell: Boolean,
@@ -42,7 +43,7 @@ class CompiledRule(
     ) {
         for ((name, e) in captures) {
             val r = e.evaluate(ec)
-            if (r is Value.Num) ec.snapshotStore.captureSlot(ruleSymbol, name, kind, r.v)
+            if (r is Value.Num) ec.snapshotStore.captureSlot(ruleAlias, name, kind, r.v)
         }
     }
 }

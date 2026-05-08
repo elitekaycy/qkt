@@ -9,7 +9,7 @@ class AggregateBinding(
     val seriesEvaluator: CompiledExpr,
     val window: Window,
     val state: AggregateState,
-    val ruleSymbol: String,
+    val ruleAlias: String,
 ) {
     fun update(ctx: EvalContext) {
         val v = seriesEvaluator.evaluate(ctx)
@@ -29,7 +29,7 @@ class AggregateBinding(
 
         fun all(): List<AggregateBinding> = list
 
-        fun bindingsForSymbol(symbol: String): List<AggregateBinding> = list.filter { it.ruleSymbol == symbol }
+        fun bindingsForAlias(alias: String): List<AggregateBinding> = list.filter { it.ruleAlias == alias }
 
         companion object {
             fun stateFor(

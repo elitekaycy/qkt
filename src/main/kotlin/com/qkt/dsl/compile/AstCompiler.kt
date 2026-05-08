@@ -62,14 +62,14 @@ class AstCompiler {
                         is Cancel -> a.stream
                         is CloseAll, is CancelAll, is Log -> null
                     }
-                val symbol =
-                    if (streamAlias != null) {
-                        streams[streamAlias]?.symbol ?: error("Unknown stream alias: $streamAlias")
-                    } else {
-                        streams.values.firstOrNull()?.symbol
-                            ?: error("Strategy must declare at least one stream")
-                    }
-                val compiledCond = exprCompiler.compile(cond, ruleSymbol = symbol)
+                val ruleAlias =
+                    streamAlias
+                        ?: streams.keys.firstOrNull()
+                        ?: error("Strategy must declare at least one stream")
+                val ruleSymbol =
+                    streams[ruleAlias]?.symbol
+                        ?: error("Unknown stream alias: $ruleAlias")
+                val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
                 val mergedAction = mergeDefaults(rule.action, ast.defaults)
                 val action = actionCompiler.compile(mergedAction)
                 val isBuy = mergedAction is Buy
@@ -77,7 +77,8 @@ class AstCompiler {
                 CompiledRule(
                     condition = compiledCond,
                     action = action,
-                    ruleSymbol = symbol,
+                    ruleAlias = ruleAlias,
+                    ruleSymbol = ruleSymbol,
                     isBuy = isBuy,
                     isSell = isSell,
                     onBuyCaptures = plan.captureOnBuy.map { it to letCompiledRhs.getValue(it) },
@@ -135,7 +136,7 @@ private class CompiledStrategy(
             )
 
         // 1. Position transitions for this candle's symbol
-        for ((_, key) in streams) {
+        for ((alias, key) in streams) {
             val symbol = key.symbol
             if (candle.symbol != symbol) continue
             val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
@@ -143,12 +144,12 @@ private class CompiledStrategy(
             when (transition) {
                 PositionTransition.ClosedToZero, PositionTransition.Flipped -> {
                     for (name in plan.captureOnOpen) {
-                        snapshotStore.clearSlot(symbol, name, SnapshotOpen)
+                        snapshotStore.clearSlot(alias, name, SnapshotOpen)
                     }
-                    aggregates.bindingsForSymbol(symbol).forEach { it.resetIfSinceOpen() }
+                    aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
                 }
                 PositionTransition.OpenedFromZero -> {
-                    aggregates.bindingsForSymbol(symbol).forEach { it.resetIfSinceOpen() }
+                    aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
                 }
                 PositionTransition.Stay -> {}
             }
@@ -161,17 +162,17 @@ private class CompiledStrategy(
         for ((name, _) in plan.rollingMaxN) {
             val rhs = letCompiledRhs[name] ?: continue
             val v = rhs.evaluate(ec)
-            for ((_, key) in streams) {
-                val symbol = key.symbol
-                if (symbol != candle.symbol) continue
-                snapshotStore.pushRolling(symbol, name, if (v is Value.Num) v.v else null)
+            for ((alias, key) in streams) {
+                if (key.symbol != candle.symbol) continue
+                snapshotStore.pushRolling(alias, name, if (v is Value.Num) v.v else null)
             }
         }
 
         // 4. Aggregate updates
         for (b in aggregates.all()) {
             if (b.window is SinceOpen) {
-                val curQty = ctx.positions.positionFor(b.ruleSymbol)?.quantity ?: BigDecimal.ZERO
+                val symbol = streams[b.ruleAlias]?.symbol
+                val curQty = symbol?.let { ctx.positions.positionFor(it)?.quantity } ?: BigDecimal.ZERO
                 if (curQty.signum() != 0) b.update(ec)
             } else {
                 b.update(ec)
