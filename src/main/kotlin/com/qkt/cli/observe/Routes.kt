@@ -69,7 +69,62 @@ object Routes {
             respond(ex, 200, json.encodeToString(JsonArray.serializer(), arr))
         }
 
-    fun events(ring: EventRing): HttpHandler = HttpHandler { _ -> TODO("Task 6") }
+    fun events(ring: EventRing): HttpHandler =
+        HttpHandler { ex ->
+            if (ex.requestMethod != "GET") {
+                respond(ex, 405, """{"error":"method not allowed"}""")
+                return@HttpHandler
+            }
+            ex.responseHeaders.add("Content-Type", "text/event-stream")
+            ex.responseHeaders.add("Cache-Control", "no-cache")
+            ex.responseHeaders.add("Connection", "keep-alive")
+            ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+            ex.sendResponseHeaders(200, 0)
+            val out = ex.responseBody
+            val alive =
+                java.util.concurrent.atomic
+                    .AtomicBoolean(true)
+            val writeLock = Any()
+
+            fun writeFrame(bytes: ByteArray): Boolean =
+                try {
+                    synchronized(writeLock) {
+                        out.write(bytes)
+                        out.flush()
+                    }
+                    true
+                } catch (_: java.io.IOException) {
+                    alive.set(false)
+                    false
+                }
+            // Immediate prelude so the client unblocks on response start
+            if (!writeFrame(": connected\n\n".toByteArray(Charsets.UTF_8))) {
+                runCatching { out.close() }
+                return@HttpHandler
+            }
+            val sub =
+                ring.subscribe { entry ->
+                    if (!alive.get()) return@subscribe
+                    val payload =
+                        json.encodeToString(
+                            kotlinx.serialization.json.JsonObject
+                                .serializer(),
+                            entry.payload,
+                        )
+                    writeFrame("event: ${entry.kind}\ndata: $payload\n\n".toByteArray(Charsets.UTF_8))
+                }
+            try {
+                while (alive.get()) {
+                    Thread.sleep(15_000)
+                    if (!writeFrame(": keep-alive\n\n".toByteArray(Charsets.UTF_8))) break
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } finally {
+                sub.close()
+                runCatching { out.close() }
+            }
+        }
 
     fun stop(onStop: (Boolean) -> Unit): HttpHandler = HttpHandler { _ -> TODO("Task 7") }
 
