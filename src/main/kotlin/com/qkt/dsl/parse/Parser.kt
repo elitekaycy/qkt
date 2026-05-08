@@ -1,7 +1,12 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.LetDecl
+import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
+import java.math.BigDecimal
 
 class Parser(
     private val tokens: List<Token>,
@@ -29,6 +34,13 @@ class Parser(
                 emptyList()
             }
 
+        val lets =
+            if (peek().kind == TokenKind.LET) {
+                tryParse { parseLet() } ?: emptyList()
+            } else {
+                emptyList()
+            }
+
         if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
         return ParseResult.Success(
             StrategyAst(
@@ -36,11 +48,40 @@ class Parser(
                 version = version,
                 streams = streams,
                 constants = emptyList(),
-                lets = emptyList(),
+                lets = lets,
                 defaults = null,
                 rules = emptyList(),
             ),
         )
+    }
+
+    private fun parseLet(): List<LetDecl> {
+        val out = mutableListOf<LetDecl>()
+        expect(TokenKind.LET, "expected LET")
+        do {
+            val name = expect(TokenKind.IDENT, "expected let name").lexeme
+            expect(TokenKind.EQ, "expected '=' after let name")
+            val expr = parseExpr()
+            out.add(LetDecl(name, expr))
+        } while (match(TokenKind.COMMA))
+        return out
+    }
+
+    private fun parseExpr(): ExprAst = parsePrimary()
+
+    private fun parsePrimary(): ExprAst {
+        val t = peek()
+        return when (t.kind) {
+            TokenKind.NUMBER -> {
+                advance()
+                NumLit(BigDecimal(t.lexeme))
+            }
+            TokenKind.IDENT -> {
+                advance()
+                Ref(t.lexeme)
+            }
+            else -> error("expected expression, got '${t.lexeme}'")
+        }
     }
 
     private fun parseSymbols(): List<StreamDecl> {
