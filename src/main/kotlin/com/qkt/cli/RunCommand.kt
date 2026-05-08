@@ -2,15 +2,26 @@ package com.qkt.cli
 
 import com.qkt.app.LiveSession
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.observe.EventRing
+import com.qkt.cli.observe.ObservabilityServer
+import com.qkt.cli.observe.PortPrinter
+import com.qkt.cli.observe.PositionDto
+import com.qkt.cli.observe.StatusSnapshot
+import com.qkt.cli.observe.TradeDto
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.execution.Trade
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class RunCommand(
     private val args: Args,
@@ -42,9 +53,29 @@ class RunCommand(
             return ExitCodes.USER_ERROR
         }
 
+        val port = args.option("port")?.toIntOrNull() ?: 0
+        val allowPrivileged = args.flag("allow-privileged-port")
+        if (port in 1..1023 && !allowPrivileged) {
+            System.err.println(
+                "qkt: error: port $port is privileged (< 1024); add --allow-privileged-port to override.",
+            )
+            return ExitCodes.ARG_ERROR
+        }
+        val bind = args.option("bind") ?: "127.0.0.1"
+        val portFile = args.option("port-file")?.let { Path.of(it) }
+        val ringSize = args.option("ring-size")?.toIntOrNull() ?: 1000
+        val noObserve = args.flag("no-observe")
+
         val shutdownTimeoutMs =
             args.option("shutdown-timeout")?.toLongOrNull() ?: 5_000L
         val flattenOnStop = args.flag("flatten-on-stop")
+
+        if (!noObserve && bind != "127.0.0.1" && bind != "localhost") {
+            System.err.println(
+                "[WARN] --bind $bind: observability server is reachable from any host. There is NO authentication.",
+            )
+            System.err.println("       Front with nginx + basic auth + TLS for production exposure.")
+        }
 
         val strategy = AstCompiler().compile(ast)
         val symbols = ast.streams.map { it.symbol }.distinct()
@@ -60,6 +91,10 @@ class RunCommand(
         println("[INFO] qkt ${BuildInfo.VERSION} — strategy ${ast.name} v${ast.version} — paper-trading")
         println("[INFO] subscribed: ${tvSymbols.joinToString(", ")}")
 
+        val ring = EventRing(capacity = ringSize)
+        val startMs = System.currentTimeMillis()
+        val startedAt = Instant.ofEpochMilli(startMs).toString()
+
         val session =
             LiveSession(
                 strategies = listOf(ast.name to strategy),
@@ -72,8 +107,35 @@ class RunCommand(
                         "[INFO] $ts ${trade.side} ${trade.symbol} qty=${trade.quantity.toPlainString()} " +
                             "px=${trade.price.toPlainString()} realized=${realized.toPlainString()}",
                     )
+                    ring.append("trade", tradeToJson(trade, realized))
+                },
+                onSignal = { sig ->
+                    ring.append("signal", signalToJson(sig))
                 },
             ).start()
+
+        val server: ObservabilityServer? =
+            if (!noObserve) {
+                ObservabilityServer(
+                    ring = ring,
+                    statusProvider = {
+                        buildSnapshot(ast.name, ast.version, startMs, startedAt, session.recentTrades())
+                    },
+                    running = { session.running },
+                    onStop = { flatten ->
+                        if (flatten) {
+                            System.err.println("[INFO] flatten-on-stop requested via /stop (no-op in 12b paper mode)")
+                        }
+                        session.stop()
+                    },
+                    bind = bind,
+                    port = port,
+                ).also { it.start() }
+            } else {
+                null
+            }
+
+        server?.let { PortPrinter.announce(bind, it.boundPort, portFile) }
 
         val shutdownHook =
             Thread {
@@ -81,13 +143,13 @@ class RunCommand(
                 session.stop()
                 session.awaitTermination(Duration.ofMillis(shutdownTimeoutMs))
                 if (flattenOnStop) {
-                    System.err.println("[INFO] flatten-on-stop requested (no-op in 12a paper mode)")
+                    System.err.println("[INFO] flatten-on-stop requested (no-op in 12b paper mode)")
                 }
+                runCatching { server?.close() }
                 System.err.println("[INFO] terminated; ${session.recentTrades().size} trades")
             }
         Runtime.getRuntime().addShutdownHook(shutdownHook)
 
-        // Wait for the feed to terminate naturally (test/bounded feed) or for SIGINT.
         return try {
             val terminated = session.awaitTermination(Duration.ofDays(365))
             if (terminated) {
@@ -95,8 +157,77 @@ class RunCommand(
             }
             ExitCodes.SUCCESS
         } finally {
+            runCatching { server?.close() }
             runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
         }
+    }
+
+    private fun tradeToJson(
+        trade: Trade,
+        realized: BigDecimal,
+    ) = buildJsonObject {
+        put("timestamp", JsonPrimitive(Instant.ofEpochMilli(trade.timestamp).toString()))
+        put("side", JsonPrimitive(trade.side.name))
+        put("symbol", JsonPrimitive(trade.symbol))
+        put("qty", JsonPrimitive(trade.quantity.toPlainString()))
+        put("price", JsonPrimitive(trade.price.toPlainString()))
+        put("realized", JsonPrimitive(realized.toPlainString()))
+    }
+
+    private fun signalToJson(sig: com.qkt.strategy.Signal) =
+        buildJsonObject {
+            when (sig) {
+                is com.qkt.strategy.Signal.Buy -> {
+                    put("kind", JsonPrimitive("buy"))
+                    put("symbol", JsonPrimitive(sig.symbol))
+                    put("size", JsonPrimitive(sig.size.toPlainString()))
+                }
+                is com.qkt.strategy.Signal.Sell -> {
+                    put("kind", JsonPrimitive("sell"))
+                    put("symbol", JsonPrimitive(sig.symbol))
+                    put("size", JsonPrimitive(sig.size.toPlainString()))
+                }
+                is com.qkt.strategy.Signal.Submit -> {
+                    put("kind", JsonPrimitive("submit"))
+                    put("symbol", JsonPrimitive(sig.request.symbol))
+                    put("size", JsonPrimitive(sig.request.quantity.toPlainString()))
+                }
+            }
+        }
+
+    private fun buildSnapshot(
+        strategyName: String,
+        strategyVersion: Int,
+        startMs: Long,
+        startedAt: String,
+        trades: List<Trade>,
+    ): StatusSnapshot {
+        val now = System.currentTimeMillis()
+        val last = trades.lastOrNull()
+        val realized =
+            trades.fold(BigDecimal.ZERO) { acc, _ -> acc }
+        return StatusSnapshot(
+            strategy = strategyName,
+            version = strategyVersion,
+            uptimeMs = now - startMs,
+            startedAt = startedAt,
+            equity = BigDecimal.ZERO,
+            balance = BigDecimal.ZERO,
+            realized = realized,
+            unrealized = BigDecimal.ZERO,
+            positions = emptyList<PositionDto>(),
+            lastTrade =
+                last?.let {
+                    TradeDto(
+                        timestamp = Instant.ofEpochMilli(it.timestamp).toString(),
+                        side = it.side.name,
+                        symbol = it.symbol,
+                        qty = it.quantity,
+                        price = it.price,
+                        realized = BigDecimal.ZERO,
+                    )
+                },
+        )
     }
 
     companion object {
