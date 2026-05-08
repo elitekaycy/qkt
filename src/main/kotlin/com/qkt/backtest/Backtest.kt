@@ -92,11 +92,32 @@ class Backtest(
             strategyPnL.setStartingBalance(id, startingBalance)
         }
         val bus = EventBus(clock, sequencer)
-        val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val candleHub =
             com.qkt.dsl.compile
                 .CandleHub()
+
+        val dslStrategies =
+            strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
+        val brokerSymbols: MutableMap<String, MutableSet<String>> = mutableMapOf()
+        for (s in dslStrategies) {
+            for (key in s.declaredStreams.values) {
+                brokerSymbols
+                    .getOrPut(key.broker) { mutableSetOf() }
+                    .add(key.symbol)
+            }
+        }
+        val broker: com.qkt.broker.Broker =
+            if (brokerSymbols.isEmpty()) {
+                PaperBroker(bus, clock, priceTracker)
+            } else {
+                val routes =
+                    brokerSymbols.map { (_, syms) ->
+                        com.qkt.marketdata.source.SymbolPattern
+                            .exactSet(syms.toSet()) to PaperBroker(bus, clock, priceTracker)
+                    }
+                com.qkt.broker.CompositeBroker(routes = routes, bus = bus)
+            }
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
         riskState.warmupComplete = true
         val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
