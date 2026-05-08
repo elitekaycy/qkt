@@ -55,6 +55,15 @@ class StrategyBuilder(
         addRule(rb.build())
     }
 
+    fun forEach(
+        vararg streams: StreamRef,
+        block: ForEachScope.(StreamRef) -> Unit,
+    ) {
+        require(streams.isNotEmpty()) { "forEach requires at least one stream" }
+        val scope = ForEachScope(this)
+        for (s in streams) scope.block(s)
+    }
+
     internal fun addRule(rule: RuleAst) {
         rules.add(rule)
     }
@@ -81,6 +90,17 @@ class DefaultsBuilder {
     var trailing: OrderTypeAst? = null
 
     internal fun build(): DefaultsBlock = DefaultsBlock(sizing, orderType, tif, stopLoss, takeProfit, trailing)
+}
+
+@QktDsl
+class ForEachScope(
+    private val builder: StrategyBuilder,
+) {
+    fun rule(block: RuleBuilder.() -> Unit) {
+        val rb = RuleBuilder()
+        rb.block()
+        builder.addRule(rb.build())
+    }
 }
 
 @QktDsl
