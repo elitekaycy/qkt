@@ -2,6 +2,11 @@ package com.qkt.cli
 
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -55,6 +60,33 @@ class BacktestCommandTest {
             )
         }.isInstanceOf(ArgError::class.java)
             .hasMessageContaining("--from")
+    }
+
+    @Test
+    fun `produces parseable JSON report with --json`() {
+        val (code, stdout, stderr) =
+            runBacktest(
+                "backtest",
+                "src/test/resources/cli/valid_strategy.qkt",
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                "src/test/resources/cli/data",
+                "--json",
+            )
+        assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
+        val payload = stdout.trim().lines().last()
+        val obj = Json.parseToJsonElement(payload) as JsonObject
+        assertThat(obj["trades"]?.jsonPrimitive?.intOrNull).isNotNull
+        assertThat(obj["finalRealized"]).isNotNull
+        assertThat(obj["finalUnrealized"]).isNotNull
+        assertThat(obj["totalPnL"]).isNotNull
+        assertThat(obj["winRate"]).isNotNull
+        assertThat(obj["maxDrawdown"]).isNotNull
+        assertThat(obj["maxConsecutiveLosses"]?.jsonPrimitive?.intOrNull).isNotNull
+        assertThat(obj["cadence"]?.jsonPrimitive?.contentOrNull).isNotNull
     }
 
     @Test
