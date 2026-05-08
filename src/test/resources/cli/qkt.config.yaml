@@ -1,0 +1,7 @@
+source: bybit
+data_root: ./fixtures
+starting_balance: 10000
+log_level: info
+brokers:
+  bybit:
+    api_key: ${TEST_BYBIT_API_KEY}

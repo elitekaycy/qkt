@@ -20,6 +20,7 @@ dependencies {
     implementation(libs.slf4j.api)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    implementation(libs.snakeyaml.engine)
     runtimeOnly(libs.slf4j.simple)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
