@@ -195,4 +195,4 @@ assertThat(parsed).isEqualTo(handwritten)  // structural equality on data classe
 - Plan: `docs/superpowers/plans/2026-05-08-trading-engine-phase11f.md`
 - Master spec (DSL surface, grammar, FOR EACH, broker prefix semantics): `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md`
 - Phase 11e (multi-stream / multi-timeframe / multi-broker / forEach / SYMBOL): `docs/superpowers/specs/2026-05-08-trading-engine-phase11e-design.md`
-- Merge commit: TBD
+- Merge commit: 92301c1
