@@ -18,7 +18,21 @@ object Routes {
             respond(ex, if (ok) 200 else 503, body)
         }
 
-    fun status(provider: () -> StatusSnapshot): HttpHandler = HttpHandler { _ -> TODO("Task 4") }
+    fun status(provider: () -> StatusSnapshot): HttpHandler =
+        HttpHandler { ex ->
+            if (ex.requestMethod != "GET") {
+                respond(ex, 405, """{"error":"method not allowed"}""")
+                return@HttpHandler
+            }
+            try {
+                val snap = provider()
+                val body = json.encodeToString(StatusSnapshot.serializer(), snap)
+                respond(ex, 200, body)
+            } catch (e: Exception) {
+                val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                respond(ex, 500, """{"error":"$msg"}""")
+            }
+        }
 
     fun logs(ring: EventRing): HttpHandler = HttpHandler { _ -> TODO("Task 5") }
 
