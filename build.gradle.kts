@@ -27,6 +27,14 @@ dependencies {
 }
 
 application {
+    mainClass.set("com.qkt.cli.MainKt")
+    applicationName = "qkt"
+}
+
+tasks.register<JavaExec>("runDemo") {
+    group = "application"
+    description = "Run the legacy mock-tick demo (predates the qkt CLI)"
+    classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.qkt.app.MainKt")
 }
 
