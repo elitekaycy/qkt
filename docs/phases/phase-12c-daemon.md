@@ -244,4 +244,4 @@ Run via `./gradlew test -PincludeTags=dockerSmoke` after `./gradlew dockerBuild`
 - Phase 11e (CandleHub at pipeline scope): `docs/superpowers/specs/2026-05-08-trading-engine-phase11e-design.md`
 - XDG Base Directory: <https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html>
 - Logback `SiftingAppender`: <https://logback.qos.ch/manual/appenders.html#SiftingAppender>
-- Merge commit: TBD
+- Merge commit: 4d1be94
