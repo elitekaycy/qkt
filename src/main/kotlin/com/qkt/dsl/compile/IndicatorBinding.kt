@@ -19,6 +19,8 @@ class IndicatorBinding private constructor(
     private val inputKind: IndicatorInput,
     private val source: IndicatorBinding?,
 ) {
+    val rootAlias: String? get() = streamAlias ?: source?.rootAlias
+
     @Suppress("UNCHECKED_CAST")
     fun update(ctx: EvalContext) {
         if (source != null) {
@@ -141,6 +143,15 @@ class IndicatorBinding private constructor(
 
         fun updateAll(ctx: EvalContext) {
             for (b in bindings) b.update(ctx)
+        }
+
+        fun updateForAlias(
+            alias: String,
+            ctx: EvalContext,
+        ) {
+            for (b in bindings) {
+                if (b.rootAlias == alias) b.update(ctx)
+            }
         }
     }
 }

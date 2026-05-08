@@ -153,6 +153,7 @@ private class CompiledStrategy(
                 strategyContext = ctx,
                 snapshotStore = snapshotStore,
                 hub = hub,
+                currentAlias = alias,
             )
 
         val symbol = streams[alias]!!.symbol
@@ -170,8 +171,8 @@ private class CompiledStrategy(
             PositionTransition.Stay -> {}
         }
 
-        // 2. Indicators
-        bindings.updateAll(ec)
+        // 2. Indicators bound to this alias
+        bindings.updateForAlias(alias, ec)
 
         // 3. Per-candle rolling snapshot capture for this alias
         for ((name, _) in plan.rollingMaxN) {

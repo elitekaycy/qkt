@@ -23,6 +23,7 @@ class EvalContext(
     val strategyContext: StrategyContext,
     val snapshotStore: SnapshotStore = SnapshotStore(emptyMap()),
     val hub: CandleHub = CandleHub(),
+    val currentAlias: String? = null,
 )
 
 fun interface CompiledExpr {

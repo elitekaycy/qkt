@@ -248,7 +248,9 @@ class ExprCompiler(
         return CompiledExpr { ctx ->
             val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
             val candle =
-                if (ctx.candle.symbol == key.symbol) {
+                if (ctx.currentAlias == ref.stream ||
+                    (ctx.currentAlias == null && ctx.candle.symbol == key.symbol)
+                ) {
                     ctx.candle
                 } else {
                     ctx.hub.latest(key)
