@@ -674,28 +674,41 @@ class Parser(
 
     internal fun parseLayer(isFirst: Boolean): StackLayer {
         val sizing = parseSizing()
-        val orderType: OrderTypeAst? =
-            when (peek().kind) {
-                TokenKind.MARKET, TokenKind.LIMIT, TokenKind.STOP -> parseOrderType()
-                else -> null
-            }
-        val at: ExprAst? =
-            if (peek().kind == TokenKind.AT) {
-                advance()
-                inStackLayerAt = true
-                try {
-                    parseExpr()
-                } finally {
-                    inStackLayerAt = false
+        inStackLayerAt = true
+        try {
+            val orderType: OrderTypeAst? =
+                when (peek().kind) {
+                    TokenKind.MARKET, TokenKind.LIMIT, TokenKind.STOP -> parseOrderType()
+                    else -> null
                 }
-            } else {
-                null
+            val priceFromOrderType: ExprAst? =
+                when (orderType) {
+                    is Limit -> orderType.price
+                    is Stop -> orderType.price
+                    is StopLimit -> orderType.stopPrice
+                    else -> null
+                }
+            val explicitAt: ExprAst? =
+                if (peek().kind == TokenKind.AT) {
+                    if (priceFromOrderType != null) {
+                        error(
+                            "STACK layer with LIMIT/STOP/STOPLIMIT cannot have a separate AT clause; " +
+                                "the order type's price is the trigger",
+                        )
+                    }
+                    advance()
+                    parseExpr()
+                } else {
+                    null
+                }
+            val at: ExprAst? = priceFromOrderType ?: explicitAt
+            if (!isFirst && at == null) {
+                error("STACK layers after the first must have a trigger (via AT or LIMIT/STOP price)")
             }
-        val hasPrice = at != null || (orderType != null && orderType !is Market)
-        if (!isFirst && !hasPrice) {
-            error("STACK layers after the first must have an AT clause")
+            return StackLayer(sizing, orderType, at)
+        } finally {
+            inStackLayerAt = false
         }
-        return StackLayer(sizing, orderType, at)
     }
 
     internal fun parseWithin(): DurationAst {

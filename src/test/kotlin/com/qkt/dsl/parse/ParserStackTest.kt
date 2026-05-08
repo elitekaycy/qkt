@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.StackDirection
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
+import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.WhenThen
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -87,5 +88,51 @@ class ParserStackTest {
             )
         val stack = (rule.action as Buy).opts.stack as StackLayers
         assertThat(stack.layers).hasSize(2)
+    }
+
+    @Test
+    fun `entry inside LIMIT AT becomes StackEntryRef and populates layer at`() {
+        val rule =
+            parseRule(
+                "WHEN btc.close > 100 THEN BUY btc STACK [ 0.1, 0.2 LIMIT AT entry + 100 ]",
+            )
+        val stack = (rule.action as Buy).opts.stack as com.qkt.dsl.ast.StackLayers
+        val layer2 = stack.layers[1]
+        assertThat(layer2.orderType).isInstanceOf(com.qkt.dsl.ast.Limit::class.java)
+        // Both orderType.price and layer.at must reference StackEntryRef.
+        val limitPrice = (layer2.orderType as com.qkt.dsl.ast.Limit).price as com.qkt.dsl.ast.BinaryOp
+        assertThat(limitPrice.lhs).isEqualTo(com.qkt.dsl.ast.StackEntryRef)
+        val layerAt = layer2.at as com.qkt.dsl.ast.BinaryOp
+        assertThat(layerAt.lhs).isEqualTo(com.qkt.dsl.ast.StackEntryRef)
+    }
+
+    @Test
+    fun `LIMIT layer with explicit AT clause is parse error`() {
+        val src =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+            RULES
+                WHEN btc.close > 100 THEN BUY btc STACK [ 0.1, 0.2 LIMIT AT entry + 100 AT entry + 200 ]
+            """.trimIndent()
+        val tokens = Lexer(src).tokenize()
+        val result = Parser(tokens).parseStrategy()
+        assertThat(result).isInstanceOf(ParseResult.Failure::class.java)
+        val failure = result as ParseResult.Failure
+        assertThat(failure.errors.any { it.message.contains("LIMIT") }).isTrue()
+    }
+
+    @Test
+    fun `STOP layer at entry+100 populates layer at`() {
+        val rule =
+            parseRule(
+                "WHEN btc.close > 100 THEN BUY btc STACK [ 0.1, 0.2 STOP AT entry + 100 ]",
+            )
+        val stack = (rule.action as Buy).opts.stack as com.qkt.dsl.ast.StackLayers
+        val layer2 = stack.layers[1]
+        assertThat(layer2.orderType).isInstanceOf(com.qkt.dsl.ast.Stop::class.java)
+        val layerAt = layer2.at as com.qkt.dsl.ast.BinaryOp
+        assertThat(layerAt.lhs).isEqualTo(com.qkt.dsl.ast.StackEntryRef)
     }
 }
