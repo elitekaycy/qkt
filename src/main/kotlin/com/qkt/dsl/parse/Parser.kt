@@ -1,6 +1,8 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.ActionAst
+import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.AggFn
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
@@ -8,17 +10,23 @@ import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
+import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.Cancel
+import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
 import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
+import com.qkt.dsl.ast.Close
+import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.CrossDir
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
+import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.Gtc
@@ -28,12 +36,14 @@ import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
+import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
 import com.qkt.dsl.ast.SizeNotional
@@ -83,6 +93,13 @@ class Parser(
             synchronize()
         }
 
+        val defaults =
+            if (peek().kind == TokenKind.DEFAULTS) {
+                tryParse { parseDefaults() }
+            } else {
+                null
+            }
+
         val streams =
             if (peek().kind == TokenKind.SYMBOLS) {
                 tryParse { parseSymbols() } ?: emptyList()
@@ -105,7 +122,7 @@ class Parser(
                 streams = streams,
                 constants = emptyList(),
                 lets = lets,
-                defaults = null,
+                defaults = defaults,
                 rules = emptyList(),
             ),
         )
@@ -458,6 +475,127 @@ class Parser(
             }
             else -> error("expected child price (AT/BY/PCT/RR), got '${peek().lexeme}'")
         }
+
+    internal fun parseAction(): ActionAst =
+        when (peek().kind) {
+            TokenKind.BUY -> {
+                advance()
+                val stream = expect(TokenKind.IDENT, "expected stream alias after BUY").lexeme
+                Buy(stream, parseActionOpts())
+            }
+            TokenKind.SELL -> {
+                advance()
+                val stream = expect(TokenKind.IDENT, "expected stream alias after SELL").lexeme
+                Sell(stream, parseActionOpts())
+            }
+            TokenKind.CLOSE -> {
+                advance()
+                val stream = expect(TokenKind.IDENT, "expected stream alias after CLOSE").lexeme
+                Close(stream)
+            }
+            TokenKind.CLOSE_ALL -> {
+                advance()
+                CloseAll
+            }
+            TokenKind.CANCEL -> {
+                advance()
+                val stream = expect(TokenKind.IDENT, "expected stream alias after CANCEL").lexeme
+                Cancel(stream)
+            }
+            TokenKind.CANCEL_ALL -> {
+                advance()
+                CancelAll
+            }
+            TokenKind.LOG -> {
+                advance()
+                val msg = expect(TokenKind.STRING, "expected string literal after LOG").lexeme
+                Log(msg)
+            }
+            else -> error("expected action keyword, got '${peek().lexeme}'")
+        }
+
+    private fun parseActionOpts(): ActionOpts {
+        var sizing: SizingAst? = null
+        var orderType: OrderTypeAst? = null
+        var tif: TifAst? = null
+        var bracket: BracketAst? = null
+        var oco: OcoAst? = null
+        loop@ while (true) {
+            when (peek().kind) {
+                TokenKind.SIZING -> {
+                    advance()
+                    sizing = parseSizing()
+                }
+                TokenKind.ORDER_TYPE -> {
+                    advance()
+                    expect(TokenKind.EQ, "expected '=' after ORDER_TYPE")
+                    orderType = parseOrderType()
+                }
+                TokenKind.TIF -> {
+                    advance()
+                    tif = parseTif()
+                }
+                TokenKind.BRACKET -> {
+                    advance()
+                    bracket = parseBracket()
+                }
+                TokenKind.OCO -> {
+                    advance()
+                    oco = parseOco()
+                }
+                else -> break@loop
+            }
+        }
+        return ActionOpts(sizing, orderType, tif, bracket, oco)
+    }
+
+    internal fun parseDefaults(): DefaultsBlock {
+        expect(TokenKind.DEFAULTS, "expected DEFAULTS")
+        expect(TokenKind.LBRACE, "expected '{' after DEFAULTS")
+        var sizing: SizingAst? = null
+        var orderType: OrderTypeAst? = null
+        var tif: TifAst? = null
+        var stopLoss: ChildPriceAst? = null
+        var takeProfit: ChildPriceAst? = null
+        var trailing: OrderTypeAst? = null
+        while (peek().kind != TokenKind.RBRACE && peek().kind != TokenKind.EOF) {
+            when (peek().kind) {
+                TokenKind.SIZING -> {
+                    advance()
+                    expect(TokenKind.EQ, "expected '=' after SIZING in DEFAULTS")
+                    sizing = parseSizing()
+                }
+                TokenKind.STOP_LOSS -> {
+                    advance()
+                    expect(TokenKind.EQ, "expected '=' after STOP_LOSS in DEFAULTS")
+                    stopLoss = parseChildPrice()
+                }
+                TokenKind.TAKE_PROFIT -> {
+                    advance()
+                    expect(TokenKind.EQ, "expected '=' after TAKE_PROFIT in DEFAULTS")
+                    takeProfit = parseChildPrice()
+                }
+                TokenKind.TIF -> {
+                    advance()
+                    expect(TokenKind.EQ, "expected '=' after TIF in DEFAULTS")
+                    tif = parseTif()
+                }
+                TokenKind.ORDER_TYPE -> {
+                    advance()
+                    expect(TokenKind.EQ, "expected '=' after ORDER_TYPE in DEFAULTS")
+                    orderType = parseOrderType()
+                }
+                TokenKind.TRAILING -> {
+                    advance()
+                    expect(TokenKind.EQ, "expected '=' after TRAILING in DEFAULTS")
+                    trailing = parseOrderType()
+                }
+                else -> error("expected DEFAULTS clause keyword, got '${peek().lexeme}'")
+            }
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close DEFAULTS")
+        return DefaultsBlock(sizing, orderType, tif, stopLoss, takeProfit, trailing)
+    }
 
     internal fun parseBracket(): BracketAst {
         expect(TokenKind.LBRACE, "expected '{' to open BRACKET block")
