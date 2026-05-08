@@ -2,6 +2,8 @@ package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.Cmp
+import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
@@ -71,7 +73,29 @@ class Parser(
         return out
     }
 
-    private fun parseExpr(): ExprAst = parseAddExpr()
+    private fun parseExpr(): ExprAst = parseCmpExpr()
+
+    private fun parseCmpExpr(): ExprAst {
+        var lhs = parseAddExpr()
+        while (true) {
+            val k = peek().kind
+            val op =
+                when (k) {
+                    TokenKind.GT -> Cmp.GT
+                    TokenKind.LT -> Cmp.LT
+                    TokenKind.GE -> Cmp.GE
+                    TokenKind.LE -> Cmp.LE
+                    TokenKind.EQEQ -> Cmp.EQ
+                    TokenKind.NEQ -> Cmp.NE
+                    else -> null
+                }
+            if (op == null) break
+            advance()
+            val rhs = parseAddExpr()
+            lhs = CmpOp(op, lhs, rhs)
+        }
+        return lhs
+    }
 
     private fun parseAddExpr(): ExprAst {
         var lhs = parseMulExpr()
