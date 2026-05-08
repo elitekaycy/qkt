@@ -49,6 +49,7 @@ class Backtest(
     private val warmupSpec: WarmupSpec = WarmupSpec.None,
     private val symbols: List<String> = emptyList(),
     cadence: SampleCadence? = null,
+    private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -67,6 +68,7 @@ class Backtest(
         candleWindow: TimeWindow? = null,
         initialTimestamp: Long = 0L,
         cadence: SampleCadence? = null,
+        startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     ) : this(
         strategies = strategies,
         rules = rules,
@@ -74,6 +76,7 @@ class Backtest(
         candleWindow = candleWindow,
         initialTimestamp = initialTimestamp,
         cadence = cadence,
+        startingBalance = startingBalance,
     )
 
     fun run(): BacktestResult {
@@ -85,6 +88,9 @@ class Backtest(
         val pnl = PnLCalculator(positions, priceTracker)
         val strategyPositions = StrategyPositionTracker()
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
+        for ((id, _) in strategies) {
+            strategyPnL.setStartingBalance(id, startingBalance)
+        }
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
