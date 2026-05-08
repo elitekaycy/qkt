@@ -73,7 +73,32 @@ class Parser(
         return out
     }
 
-    private fun parseExpr(): ExprAst = parseCmpExpr()
+    private fun parseExpr(): ExprAst = parseOrExpr()
+
+    private fun parseOrExpr(): ExprAst {
+        var lhs = parseAndExpr()
+        while (peek().kind == TokenKind.OR) {
+            advance()
+            val rhs = parseAndExpr()
+            lhs = BinaryOp(BinOp.OR, lhs, rhs)
+        }
+        return lhs
+    }
+
+    private fun parseAndExpr(): ExprAst {
+        var lhs = parseNotExpr()
+        while (peek().kind == TokenKind.AND) {
+            advance()
+            val rhs = parseNotExpr()
+            lhs = BinaryOp(BinOp.AND, lhs, rhs)
+        }
+        return lhs
+    }
+
+    private fun parseNotExpr(): ExprAst {
+        if (match(TokenKind.NOT)) return UnaryOp(UnOp.NOT, parseNotExpr())
+        return parseCmpExpr()
+    }
 
     private fun parseCmpExpr(): ExprAst {
         var lhs = parseAddExpr()
