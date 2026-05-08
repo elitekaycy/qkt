@@ -23,6 +23,11 @@ enum class TokenKind {
     CANCEL_ALL,
     LOG,
 
+    STACK,
+    SPACING,
+    WITHIN,
+    DURATION,
+
     MARKET,
     LIMIT,
     STOP,
