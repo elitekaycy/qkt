@@ -33,7 +33,7 @@ class ExprCompilerCompositionTest {
             ec =
                 EvalContext(
                     candle = candle(price),
-                    streamSymbols = mapOf("btc" to "BTCUSDT"),
+                    streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
                     lets = emptyMap(),
                     strategyContext = testStrategyContext(),
                 )
@@ -52,7 +52,7 @@ class ExprCompilerCompositionTest {
         val ec =
             EvalContext(
                 candle = candle("100"),
-                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
                 lets = emptyMap(),
                 strategyContext = testStrategyContext(),
             )

@@ -27,7 +27,7 @@ class ExprCompilerAggregateTest {
     private fun ctx(c: Candle) =
         EvalContext(
             candle = c,
-            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )
@@ -37,7 +37,7 @@ class ExprCompilerAggregateTest {
         val aggBag = AggregateBinding.Bag()
         val ec = ExprCompiler(aggregates = aggBag)
         val expr = Aggregate(AggFn.MAX, StreamFieldRef("btc", "close"), SinceOpen)
-        val compiled = ec.compile(expr, ruleSymbol = "BTCUSDT")
+        val compiled = ec.compile(expr, ruleAlias = "BTCUSDT")
         val c1 = ctx(candle("100"))
         assertThat(compiled.evaluate(c1)).isEqualTo(Value.Undefined)
         aggBag.all().forEach { it.update(c1) }
@@ -55,7 +55,7 @@ class ExprCompilerAggregateTest {
         val aggBag = AggregateBinding.Bag()
         val ec = ExprCompiler(aggregates = aggBag)
         val expr = Aggregate(AggFn.MEAN, StreamFieldRef("btc", "close"), SinceTPast(3))
-        val compiled = ec.compile(expr, ruleSymbol = "BTCUSDT")
+        val compiled = ec.compile(expr, ruleAlias = "BTCUSDT")
         for (price in listOf("100", "110")) {
             val c = ctx(candle(price))
             aggBag.all().forEach { it.update(c) }

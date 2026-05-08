@@ -13,6 +13,8 @@ fun interface SymbolPattern {
         fun prefix(prefix: String): SymbolPattern = SymbolPattern { it.startsWith(prefix) }
 
         fun exact(symbol: String): SymbolPattern = SymbolPattern { it == symbol }
+
+        fun exactSet(symbols: Set<String>): SymbolPattern = SymbolPattern { it in symbols }
     }
 }
 

@@ -33,36 +33,36 @@ class ExprCompiler(
 ) {
     fun compile(
         expr: ExprAst,
-        ruleSymbol: String? = null,
+        ruleAlias: String? = null,
     ): CompiledExpr =
         when (expr) {
             is NumLit -> CompiledExpr { Value.Num(expr.value) }
             is BoolLit -> CompiledExpr { Value.Bool(expr.value) }
-            is BinaryOp -> compileBinary(expr, ruleSymbol)
-            is UnaryOp -> compileUnary(expr, ruleSymbol)
-            is CmpOp -> compileCmp(expr, ruleSymbol)
+            is BinaryOp -> compileBinary(expr, ruleAlias)
+            is UnaryOp -> compileUnary(expr, ruleAlias)
+            is CmpOp -> compileCmp(expr, ruleAlias)
             is StreamFieldRef -> compileStreamField(expr)
             is IndicatorCall -> compileIndicator(expr)
             is AccountRef -> compileAccountRef(expr)
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
-            is Between -> compileBetween(expr, ruleSymbol)
-            is InList -> compileInList(expr, ruleSymbol)
-            is CaseWhen -> compileCaseWhen(expr, ruleSymbol)
-            is Crosses -> compileCrosses(expr, ruleSymbol)
-            is FuncCall -> compileFuncCall(expr, ruleSymbol)
-            is Ref -> compileRef(expr, ruleSymbol)
-            is Aggregate -> compileAggregate(expr, ruleSymbol)
+            is Between -> compileBetween(expr, ruleAlias)
+            is InList -> compileInList(expr, ruleAlias)
+            is CaseWhen -> compileCaseWhen(expr, ruleAlias)
+            is Crosses -> compileCrosses(expr, ruleAlias)
+            is FuncCall -> compileFuncCall(expr, ruleAlias)
+            is Ref -> compileRef(expr, ruleAlias)
+            is Aggregate -> compileAggregate(expr, ruleAlias)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
 
     private fun compileAggregate(
         agg: Aggregate,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val sym = ruleSymbol ?: error("Aggregate requires rule symbol context")
+        val sym = ruleAlias ?: error("Aggregate requires rule symbol context")
         val state = AggregateBinding.Bag.stateFor(agg.fn, agg.window)
-        val seriesEval = compile(agg.series, ruleSymbol)
+        val seriesEval = compile(agg.series, ruleAlias)
         val binding = AggregateBinding(seriesEval, agg.window, state, sym)
         aggregates.add(binding)
         return CompiledExpr {
@@ -73,12 +73,12 @@ class ExprCompiler(
 
     private fun compileRef(
         ref: Ref,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
         val kind =
             ref.snapshot
                 ?: error("Bare Ref ${ref.name} should have been substituted by LetResolver")
-        val sym = ruleSymbol ?: error("Snapshot ref ${ref.name}@$kind requires rule symbol context")
+        val sym = ruleAlias ?: error("Snapshot ref ${ref.name}@$kind requires rule symbol context")
         return when (kind) {
             is SnapshotTPast ->
                 CompiledExpr { ctx ->
@@ -95,10 +95,10 @@ class ExprCompiler(
 
     private fun compileFuncCall(
         call: FuncCall,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
         require(FuncRegistry.has(call.name)) { "Unknown function: ${call.name}" }
-        val args = call.args.map { compile(it, ruleSymbol) }
+        val args = call.args.map { compile(it, ruleAlias) }
         return CompiledExpr { ctx ->
             val values = args.map { it.evaluate(ctx) }
             if (values.any { it !is Value.Num }) {
@@ -111,10 +111,10 @@ class ExprCompiler(
 
     private fun compileCrosses(
         c: Crosses,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val l = compile(c.lhs, ruleSymbol)
-        val r = compile(c.rhs, ruleSymbol)
+        val l = compile(c.lhs, ruleAlias)
+        val r = compile(c.rhs, ruleAlias)
         val state = CrossesState()
         return CompiledExpr { ctx ->
             val lv = l.evaluate(ctx)
@@ -130,10 +130,10 @@ class ExprCompiler(
 
     private fun compileCaseWhen(
         expr: CaseWhen,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val branches = expr.branches.map { compile(it.first, ruleSymbol) to compile(it.second, ruleSymbol) }
-        val elseE = compile(expr.elseExpr, ruleSymbol)
+        val branches = expr.branches.map { compile(it.first, ruleAlias) to compile(it.second, ruleAlias) }
+        val elseE = compile(expr.elseExpr, ruleAlias)
         return CompiledExpr { ctx ->
             var result: Value? = null
             for ((cond, body) in branches) {
@@ -149,10 +149,10 @@ class ExprCompiler(
 
     private fun compileInList(
         expr: InList,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val v = compile(expr.v, ruleSymbol)
-        val members = expr.members.map { compile(it, ruleSymbol) }
+        val v = compile(expr.v, ruleAlias)
+        val members = expr.members.map { compile(it, ruleAlias) }
         return CompiledExpr { ctx ->
             val vv = v.evaluate(ctx)
             if (vv !is Value.Num) {
@@ -173,11 +173,11 @@ class ExprCompiler(
 
     private fun compileBetween(
         b: Between,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val v = compile(b.v, ruleSymbol)
-        val lo = compile(b.lo, ruleSymbol)
-        val hi = compile(b.hi, ruleSymbol)
+        val v = compile(b.v, ruleAlias)
+        val lo = compile(b.lo, ruleAlias)
+        val hi = compile(b.hi, ruleAlias)
         return CompiledExpr { ctx ->
             val vv = v.evaluate(ctx)
             val lov = lo.evaluate(ctx)
@@ -192,7 +192,7 @@ class ExprCompiler(
 
     private fun compilePositionRef(ref: PositionRef): CompiledExpr =
         CompiledExpr { ctx ->
-            val symbol = ctx.streamSymbols[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val symbol = ctx.streams[ref.stream]?.symbol ?: error("Unknown stream alias: ${ref.stream}")
             val qty =
                 ctx.strategyContext.positions
                     .positionFor(symbol)
@@ -205,7 +205,7 @@ class ExprCompiler(
             "StateAccessor source ${ref.source} is not supported in 11c1"
         }
         return CompiledExpr { ctx ->
-            val symbol = ctx.streamSymbols[ref.key] ?: error("Unknown stream alias: ${ref.key}")
+            val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
             val price =
                 ctx.strategyContext.positions
                     .positionFor(symbol)
@@ -246,17 +246,25 @@ class ExprCompiler(
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
         return CompiledExpr { ctx ->
-            val symbol = ctx.streamSymbols[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
-            if (ctx.candle.symbol != symbol) {
+            val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val candle =
+                if (ctx.currentAlias == ref.stream ||
+                    (ctx.currentAlias == null && ctx.candle.symbol == key.symbol)
+                ) {
+                    ctx.candle
+                } else {
+                    ctx.hub.latest(key)
+                }
+            if (candle == null) {
                 Value.Undefined
             } else {
                 Value.Num(
                     when (ref.field) {
-                        "close", "price" -> ctx.candle.close
-                        "open" -> ctx.candle.open
-                        "high" -> ctx.candle.high
-                        "low" -> ctx.candle.low
-                        "volume" -> ctx.candle.volume
+                        "close", "price" -> candle.close
+                        "open" -> candle.open
+                        "high" -> candle.high
+                        "low" -> candle.low
+                        "volume" -> candle.volume
                         else -> error("unreachable")
                     },
                 )
@@ -266,10 +274,10 @@ class ExprCompiler(
 
     private fun compileBinary(
         op: BinaryOp,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val l = compile(op.lhs, ruleSymbol)
-        val r = compile(op.rhs, ruleSymbol)
+        val l = compile(op.lhs, ruleAlias)
+        val r = compile(op.rhs, ruleAlias)
         return when (op.op) {
             BinOp.ADD -> numericBinary(l, r) { a, b -> a.add(b, Money.CONTEXT) }
             BinOp.SUB -> numericBinary(l, r) { a, b -> a.subtract(b, Money.CONTEXT) }
@@ -304,9 +312,9 @@ class ExprCompiler(
 
     private fun compileUnary(
         op: UnaryOp,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val a = compile(op.arg, ruleSymbol)
+        val a = compile(op.arg, ruleAlias)
         return when (op.op) {
             UnOp.NEG ->
                 CompiledExpr { ctx ->
@@ -323,10 +331,10 @@ class ExprCompiler(
 
     private fun compileCmp(
         op: CmpOp,
-        ruleSymbol: String?,
+        ruleAlias: String?,
     ): CompiledExpr {
-        val l = compile(op.lhs, ruleSymbol)
-        val r = compile(op.rhs, ruleSymbol)
+        val l = compile(op.lhs, ruleAlias)
+        val r = compile(op.rhs, ruleAlias)
         return CompiledExpr { ctx ->
             val lv = l.evaluate(ctx)
             val rv = r.evaluate(ctx)

@@ -18,7 +18,7 @@ class ExprCompilerSnapshotTest {
     private fun ctx(store: SnapshotStore): EvalContext =
         EvalContext(
             candle = candle,
-            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
             snapshotStore = store,
@@ -28,7 +28,7 @@ class ExprCompilerSnapshotTest {
     fun `Ref with SnapshotBuy reads slot via ruleSymbol`() {
         val store = SnapshotStore(emptyMap())
         store.captureSlot("BTCUSDT", "fast", SnapshotBuy, BigDecimal("123"))
-        val compiled = ExprCompiler().compile(Ref("fast", SnapshotBuy), ruleSymbol = "BTCUSDT")
+        val compiled = ExprCompiler().compile(Ref("fast", SnapshotBuy), ruleAlias = "BTCUSDT")
         val v = compiled.evaluate(ctx(store)) as Value.Num
         assertThat(v.v).isEqualByComparingTo("123")
     }
@@ -36,7 +36,7 @@ class ExprCompilerSnapshotTest {
     @Test
     fun `unset slot returns Undefined`() {
         val store = SnapshotStore(emptyMap())
-        val compiled = ExprCompiler().compile(Ref("fast", SnapshotOpen), ruleSymbol = "BTCUSDT")
+        val compiled = ExprCompiler().compile(Ref("fast", SnapshotOpen), ruleAlias = "BTCUSDT")
         assertThat(compiled.evaluate(ctx(store))).isEqualTo(Value.Undefined)
     }
 
@@ -46,7 +46,7 @@ class ExprCompilerSnapshotTest {
         store.pushRolling("BTCUSDT", "close", BigDecimal("100"))
         store.pushRolling("BTCUSDT", "close", BigDecimal("110"))
         store.pushRolling("BTCUSDT", "close", BigDecimal("120"))
-        val compiled = ExprCompiler().compile(Ref("close", SnapshotTPast(2)), ruleSymbol = "BTCUSDT")
+        val compiled = ExprCompiler().compile(Ref("close", SnapshotTPast(2)), ruleAlias = "BTCUSDT")
         val v = compiled.evaluate(ctx(store)) as Value.Num
         assertThat(v.v).isEqualByComparingTo("100")
     }
@@ -61,7 +61,7 @@ class ExprCompilerSnapshotTest {
     @Test
     fun `bare Ref reaching ExprCompiler errors`() {
         assertThatThrownBy {
-            ExprCompiler().compile(Ref("fast"), ruleSymbol = "BTCUSDT")
+            ExprCompiler().compile(Ref("fast"), ruleAlias = "BTCUSDT")
         }.isInstanceOf(IllegalStateException::class.java)
     }
 }

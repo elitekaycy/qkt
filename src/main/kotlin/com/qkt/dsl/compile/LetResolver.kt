@@ -34,6 +34,9 @@ class LetResolver(
     fun resolve(expr: ExprAst): ExprAst =
         when (expr) {
             is Ref -> {
+                if (expr.name == com.qkt.dsl.kotlin.SYMBOL_PLACEHOLDER_NAME) {
+                    error("SYMBOL placeholder is only valid inside DEFAULTS block")
+                }
                 if (expr.snapshot != null) {
                     if (!table.containsKey(expr.name)) error("Unknown LET reference: ${expr.name}")
                     expr

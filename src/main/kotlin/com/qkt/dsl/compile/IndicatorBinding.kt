@@ -19,6 +19,8 @@ class IndicatorBinding private constructor(
     private val inputKind: IndicatorInput,
     private val source: IndicatorBinding?,
 ) {
+    val rootAlias: String? get() = streamAlias ?: source?.rootAlias
+
     @Suppress("UNCHECKED_CAST")
     fun update(ctx: EvalContext) {
         if (source != null) {
@@ -27,7 +29,7 @@ class IndicatorBinding private constructor(
             (indicator as Indicator<BigDecimal>).update(v)
             return
         }
-        val symbol = ctx.streamSymbols[streamAlias!!] ?: error("Unknown stream alias: $streamAlias")
+        val symbol = ctx.streams[streamAlias!!]?.symbol ?: error("Unknown stream alias: $streamAlias")
         if (ctx.candle.symbol != symbol) return
         when (inputKind) {
             IndicatorInput.NUMERIC_SERIES -> {
@@ -141,6 +143,15 @@ class IndicatorBinding private constructor(
 
         fun updateAll(ctx: EvalContext) {
             for (b in bindings) b.update(ctx)
+        }
+
+        fun updateForAlias(
+            alias: String,
+            ctx: EvalContext,
+        ) {
+            for (b in bindings) {
+                if (b.rootAlias == alias) b.update(ctx)
+            }
         }
     }
 }

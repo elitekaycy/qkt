@@ -56,6 +56,9 @@ class TradingPipeline(
     val calendar: TradingCalendar,
     val source: MarketSource,
     val candleWindow: TimeWindow? = null,
+    val candleHub: com.qkt.dsl.compile.CandleHub =
+        com.qkt.dsl.compile
+            .CandleHub(),
     val onFilled: (Trade, BigDecimal, String) -> Unit = { _, _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
@@ -88,25 +91,21 @@ class TradingPipeline(
                     pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                 )
-            bus.subscribe<TickEvent> { e ->
-                strategy.onTick(e.tick, ctx) { sig ->
-                    bus.publish(SignalEvent(sig))
-                    val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
-                    when (val decision = riskEngine.approve(request)) {
-                        is Decision.Approve -> bus.publish(OrderEvent(request))
-                        is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
-                    }
+            val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
+                bus.publish(SignalEvent(sig))
+                val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
+                when (val decision = riskEngine.approve(request)) {
+                    is Decision.Approve -> bus.publish(OrderEvent(request))
+                    is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
                 }
             }
-            bus.subscribe<CandleEvent> { e ->
-                strategy.onCandle(e.candle, ctx) { sig ->
-                    bus.publish(SignalEvent(sig))
-                    val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
-                    when (val decision = riskEngine.approve(request)) {
-                        is Decision.Approve -> bus.publish(OrderEvent(request))
-                        is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
-                    }
-                }
+            if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
+                for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention)
+                strategy.bindToHub(candleHub, ctx, emit)
+                bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
+            } else {
+                bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
+                bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
             }
         }
         bus.subscribe<TickEvent> { _ ->
@@ -168,6 +167,7 @@ class TradingPipeline(
 
     fun ingest(tick: Tick) {
         engine.onTick(tick)
+        candleHub.feed(tick)
     }
 
     fun ingestForWarmup(tick: Tick) {

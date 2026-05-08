@@ -31,7 +31,7 @@ class OrderTypeCompilerTest {
                     0L,
                     60_000L,
                 ),
-            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )
