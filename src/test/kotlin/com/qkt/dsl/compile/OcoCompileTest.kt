@@ -18,7 +18,16 @@ import org.slf4j.LoggerFactory
 
 class OcoCompileTest {
     private val candle =
-        Candle("BTCUSDT", BigDecimal("100"), BigDecimal("100"), BigDecimal("100"), BigDecimal("100"), BigDecimal.ZERO, 0L, 1L)
+        Candle(
+            "BTCUSDT",
+            BigDecimal("100"),
+            BigDecimal("100"),
+            BigDecimal("100"),
+            BigDecimal("100"),
+            BigDecimal.ZERO,
+            0L,
+            1L,
+        )
     private val ctx =
         EvalContext(
             candle = candle,

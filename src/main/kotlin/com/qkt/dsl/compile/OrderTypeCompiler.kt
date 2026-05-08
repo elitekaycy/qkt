@@ -106,7 +106,15 @@ class OrderTypeCompiler(
             BuildRequest { ec, id, side, qty, tif, strategyId, ts ->
                 val d = (distEval.evaluate(ec) as Value.Num).v
                 OrderRequest.TrailingStop(
-                    id, ec.candle.symbol, side, qty, d, TrailMode.ABSOLUTE, tif, ts, strategyId,
+                    id,
+                    ec.candle.symbol,
+                    side,
+                    qty,
+                    d,
+                    TrailMode.ABSOLUTE,
+                    tif,
+                    ts,
+                    strategyId,
                 )
             }
         val entry = EntryPriceRef { ec -> ec.candle.close }
@@ -120,7 +128,15 @@ class OrderTypeCompiler(
                 val f = (fracEval.evaluate(ec) as Value.Num).v
                 val percent = f.multiply(BigDecimal("100"), Money.CONTEXT)
                 OrderRequest.TrailingStop(
-                    id, ec.candle.symbol, side, qty, percent, TrailMode.PERCENT, tif, ts, strategyId,
+                    id,
+                    ec.candle.symbol,
+                    side,
+                    qty,
+                    percent,
+                    TrailMode.PERCENT,
+                    tif,
+                    ts,
+                    strategyId,
                 )
             }
         val entry = EntryPriceRef { ec -> ec.candle.close }

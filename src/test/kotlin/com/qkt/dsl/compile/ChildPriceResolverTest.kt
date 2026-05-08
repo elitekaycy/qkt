@@ -17,7 +17,17 @@ class ChildPriceResolverTest {
     private val resolver = ChildPriceResolver(ExprCompiler())
     private val ec =
         EvalContext(
-            candle = Candle("BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L),
+            candle =
+                Candle(
+                    "BTCUSDT",
+                    BigDecimal.ONE,
+                    BigDecimal.ONE,
+                    BigDecimal.ONE,
+                    BigDecimal.ONE,
+                    BigDecimal.ZERO,
+                    0L,
+                    1L,
+                ),
             streamSymbols = mapOf("btc" to "BTCUSDT"),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
