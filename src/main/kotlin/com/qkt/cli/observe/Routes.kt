@@ -3,6 +3,10 @@ package com.qkt.cli.observe
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 object Routes {
     private val json = Json { encodeDefaults = true }
@@ -34,11 +38,51 @@ object Routes {
             }
         }
 
-    fun logs(ring: EventRing): HttpHandler = HttpHandler { _ -> TODO("Task 5") }
+    fun logs(ring: EventRing): HttpHandler =
+        HttpHandler { ex ->
+            if (ex.requestMethod != "GET") {
+                respond(ex, 405, """{"error":"method not allowed"}""")
+                return@HttpHandler
+            }
+            val params = parseQuery(ex.requestURI.rawQuery)
+            val since = params["since"]?.toLongOrNull()
+            if (params["since"] != null && since == null) {
+                respond(ex, 400, """{"error":"invalid 'since' query param"}""")
+                return@HttpHandler
+            }
+            val limit = params["limit"]?.toIntOrNull()
+            if (params["limit"] != null && (limit == null || limit < 1)) {
+                respond(ex, 400, """{"error":"invalid 'limit' query param"}""")
+                return@HttpHandler
+            }
+            val entries = ring.snapshot(since = since ?: 0L, limit = limit ?: 1000)
+            val arr =
+                JsonArray(
+                    entries.map { e ->
+                        buildJsonObject {
+                            put("ts", JsonPrimitive(e.ts))
+                            put("kind", JsonPrimitive(e.kind))
+                            put("payload", e.payload)
+                        }
+                    },
+                )
+            respond(ex, 200, json.encodeToString(JsonArray.serializer(), arr))
+        }
 
     fun events(ring: EventRing): HttpHandler = HttpHandler { _ -> TODO("Task 6") }
 
     fun stop(onStop: (Boolean) -> Unit): HttpHandler = HttpHandler { _ -> TODO("Task 7") }
+
+    internal fun parseQuery(raw: String?): Map<String, String> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return raw
+            .split('&')
+            .mapNotNull { part ->
+                val i = part.indexOf('=')
+                if (i < 0) return@mapNotNull null
+                part.substring(0, i) to part.substring(i + 1)
+            }.toMap()
+    }
 
     internal fun respond(
         ex: HttpExchange,
