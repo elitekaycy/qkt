@@ -93,15 +93,42 @@ class DaemonCommand(
     }
 
     private fun stopDaemon(): Int {
-        // Implemented in Task 9.
-        System.err.println("qkt: error: daemon stop not yet implemented")
-        return ExitCodes.USER_ERROR
+        val stateDir = StateDir.resolve(args.option("state-dir"))
+        val client = controlClient(stateDir)
+        return try {
+            client.shutdown()
+            println("[INFO] daemon stop accepted")
+            ExitCodes.SUCCESS
+        } catch (e: ControlClient.NoDaemonRunningException) {
+            System.err.println("qkt: error: ${e.message}")
+            ExitCodes.USER_ERROR
+        } catch (e: ControlClient.DaemonError) {
+            System.err.println("qkt: error: shutdown failed (${e.code}): ${e.body}")
+            ExitCodes.USER_ERROR
+        }
     }
 
     private fun statusDaemon(): Int {
-        // Implemented in Task 9.
-        System.err.println("qkt: error: daemon status not yet implemented")
-        return ExitCodes.USER_ERROR
+        val stateDir = StateDir.resolve(args.option("state-dir"))
+        val client = controlClient(stateDir)
+        return try {
+            val body = client.health()
+            val port = stateDir.readControlPort() ?: 0
+            if (args.flag("json")) {
+                println(body)
+            } else {
+                println("control port: $port")
+                println("state file: ${stateDir.controlPortFile}")
+                println(body)
+            }
+            ExitCodes.SUCCESS
+        } catch (e: ControlClient.NoDaemonRunningException) {
+            System.err.println("qkt: error: ${e.message}")
+            ExitCodes.USER_ERROR
+        } catch (e: ControlClient.DaemonError) {
+            System.err.println("qkt: error: status failed (${e.code}): ${e.body}")
+            ExitCodes.USER_ERROR
+        }
     }
 
     private fun loadDirIfRequested(
@@ -129,7 +156,6 @@ class DaemonCommand(
         }
     }
 
-    @Suppress("unused")
     private fun controlClient(stateDir: StateDir): ControlClient = ControlClient(stateDir)
 
     companion object {

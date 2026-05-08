@@ -27,6 +27,7 @@ object ControlRoutes {
                     method == "POST" && path == "/deploy" -> handleDeploy(ex, registry)
                     method == "GET" && path == "/list" -> handleList(ex, registry)
                     method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, path)
+                    method == "POST" && path == "/shutdown" -> handleShutdown(ex, shutdown)
                     else -> respond(ex, 404, """{"error":"not found"}""")
                 }
             } catch (e: Exception) {
@@ -58,6 +59,25 @@ object ControlRoutes {
                     """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state"}"""
             }
         respond(ex, 200, arr)
+    }
+
+    private fun handleShutdown(
+        ex: HttpExchange,
+        shutdown: () -> Unit,
+    ) {
+        respond(ex, 202, """{"status":"accepted"}""")
+        // Trigger asynchronously so the response can flush before the server closes.
+        Thread {
+            try {
+                Thread.sleep(50)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            runCatching { shutdown() }
+        }.apply {
+            isDaemon = true
+            start()
+        }
     }
 
     private fun handleStop(

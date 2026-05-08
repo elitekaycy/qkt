@@ -41,6 +41,19 @@ class ControlClient(
         return readOrThrow(resp)
     }
 
+    fun shutdown(): String {
+        val resp =
+            http
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("${baseUrl()}/shutdown")
+                        .post("".toRequestBody(JSON_MEDIA))
+                        .build(),
+                ).execute()
+        return readOrThrow(resp)
+    }
+
     fun stop(
         name: String,
         flatten: Boolean = false,
