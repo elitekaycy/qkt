@@ -51,12 +51,14 @@ The pattern STACK targets is the everyday discretionary practice of pyramiding i
 ```
 STRATEGY btc_pyramid VERSION 1
 
-STREAM btc = bybit:BTCUSDT@1m
+SYMBOLS
+    btc = BYBIT:BTCUSDT EVERY 1m
 
-WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
-  BUY btc 0.1 STACK 3 SPACING 100
-    STOPLOSS BY 50
-    TAKEPROFIT BY 200
+RULES
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+    THEN BUY btc SIZING 0.1
+         STACK 3 SPACING 100
+         BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 200 }
 ```
 
 Behaviour:
@@ -73,9 +75,9 @@ Total exposure at full stack: 0.3 BTC. Each layer is 0.1.
 
 ```
 WHEN rsi(btc.close, 14) < 30
-  BUY btc 0.1 STACK 3 SPACING 100 BELOW
-    STOPLOSS BY 200
-    TAKEPROFIT BY 300
+THEN BUY btc SIZING 0.1
+     STACK 3 SPACING 100 BELOW
+     BRACKET { STOP LOSS BY 200, TAKE PROFIT BY 300 }
 ```
 
 Layers 2 and 3 trigger at `anchor - 100` and `anchor - 200` (averaging down).
@@ -84,18 +86,19 @@ Layers 2 and 3 trigger at `anchor - 100` and `anchor - 200` (averaging down).
 
 ```
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
-  BUY btc STACK [
-    0.1,                                     // layer 1: market
-    0.2 AT entry + 100,                      // layer 2: triggered market at +100
-    0.3 LIMIT AT entry + 200,                // layer 3: triggered limit at +200
-  ]
-    STOPLOSS BY 50
-    TAKEPROFIT BY 200
+THEN BUY btc STACK [
+       0.1,                                     -- layer 1: market
+       0.2 AT entry + 100,                      -- layer 2: triggered market at +100
+       0.3 LIMIT AT entry + 200,                -- layer 3: triggered limit at +200
+     ]
+     BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 200 }
 ```
 
 `entry` is a magic identifier valid only inside layer-list AT expressions; resolves to layer 1's actual fill price.
 
 Layer 1 fires at market. Layers 2 and 3 are submitted as pending orders once layer 1 fills, with trigger prices computed from `entry`.
+
+Note: in the layer-list form the outer `BUY btc` carries no `SIZING` clause — each layer carries its own sizing. The conflict rule (outer `SIZING` + per-layer sizing) is enforced at parse time.
 
 ### 3.4 Layer-list with mixed sizing
 
@@ -103,22 +106,23 @@ Sizing forms in qkt today: `<expr>` (qty) / `<expr> USD` (notional) / `<expr> % 
 
 ```
 BUY btc STACK [
-  0.1 AT entry,                    // qty
-  RISK 0.01 AT entry + 100,        // 1% fractional risk
-  5000 USD AT entry + 200,         // notional
-  RISK $500 AT entry + 300,        // absolute risk
-  2 % OF EQUITY AT entry + 400,    // % equity
+  0.1 AT entry,                    -- qty
+  RISK 0.01 AT entry + 100,        -- 1% fractional risk
+  5000 USD AT entry + 200,         -- notional
+  RISK $500 AT entry + 300,        -- absolute risk
+  2 % OF EQUITY AT entry + 400,    -- % equity
 ]
-  STOPLOSS BY 50
+BRACKET { STOP LOSS BY 50 }
 ```
 
-Each layer's sizing is evaluated when that layer fires. RISK sizings use per-layer SL prices derived from the outer `STOPLOSS BY 50` applied to each layer's expected entry.
+Each layer's sizing is evaluated when that layer fires. RISK sizings use per-layer SL prices derived from the outer `BRACKET { STOP LOSS BY 50 }` applied to each layer's expected entry.
 
 ### 3.5 WITHIN time fence
 
 ```
-BUY btc 0.1 STACK 3 SPACING 100 WITHIN 1h
-  STOPLOSS BY 50
+BUY btc SIZING 0.1
+STACK 3 SPACING 100 WITHIN 1h
+BRACKET { STOP LOSS BY 50 }
 ```
 
 If, 1h after layer 1's fill, layers 2 and 3 still haven't fired, both pending layers cancel. Already-filled layers (only layer 1 in that case) keep their brackets and continue to live their normal lifecycle.
@@ -127,9 +131,9 @@ If, 1h after layer 1's fill, layers 2 and 3 still haven't fired, both pending la
 
 ```
 WHEN rsi(btc.close, 14) > 70
-  SELL btc 0.1 STACK 3 SPACING 100
-    STOPLOSS BY 50
-    TAKEPROFIT BY 200
+THEN SELL btc SIZING 0.1
+     STACK 3 SPACING 100
+     BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 200 }
 ```
 
 For SELL, default direction is **downward** (with-trend = price falling). `ABOVE` / `BELOW` work identically (relative to entry); they reverse trade-direction default.
@@ -138,8 +142,8 @@ For SELL, default direction is **downward** (with-trend = price falling). `ABOVE
 
 ```
 RULES
-  WHEN ema_cross_up THEN BUY btc 0.1 STACK 3 SPACING 100
-  WHEN flag_x THEN BUY btc 0.05 STACK 2 SPACING 50
+    WHEN ema_cross_up THEN BUY btc SIZING 0.1 STACK 3 SPACING 100
+    WHEN flag_x       THEN BUY btc SIZING 0.05 STACK 2 SPACING 50
 ```
 
 Both rules can fire while either's stack is in flight. Each rule spawns its own independent StackOrchestrator. Layer fills, brackets, and cancellations are tracked per-stack — one stack's TP closing its layers does not cancel another stack's pending layers.
@@ -147,9 +151,10 @@ Both rules can fire while either's stack is in flight. Each rule spawns its own 
 ### 3.8 FOR/EACH composition
 
 ```
-FOR EACH s IN ["BTCUSDT", "ETHUSDT", "SOLUSDT"] DO
-  WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
-    BUY s 0.1 STACK 3 SPACING 100
+RULES
+    FOR EACH s IN [btc, eth, sol] DO
+        WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
+        THEN BUY s SIZING 0.1 STACK 3 SPACING 100
 ```
 
 Each iteration generates its own STACK-bearing rule; stacks fire independently per symbol. No special handling.
@@ -226,12 +231,13 @@ New token kinds:
 ### 4.3 Grammar (BNF-ish)
 
 ```
-buy_action      ::= "BUY" stream sizing? action_opts
-sell_action     ::= "SELL" stream sizing? action_opts
+buy_action      ::= "BUY"  IDENT action_opts
+sell_action     ::= "SELL" IDENT action_opts
 
-action_opts     ::= ( bracket_clause | oco_clause | tif_clause
-                    | order_type_clause | stack_clause )*
+action_opts     ::= ( sizing_clause | order_type_clause | tif_clause
+                    | bracket_clause | oco_clause | stack_clause )*
 
+sizing_clause   ::= "SIZING" sizing
 stack_clause    ::= "STACK" ( stack_spacing | stack_layers )
 
 stack_spacing   ::= integer "SPACING" expr direction? within_clause?
@@ -244,7 +250,7 @@ layer           ::= sizing order_type? ("AT" expr)?
 duration        ::= DURATION    -- e.g., 1h, 30m
 ```
 
-Order in `action_opts`: free order; STACK can appear before or after bracket/oco/etc. The parser consumes whatever clauses it sees, attaching them to `ActionOpts`.
+Order in `action_opts`: free order; STACK can appear before or after bracket/oco/etc. The parser consumes whatever clauses it sees, attaching them to `ActionOpts`. The conflict rule "outer `SIZING` clause AND `STACK` layer-list" is enforced after the action_opts loop completes.
 
 ### 4.4 Engine integration
 
