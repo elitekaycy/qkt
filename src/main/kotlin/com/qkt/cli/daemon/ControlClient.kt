@@ -41,6 +41,12 @@ class ControlClient(
         return readOrThrow(resp)
     }
 
+    fun status(name: String? = null): String {
+        val url = if (name == null) "${baseUrl()}/status" else "${baseUrl()}/status/$name"
+        val resp = http.newCall(Request.Builder().url(url).build()).execute()
+        return readOrThrow(resp)
+    }
+
     fun logs(
         name: String,
         lines: Int? = null,

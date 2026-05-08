@@ -31,6 +31,8 @@ object ControlRoutes {
                     method == "POST" && path == "/shutdown" -> handleShutdown(ex, shutdown)
                     method == "GET" && path.startsWith("/logs/") ->
                         handleLogs(ex, registry, stateDir, path)
+                    method == "GET" && path == "/status" -> handleStatusAll(ex, registry)
+                    method == "GET" && path.startsWith("/status/") -> handleStatusOne(ex, registry, path)
                     else -> respond(ex, 404, """{"error":"not found"}""")
                 }
             } catch (e: Exception) {
@@ -63,6 +65,51 @@ object ControlRoutes {
             }
         respond(ex, 200, arr)
     }
+
+    private val internalHttp = okhttp3.OkHttpClient()
+
+    private fun handleStatusOne(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        path: String,
+    ) {
+        val name = path.removePrefix("/status/").trim('/').ifBlank { null }
+        if (name == null) return respond(ex, 400, """{"error":"missing strategy name in path"}""")
+        val handle =
+            registry.get(name)
+                ?: return respond(ex, 404, """{"error":"unknown strategy: $name"}""")
+        val body = fetchStrategyStatus(handle.port)
+        if (body == null) {
+            return respond(ex, 502, """{"error":"strategy /status unreachable"}""")
+        }
+        respond(ex, 200, body)
+    }
+
+    private fun handleStatusAll(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+    ) {
+        val parts =
+            registry.list().mapNotNull { h ->
+                fetchStrategyStatus(h.port)
+            }
+        respond(ex, 200, parts.joinToString(separator = ",", prefix = "[", postfix = "]"))
+    }
+
+    private fun fetchStrategyStatus(port: Int): String? =
+        runCatching {
+            val resp =
+                internalHttp
+                    .newCall(
+                        okhttp3.Request
+                            .Builder()
+                            .url("http://127.0.0.1:$port/status")
+                            .build(),
+                    ).execute()
+            resp.use { r ->
+                if (r.isSuccessful) r.body?.string() else null
+            }
+        }.getOrNull()
 
     private fun handleLogs(
         ex: HttpExchange,
