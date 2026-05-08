@@ -94,6 +94,9 @@ class Backtest(
         val bus = EventBus(clock, sequencer)
         val broker = PaperBroker(bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
+        val candleHub =
+            com.qkt.dsl.compile
+                .CandleHub()
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
         riskState.warmupComplete = true
         val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
@@ -129,6 +132,7 @@ class Backtest(
                 calendar = calendar,
                 source = source,
                 candleWindow = candleWindow,
+                candleHub = candleHub,
                 onFilled = { trade, realized, strategyId ->
                     tradeRecords.add(TradeRecord(trade, realized, strategyId))
                 },

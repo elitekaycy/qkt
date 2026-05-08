@@ -10,7 +10,7 @@ import java.math.BigDecimal
 class CompiledRule(
     private val condition: CompiledExpr,
     private val action: (EvalContext) -> List<Signal>,
-    private val ruleAlias: String,
+    val ruleAlias: String,
     private val ruleSymbol: String,
     private val isBuy: Boolean,
     private val isSell: Boolean,

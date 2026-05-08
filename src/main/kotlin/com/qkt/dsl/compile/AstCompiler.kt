@@ -87,8 +87,14 @@ class AstCompiler {
                 )
             }
 
+        val maxRolling = plan.rollingMaxN.values.maxOrNull() ?: 0
+        val retention = maxOf(1, maxRolling + 1)
+        val retentionByKey: Map<HubKey, Int> =
+            streams.values.associateWith { retention }
+
         return CompiledStrategy(
             streams = streams,
+            retentionByKey = retentionByKey,
             bindings = bindings,
             aggregates = aggregates,
             snapshotStore = snapshotStore,
@@ -102,6 +108,7 @@ class AstCompiler {
 
 private class CompiledStrategy(
     private val streams: Map<String, HubKey>,
+    override val retentionByKey: Map<HubKey, Int>,
     private val bindings: IndicatorBinding.Bag,
     private val aggregates: AggregateBinding.Bag,
     private val snapshotStore: SnapshotStore,
@@ -109,8 +116,86 @@ private class CompiledStrategy(
     private val letCompiledRhs: Map<String, CompiledExpr>,
     private val transitions: PositionTransitions,
     private val rules: List<CompiledRule>,
-) : Strategy {
+) : DslCompiledStrategy {
     private val subscribedSymbols: Set<String> = streams.values.map { it.symbol }.toSet()
+    private var hubBound: Boolean = false
+    private var boundHub: CandleHub? = null
+
+    override val declaredStreams: Map<String, HubKey> get() = streams
+
+    override fun bindToHub(
+        hub: CandleHub,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        check(!hubBound) { "CompiledStrategy already bound to a hub" }
+        hubBound = true
+        boundHub = hub
+        for ((alias, key) in streams) {
+            hub.onClosed(key) { closed ->
+                evaluate(alias, closed, hub, ctx, emit)
+            }
+        }
+    }
+
+    private fun evaluate(
+        alias: String,
+        candle: Candle,
+        hub: CandleHub,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = streams,
+                lets = emptyMap(),
+                strategyContext = ctx,
+                snapshotStore = snapshotStore,
+                hub = hub,
+            )
+
+        val symbol = streams[alias]!!.symbol
+
+        // 1. Position transitions for the alias's symbol
+        val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+        val transition = transitions.observe(symbol, qty)
+        when (transition) {
+            PositionTransition.ClosedToZero, PositionTransition.Flipped -> {
+                for (name in plan.captureOnOpen) snapshotStore.clearSlot(alias, name, SnapshotOpen)
+                aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
+            }
+            PositionTransition.OpenedFromZero ->
+                aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
+            PositionTransition.Stay -> {}
+        }
+
+        // 2. Indicators
+        bindings.updateAll(ec)
+
+        // 3. Per-candle rolling snapshot capture for this alias
+        for ((name, _) in plan.rollingMaxN) {
+            val rhs = letCompiledRhs[name] ?: continue
+            val v = rhs.evaluate(ec)
+            snapshotStore.pushRolling(alias, name, if (v is Value.Num) v.v else null)
+        }
+
+        // 4. Aggregate updates for bindings on this alias
+        for (b in aggregates.bindingsForAlias(alias)) {
+            if (b.window is SinceOpen) {
+                val curQty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+                if (curQty.signum() != 0) b.update(ec)
+            } else {
+                b.update(ec)
+            }
+        }
+
+        // 5. Rules whose ruleAlias matches
+        for (rule in rules) {
+            if (rule.ruleAlias != alias) continue
+            for (sig in rule.fire(ec, ctx)) emit(sig)
+        }
+    }
 
     override fun onTick(
         tick: Tick,
@@ -124,6 +209,7 @@ private class CompiledStrategy(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        if (hubBound) return
         if (candle.symbol !in subscribedSymbols) return
 
         val ec =
