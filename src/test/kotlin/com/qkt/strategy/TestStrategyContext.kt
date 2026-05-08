@@ -36,6 +36,10 @@ private val emptyPnL =
         override fun unrealizedTotal(): BigDecimal = BigDecimal.ZERO
 
         override fun total(): BigDecimal = BigDecimal.ZERO
+
+        override fun equity(): BigDecimal = BigDecimal.ZERO
+
+        override fun balance(): BigDecimal = BigDecimal.ZERO
     }
 
 fun testStrategyContext(

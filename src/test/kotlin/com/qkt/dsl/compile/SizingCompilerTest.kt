@@ -2,11 +2,9 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizePctEquity
 import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
@@ -64,19 +62,5 @@ class SizingCompilerTest {
     fun `SizePositionFull returns absolute quantity when flat`() {
         val s = compiler().compile(SizePositionFull("btc"), stopDistance = null)
         assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"))).isEqualByComparingTo("0")
-    }
-
-    @Test
-    fun `SizePctEquity is deferred to 11d2`() {
-        assertThatThrownBy {
-            compiler().compile(SizePctEquity(NumLit(BigDecimal("0.01"))), stopDistance = null)
-        }.isInstanceOf(IllegalStateException::class.java).hasMessageContaining("deferred")
-    }
-
-    @Test
-    fun `SizeRiskFrac is deferred to 11d2`() {
-        assertThatThrownBy {
-            compiler().compile(SizeRiskFrac(NumLit(BigDecimal("0.01"))), stopDistance = BigDecimal("5"))
-        }.isInstanceOf(IllegalStateException::class.java).hasMessageContaining("deferred")
     }
 }

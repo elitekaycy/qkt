@@ -1,13 +1,18 @@
 package com.qkt.dsl.kotlin
 
 import com.qkt.dsl.ast.ActionAst
+import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ConstantDecl
+import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.LetDecl
+import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
+import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
+import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.WhenThen
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
@@ -24,6 +29,7 @@ class StrategyBuilder(
     private val constants: MutableList<ConstantDecl> = mutableListOf()
     internal val lets: MutableList<LetDecl> = mutableListOf()
     private val rules: MutableList<RuleAst> = mutableListOf()
+    private var defaults: DefaultsBlock? = null
 
     fun stream(
         alias: String,
@@ -36,6 +42,12 @@ class StrategyBuilder(
     }
 
     fun letting(expr: ExprAst): LetBindingProvider = LetBindingProvider(this, expr)
+
+    fun defaults(block: DefaultsBuilder.() -> Unit) {
+        val db = DefaultsBuilder()
+        db.block()
+        defaults = db.build()
+    }
 
     fun rule(block: RuleBuilder.() -> Unit) {
         val rb = RuleBuilder()
@@ -54,9 +66,21 @@ class StrategyBuilder(
             streams = streams.toList(),
             constants = constants.toList(),
             lets = lets.toList(),
-            defaults = null,
+            defaults = defaults,
             rules = rules.toList(),
         )
+}
+
+@QktDsl
+class DefaultsBuilder {
+    var sizing: SizingAst? = null
+    var orderType: OrderTypeAst? = null
+    var tif: TifAst? = null
+    var stopLoss: ChildPriceAst? = null
+    var takeProfit: ChildPriceAst? = null
+    var trailing: OrderTypeAst? = null
+
+    internal fun build(): DefaultsBlock = DefaultsBlock(sizing, orderType, tif, stopLoss, takeProfit, trailing)
 }
 
 @QktDsl

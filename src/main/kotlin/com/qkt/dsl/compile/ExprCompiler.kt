@@ -215,8 +215,8 @@ class ExprCompiler(
     }
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {
-        require(ref.field in setOf("realized_pnl", "unrealized_pnl", "total_pnl")) {
-            "Unsupported ACCOUNT field in 11c1: ${ref.field} (equity/balance/drawdown deferred — engine surface needs work)"
+        require(ref.field in setOf("realized_pnl", "unrealized_pnl", "total_pnl", "equity", "balance")) {
+            "Unsupported ACCOUNT field: ${ref.field}"
         }
         return CompiledExpr { ctx ->
             val pnl = ctx.strategyContext.pnl
@@ -225,6 +225,8 @@ class ExprCompiler(
                     "realized_pnl" -> pnl.realized()
                     "unrealized_pnl" -> pnl.unrealizedTotal()
                     "total_pnl" -> pnl.total()
+                    "equity" -> pnl.equity()
+                    "balance" -> pnl.balance()
                     else -> error("unreachable")
                 },
             )

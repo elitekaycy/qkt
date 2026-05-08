@@ -59,10 +59,32 @@ class SizingCompiler(
                         ?: BigDecimal.ZERO
                 }
             }
-            is SizePctEquity, is SizePctBalance, is SizeRiskFrac ->
-                error(
-                    "Sizing mode ${sizing::class.simpleName} is deferred to Phase 11d2 — " +
-                        "needs engine equity/balance surface",
-                )
+            is SizePctEquity -> {
+                val e = exprCompiler.compile(sizing.frac)
+                CompiledSize { ec, entry ->
+                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val equity = ec.strategyContext.pnl.equity()
+                    equity.multiply(frac, Money.CONTEXT).divide(entry, Money.CONTEXT)
+                }
+            }
+            is SizePctBalance -> {
+                val e = exprCompiler.compile(sizing.frac)
+                CompiledSize { ec, entry ->
+                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val balance = ec.strategyContext.pnl.balance()
+                    balance.multiply(frac, Money.CONTEXT).divide(entry, Money.CONTEXT)
+                }
+            }
+            is SizeRiskFrac -> {
+                require(stopDistance != null && stopDistance.signum() > 0) {
+                    "SIZING RISK <fraction> requires a resolvable stop distance via BRACKET STOP LOSS"
+                }
+                val e = exprCompiler.compile(sizing.frac)
+                CompiledSize { ec, _ ->
+                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val equity = ec.strategyContext.pnl.equity()
+                    equity.multiply(frac, Money.CONTEXT).divide(stopDistance, Money.CONTEXT)
+                }
+            }
         }
 }
