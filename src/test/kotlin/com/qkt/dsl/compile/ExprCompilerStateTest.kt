@@ -70,8 +70,62 @@ class ExprCompilerStateTest {
 
     @Test
     fun `unsupported ACCOUNT field is rejected at compile time`() {
-        assertThatThrownBy { ExprCompiler().compile(AccountRef("equity")) }
+        assertThatThrownBy { ExprCompiler().compile(AccountRef("drawdown")) }
             .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `ACCOUNT equity reads from pnl view`() {
+        val pnl =
+            object : StrategyPnLView {
+                override fun realized(): BigDecimal = BigDecimal.ZERO
+
+                override fun unrealizedFor(symbol: String): BigDecimal = BigDecimal.ZERO
+
+                override fun unrealizedTotal(): BigDecimal = BigDecimal.ZERO
+
+                override fun total(): BigDecimal = BigDecimal.ZERO
+
+                override fun equity(): BigDecimal = BigDecimal("10250")
+
+                override fun balance(): BigDecimal = BigDecimal("10000")
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streamSymbols = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(pnl = pnl),
+            )
+        val v = ExprCompiler().compile(AccountRef("equity")).evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("10250")
+    }
+
+    @Test
+    fun `ACCOUNT balance reads from pnl view`() {
+        val pnl =
+            object : StrategyPnLView {
+                override fun realized(): BigDecimal = BigDecimal.ZERO
+
+                override fun unrealizedFor(symbol: String): BigDecimal = BigDecimal.ZERO
+
+                override fun unrealizedTotal(): BigDecimal = BigDecimal.ZERO
+
+                override fun total(): BigDecimal = BigDecimal.ZERO
+
+                override fun equity(): BigDecimal = BigDecimal("10250")
+
+                override fun balance(): BigDecimal = BigDecimal("10000")
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streamSymbols = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(pnl = pnl),
+            )
+        val v = ExprCompiler().compile(AccountRef("balance")).evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("10000")
     }
 
     @Test
