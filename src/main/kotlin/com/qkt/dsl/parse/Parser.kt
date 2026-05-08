@@ -21,6 +21,14 @@ import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
+import com.qkt.dsl.ast.SizeNotional
+import com.qkt.dsl.ast.SizePctBalance
+import com.qkt.dsl.ast.SizePctEquity
+import com.qkt.dsl.ast.SizePositionFull
+import com.qkt.dsl.ast.SizeQty
+import com.qkt.dsl.ast.SizeRiskAbs
+import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.SnapshotBuy
 import com.qkt.dsl.ast.SnapshotKind
 import com.qkt.dsl.ast.SnapshotOpen
@@ -342,6 +350,52 @@ class Parser(
                 SnapshotTPast(n)
             }
             else -> error("expected snapshot kind (buy/sell/open/T-N), got '${t.lexeme}'")
+        }
+    }
+
+    internal fun parseSizing(): SizingAst {
+        val k = peek().kind
+        return when (k) {
+            TokenKind.RISK -> {
+                advance()
+                if (match(TokenKind.DOLLAR)) {
+                    SizeRiskAbs(parseExpr())
+                } else {
+                    SizeRiskFrac(parseExpr())
+                }
+            }
+            TokenKind.POSITION -> {
+                // SIZING POSITION.<alias>
+                advance()
+                expect(TokenKind.DOT, "expected '.' after POSITION")
+                val alias = expectFieldName().lexeme
+                SizePositionFull(alias)
+            }
+            else -> {
+                val e = parseExpr()
+                when (peek().kind) {
+                    TokenKind.USD -> {
+                        advance()
+                        SizeNotional(e)
+                    }
+                    TokenKind.PERCENT -> {
+                        advance()
+                        expect(TokenKind.OF, "expected OF after %")
+                        when (peek().kind) {
+                            TokenKind.EQUITY -> {
+                                advance()
+                                SizePctEquity(e)
+                            }
+                            TokenKind.BALANCE -> {
+                                advance()
+                                SizePctBalance(e)
+                            }
+                            else -> error("expected EQUITY or BALANCE after % OF, got '${peek().lexeme}'")
+                        }
+                    }
+                    else -> SizeQty(e)
+                }
+            }
         }
     }
 
