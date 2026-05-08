@@ -126,7 +126,20 @@ object Routes {
             }
         }
 
-    fun stop(onStop: (Boolean) -> Unit): HttpHandler = HttpHandler { _ -> TODO("Task 7") }
+    fun stop(onStop: (Boolean) -> Unit): HttpHandler =
+        HttpHandler { ex ->
+            if (ex.requestMethod != "POST") {
+                respond(ex, 405, """{"error":"method not allowed"}""")
+                return@HttpHandler
+            }
+            val flatten = parseQuery(ex.requestURI.rawQuery)["flatten"] == "true"
+            respond(ex, 202, """{"status":"accepted","action":"graceful_shutdown"}""")
+            try {
+                onStop(flatten)
+            } catch (_: Exception) {
+                // already responded; swallow shutdown errors
+            }
+        }
 
     internal fun parseQuery(raw: String?): Map<String, String> {
         if (raw.isNullOrBlank()) return emptyMap()

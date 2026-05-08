@@ -229,6 +229,65 @@ class ObservabilityServerTest {
     }
 
     @Test
+    fun `stop POST returns 202 and invokes onStop with flatten false`() {
+        val captured =
+            java.util.concurrent.atomic
+                .AtomicReference<Boolean?>(null)
+        val s = server(onStop = { captured.set(it) })
+        s.start()
+        try {
+            val req =
+                Request
+                    .Builder()
+                    .url("http://127.0.0.1:${s.boundPort}/stop")
+                    .post(ByteArray(0).toRequestBody(null))
+                    .build()
+            val resp = client.newCall(req).execute()
+            assertThat(resp.code).isEqualTo(202)
+            val body = resp.body!!.string()
+            assertThat(body).contains("\"status\":\"accepted\"")
+            assertThat(body).contains("\"action\":\"graceful_shutdown\"")
+            assertThat(captured.get()).isFalse()
+        } finally {
+            s.close()
+        }
+    }
+
+    @Test
+    fun `stop POST with flatten true invokes onStop with flatten true`() {
+        val captured =
+            java.util.concurrent.atomic
+                .AtomicReference<Boolean?>(null)
+        val s = server(onStop = { captured.set(it) })
+        s.start()
+        try {
+            val req =
+                Request
+                    .Builder()
+                    .url("http://127.0.0.1:${s.boundPort}/stop?flatten=true")
+                    .post(ByteArray(0).toRequestBody(null))
+                    .build()
+            val resp = client.newCall(req).execute()
+            assertThat(resp.code).isEqualTo(202)
+            assertThat(captured.get()).isTrue()
+        } finally {
+            s.close()
+        }
+    }
+
+    @Test
+    fun `stop GET returns 405`() {
+        val s = server(onStop = {})
+        s.start()
+        try {
+            val resp = client.newCall(Request.Builder().url("http://127.0.0.1:${s.boundPort}/stop").build()).execute()
+            assertThat(resp.code).isEqualTo(405)
+        } finally {
+            s.close()
+        }
+    }
+
+    @Test
     fun `unknown route returns 404`() {
         val s = server()
         s.start()
