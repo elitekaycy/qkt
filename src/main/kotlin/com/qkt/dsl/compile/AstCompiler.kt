@@ -69,9 +69,10 @@ class AstCompiler {
                             ?: error("Strategy must declare at least one stream")
                     }
                 val compiledCond = exprCompiler.compile(cond, ruleSymbol = symbol)
-                val action = actionCompiler.compile(rule.action)
-                val isBuy = rule.action is Buy
-                val isSell = rule.action is Sell
+                val mergedAction = mergeDefaults(rule.action, ast.defaults)
+                val action = actionCompiler.compile(mergedAction)
+                val isBuy = mergedAction is Buy
+                val isSell = mergedAction is Sell
                 CompiledRule(
                     condition = compiledCond,
                     action = action,
