@@ -192,7 +192,7 @@ class ExprCompiler(
 
     private fun compilePositionRef(ref: PositionRef): CompiledExpr =
         CompiledExpr { ctx ->
-            val symbol = ctx.streamSymbols[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val symbol = ctx.streams[ref.stream]?.symbol ?: error("Unknown stream alias: ${ref.stream}")
             val qty =
                 ctx.strategyContext.positions
                     .positionFor(symbol)
@@ -205,7 +205,7 @@ class ExprCompiler(
             "StateAccessor source ${ref.source} is not supported in 11c1"
         }
         return CompiledExpr { ctx ->
-            val symbol = ctx.streamSymbols[ref.key] ?: error("Unknown stream alias: ${ref.key}")
+            val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
             val price =
                 ctx.strategyContext.positions
                     .positionFor(symbol)
@@ -246,7 +246,7 @@ class ExprCompiler(
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
         return CompiledExpr { ctx ->
-            val symbol = ctx.streamSymbols[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val symbol = ctx.streams[ref.stream]?.symbol ?: error("Unknown stream alias: ${ref.stream}")
             if (ctx.candle.symbol != symbol) {
                 Value.Undefined
             } else {

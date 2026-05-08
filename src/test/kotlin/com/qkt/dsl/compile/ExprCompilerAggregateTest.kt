@@ -27,7 +27,7 @@ class ExprCompilerAggregateTest {
     private fun ctx(c: Candle) =
         EvalContext(
             candle = c,
-            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )

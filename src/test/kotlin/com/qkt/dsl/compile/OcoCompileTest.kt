@@ -31,7 +31,7 @@ class OcoCompileTest {
     private val ctx =
         EvalContext(
             candle = candle,
-            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )

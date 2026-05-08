@@ -27,11 +27,11 @@ class ExprCompilerCrossesTest {
 
     private fun ctxFor(
         candle: Candle,
-        streamSymbols: Map<String, String> = mapOf("btc" to "BTCUSDT"),
+        streams: Map<String, HubKey> = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
     ): EvalContext =
         EvalContext(
             candle = candle,
-            streamSymbols = streamSymbols,
+            streams = streams,
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )

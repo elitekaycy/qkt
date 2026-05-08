@@ -18,10 +18,11 @@ sealed interface Value {
 
 class EvalContext(
     val candle: Candle,
-    val streamSymbols: Map<String, String>,
+    val streams: Map<String, HubKey>,
     val lets: Map<String, BigDecimal>,
     val strategyContext: StrategyContext,
     val snapshotStore: SnapshotStore = SnapshotStore(emptyMap()),
+    val hub: CandleHub = CandleHub(),
 )
 
 fun interface CompiledExpr {

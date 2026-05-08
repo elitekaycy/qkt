@@ -15,7 +15,7 @@ class ExprCompilerFuncCallTest {
     private val ctx =
         EvalContext(
             candle = candle,
-            streamSymbols = emptyMap(),
+            streams = emptyMap(),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )
@@ -49,7 +49,7 @@ class ExprCompilerFuncCallTest {
         val ec =
             EvalContext(
                 candle = candle,
-                streamSymbols = mapOf("btc" to "BTCUSDT"),
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
                 lets = emptyMap(),
                 strategyContext = testStrategyContext(),
             )

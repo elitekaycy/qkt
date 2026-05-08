@@ -18,7 +18,7 @@ class ExprCompilerSnapshotTest {
     private fun ctx(store: SnapshotStore): EvalContext =
         EvalContext(
             candle = candle,
-            streamSymbols = mapOf("btc" to "BTCUSDT"),
+            streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
             snapshotStore = store,

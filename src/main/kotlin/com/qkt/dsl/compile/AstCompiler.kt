@@ -21,7 +21,8 @@ import java.math.BigDecimal
 
 class AstCompiler {
     fun compile(ast: StrategyAst): Strategy {
-        val streamSymbols: Map<String, String> = ast.streams.associate { it.alias to it.symbol }
+        val streams: Map<String, HubKey> =
+            ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) }
         val resolver = LetResolver(ast.lets)
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
@@ -63,9 +64,9 @@ class AstCompiler {
                     }
                 val symbol =
                     if (streamAlias != null) {
-                        streamSymbols[streamAlias] ?: error("Unknown stream alias: $streamAlias")
+                        streams[streamAlias]?.symbol ?: error("Unknown stream alias: $streamAlias")
                     } else {
-                        streamSymbols.values.firstOrNull()
+                        streams.values.firstOrNull()?.symbol
                             ?: error("Strategy must declare at least one stream")
                     }
                 val compiledCond = exprCompiler.compile(cond, ruleSymbol = symbol)
@@ -86,7 +87,7 @@ class AstCompiler {
             }
 
         return CompiledStrategy(
-            streamSymbols = streamSymbols,
+            streams = streams,
             bindings = bindings,
             aggregates = aggregates,
             snapshotStore = snapshotStore,
@@ -99,7 +100,7 @@ class AstCompiler {
 }
 
 private class CompiledStrategy(
-    private val streamSymbols: Map<String, String>,
+    private val streams: Map<String, HubKey>,
     private val bindings: IndicatorBinding.Bag,
     private val aggregates: AggregateBinding.Bag,
     private val snapshotStore: SnapshotStore,
@@ -108,6 +109,8 @@ private class CompiledStrategy(
     private val transitions: PositionTransitions,
     private val rules: List<CompiledRule>,
 ) : Strategy {
+    private val subscribedSymbols: Set<String> = streams.values.map { it.symbol }.toSet()
+
     override fun onTick(
         tick: Tick,
         ctx: StrategyContext,
@@ -120,19 +123,20 @@ private class CompiledStrategy(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
-        if (candle.symbol !in streamSymbols.values) return
+        if (candle.symbol !in subscribedSymbols) return
 
         val ec =
             EvalContext(
                 candle = candle,
-                streamSymbols = streamSymbols,
+                streams = streams,
                 lets = emptyMap(),
                 strategyContext = ctx,
                 snapshotStore = snapshotStore,
             )
 
         // 1. Position transitions for this candle's symbol
-        for ((_, symbol) in streamSymbols) {
+        for ((_, key) in streams) {
+            val symbol = key.symbol
             if (candle.symbol != symbol) continue
             val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
             val transition = transitions.observe(symbol, qty)
@@ -157,7 +161,8 @@ private class CompiledStrategy(
         for ((name, _) in plan.rollingMaxN) {
             val rhs = letCompiledRhs[name] ?: continue
             val v = rhs.evaluate(ec)
-            for ((_, symbol) in streamSymbols) {
+            for ((_, key) in streams) {
+                val symbol = key.symbol
                 if (symbol != candle.symbol) continue
                 snapshotStore.pushRolling(symbol, name, if (v is Value.Num) v.v else null)
             }

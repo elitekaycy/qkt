@@ -17,7 +17,7 @@ class ExprCompilerBetweenInCaseTest {
     private val ctx =
         EvalContext(
             candle = candle,
-            streamSymbols = emptyMap(),
+            streams = emptyMap(),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )

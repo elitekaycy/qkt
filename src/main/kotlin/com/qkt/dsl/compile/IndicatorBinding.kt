@@ -27,7 +27,7 @@ class IndicatorBinding private constructor(
             (indicator as Indicator<BigDecimal>).update(v)
             return
         }
-        val symbol = ctx.streamSymbols[streamAlias!!] ?: error("Unknown stream alias: $streamAlias")
+        val symbol = ctx.streams[streamAlias!!]?.symbol ?: error("Unknown stream alias: $streamAlias")
         if (ctx.candle.symbol != symbol) return
         when (inputKind) {
             IndicatorInput.NUMERIC_SERIES -> {
