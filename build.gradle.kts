@@ -49,7 +49,7 @@ tasks.test {
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
         if (included.isEmpty()) {
-            excludeTags("e2e", "e2e-live")
+            excludeTags("e2e", "e2e-live", "dockerSmoke")
         } else {
             includeTags(*included.toTypedArray())
         }
@@ -57,6 +57,14 @@ tasks.test {
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = true
+    }
+}
+
+tasks.register("dockerBuild") {
+    group = "distribution"
+    description = "Build the qkt Docker image at qkt:local"
+    doLast {
+        exec { commandLine("docker", "build", "-t", "qkt:local", ".") }
     }
 }
 
