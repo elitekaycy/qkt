@@ -27,6 +27,7 @@ import com.qkt.dsl.ast.CrossDir
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
+import com.qkt.dsl.ast.DurationAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.Gtc
@@ -60,6 +61,10 @@ import com.qkt.dsl.ast.SnapshotKind
 import com.qkt.dsl.ast.SnapshotOpen
 import com.qkt.dsl.ast.SnapshotSell
 import com.qkt.dsl.ast.SnapshotTPast
+import com.qkt.dsl.ast.StackAst
+import com.qkt.dsl.ast.StackDirection
+import com.qkt.dsl.ast.StackLayers
+import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.Stop
@@ -575,6 +580,7 @@ class Parser(
         var tif: TifAst? = null
         var bracket: BracketAst? = null
         var oco: OcoAst? = null
+        var stack: StackAst? = null
         loop@ while (true) {
             when (peek().kind) {
                 TokenKind.SIZING -> {
@@ -598,10 +604,76 @@ class Parser(
                     advance()
                     oco = parseOco()
                 }
+                TokenKind.STACK -> {
+                    advance()
+                    stack = parseStackClause()
+                }
                 else -> break@loop
             }
         }
-        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco)
+        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco, stack)
+    }
+
+    internal fun parseStackClause(): StackAst {
+        // STACK <count> SPACING <expr> [ABOVE|BELOW] [WITHIN <duration>]
+        // STACK [ <layers> ] [WITHIN <duration>]   (added in Task 5)
+        return if (peek().kind == TokenKind.LBRACKET) {
+            parseStackLayers()
+        } else {
+            parseStackSpacing()
+        }
+    }
+
+    internal fun parseStackSpacing(): StackSpacing {
+        val countTok = expect(TokenKind.NUMBER, "expected count after STACK")
+        val count =
+            countTok.lexeme.toIntOrNull()
+                ?: error("STACK count must be a positive integer, got '${countTok.lexeme}'")
+        if (count < 1) error("STACK count must be >= 1, got $count")
+        expect(TokenKind.SPACING, "expected SPACING after STACK count")
+        val spacing = parseExpr()
+        val direction =
+            when (peek().kind) {
+                TokenKind.ABOVE -> {
+                    advance()
+                    StackDirection.ABOVE
+                }
+                TokenKind.BELOW -> {
+                    advance()
+                    StackDirection.BELOW
+                }
+                else -> StackDirection.TRADE_DIRECTION
+            }
+        val within = if (peek().kind == TokenKind.WITHIN) parseWithin() else null
+        return StackSpacing(count, spacing, direction, within)
+    }
+
+    internal fun parseStackLayers(): StackLayers {
+        // implemented in Task 5
+        error("layer-list form not yet implemented")
+    }
+
+    internal fun parseWithin(): DurationAst {
+        expect(TokenKind.WITHIN, "expected WITHIN")
+        return parseDuration()
+    }
+
+    internal fun parseDuration(): DurationAst {
+        val tok = expect(TokenKind.DURATION, "expected duration literal (e.g., 1h, 30m)")
+        val lex = tok.lexeme
+        val n =
+            lex.dropLast(1).toLongOrNull()
+                ?: error("invalid duration literal '$lex'")
+        val unit = lex.last()
+        val millis =
+            when (unit) {
+                's' -> n * 1_000L
+                'm' -> n * 60_000L
+                'h' -> n * 3_600_000L
+                'd' -> n * 86_400_000L
+                else -> error("unknown duration unit '$unit' in '$lex'")
+            }
+        return DurationAst(millis)
     }
 
     internal fun parseDefaults(): DefaultsBlock {
@@ -777,14 +849,20 @@ class Parser(
             expect(TokenKind.COLON, "expected ':' between broker and symbol")
             val symbol = expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
             expect(TokenKind.EVERY, "expected EVERY")
-            val tfNum = expect(TokenKind.NUMBER, "expected timeframe count").lexeme
-            val tfUnit = expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
+            val timeframe =
+                if (peek().kind == TokenKind.DURATION) {
+                    advance().lexeme
+                } else {
+                    val tfNum = expect(TokenKind.NUMBER, "expected timeframe count").lexeme
+                    val tfUnit = expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
+                    "$tfNum$tfUnit"
+                }
             out.add(
                 StreamDecl(
                     alias = alias,
                     broker = broker,
                     symbol = symbol,
-                    timeframe = "$tfNum$tfUnit",
+                    timeframe = timeframe,
                 ),
             )
         } while (match(TokenKind.COMMA))
