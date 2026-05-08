@@ -177,4 +177,4 @@ For new strategies, prefer asserting on the *emitted OrderRequest shape* rather 
 
 - Spec: `docs/superpowers/specs/2026-05-07-trading-engine-phase11-master-design.md` §7 Phase 11d1
 - Plan: `docs/superpowers/plans/2026-05-07-trading-engine-phase11d1.md`
-- Merge commit: TBD (filled in after merge to `main`).
+- Merge commit: `8cc6811`
