@@ -6,7 +6,7 @@ An event-driven trading engine in Kotlin with backtest replay, parameter sweeps,
 
 ## Status
 
-Pre-1.0. Latest release: [`v0.10.1`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.13.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
 See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-process.md`](docs/release-process.md) for versioning.
 
@@ -21,36 +21,64 @@ See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-p
 - **TradingView live vendor** (anonymous, free-tier) for paper trading ([phase 7c](docs/phases/)).
 - **On-disk content-addressable data store** with Dukascopy auto-fetch and bring-your-own CSV ([phase 6](docs/phases/)).
 
-## Quickstart
+## Quick start
 
 Requires JDK 21 (Gradle's toolchain auto-provisions if not local).
 
 ```bash
 git clone https://github.com/elitekaycy/qkt.git
 cd qkt
-./gradlew build      # compile + test + assemble
-./gradlew run        # main application — prints fills, exits
+./gradlew installDist
+./build/install/qkt/bin/qkt --version
 ```
 
-A minimal in-process backtest:
+qkt has three deployment shapes: foreground for one strategy, daemon for many, or Docker for both.
 
-```kotlin
-import com.qkt.backtest.Backtest
-import com.qkt.candles.TimeWindow
-import com.qkt.common.Money
-import com.qkt.marketdata.Tick
+### 1. Foreground — one strategy
 
-val ticks = (1..100).map { Tick("X", Money.of((100 + it).toString()), it * 60_000L) }
-val result = Backtest(
-    strategies = listOf("buy-and-hold" to MyStrategy()),
-    ticks = ticks,
-    candleWindow = TimeWindow.ONE_MINUTE,
-).run()
-
-println("Total P&L: ${result.global.totalPnL}")
-println("Sharpe: ${result.global.sharpeRatio}")
-println("Max drawdown: ${result.global.maxDrawdown}")
+```bash
+qkt run strategies/ema-crossover.qkt
+# [INFO] qkt 0.13.0 — strategy ema-crossover v1 — paper-trading
+# QKT_PORT=47291
+# ... ticks flow, fills print to stdout, /status etc. served on QKT_PORT
 ```
+
+`qkt run` paper-trades a single strategy and exposes a per-process observability HTTP port (12b).
+
+### 2. Daemon — many strategies in one JVM
+
+```bash
+qkt daemon &                                  # start in background (or under systemd)
+qkt deploy strategies/ema.qkt --as ema-fast   # register + start, returns port
+qkt deploy strategies/momentum.qkt --as momo
+qkt list                                      # NAME UPTIME PORT TRADES STATE
+qkt status ema-fast                           # proxies through to the strategy's :PORT/status
+qkt logs ema-fast -f                          # tail ~/.local/state/qkt/logs/ema-fast.log
+qkt stop ema-fast                             # graceful shutdown
+qkt daemon stop                               # shut down the daemon
+```
+
+Each deployed strategy gets its own `LiveSession`, observability port, and log file. Strategies on the
+same `(broker, symbol, timeframe)` share one CandleHub aggregator (12c). The daemon control plane is
+HTTP over TCP `127.0.0.1`; the bound port lands at `~/.local/state/qkt/control.port`.
+
+`qkt daemon --load-dir <path>` auto-deploys every `*.qkt` file in the directory at startup.
+
+### 3. Docker
+
+The daemon is published as a multi-stage image at `ghcr.io/elitekaycy/qkt:<tag>`.
+
+```bash
+docker run -d --name qkt-prop \
+    -v $(pwd)/strategies:/strategies \
+    -p 47000-47100:47000-47100 \
+    ghcr.io/elitekaycy/qkt:0.13.0
+
+docker exec qkt-prop qkt list
+docker exec qkt-prop qkt logs sample -f
+```
+
+A walk-through user image (`FROM ghcr.io/elitekaycy/qkt`) is in [`examples/docker/`](examples/docker/).
 
 For real historical data via the Dukascopy fetcher or live trading via TradingView, see the relevant phase changelogs in [`docs/phases/`](docs/phases/).
 
@@ -97,10 +125,20 @@ src/main/kotlin/com/qkt/
 ```bash
 ./gradlew build              # compile + test + ktlint + assemble
 ./gradlew test               # tests only
-./gradlew run                # main application
-./gradlew runLiveDemo        # TradingView paper-trading demo
+./gradlew installDist        # produces build/install/qkt/bin/qkt
+./gradlew dockerBuild        # builds qkt:local docker image
 ./gradlew test -PincludeTags=e2e  # run live smoke tests (manual)
 ./gradlew ktlintFormat       # auto-format
+```
+
+### Legacy entry points
+
+These pre-date the `qkt` CLI and remain for reference / one-off debugging:
+
+```bash
+./gradlew run                # the original mock-tick demo (com.qkt.app.Main)
+./gradlew runLiveDemo        # TradingView paper-trading demo (com.qkt.app.LiveDemo)
+./gradlew runMaxAudit        # live audit across asset classes (com.qkt.app.MaxAudit)
 ```
 
 Pre-push helper:
