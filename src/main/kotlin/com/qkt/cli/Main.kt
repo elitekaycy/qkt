@@ -6,6 +6,7 @@ fun main(argv: Array<String>) {
         try {
             when (args.subcommand) {
                 "parse" -> ParseCommand(args).run()
+                "backtest" -> BacktestCommand(args).run()
                 "--version", "-v" -> {
                     println("qkt ${BuildInfo.VERSION}")
                     ExitCodes.SUCCESS
