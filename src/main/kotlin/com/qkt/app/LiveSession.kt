@@ -9,6 +9,7 @@ import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
+import com.qkt.events.SignalEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
 import com.qkt.marketdata.MarketPriceTracker
@@ -23,6 +24,7 @@ import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RiskState
 import com.qkt.strategy.Mode
+import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
@@ -46,6 +48,7 @@ class LiveSession(
     private val warmupOverride: WarmupSpec? = null,
     private val onWarmupTick: (Tick) -> Unit = {},
     private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
+    private val onSignal: (Signal) -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -92,6 +95,7 @@ class LiveSession(
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
+        bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
 
         val now = Instant.ofEpochMilli(clock.now())
         val effectiveWarmup =
