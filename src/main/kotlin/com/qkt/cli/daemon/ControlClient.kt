@@ -35,6 +35,12 @@ class ControlClient(
         return readOrThrow(resp)
     }
 
+    fun list(): String {
+        val resp =
+            http.newCall(Request.Builder().url("${baseUrl()}/list").build()).execute()
+        return readOrThrow(resp)
+    }
+
     fun deploy(
         name: String,
         file: Path,

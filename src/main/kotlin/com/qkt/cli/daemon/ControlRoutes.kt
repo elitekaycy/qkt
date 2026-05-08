@@ -25,6 +25,7 @@ object ControlRoutes {
                 when {
                     method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
                     method == "POST" && path == "/deploy" -> handleDeploy(ex, registry)
+                    method == "GET" && path == "/list" -> handleList(ex, registry)
                     else -> respond(ex, 404, """{"error":"not found"}""")
                 }
             } catch (e: Exception) {
@@ -41,6 +42,21 @@ object ControlRoutes {
         val uptimeMs = Instant.now().toEpochMilli() - startedAt.toEpochMilli()
         val count = registry.list().size
         respond(ex, 200, """{"status":"ok","strategies":$count,"uptimeMs":$uptimeMs}""")
+    }
+
+    private fun handleList(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+    ) {
+        val now = Instant.now().toEpochMilli()
+        val arr =
+            registry.list().joinToString(separator = ",", prefix = "[", postfix = "]") { h ->
+                val uptime = now - h.startedAt.toEpochMilli()
+                val state = if (h.isRunning()) "running" else "stopped"
+                """{"name":"${h.name}","port":${h.port},""" +
+                    """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state"}"""
+            }
+        respond(ex, 200, arr)
     }
 
     private fun handleDeploy(
