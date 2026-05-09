@@ -6,7 +6,7 @@ An event-driven trading engine in Kotlin with backtest replay, parameter sweeps,
 
 ## Status
 
-Pre-1.0. Latest release: [`v0.13.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.14.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
 See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-process.md`](docs/release-process.md) for versioning.
 
@@ -20,6 +20,24 @@ See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-p
 - **Parameter sweep harness** with sequential or fixed-pool parallel execution and ranked summary reports ([phase 10b](docs/phases/phase-10b-parameter-sweep.md)).
 - **TradingView live vendor** (anonymous, free-tier) for paper trading ([phase 7c](docs/phases/)).
 - **On-disk content-addressable data store** with Dukascopy auto-fetch and bring-your-own CSV ([phase 6](docs/phases/)).
+- **STACK pyramiding** — turn one `BUY`/`SELL` action into N price-triggered entries with an optional time fence ([phase 13a](docs/phases/phase-13a-stack.md)).
+
+### STACK example — 3-layer pyramid
+
+A single DSL rule expresses a full scaling-in plan. Layer 1 fires at market on the signal; layers 2 and 3 become pending entries triggered by price, each inheriting the outer bracket:
+
+```
+STRATEGY pyr VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+RULES
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+    THEN BUY btc SIZING 0.1
+         STACK 3 SPACING 100
+         BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 200 }
+```
+
+If layer 1 fills at 50000, layers 2 and 3 trigger at 50100 and 50200 respectively. If layer 1's stop-loss fires before those prices are reached, the pending layers cancel automatically. Add `WITHIN 1h` to the `STACK` clause to abandon unfired layers after one hour. Use the `BELOW` keyword (or a layer-list with `AT entry - N` clauses) for average-down strategies. See [phase 13a](docs/phases/phase-13a-stack.md) for the full reference.
 
 ## Quick start
 
