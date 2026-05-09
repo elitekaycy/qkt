@@ -1,12 +1,18 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ActionOpts
+import com.qkt.dsl.ast.BinOp
+import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.StackDirection
+import com.qkt.dsl.ast.StackEntryRef
+import com.qkt.dsl.ast.StackLayer
+import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.Candle
@@ -107,5 +113,62 @@ class ActionCompilerStackTest {
 
         val expectedTotal = expectedQtyPerLayer.multiply(BigDecimal("3"))
         assertThat(stack.quantity).isEqualByComparingTo(expectedTotal)
+    }
+
+    @Test
+    fun `STACK SPACING with literal SIZING qty produces resolved layers`() {
+        val action =
+            Buy(
+                stream = "btc",
+                opts =
+                    ActionOpts(
+                        sizing = SizeQty(NumLit(BigDecimal("0.5"))),
+                        stack = StackSpacing(3, NumLit(BigDecimal("100")), StackDirection.TRADE_DIRECTION),
+                    ),
+            )
+        val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(makeCtx())
+        val req = (sigs.single() as Signal.Submit).request as OrderRequest.Stack
+
+        assertThat(req.plan.layers).hasSize(3)
+        for (layer in req.plan.layers) {
+            assertThat(layer.resolvedQuantity)
+                .describedAs("layer ${layer.index} resolvedQuantity")
+                .isNotNull
+                .isEqualByComparingTo(BigDecimal("0.5"))
+        }
+        assertThat(req.quantity).isEqualByComparingTo(BigDecimal("1.5"))
+    }
+
+    @Test
+    fun `STACK layer-list form produces explicit per-layer quantities`() {
+        val action =
+            Buy(
+                stream = "btc",
+                opts =
+                    ActionOpts(
+                        stack =
+                            StackLayers(
+                                listOf(
+                                    StackLayer(SizeQty(NumLit(BigDecimal("0.1")))),
+                                    StackLayer(
+                                        SizeQty(NumLit(BigDecimal("0.2"))),
+                                        at = BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("100"))),
+                                    ),
+                                    StackLayer(
+                                        SizeQty(NumLit(BigDecimal("0.3"))),
+                                        at = BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("200"))),
+                                    ),
+                                ),
+                            ),
+                    ),
+            )
+        val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(makeCtx())
+        val req = (sigs.single() as Signal.Submit).request as OrderRequest.Stack
+
+        val resolved = req.plan.layers.map { it.resolvedQuantity!! }
+        assertThat(resolved[0]).isEqualByComparingTo(BigDecimal("0.1"))
+        assertThat(resolved[1]).isEqualByComparingTo(BigDecimal("0.2"))
+        assertThat(resolved[2]).isEqualByComparingTo(BigDecimal("0.3"))
+        assertThat(req.quantity).isEqualByComparingTo(BigDecimal("0.6"))
     }
 }

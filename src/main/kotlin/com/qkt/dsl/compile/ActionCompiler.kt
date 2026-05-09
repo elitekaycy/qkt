@@ -96,9 +96,14 @@ class ActionCompiler(
         opts: ActionOpts,
         side: Side,
     ): (EvalContext) -> List<Signal> {
+        // Stack path: STACK is mutually exclusive with BRACKET/OCO on the same action.
+        if (opts.stack != null) {
+            return compileStack(stream, opts, side)
+        }
+
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING")
 
-        // Fast path: plain market + default TIF + no bracket/OCO + direct qty sizing → emit Signal.Buy/Sell
+        // Fast path: plain market + default TIF + no bracket/OCO/stack + direct qty sizing → emit Signal.Buy/Sell
         val isFastPath =
             (opts.orderType == null || opts.orderType == Market) &&
                 opts.tif == null &&
@@ -114,11 +119,6 @@ class ActionCompiler(
                 val sig = if (side == Side.BUY) Signal.Buy(symbol, v.v) else Signal.Sell(symbol, v.v)
                 listOf(sig)
             }
-        }
-
-        // Stack path: STACK is mutually exclusive with BRACKET/OCO on the same action.
-        if (opts.stack != null) {
-            return compileStack(stream, opts, side)
         }
 
         // Submit path: any non-trivial option → emit Signal.Submit(OrderRequest.X)
@@ -214,11 +214,10 @@ class ActionCompiler(
         opts: ActionOpts,
         side: Side,
     ): (EvalContext) -> List<Signal> {
-        val sizing = opts.sizing ?: error("BUY/SELL with STACK requires SIZING")
         val stackAst = opts.stack ?: error("unreachable")
         val tif = TifTranslator.translate(opts.tif)
         val staticStopDistance = resolveStaticStopDistance(opts.bracket?.stopLoss)
-        val plan = StackCompiler.compile(stackAst, sizing, opts.bracket)
+        val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket)
         // Pre-compile one CompiledSize per layer (they may share the same sizing AST for
         // StackSpacing, but compiling per-layer is cheap and avoids sharing mutable state).
         val compiledSizes =
