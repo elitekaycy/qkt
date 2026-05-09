@@ -206,6 +206,58 @@ class RoundTripEquivalenceTest {
     }
 
     @Test
+    fun `CANCEL round trips`() {
+        val parsed =
+            (
+                Dsl.parse(
+                    """
+                    STRATEGY t VERSION 1
+                    SYMBOLS
+                        btc = BACKTEST:BTCUSDT EVERY 1m
+                    RULES
+                        WHEN btc.close > 100
+                        THEN CANCEL btc
+                    """.trimIndent(),
+                ) as ParseResult.Success
+            ).value
+        val handwritten =
+            strategy("t", 1) {
+                val btc = stream("btc", "BACKTEST", "BTCUSDT", "1m")
+                rule {
+                    whenever(btc.close gt 100.bd)
+                    then { cancelStream(btc) }
+                }
+            }
+        assertThat(parsed).isEqualTo(handwritten)
+    }
+
+    @Test
+    fun `CANCEL_ALL round trips`() {
+        val parsed =
+            (
+                Dsl.parse(
+                    """
+                    STRATEGY t VERSION 1
+                    SYMBOLS
+                        btc = BACKTEST:BTCUSDT EVERY 1m
+                    RULES
+                        WHEN btc.close < 50
+                        THEN CANCEL_ALL
+                    """.trimIndent(),
+                ) as ParseResult.Success
+            ).value
+        val handwritten =
+            strategy("t", 1) {
+                val btc = stream("btc", "BACKTEST", "BTCUSDT", "1m")
+                rule {
+                    whenever(btc.close lt 50.bd)
+                    then { cancelAll() }
+                }
+            }
+        assertThat(parsed).isEqualTo(handwritten)
+    }
+
+    @Test
     fun `STACK layer-list round trips`() {
         val parsed =
             (
