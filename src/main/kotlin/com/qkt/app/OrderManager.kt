@@ -679,6 +679,14 @@ class OrderManager(
             handleTimeExitExpiry(te)
         }
 
+        val nowEpoch = clock.now()
+        for (state in stacks.all()) {
+            val deadline = state.deadlineEpochMs ?: continue
+            if (nowEpoch < deadline) continue
+            cancelStackPending(state.id)
+            stacks.terminate(state.id)
+        }
+
         val triggered: List<ManagedOrder> =
             orders.values
                 .filter { it.state == OrderState.PENDING }

@@ -355,4 +355,63 @@ class OrderManagerStackTest {
             }
         assertThat(pendingRemain).isEmpty()
     }
+
+    @Test
+    fun `WITHIN deadline cancels pending layers`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val plan =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                        LayerSpec(
+                            2,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            com.qkt.dsl.ast.Market,
+                            At(
+                                BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("100"))),
+                                StackDirection.TRADE_DIRECTION,
+                            ),
+                        ),
+                    ),
+                withinMillis = 60_000L,
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-w",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.2"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l1",
+                brokerOrderId = "b1",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                price = BigDecimal("50000"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+        assertThat(manager.pendingOrders()).hasSize(1)
+
+        // Advance simulated clock past deadline and tick.
+        clock.time += 60_001L
+        bus.publish(
+            TickEvent(
+                tick = Tick("BTCUSDT", BigDecimal("50050"), clock.now()),
+            ),
+        )
+        assertThat(manager.pendingOrders()).isEmpty()
+    }
 }
