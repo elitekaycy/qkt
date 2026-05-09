@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackDirection
+import java.math.BigDecimal
 
 data class StackPlan(
     val layers: List<LayerSpec>,
@@ -21,6 +22,10 @@ data class LayerSpec(
     val sizing: SizingAst,
     val orderType: OrderTypeAst,
     val trigger: LayerTrigger,
+    // Quantity resolved at action-execute time by ActionCompiler. Null for manually-built
+    // LayerSpec instances (e.g., in tests) that use SizeQty(NumLit) and rely on the
+    // OrderManager literal fallback.
+    val resolvedQuantity: BigDecimal? = null,
 )
 
 sealed interface LayerTrigger

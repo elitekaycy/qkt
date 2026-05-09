@@ -13,6 +13,7 @@ import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
+import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.StackDirection
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.events.BrokerEvent
@@ -472,5 +473,44 @@ class OrderManagerStackTest {
         assertThat(manager.pendingOrders()).hasSize(2)
         manager.cancel("stk-c")
         assertThat(manager.pendingOrders()).isEmpty()
+    }
+
+    @Test
+    fun `resolvedQuantity on LayerSpec is used directly, bypassing SizeQty literal fallback`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        // SizeRiskFrac would normally error in OrderManager's literal fallback,
+        // but resolvedQuantity short-circuits to the pre-resolved value.
+        val preResolved = BigDecimal("0.05")
+        val plan =
+            StackPlan(
+                listOf(
+                    LayerSpec(
+                        index = 1,
+                        sizing = SizeRiskFrac(NumLit(BigDecimal("0.01"))),
+                        orderType = com.qkt.dsl.ast.Market,
+                        trigger = Immediate,
+                        resolvedQuantity = preResolved,
+                    ),
+                ),
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-resolved",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = preResolved,
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+
+        assertThat(broker.submits).hasSize(1)
+        assertThat(broker.submits[0].quantity).isEqualByComparingTo(preResolved)
     }
 }

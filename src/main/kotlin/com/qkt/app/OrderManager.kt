@@ -388,12 +388,21 @@ class OrderManager(
         }
 
     private fun resolveLayerQuantity(layer: LayerSpec): BigDecimal {
+        layer.resolvedQuantity?.let { return it }
+        // Fallback: supports test code that builds LayerSpec by hand without going through
+        // ActionCompiler. Only literal-qty sizing is supported in this path.
         val sizing = layer.sizing
         if (sizing is SizeQty) {
-            val n = sizing.expr as? NumLit ?: error("STACK layer qty must be a literal in v1")
+            val n =
+                sizing.expr as? NumLit
+                    ?: error("STACK layer qty must be a literal in tests that bypass ActionCompiler")
             return n.value
         }
-        error("non-quantity sizing per layer is wired in a later task")
+        error(
+            "STACK non-qty sizing (RISK/NOTIONAL/EQUITY%/BALANCE%) requires resolution by ActionCompiler. " +
+                "If building LayerSpec manually for testing, use SizeQty(NumLit). " +
+                "If reaching this in production, ActionCompiler did not populate LayerSpec.resolvedQuantity.",
+        )
     }
 
     private fun buildLayerOrder(
