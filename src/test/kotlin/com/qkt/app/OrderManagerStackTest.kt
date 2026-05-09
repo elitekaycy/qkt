@@ -414,4 +414,63 @@ class OrderManagerStackTest {
         )
         assertThat(manager.pendingOrders()).isEmpty()
     }
+
+    @Test
+    fun `external cancel of stack id cancels its pending layers`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val plan =
+            StackPlan(
+                listOf(
+                    LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                    LayerSpec(
+                        2,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        com.qkt.dsl.ast.Market,
+                        At(
+                            BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("100"))),
+                            StackDirection.TRADE_DIRECTION,
+                        ),
+                    ),
+                    LayerSpec(
+                        3,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        com.qkt.dsl.ast.Market,
+                        At(
+                            BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("200"))),
+                            StackDirection.TRADE_DIRECTION,
+                        ),
+                    ),
+                ),
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-c",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.3"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l1",
+                brokerOrderId = "b1",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                price = BigDecimal("50000"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+        assertThat(manager.pendingOrders()).hasSize(2)
+        manager.cancel("stk-c")
+        assertThat(manager.pendingOrders()).isEmpty()
+    }
 }

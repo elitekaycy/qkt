@@ -83,6 +83,14 @@ class OrderManager(
     fun cancel(clientOrderId: String) {
         val managed = orders[clientOrderId] ?: return
         if (managed.state.isTerminal) return
+        if (managed.request is OrderRequest.Stack) {
+            stacks.get(clientOrderId)?.let { state ->
+                for (pid in state.pendingLayerIds.toList()) cancel(pid)
+            }
+            stacks.terminate(clientOrderId)
+            update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
+            return
+        }
         if (managed.childClientOrderIds.isNotEmpty()) {
             for (childId in managed.childClientOrderIds) cancel(childId)
             update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
