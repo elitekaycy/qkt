@@ -233,6 +233,21 @@ sealed interface OrderRequest {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
         }
     }
+
+    data class Stack(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val plan: StackPlan,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+        override val strategyId: String = "",
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+        }
+    }
 }
 
 fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
@@ -249,4 +264,5 @@ fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
         is OrderRequest.Bracket -> copy(strategyId = strategyId)
         is OrderRequest.ScaleOut -> copy(strategyId = strategyId)
         is OrderRequest.TimeExit -> copy(strategyId = strategyId)
+        is OrderRequest.Stack -> copy(strategyId = strategyId)
     }
