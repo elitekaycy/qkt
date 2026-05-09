@@ -103,15 +103,23 @@ class OrderManager(
         }
     }
 
-    fun cancelStacksForSymbol(symbol: String) {
-        val toCancel =
+    fun cancelPendingForSymbol(symbol: String) {
+        // Cancel pending stacks targeting this symbol.
+        val stackIds =
             stacks
                 .all()
                 .filter { state ->
                     val managed = orders[state.id] ?: return@filter false
                     (managed.request as? OrderRequest.Stack)?.symbol == symbol
                 }.map { it.id }
-        for (id in toCancel) cancel(id)
+        for (id in stackIds) cancel(id)
+        // Cancel any remaining (non-stack) pending orders for the symbol that aren't already
+        // children of a stack we just cancelled.
+        val pending =
+            orders.values
+                .filter { it.state == OrderState.PENDING && it.request.symbol == symbol }
+                .map { it.id }
+        for (id in pending) cancel(id)
     }
 
     fun getOrder(clientOrderId: String): ManagedOrder? = orders[clientOrderId]

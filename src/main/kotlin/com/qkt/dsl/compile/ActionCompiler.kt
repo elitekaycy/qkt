@@ -61,7 +61,7 @@ class ActionCompiler(
             val out = mutableListOf<Signal>()
             for (streamAlias in ctx.streams.keys) {
                 val sym = ctx.streams[streamAlias]?.symbol ?: continue
-                out.add(Signal.CancelStacksForSymbol(sym))
+                out.add(Signal.CancelPendingForSymbol(sym))
             }
             for ((symbol, position) in ctx.strategyContext.positions.allPositions()) {
                 val qty = position.quantity
@@ -81,7 +81,7 @@ class ActionCompiler(
                     .positionFor(symbol)
                     ?.quantity ?: BigDecimal.ZERO
             val signals = mutableListOf<Signal>()
-            signals.add(Signal.CancelStacksForSymbol(symbol))
+            signals.add(Signal.CancelPendingForSymbol(symbol))
             when {
                 qty.signum() > 0 -> signals.add(Signal.Sell(symbol, qty))
                 qty.signum() < 0 -> signals.add(Signal.Buy(symbol, qty.abs()))

@@ -811,7 +811,7 @@ class OrderManagerStackTest {
     }
 
     @Test
-    fun `cancelStacksForSymbol cancels all stacks targeting that symbol`() {
+    fun `cancelPendingForSymbol cancels all stacks targeting that symbol`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
         val broker =
@@ -856,7 +856,7 @@ class OrderManagerStackTest {
             ),
         )
         assertThat(manager.pendingOrders()).isNotEmpty
-        manager.cancelStacksForSymbol("BTCUSDT")
+        manager.cancelPendingForSymbol("BTCUSDT")
         assertThat(manager.pendingOrders()).isEmpty()
     }
 

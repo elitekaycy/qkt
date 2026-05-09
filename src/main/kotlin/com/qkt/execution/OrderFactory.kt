@@ -31,5 +31,5 @@ fun Signal.toOrderRequest(
                 strategyId = strategyId,
             )
         is Signal.Submit -> request.withStrategyId(strategyId)
-        is Signal.CancelStacksForSymbol -> null
+        is Signal.CancelPendingForSymbol -> null
     }

@@ -192,7 +192,7 @@ class StackBacktestTest {
                         val qty = pos.quantity
                         emit(
                             com.qkt.strategy.Signal
-                                .CancelStacksForSymbol("btcusdt"),
+                                .CancelPendingForSymbol("btcusdt"),
                         )
                         if (qty.signum() > 0) {
                             emit(

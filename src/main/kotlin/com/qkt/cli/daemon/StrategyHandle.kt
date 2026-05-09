@@ -190,7 +190,7 @@ class StrategyHandle(
                         put("symbol", JsonPrimitive(sig.request.symbol))
                         put("size", JsonPrimitive(sig.request.quantity.toPlainString()))
                     }
-                    is com.qkt.strategy.Signal.CancelStacksForSymbol -> {
+                    is com.qkt.strategy.Signal.CancelPendingForSymbol -> {
                         put("kind", JsonPrimitive("cancel_stacks"))
                         put("symbol", JsonPrimitive(sig.symbol))
                     }
