@@ -28,6 +28,12 @@ enum class TokenKind {
     WITHIN,
     DURATION,
 
+    PORTFOLIO,
+    IMPORT,
+    AS,
+    RUN,
+    HOLD,
+
     MARKET,
     LIMIT,
     STOP,
