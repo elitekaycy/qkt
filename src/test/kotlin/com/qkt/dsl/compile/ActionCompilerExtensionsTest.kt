@@ -70,6 +70,8 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ec)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
+                .CancelStacksForSymbol("BTCUSDT"),
+            com.qkt.strategy.Signal
                 .Sell("BTCUSDT", BigDecimal("2.5")),
         )
     }
@@ -102,19 +104,24 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ec)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
+                .CancelStacksForSymbol("BTCUSDT"),
+            com.qkt.strategy.Signal
                 .Buy("BTCUSDT", BigDecimal("1.5")),
         )
     }
 
     @Test
-    fun `CLOSE on flat emits no signals`() {
+    fun `CLOSE on flat emits only stack cancellation`() {
         val sigs =
             ActionCompiler(ExprCompiler(), logger)
                 .compile(
                     com.qkt.dsl.ast
                         .Close("btc"),
                 ).invoke(ctx)
-        assertThat(sigs).isEmpty()
+        assertThat(sigs).containsExactly(
+            com.qkt.strategy.Signal
+                .CancelStacksForSymbol("BTCUSDT"),
+        )
     }
 
     @Test
@@ -163,6 +170,8 @@ class ActionCompilerExtensionsTest {
                 .compile(com.qkt.dsl.ast.CloseAll)
                 .invoke(ec)
         assertThat(sigs).containsExactlyInAnyOrder(
+            com.qkt.strategy.Signal
+                .CancelStacksForSymbol("BTCUSDT"),
             com.qkt.strategy.Signal
                 .Sell("BTCUSDT", BigDecimal("2")),
             com.qkt.strategy.Signal

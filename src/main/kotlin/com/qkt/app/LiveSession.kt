@@ -155,6 +155,9 @@ class LiveSession(
                 terminated.await(timeout.toMillis(), TimeUnit.MILLISECONDS)
 
             override fun recentTrades(): List<Trade> = trades.toList()
+
+            override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
+                pipeline.orderManager.pendingStackLayerInfos()
         }
     }
 }

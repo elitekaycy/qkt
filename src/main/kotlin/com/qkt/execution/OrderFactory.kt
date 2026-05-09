@@ -8,7 +8,7 @@ fun Signal.toOrderRequest(
     ts: Long,
     timeInForce: TimeInForce = TimeInForce.GTC,
     strategyId: String = "",
-): OrderRequest =
+): OrderRequest? =
     when (this) {
         is Signal.Buy ->
             OrderRequest.Market(
@@ -31,4 +31,5 @@ fun Signal.toOrderRequest(
                 strategyId = strategyId,
             )
         is Signal.Submit -> request.withStrategyId(strategyId)
+        is Signal.CancelStacksForSymbol -> null
     }

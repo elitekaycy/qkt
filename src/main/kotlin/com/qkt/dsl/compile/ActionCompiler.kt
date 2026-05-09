@@ -1,10 +1,13 @@
 package com.qkt.dsl.compile
 
 import com.qkt.common.IdGenerator
+import com.qkt.common.Money
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
+import com.qkt.dsl.ast.BinOp
+import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
@@ -12,11 +15,14 @@ import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
+import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
+import com.qkt.dsl.ast.StackEntryRef
+import com.qkt.execution.At
 import com.qkt.execution.OrderRequest
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
@@ -53,6 +59,10 @@ class ActionCompiler(
     private fun compileCloseAll(): (EvalContext) -> List<Signal> =
         { ctx ->
             val out = mutableListOf<Signal>()
+            for (streamAlias in ctx.streams.keys) {
+                val sym = ctx.streams[streamAlias]?.symbol ?: continue
+                out.add(Signal.CancelStacksForSymbol(sym))
+            }
             for ((symbol, position) in ctx.strategyContext.positions.allPositions()) {
                 val qty = position.quantity
                 when {
@@ -70,11 +80,13 @@ class ActionCompiler(
                 ctx.strategyContext.positions
                     .positionFor(symbol)
                     ?.quantity ?: BigDecimal.ZERO
+            val signals = mutableListOf<Signal>()
+            signals.add(Signal.CancelStacksForSymbol(symbol))
             when {
-                qty.signum() > 0 -> listOf(Signal.Sell(symbol, qty))
-                qty.signum() < 0 -> listOf(Signal.Buy(symbol, qty.abs()))
-                else -> emptyList()
+                qty.signum() > 0 -> signals.add(Signal.Sell(symbol, qty))
+                qty.signum() < 0 -> signals.add(Signal.Buy(symbol, qty.abs()))
             }
+            signals
         }
 
     private fun compileLog(log: Log): (EvalContext) -> List<Signal> {
@@ -90,9 +102,14 @@ class ActionCompiler(
         opts: ActionOpts,
         side: Side,
     ): (EvalContext) -> List<Signal> {
+        // Stack path: STACK is mutually exclusive with BRACKET/OCO on the same action.
+        if (opts.stack != null) {
+            return compileStack(stream, opts, side)
+        }
+
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING")
 
-        // Fast path: plain market + default TIF + no bracket/OCO + direct qty sizing → emit Signal.Buy/Sell
+        // Fast path: plain market + default TIF + no bracket/OCO/stack + direct qty sizing → emit Signal.Buy/Sell
         val isFastPath =
             (opts.orderType == null || opts.orderType == Market) &&
                 opts.tif == null &&
@@ -197,6 +214,82 @@ class ActionCompiler(
             listOf(Signal.Submit(request))
         }
     }
+
+    private fun compileStack(
+        stream: String,
+        opts: ActionOpts,
+        side: Side,
+    ): (EvalContext) -> List<Signal> {
+        val stackAst = opts.stack ?: error("unreachable")
+        val tif = TifTranslator.translate(opts.tif)
+        val staticStopDistance = resolveStaticStopDistance(opts.bracket?.stopLoss)
+        val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket, side)
+        // Pre-compile one CompiledSize per layer (they may share the same sizing AST for
+        // StackSpacing, but compiling per-layer is cheap and avoids sharing mutable state).
+        val compiledSizes =
+            plan.layers.map { layer ->
+                sizingCompiler.compile(layer.sizing, staticStopDistance)
+            }
+
+        return { ctx ->
+            val symbol = ctx.streams[stream]?.symbol ?: error("Unknown stream alias: $stream")
+            val ts = ctx.strategyContext.clock.now()
+            val currentPrice = ctx.candle.close
+
+            // Resolve each layer's quantity now, using the candle close as the entry proxy.
+            // Approximation: equity/balance at action-execute time may differ from fire time.
+            // For risk-fraction strategies the difference is negligible tick-to-tick.
+            val resolvedLayers =
+                plan.layers.mapIndexed { idx, layer ->
+                    val expectedEntry =
+                        if (layer.trigger == com.qkt.execution.Immediate) {
+                            currentPrice
+                        } else {
+                            val at = layer.trigger as At
+                            evaluateLayerTriggerPrice(at.price, currentPrice)
+                        }
+                    val qty = compiledSizes[idx].evaluate(ctx, expectedEntry)
+                    layer.copy(resolvedQuantity = qty)
+                }
+            val resolvedPlan = plan.copy(layers = resolvedLayers)
+            val totalQty = resolvedLayers.sumOf { it.resolvedQuantity!! }
+
+            val req =
+                OrderRequest.Stack(
+                    id = ids.next(),
+                    symbol = symbol,
+                    side = side,
+                    quantity = totalQty.max(BigDecimal.ONE.movePointLeft(Money.SCALE)),
+                    plan = resolvedPlan,
+                    timeInForce = tif,
+                    timestamp = ts,
+                )
+            listOf(Signal.Submit(req))
+        }
+    }
+
+    // Evaluates a layer trigger expression using currentPrice as the anchor proxy.
+    // Mirrors OrderManager.evaluateAt but lives here for compile-time resolution.
+    private fun evaluateLayerTriggerPrice(
+        expr: ExprAst,
+        anchor: BigDecimal,
+    ): BigDecimal =
+        when (expr) {
+            is StackEntryRef -> anchor
+            is NumLit -> expr.value
+            is BinaryOp -> {
+                val l = evaluateLayerTriggerPrice(expr.lhs, anchor)
+                val r = evaluateLayerTriggerPrice(expr.rhs, anchor)
+                when (expr.op) {
+                    BinOp.ADD -> l + r
+                    BinOp.SUB -> l - r
+                    BinOp.MUL -> l * r
+                    BinOp.DIV -> l.divide(r, Money.CONTEXT)
+                    else -> error("unsupported op in stack trigger: ${expr.op}")
+                }
+            }
+            else -> error("unsupported trigger expression type: ${expr::class.simpleName}")
+        }
 
     private fun resolveStaticStopDistance(stop: ChildPriceAst?): BigDecimal? =
         when (stop) {

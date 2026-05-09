@@ -6,6 +6,7 @@ data class ActionOpts(
     val tif: TifAst? = null,
     val bracket: BracketAst? = null,
     val oco: OcoAst? = null,
+    val stack: StackAst? = null,
 )
 
 sealed interface SizingAst

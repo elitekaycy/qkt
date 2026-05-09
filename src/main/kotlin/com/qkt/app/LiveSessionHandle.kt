@@ -12,4 +12,6 @@ interface LiveSessionHandle {
     fun awaitTermination(timeout: Duration): Boolean
 
     fun recentTrades(): List<Trade>
+
+    fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo>
 }

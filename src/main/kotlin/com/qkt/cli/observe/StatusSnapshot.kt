@@ -50,6 +50,15 @@ data class TradeDto(
 )
 
 @Serializable
+data class PendingStackLayer(
+    val stackId: String,
+    val layer: Int,
+    @Serializable(with = BigDecimalAsNumberSerializer::class) val triggerPrice: BigDecimal,
+    val side: String,
+    @Serializable(with = BigDecimalAsNumberSerializer::class) val quantity: BigDecimal,
+)
+
+@Serializable
 data class StatusSnapshot(
     val strategy: String,
     val version: Int,
@@ -61,4 +70,5 @@ data class StatusSnapshot(
     @Serializable(with = BigDecimalAsNumberSerializer::class) val unrealized: BigDecimal,
     val positions: List<PositionDto>,
     val lastTrade: TradeDto?,
+    val pendingStackLayers: List<PendingStackLayer> = emptyList(),
 )

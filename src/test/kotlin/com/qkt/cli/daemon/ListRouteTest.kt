@@ -46,6 +46,9 @@ class ListRouteTest {
                     override fun awaitTermination(timeout: Duration): Boolean = true
 
                     override fun recentTrades(): List<Trade> = emptyList()
+
+                    override fun pendingStackLayerInfos(): List<com.qkt.app.OrderManager.PendingStackLayerInfo> =
+                        emptyList()
                 }
             val server =
                 ObservabilityServer(

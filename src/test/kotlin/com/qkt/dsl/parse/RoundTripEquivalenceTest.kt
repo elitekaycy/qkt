@@ -1,16 +1,24 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.StackDirection
 import com.qkt.dsl.kotlin.SYMBOL
 import com.qkt.dsl.kotlin.and
 import com.qkt.dsl.kotlin.bd
 import com.qkt.dsl.kotlin.childBy
 import com.qkt.dsl.kotlin.childRr
+import com.qkt.dsl.kotlin.duration
+import com.qkt.dsl.kotlin.entryPrice
 import com.qkt.dsl.kotlin.gt
+import com.qkt.dsl.kotlin.layer
 import com.qkt.dsl.kotlin.lt
+import com.qkt.dsl.kotlin.plus
 import com.qkt.dsl.kotlin.position
 import com.qkt.dsl.kotlin.positionFull
+import com.qkt.dsl.kotlin.stack
+import com.qkt.dsl.kotlin.stackOf
 import com.qkt.dsl.kotlin.strategy
 import java.math.BigDecimal
 import java.nio.file.Path
@@ -154,6 +162,85 @@ class RoundTripEquivalenceTest {
                             .AccountRef("equity") lt BigDecimal("9500").bd,
                     )
                     then { closeAll() }
+                }
+            }
+        assertThat(parsed).isEqualTo(handwritten)
+    }
+
+    @Test
+    fun `STACK SPACING round trips`() {
+        val parsed =
+            (
+                Dsl.parse(
+                    """
+                    STRATEGY t VERSION 1
+                    SYMBOLS
+                        btc = BACKTEST:BTCUSDT EVERY 1m
+                    RULES
+                        WHEN btc.close > 100
+                        THEN BUY btc SIZING 0.1 STACK 3 SPACING 100 ABOVE WITHIN 1h
+                    """.trimIndent(),
+                ) as ParseResult.Success
+            ).value
+        val handwritten =
+            strategy("t", 1) {
+                val btc = stream("btc", "BACKTEST", "BTCUSDT", "1m")
+                rule {
+                    whenever(btc.close gt 100.bd)
+                    then {
+                        buy(
+                            stream = btc,
+                            qty = "0.1".bd,
+                            stack =
+                                stack(
+                                    count = 3,
+                                    spacing = NumLit(BigDecimal("100")),
+                                    direction = StackDirection.ABOVE,
+                                    within = duration("1h"),
+                                ),
+                        )
+                    }
+                }
+            }
+        assertThat(parsed).isEqualTo(handwritten)
+    }
+
+    @Test
+    fun `STACK layer-list round trips`() {
+        val parsed =
+            (
+                Dsl.parse(
+                    """
+                    STRATEGY t VERSION 1
+                    SYMBOLS
+                        btc = BACKTEST:BTCUSDT EVERY 1m
+                    RULES
+                        WHEN btc.close > 100
+                        THEN BUY btc STACK [ 0.1, 0.2 AT entry + 100, 0.3 LIMIT AT entry + 200 ]
+                    """.trimIndent(),
+                ) as ParseResult.Success
+            ).value
+        val limitExpr = entryPrice + NumLit(BigDecimal("200"))
+        val handwritten =
+            strategy("t", 1) {
+                val btc = stream("btc", "BACKTEST", "BTCUSDT", "1m")
+                rule {
+                    whenever(btc.close gt 100.bd)
+                    then {
+                        buy(
+                            stream = btc,
+                            stack =
+                                stackOf(
+                                    layer(qty = NumLit(BigDecimal("0.1"))),
+                                    layer(qty = NumLit(BigDecimal("0.2")), at = entryPrice + NumLit(BigDecimal("100"))),
+                                    layer(
+                                        qty = NumLit(BigDecimal("0.3")),
+                                        orderType = Limit(limitExpr),
+                                        at = limitExpr,
+                                    ),
+                                ),
+                        )
+                    }
                 }
             }
         assertThat(parsed).isEqualTo(handwritten)
