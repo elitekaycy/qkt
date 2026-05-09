@@ -90,6 +90,33 @@ class Parser(
     private val errors = mutableListOf<ParseError>()
     private var inStackLayerAt: Boolean = false
 
+    fun parseFile(): ParseResult<ParsedFile> =
+        when (peek().kind) {
+            TokenKind.STRATEGY ->
+                when (val r = parseStrategy()) {
+                    is ParseResult.Success -> ParseResult.Success(ParsedFile.StrategyFile(r.value))
+                    is ParseResult.Failure -> ParseResult.Failure(r.errors)
+                }
+            TokenKind.PORTFOLIO ->
+                when (val r = parsePortfolio()) {
+                    is ParseResult.Success -> ParseResult.Success(ParsedFile.PortfolioFile(r.value))
+                    is ParseResult.Failure -> ParseResult.Failure(r.errors)
+                }
+            else ->
+                ParseResult.Failure(
+                    listOf(
+                        ParseError(
+                            line = peek().line,
+                            col = peek().col,
+                            message = "expected STRATEGY or PORTFOLIO at file start, got '${peek().lexeme}'",
+                        ),
+                    ),
+                )
+        }
+
+    internal fun parsePortfolio(): ParseResult<com.qkt.dsl.ast.PortfolioAst> =
+        ParseResult.Failure(listOf(ParseError(line = 0, col = 0, message = "parsePortfolio: implemented in Task 10")))
+
     fun parseStrategy(): ParseResult<StrategyAst> {
         var name = "_unparsed"
         var version = 0
