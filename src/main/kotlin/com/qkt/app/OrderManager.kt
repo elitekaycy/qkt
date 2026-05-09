@@ -60,6 +60,7 @@ class OrderManager(
         bus.subscribe<BrokerEvent.OrderRejected> { e -> onRejected(e) }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> onFilled(e) }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> onStackLayerFilled(e) }
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> evaluateStackFlat(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> onPartiallyFilled(e) }
         bus.subscribe<BrokerEvent.OrderCancelled> { e -> onCancelled(e) }
         bus.subscribe<TickEvent> { e -> evaluateTriggers(e.tick) }
@@ -233,7 +234,101 @@ class OrderManager(
         if (state.layerOneOrderId == e.clientOrderId && state.anchor == null) {
             stacks.setAnchor(owner, e.price, clock.now())
             materializePendingLayers(owner, anchor = e.price)
+            attachLayerSl(owner, e.clientOrderId, e.price)
         }
+    }
+
+    private fun attachLayerSl(
+        stackId: String,
+        layerOrderId: String,
+        fillPrice: BigDecimal,
+    ) {
+        val state = stacks.get(stackId) ?: return
+        val slAst = state.outerBracket?.stopLoss ?: return
+        val parent =
+            (orders[stackId]?.request as? OrderRequest.Stack)
+                ?: return
+        val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
+        val slPrice =
+            when (slAst) {
+                is com.qkt.dsl.ast.ChildBy ->
+                    if (parent.side == Side.BUY) {
+                        fillPrice - evaluateAt(slAst.distance, fillPrice)
+                    } else {
+                        fillPrice + evaluateAt(slAst.distance, fillPrice)
+                    }
+                is com.qkt.dsl.ast.ChildAt -> evaluateAt((slAst.price), fillPrice)
+                is com.qkt.dsl.ast.ChildPct -> {
+                    val dist = fillPrice.multiply(evaluateAt(slAst.frac, fillPrice), Money.CONTEXT)
+                    if (parent.side == Side.BUY) fillPrice - dist else fillPrice + dist
+                }
+                else -> return
+            }
+        val layerEntry = orders[layerOrderId] ?: return
+        val slId = "$layerOrderId-sl"
+        val slReq =
+            OrderRequest.Stop(
+                id = slId,
+                symbol = parent.symbol,
+                side = exitSide,
+                quantity =
+                    layerEntry.cumulativeFilledQuantity.takeIf { it.signum() > 0 }
+                        ?: layerEntry.request.quantity,
+                stopPrice = slPrice.setScale(Money.SCALE, Money.ROUNDING),
+                timeInForce = parent.timeInForce,
+                timestamp = clock.now(),
+                strategyId = parent.strategyId,
+            )
+        val now = clock.now()
+        track(
+            ManagedOrder(
+                id = slId,
+                request = slReq,
+                state = OrderState.CREATED,
+                parentClientOrderId = layerOrderId,
+                createdAt = now,
+                lastUpdatedAt = now,
+            ),
+        )
+        update(layerOrderId) {
+            it.copy(childClientOrderIds = it.childClientOrderIds + slId, lastUpdatedAt = now)
+        }
+        dispatch(slReq)
+    }
+
+    private fun evaluateStackFlat(e: BrokerEvent.OrderFilled) {
+        val managed = orders[e.clientOrderId] ?: return
+        val directParentId = managed.parentClientOrderId ?: return
+        val stackId = walkToStackOwner(directParentId) ?: return
+        // Layer entry fills (direct children of the stack) are handled by onStackLayerFilled.
+        if (directParentId == stackId) return
+        val state = stacks.get(stackId) ?: return
+        val openLayers =
+            state.filledLayerIds.count { lid ->
+                val m = orders[lid] ?: return@count false
+                !m.state.isTerminal
+            }
+        if (openLayers == 0 && state.filledLayerIds.isNotEmpty()) {
+            cancelStackPending(stackId)
+            stacks.terminate(stackId)
+        }
+    }
+
+    private fun walkToStackOwner(orderId: String): String? {
+        var cursor: String? = orderId
+        var depth = 0
+        while (cursor != null && depth < 5) {
+            val m = orders[cursor] ?: return null
+            if (m.request is OrderRequest.Stack) return m.id
+            cursor = m.parentClientOrderId
+            depth++
+        }
+        return null
+    }
+
+    private fun cancelStackPending(stackId: String) {
+        val state = stacks.get(stackId) ?: return
+        for (pid in state.pendingLayerIds.toList()) cancel(pid)
     }
 
     private fun materializePendingLayers(
