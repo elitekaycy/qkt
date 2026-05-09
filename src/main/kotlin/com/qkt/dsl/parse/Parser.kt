@@ -114,8 +114,92 @@ class Parser(
                 )
         }
 
-    internal fun parsePortfolio(): ParseResult<com.qkt.dsl.ast.PortfolioAst> =
-        ParseResult.Failure(listOf(ParseError(line = 0, col = 0, message = "parsePortfolio: implemented in Task 10")))
+    internal fun parsePortfolio(): ParseResult<com.qkt.dsl.ast.PortfolioAst> {
+        var name = "_unparsed"
+        var version = 0
+        try {
+            expect(TokenKind.PORTFOLIO, "expected PORTFOLIO")
+            name = expect(TokenKind.IDENT, "expected portfolio name").lexeme
+            expect(TokenKind.VERSION, "expected VERSION")
+            val v = expect(TokenKind.NUMBER, "expected integer version")
+            version = v.lexeme.toIntOrNull() ?: error("VERSION must be an integer, got '${v.lexeme}'")
+        } catch (_: ParseException) {
+            synchronize()
+        }
+
+        val streams =
+            if (peek().kind == TokenKind.SYMBOLS) {
+                tryParse { parseSymbols() } ?: emptyList()
+            } else {
+                emptyList()
+            }
+
+        val imports = mutableListOf<com.qkt.dsl.ast.ImportClause>()
+        while (peek().kind == TokenKind.IMPORT) {
+            tryParse { parseImport() }?.let { imports.add(it) }
+        }
+
+        val rules = mutableListOf<com.qkt.dsl.ast.PortfolioRule>()
+        if (peek().kind == TokenKind.RULES) {
+            advance()
+            while (peek().kind == TokenKind.WHEN || peek().kind == TokenKind.RUN) {
+                tryParse { parsePortfolioRule() }?.let { rules.add(it) }
+            }
+        }
+
+        if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
+        return try {
+            ParseResult.Success(
+                com.qkt.dsl.ast
+                    .PortfolioAst(name, version, streams, imports, rules),
+            )
+        } catch (e: IllegalArgumentException) {
+            ParseResult.Failure(
+                listOf(
+                    ParseError(
+                        line = 0,
+                        col = 0,
+                        message = e.message ?: "PORTFOLIO validation failed",
+                    ),
+                ),
+            )
+        }
+    }
+
+    internal fun parseImport(): com.qkt.dsl.ast.ImportClause {
+        expect(TokenKind.IMPORT, "expected IMPORT")
+        val pathTok = expect(TokenKind.STRING, "expected import path string")
+        expect(TokenKind.AS, "expected AS after import path")
+        val alias = expect(TokenKind.IDENT, "expected alias").lexeme
+        val hold =
+            if (peek().kind == TokenKind.HOLD) {
+                advance()
+                true
+            } else {
+                false
+            }
+        return com.qkt.dsl.ast
+            .ImportClause(path = pathTok.lexeme, alias = alias, hold = hold)
+    }
+
+    internal fun parsePortfolioRule(): com.qkt.dsl.ast.PortfolioRule =
+        when (peek().kind) {
+            TokenKind.WHEN -> {
+                advance()
+                val cond = parseExpr()
+                expect(TokenKind.RUN, "expected RUN after WHEN expression")
+                val alias = expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
+                com.qkt.dsl.ast
+                    .WhenRun(cond, alias)
+            }
+            TokenKind.RUN -> {
+                advance()
+                val alias = expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
+                com.qkt.dsl.ast
+                    .AlwaysRun(alias)
+            }
+            else -> error("expected WHEN or RUN, got '${peek().lexeme}'")
+        }
 
     fun parseStrategy(): ParseResult<StrategyAst> {
         var name = "_unparsed"
