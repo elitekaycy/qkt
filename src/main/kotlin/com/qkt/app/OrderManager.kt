@@ -267,9 +267,10 @@ class OrderManager(
         }
         val slId = "${e.clientOrderId}-sl"
         val tpId = "${e.clientOrderId}-tp"
-        val hadSl = attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
-        val hadTp = attachLayerTp(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
-        if (hadSl && hadTp) {
+        val slDistance = attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
+        val hadTp =
+            attachLayerTp(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price, slDistance = slDistance)
+        if (slDistance != null && hadTp) {
             siblings[slId] = listOf(tpId)
             siblings[tpId] = listOf(slId)
         }
@@ -279,13 +280,13 @@ class OrderManager(
         stackId: String,
         layerOrderId: String,
         fillPrice: BigDecimal,
-    ): Boolean {
-        val state = stacks.get(stackId) ?: return false
-        val slAst = state.outerBracket?.stopLoss ?: return false
-        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return false
+    ): BigDecimal? {
+        val state = stacks.get(stackId) ?: return null
+        val slAst = state.outerBracket?.stopLoss ?: return null
+        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return null
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
         val slPrice = computeChildPrice(slAst, parent.side, fillPrice, isStopLoss = true)
-        val layerEntry = orders[layerOrderId] ?: return false
+        val layerEntry = orders[layerOrderId] ?: return null
         val slId = "$layerOrderId-sl"
         val slReq =
             OrderRequest.Stop(
@@ -315,18 +316,19 @@ class OrderManager(
             it.copy(childClientOrderIds = it.childClientOrderIds + slId, lastUpdatedAt = now)
         }
         dispatch(slReq)
-        return true
+        return (fillPrice - slPrice).abs()
     }
 
     private fun attachLayerTp(
         stackId: String,
         layerOrderId: String,
         fillPrice: BigDecimal,
+        slDistance: BigDecimal?,
     ): Boolean {
         val state = stacks.get(stackId) ?: return false
         val tpAst = state.outerBracket?.takeProfit ?: return false
         val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return false
-        val tpPrice = computeChildPrice(tpAst, parent.side, fillPrice, isStopLoss = false)
+        val tpPrice = computeChildPrice(tpAst, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
         val tpId = "$layerOrderId-tp"
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
         val tpReq =
@@ -363,6 +365,7 @@ class OrderManager(
         side: Side,
         fillPrice: BigDecimal,
         isStopLoss: Boolean,
+        slDistance: BigDecimal? = null,
     ): BigDecimal {
         val sign =
             if (side == Side.BUY) {
@@ -380,8 +383,15 @@ class OrderManager(
                 val distance = fillPrice.multiply(evaluateAt(childPrice.frac, fillPrice), Money.CONTEXT)
                 (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
             }
-            is com.qkt.dsl.ast.ChildRr ->
-                error("ChildRr is not supported in STACK outerBracket; wire risk metrics first")
+            is com.qkt.dsl.ast.ChildRr -> {
+                require(!isStopLoss) { "RR is only valid for TAKE PROFIT, not STOP LOSS" }
+                val sl =
+                    slDistance
+                        ?: error("ChildRr requires a resolvable STOP LOSS distance from outerBracket")
+                val multiplier = evaluateAt(childPrice.multiplier, fillPrice)
+                val distance = sl.multiply(multiplier, Money.CONTEXT)
+                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
+            }
         }
     }
 
