@@ -1,0 +1,4 @@
+PORTFOLIO simple VERSION 1
+IMPORT 'simple_child_strategy.qkt' AS child
+RULES
+    RUN child
