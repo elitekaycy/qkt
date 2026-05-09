@@ -80,6 +80,25 @@ class ParserPortfolioTest {
     }
 
     @Test
+    fun `PORTFOLIO with no imports rejected`() {
+        val failure = parsePortfolioFailure("PORTFOLIO empty VERSION 1")
+        assertThat(failure.errors.joinToString { it.message }).contains("at least one IMPORT")
+    }
+
+    @Test
+    fun `PORTFOLIO with duplicate import path rejected`() {
+        val failure =
+            parsePortfolioFailure(
+                """
+                PORTFOLIO dup VERSION 1
+                IMPORT 'same.qkt' AS x
+                IMPORT 'same.qkt' AS y
+                """.trimIndent(),
+            )
+        assertThat(failure.errors.joinToString { it.message }).contains("import paths must be unique")
+    }
+
+    @Test
     fun `PORTFOLIO unknown alias in RUN rejected`() {
         val failure =
             parsePortfolioFailure(
