@@ -15,6 +15,7 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackDirection
 import com.qkt.dsl.ast.StackEntryRef
+import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.At
 import com.qkt.execution.Immediate
@@ -138,6 +139,147 @@ class OrderManagerStackTest {
         )
 
         assertThat(broker.submits).anyMatch { it.id == "${req.id}-l2" }
+    }
+
+    @Test
+    fun `layer 2 fill attaches its own SL`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val plan =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                        LayerSpec(
+                            2,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            com.qkt.dsl.ast.Market,
+                            At(
+                                BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("100"))),
+                                StackDirection.TRADE_DIRECTION,
+                            ),
+                        ),
+                    ),
+                outerBracket =
+                    BracketAst(
+                        stopLoss = ChildBy(NumLit(BigDecimal("50"))),
+                    ),
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-l2sl",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.2"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+        broker.emitFill(broker.submits[0], price = Money.of("50000"))
+
+        // Layer 2 triggers and fills.
+        bus.publish(
+            TickEvent(
+                tick = Tick("BTCUSDT", BigDecimal("50100"), clock.now()),
+            ),
+        )
+        val l2Submit = broker.submits.first { it.id == "${req.id}-l2" }
+        broker.emitFill(l2Submit, price = BigDecimal("50100"))
+
+        // Both layer 1 and layer 2 should have SL orders attached.
+        assertThat(manager.activeOrders().any { it.id == "${req.id}-l1-sl" }).isTrue
+        assertThat(manager.activeOrders().any { it.id == "${req.id}-l2-sl" }).isTrue
+    }
+
+    @Test
+    fun `multi-layer flat detection requires all positions closed`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val plan =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                        LayerSpec(
+                            2,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            com.qkt.dsl.ast.Market,
+                            At(
+                                BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("100"))),
+                                StackDirection.TRADE_DIRECTION,
+                            ),
+                        ),
+                    ),
+                outerBracket =
+                    BracketAst(
+                        stopLoss = ChildBy(NumLit(BigDecimal("50"))),
+                    ),
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-mflat",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.2"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+        broker.emitFill(broker.submits[0], price = Money.of("50000"))
+
+        // Layer 2 triggers and fills.
+        bus.publish(
+            TickEvent(
+                tick = Tick("BTCUSDT", BigDecimal("50100"), clock.now()),
+            ),
+        )
+        val l2Submit = broker.submits.first { it.id == "${req.id}-l2" }
+        broker.emitFill(l2Submit, price = BigDecimal("50100"))
+
+        // Both SLs are now pending. Fire layer 1's SL directly to avoid tick triggering layer 2's SL.
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l1-sl",
+                brokerOrderId = "${req.id}-l1-sl",
+                symbol = "BTCUSDT",
+                side = Side.SELL,
+                price = BigDecimal("49950"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+
+        // Stack NOT terminated yet — layer 2's SL is still alive.
+        assertThat(manager.activeOrders().any { it.id == "${req.id}-l2-sl" }).isTrue
+
+        // Now fire layer 2's SL directly — stack should terminate.
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l2-sl",
+                brokerOrderId = "${req.id}-l2-sl",
+                symbol = "BTCUSDT",
+                side = Side.SELL,
+                price = BigDecimal("50050"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+
+        // Both SL orders are now terminal; no pending or working child orders remain.
+        assertThat(manager.activeOrders().none { it.id == "${req.id}-l1-sl" }).isTrue
+        assertThat(manager.activeOrders().none { it.id == "${req.id}-l2-sl" }).isTrue
+        assertThat(manager.activeOrders().none { it.id == "${req.id}-l1" }).isTrue
+        assertThat(manager.activeOrders().none { it.id == "${req.id}-l2" }).isTrue
     }
 
     @Test

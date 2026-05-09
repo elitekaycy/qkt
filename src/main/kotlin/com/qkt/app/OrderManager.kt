@@ -231,11 +231,13 @@ class OrderManager(
     private fun onStackLayerFilled(e: BrokerEvent.OrderFilled) {
         val owner = stacks.markFilled(e.clientOrderId) ?: return
         val state = stacks.get(owner) ?: return
+        // Anchor capture happens only on layer 1.
         if (state.layerOneOrderId == e.clientOrderId && state.anchor == null) {
             stacks.setAnchor(owner, e.price, clock.now())
             materializePendingLayers(owner, anchor = e.price)
-            attachLayerSl(owner, e.clientOrderId, e.price)
         }
+        // Attach SL for every filled layer (per-layer brackets, design D1).
+        attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
     }
 
     private fun attachLayerSl(
@@ -262,7 +264,9 @@ class OrderManager(
                     val dist = fillPrice.multiply(evaluateAt(slAst.frac, fillPrice), Money.CONTEXT)
                     if (parent.side == Side.BUY) fillPrice - dist else fillPrice + dist
                 }
-                else -> return
+                // TakeProfit attachment + OCO sibling cancellation are deferred to a future task.
+                // SL-only is a known v1 limitation.
+                else -> error("ChildRr is not supported in STACK outerBracket; wire risk metrics first")
             }
         val layerEntry = orders[layerOrderId] ?: return
         val slId = "$layerOrderId-sl"
@@ -298,32 +302,18 @@ class OrderManager(
 
     private fun evaluateStackFlat(e: BrokerEvent.OrderFilled) {
         val managed = orders[e.clientOrderId] ?: return
-        val directParentId = managed.parentClientOrderId ?: return
-        val stackId = walkToStackOwner(directParentId) ?: return
-        // Layer entry fills (direct children of the stack) are handled by onStackLayerFilled.
-        if (directParentId == stackId) return
+        // The fill is on an SL/TP closing a layer's position. Walk up to the layer-entry.
+        val parentId = managed.parentClientOrderId ?: return
+        // If parentId is the Stack itself, this is a layer-entry fill — handled by onStackLayerFilled.
+        val parent = orders[parentId] ?: return
+        if (parent.request is OrderRequest.Stack) return
+        // parentId is a layer-entry; this SL/TP fill closes its position. Record it.
+        val stackId = stacks.markLayerClosed(parentId) ?: return
         val state = stacks.get(stackId) ?: return
-        val openLayers =
-            state.filledLayerIds.count { lid ->
-                val m = orders[lid] ?: return@count false
-                !m.state.isTerminal
-            }
-        if (openLayers == 0 && state.filledLayerIds.isNotEmpty()) {
+        if (state.filledLayerIds.size == state.closedLayerIds.size && state.filledLayerIds.isNotEmpty()) {
             cancelStackPending(stackId)
             stacks.terminate(stackId)
         }
-    }
-
-    private fun walkToStackOwner(orderId: String): String? {
-        var cursor: String? = orderId
-        var depth = 0
-        while (cursor != null && depth < 5) {
-            val m = orders[cursor] ?: return null
-            if (m.request is OrderRequest.Stack) return m.id
-            cursor = m.parentClientOrderId
-            depth++
-        }
-        return null
     }
 
     private fun cancelStackPending(stackId: String) {

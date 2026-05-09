@@ -79,6 +79,15 @@ internal class StackTracker {
                     orderId == it.value.layerOneOrderId
             }?.key
 
+    fun markLayerClosed(layerOrderId: String): String? {
+        val entry = active.entries.firstOrNull { layerOrderId in it.value.filledLayerIds }
+        if (entry != null) {
+            entry.value.closedLayerIds.add(layerOrderId)
+            return entry.key
+        }
+        return null
+    }
+
     internal data class ActiveStack(
         val id: String,
         val plan: StackPlan,
@@ -89,5 +98,6 @@ internal class StackTracker {
         val layerOneOrderId: String? = null,
         val pendingLayerIds: MutableSet<String> = mutableSetOf(),
         val filledLayerIds: MutableSet<String> = mutableSetOf(),
+        val closedLayerIds: MutableSet<String> = mutableSetOf(),
     )
 }
