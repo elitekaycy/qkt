@@ -125,24 +125,42 @@ class ActionCompilerExtensionsTest {
     }
 
     @Test
-    fun `CANCEL is deferred with a clear message`() {
-        org.assertj.core.api.Assertions
-            .assertThatThrownBy {
-                ActionCompiler(ExprCompiler(), logger).compile(
+    fun `CANCEL emits CancelPendingForSymbol for the stream`() {
+        val sigs =
+            ActionCompiler(ExprCompiler(), logger)
+                .compile(
                     com.qkt.dsl.ast
                         .Cancel("btc"),
-                )
-            }.isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("deferred")
+                ).invoke(ctx)
+        assertThat(sigs).containsExactly(
+            com.qkt.strategy.Signal
+                .CancelPendingForSymbol("BTCUSDT"),
+        )
     }
 
     @Test
-    fun `CANCEL_ALL is deferred with a clear message`() {
-        org.assertj.core.api.Assertions
-            .assertThatThrownBy {
-                ActionCompiler(ExprCompiler(), logger).compile(com.qkt.dsl.ast.CancelAll)
-            }.isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("deferred")
+    fun `CANCEL_ALL emits one CancelPendingForSymbol per known stream`() {
+        val multiCtx =
+            EvalContext(
+                candle = candle,
+                streams =
+                    mapOf(
+                        "btc" to HubKey("BACKTEST", "BTCUSDT", "1m"),
+                        "eth" to HubKey("BACKTEST", "ETHUSDT", "1m"),
+                    ),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        val sigs =
+            ActionCompiler(ExprCompiler(), logger)
+                .compile(com.qkt.dsl.ast.CancelAll)
+                .invoke(multiCtx)
+        assertThat(sigs).containsExactlyInAnyOrder(
+            com.qkt.strategy.Signal
+                .CancelPendingForSymbol("BTCUSDT"),
+            com.qkt.strategy.Signal
+                .CancelPendingForSymbol("ETHUSDT"),
+        )
     }
 
     @Test
