@@ -93,8 +93,8 @@ class TradingPipeline(
                 )
             val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 bus.publish(SignalEvent(sig))
-                if (sig is com.qkt.strategy.Signal.CancelStacksForSymbol) {
-                    orderManager.cancelStacksForSymbol(sig.symbol)
+                if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
+                    orderManager.cancelPendingForSymbol(sig.symbol)
                 } else {
                     val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
                     if (request != null) {

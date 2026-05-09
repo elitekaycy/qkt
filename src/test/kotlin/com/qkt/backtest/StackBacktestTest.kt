@@ -192,7 +192,7 @@ class StackBacktestTest {
                         val qty = pos.quantity
                         emit(
                             com.qkt.strategy.Signal
-                                .CancelStacksForSymbol("btcusdt"),
+                                .CancelPendingForSymbol("btcusdt"),
                         )
                         if (qty.signum() > 0) {
                             emit(
@@ -228,6 +228,259 @@ class StackBacktestTest {
         assertThat(buys).hasSize(1)
         assertThat(sells).hasSize(1)
         assertThat(result.finalPositions["btcusdt"]).isNull()
+    }
+
+    private fun threeLayerSellPlan(): StackPlan =
+        StackPlan(
+            layers =
+                listOf(
+                    LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), Market, Immediate),
+                    LayerSpec(
+                        2,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        Market,
+                        At(
+                            BinaryOp(BinOp.SUB, StackEntryRef, NumLit(BigDecimal("100"))),
+                            StackDirection.BELOW,
+                        ),
+                    ),
+                    LayerSpec(
+                        3,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        Market,
+                        At(
+                            BinaryOp(BinOp.SUB, StackEntryRef, NumLit(BigDecimal("200"))),
+                            StackDirection.BELOW,
+                        ),
+                    ),
+                ),
+        )
+
+    private fun onceSellStrategy(plan: StackPlan): Strategy {
+        var submitted = false
+        return object : Strategy {
+            override fun onTick(
+                tick: Tick,
+                ctx: StrategyContext,
+                emit: (Signal) -> Unit,
+            ) {
+                if (submitted) return
+                if (tick.symbol != "btcusdt") return
+                if (tick.price > BigDecimal("50000")) return
+                submitted = true
+                emit(
+                    Signal.Submit(
+                        OrderRequest.Stack(
+                            id = "stk-sell",
+                            symbol = "btcusdt",
+                            side = Side.SELL,
+                            quantity = BigDecimal("0.3"),
+                            plan = plan,
+                            timeInForce = TimeInForce.GTC,
+                            timestamp = ctx.clock.now(),
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `SELL stack pyramid fills three layers at decreasing prices`() {
+        val plan = threeLayerSellPlan()
+        val ticks =
+            listOf(
+                tick("50500", 1L),
+                tick("50000", 2L),
+                tick("49900", 3L),
+                tick("49800", 4L),
+                tick("49750", 5L),
+            )
+
+        val result =
+            Backtest(
+                strategies = listOf("stack-sell-e2e" to onceSellStrategy(plan)),
+                ticks = ticks,
+            ).run()
+
+        val sells = result.trades.filter { it.trade.side == Side.SELL }
+        assertThat(sells).hasSize(3)
+        val prices = sells.map { it.trade.price }.sortedByDescending { it }
+        assertThat(prices[0]).isEqualByComparingTo(BigDecimal("50000"))
+        assertThat(prices[1]).isEqualByComparingTo(BigDecimal("49900"))
+        assertThat(prices[2]).isEqualByComparingTo(BigDecimal("49800"))
+
+        assertThat(result.finalPositions["btcusdt"]?.quantity)
+            .isNotNull
+            .isEqualByComparingTo(BigDecimal("-0.3"))
+    }
+
+    @Test
+    fun `BUY stack with BELOW direction averages down at decreasing prices`() {
+        // BUY side but BELOW direction → layers must be LIMIT orders so they fill when price
+        // falls TO or below the trigger. (A BUY Stop would fire when price rose THROUGH the
+        // trigger, which is the wrong semantic for averaging-down.)
+        val l2Trigger = BinaryOp(BinOp.SUB, StackEntryRef, NumLit(BigDecimal("100")))
+        val l3Trigger = BinaryOp(BinOp.SUB, StackEntryRef, NumLit(BigDecimal("200")))
+        val plan =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), Market, Immediate),
+                        LayerSpec(
+                            2,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            com.qkt.dsl.ast
+                                .Limit(l2Trigger),
+                            At(l2Trigger, StackDirection.BELOW),
+                        ),
+                        LayerSpec(
+                            3,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            com.qkt.dsl.ast
+                                .Limit(l3Trigger),
+                            At(l3Trigger, StackDirection.BELOW),
+                        ),
+                    ),
+            )
+        val ticks =
+            listOf(
+                tick("49500", 1L),
+                tick("50000", 2L),
+                tick("49900", 3L),
+                tick("49800", 4L),
+                tick("49750", 5L),
+            )
+
+        val result =
+            Backtest(
+                strategies = listOf("stack-buy-below" to onceStrategy("btcusdt", plan)),
+                ticks = ticks,
+            ).run()
+
+        val buys = result.trades.filter { it.trade.side == Side.BUY }
+        assertThat(buys).hasSize(3)
+        val prices = buys.map { it.trade.price }.sortedByDescending { it }
+        assertThat(prices[0]).isEqualByComparingTo(BigDecimal("50000"))
+        assertThat(prices[1]).isEqualByComparingTo(BigDecimal("49900"))
+        assertThat(prices[2]).isEqualByComparingTo(BigDecimal("49800"))
+
+        assertThat(result.finalPositions["btcusdt"]?.quantity)
+            .isNotNull
+            .isEqualByComparingTo(BigDecimal("0.3"))
+    }
+
+    @Test
+    fun `concurrent stacks one SL fire does not cancel other pending layers`() {
+        // Stack A has a tight SL (BY 5) so it goes flat quickly; Stack B's pending layer 2 must
+        // remain alive across A's flat-detection. If B's pending layer 2 gets cancelled when A
+        // closes, layer 2 won't fire when its trigger price is reached later.
+        val planA =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), Market, Immediate),
+                        LayerSpec(
+                            2,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            Market,
+                            At(
+                                BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("500"))),
+                                StackDirection.ABOVE,
+                            ),
+                        ),
+                    ),
+                outerBracket = BracketAst(stopLoss = ChildBy(NumLit(BigDecimal("5")))),
+            )
+        val planB =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), Market, Immediate),
+                        LayerSpec(
+                            2,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            Market,
+                            At(
+                                BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("50"))),
+                                StackDirection.ABOVE,
+                            ),
+                        ),
+                    ),
+            )
+
+        val strategy =
+            object : Strategy {
+                private var submittedA = false
+                private var submittedB = false
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    if (tick.symbol != "btcusdt") return
+                    if (!submittedA && tick.price >= BigDecimal("50000")) {
+                        submittedA = true
+                        emit(
+                            Signal.Submit(
+                                OrderRequest.Stack(
+                                    id = "stkA",
+                                    symbol = "btcusdt",
+                                    side = Side.BUY,
+                                    quantity = BigDecimal("0.2"),
+                                    plan = planA,
+                                    timeInForce = TimeInForce.GTC,
+                                    timestamp = ctx.clock.now(),
+                                ),
+                            ),
+                        )
+                        return
+                    }
+                    if (submittedA && !submittedB && tick.price >= BigDecimal("50010")) {
+                        submittedB = true
+                        emit(
+                            Signal.Submit(
+                                OrderRequest.Stack(
+                                    id = "stkB",
+                                    symbol = "btcusdt",
+                                    side = Side.BUY,
+                                    quantity = BigDecimal("0.2"),
+                                    plan = planB,
+                                    timeInForce = TimeInForce.GTC,
+                                    timestamp = ctx.clock.now(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+            }
+
+        val ticks =
+            listOf(
+                tick("50000", 1L), // A submits, A's layer 1 fills @ 50000; A's SL at 49995
+                tick("50010", 2L), // B submits, B's layer 1 fills @ 50010
+                tick("49994", 3L), // A's SL fires (A goes flat → A's pending l2 cancels via flat detection)
+                tick("50060", 4L), // B's layer 2 trigger (50010 + 50) hits
+            )
+
+        val result =
+            Backtest(
+                strategies = listOf("stack-concurrent" to strategy),
+                ticks = ticks,
+            ).run()
+
+        val buys = result.trades.filter { it.trade.side == Side.BUY }
+        val sells = result.trades.filter { it.trade.side == Side.SELL }
+        // 3 buys: A-l1 @ 50000, B-l1 @ 50010, B-l2 @ 50060. (A-l2 cancelled by A's SL.)
+        assertThat(buys).hasSize(3)
+        // 1 sell: A's SL @ 49995.
+        assertThat(sells).hasSize(1)
+        // Final position is B's 0.2 only (A is flat).
+        assertThat(result.finalPositions["btcusdt"]?.quantity)
+            .`as`("stack B's pending layer 2 should fire even after stack A goes flat")
+            .isNotNull
+            .isEqualByComparingTo(BigDecimal("0.2"))
     }
 
     @Test

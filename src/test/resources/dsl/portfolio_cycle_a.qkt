@@ -1,0 +1,4 @@
+PORTFOLIO cyc_a VERSION 1
+IMPORT 'portfolio_cycle_b.qkt' AS b
+RULES
+    RUN b

@@ -108,6 +108,12 @@ object ActionScope {
 
     fun closeAll(): ActionAst = CloseAll
 
+    fun cancelStream(stream: StreamRef): ActionAst =
+        com.qkt.dsl.ast
+            .Cancel(stream.alias)
+
+    fun cancelAll(): ActionAst = com.qkt.dsl.ast.CancelAll
+
     fun buy(
         stream: StreamRef,
         orderType: OrderTypeAst = Market,

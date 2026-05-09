@@ -45,14 +45,8 @@ class ActionCompiler(
             is Log -> compileLog(action)
             is Close -> compileClose(action.stream)
             is CloseAll -> compileCloseAll()
-            is Cancel ->
-                error(
-                    "CANCEL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
-                )
-            is CancelAll ->
-                error(
-                    "CANCEL_ALL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
-                )
+            is Cancel -> compileCancel(action.stream)
+            is CancelAll -> compileCancelAll()
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
 
@@ -61,7 +55,7 @@ class ActionCompiler(
             val out = mutableListOf<Signal>()
             for (streamAlias in ctx.streams.keys) {
                 val sym = ctx.streams[streamAlias]?.symbol ?: continue
-                out.add(Signal.CancelStacksForSymbol(sym))
+                out.add(Signal.CancelPendingForSymbol(sym))
             }
             for ((symbol, position) in ctx.strategyContext.positions.allPositions()) {
                 val qty = position.quantity
@@ -81,12 +75,26 @@ class ActionCompiler(
                     .positionFor(symbol)
                     ?.quantity ?: BigDecimal.ZERO
             val signals = mutableListOf<Signal>()
-            signals.add(Signal.CancelStacksForSymbol(symbol))
+            signals.add(Signal.CancelPendingForSymbol(symbol))
             when {
                 qty.signum() > 0 -> signals.add(Signal.Sell(symbol, qty))
                 qty.signum() < 0 -> signals.add(Signal.Buy(symbol, qty.abs()))
             }
             signals
+        }
+
+    private fun compileCancel(streamAlias: String): (EvalContext) -> List<Signal> =
+        { ctx ->
+            val symbol = ctx.streams[streamAlias]?.symbol ?: error("Unknown stream alias: $streamAlias")
+            listOf(Signal.CancelPendingForSymbol(symbol))
+        }
+
+    private fun compileCancelAll(): (EvalContext) -> List<Signal> =
+        { ctx ->
+            ctx.streams.values
+                .map { it.symbol }
+                .distinct()
+                .map { Signal.CancelPendingForSymbol(it) }
         }
 
     private fun compileLog(log: Log): (EvalContext) -> List<Signal> {

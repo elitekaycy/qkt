@@ -39,28 +39,54 @@ object StackCompiler {
         val effectiveDirection = resolveDirection(ast.direction, side)
         val layers =
             (1..ast.count).map { i ->
-                val trigger =
-                    if (i == 1) {
-                        Immediate
-                    } else {
-                        val offset = scaleOffset(ast.spacing, i - 1)
-                        val triggerExpr =
-                            if (effectiveDirection == com.qkt.dsl.ast.StackDirection.BELOW) {
-                                BinaryOp(BinOp.SUB, StackEntryRef, offset)
-                            } else {
-                                BinaryOp(BinOp.ADD, StackEntryRef, offset)
-                            }
-                        At(triggerExpr, effectiveDirection)
-                    }
-                LayerSpec(
-                    index = i,
-                    sizing = sizing,
-                    orderType = Market,
-                    trigger = trigger,
-                )
+                if (i == 1) {
+                    LayerSpec(
+                        index = 1,
+                        sizing = sizing,
+                        orderType = Market,
+                        trigger = Immediate,
+                    )
+                } else {
+                    val offset = scaleOffset(ast.spacing, i - 1)
+                    val triggerExpr =
+                        if (effectiveDirection == com.qkt.dsl.ast.StackDirection.BELOW) {
+                            BinaryOp(BinOp.SUB, StackEntryRef, offset)
+                        } else {
+                            BinaryOp(BinOp.ADD, StackEntryRef, offset)
+                        }
+                    val orderType =
+                        if (isStopLayer(side, effectiveDirection)) {
+                            Market
+                        } else {
+                            com.qkt.dsl.ast
+                                .Limit(triggerExpr)
+                        }
+                    LayerSpec(
+                        index = i,
+                        sizing = sizing,
+                        orderType = orderType,
+                        trigger = At(triggerExpr, effectiveDirection),
+                    )
+                }
             }
         return StackPlan(layers, outerBracket, ast.within?.millis)
     }
+
+    /**
+     * Whether a triggered layer should be a Stop or a Limit. Stop fires when price moves
+     * THROUGH the trigger in the trade direction; Limit fills when price reaches the trigger
+     * from the opposite side.
+     */
+    private fun isStopLayer(
+        side: com.qkt.common.Side,
+        direction: com.qkt.dsl.ast.StackDirection,
+    ): Boolean =
+        when (direction) {
+            com.qkt.dsl.ast.StackDirection.ABOVE -> side == com.qkt.common.Side.BUY
+            com.qkt.dsl.ast.StackDirection.BELOW -> side == com.qkt.common.Side.SELL
+            com.qkt.dsl.ast.StackDirection.TRADE_DIRECTION ->
+                error("direction must be resolved before isStopLayer")
+        }
 
     private fun scaleOffset(
         spacing: com.qkt.dsl.ast.ExprAst,
