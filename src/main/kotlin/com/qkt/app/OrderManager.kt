@@ -208,13 +208,23 @@ class OrderManager(
         val firstLayer =
             req.plan.layers.firstOrNull()
                 ?: error("StackPlan must have at least one layer")
-        require(firstLayer.trigger == Immediate) { "first layer must have Immediate trigger" }
+        // Layer 1 may be Immediate (market) or At (pending limit/stop). Both are supported.
         stacks.register(req.id, req.plan, req.plan.outerBracket)
         val now = clock.now()
         val firstOrderId = "${req.id}-l1"
         stacks.setLayerOneOrderId(req.id, firstOrderId)
         val firstQty = resolveLayerQuantity(firstLayer)
-        val firstReq = buildLayerOrder(firstOrderId, req, firstLayer, firstQty, triggerPrice = null)
+        val firstTriggerPrice: BigDecimal? =
+            when (val t = firstLayer.trigger) {
+                Immediate -> null
+                is At -> {
+                    require(!referencesStackEntryRef(t.price)) {
+                        "STACK layer 1 AT expression cannot reference 'entry' (anchor is set by layer 1's fill)"
+                    }
+                    evaluateAt(t.price, anchor = BigDecimal.ZERO)
+                }
+            }
+        val firstReq = buildLayerOrder(firstOrderId, req, firstLayer, firstQty, triggerPrice = firstTriggerPrice)
         track(
             ManagedOrder(
                 id = firstOrderId,
@@ -374,6 +384,13 @@ class OrderManager(
         val at = (trigger as? At) ?: error("non-Immediate triggers must be At")
         return evaluateAt(at.price, anchor)
     }
+
+    private fun referencesStackEntryRef(expr: ExprAst): Boolean =
+        when (expr) {
+            is StackEntryRef -> true
+            is BinaryOp -> referencesStackEntryRef(expr.lhs) || referencesStackEntryRef(expr.rhs)
+            else -> false
+        }
 
     private fun evaluateAt(
         expr: ExprAst,
