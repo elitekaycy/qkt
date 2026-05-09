@@ -20,20 +20,23 @@ object StackCompiler {
         ast: StackAst,
         outerSizing: SizingAst?,
         outerBracket: BracketAst?,
+        side: com.qkt.common.Side,
     ): StackPlan =
         when (ast) {
-            is StackSpacing -> compileSpacing(ast, outerSizing, outerBracket)
-            is StackLayers -> compileLayers(ast, outerBracket)
+            is StackSpacing -> compileSpacing(ast, outerSizing, outerBracket, side)
+            is StackLayers -> compileLayers(ast, outerBracket, side)
         }
 
     private fun compileSpacing(
         ast: StackSpacing,
         outerSizing: SizingAst?,
         outerBracket: BracketAst?,
+        side: com.qkt.common.Side,
     ): StackPlan {
         val sizing =
             outerSizing
                 ?: error("STACK SPACING form requires outer SIZING on the BUY/SELL action")
+        val effectiveDirection = resolveDirection(ast.direction, side)
         val layers =
             (1..ast.count).map { i ->
                 val trigger =
@@ -41,7 +44,13 @@ object StackCompiler {
                         Immediate
                     } else {
                         val offset = scaleOffset(ast.spacing, i - 1)
-                        At(BinaryOp(BinOp.ADD, StackEntryRef, offset), ast.direction)
+                        val triggerExpr =
+                            if (effectiveDirection == com.qkt.dsl.ast.StackDirection.BELOW) {
+                                BinaryOp(BinOp.SUB, StackEntryRef, offset)
+                            } else {
+                                BinaryOp(BinOp.ADD, StackEntryRef, offset)
+                            }
+                        At(triggerExpr, effectiveDirection)
                     }
                 LayerSpec(
                     index = i,
@@ -66,7 +75,14 @@ object StackCompiler {
     private fun compileLayers(
         ast: StackLayers,
         outerBracket: BracketAst?,
+        side: com.qkt.common.Side,
     ): StackPlan {
+        val effectiveDirection =
+            if (side == com.qkt.common.Side.BUY) {
+                com.qkt.dsl.ast.StackDirection.ABOVE
+            } else {
+                com.qkt.dsl.ast.StackDirection.BELOW
+            }
         val layers =
             ast.layers.mapIndexed { idx, l ->
                 val trigger =
@@ -74,7 +90,7 @@ object StackCompiler {
                         require(idx == 0) { "layer ${idx + 1} must have AT" }
                         Immediate
                     } else {
-                        At(l.at, com.qkt.dsl.ast.StackDirection.TRADE_DIRECTION)
+                        At(l.at, effectiveDirection)
                     }
                 LayerSpec(
                     index = idx + 1,
@@ -85,4 +101,19 @@ object StackCompiler {
             }
         return StackPlan(layers, outerBracket, ast.within?.millis)
     }
+
+    private fun resolveDirection(
+        direction: com.qkt.dsl.ast.StackDirection,
+        side: com.qkt.common.Side,
+    ): com.qkt.dsl.ast.StackDirection =
+        when (direction) {
+            com.qkt.dsl.ast.StackDirection.ABOVE -> com.qkt.dsl.ast.StackDirection.ABOVE
+            com.qkt.dsl.ast.StackDirection.BELOW -> com.qkt.dsl.ast.StackDirection.BELOW
+            com.qkt.dsl.ast.StackDirection.TRADE_DIRECTION ->
+                if (side == com.qkt.common.Side.BUY) {
+                    com.qkt.dsl.ast.StackDirection.ABOVE
+                } else {
+                    com.qkt.dsl.ast.StackDirection.BELOW
+                }
+        }
 }

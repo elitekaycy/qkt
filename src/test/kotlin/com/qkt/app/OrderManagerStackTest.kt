@@ -540,6 +540,71 @@ class OrderManagerStackTest {
     }
 
     @Test
+    fun `SELL stack triggers fire at decreasing prices`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val plan =
+            StackPlan(
+                listOf(
+                    LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                    LayerSpec(
+                        2,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        com.qkt.dsl.ast.Market,
+                        At(
+                            BinaryOp(BinOp.SUB, StackEntryRef, NumLit(BigDecimal("100"))),
+                            StackDirection.BELOW,
+                        ),
+                    ),
+                    LayerSpec(
+                        3,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        com.qkt.dsl.ast.Market,
+                        At(
+                            BinaryOp(BinOp.SUB, StackEntryRef, NumLit(BigDecimal("200"))),
+                            StackDirection.BELOW,
+                        ),
+                    ),
+                ),
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-sell",
+                symbol = "BTCUSDT",
+                side = Side.SELL,
+                quantity = BigDecimal("0.3"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l1",
+                brokerOrderId = "b1",
+                symbol = "BTCUSDT",
+                side = Side.SELL,
+                price = BigDecimal("50000"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+        val pending = manager.pendingOrders()
+        assertThat(pending).hasSize(2)
+        val triggers = pending.map { (it.request as OrderRequest.Stop).stopPrice }
+        assertThat(triggers)
+            .usingElementComparator(Comparator { a, b -> a.compareTo(b) })
+            .containsExactlyInAnyOrder(
+                BigDecimal("49900"),
+                BigDecimal("49800"),
+            )
+    }
+
+    @Test
     fun `resolvedQuantity on LayerSpec is used directly, bypassing SizeQty literal fallback`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)

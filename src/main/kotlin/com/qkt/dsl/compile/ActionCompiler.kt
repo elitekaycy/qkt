@@ -217,7 +217,7 @@ class ActionCompiler(
         val stackAst = opts.stack ?: error("unreachable")
         val tif = TifTranslator.translate(opts.tif)
         val staticStopDistance = resolveStaticStopDistance(opts.bracket?.stopLoss)
-        val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket)
+        val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket, side)
         // Pre-compile one CompiledSize per layer (they may share the same sizing AST for
         // StackSpacing, but compiling per-layer is cheap and avoids sharing mutable state).
         val compiledSizes =
