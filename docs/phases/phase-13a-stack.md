@@ -315,7 +315,6 @@ assertThat(result.finalPositions["btcusdt"]).isNull()
 ## Known limitations
 
 - **Per-layer bracket override deferred.** The outer `BRACKET` clause applies identically to every layer. There is no syntax to give layer 2 a different SL distance than layer 1. Per-layer bracket overrides are a v2 concern.
-- **ChildRr in stack outerBracket throws.** If the `BRACKET` clause uses a risk-reward ratio form (`STOP LOSS BY X, TAKE PROFIT RR Y`), `attachLayerSl` throws an `error(...)` at runtime because the risk-metrics plumbing needed to evaluate RR at the per-layer level is not yet connected. Use `BY <distance>` or `AT <price>` instead.
 - **Bare `STACK N` not supported.** `STACK 3` without a `SPACING` clause (iceberg / TWAP slicing) is a different primitive and is out of scope. A `SPACING` or layer-list is always required.
 - **WHEN-condition per-layer triggers not supported.** Layers 2..N can only use price triggers (`AT <expr>`). Arbitrary boolean conditions per layer would require a full condition engine inside the layer scheduler and are deferred.
 - **PIPS unit not supported.** `SPACING 100` means 100 raw price units (e.g., 100 USDT for a BTC pair quoted in USDT). A PIPS / points suffix is a language-wide feature affecting all distance clauses; it is out of scope for 13a.
