@@ -45,14 +45,8 @@ class ActionCompiler(
             is Log -> compileLog(action)
             is Close -> compileClose(action.stream)
             is CloseAll -> compileCloseAll()
-            is Cancel ->
-                error(
-                    "CANCEL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
-                )
-            is CancelAll ->
-                error(
-                    "CANCEL_ALL action is deferred — engine cancellation API needs broker-side surface; revisit alongside Phase 11d order lifecycle work",
-                )
+            is Cancel -> compileCancel(action.stream)
+            is CancelAll -> compileCancelAll()
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
 
@@ -87,6 +81,20 @@ class ActionCompiler(
                 qty.signum() < 0 -> signals.add(Signal.Buy(symbol, qty.abs()))
             }
             signals
+        }
+
+    private fun compileCancel(streamAlias: String): (EvalContext) -> List<Signal> =
+        { ctx ->
+            val symbol = ctx.streams[streamAlias]?.symbol ?: error("Unknown stream alias: $streamAlias")
+            listOf(Signal.CancelPendingForSymbol(symbol))
+        }
+
+    private fun compileCancelAll(): (EvalContext) -> List<Signal> =
+        { ctx ->
+            ctx.streams.values
+                .map { it.symbol }
+                .distinct()
+                .map { Signal.CancelPendingForSymbol(it) }
         }
 
     private fun compileLog(log: Log): (EvalContext) -> List<Signal> {
