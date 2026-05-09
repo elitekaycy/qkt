@@ -17,4 +17,8 @@ sealed class Signal {
     data class Submit(
         val request: OrderRequest,
     ) : Signal()
+
+    data class CancelStacksForSymbol(
+        val symbol: String,
+    ) : Signal()
 }

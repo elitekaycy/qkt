@@ -79,7 +79,7 @@ class EndToEndTest {
             }
         }
         bus.subscribe<SignalEvent> { e ->
-            val request = e.signal.toOrderRequest(ids.next(), clock.now())
+            val request = e.signal.toOrderRequest(ids.next(), clock.now()) ?: return@subscribe
             if (captureOrders) orders.add(request)
             when (val decision = riskEngine.approve(request)) {
                 is Decision.Approve -> bus.publish(OrderEvent(request))

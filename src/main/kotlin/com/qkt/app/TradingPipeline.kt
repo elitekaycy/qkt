@@ -93,10 +93,16 @@ class TradingPipeline(
                 )
             val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 bus.publish(SignalEvent(sig))
-                val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
-                when (val decision = riskEngine.approve(request)) {
-                    is Decision.Approve -> bus.publish(OrderEvent(request))
-                    is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
+                if (sig is com.qkt.strategy.Signal.CancelStacksForSymbol) {
+                    orderManager.cancelStacksForSymbol(sig.symbol)
+                } else {
+                    val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
+                    if (request != null) {
+                        when (val decision = riskEngine.approve(request)) {
+                            is Decision.Approve -> bus.publish(OrderEvent(request))
+                            is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
+                        }
+                    }
                 }
             }
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {

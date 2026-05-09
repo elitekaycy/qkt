@@ -103,6 +103,17 @@ class OrderManager(
         }
     }
 
+    fun cancelStacksForSymbol(symbol: String) {
+        val toCancel =
+            stacks
+                .all()
+                .filter { state ->
+                    val managed = orders[state.id] ?: return@filter false
+                    (managed.request as? OrderRequest.Stack)?.symbol == symbol
+                }.map { it.id }
+        for (id in toCancel) cancel(id)
+    }
+
     fun getOrder(clientOrderId: String): ManagedOrder? = orders[clientOrderId]
 
     fun activeOrders(): List<ManagedOrder> = orders.values.filter { !it.state.isTerminal }
