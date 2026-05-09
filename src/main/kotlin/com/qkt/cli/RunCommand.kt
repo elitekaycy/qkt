@@ -4,6 +4,7 @@ import com.qkt.app.LiveSession
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
+import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.cli.observe.PortPrinter
 import com.qkt.cli.observe.PositionDto
 import com.qkt.cli.observe.StatusSnapshot
@@ -119,7 +120,17 @@ class RunCommand(
                 ObservabilityServer(
                     ring = ring,
                     statusProvider = {
-                        buildSnapshot(ast.name, ast.version, startMs, startedAt, session.recentTrades())
+                        val layers =
+                            session.pendingStackLayerInfos().map {
+                                PendingStackLayer(
+                                    stackId = it.stackId,
+                                    layer = it.layer,
+                                    triggerPrice = it.triggerPrice,
+                                    side = it.side,
+                                    quantity = it.quantity,
+                                )
+                            }
+                        buildSnapshot(ast.name, ast.version, startMs, startedAt, session.recentTrades(), layers)
                     },
                     running = { session.running },
                     onStop = { flatten ->
@@ -201,6 +212,7 @@ class RunCommand(
         startMs: Long,
         startedAt: String,
         trades: List<Trade>,
+        pendingStackLayers: List<PendingStackLayer> = emptyList(),
     ): StatusSnapshot {
         val now = System.currentTimeMillis()
         val last = trades.lastOrNull()
@@ -227,6 +239,7 @@ class RunCommand(
                         realized = BigDecimal.ZERO,
                     )
                 },
+            pendingStackLayers = pendingStackLayers,
         )
     }
 

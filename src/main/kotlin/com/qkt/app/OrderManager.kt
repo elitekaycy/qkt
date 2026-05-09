@@ -354,6 +354,15 @@ class OrderManager(
                 ),
             )
             stacks.addPending(stackId, layerOrderId)
+            log.info(
+                "stack pending stack_id={} strategy_id={} layer={} qty={} trigger={} side={}",
+                stackId,
+                parent.strategyId,
+                layer.index,
+                qty,
+                triggerPrice,
+                parent.side,
+            )
             dispatch(pending)
         }
     }
@@ -815,6 +824,18 @@ class OrderManager(
         managed: ManagedOrder,
         tickPrice: BigDecimal,
     ) {
+        val stackOwner = stacks.stackOwning(managed.id)
+        if (stackOwner != null) {
+            val layerIdx = managed.id.substringAfterLast("-l").toIntOrNull() ?: 0
+            log.info(
+                "stack fire stack_id={} strategy_id={} layer={} qty={} trigger_price={}",
+                stackOwner,
+                managed.request.strategyId,
+                layerIdx,
+                managed.request.quantity,
+                tickPrice,
+            )
+        }
         update(managed.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
         val internal: OrderRequest =
             when (val req = managed.request) {
@@ -898,4 +919,34 @@ class OrderManager(
             .divide(totalQty, Money.CONTEXT)
             .setScale(Money.SCALE, Money.ROUNDING)
     }
+
+    fun pendingStackLayerInfos(): List<PendingStackLayerInfo> =
+        stacks.all().flatMap { state ->
+            state.pendingLayerIds.mapNotNull { layerId ->
+                val managed = orders[layerId] ?: return@mapNotNull null
+                if (managed.state != OrderState.PENDING) return@mapNotNull null
+                val triggerPrice =
+                    when (val r = managed.request) {
+                        is OrderRequest.Stop -> r.stopPrice
+                        is OrderRequest.Limit -> r.limitPrice
+                        else -> return@mapNotNull null
+                    }
+                val layerIdx = layerId.substringAfterLast("-l").toIntOrNull() ?: 0
+                PendingStackLayerInfo(
+                    stackId = state.id,
+                    layer = layerIdx,
+                    triggerPrice = triggerPrice,
+                    side = managed.request.side.name,
+                    quantity = managed.request.quantity,
+                )
+            }
+        }
+
+    data class PendingStackLayerInfo(
+        val stackId: String,
+        val layer: Int,
+        val triggerPrice: BigDecimal,
+        val side: String,
+        val quantity: BigDecimal,
+    )
 }

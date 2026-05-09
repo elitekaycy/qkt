@@ -5,6 +5,7 @@ import com.qkt.app.LiveSessionHandle
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
+import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.cli.observe.PositionDto
 import com.qkt.cli.observe.StatusSnapshot
 import com.qkt.cli.observe.TradeDto
@@ -111,7 +112,24 @@ class StrategyHandle(
                 ObservabilityServer(
                     ring = ring,
                     statusProvider = {
-                        buildSnapshot(ast.name, ast.version, startMs, startedAt.toString(), session.recentTrades())
+                        val layers =
+                            session.pendingStackLayerInfos().map {
+                                PendingStackLayer(
+                                    stackId = it.stackId,
+                                    layer = it.layer,
+                                    triggerPrice = it.triggerPrice,
+                                    side = it.side,
+                                    quantity = it.quantity,
+                                )
+                            }
+                        buildSnapshot(
+                            ast.name,
+                            ast.version,
+                            startMs,
+                            startedAt.toString(),
+                            session.recentTrades(),
+                            layers,
+                        )
                     },
                     running = { session.running },
                     onStop = { _ -> session.stop() },
@@ -181,6 +199,7 @@ class StrategyHandle(
             startMs: Long,
             startedAt: String,
             trades: List<Trade>,
+            pendingStackLayers: List<PendingStackLayer> = emptyList(),
         ): StatusSnapshot {
             val now = System.currentTimeMillis()
             val last = trades.lastOrNull()
@@ -205,6 +224,7 @@ class StrategyHandle(
                             realized = BigDecimal.ZERO,
                         )
                     },
+                pendingStackLayers = pendingStackLayers,
             )
         }
     }
