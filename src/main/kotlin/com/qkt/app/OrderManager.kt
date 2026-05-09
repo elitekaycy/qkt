@@ -254,39 +254,27 @@ class OrderManager(
             stacks.setAnchor(owner, e.price, clock.now())
             materializePendingLayers(owner, anchor = e.price)
         }
-        // Attach SL for every filled layer (per-layer brackets, design D1).
-        attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
+        val slId = "${e.clientOrderId}-sl"
+        val tpId = "${e.clientOrderId}-tp"
+        val hadSl = attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
+        val hadTp = attachLayerTp(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
+        if (hadSl && hadTp) {
+            siblings[slId] = listOf(tpId)
+            siblings[tpId] = listOf(slId)
+        }
     }
 
     private fun attachLayerSl(
         stackId: String,
         layerOrderId: String,
         fillPrice: BigDecimal,
-    ) {
-        val state = stacks.get(stackId) ?: return
-        val slAst = state.outerBracket?.stopLoss ?: return
-        val parent =
-            (orders[stackId]?.request as? OrderRequest.Stack)
-                ?: return
+    ): Boolean {
+        val state = stacks.get(stackId) ?: return false
+        val slAst = state.outerBracket?.stopLoss ?: return false
+        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return false
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
-        val slPrice =
-            when (slAst) {
-                is com.qkt.dsl.ast.ChildBy ->
-                    if (parent.side == Side.BUY) {
-                        fillPrice - evaluateAt(slAst.distance, fillPrice)
-                    } else {
-                        fillPrice + evaluateAt(slAst.distance, fillPrice)
-                    }
-                is com.qkt.dsl.ast.ChildAt -> evaluateAt((slAst.price), fillPrice)
-                is com.qkt.dsl.ast.ChildPct -> {
-                    val dist = fillPrice.multiply(evaluateAt(slAst.frac, fillPrice), Money.CONTEXT)
-                    if (parent.side == Side.BUY) fillPrice - dist else fillPrice + dist
-                }
-                // TakeProfit attachment + OCO sibling cancellation are deferred to a future task.
-                // SL-only is a known v1 limitation.
-                else -> error("ChildRr is not supported in STACK outerBracket; wire risk metrics first")
-            }
-        val layerEntry = orders[layerOrderId] ?: return
+        val slPrice = computeChildPrice(slAst, parent.side, fillPrice, isStopLoss = true)
+        val layerEntry = orders[layerOrderId] ?: return false
         val slId = "$layerOrderId-sl"
         val slReq =
             OrderRequest.Stop(
@@ -296,7 +284,7 @@ class OrderManager(
                 quantity =
                     layerEntry.cumulativeFilledQuantity.takeIf { it.signum() > 0 }
                         ?: layerEntry.request.quantity,
-                stopPrice = slPrice.setScale(Money.SCALE, Money.ROUNDING),
+                stopPrice = slPrice,
                 timeInForce = parent.timeInForce,
                 timestamp = clock.now(),
                 strategyId = parent.strategyId,
@@ -316,6 +304,74 @@ class OrderManager(
             it.copy(childClientOrderIds = it.childClientOrderIds + slId, lastUpdatedAt = now)
         }
         dispatch(slReq)
+        return true
+    }
+
+    private fun attachLayerTp(
+        stackId: String,
+        layerOrderId: String,
+        fillPrice: BigDecimal,
+    ): Boolean {
+        val state = stacks.get(stackId) ?: return false
+        val tpAst = state.outerBracket?.takeProfit ?: return false
+        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return false
+        val tpPrice = computeChildPrice(tpAst, parent.side, fillPrice, isStopLoss = false)
+        val tpId = "$layerOrderId-tp"
+        val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
+        val tpReq =
+            OrderRequest.Limit(
+                id = tpId,
+                symbol = parent.symbol,
+                side = exitSide,
+                quantity = (orders[layerOrderId]?.request?.quantity ?: return false),
+                limitPrice = tpPrice,
+                timeInForce = parent.timeInForce,
+                timestamp = clock.now(),
+                strategyId = parent.strategyId,
+            )
+        val now = clock.now()
+        track(
+            ManagedOrder(
+                id = tpId,
+                request = tpReq,
+                state = OrderState.CREATED,
+                parentClientOrderId = layerOrderId,
+                createdAt = now,
+                lastUpdatedAt = now,
+            ),
+        )
+        update(layerOrderId) {
+            it.copy(childClientOrderIds = it.childClientOrderIds + tpId, lastUpdatedAt = now)
+        }
+        dispatch(tpReq)
+        return true
+    }
+
+    private fun computeChildPrice(
+        childPrice: com.qkt.dsl.ast.ChildPriceAst,
+        side: Side,
+        fillPrice: BigDecimal,
+        isStopLoss: Boolean,
+    ): BigDecimal {
+        val sign =
+            if (side == Side.BUY) {
+                if (isStopLoss) BigDecimal("-1") else BigDecimal("1")
+            } else {
+                if (isStopLoss) BigDecimal("1") else BigDecimal("-1")
+            }
+        return when (childPrice) {
+            is com.qkt.dsl.ast.ChildBy -> {
+                val distance = evaluateAt(childPrice.distance, fillPrice)
+                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
+            }
+            is com.qkt.dsl.ast.ChildAt -> evaluateAt(childPrice.price, fillPrice).setScale(Money.SCALE, Money.ROUNDING)
+            is com.qkt.dsl.ast.ChildPct -> {
+                val distance = fillPrice.multiply(evaluateAt(childPrice.frac, fillPrice), Money.CONTEXT)
+                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
+            }
+            is com.qkt.dsl.ast.ChildRr ->
+                error("ChildRr is not supported in STACK outerBracket; wire risk metrics first")
+        }
     }
 
     private fun evaluateStackFlat(e: BrokerEvent.OrderFilled) {

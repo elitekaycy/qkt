@@ -703,6 +703,114 @@ class OrderManagerStackTest {
     }
 
     @Test
+    fun `layer 1 fill attaches both SL and TP as OCO siblings`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val plan =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                    ),
+                outerBracket =
+                    com.qkt.dsl.ast.BracketAst(
+                        stopLoss = ChildBy(NumLit(BigDecimal("50"))),
+                        takeProfit = ChildBy(NumLit(BigDecimal("200"))),
+                    ),
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-tp",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l1",
+                brokerOrderId = "b1",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                price = BigDecimal("50000"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+        val active = manager.activeOrders()
+        assertThat(active.any { it.id == "${req.id}-l1-sl" }).isTrue
+        assertThat(active.any { it.id == "${req.id}-l1-tp" }).isTrue
+        val sl = active.first { it.id == "${req.id}-l1-sl" }.request as OrderRequest.Stop
+        val tp = active.first { it.id == "${req.id}-l1-tp" }.request as OrderRequest.Limit
+        assertThat(sl.stopPrice).isEqualByComparingTo(BigDecimal("49950"))
+        assertThat(tp.limitPrice).isEqualByComparingTo(BigDecimal("50200"))
+    }
+
+    @Test
+    fun `TP fill cancels SL as OCO sibling`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val plan =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                    ),
+                outerBracket =
+                    com.qkt.dsl.ast.BracketAst(
+                        stopLoss = ChildBy(NumLit(BigDecimal("50"))),
+                        takeProfit = ChildBy(NumLit(BigDecimal("200"))),
+                    ),
+            )
+        val req =
+            OrderRequest.Stack(
+                id = "stk-tp2",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(req)
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l1",
+                brokerOrderId = "b1",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                price = BigDecimal("50000"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${req.id}-l1-tp",
+                brokerOrderId = "b2",
+                symbol = "BTCUSDT",
+                side = Side.SELL,
+                price = BigDecimal("50200"),
+                quantity = BigDecimal("0.1"),
+                timestamp = clock.now(),
+            ),
+        )
+        val sl = manager.activeOrders().firstOrNull { it.id == "${req.id}-l1-sl" }
+        assertThat(sl).isNull()
+    }
+
+    @Test
     fun `resolvedQuantity on LayerSpec is used directly, bypassing SizeQty literal fallback`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
