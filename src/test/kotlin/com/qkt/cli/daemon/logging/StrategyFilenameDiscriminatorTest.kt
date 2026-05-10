@@ -12,23 +12,41 @@ class StrategyFilenameDiscriminatorTest {
         val mdc = if (strategy == null) emptyMap() else mapOf("strategy" to strategy)
         return object : ILoggingEvent {
             override fun getMDCPropertyMap(): Map<String, String> = mdc
+
             override fun getMdc(): Map<String, String> = mdc
+
             override fun getThreadName(): String = "test"
+
             override fun getLevel(): ch.qos.logback.classic.Level = ch.qos.logback.classic.Level.INFO
+
             override fun getMessage(): String = ""
+
             override fun getArgumentArray(): Array<Any?>? = null
+
             override fun getFormattedMessage(): String = ""
+
             override fun getLoggerName(): String = "test"
+
             override fun getLoggerContextVO(): ch.qos.logback.classic.spi.LoggerContextVO? = null
+
             override fun getThrowableProxy(): ch.qos.logback.classic.spi.IThrowableProxy? = null
+
             override fun getCallerData(): Array<StackTraceElement> = emptyArray()
+
             override fun hasCallerData(): Boolean = false
+
             override fun getMarker(): org.slf4j.Marker? = null
+
             override fun getMarkerList(): MutableList<org.slf4j.Marker>? = null
+
             override fun getKeyValuePairs(): MutableList<org.slf4j.event.KeyValuePair>? = null
+
             override fun getTimeStamp(): Long = 0L
+
             override fun getNanoseconds(): Int = 0
+
             override fun getSequenceNumber(): Long = 0
+
             override fun prepareForDeferredProcessing() {}
         }
     }

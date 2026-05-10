@@ -41,7 +41,6 @@ import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
-import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
@@ -76,6 +75,7 @@ import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
