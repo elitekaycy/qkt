@@ -33,12 +33,40 @@ class DaemonCommand(
         val sharedHub =
             com.qkt.dsl.compile
                 .CandleHub()
+
+        val configPathEarly =
+            args.option("config")?.let { java.nio.file.Path.of(it) }
+                ?: java.nio.file.Path.of("./qkt.config.yaml")
+        val cfg = Config.load(configPathEarly)
+        val mt5Profiles =
+            try {
+                com.qkt.broker.mt5
+                    .MT5BrokerProfileLoader()
+                    .load(
+                        raw = cfg.brokers,
+                        defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
+                        env = System.getenv(),
+                    )
+            } catch (e: Exception) {
+                println("[WARN] mt5 profile load failed: ${e.message}")
+                emptyList()
+            }
+        val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
+            mt5Profiles.associate { profile ->
+                profile.name.lowercase() to
+                    { bus, clock, _ ->
+                        com.qkt.broker.mt5
+                            .MT5Broker(profile, bus, clock)
+                    }
+            }
+
         val registry =
             StrategyRegistry(
                 StrategyHandle.RealFactory(
                     stateDir = stateDir,
                     marketSourceProvider = sourceFactory,
                     candleHub = sharedHub,
+                    brokerFactories = brokerFactories,
                 ),
             )
         val startedAt = Instant.now()
@@ -49,6 +77,7 @@ class DaemonCommand(
                 .PortfolioDeployer(
                     stateDir = stateDir,
                     marketSourceProvider = sourceFactory,
+                    brokerFactories = brokerFactories,
                 )
         val plane =
             ControlPlane(
@@ -70,30 +99,6 @@ class DaemonCommand(
                 "(state file: ${stateDir.controlPortFile})",
         )
 
-        // Load MT5 broker profiles from qkt.config.yaml. Profiles are surfaced via
-        // `qkt brokers list`; live strategy → MT5 dispatch requires a follow-on
-        // LiveSession refactor (tracked in docs/backlog.md).
-        val configPath =
-            args.option("config")?.let {
-                java.nio.file.Path
-                    .of(it)
-            }
-                ?: java.nio.file.Path
-                    .of("./qkt.config.yaml")
-        val cfg = Config.load(configPath)
-        val mt5Profiles =
-            try {
-                com.qkt.broker.mt5
-                    .MT5BrokerProfileLoader()
-                    .load(
-                        raw = cfg.brokers,
-                        defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
-                        env = System.getenv(),
-                    )
-            } catch (e: Exception) {
-                println("[WARN] mt5 profile load failed: ${e.message}")
-                emptyList()
-            }
         if (mt5Profiles.isNotEmpty()) {
             println("[INFO] mt5 broker profiles loaded: ${mt5Profiles.joinToString { it.name }}")
         }
