@@ -1,0 +1,64 @@
+# qkt + mt5-gateway full-stack development setup.
+#
+# Spins up:
+#   - mt5-gateway: MT5 in Wine + Flask HTTP API (port 5001) + VNC (port 3000)
+#   - qkt:        daemon auto-deploying strategies from ./strategies
+#
+# Prerequisites:
+#   1. Build mt5-gateway image (clone https://github.com/elitekaycy/mt5-gateway, run `docker build`).
+#      Or pull from a private registry if you have one configured.
+#   2. Copy .env.example to .env and set MT5_LOGIN / MT5_PASSWORD / MT5_SERVER / VNC_PASSWORD.
+#   3. Drop .qkt files in ./strategies/ before `up`, or `qkt deploy` after.
+#
+# First-run flow:
+#   docker compose up -d
+#   # Open VNC at localhost:3000, log in to MT5 through the GUI
+#   curl http://localhost:5001/health
+#   docker compose exec qkt qkt deploy /strategies/live_eur.qkt --as live_eur
+#
+# Tear down:
+#   docker compose down                # keeps state
+#   docker compose down -v             # also wipes the volume
+
+services:
+  mt5-gateway:
+    image: mt5-gateway:latest
+    container_name: qkt-mt5-gateway
+    restart: unless-stopped
+    environment:
+      - MT5_LOGIN=${MT5_LOGIN}
+      - MT5_PASSWORD=${MT5_PASSWORD}
+      - MT5_SERVER=${MT5_SERVER}
+      - VNC_PASSWORD=${VNC_PASSWORD}
+    ports:
+      - "3000:3000"   # VNC — connect to log in to MT5 GUI on first start
+      - "5001:5001"   # HTTP API — qkt daemon talks here
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  qkt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qkt:local
+    container_name: qkt-daemon
+    restart: unless-stopped
+    depends_on:
+      mt5-gateway:
+        condition: service_healthy
+    environment:
+      - QKT_STATE_DIR=/var/lib/qkt
+      - QKT_CONFIG=/etc/qkt/qkt.config.yaml
+    volumes:
+      - ./strategies:/strategies:ro
+      - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
+      - qkt-state:/var/lib/qkt
+    ports:
+      - "47000-47100:47000-47100"   # observability ports for deployed strategies
+    # ENTRYPOINT inherited from Dockerfile: qkt daemon --load-dir /strategies
+
+volumes:
+  qkt-state:

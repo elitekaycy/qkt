@@ -1,0 +1,40 @@
+# qkt project config. Copy to qkt.config.yaml and adjust.
+#
+# - `${VAR}` values are substituted from environment variables at load time.
+# - Broker entries with `type: mt5` route through the MT5 broker (Phase 17/18).
+# - Built-in profiles (exness, icmarkets, ftmo, pepperstone) supply sensible defaults;
+#   listing a profile by its built-in name partially overrides those defaults.
+# - For multi-account same-broker setups, use `extends:` with a distinct name.
+#
+# Run `qkt brokers list` to see the resolved profile set.
+
+source: tv                            # default tick source for live mode
+data_root: ./data                     # historical-data store
+starting_balance: 10000               # default starting balance for backtest reports
+log_level: info
+
+# Optional Bybit credentials — only used if a strategy declares a BYBIT: stream
+# bybit:
+#   api_key: ${BYBIT_API_KEY}
+#   api_secret: ${BYBIT_API_SECRET}
+
+brokers:
+  # Use the built-in exness defaults; override only the gateway URL.
+  exness:
+    type: mt5
+    gateway_url: ${QKT_EXNESS_URL:-http://mt5-gateway:5001}
+
+  # Example: a second Exness account on a separate gateway/login.
+  # exness-personal:
+  #   type: mt5
+  #   extends: exness
+  #   gateway_url: http://mt5-gateway-2:5001
+  #   magic: 10005
+
+  # Example: a totally new MT5 broker.
+  # icmarkets:
+  #   type: mt5
+  #   gateway_url: http://localhost:5002
+  #   symbol_suffix: ".raw"
+  #   server_tz_offset_hours: 3
+  #   magic: 10002
