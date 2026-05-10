@@ -98,7 +98,7 @@ class ActionCompiler(
         }
 
     private fun compileLog(log: Log): (EvalContext) -> List<Signal> {
-        val msg = log.message
+        val msg = log.messageFormat
         return { _ ->
             strategyLogger.info(msg)
             emptyList()

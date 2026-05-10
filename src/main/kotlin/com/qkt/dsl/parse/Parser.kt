@@ -38,6 +38,7 @@ import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
@@ -687,7 +688,7 @@ class Parser(
             TokenKind.LOG -> {
                 advance()
                 val msg = expect(TokenKind.STRING, "expected string literal after LOG").lexeme
-                Log(msg)
+                Log(LogLevel.INFO, msg, emptyMap())
             }
             else -> error("expected action keyword, got '${peek().lexeme}'")
         }

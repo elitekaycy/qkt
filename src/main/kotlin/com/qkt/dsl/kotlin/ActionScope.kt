@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
@@ -102,7 +103,7 @@ object ActionScope {
             ),
         )
 
-    fun log(message: String): ActionAst = Log(message)
+    fun log(message: String): ActionAst = Log(LogLevel.INFO, message, emptyMap())
 
     fun closeStream(stream: StreamRef): ActionAst = Close(stream.alias)
 

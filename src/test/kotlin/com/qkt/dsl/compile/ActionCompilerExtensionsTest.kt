@@ -28,7 +28,7 @@ class ActionCompilerExtensionsTest {
     fun `Log emits no signals`() {
         val sigs =
             ActionCompiler(ExprCompiler(), logger)
-                .compile(Log("entered long"))
+                .compile(Log(com.qkt.dsl.ast.LogLevel.INFO, "entered long", emptyMap()))
                 .invoke(ctx)
         assertThat(sigs).isEmpty()
     }
