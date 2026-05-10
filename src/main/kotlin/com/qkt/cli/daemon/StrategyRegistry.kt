@@ -56,8 +56,7 @@ class StrategyRegistry(
 
     fun listPortfolios(): List<PortfolioRecord> = portfolios.values.toList()
 
-    fun childrenOf(parent: String): List<StrategyHandle> =
-        handles.values.filter { it.childMeta?.parent == parent }
+    fun childrenOf(parent: String): List<StrategyHandle> = handles.values.filter { it.childMeta?.parent == parent }
 
     fun removePortfolio(name: String): PortfolioRecord? {
         val record = portfolios.remove(name) ?: return null

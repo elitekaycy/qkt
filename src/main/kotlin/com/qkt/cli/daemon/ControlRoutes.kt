@@ -111,8 +111,9 @@ object ControlRoutes {
         val handle =
             registry.get(name)
                 ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
-        val body = fetchStrategyStatus(handle.port)
-            ?: return respond(ex, 502, """{"error":"strategy /status unreachable"}""")
+        val body =
+            fetchStrategyStatus(handle.port)
+                ?: return respond(ex, 502, """{"error":"strategy /status unreachable"}""")
         if (handle.childMeta != null) {
             respond(ex, 200, augmentChildStatus(body, handle))
         } else {
@@ -154,10 +155,18 @@ object ControlRoutes {
             val meta = c.childMeta ?: continue
             val raw = fetchStrategyStatus(c.port) ?: continue
             val obj = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: continue
-            realized = realized + (obj["realized"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
-            unrealized = unrealized + (obj["unrealized"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
-            equity = equity + (obj["equity"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
-            balance = balance + (obj["balance"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            realized =
+                realized +
+                (obj["realized"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            unrealized =
+                unrealized +
+                (obj["unrealized"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            equity =
+                equity +
+                (obj["equity"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            balance =
+                balance +
+                (obj["balance"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
             childRows.add(
                 kotlinx.serialization.json.buildJsonObject {
                     put("alias", kotlinx.serialization.json.JsonPrimitive(meta.alias))
@@ -172,19 +181,20 @@ object ControlRoutes {
                 },
             )
         }
-        return kotlinx.serialization.json.buildJsonObject {
-            put("name", kotlinx.serialization.json.JsonPrimitive(record.name))
-            put("kind", kotlinx.serialization.json.JsonPrimitive("portfolio"))
-            put("version", kotlinx.serialization.json.JsonPrimitive(record.version))
-            put("startedAt", kotlinx.serialization.json.JsonPrimitive(record.startedAt.toString()))
-            put("uptimeMs", kotlinx.serialization.json.JsonPrimitive(now - record.startedAt.toEpochMilli()))
-            put("supervisorRunning", kotlinx.serialization.json.JsonPrimitive(record.supervisor.running))
-            put("equity", kotlinx.serialization.json.JsonPrimitive(equity.toPlainString()))
-            put("balance", kotlinx.serialization.json.JsonPrimitive(balance.toPlainString()))
-            put("realized", kotlinx.serialization.json.JsonPrimitive(realized.toPlainString()))
-            put("unrealized", kotlinx.serialization.json.JsonPrimitive(unrealized.toPlainString()))
-            put("children", kotlinx.serialization.json.JsonArray(childRows))
-        }.toString()
+        return kotlinx.serialization.json
+            .buildJsonObject {
+                put("name", kotlinx.serialization.json.JsonPrimitive(record.name))
+                put("kind", kotlinx.serialization.json.JsonPrimitive("portfolio"))
+                put("version", kotlinx.serialization.json.JsonPrimitive(record.version))
+                put("startedAt", kotlinx.serialization.json.JsonPrimitive(record.startedAt.toString()))
+                put("uptimeMs", kotlinx.serialization.json.JsonPrimitive(now - record.startedAt.toEpochMilli()))
+                put("supervisorRunning", kotlinx.serialization.json.JsonPrimitive(record.supervisor.running))
+                put("equity", kotlinx.serialization.json.JsonPrimitive(equity.toPlainString()))
+                put("balance", kotlinx.serialization.json.JsonPrimitive(balance.toPlainString()))
+                put("realized", kotlinx.serialization.json.JsonPrimitive(realized.toPlainString()))
+                put("unrealized", kotlinx.serialization.json.JsonPrimitive(unrealized.toPlainString()))
+                put("children", kotlinx.serialization.json.JsonArray(childRows))
+            }.toString()
     }
 
     private fun handleStatusAll(
@@ -422,7 +432,11 @@ object ControlRoutes {
         }
 
         val parsed =
-            when (val r = com.qkt.dsl.parse.Dsl.parseFileAny(path)) {
+            when (
+                val r =
+                    com.qkt.dsl.parse.Dsl
+                        .parseFileAny(path)
+            ) {
                 is com.qkt.dsl.parse.ParseResult.Success -> r.value
                 is com.qkt.dsl.parse.ParseResult.Failure -> {
                     val msg = r.errors.joinToString(";") { it.message }.replace("\"", "'")
@@ -458,7 +472,9 @@ object ControlRoutes {
                 }
                 val record =
                     try {
-                        val compiled = com.qkt.dsl.portfolio.PortfolioLoader.load(path)
+                        val compiled =
+                            com.qkt.dsl.portfolio.PortfolioLoader
+                                .load(path)
                         val record = portfolioDeployer.deploy(name, compiled)
                         registry.registerPortfolio(record)
                         record
@@ -491,8 +507,9 @@ object ControlRoutes {
         registry: StrategyRegistry,
         path: String,
     ) {
-        val name = path.removePrefix("/start/").trim('/').ifBlank { null }
-            ?: return respond(ex, 400, """{"error":"missing name"}""")
+        val name =
+            path.removePrefix("/start/").trim('/').ifBlank { null }
+                ?: return respond(ex, 400, """{"error":"missing name"}""")
         val handle = registry.get(name)
         if (handle != null && handle.childMeta != null) {
             handle.childMeta.operatorStop.set(false)

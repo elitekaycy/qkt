@@ -6,21 +6,14 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
-import com.qkt.cli.observe.PositionDto
-import com.qkt.cli.observe.StatusSnapshot
-import com.qkt.cli.observe.TradeDto
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
-import com.qkt.execution.Trade
 import com.qkt.marketdata.source.MarketSource
-import java.math.BigDecimal
 import java.nio.file.Path
 import java.time.Instant
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 class StrategyHandle(
@@ -33,7 +26,6 @@ class StrategyHandle(
     val startedAt: Instant,
     val childMeta: ChildMeta? = null,
 ) : AutoCloseable {
-
     data class ChildMeta(
         val parent: String,
         val alias: String,
@@ -41,6 +33,7 @@ class StrategyHandle(
         val gateActive: java.util.concurrent.atomic.AtomicBoolean,
         val operatorStop: java.util.concurrent.atomic.AtomicBoolean,
     )
+
     val port: Int get() = observability.boundPort
     val tradeCount: Int get() = ring.size()
 
@@ -168,6 +161,5 @@ class StrategyHandle(
                 startedAt = startedAt,
             )
         }
-
     }
 }

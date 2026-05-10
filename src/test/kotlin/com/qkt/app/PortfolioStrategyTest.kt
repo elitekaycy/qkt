@@ -67,7 +67,10 @@ class PortfolioStrategyTest {
                     StrategyAst(
                         name = "x",
                         version = 1,
-                        streams = listOf(StreamDecl(alias = "btc", broker = "BACKTEST", symbol = "BTCUSDT", timeframe = "1m")),
+                        streams =
+                            listOf(
+                                StreamDecl(alias = "btc", broker = "BACKTEST", symbol = "BTCUSDT", timeframe = "1m"),
+                            ),
                         constants = emptyList(),
                         lets = emptyList(),
                         defaults = null,

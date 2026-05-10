@@ -168,7 +168,10 @@ class PortfolioSupervisorTest {
                     StrategyAst(
                         name = alias,
                         version = 1,
-                        streams = listOf(StreamDecl(alias = "s", broker = "BACKTEST", symbol = "BTCUSDT", timeframe = "1m")),
+                        streams =
+                            listOf(
+                                StreamDecl(alias = "s", broker = "BACKTEST", symbol = "BTCUSDT", timeframe = "1m"),
+                            ),
                         constants = emptyList(),
                         lets = emptyList(),
                         defaults = null,
@@ -177,7 +180,9 @@ class PortfolioSupervisorTest {
                 live = live,
                 observability = server,
                 ring = ring,
-                logFile = java.nio.file.Files.createTempFile("child-", ".log"),
+                logFile =
+                    java.nio.file.Files
+                        .createTempFile("child-", ".log"),
                 startedAt = Instant.now(),
             )
         return ChildHandle(parent = parent, alias = alias, hold = hold, handle = handle)
