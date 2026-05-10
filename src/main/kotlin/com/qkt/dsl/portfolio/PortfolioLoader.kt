@@ -72,6 +72,7 @@ object PortfolioLoader {
                         compiled = compiled,
                         streams = childAst.streams.map { it.alias },
                         symbols = childAst.streams.map { it.symbol }.distinct(),
+                        ast = childAst,
                     )
                 }
             return PortfolioCompiled(ast, children)

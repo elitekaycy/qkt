@@ -31,7 +31,7 @@ class StateDir private constructor(
         Files.deleteIfExists(controlPortFile)
     }
 
-    fun logFile(name: String): Path = logsDir.resolve("$name.log")
+    fun logFile(name: String): Path = logsDir.resolve("${name.replace("/", "__")}.log")
 
     companion object {
         fun resolve(override: String? = null): StateDir {

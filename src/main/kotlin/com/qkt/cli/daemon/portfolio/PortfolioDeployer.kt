@@ -1,0 +1,179 @@
+package com.qkt.cli.daemon.portfolio
+
+import com.qkt.app.LiveSession
+import com.qkt.candles.TimeWindow
+import com.qkt.cli.daemon.PortfolioRecord
+import com.qkt.cli.daemon.StateDir
+import com.qkt.cli.daemon.StrategyHandle
+import com.qkt.cli.daemon.buildSnapshot
+import com.qkt.cli.daemon.signalToJson
+import com.qkt.cli.daemon.tradeToJson
+import com.qkt.cli.observe.EventRing
+import com.qkt.cli.observe.ObservabilityServer
+import com.qkt.cli.observe.PendingStackLayer
+import com.qkt.dsl.portfolio.CompiledChild
+import com.qkt.dsl.portfolio.PortfolioCompiled
+import com.qkt.marketdata.source.MarketSource
+import java.nio.file.Files
+import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
+
+class PortfolioDeployer(
+    private val stateDir: StateDir,
+    private val marketSourceProvider: (List<String>) -> MarketSource,
+    private val ringSize: Int = 1000,
+    private val bind: String = "127.0.0.1",
+) {
+    fun deploy(
+        portfolioName: String,
+        compiled: PortfolioCompiled,
+    ): PortfolioRecord {
+        val children = mutableListOf<StrategyHandle>()
+        val childWrappers = mutableListOf<ChildHandle>()
+        try {
+            for (compiledChild in compiled.children) {
+                val (handle, wrapper) = createChild(portfolioName, compiledChild)
+                children.add(handle)
+                childWrappers.add(wrapper)
+            }
+            val tvSymbols = compiled.ast.streams.map { "${it.broker}:${it.symbol}" }.distinct()
+            val supervisor =
+                PortfolioSupervisor(
+                    ast = compiled.ast,
+                    children = childWrappers,
+                    marketSource = if (tvSymbols.isEmpty()) null else marketSourceProvider(tvSymbols),
+                )
+            supervisor.start()
+
+            val portfolioLog = stateDir.logFile(portfolioName)
+            Files.createDirectories(portfolioLog.parent)
+            if (!Files.exists(portfolioLog)) Files.createFile(portfolioLog)
+
+            return PortfolioRecord(
+                name = portfolioName,
+                version = compiled.ast.version,
+                supervisor = supervisor,
+                children = children,
+                logFile = portfolioLog,
+                startedAt = Instant.now(),
+            )
+        } catch (e: Exception) {
+            for (h in children) runCatching { h.close() }
+            throw e
+        }
+    }
+
+    private fun createChild(
+        portfolioName: String,
+        compiledChild: CompiledChild,
+    ): Pair<StrategyHandle, ChildHandle> {
+        val childName = "$portfolioName/${compiledChild.alias}"
+        val gateActive = AtomicBoolean(false)
+        val operatorStop = AtomicBoolean(false)
+        val effectiveActive: () -> Boolean = { gateActive.get() && !operatorStop.get() }
+
+        val tvSymbols = compiledChild.ast.streams.map { "${it.broker}:${it.symbol}" }.distinct()
+        val source = marketSourceProvider(tvSymbols)
+        val ring = EventRing(capacity = ringSize)
+        val startMs = System.currentTimeMillis()
+        val startedAt = Instant.ofEpochMilli(startMs)
+
+        val candleWindow: TimeWindow? =
+            compiledChild.ast.streams
+                .firstOrNull()
+                ?.timeframe
+                ?.let { TimeWindow.parse(it) }
+
+        val session =
+            LiveSession(
+                strategies = listOf(compiledChild.strategyId to compiledChild.compiled),
+                source = source,
+                symbols = compiledChild.symbols,
+                candleWindow = candleWindow,
+                mdcStrategy = childName,
+                onTrade = { trade, realized, _ ->
+                    org.slf4j.MDC.put("strategy", childName)
+                    org.slf4j.MDC.put("parent", portfolioName)
+                    try {
+                        ring.append("trade", tradeToJson(trade, realized))
+                    } finally {
+                        org.slf4j.MDC.remove("strategy")
+                        org.slf4j.MDC.remove("parent")
+                    }
+                },
+                onSignal = { sig ->
+                    org.slf4j.MDC.put("strategy", childName)
+                    org.slf4j.MDC.put("parent", portfolioName)
+                    try {
+                        ring.append("signal", signalToJson(sig))
+                    } finally {
+                        org.slf4j.MDC.remove("strategy")
+                        org.slf4j.MDC.remove("parent")
+                    }
+                },
+                gate = effectiveActive,
+            ).start()
+
+        val server =
+            ObservabilityServer(
+                ring = ring,
+                statusProvider = {
+                    val layers =
+                        session.pendingStackLayerInfos().map {
+                            PendingStackLayer(
+                                stackId = it.stackId,
+                                layer = it.layer,
+                                triggerPrice = it.triggerPrice,
+                                side = it.side,
+                                quantity = it.quantity,
+                            )
+                        }
+                    buildSnapshot(
+                        childName,
+                        compiledChild.ast.version,
+                        startMs,
+                        startedAt.toString(),
+                        session.recentTrades(),
+                        layers,
+                    )
+                },
+                running = { session.running },
+                onStop = { _ -> session.stop() },
+                bind = bind,
+                port = 0,
+            ).also { it.start() }
+
+        val logFile = stateDir.logFile(childName)
+        Files.createDirectories(logFile.parent)
+        if (!Files.exists(logFile)) Files.createFile(logFile)
+
+        val handle =
+            StrategyHandle(
+                name = childName,
+                ast = compiledChild.ast,
+                live = session,
+                observability = server,
+                ring = ring,
+                logFile = logFile,
+                startedAt = startedAt,
+                childMeta =
+                    StrategyHandle.ChildMeta(
+                        parent = portfolioName,
+                        alias = compiledChild.alias,
+                        hold = compiledChild.hold,
+                        gateActive = gateActive,
+                        operatorStop = operatorStop,
+                    ),
+            )
+        val wrapper =
+            ChildHandle(
+                parent = portfolioName,
+                alias = compiledChild.alias,
+                hold = compiledChild.hold,
+                handle = handle,
+                gateActive = gateActive,
+                operatorStop = operatorStop,
+            )
+        return handle to wrapper
+    }
+}
