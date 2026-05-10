@@ -99,6 +99,19 @@ class ControlClient(
         return readOrThrow(resp)
     }
 
+    fun start(name: String): String {
+        val resp =
+            http
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("${baseUrl()}/start/$name")
+                        .post("".toRequestBody(JSON_MEDIA))
+                        .build(),
+                ).execute()
+        return readOrThrow(resp)
+    }
+
     fun deploy(
         name: String,
         file: Path,

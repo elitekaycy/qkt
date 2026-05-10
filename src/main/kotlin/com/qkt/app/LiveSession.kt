@@ -51,6 +51,7 @@ class LiveSession(
     private val onWarmupTick: (Tick) -> Unit = {},
     private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
     private val onSignal: (Signal) -> Unit = {},
+    private val gate: () -> Boolean = { true },
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -97,6 +98,7 @@ class LiveSession(
                     trades.add(trade)
                     onTrade(trade, realized, strategyId)
                 },
+                gate = gate,
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
@@ -158,6 +160,32 @@ class LiveSession(
 
             override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
                 pipeline.orderManager.pendingStackLayerInfos()
+
+            override fun flatten() {
+                val strategyId = strategies.firstOrNull()?.first ?: return
+                val current = positions.allPositions()
+                for ((symbol, pos) in current) {
+                    if (pos.quantity.signum() == 0) continue
+                    pipeline.orderManager.cancelPendingForSymbol(symbol)
+                    val side =
+                        if (pos.quantity.signum() > 0) {
+                            com.qkt.common.Side.SELL
+                        } else {
+                            com.qkt.common.Side.BUY
+                        }
+                    val request =
+                        com.qkt.execution.OrderRequest.Market(
+                            id = ids.next(),
+                            symbol = symbol,
+                            side = side,
+                            quantity = pos.quantity.abs(),
+                            timeInForce = com.qkt.execution.TimeInForce.GTC,
+                            timestamp = clock.now(),
+                            strategyId = strategyId,
+                        )
+                    bus.publish(com.qkt.events.OrderEvent(request))
+                }
+            }
         }
     }
 }

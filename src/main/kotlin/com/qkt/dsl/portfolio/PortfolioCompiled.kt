@@ -1,6 +1,7 @@
 package com.qkt.dsl.portfolio
 
 import com.qkt.dsl.ast.PortfolioAst
+import com.qkt.dsl.ast.StrategyAst
 import com.qkt.strategy.Strategy
 
 data class PortfolioCompiled(
@@ -15,4 +16,5 @@ data class CompiledChild(
     val compiled: Strategy,
     val streams: List<String>,
     val symbols: List<String>,
+    val ast: StrategyAst,
 )

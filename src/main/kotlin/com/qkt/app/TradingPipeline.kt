@@ -62,6 +62,7 @@ class TradingPipeline(
     val onFilled: (Trade, BigDecimal, String) -> Unit = { _, _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
+    val gate: () -> Boolean = { true },
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
@@ -91,7 +92,7 @@ class TradingPipeline(
                     pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                 )
-            val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
+            val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 bus.publish(SignalEvent(sig))
                 if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
                     orderManager.cancelPendingForSymbol(sig.symbol)
@@ -104,6 +105,9 @@ class TradingPipeline(
                         }
                     }
                 }
+            }
+            val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
+                if (gate()) rawEmit(sig)
             }
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
                 for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention)

@@ -6,7 +6,7 @@ An event-driven trading engine in Kotlin with backtest replay, parameter sweeps,
 
 ## Status
 
-Pre-1.0. Latest release: [`v0.15.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.16.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
 See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-process.md`](docs/release-process.md) for versioning.
 
@@ -22,6 +22,7 @@ See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-p
 - **On-disk content-addressable data store** with Dukascopy auto-fetch and bring-your-own CSV ([phase 6](docs/phases/)).
 - **STACK pyramiding** — turn one `BUY`/`SELL` action into N price-triggered entries with an optional time fence ([phase 13a](docs/phases/phase-13a-stack.md)).
 - **CANCEL action + PORTFOLIO** — `CANCEL`/`CANCEL_ALL` cancel pending orders from inside a strategy; `PORTFOLIO` files compose N strategies with regime-gated activation ([phase 13b](docs/phases/phase-13b.md)).
+- **Portfolio daemon** — `qkt deploy mybook.qkt` fans out into per-child `LiveSession`s with their own ports + logs; `qkt start mybook/trend` clears operator-stop ([phase 14](docs/phases/phase-14.md)).
 
 ### STACK example — 3-layer pyramid
 

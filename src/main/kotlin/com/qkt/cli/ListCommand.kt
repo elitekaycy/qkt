@@ -35,15 +35,24 @@ class ListCommand(
             println(body)
             return ExitCodes.SUCCESS
         }
-        println("NAME          UPTIME   PORT     TRADES   STATE")
-        for (e in arr) {
-            val o = e as? JsonObject ?: continue
+        val rows = arr.mapNotNull { it as? JsonObject }
+        val sorted =
+            rows.sortedWith(
+                compareBy(
+                    { it["parent"]?.jsonPrimitive?.contentOrNull ?: it["name"]!!.jsonPrimitive.content },
+                    { it["name"]!!.jsonPrimitive.content },
+                ),
+            )
+        println("NAME                KIND       UPTIME   PORT     TRADES   STATE")
+        for (o in sorted) {
             val name = o["name"]?.jsonPrimitive?.contentOrNull ?: "?"
+            val kind = o["kind"]?.jsonPrimitive?.contentOrNull ?: "strategy"
             val uptimeMs = o["uptimeMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
-            val port = o["port"]?.jsonPrimitive?.contentOrNull ?: "?"
-            val trades = o["trades"]?.jsonPrimitive?.contentOrNull ?: "0"
+            val port = o["port"]?.jsonPrimitive?.contentOrNull ?: "-"
+            val trades = o["trades"]?.jsonPrimitive?.contentOrNull ?: "-"
             val state = o["state"]?.jsonPrimitive?.contentOrNull ?: "?"
-            println("%-13s %-8s %-8s %-8s %s".format(name, formatUptime(uptimeMs), port, trades, state))
+            val display = if (kind == "child") "  $name" else name
+            println("%-19s %-10s %-8s %-8s %-8s %s".format(display, kind, formatUptime(uptimeMs), port, trades, state))
         }
         return ExitCodes.SUCCESS
     }

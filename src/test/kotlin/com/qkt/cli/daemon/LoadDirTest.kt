@@ -112,11 +112,17 @@ RULES
             waitForFile(stateDir.controlPortFile)
             val port = stateDir.readControlPort()!!
             val client = OkHttpClient()
-            val resp =
-                client
-                    .newCall(Request.Builder().url("http://127.0.0.1:$port/list").build())
-                    .execute()
-            val body = resp.body!!.string()
+            val deadline = System.currentTimeMillis() + 30_000
+            var body: String = ""
+            while (System.currentTimeMillis() < deadline) {
+                val resp =
+                    client
+                        .newCall(Request.Builder().url("http://127.0.0.1:$port/list").build())
+                        .execute()
+                body = resp.body!!.string()
+                if (body.contains("\"name\":\"alpha\"") && body.contains("\"name\":\"beta\"")) break
+                Thread.sleep(100)
+            }
             assertThat(body).contains("\"name\":\"alpha\"")
             assertThat(body).contains("\"name\":\"beta\"")
         } finally {

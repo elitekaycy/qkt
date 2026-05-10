@@ -8,6 +8,7 @@ import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 object ControlRoutes {
@@ -17,6 +18,7 @@ object ControlRoutes {
         registry: StrategyRegistry,
         startedAt: Instant,
         stateDir: StateDir?,
+        portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer? = null,
         shutdown: () -> Unit,
     ): HttpHandler =
         HttpHandler { ex ->
@@ -25,9 +27,10 @@ object ControlRoutes {
             try {
                 when {
                     method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
-                    method == "POST" && path == "/deploy" -> handleDeploy(ex, registry)
+                    method == "POST" && path == "/deploy" -> handleDeploy(ex, registry, portfolioDeployer)
                     method == "GET" && path == "/list" -> handleList(ex, registry)
                     method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, path)
+                    method == "POST" && path.startsWith("/start/") -> handleStart(ex, registry, path)
                     method == "POST" && path == "/shutdown" -> handleShutdown(ex, shutdown)
                     method == "GET" && path.startsWith("/logs/") ->
                         handleLogs(ex, registry, stateDir, path)
@@ -56,14 +59,41 @@ object ControlRoutes {
         registry: StrategyRegistry,
     ) {
         val now = Instant.now().toEpochMilli()
-        val arr =
-            registry.list().joinToString(separator = ",", prefix = "[", postfix = "]") { h ->
-                val uptime = now - h.startedAt.toEpochMilli()
-                val state = if (h.isRunning()) "running" else "stopped"
-                """{"name":"${h.name}","port":${h.port},""" +
-                    """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state"}"""
+        val rows = mutableListOf<String>()
+        for (record in registry.listPortfolios()) {
+            val uptime = now - record.startedAt.toEpochMilli()
+            val state = if (record.supervisor.running) "running" else "stopped"
+            val aliases = record.children.mapNotNull { it.childMeta?.alias }
+            val aliasJson = aliases.joinToString(",", "[", "]") { "\"$it\"" }
+            rows.add(
+                """{"name":"${record.name}","kind":"portfolio","childAliases":$aliasJson,""" +
+                    """"uptimeMs":$uptime,"state":"$state"}""",
+            )
+        }
+        for (h in registry.list()) {
+            val uptime = now - h.startedAt.toEpochMilli()
+            val state = if (h.isRunning()) "running" else "stopped"
+            val meta = h.childMeta
+            if (meta != null) {
+                val gateState =
+                    when {
+                        meta.operatorStop.get() -> "operator_stopped"
+                        meta.gateActive.get() -> "active"
+                        else -> "idle"
+                    }
+                rows.add(
+                    """{"name":"${h.name}","kind":"child","parent":"${meta.parent}",""" +
+                        """"port":${h.port},"trades":${h.tradeCount},""" +
+                        """"uptimeMs":$uptime,"state":"$state","gateState":"$gateState"}""",
+                )
+            } else {
+                rows.add(
+                    """{"name":"${h.name}","kind":"strategy","port":${h.port},""" +
+                        """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state"}""",
+                )
             }
-        respond(ex, 200, arr)
+        }
+        respond(ex, 200, rows.joinToString(",", "[", "]"))
     }
 
     private val internalHttp = okhttp3.OkHttpClient()
@@ -74,26 +104,110 @@ object ControlRoutes {
         path: String,
     ) {
         val name = path.removePrefix("/status/").trim('/').ifBlank { null }
-        if (name == null) return respond(ex, 400, """{"error":"missing strategy name in path"}""")
+        if (name == null) return respond(ex, 400, """{"error":"missing name in path"}""")
+        registry.getPortfolio(name)?.let { record ->
+            return respond(ex, 200, composePortfolioStatus(registry, record))
+        }
         val handle =
             registry.get(name)
-                ?: return respond(ex, 404, """{"error":"unknown strategy: $name"}""")
-        val body = fetchStrategyStatus(handle.port)
-        if (body == null) {
-            return respond(ex, 502, """{"error":"strategy /status unreachable"}""")
+                ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
+        val body =
+            fetchStrategyStatus(handle.port)
+                ?: return respond(ex, 502, """{"error":"strategy /status unreachable"}""")
+        if (handle.childMeta != null) {
+            respond(ex, 200, augmentChildStatus(body, handle))
+        } else {
+            respond(ex, 200, body)
         }
-        respond(ex, 200, body)
+    }
+
+    private fun augmentChildStatus(
+        body: String,
+        handle: StrategyHandle,
+    ): String {
+        val obj = json.parseToJsonElement(body).jsonObject
+        val meta = handle.childMeta ?: return body
+        val updated =
+            kotlinx.serialization.json.buildJsonObject {
+                for ((k, v) in obj) put(k, v)
+                put("kind", kotlinx.serialization.json.JsonPrimitive("child"))
+                put("parent", kotlinx.serialization.json.JsonPrimitive(meta.parent))
+                put("alias", kotlinx.serialization.json.JsonPrimitive(meta.alias))
+                put("gateActive", kotlinx.serialization.json.JsonPrimitive(meta.gateActive.get()))
+                put("operatorStop", kotlinx.serialization.json.JsonPrimitive(meta.operatorStop.get()))
+                put("hold", kotlinx.serialization.json.JsonPrimitive(meta.hold))
+            }
+        return updated.toString()
+    }
+
+    private fun composePortfolioStatus(
+        registry: StrategyRegistry,
+        record: PortfolioRecord,
+    ): String {
+        val now = System.currentTimeMillis()
+        val children = registry.childrenOf(record.name)
+        var realized = java.math.BigDecimal.ZERO
+        var unrealized = java.math.BigDecimal.ZERO
+        var equity = java.math.BigDecimal.ZERO
+        var balance = java.math.BigDecimal.ZERO
+        val childRows = mutableListOf<kotlinx.serialization.json.JsonObject>()
+        for (c in children) {
+            val meta = c.childMeta ?: continue
+            val raw = fetchStrategyStatus(c.port) ?: continue
+            val obj = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: continue
+            realized =
+                realized +
+                (obj["realized"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            unrealized =
+                unrealized +
+                (obj["unrealized"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            equity =
+                equity +
+                (obj["equity"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            balance =
+                balance +
+                (obj["balance"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
+            childRows.add(
+                kotlinx.serialization.json.buildJsonObject {
+                    put("alias", kotlinx.serialization.json.JsonPrimitive(meta.alias))
+                    put("name", kotlinx.serialization.json.JsonPrimitive(c.name))
+                    put("port", kotlinx.serialization.json.JsonPrimitive(c.port))
+                    put("gateActive", kotlinx.serialization.json.JsonPrimitive(meta.gateActive.get()))
+                    put("operatorStop", kotlinx.serialization.json.JsonPrimitive(meta.operatorStop.get()))
+                    put("hold", kotlinx.serialization.json.JsonPrimitive(meta.hold))
+                    put("trades", kotlinx.serialization.json.JsonPrimitive(c.tradeCount))
+                    put("realized", obj["realized"] ?: kotlinx.serialization.json.JsonPrimitive("0"))
+                    put("unrealized", obj["unrealized"] ?: kotlinx.serialization.json.JsonPrimitive("0"))
+                },
+            )
+        }
+        return kotlinx.serialization.json
+            .buildJsonObject {
+                put("name", kotlinx.serialization.json.JsonPrimitive(record.name))
+                put("kind", kotlinx.serialization.json.JsonPrimitive("portfolio"))
+                put("version", kotlinx.serialization.json.JsonPrimitive(record.version))
+                put("startedAt", kotlinx.serialization.json.JsonPrimitive(record.startedAt.toString()))
+                put("uptimeMs", kotlinx.serialization.json.JsonPrimitive(now - record.startedAt.toEpochMilli()))
+                put("supervisorRunning", kotlinx.serialization.json.JsonPrimitive(record.supervisor.running))
+                put("equity", kotlinx.serialization.json.JsonPrimitive(equity.toPlainString()))
+                put("balance", kotlinx.serialization.json.JsonPrimitive(balance.toPlainString()))
+                put("realized", kotlinx.serialization.json.JsonPrimitive(realized.toPlainString()))
+                put("unrealized", kotlinx.serialization.json.JsonPrimitive(unrealized.toPlainString()))
+                put("children", kotlinx.serialization.json.JsonArray(childRows))
+            }.toString()
     }
 
     private fun handleStatusAll(
         ex: HttpExchange,
         registry: StrategyRegistry,
     ) {
-        val parts =
-            registry.list().mapNotNull { h ->
+        val portfolioParts = registry.listPortfolios().map { composePortfolioStatus(registry, it) }
+        val strategyParts =
+            registry.list().filter { it.childMeta == null }.mapNotNull { h ->
                 fetchStrategyStatus(h.port)
             }
-        respond(ex, 200, parts.joinToString(separator = ",", prefix = "[", postfix = "]"))
+        val all = portfolioParts + strategyParts
+        respond(ex, 200, all.joinToString(separator = ",", prefix = "[", postfix = "]"))
     }
 
     private fun fetchStrategyStatus(port: Int): String? =
@@ -229,13 +343,9 @@ object ControlRoutes {
     ) {
         val name = path.removePrefix("/stop/").trim('/').ifBlank { null }
         if (name == null) {
-            return respond(ex, 400, """{"error":"missing strategy name in path"}""")
+            return respond(ex, 400, """{"error":"missing name in path"}""")
         }
-        val handle = registry.get(name)
-        if (handle == null) {
-            return respond(ex, 404, """{"error":"unknown strategy: $name"}""")
-        }
-        // ?flatten=true and ?timeout=<ms> are accepted; flatten is a no-op in 12c paper mode.
+        // ?flatten=true and ?timeout=<ms> are accepted on strategy stops; preserved for compatibility.
         val params = parseQuery(ex.requestURI.rawQuery)
         if (params.containsKey("timeout")) {
             val t = params["timeout"]?.toLongOrNull()
@@ -248,6 +358,36 @@ object ControlRoutes {
             if (f != "true" && f != "false") {
                 return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
             }
+        }
+
+        registry.getPortfolio(name)?.let { record ->
+            record.supervisor.stop()
+            var totalTrades = 0
+            for (child in record.children) {
+                val meta = child.childMeta
+                if (meta != null && !meta.hold) {
+                    runCatching { child.live.flatten() }
+                }
+                totalTrades += child.tradeCount
+            }
+            registry.removePortfolio(name)
+            for (child in record.children) runCatching { child.close() }
+            return respond(ex, 200, """{"name":"$name","state":"stopped","trades":$totalTrades}""")
+        }
+
+        val handle =
+            registry.get(name)
+                ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
+        val meta = handle.childMeta
+        if (meta != null) {
+            meta.operatorStop.set(true)
+            meta.gateActive.set(false)
+            if (!meta.hold) runCatching { handle.live.flatten() }
+            return respond(
+                ex,
+                200,
+                """{"name":"$name","state":"operator_stopped","trades":${handle.tradeCount}}""",
+            )
         }
         val trades = handle.tradeCount
         registry.stop(name)
@@ -268,6 +408,7 @@ object ControlRoutes {
     private fun handleDeploy(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer?,
     ) {
         val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
         val obj =
@@ -282,29 +423,105 @@ object ControlRoutes {
         if (file.isNullOrBlank() || name.isNullOrBlank()) {
             return respond(ex, 400, """{"error":"missing 'file' or 'name'"}""")
         }
+        if (name.contains('/')) {
+            return respond(ex, 400, """{"error":"top-level name must not contain '/': $name"}""")
+        }
         val path = Path.of(file)
         if (!Files.exists(path)) {
             return respond(ex, 400, """{"error":"file not found: $file"}""")
         }
-        val handle =
-            try {
-                registry.deploy(name, path)
-            } catch (e: IllegalStateException) {
-                val msg = (e.message ?: "conflict").replace("\"", "'")
-                return respond(ex, 409, """{"error":"$msg"}""")
-            } catch (e: IllegalArgumentException) {
-                val msg = (e.message ?: "invalid").replace("\"", "'")
-                return respond(ex, 400, """{"error":"$msg"}""")
-            } catch (e: Exception) {
-                val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-                return respond(ex, 500, """{"error":"$msg"}""")
+
+        val parsed =
+            when (
+                val r =
+                    com.qkt.dsl.parse.Dsl
+                        .parseFileAny(path)
+            ) {
+                is com.qkt.dsl.parse.ParseResult.Success -> r.value
+                is com.qkt.dsl.parse.ParseResult.Failure -> {
+                    val msg = r.errors.joinToString(";") { it.message }.replace("\"", "'")
+                    return respond(ex, 400, """{"error":"parse failed: $msg"}""")
+                }
             }
-        respond(
-            ex,
-            200,
-            """{"name":"${handle.name}","port":${handle.port},""" +
-                """"state":"running","startedAt":"${handle.startedAt}"}""",
-        )
+
+        when (parsed) {
+            is com.qkt.dsl.parse.ParsedFile.StrategyFile -> {
+                val handle =
+                    try {
+                        registry.deploy(name, path)
+                    } catch (e: IllegalStateException) {
+                        val msg = (e.message ?: "conflict").replace("\"", "'")
+                        return respond(ex, 409, """{"error":"$msg"}""")
+                    } catch (e: IllegalArgumentException) {
+                        val msg = (e.message ?: "invalid").replace("\"", "'")
+                        return respond(ex, 400, """{"error":"$msg"}""")
+                    } catch (e: Exception) {
+                        val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                        return respond(ex, 500, """{"error":"$msg"}""")
+                    }
+                respond(
+                    ex,
+                    200,
+                    """{"name":"${handle.name}","kind":"strategy","port":${handle.port},""" +
+                        """"state":"running","startedAt":"${handle.startedAt}"}""",
+                )
+            }
+            is com.qkt.dsl.parse.ParsedFile.PortfolioFile -> {
+                if (portfolioDeployer == null) {
+                    return respond(ex, 501, """{"error":"portfolio deploy not configured on this daemon"}""")
+                }
+                val record =
+                    try {
+                        val compiled =
+                            com.qkt.dsl.portfolio.PortfolioLoader
+                                .load(path)
+                        val record = portfolioDeployer.deploy(name, compiled)
+                        registry.registerPortfolio(record)
+                        record
+                    } catch (e: IllegalStateException) {
+                        val msg = (e.message ?: "conflict").replace("\"", "'")
+                        return respond(ex, 409, """{"error":"$msg"}""")
+                    } catch (e: IllegalArgumentException) {
+                        val msg = (e.message ?: "invalid").replace("\"", "'")
+                        return respond(ex, 400, """{"error":"$msg"}""")
+                    } catch (e: Exception) {
+                        val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                        return respond(ex, 500, """{"error":"$msg"}""")
+                    }
+                val childrenJson =
+                    record.children.joinToString(",", "[", "]") { c ->
+                        """{"alias":"${c.childMeta!!.alias}","name":"${c.name}","port":${c.port},"hold":${c.childMeta.hold}}"""
+                    }
+                respond(
+                    ex,
+                    200,
+                    """{"name":"${record.name}","kind":"portfolio","state":"running",""" +
+                        """"startedAt":"${record.startedAt}","children":$childrenJson}""",
+                )
+            }
+        }
+    }
+
+    private fun handleStart(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        path: String,
+    ) {
+        val name =
+            path.removePrefix("/start/").trim('/').ifBlank { null }
+                ?: return respond(ex, 400, """{"error":"missing name"}""")
+        val handle = registry.get(name)
+        if (handle != null && handle.childMeta != null) {
+            handle.childMeta.operatorStop.set(false)
+            return respond(ex, 200, """{"name":"$name","state":"resumed"}""")
+        }
+        if (handle != null) {
+            return respond(ex, 400, """{"error":"strategy '$name' has no paused state"}""")
+        }
+        if (registry.getPortfolio(name) != null) {
+            return respond(ex, 400, """{"error":"portfolio '$name' cannot be started; use deploy"}""")
+        }
+        respond(ex, 404, """{"error":"unknown name: $name"}""")
     }
 
     internal fun respond(

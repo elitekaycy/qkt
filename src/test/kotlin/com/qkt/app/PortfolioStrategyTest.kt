@@ -3,6 +3,9 @@ package com.qkt.app
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.ImportClause
 import com.qkt.dsl.ast.PortfolioAst
+import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreamDecl
+import com.qkt.dsl.ast.WhenThen
 import com.qkt.dsl.compile.AggregateBinding
 import com.qkt.dsl.compile.ExprCompiler
 import com.qkt.dsl.compile.IndicatorBinding
@@ -60,6 +63,19 @@ class PortfolioStrategyTest {
                 compiled = recorder,
                 streams = listOf("btc"),
                 symbols = listOf("BTCUSDT"),
+                ast =
+                    StrategyAst(
+                        name = "x",
+                        version = 1,
+                        streams =
+                            listOf(
+                                StreamDecl(alias = "btc", broker = "BACKTEST", symbol = "BTCUSDT", timeframe = "1m"),
+                            ),
+                        constants = emptyList(),
+                        lets = emptyList(),
+                        defaults = null,
+                        rules = emptyList<WhenThen>(),
+                    ),
             )
         val pf = newPortfolio(listOf(child), listOf(AlwaysRun("x")))
 
