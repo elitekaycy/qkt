@@ -20,6 +20,14 @@ qkt treats every commit as if it'll be read by a stranger years from now — bec
 
     [:octicons-arrow-right-24: Conventions](conventions.md)
 
+- :material-comment-text-outline:{ .lg .middle } **KDoc style**
+
+    ---
+
+    What to KDoc, what not to, how the Dokka site is generated.
+
+    [:octicons-arrow-right-24: KDoc style](kdoc-style.md)
+
 - :material-flag-outline:{ .lg .middle } **Phase workflow**
 
     ---

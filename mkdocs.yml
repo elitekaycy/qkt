@@ -124,6 +124,7 @@ nav:
       - contributing/index.md
       - Development setup: contributing/development-setup.md
       - Conventions: contributing/conventions.md
+      - KDoc style: contributing/kdoc-style.md
       - Phase workflow: contributing/phase-workflow.md
   - Phases:
       - phases/index.md
