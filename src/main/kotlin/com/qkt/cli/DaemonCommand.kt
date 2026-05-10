@@ -44,6 +44,12 @@ class DaemonCommand(
         val startedAt = Instant.now()
         val stopLatch = CountDownLatch(1)
 
+        val portfolioDeployer =
+            com.qkt.cli.daemon.portfolio
+                .PortfolioDeployer(
+                    stateDir = stateDir,
+                    marketSourceProvider = sourceFactory,
+                )
         val plane =
             ControlPlane(
                 registry = registry,
@@ -52,6 +58,7 @@ class DaemonCommand(
                 startedAt = startedAt,
                 shutdownHook = { stopLatch.countDown() },
                 stateDir = stateDir,
+                portfolioDeployer = portfolioDeployer,
             )
         plane.start()
         stateDir.writeControlPort(plane.boundPort)

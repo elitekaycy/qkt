@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon
 
+import com.qkt.cli.daemon.portfolio.PortfolioDeployer
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.time.Instant
@@ -12,6 +13,7 @@ class ControlPlane(
     private val startedAt: Instant = Instant.now(),
     private val shutdownHook: () -> Unit = {},
     private val stateDir: StateDir? = null,
+    private val portfolioDeployer: PortfolioDeployer? = null,
 ) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(bind, port), 0)
 
@@ -21,7 +23,7 @@ class ControlPlane(
     init {
         server.createContext(
             "/",
-            ControlRoutes.dispatch(registry, startedAt, stateDir) { shutdownHook() },
+            ControlRoutes.dispatch(registry, startedAt, stateDir, portfolioDeployer) { shutdownHook() },
         )
         server.executor = Executors.newFixedThreadPool(8)
     }

@@ -17,6 +17,7 @@ object ControlRoutes {
         registry: StrategyRegistry,
         startedAt: Instant,
         stateDir: StateDir?,
+        portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer? = null,
         shutdown: () -> Unit,
     ): HttpHandler =
         HttpHandler { ex ->
@@ -25,9 +26,10 @@ object ControlRoutes {
             try {
                 when {
                     method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
-                    method == "POST" && path == "/deploy" -> handleDeploy(ex, registry)
+                    method == "POST" && path == "/deploy" -> handleDeploy(ex, registry, portfolioDeployer)
                     method == "GET" && path == "/list" -> handleList(ex, registry)
                     method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, path)
+                    method == "POST" && path.startsWith("/start/") -> handleStart(ex, registry, path)
                     method == "POST" && path == "/shutdown" -> handleShutdown(ex, shutdown)
                     method == "GET" && path.startsWith("/logs/") ->
                         handleLogs(ex, registry, stateDir, path)
@@ -268,6 +270,7 @@ object ControlRoutes {
     private fun handleDeploy(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer?,
     ) {
         val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
         val obj =
@@ -282,29 +285,98 @@ object ControlRoutes {
         if (file.isNullOrBlank() || name.isNullOrBlank()) {
             return respond(ex, 400, """{"error":"missing 'file' or 'name'"}""")
         }
+        if (name.contains('/')) {
+            return respond(ex, 400, """{"error":"top-level name must not contain '/': $name"}""")
+        }
         val path = Path.of(file)
         if (!Files.exists(path)) {
             return respond(ex, 400, """{"error":"file not found: $file"}""")
         }
-        val handle =
-            try {
-                registry.deploy(name, path)
-            } catch (e: IllegalStateException) {
-                val msg = (e.message ?: "conflict").replace("\"", "'")
-                return respond(ex, 409, """{"error":"$msg"}""")
-            } catch (e: IllegalArgumentException) {
-                val msg = (e.message ?: "invalid").replace("\"", "'")
-                return respond(ex, 400, """{"error":"$msg"}""")
-            } catch (e: Exception) {
-                val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-                return respond(ex, 500, """{"error":"$msg"}""")
+
+        val parsed =
+            when (val r = com.qkt.dsl.parse.Dsl.parseFileAny(path)) {
+                is com.qkt.dsl.parse.ParseResult.Success -> r.value
+                is com.qkt.dsl.parse.ParseResult.Failure -> {
+                    val msg = r.errors.joinToString(";") { it.message }.replace("\"", "'")
+                    return respond(ex, 400, """{"error":"parse failed: $msg"}""")
+                }
             }
-        respond(
-            ex,
-            200,
-            """{"name":"${handle.name}","port":${handle.port},""" +
-                """"state":"running","startedAt":"${handle.startedAt}"}""",
-        )
+
+        when (parsed) {
+            is com.qkt.dsl.parse.ParsedFile.StrategyFile -> {
+                val handle =
+                    try {
+                        registry.deploy(name, path)
+                    } catch (e: IllegalStateException) {
+                        val msg = (e.message ?: "conflict").replace("\"", "'")
+                        return respond(ex, 409, """{"error":"$msg"}""")
+                    } catch (e: IllegalArgumentException) {
+                        val msg = (e.message ?: "invalid").replace("\"", "'")
+                        return respond(ex, 400, """{"error":"$msg"}""")
+                    } catch (e: Exception) {
+                        val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                        return respond(ex, 500, """{"error":"$msg"}""")
+                    }
+                respond(
+                    ex,
+                    200,
+                    """{"name":"${handle.name}","kind":"strategy","port":${handle.port},""" +
+                        """"state":"running","startedAt":"${handle.startedAt}"}""",
+                )
+            }
+            is com.qkt.dsl.parse.ParsedFile.PortfolioFile -> {
+                if (portfolioDeployer == null) {
+                    return respond(ex, 501, """{"error":"portfolio deploy not configured on this daemon"}""")
+                }
+                val record =
+                    try {
+                        val compiled = com.qkt.dsl.portfolio.PortfolioLoader.load(path)
+                        val record = portfolioDeployer.deploy(name, compiled)
+                        registry.registerPortfolio(record)
+                        record
+                    } catch (e: IllegalStateException) {
+                        val msg = (e.message ?: "conflict").replace("\"", "'")
+                        return respond(ex, 409, """{"error":"$msg"}""")
+                    } catch (e: IllegalArgumentException) {
+                        val msg = (e.message ?: "invalid").replace("\"", "'")
+                        return respond(ex, 400, """{"error":"$msg"}""")
+                    } catch (e: Exception) {
+                        val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                        return respond(ex, 500, """{"error":"$msg"}""")
+                    }
+                val childrenJson =
+                    record.children.joinToString(",", "[", "]") { c ->
+                        """{"alias":"${c.childMeta!!.alias}","name":"${c.name}","port":${c.port},"hold":${c.childMeta.hold}}"""
+                    }
+                respond(
+                    ex,
+                    200,
+                    """{"name":"${record.name}","kind":"portfolio","state":"running",""" +
+                        """"startedAt":"${record.startedAt}","children":$childrenJson}""",
+                )
+            }
+        }
+    }
+
+    private fun handleStart(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        path: String,
+    ) {
+        val name = path.removePrefix("/start/").trim('/').ifBlank { null }
+            ?: return respond(ex, 400, """{"error":"missing name"}""")
+        val handle = registry.get(name)
+        if (handle != null && handle.childMeta != null) {
+            handle.childMeta.operatorStop.set(false)
+            return respond(ex, 200, """{"name":"$name","state":"resumed"}""")
+        }
+        if (handle != null) {
+            return respond(ex, 400, """{"error":"strategy '$name' has no paused state"}""")
+        }
+        if (registry.getPortfolio(name) != null) {
+            return respond(ex, 400, """{"error":"portfolio '$name' cannot be started; use deploy"}""")
+        }
+        respond(ex, 404, """{"error":"unknown name: $name"}""")
     }
 
     internal fun respond(
