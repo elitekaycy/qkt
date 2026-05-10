@@ -55,6 +55,20 @@ class OrderManager(
 
     private val stacks: StackTracker = StackTracker()
 
+    private val riskByClientOrderId: MutableMap<String, BigDecimal> = java.util.concurrent.ConcurrentHashMap()
+
+    fun riskUsdFor(clientOrderId: String): BigDecimal? = riskByClientOrderId[clientOrderId]
+
+    private fun recordRisk(
+        clientOrderIds: List<String>,
+        quantity: BigDecimal,
+        entry: BigDecimal,
+        stop: BigDecimal,
+    ) {
+        val risk = entry.subtract(stop).abs().multiply(quantity)
+        for (id in clientOrderIds) riskByClientOrderId[id] = risk
+    }
+
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> onRejected(e) }
@@ -159,12 +173,22 @@ class OrderManager(
 
             is OrderRequest.OTO -> submitOto(request)
 
-            is OrderRequest.Bracket ->
+            is OrderRequest.Bracket -> {
+                val entryEstimate = priceProvider.lastPrice(request.symbol) ?: BigDecimal.ZERO
+                if (entryEstimate.signum() != 0) {
+                    recordRisk(
+                        clientOrderIds = listOf(request.id, request.entry.id),
+                        quantity = request.quantity,
+                        entry = entryEstimate,
+                        stop = request.stopLoss,
+                    )
+                }
                 if (OrderTypeCapability.BRACKET in broker.capabilitiesFor(request.symbol)) {
                     submitToBroker(request)
                 } else {
                     submitBracketFallback(request)
                 }
+            }
 
             is OrderRequest.ScaleOut -> submitScaleOut(request)
 

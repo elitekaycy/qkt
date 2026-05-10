@@ -6,7 +6,7 @@ An event-driven trading engine in Kotlin with backtest replay, parameter sweeps,
 
 ## Status
 
-Pre-1.0. Latest release: [`v0.17.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.18.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
 See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-process.md`](docs/release-process.md) for versioning.
 
@@ -24,6 +24,7 @@ See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-p
 - **CANCEL action + PORTFOLIO** — `CANCEL`/`CANCEL_ALL` cancel pending orders from inside a strategy; `PORTFOLIO` files compose N strategies with regime-gated activation ([phase 13b](docs/phases/phase-13b.md)).
 - **Portfolio daemon** — `qkt deploy mybook.qkt` fans out into per-child `LiveSession`s with their own ports + logs; `qkt start mybook/trend` clears operator-stop ([phase 14](docs/phases/phase-14.md)).
 - **DSL `LOG` action** — levels (`INFO`/`WARN`/`ERROR`/`DEBUG`), `{name}` placeholders, structured `key=expr` fields. Stdout shows `[strategy]` prefix; child log files use safe `__`-substituted names ([phase 15](docs/phases/phase-15.md)).
+- **Backtest HTML report** — single self-contained `report.html` per run with embedded SVG equity + drawdown chart, Monte Carlo fan, drawdown-period table, per-trade risk column ([phase 16](docs/phases/phase-16.md)).
 
 ### STACK example — 3-layer pyramid
 

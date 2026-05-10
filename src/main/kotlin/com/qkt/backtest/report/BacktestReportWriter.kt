@@ -27,6 +27,7 @@ class BacktestReportWriter(
         }
         Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
         Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
+        HtmlReportWriter().write(result, dir.resolve("report.html"))
     }
 
     private fun renderEquityCsv(curve: List<EquitySample>): String {
@@ -42,7 +43,7 @@ class BacktestReportWriter(
     }
 
     private fun renderTradesCsv(trades: List<TradeRecord>): String {
-        val sb = StringBuilder("timestamp,strategy,symbol,side,quantity,price,realized,brokerOrderId\n")
+        val sb = StringBuilder("timestamp,strategy,symbol,side,quantity,price,realized,riskUsd,brokerOrderId\n")
         for (r in trades) {
             sb
                 .append(r.trade.timestamp)
@@ -58,6 +59,8 @@ class BacktestReportWriter(
                 .append(r.trade.price.toPlainString())
                 .append(',')
                 .append(r.realized.toPlainString())
+                .append(',')
+                .append(r.riskUsd?.toPlainString() ?: "")
                 .append(',')
                 .append(r.trade.orderId)
                 .append('\n')
