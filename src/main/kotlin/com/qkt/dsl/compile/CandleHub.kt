@@ -5,6 +5,17 @@ import com.qkt.candles.TimeWindow
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 
+/**
+ * Shared candle aggregation backplane for DSL strategies.
+ *
+ * Lives on the trading pipeline; every DSL strategy registers the streams it cares
+ * about and gets called back whenever a closed candle prints on those streams.
+ * Multiple strategies sharing the same `(broker, symbol, timeframe)` triple share the
+ * same aggregator — deduplicated, JIT-registered.
+ *
+ * Writes are forward-only (no out-of-order history rewrites). Per-key retention is the
+ * max requested by any strategy.
+ */
 class CandleHub {
     private class Slot(
         val aggregator: CandleAggregator,

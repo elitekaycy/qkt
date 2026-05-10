@@ -31,6 +31,16 @@ import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
+/**
+ * Manages the lifecycle of every order from signal to fill.
+ *
+ * Translates [com.qkt.strategy.Signal]s into [com.qkt.execution.OrderRequest]s, splits
+ * engine-managed shapes (Bracket, ScaleOut, TimeExit, Stack) into atomic broker calls,
+ * tracks the [com.qkt.execution.ManagedOrder] state machine through broker callbacks,
+ * and emits trade events for downstream consumers.
+ *
+ * One per [LiveSession] / `Backtest` run; not thread-safe.
+ */
 class OrderManager(
     private val broker: Broker,
     private val bus: EventBus,

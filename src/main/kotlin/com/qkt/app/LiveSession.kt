@@ -39,6 +39,18 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
+/**
+ * Runs one or more strategies against a live or paper data source, end to end.
+ *
+ * Owns its own [com.qkt.bus.EventBus], [com.qkt.engine.Engine], [Broker]
+ * (constructed by the typed [BrokerFactory] registry per session), [PositionTracker],
+ * [PnLCalculator], and [RiskEngine]. The daemon spawns one session per deployed
+ * `.qkt` file; portfolios fan out into one session per child strategy.
+ *
+ * The session pulls from a [LiveTickFeed], runs warmup if the strategy is [Warmable],
+ * then enters the live loop where ticks are ingested, signals are routed, and trades
+ * land back on the bus. Closing the session shuts everything down cleanly.
+ */
 class LiveSession(
     private val strategies: List<Pair<String, Strategy>>,
     private val rules: List<RiskRule> = emptyList(),
