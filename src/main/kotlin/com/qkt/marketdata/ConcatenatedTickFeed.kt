@@ -1,5 +1,12 @@
 package com.qkt.marketdata
 
+/**
+ * Plays [factories] sequentially — exhausts each feed before opening the next.
+ *
+ * Factories not instances so each feed is opened lazily and the next isn't created
+ * until needed. Used to stitch together day-partitioned CSVs without holding them all
+ * in memory.
+ */
 class ConcatenatedTickFeed(
     private val factories: List<() -> TickFeed>,
 ) : TickFeed {

@@ -5,6 +5,12 @@ import com.qkt.common.Money
 import java.math.BigDecimal
 import kotlin.random.Random
 
+/**
+ * Synthesizes deterministic random-walk ticks. Used for smoke tests and demos.
+ *
+ * Seeded [random] makes runs reproducible. Each tick mutates the price by ±0.5% drawn
+ * from the seeded RNG; spacing is fixed at [tickIntervalMs].
+ */
 class MockTickFeed(
     private val symbol: String,
     private val startPrice: BigDecimal,

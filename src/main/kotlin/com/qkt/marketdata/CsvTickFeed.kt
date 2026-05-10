@@ -8,6 +8,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.GZIPInputStream
 
+/**
+ * Streams ticks from a CSV file at [path]. Transparently handles `.gz` compression.
+ *
+ * Header is auto-detected (timestamp / symbol / price columns). Throws on malformed
+ * rows or non-monotonic timestamps — bad data should fail loud, not silently corrupt
+ * the backtest.
+ */
 class CsvTickFeed(
     private val path: Path,
 ) : TickFeed {
