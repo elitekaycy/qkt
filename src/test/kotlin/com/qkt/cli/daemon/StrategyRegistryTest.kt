@@ -163,4 +163,27 @@ class StrategyRegistryTest {
         registry.stopAll()
         assertThat(registry.list()).isEmpty()
     }
+
+    @Test
+    fun `child-style names with slash are accepted`(
+        @TempDir tmp: Path,
+    ) {
+        val state = StateDir.resolve(tmp.toString())
+        val registry = StrategyRegistry(fakeFactory(state))
+        val handle = registry.deploy("mybook/trend", tmp.resolve("trend.qkt"))
+        assertThat(handle.name).isEqualTo("mybook/trend")
+    }
+
+    @Test
+    fun `malformed slashed names are rejected`(
+        @TempDir tmp: Path,
+    ) {
+        val state = StateDir.resolve(tmp.toString())
+        val registry = StrategyRegistry(fakeFactory(state))
+        for (bad in listOf("/foo", "foo/", "foo//bar", "foo/bar/baz")) {
+            assertThatThrownBy { registry.deploy(bad, tmp.resolve("x.qkt")) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("invalid strategy name")
+        }
+    }
 }
