@@ -47,7 +47,9 @@ class MT5Broker(
                 clientOrderId = request.id,
                 brokerOrderId = null,
                 accepted = false,
-                rejectReason = "MT5 v1 does not natively support ${request::class.simpleName}; engine fallback required",
+                rejectReason =
+                    "MT5 v1 does not natively support ${request::class.simpleName}; " +
+                        "engine fallback required",
             )
         }
         val mt5Req = translator.translate(request)
