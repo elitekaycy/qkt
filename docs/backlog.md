@@ -41,9 +41,9 @@ Status legend:
 - `done` — Backtest fidelity audit: equity curve, DD-days, Monte Carlo, per-trade risk in HTML report (slippage/spread/regime deferred) (see [phase 16](phases/phase-16.md))
 - `done` — Backtest vs live execution parity: identical trades (orderId/symbol/side/qty/price/timestamp) between Backtest and LiveSession given same compiled strategy and tick sequence (`src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt`)
 - `done` — Backtest report HTML output: single self-contained `report.html` (see [phase 16](phases/phase-16.md))
-- `tbd` — Tick-feed accuracy audit: compare current TradingView and Bybit feeds against known-good sources; confirm WS reconnect/resume/dedup is prod-grade
+- `progress` — Tick-feed accuracy audit: `qkt audit-ticks` framework shipped (TV vs MT5 drift); operator-driven runs against live feeds (see [phase 19](phases/phase-19.md))
 - `tbd` — End-to-end portfolio daemon test (deferred from Phase 14 — see `docs/phases/phase-14.md` known limitations)
-- `tbd` — Pristine test sweep + memory leak audit: every code path covered, no stubs, no resource leaks across long-running sessions
+- `progress` — Pristine test sweep + memory leak audit: code-review audit complete, two leaks fixed (Observability executor, OrderManager risk map); two future fixes documented (CandleHub.unregister, Broker.shutdown lifecycle) (see [phase 19](phases/phase-19.md))
 - `tbd` — Documentation MVP: KDoc + Dokka for code reference, MkDocs Material for end-user docs, Mermaid for architecture diagrams, served via GitHub Pages with auto-deploy CI
 
 ---
@@ -51,7 +51,7 @@ Status legend:
 ## Sequence-after-immediate (still pre-live, days not weeks)
 
 - `done` — MT5 broker (multi-profile via mt5-gateway) + LiveSession typed-broker dispatch (see [phase 17](phases/phase-17.md), [phase 18](phases/phase-18.md))
-- `tbd` — Standardized logging across engine/strategy/child/portfolio: consistent prefix or structured JSON; aligned with DSL `LOG` output format
+- `done` — Standardized logging guide: MDC keys documented, console + file patterns specified, conventions for strategy authors + engine contributors (see [docs/logging.md](logging.md))
 - `tbd` — Packaging and one-shot install: Docker image, single binary or self-contained zip, documented `qkt up` on a fresh machine
 - `tbd` — CI/CD: GitHub Actions for build, test, ktlint, release artifacts, docs deploy
 
