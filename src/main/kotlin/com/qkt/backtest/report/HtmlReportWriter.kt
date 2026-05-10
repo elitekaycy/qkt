@@ -165,8 +165,9 @@ class HtmlReportWriter(
     }
 
     private fun monteCarloSection(r: PerformanceReport): String {
-        val mc = r.monteCarlo ?: return "<p>Insufficient trades for Monte Carlo " +
-            "(need ${config.minTradesForMonteCarlo}+).</p>"
+        val mc =
+            r.monteCarlo ?: return "<p>Insufficient trades for Monte Carlo " +
+                "(need ${config.minTradesForMonteCarlo}+).</p>"
         return buildString {
             append("<table><tbody>")
             append("<tr><td>Simulations</td><td>${mc.simulations}</td></tr>")

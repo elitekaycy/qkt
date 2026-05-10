@@ -96,9 +96,15 @@ class DrawdownAnalyzerTest {
         val curve =
             listOf(
                 sample(0, "100"),
-                sample(1, "110"), sample(2, "108"), sample(3, "110"),
-                sample(4, "120"), sample(5, "108"), sample(6, "121"),
-                sample(7, "130"), sample(8, "126"), sample(9, "131"),
+                sample(1, "110"),
+                sample(2, "108"),
+                sample(3, "110"),
+                sample(4, "120"),
+                sample(5, "108"),
+                sample(6, "121"),
+                sample(7, "130"),
+                sample(8, "126"),
+                sample(9, "131"),
             )
         val periods = DrawdownAnalyzer.analyze(curve, threshold)
         assertThat(periods).hasSize(3)
