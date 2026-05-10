@@ -310,6 +310,32 @@ class RoundTripEquivalenceTest {
     }
 
     @Test
+    fun `LOG with level placeholder field round trips`() {
+        val parsed =
+            (
+                Dsl.parse(
+                    """
+                    STRATEGY t VERSION 1
+                    SYMBOLS
+                        btc = BACKTEST:BTCUSDT EVERY 1m
+                    RULES
+                        WHEN btc.close > 100
+                        THEN LOG WARN 'buy at {price}' price=btc.close
+                    """.trimIndent(),
+                ) as ParseResult.Success
+            ).value
+        val handwritten =
+            strategy("t", 1) {
+                val btc = stream("btc", "BACKTEST", "BTCUSDT", "1m")
+                rule {
+                    whenever(btc.close gt 100.bd)
+                    then { warn("buy at {price}", "price" to btc.close) }
+                }
+            }
+        assertThat(parsed).isEqualTo(handwritten)
+    }
+
+    @Test
     fun `STACK layer-list round trips`() {
         val parsed =
             (
