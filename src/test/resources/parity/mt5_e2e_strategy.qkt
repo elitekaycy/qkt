@@ -1,0 +1,8 @@
+STRATEGY mt5_e2e VERSION 1
+
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 1m
+
+RULES
+    WHEN eur.close > 0
+    THEN BUY eur SIZING 0.1
