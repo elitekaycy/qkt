@@ -38,6 +38,7 @@ import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
@@ -74,6 +75,7 @@ import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
@@ -390,7 +392,7 @@ class Parser(
             }
             TokenKind.STRING -> {
                 advance()
-                error("string literals are not allowed in expressions")
+                StringLit(t.lexeme)
             }
             TokenKind.TRUE -> {
                 advance()
@@ -684,13 +686,46 @@ class Parser(
                 advance()
                 CancelAll
             }
-            TokenKind.LOG -> {
-                advance()
-                val msg = expect(TokenKind.STRING, "expected string literal after LOG").lexeme
-                Log(msg)
-            }
+            TokenKind.LOG -> parseLogAction()
             else -> error("expected action keyword, got '${peek().lexeme}'")
         }
+
+    private fun parseLogAction(): Log {
+        expect(TokenKind.LOG, "expected LOG")
+        val level =
+            when (peek().kind) {
+                TokenKind.WARN -> {
+                    advance()
+                    LogLevel.WARN
+                }
+                TokenKind.ERROR -> {
+                    advance()
+                    LogLevel.ERROR
+                }
+                TokenKind.DEBUG -> {
+                    advance()
+                    LogLevel.DEBUG
+                }
+                else -> LogLevel.INFO
+            }
+        val message = expect(TokenKind.STRING, "expected string literal after LOG").lexeme
+        val fields = linkedMapOf<String, ExprAst>()
+        while (peek().kind == TokenKind.IDENT && tokens.getOrNull(pos + 1)?.kind == TokenKind.EQ) {
+            val name = expect(TokenKind.IDENT, "expected field name").lexeme
+            expect(TokenKind.EQ, "expected '='")
+            val expr = parseExpr()
+            if (fields.containsKey(name)) {
+                error("duplicate LOG field '$name'")
+            }
+            fields[name] = expr
+        }
+        val placeholders = LOG_PLACEHOLDER_REGEX.findAll(message).map { it.groupValues[1] }.toSet()
+        val unmatched = placeholders - fields.keys
+        if (unmatched.isNotEmpty()) {
+            error("LOG placeholder(s) without matching field: ${unmatched.joinToString()}")
+        }
+        return Log(level, message, fields)
+    }
 
     private fun parseActionOpts(): ActionOpts {
         var sizing: SizingAst? = null
@@ -1100,6 +1135,8 @@ class Parser(
     }
 
     companion object {
+        private val LOG_PLACEHOLDER_REGEX = Regex("\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}")
+
         private val SYNC_KINDS =
             setOf(
                 TokenKind.DEFAULTS,

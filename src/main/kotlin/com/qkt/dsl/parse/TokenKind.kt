@@ -22,6 +22,9 @@ enum class TokenKind {
     CANCEL,
     CANCEL_ALL,
     LOG,
+    WARN,
+    ERROR,
+    DEBUG,
 
     STACK,
     SPACING,

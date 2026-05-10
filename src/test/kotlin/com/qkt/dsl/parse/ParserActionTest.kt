@@ -59,6 +59,8 @@ class ParserActionTest {
     @Test
     fun `LOG string`() {
         val r = Parser(Lexer("LOG 'hello'").tokenize()).parseAction() as Log
-        assertThat(r.message).isEqualTo("hello")
+        assertThat(r.messageFormat).isEqualTo("hello")
+        assertThat(r.level).isEqualTo(com.qkt.dsl.ast.LogLevel.INFO)
+        assertThat(r.fields).isEmpty()
     }
 }

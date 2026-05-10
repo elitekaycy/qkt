@@ -12,6 +12,10 @@ data class BoolLit(
     val value: Boolean,
 ) : ExprAst
 
+data class StringLit(
+    val value: String,
+) : ExprAst
+
 data class Ref(
     val name: String,
     val snapshot: SnapshotKind? = null,

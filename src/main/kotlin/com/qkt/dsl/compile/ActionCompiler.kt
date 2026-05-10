@@ -17,6 +17,7 @@ import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Sell
@@ -98,11 +99,53 @@ class ActionCompiler(
         }
 
     private fun compileLog(log: Log): (EvalContext) -> List<Signal> {
-        val msg = log.message
-        return { _ ->
-            strategyLogger.info(msg)
+        val placeholders = LOG_PLACEHOLDER_REGEX.findAll(log.messageFormat).map { it.groupValues[1] }.toSet()
+        val unmatched = placeholders - log.fields.keys
+        check(unmatched.isEmpty()) {
+            "LOG placeholder(s) without matching field: ${unmatched.joinToString()}"
+        }
+        val compiledFields = log.fields.mapValues { (_, expr) -> exprCompiler.compile(expr) }
+        return { ctx ->
+            val resolved = compiledFields.mapValues { (_, ce) -> ce.evaluate(ctx) }
+            val rendered = renderLogMessage(log.messageFormat, resolved)
+            try {
+                for ((k, v) in resolved) {
+                    org.slf4j.MDC.put("log.$k", stringifyValue(v))
+                }
+                when (log.level) {
+                    LogLevel.DEBUG -> strategyLogger.debug(rendered)
+                    LogLevel.INFO -> strategyLogger.info(rendered)
+                    LogLevel.WARN -> strategyLogger.warn(rendered)
+                    LogLevel.ERROR -> strategyLogger.error(rendered)
+                }
+            } finally {
+                for (k in resolved.keys) org.slf4j.MDC.remove("log.$k")
+            }
             emptyList()
         }
+    }
+
+    private fun renderLogMessage(
+        format: String,
+        resolved: Map<String, Value>,
+    ): String {
+        var out = format
+        for ((k, v) in resolved) {
+            out = out.replace("{$k}", stringifyValue(v))
+        }
+        return out
+    }
+
+    private fun stringifyValue(v: Value): String =
+        when (v) {
+            is Value.Num -> v.v.toPlainString()
+            is Value.Bool -> v.v.toString()
+            is Value.Str -> v.v
+            is Value.Undefined -> "undefined"
+        }
+
+    companion object {
+        private val LOG_PLACEHOLDER_REGEX = Regex("\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}")
     }
 
     private fun compileBuySell(

@@ -31,6 +31,10 @@ data class Cancel(
 
 data object CancelAll : ActionAst
 
+enum class LogLevel { DEBUG, INFO, WARN, ERROR }
+
 data class Log(
-    val message: String,
+    val level: LogLevel,
+    val messageFormat: String,
+    val fields: Map<String, ExprAst>,
 ) : ActionAst
