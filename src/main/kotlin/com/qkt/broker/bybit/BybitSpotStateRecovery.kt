@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
+/** On-startup state reconciliation for [BybitSpotBroker] — replays open orders + balances. */
 class BybitSpotStateRecovery(
     private val transport: BybitTransport,
     private val bus: EventBus,

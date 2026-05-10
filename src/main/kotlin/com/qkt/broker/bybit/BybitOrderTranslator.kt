@@ -9,6 +9,7 @@ import java.math.BigDecimal
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+/** Converts qkt [OrderRequest]s into Bybit's `POST /v5/order/create` JSON body. */
 object BybitOrderTranslator {
     fun toCreateBody(
         request: OrderRequest,

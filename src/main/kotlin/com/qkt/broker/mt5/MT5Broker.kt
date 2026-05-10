@@ -9,6 +9,18 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import org.slf4j.LoggerFactory
 
+/**
+ * Routes orders to a MetaTrader 5 venue via an `mt5-gateway` HTTP service.
+ *
+ * Per-instance: each [com.qkt.app.LiveSession] instantiates its own broker so daemon
+ * lifecycles are clean. Translates qkt [OrderRequest]s into MT5 wire shapes through
+ * [MT5OrderTranslator], polls open positions through [MT5PositionPoller], and recovers
+ * state on startup via [MT5StateRecovery].
+ *
+ * The profile determines venue identity, symbol policy (suffix translation), magic
+ * number, and capability restrictions. See [MT5DefaultProfiles] for shipped templates
+ * (Exness, ICMarkets, FTMO, Pepperstone) and [MT5BrokerProfileLoader] for YAML config.
+ */
 class MT5Broker(
     private val profile: MT5BrokerProfile,
     private val bus: EventBus,

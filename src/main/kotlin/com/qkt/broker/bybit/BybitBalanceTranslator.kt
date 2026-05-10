@@ -6,6 +6,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+/** Parses Bybit's `wallet-balance` REST response into `currency → balance` map. */
 object BybitBalanceTranslator {
     private val json = Json { ignoreUnknownKeys = true }
 

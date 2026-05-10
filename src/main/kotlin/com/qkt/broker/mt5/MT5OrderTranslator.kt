@@ -3,6 +3,7 @@ package com.qkt.broker.mt5
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 
+/** Converts qkt [OrderRequest]s into the JSON wire shape understood by `mt5-gateway`. */
 class MT5OrderTranslator(
     private val profile: MT5BrokerProfile,
     private val symbol: MT5Symbol,

@@ -1,5 +1,6 @@
 package com.qkt.broker.mt5
 
+/** Bidirectional translator between qkt-side symbols and broker-side MT5 symbols per a [SymbolPolicy]. */
 class MT5Symbol(
     private val policy: SymbolPolicy,
 ) {

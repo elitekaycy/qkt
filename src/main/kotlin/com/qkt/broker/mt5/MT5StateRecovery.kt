@@ -4,6 +4,14 @@ import com.qkt.bus.EventBus
 import com.qkt.events.BrokerEvent
 import org.slf4j.LoggerFactory
 
+/**
+ * On-startup state reconciliation for an [MT5Broker].
+ *
+ * Pulls open orders + positions from the venue (filtered by [MT5BrokerProfile.magic]
+ * so only this daemon's orders are picked up) and publishes reconciliation events so
+ * the engine's position tracker, P&L attribution, and risk view start in sync with
+ * the venue.
+ */
 class MT5StateRecovery(
     private val client: MT5Client,
     private val profile: MT5BrokerProfile,

@@ -6,6 +6,18 @@ import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.source.SymbolPattern
 import org.slf4j.LoggerFactory
 
+/**
+ * Multi-venue router that dispatches each [OrderRequest] to the leaf broker whose
+ * [SymbolPattern] matches the order's symbol.
+ *
+ * Used to combine multiple brokers (e.g. MT5 for FX + Bybit for crypto) behind a single
+ * [Broker] interface. Routes are evaluated in order; the first matching pattern wins.
+ * An optional [fallback] catches anything no pattern claims. Composite tracks
+ * `orderId → broker` so [cancel] and [modify] reach the right leaf.
+ *
+ * Capabilities are symbol-dependent — [capabilities] throws, callers must use
+ * [capabilitiesFor].
+ */
 class CompositeBroker(
     private val routes: List<Pair<SymbolPattern, Broker>>,
     private val fallback: Broker? = null,

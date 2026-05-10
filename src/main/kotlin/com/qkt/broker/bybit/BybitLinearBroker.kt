@@ -20,6 +20,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
+/**
+ * Routes orders to Bybit USDT-denominated linear perpetuals.
+ *
+ * Linear futures expose a dedicated position endpoint (unlike Spot), so this broker
+ * uses [PositionProvider] to mirror authoritative venue positions. Otherwise the
+ * structure parallels [BybitSpotBroker].
+ */
 class BybitLinearBroker(
     private val transport: BybitTransport,
     private val bus: EventBus,
