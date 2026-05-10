@@ -128,6 +128,7 @@ nav:
       - Phase workflow: contributing/phase-workflow.md
   - Phases:
       - phases/index.md
+      - Phase 22 — KDoc public API: phases/phase-22.md
       - Phase 21 — Documentation site: phases/phase-21.md
       - Phase 20 — Quickstart + compose: phases/phase-20.md
       - Phase 19 — Pre-live confidence pack: phases/phase-19.md

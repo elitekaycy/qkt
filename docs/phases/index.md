@@ -4,6 +4,7 @@ qkt is built in numbered phases. Each phase has a post-merge changelog with usag
 
 ## Recent
 
+- [Phase 22 — KDoc the public API](phase-22.md)
 - [Phase 21 — Documentation site](phase-21.md)
 - [Phase 20 — Quickstart + docker compose](phase-20.md)
 - [Phase 19 — Pre-live confidence pack](phase-19.md)

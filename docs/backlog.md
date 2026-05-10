@@ -39,6 +39,7 @@ Status legend:
 - `done` — Phase 19: pre-live confidence pack — parity test, audit-ticks, logging guide, memory leak audit
 - `done` — Phase 20: top-level QUICKSTART + docker-compose stack
 - `done` — Phase 21: documentation site — MkDocs Material, Mermaid, Dokka, GitHub Pages
+- `done` — Phase 22: KDoc the public API — every Tier 1 type, style guide, SKILL rule for future work
 
 ---
 
@@ -61,7 +62,7 @@ Status legend:
 - `done` — Standardized logging guide: MDC keys documented, console + file patterns specified, conventions for strategy authors + engine contributors (see [docs/logging.md](logging.md))
 - `progress` — Packaging and one-shot install: full docker-compose stack (qkt + mt5-gateway) shipped (Phase 20); single-binary install pending
 - `progress` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint CI green via `check.yml`; release artifact CI still pending
-- `tbd` — Phase 22: KDoc the public API — every Tier 1 type gets a class-level + per-member KDoc, Dokka site becomes useful as reference (spec: `docs/superpowers/specs/2026-05-10-phase22-kdoc-public-api-design.md`)
+- `tbd` — Tier 2 KDoc backfill — backtest reporting types, risk types, portfolio supervisor, indicator catalog. Phase 22 covered Tier 1; Tier 2 lands organically as features ship per the SKILL rule.
 
 ---
 
