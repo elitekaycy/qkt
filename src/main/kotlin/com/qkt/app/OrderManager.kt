@@ -57,7 +57,11 @@ class OrderManager(
 
     private val riskByClientOrderId: MutableMap<String, BigDecimal> = java.util.concurrent.ConcurrentHashMap()
 
-    fun riskUsdFor(clientOrderId: String): BigDecimal? = riskByClientOrderId[clientOrderId]
+    /**
+     * Returns and removes the recorded risk for [clientOrderId]. Designed to be called once per
+     * fill — the entry is consumed so the map doesn't grow unbounded over a long-running session.
+     */
+    fun riskUsdFor(clientOrderId: String): BigDecimal? = riskByClientOrderId.remove(clientOrderId)
 
     private fun recordRisk(
         clientOrderIds: List<String>,

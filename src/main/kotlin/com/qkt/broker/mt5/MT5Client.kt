@@ -66,6 +66,19 @@ class MT5Client(
         return arr.map { parsePosition(it.jsonObject) }
     }
 
+    fun getTick(brokerSymbol: String): MT5Tick? {
+        val url = "$gatewayUrl/tick?symbol=$brokerSymbol"
+        val raw = getWithRetry(url) ?: return null
+        val obj = json.parseToJsonElement(raw).jsonObject
+        val rawTime = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        return MT5Tick(
+            symbol = brokerSymbol,
+            bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            time = rawTime - tzOffsetMs,
+        )
+    }
+
     fun cancelOrder(ticket: Long): String {
         val request =
             Request
