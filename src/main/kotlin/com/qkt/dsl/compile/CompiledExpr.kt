@@ -13,6 +13,10 @@ sealed interface Value {
         val v: Boolean,
     ) : Value
 
+    data class Str(
+        val v: String,
+    ) : Value
+
     data object Undefined : Value
 }
 
