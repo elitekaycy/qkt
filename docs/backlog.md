@@ -37,7 +37,7 @@ Status legend:
 
 ## Immediate (blocks going live with real money)
 
-- `tbd` — DSL `LOG` action: emit log lines from inside the DSL with strategy/child prefix
+- `done` — DSL `LOG` action with levels, placeholders, structured fields; stdout `[strategy]` prefix; child file slash-safe names (see [phase 15](phases/phase-15.md))
 - `tbd` — Backtest fidelity audit: confirm backtest report contains equity curve, DD days, regime breakdown, Monte Carlo, Sharpe, spread, slippage, P&L, big wins/losses, per-trade risk
 - `tbd` — Backtest vs live execution parity: bit-for-bit identical fills/fees/slippage/PnL between backtest and paper-traded live session for the same strategy + ticks
 - `tbd` — Backtest report output: PDF or HTML with everything in one artifact
