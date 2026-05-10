@@ -48,6 +48,8 @@ class StrategyRegistryTest {
 
                     override fun pendingStackLayerInfos(): List<com.qkt.app.OrderManager.PendingStackLayerInfo> =
                         emptyList()
+
+                    override fun flatten() = Unit
                 }
             val server =
                 ObservabilityServer(

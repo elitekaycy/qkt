@@ -14,4 +14,6 @@ interface LiveSessionHandle {
     fun recentTrades(): List<Trade>
 
     fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo>
+
+    fun flatten()
 }
