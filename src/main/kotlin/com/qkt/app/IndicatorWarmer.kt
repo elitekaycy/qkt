@@ -9,6 +9,14 @@ import com.qkt.strategy.WarmupSpec
 import java.time.Instant
 import org.slf4j.LoggerFactory
 
+/**
+ * Pre-feeds historical ticks through the pipeline before live signal evaluation.
+ *
+ * Reads the strategy's [WarmupSpec], queries the [MarketSource] for the needed
+ * historical window, and pushes those ticks through the pipeline as
+ * [com.qkt.events.WarmupTickEvent]s — indicators populate state but the strategy's
+ * `onTick` callback is silenced until warmup completes.
+ */
 class IndicatorWarmer(
     private val source: MarketSource,
     private val pipeline: TradingPipeline,

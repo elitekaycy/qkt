@@ -2,6 +2,13 @@ package com.qkt.execution
 
 import java.math.BigDecimal
 
+/**
+ * The order manager's in-memory record of a submitted [OrderRequest].
+ *
+ * Holds the live [OrderState], cumulative fill state, and parent/child linkage for
+ * composite shapes (Bracket, OCO, OTO, etc). The order manager mutates this through
+ * `copy(...)` on every broker event; consumers see only the latest snapshot.
+ */
 data class ManagedOrder(
     val id: String,
     val request: OrderRequest,

@@ -7,6 +7,13 @@ import com.qkt.events.BrokerEvent
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
+/**
+ * Polls open MT5 positions and emits reconciliation events when they drift from local state.
+ *
+ * MT5 lacks a push notification for position changes, so the broker polls. The poller
+ * compares the venue's open positions against its last snapshot and publishes
+ * [com.qkt.events.BrokerEvent.PositionReconciled] for any difference.
+ */
 class MT5PositionPoller(
     private val client: MT5Client,
     private val profile: MT5BrokerProfile,

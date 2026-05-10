@@ -24,15 +24,18 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.slf4j.LoggerFactory
 
+/** Bybit-side error reply — non-zero `retCode` from a signed REST call. */
 class BybitApiException(
     val retCode: Int,
     val retMsg: String,
 ) : RuntimeException("Bybit retCode=$retCode retMsg=$retMsg")
 
+/** Underlying transport (WebSocket or REST) failed to connect or stay connected. */
 class BybitConnectException(
     message: String,
 ) : RuntimeException(message)
 
+/** Bybit rate-limited the request. The supervisor backs off automatically. */
 class BybitRateLimitException(
     message: String,
 ) : RuntimeException(message)
@@ -41,6 +44,12 @@ private class RateLimitSignal(
     val resetAtMs: Long,
 ) : RuntimeException()
 
+/**
+ * Abstracts the wire connection to Bybit (signed REST + WebSocket) so it can be faked.
+ *
+ * Brokers depend on `BybitTransport`, not the concrete [BybitClient], which lets tests
+ * substitute an in-memory transport without spinning up real HTTP/WS connections.
+ */
 interface BybitTransport {
     val isConnected: Boolean
 
@@ -65,6 +74,12 @@ interface BybitTransport {
     fun onReconnect(handler: () -> Unit)
 }
 
+/**
+ * Default production [BybitTransport] — signed REST + WebSocket with reconnect supervisor.
+ *
+ * Reads API credentials from env vars (`BYBIT_API_KEY`, `BYBIT_API_SECRET`) unless
+ * passed explicitly. Honors `BYBIT_TESTNET=true` for paper-testing against testnet.
+ */
 class BybitClient(
     apiKey: String? = null,
     apiSecret: String? = null,

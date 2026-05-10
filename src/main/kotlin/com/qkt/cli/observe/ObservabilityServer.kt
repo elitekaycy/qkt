@@ -4,6 +4,13 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.util.concurrent.Executors
 
+/**
+ * Per-strategy HTTP observability server.
+ *
+ * Each `LiveSession` spins up its own server on an ephemeral port (announced via
+ * `QKT_PORT=…` on stdout). Routes: `/health`, `/status`, `/events`, `/stop`, `/logs`.
+ * The server is fronted by the daemon control plane for `qkt status`/`qkt logs`.
+ */
 class ObservabilityServer(
     private val ring: EventRing,
     private val statusProvider: () -> StatusSnapshot,

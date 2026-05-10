@@ -2,6 +2,7 @@ package com.qkt.broker.mt5
 
 import java.math.BigDecimal
 
+/** Bid/ask tick reported by the gateway. */
 data class MT5Tick(
     val symbol: String,
     val bid: BigDecimal,
@@ -9,6 +10,7 @@ data class MT5Tick(
     val time: Long,
 )
 
+/** Account-level snapshot from the MT5 venue — used for equity and leverage tracking. */
 data class MT5AccountInfo(
     val balance: BigDecimal,
     val equity: BigDecimal,
@@ -16,6 +18,7 @@ data class MT5AccountInfo(
     val leverage: Int,
 )
 
+/** Open position on the venue, filtered by [MT5BrokerProfile.magic] during reconciliation. */
 data class MT5Position(
     val ticket: Long,
     val symbol: String,
@@ -30,6 +33,7 @@ data class MT5Position(
     val comment: String? = null,
 )
 
+/** Symbol metadata reported by the venue — used for size/price validation. */
 data class MT5SymbolInfo(
     val ask: BigDecimal,
     val bid: BigDecimal,
@@ -40,6 +44,7 @@ data class MT5SymbolInfo(
     val volumeStep: BigDecimal,
 )
 
+/** JSON wire shape for `POST /order` to the gateway. */
 data class MT5OrderRequest(
     val symbol: String,
     val volume: BigDecimal,
@@ -54,6 +59,7 @@ data class MT5OrderRequest(
     val typeTime: String? = null,
 )
 
+/** Inner result block of a venue order response — `retcode` is the MQL5 trade return code. */
 data class MT5OrderResult(
     val retcode: Int,
     val order: Long,
@@ -62,11 +68,14 @@ data class MT5OrderResult(
     val comment: String,
 )
 
+/** Top-level response from `POST /order`. */
 data class MT5OrderResponse(
     val result: MT5OrderResult,
     val errorMessage: String? = null,
 )
 
+/** MQL5 trade return code for a successful order (`TRADE_RETCODE_DONE`). */
 const val MT5_TRADE_RETCODE_DONE: Int = 10009
 
+/** Returns `true` iff [retcode] indicates a successful order placement. */
 fun isOrderSuccessful(retcode: Int): Boolean = retcode == MT5_TRADE_RETCODE_DONE

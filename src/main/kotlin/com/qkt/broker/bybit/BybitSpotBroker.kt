@@ -19,6 +19,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
+/**
+ * Routes orders to Bybit Spot via REST + WebSocket.
+ *
+ * Handles symbol translation through [BybitSymbol], order translation through
+ * [BybitOrderTranslator], periodic balance reconciliation, and broker state recovery
+ * on startup. Spot positions are inferred from balances — there's no separate
+ * position endpoint.
+ */
 class BybitSpotBroker(
     private val transport: BybitTransport,
     private val bus: EventBus,

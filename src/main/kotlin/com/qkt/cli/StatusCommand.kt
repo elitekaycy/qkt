@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
 
+/** `qkt status [name]` — daemon-wide or per-strategy JSON status snapshot. */
 class StatusCommand(
     private val args: Args,
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },

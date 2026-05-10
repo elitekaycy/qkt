@@ -94,7 +94,7 @@ tasks.named<org.jetbrains.dokka.gradle.DokkaTask>("dokkaHtml") {
     dokkaSourceSets.configureEach {
         includeNonPublic.set(false)
         skipDeprecated.set(false)
-        reportUndocumented.set(false)
+        reportUndocumented.set(true)
         jdkVersion.set(21)
     }
 }

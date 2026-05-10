@@ -6,6 +6,14 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import org.slf4j.LoggerFactory
 
+/**
+ * Diagnostic broker that logs every submission and immediately acknowledges it.
+ *
+ * Useful for instrumenting strategy logic without booking against a real venue or the
+ * paper simulator — every submit produces an [com.qkt.events.BrokerEvent.OrderAccepted]
+ * but nothing ever fills. Not suitable for backtesting or paper-trading, only for
+ * inspecting what a strategy would have submitted.
+ */
 class LogBroker(
     private val bus: EventBus,
     private val clock: Clock,

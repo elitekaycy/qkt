@@ -3,13 +3,32 @@ package com.qkt.events
 import com.qkt.common.Side
 import java.math.BigDecimal
 
+/**
+ * Events emitted by a [com.qkt.broker.Broker] after order submission.
+ *
+ * Every broker — paper, MT5, Bybit, composite — publishes through this hierarchy so the
+ * rest of the engine can treat all venues uniformly. The order-event subset
+ * ([OrderEvent]) is keyed by `clientOrderId` so the engine can correlate broker
+ * responses back to the originating [com.qkt.execution.OrderRequest].
+ */
 sealed interface BrokerEvent : Event {
+    /**
+     * The subset of broker events that report on a specific submitted order.
+     *
+     * Excludes balance/position events that aren't tied to a single client order.
+     */
     sealed interface OrderEvent : BrokerEvent {
+        /** The client-assigned order id used to correlate the request with the response. */
         val clientOrderId: String
+
+        /** The broker-assigned id once acknowledged, or `null` before acknowledgement. */
         val brokerOrderId: String?
+
+        /** Which strategy produced the originating signal — empty for engine-internal orders. */
         val strategyId: String
     }
 
+    /** The broker accepted the order. The fill may still arrive later as [OrderFilled]. */
     data class OrderAccepted(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
@@ -18,6 +37,7 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : OrderEvent
 
+    /** The broker refused the order. [reason] is the venue's rejection message. */
     data class OrderRejected(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
@@ -27,6 +47,7 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : OrderEvent
 
+    /** A complete fill at [price] for [quantity]. The order is done after this event. */
     data class OrderFilled(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
@@ -39,6 +60,11 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : OrderEvent
 
+    /**
+     * A partial fill — [quantity] filled in this slice, [cumulativeFilled] across the order.
+     *
+     * The order remains live; expect more partial fills or a final [OrderFilled].
+     */
     data class OrderPartiallyFilled(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
@@ -52,6 +78,7 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : OrderEvent
 
+    /** The order was cancelled by the strategy, the engine, or the venue. */
     data class OrderCancelled(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
@@ -61,6 +88,12 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : OrderEvent
 
+    /**
+     * Account balances refreshed from the venue.
+     *
+     * The `source` field identifies which broker emitted them — useful when a
+     * [com.qkt.broker.composite.CompositeBroker] routes through multiple venues.
+     */
     data class BalancesUpdated(
         val balances: Map<String, BigDecimal>,
         val source: String,
@@ -68,6 +101,12 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : BrokerEvent
 
+    /**
+     * Reports a position correction from the venue that doesn't match local state.
+     *
+     * Emitted on startup (state recovery) and on out-of-band changes (manual close on
+     * the venue). The engine reconciles its position tracker from this event.
+     */
     data class PositionReconciled(
         val symbol: String,
         val oldQty: BigDecimal?,

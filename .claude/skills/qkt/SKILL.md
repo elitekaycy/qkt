@@ -161,6 +161,11 @@ Phase <N>. Spec: <link to docs/superpowers/specs/...>. Plan: <link to docs/super
 - <existing tests updated>
 - Local: `./gradlew build` green, <N> tests passing.
 
+## Docs
+- <new KDoc for public types/methods>
+- <doc-site pages added/updated>
+- Local: `./gradlew dokkaHtml` clean, `mkdocs build --strict` green.
+
 ## Backwards compatibility
 <"Phase 1 only — no compat concern" OR specific notes for breaking changes>
 
@@ -193,11 +198,11 @@ Every meaningful feature follows this lifecycle:
 
 1. **Brainstorm** → produces a **design spec** at `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`.
 2. **Plan** → produces an **implementation plan** at `docs/superpowers/plans/YYYY-MM-DD-<topic>.md`.
-3. **Implement** → tasks from the plan executed in order, each ending in a commit.
+3. **Implement** → tasks from the plan executed in order, each ending in a commit. **Every new public type, interface, top-level function, or externally-callable method MUST land with KDoc** — class-level paragraph plus one-line summary per public member. KDoc is part of the implementation, not a follow-up. See `docs/contributing/kdoc-style.md`.
 4. **Merge** → into `main` via PR with the description template above.
 5. **Phase changelog** → upon merging the phase, write a user-facing **phase changelog** at `docs/phases/phase-<N>-<topic>.md`. This is the developer-facing complement to the spec: the spec is forward-looking ("what we will build, why"); the changelog is backward-looking ("here's what's now available, here are all the ways to use it").
 
-Specs document **what** and **why**. Plans document **how**, in bite-sized tasks. Phase changelogs document **how to use**, with worked examples. All three are committed to git alongside the code they describe.
+Specs document **what** and **why**. Plans document **how**, in bite-sized tasks. Phase changelogs document **how to use**, with worked examples. KDoc documents the API contract right at the source. All four are committed to git alongside the code they describe.
 
 ### Phase changelog requirements
 
@@ -307,7 +312,7 @@ This section will grow when Phase 5 begins.
 - **Don't add Java-style getters/setters** on Kotlin properties. `val x: Int` is the property; access it as `instance.x`.
 - **Don't use semicolons.** Kotlin doesn't need them.
 - **Don't reach for inheritance.** Composition + interfaces is the default. `open class` requires justification.
-- **Don't write Javadoc-style comments** (`/** ... */` with `@param` etc.) unless the function is part of a public API and warrants it. Most internal code doesn't need it.
+- **Do write KDoc on public API.** Every new public type, interface, top-level function, and externally-callable method gets KDoc (class-level paragraph + one-line summary per public member). Dokka renders it into the API reference site. See `docs/contributing/kdoc-style.md` for the full style guide. The dividing line: would someone outside this package reasonably call this? If yes — KDoc it. Internal helpers and private classes do not need KDoc.
 - **Don't catch `Exception`** as a way to "be safe." Catch the specific exception you handle. Let everything else propagate.
 
 ---

@@ -14,6 +14,13 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.slf4j.LoggerFactory
 
+/**
+ * Low-level HTTP client for the `mt5-gateway` service.
+ *
+ * One client per [MT5Broker]. Handles JSON serialization, retries on GETs (POST /order
+ * is deliberately not retried — duplicate placement is worse than a surfaced failure),
+ * timezone offsets between the venue clock and UTC, and basic error parsing.
+ */
 class MT5Client(
     private val gatewayUrl: String,
     private val tzOffsetHours: Int,

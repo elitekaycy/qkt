@@ -5,7 +5,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
+/**
+ * Announces the observability port on stdout + writes it atomically to a port file.
+ *
+ * The daemon uses this to discover each strategy's port without parsing strategy logs.
+ */
 object PortPrinter {
+    /** Prints `QKT_PORT=<port>` to [out] and (optionally) writes the same value to [portFile]. */
     fun announce(
         host: String,
         port: Int,

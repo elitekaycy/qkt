@@ -13,6 +13,17 @@ import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
+/**
+ * In-process simulator that books fills against the latest tracker price.
+ *
+ * The default broker for backtests, `qkt run`, and paper-trading deployments. Market
+ * orders fill at the tracker's latest price; limits, stops, and if-touched orders are
+ * parked in a working list and resolved as ticks print through.
+ *
+ * No slippage model, no rejection model, no latency — by design. Strategies that want
+ * those should test against [com.qkt.broker.composite.CompositeBroker] with a simulated
+ * latency layer or run against an actual venue.
+ */
 class PaperBroker(
     private val bus: EventBus,
     private val clock: Clock,

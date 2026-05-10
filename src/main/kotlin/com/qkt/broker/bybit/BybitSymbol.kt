@@ -1,5 +1,6 @@
 package com.qkt.broker.bybit
 
+/** Maps qkt symbols (`BYBIT_SPOT:BTCUSDT`) to Bybit's `(category, symbol)` REST parameters. */
 object BybitSymbol {
     private val CATEGORY_BY_PREFIX: Map<String, String> =
         mapOf(

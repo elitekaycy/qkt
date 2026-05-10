@@ -3,6 +3,7 @@ package com.qkt.broker.bybit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
+/** HMAC-SHA256 signer for Bybit's signed REST endpoints. */
 class BybitSigner(
     private val secret: String,
 ) {

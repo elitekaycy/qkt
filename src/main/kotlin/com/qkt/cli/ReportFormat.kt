@@ -3,13 +3,18 @@ package com.qkt.cli
 import com.qkt.backtest.BacktestResult
 import java.io.PrintStream
 
+/** Output format selector for `qkt backtest` console reports. */
 sealed interface ReportFormat {
+    /** Aligned plaintext summary — the default. */
     data object Text : ReportFormat
 
+    /** Single-line JSON — for piping into tooling. */
     data object Json : ReportFormat
 }
 
+/** Renders a [BacktestResult] in [ReportFormat.Text] or [ReportFormat.Json] form. */
 object ReportPrinter {
+    /** Writes [result] in [fmt] form to [out]. */
     fun print(
         result: BacktestResult,
         fmt: ReportFormat,

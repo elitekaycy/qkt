@@ -1,6 +1,19 @@
 package com.qkt.broker.mt5
 
+/**
+ * Resolves raw YAML broker entries from `qkt.config.yaml` into [MT5BrokerProfile]s.
+ *
+ * Handles `extends:` chains (a profile inherits from a default or another profile),
+ * env-var substitution (`${EXNESS_GATEWAY_URL}`), and merges per-profile overrides
+ * over the base. Output is deterministic — same input → same profile list.
+ */
 class MT5BrokerProfileLoader {
+    /**
+     * Returns one [MT5BrokerProfile] per `type: mt5` entry in [raw].
+     *
+     * [defaults] supplies the built-in templates available for `extends:` references.
+     * [env] is consulted for `${VAR}` substitutions in raw values.
+     */
     fun load(
         raw: Map<String, Map<String, String>>,
         defaults: Map<String, MT5BrokerProfile>,

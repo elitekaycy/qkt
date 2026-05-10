@@ -37,6 +37,13 @@ import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
+/**
+ * The reusable end-to-end wiring of bus + engine + risk + order management + broker.
+ *
+ * Used by both `Backtest` and `LiveSession` — the only difference between the two is
+ * the tick feed and the clock; the pipeline is identical. That symmetry is what makes
+ * backtest = live-paper given the same ticks (verified by the parity regression test).
+ */
 class TradingPipeline(
     val clock: Clock,
     val ids: IdGenerator,

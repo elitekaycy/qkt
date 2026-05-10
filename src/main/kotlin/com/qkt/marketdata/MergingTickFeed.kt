@@ -2,6 +2,12 @@ package com.qkt.marketdata
 
 import java.util.PriorityQueue
 
+/**
+ * K-way merge of multiple feeds in monotonic timestamp order.
+ *
+ * Used to combine per-symbol feeds into a single chronological stream for multi-asset
+ * backtests. Tie-break: feeds earlier in [feeds] win — keeps output deterministic.
+ */
 class MergingTickFeed(
     private val feeds: List<TickFeed>,
 ) : TickFeed {
