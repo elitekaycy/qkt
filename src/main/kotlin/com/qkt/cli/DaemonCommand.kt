@@ -35,8 +35,12 @@ class DaemonCommand(
                 .CandleHub()
 
         val configPathEarly =
-            args.option("config")?.let { java.nio.file.Path.of(it) }
-                ?: java.nio.file.Path.of("./qkt.config.yaml")
+            args.option("config")?.let {
+                java.nio.file.Path
+                    .of(it)
+            }
+                ?: java.nio.file.Path
+                    .of("./qkt.config.yaml")
         val cfg = Config.load(configPathEarly)
         val mt5Profiles =
             try {
