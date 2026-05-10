@@ -17,13 +17,18 @@ class ObservabilityServer(
     val boundPort: Int get() = server.address.port
     val boundHost: String = bind
 
+    private val executor: java.util.concurrent.ExecutorService =
+        Executors.newFixedThreadPool(4) { r ->
+            Thread(r, "qkt-observability-${server.address.port}").apply { isDaemon = true }
+        }
+
     init {
         server.createContext("/health", Routes.health(running))
         server.createContext("/status", Routes.status(statusProvider))
         server.createContext("/logs", Routes.logs(ring))
         server.createContext("/events", Routes.events(ring))
         server.createContext("/stop", Routes.stop(onStop))
-        server.executor = Executors.newFixedThreadPool(4)
+        server.executor = executor
     }
 
     fun start() {
@@ -32,5 +37,9 @@ class ObservabilityServer(
 
     override fun close() {
         server.stop(0)
+        executor.shutdown()
+        if (!executor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+            executor.shutdownNow()
+        }
     }
 }
