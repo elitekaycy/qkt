@@ -2,6 +2,7 @@ package com.qkt.execution
 
 import java.math.BigDecimal
 
+/** One leg of an [OrderRequest.ScaleOut] — exit [fraction] of the basis at [priceTarget]. */
 data class ScaleOutLeg(
     val priceTarget: BigDecimal,
     val fraction: BigDecimal,

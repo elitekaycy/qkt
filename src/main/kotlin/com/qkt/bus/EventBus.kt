@@ -15,6 +15,19 @@ import com.qkt.events.WarmupTickEvent
 import kotlin.reflect.KClass
 import org.slf4j.LoggerFactory
 
+/**
+ * Single-threaded publish/subscribe bus for [Event]s.
+ *
+ * The backbone of qkt's event-driven pipeline. Every component publishes through one
+ * bus instance and subscribes through the same bus instance — strategies emit signals,
+ * brokers emit fills, the engine emits ticks. Subscribers are invoked synchronously in
+ * registration order on the publishing thread; the bus is intentionally not thread-safe
+ * because the engine is single-threaded by design.
+ *
+ * The bus stamps every published event with a deterministic [com.qkt.common.SequenceGenerator]
+ * id and the current [Clock] time, which is what makes backtest replay bit-identical
+ * to a live run on the same tick stream.
+ */
 class EventBus(
     private val clock: Clock,
     private val sequencer: SequenceGenerator,
@@ -24,6 +37,13 @@ class EventBus(
     @PublishedApi
     internal val subscribers = mutableMapOf<KClass<out Event>, MutableList<(Event) -> Unit>>()
 
+    /**
+     * Registers [handler] to be invoked for every published event of type [T].
+     *
+     * Handlers run synchronously on the publishing thread, in registration order. A
+     * handler that throws will propagate and prevent later handlers from running for
+     * that event — keep handlers fast and exception-free.
+     */
     inline fun <reified T : Event> subscribe(noinline handler: (T) -> Unit) {
         @Suppress("UNCHECKED_CAST")
         subscribers
@@ -31,6 +51,12 @@ class EventBus(
             .add { event -> handler(event as T) }
     }
 
+    /**
+     * Stamps [event] with the current clock time + next sequence id, then dispatches it
+     * to every subscriber registered for the event's concrete class.
+     *
+     * Dispatch is synchronous; the call returns once all subscribers have run.
+     */
     fun publish(event: Event) {
         val stamped = stamp(event)
         log.trace("publish {} seq={} ts={}", stamped::class.simpleName, stamped.sequenceId, stamped.timestamp)
