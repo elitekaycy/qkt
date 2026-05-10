@@ -31,7 +31,16 @@ class StrategyHandle(
     val ring: EventRing,
     val logFile: Path,
     val startedAt: Instant,
+    val childMeta: ChildMeta? = null,
 ) : AutoCloseable {
+
+    data class ChildMeta(
+        val parent: String,
+        val alias: String,
+        val hold: Boolean,
+        val gateActive: java.util.concurrent.atomic.AtomicBoolean,
+        val operatorStop: java.util.concurrent.atomic.AtomicBoolean,
+    )
     val port: Int get() = observability.boundPort
     val tradeCount: Int get() = ring.size()
 
