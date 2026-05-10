@@ -25,6 +25,7 @@ dependencies {
     testImplementation(libs.logback.classic)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.okhttp.mockwebserver)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
