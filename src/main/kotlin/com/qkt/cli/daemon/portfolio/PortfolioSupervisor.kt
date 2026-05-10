@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon.portfolio
 
+import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.PortfolioAst
 import com.qkt.marketdata.source.MarketSource
 import java.util.concurrent.atomic.AtomicBoolean
@@ -41,8 +42,29 @@ class PortfolioSupervisor(
         thread = null
     }
 
+    internal fun applyDesired(desired: Map<String, Boolean>) {
+        for (child in children) {
+            val want = desired[child.alias] ?: false
+            val have = child.gateActive.get()
+            if (want == have) continue
+            if (want) {
+                child.gateActive.set(true)
+                log.info("${child.alias} activated")
+            } else {
+                child.gateActive.set(false)
+                log.info("${child.alias} deactivated, hold=${child.hold}")
+                if (!child.hold) child.flatten()
+            }
+        }
+    }
+
     private fun applyAlwaysRunRules() {
-        // Filled in T7.
+        val desired = mutableMapOf<String, Boolean>()
+        for (alias in children.map { it.alias }) desired[alias] = false
+        for (rule in ast.rules) {
+            if (rule is AlwaysRun) desired[rule.alias] = true
+        }
+        applyDesired(desired)
     }
 
     private fun tickLoop() {
