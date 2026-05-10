@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     application
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.dokka)
 }
 
 group = "com.qkt"
@@ -85,6 +86,17 @@ tasks.register<JavaExec>("runLiveDemo") {
     description = "Run the live TradingView demo"
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.qkt.app.LiveDemoKt")
+}
+
+tasks.named<org.jetbrains.dokka.gradle.DokkaTask>("dokkaHtml") {
+    moduleName.set("qkt")
+    outputDirectory.set(layout.buildDirectory.dir("dokka/html"))
+    dokkaSourceSets.configureEach {
+        includeNonPublic.set(false)
+        skipDeprecated.set(false)
+        reportUndocumented.set(false)
+        jdkVersion.set(21)
+    }
 }
 
 tasks.register<JavaExec>("runMaxAudit") {

@@ -1,5 +1,5 @@
 package com.qkt.cli
 
 object BuildInfo {
-    const val VERSION: String = "0.22.0"
+    const val VERSION: String = "0.23.0"
 }

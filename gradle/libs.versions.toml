@@ -8,6 +8,7 @@ logback = "1.5.6"
 kotlinx-serialization = "1.7.3"
 okhttp = "4.12.0"
 snakeyaml-engine = "2.7"
+dokka = "1.9.20"
 
 [libraries]
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
@@ -25,3 +26,4 @@ snakeyaml-engine = { module = "org.snakeyaml:snakeyaml-engine", version.ref = "s
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }

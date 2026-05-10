@@ -7,3 +7,6 @@ local.properties
 .DS_Store
 out/
 tt.txt
+site/
+.cache/
+.venv-docs/
