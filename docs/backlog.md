@@ -50,7 +50,7 @@ Status legend:
 
 ## Sequence-after-immediate (still pre-live, days not weeks)
 
-- `progress` — MT5 broker (multi-profile via mt5-gateway): client/translator/poller/state-recovery shipped; `qkt brokers list` works; LiveSession → MT5 dispatch refactor deferred (see [phase 17](phases/phase-17.md))
+- `done` — MT5 broker (multi-profile via mt5-gateway) + LiveSession typed-broker dispatch (see [phase 17](phases/phase-17.md), [phase 18](phases/phase-18.md))
 - `tbd` — Standardized logging across engine/strategy/child/portfolio: consistent prefix or structured JSON; aligned with DSL `LOG` output format
 - `tbd` — Packaging and one-shot install: Docker image, single binary or self-contained zip, documented `qkt up` on a fresh machine
 - `tbd` — CI/CD: GitHub Actions for build, test, ktlint, release artifacts, docs deploy

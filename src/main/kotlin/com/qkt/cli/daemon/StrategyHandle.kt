@@ -57,6 +57,7 @@ class StrategyHandle(
         private val candleHub: CandleHub? = null,
         private val ringSize: Int = 1000,
         private val bind: String = "127.0.0.1",
+        private val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = emptyMap(),
     ) : Factory {
         override fun create(
             name: String,
@@ -108,6 +109,7 @@ class StrategyHandle(
                             org.slf4j.MDC.remove("strategy")
                         }
                     },
+                    brokerFactories = brokerFactories,
                 ).start()
 
             val server =

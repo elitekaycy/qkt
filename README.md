@@ -6,7 +6,7 @@ An event-driven trading engine in Kotlin with backtest replay, parameter sweeps,
 
 ## Status
 
-Pre-1.0. Latest release: [`v0.19.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.20.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
 See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-process.md`](docs/release-process.md) for versioning.
 
@@ -26,6 +26,7 @@ See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-p
 - **DSL `LOG` action** — levels (`INFO`/`WARN`/`ERROR`/`DEBUG`), `{name}` placeholders, structured `key=expr` fields. Stdout shows `[strategy]` prefix; child log files use safe `__`-substituted names ([phase 15](docs/phases/phase-15.md)).
 - **Backtest HTML report** — single self-contained `report.html` per run with embedded SVG equity + drawdown chart, Monte Carlo fan, drawdown-period table, per-trade risk column ([phase 16](docs/phases/phase-16.md)).
 - **MT5 broker (multi-profile)** — talks to per-broker `mt5-gateway` HTTP services; built-in defaults for Exness, ICMarkets, FTMO, Pepperstone; override or extend via `qkt.config.yaml`; v1 ships Market + Bracket ([phase 17](docs/phases/phase-17.md)).
+- **Live broker dispatch** — `LiveSession` accepts a typed broker registry; strategies declaring `EXNESS:EURUSD` route orders through the configured profile (MT5 or any other protocol). Per-session lifecycles via `BrokerFactory` ([phase 18](docs/phases/phase-18.md)).
 
 ### STACK example — 3-layer pyramid
 

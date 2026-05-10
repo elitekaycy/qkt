@@ -1,5 +1,7 @@
 package com.qkt.app
 
+import com.qkt.broker.Broker
+import com.qkt.broker.CompositeBroker
 import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
@@ -52,8 +54,37 @@ class LiveSession(
     private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
     private val onSignal: (Signal) -> Unit = {},
     private val gate: () -> Boolean = { true },
+    private val brokerFactories: Map<String, BrokerFactory> = emptyMap(),
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
+
+    private fun buildBroker(
+        paperBroker: PaperBroker,
+        bus: EventBus,
+        clock: Clock,
+        priceTracker: MarketPriceTracker,
+    ): Broker {
+        if (brokerFactories.isEmpty()) return paperBroker
+        val dslStrategies =
+            strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
+        val brokerSymbols = mutableMapOf<String, MutableSet<String>>()
+        for (s in dslStrategies) {
+            for (key in s.declaredStreams.values) {
+                brokerSymbols
+                    .getOrPut(key.broker.lowercase()) { mutableSetOf() }
+                    .add(key.symbol)
+            }
+        }
+        if (brokerSymbols.isEmpty()) return paperBroker
+        val routes =
+            brokerSymbols.map { (label, syms) ->
+                val factory = brokerFactories[label]
+                val instance = factory?.invoke(bus, clock, priceTracker) ?: paperBroker
+                com.qkt.marketdata.source.SymbolPattern
+                    .exactSet(syms.toSet()) to instance
+            }
+        return CompositeBroker(routes = routes, fallback = paperBroker, bus = bus)
+    }
 
     fun start(): LiveSessionHandle {
         val ids = SequentialIdGenerator()
@@ -64,7 +95,8 @@ class LiveSession(
         val strategyPositions = StrategyPositionTracker()
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
-        val broker = PaperBroker(bus, clock, priceTracker)
+        val paperBroker = PaperBroker(bus, clock, priceTracker)
+        val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
         val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
