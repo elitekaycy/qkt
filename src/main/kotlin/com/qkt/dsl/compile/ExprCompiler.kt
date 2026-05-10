@@ -22,6 +22,7 @@ import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.stdlib.FuncRegistry
@@ -38,6 +39,7 @@ class ExprCompiler(
         when (expr) {
             is NumLit -> CompiledExpr { Value.Num(expr.value) }
             is BoolLit -> CompiledExpr { Value.Bool(expr.value) }
+            is StringLit -> CompiledExpr { Value.Str(expr.value) }
             is BinaryOp -> compileBinary(expr, ruleAlias)
             is UnaryOp -> compileUnary(expr, ruleAlias)
             is CmpOp -> compileCmp(expr, ruleAlias)

@@ -22,6 +22,7 @@ import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.UnaryOp
 
 data class SnapshotPlan(
@@ -96,7 +97,7 @@ data class SnapshotPlan(
                 is IndicatorCall -> expr.args.forEach { walk(it, onBuy, onSell, onOpen, rolling) }
                 is Aggregate -> walk(expr.series, onBuy, onSell, onOpen, rolling)
                 is FuncCall -> expr.args.forEach { walk(it, onBuy, onSell, onOpen, rolling) }
-                is NumLit, is BoolLit, is StreamFieldRef, is AccountRef,
+                is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
                 is PositionRef, is StateAccessor, is StackEntryRef,
                 -> {}
             }
