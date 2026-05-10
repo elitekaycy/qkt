@@ -32,6 +32,13 @@ Status legend:
 - `done` — Phase 13a: STACK pyramiding (one BUY/SELL → N price-triggered entries with optional time fence)
 - `done` — Phase 13b: CANCEL/CANCEL_ALL action + PORTFOLIO file format with regime-gated child activation
 - `done` — Phase 14: portfolio v2 daemon fan-out — per-child LiveSession + ports + logs + PnL; `qkt start` verb; cascade stop
+- `done` — Phase 15: DSL `LOG` action
+- `done` — Phase 16: backtest fidelity + HTML report
+- `done` — Phase 17: MT5 broker via mt5-gateway
+- `done` — Phase 18: LiveSession typed-broker dispatch
+- `done` — Phase 19: pre-live confidence pack — parity test, audit-ticks, logging guide, memory leak audit
+- `done` — Phase 20: top-level QUICKSTART + docker-compose stack
+- `done` — Phase 21: documentation site — MkDocs Material, Mermaid, Dokka, GitHub Pages
 
 ---
 
@@ -44,7 +51,7 @@ Status legend:
 - `progress` — Tick-feed accuracy audit: `qkt audit-ticks` framework shipped (TV vs MT5 drift); operator-driven runs against live feeds (see [phase 19](phases/phase-19.md))
 - `tbd` — End-to-end portfolio daemon test (deferred from Phase 14 — see `docs/phases/phase-14.md` known limitations)
 - `progress` — Pristine test sweep + memory leak audit: code-review audit complete, two leaks fixed (Observability executor, OrderManager risk map); two future fixes documented (CandleHub.unregister, Broker.shutdown lifecycle) (see [phase 19](phases/phase-19.md))
-- `progress` — Documentation MVP: top-level QUICKSTART.md + docker-compose stack shipped (Phase 20); full plan committed at `docs/superpowers/specs/2026-05-10-documentation-plan-design.md`; MkDocs/Dokka site implementation pending (see [phase 20](phases/phase-20.md))
+- `done` — Documentation MVP: MkDocs Material site with Diátaxis IA, Mermaid diagrams, Dokka API reference, GitHub Pages deploy via Actions (see [phase 21](phases/phase-21.md))
 
 ---
 
@@ -53,7 +60,7 @@ Status legend:
 - `done` — MT5 broker (multi-profile via mt5-gateway) + LiveSession typed-broker dispatch (see [phase 17](phases/phase-17.md), [phase 18](phases/phase-18.md))
 - `done` — Standardized logging guide: MDC keys documented, console + file patterns specified, conventions for strategy authors + engine contributors (see [docs/logging.md](logging.md))
 - `progress` — Packaging and one-shot install: full docker-compose stack (qkt + mt5-gateway) shipped (Phase 20); single-binary install pending
-- `tbd` — CI/CD: GitHub Actions for build, test, ktlint, release artifacts, docs deploy
+- `progress` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint/release CI still pending
 
 ---
 

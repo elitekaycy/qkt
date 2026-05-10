@@ -1,0 +1,57 @@
+/* qkt docs — minimal palette + typographic refinements over Material defaults */
+
+:root {
+  --md-primary-fg-color: #1f6feb;
+  --md-primary-fg-color--light: #4187f0;
+  --md-primary-fg-color--dark: #1a5dc8;
+  --md-accent-fg-color: #1f6feb;
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #ffffff;
+  --md-default-fg-color: #1c1c1c;
+  --md-code-bg-color: #f5f5f5;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0e0e10;
+  --md-default-fg-color: #e6e6e6;
+  --md-code-bg-color: #1a1a1a;
+}
+
+/* Tighten the hero on the homepage so the page reads as a scannable index, not an ad. */
+.md-content article > h1:first-child {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* Material's default code copy is slightly heavy in dark mode; soften it. */
+.md-clipboard {
+  opacity: 0.55;
+}
+.md-clipboard:hover {
+  opacity: 1;
+}
+
+/* Card grid for the homepage feature tiles. */
+.grid.cards {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.grid.cards > :is(ul, ol) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.grid.cards > :is(ul, ol) > li,
+.grid.cards > .card {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  transition: border-color 0.15s ease;
+}
+.grid.cards > :is(ul, ol) > li:hover,
+.grid.cards > .card:hover {
+  border-color: var(--md-primary-fg-color);
+}

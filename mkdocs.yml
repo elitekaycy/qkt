@@ -1,0 +1,169 @@
+site_name: qkt
+site_description: An event-driven trading engine in Kotlin with backtest replay, parameter sweeps, attribution-aware risk, and a SQL-like DSL.
+site_url: https://elitekaycy.github.io/qkt/
+repo_url: https://github.com/elitekaycy/qkt
+repo_name: elitekaycy/qkt
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 elitekaycy
+
+docs_dir: docs
+site_dir: site
+
+exclude_docs: |
+  superpowers/
+  phase4-backlog.md
+
+not_in_nav: |
+  logging.md
+  memory-audit.md
+  release-process.md
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+
+extra_css:
+  - assets/extra.css
+
+plugins:
+  - search
+  - mermaid2:
+      version: 10.9.0
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.details
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.tilde
+
+nav:
+  - Home: index.md
+  - Get started:
+      - get-started/index.md
+      - Quickstart: get-started/quickstart.md
+      - Deploy paper: get-started/deploy-paper.md
+      - Deploy MT5: get-started/deploy-mt5.md
+  - Tutorials:
+      - tutorials/index.md
+  - How-to:
+      - how-to/index.md
+  - Reference:
+      - reference/index.md
+      - DSL grammar: reference/dsl-grammar.md
+      - CLI commands: reference/cli-commands.md
+      - Config schema: reference/config-schema.md
+  - Concepts:
+      - concepts/index.md
+      - Architecture: concepts/architecture.md
+      - Determinism: concepts/determinism.md
+      - Backtest model: concepts/backtest-model.md
+      - Broker integration: concepts/broker-integration.md
+  - Operations:
+      - operations/index.md
+      - Deploy with Docker: operations/deploy-docker.md
+      - Logging: operations/logging.md
+  - Contributing:
+      - contributing/index.md
+      - Development setup: contributing/development-setup.md
+      - Conventions: contributing/conventions.md
+      - Phase workflow: contributing/phase-workflow.md
+  - Phases:
+      - phases/index.md
+      - Phase 21 — Documentation site: phases/phase-21.md
+      - Phase 20 — Quickstart + compose: phases/phase-20.md
+      - Phase 19 — Pre-live confidence pack: phases/phase-19.md
+      - Phase 18 — LiveSession typed brokers: phases/phase-18.md
+      - Phase 17 — MT5 broker: phases/phase-17.md
+      - Phase 16 — Backtest fidelity + report: phases/phase-16.md
+      - Phase 15 — DSL LOG: phases/phase-15.md
+      - Phase 14 — Portfolio v2: phases/phase-14.md
+      - Phase 13a — STACK: phases/phase-13a-stack.md
+      - Phase 13b: phases/phase-13b.md
+      - Phase 12a — CLI: phases/phase-12a-cli.md
+      - Phase 12b — Observability: phases/phase-12b-observability.md
+      - Phase 12c — Daemon: phases/phase-12c-daemon.md
+      - Phase 11a — OSS baseline: phases/phase-11a-oss-baseline.md
+      - Phase 11b — DSL foundation: phases/phase-11b-dsl-foundation.md
+      - Phase 11c1 — State and operators: phases/phase-11c1-state-and-operators.md
+      - Phase 11c2 — Snapshots and aggregates: phases/phase-11c2-snapshots-aggregates.md
+      - Phase 11c3 — Actions: phases/phase-11c3-actions.md
+      - Phase 11d1 — Order surface: phases/phase-11d1-order-surface.md
+      - Phase 11d2 — Equity defaults: phases/phase-11d2-equity-defaults.md
+      - Phase 11e — Multistream: phases/phase-11e-multistream.md
+      - Phase 11f — Parser: phases/phase-11f-parser.md
+      - Phase 10 — Backtest reporting: phases/phase-10-backtest-reporting.md
+      - Phase 10b — Parameter sweep: phases/phase-10b-parameter-sweep.md
+      - Phase 10c — Walk-forward: phases/phase-10c-walk-forward.md
+      - Phase 9 — Risk engine: phases/phase-9-risk-engine.md
+      - Phase 8 — Strategy context: phases/phase-8-strategy-context-and-pnl-attribution.md
+      - Phase 7 — Live runtime: phases/phase-7-live-runtime.md
+      - Phase 7d — Broker and orders: phases/phase-7d-broker-and-orders.md
+      - Phase 7e — Bybit and composite: phases/phase-7e-bybit-and-composite.md
+      - Phase 7f — Broker resilience: phases/phase-7f-broker-resilience.md
+      - Phase 7g — Reconciliation and balances: phases/phase-7g-reconciliation-and-balances.md
+      - Phase 7h — Derivatives and rate limit: phases/phase-7h-derivatives-and-rate-limit.md
+  - Backlog: backlog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/elitekaycy/qkt
+  generator: false
