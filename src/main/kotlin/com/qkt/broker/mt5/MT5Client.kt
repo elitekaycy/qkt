@@ -39,7 +39,12 @@ class MT5Client(
 
     fun placeOrder(req: MT5OrderRequest): MT5OrderResponse {
         val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
-        val request = Request.Builder().url("$gatewayUrl/order").post(body).build()
+        val request =
+            Request
+                .Builder()
+                .url("$gatewayUrl/order")
+                .post(body)
+                .build()
         // POST /order is NOT retried: duplicate placement is worse than a surfaced failure.
         val resp = http.newCall(request).execute()
         resp.use {
@@ -117,11 +122,12 @@ class MT5Client(
 
     private fun parseOrderResponse(raw: String): MT5OrderResponse {
         val obj = json.parseToJsonElement(raw).jsonObject
-        val r = obj["result"]?.jsonObject
-            ?: return MT5OrderResponse(
-                result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
-                errorMessage = "missing result field: $raw",
-            )
+        val r =
+            obj["result"]?.jsonObject
+                ?: return MT5OrderResponse(
+                    result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
+                    errorMessage = "missing result field: $raw",
+                )
         return MT5OrderResponse(
             result =
                 MT5OrderResult(

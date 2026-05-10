@@ -74,8 +74,12 @@ class DaemonCommand(
         // `qkt brokers list`; live strategy → MT5 dispatch requires a follow-on
         // LiveSession refactor (tracked in docs/backlog.md).
         val configPath =
-            args.option("config")?.let { java.nio.file.Path.of(it) }
-                ?: java.nio.file.Path.of("./qkt.config.yaml")
+            args.option("config")?.let {
+                java.nio.file.Path
+                    .of(it)
+            }
+                ?: java.nio.file.Path
+                    .of("./qkt.config.yaml")
         val cfg = Config.load(configPath)
         val mt5Profiles =
             try {
