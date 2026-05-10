@@ -302,7 +302,120 @@ Tutorials + how-tos. The high-value end-user content. Each piece written by walk
 
 ---
 
-## 11. References
+## 11. UI/UX commitments
+
+Docs that look and feel inconsistent erode trust faster than missing pages. MkDocs Material gives us strong defaults; this section locks in the rules so we don't drift.
+
+### 11.1 Brand identity
+
+| Element | Choice |
+|---|---|
+| Primary color (accent) | `#1f6feb` — calm blue, matches GitHub-native aesthetics; works in light + dark |
+| Accent color (callouts, links) | `#1f6feb` (same — single accent reduces visual noise) |
+| Neutral text | `#1c1c1c` light mode / `#e6e6e6` dark mode |
+| Code background | `#f5f5f5` light / `#1a1a1a` dark |
+| Diff added / removed | Material defaults (green / red, contrast-validated) |
+| Logo / wordmark | Plain "qkt" wordmark in Material theme until a logo is commissioned |
+
+Configured via `docs/_overrides/extra.css` and `mkdocs.yml`'s `palette` block. No custom theme — Material with palette overrides only.
+
+### 11.2 Theme parity — light + dark
+
+- Both modes ship from day one. Toggle in the top-right (Material default).
+- Every page renders correctly in both modes; visual review checklist below enforces it.
+- Diagrams (Mermaid) use a theme variable that adapts to mode — no hardcoded fills.
+- Code blocks use the `material` syntax theme (consistent across modes).
+- Screenshots committed to the repo include both light and dark variants where relevant.
+
+### 11.3 Typography
+
+- **Body:** Inter (loaded from Google Fonts, fallback `system-ui`). Pairs well with code; supports dense data.
+- **Code:** JetBrains Mono (fallback `Menlo, monospace`). Wide ligature support.
+- **Headings:** Inter, weighted 600. No display font.
+- **Sizes:** Material defaults (16px body, 1.125 modular scale). No custom override.
+
+Two fonts only. More than two looks unprofessional and slows page loads.
+
+### 11.4 Layout
+
+- Max content width: 880px (Material default). Wider than this hurts reading speed.
+- Left sidebar: navigation. Right sidebar: in-page table of contents. Both collapsible.
+- Sticky top header with logo + search + light/dark toggle.
+- Mobile: hamburger nav, no right sidebar (TOC moves to a collapsible "On this page" section).
+
+### 11.5 Component patterns — one way to do each thing
+
+| Pattern | Use |
+|---|---|
+| **Headings** | Sentence case. H1 set by page title only. H2 for major sections. H3 maximum nesting in user-facing pages. |
+| **Code blocks** | Always specify a language (`bash`, `kotlin`, `yaml`). Material renders copy button + language label automatically. No raw `<pre>` tags. |
+| **Inline code** | Backticks for any literal: file path, command, identifier. |
+| **Admonitions** | `note`, `tip`, `warning`, `danger`. Use `tip` for "this saves you time"; `warning` for "this can hurt you in production"; `danger` for "this can lose money". No custom admonition types in v1. |
+| **Tabs** | For multi-language examples (text DSL vs Kotlin DSL). Configured via Material's `pymdownx.tabbed` extension. |
+| **Tables** | Sentence-case headers. Right-align numeric columns. Markdown tables only — no HTML. |
+| **Diagrams** | Mermaid. One diagram per concept. Captions in italic underneath. |
+| **Cross-references** | Relative markdown links. Validated by `mkdocs build --strict` (fails CI if a link breaks). |
+| **Lists** | Hyphen `-` for unordered. Numeric `1.` for ordered. No mix-and-match in one list. |
+| **Inline emphasis** | `**bold**` for the load-bearing word in a sentence. `_italics_` for terms-of-art on first introduction. No underline. |
+
+### 11.6 Responsive breakpoints
+
+- ≥ 1200px: full layout (sidebar + content + TOC).
+- 960–1199px: sidebar + content; TOC collapses.
+- 600–959px: sidebar collapses to hamburger; content fills viewport.
+- < 600px: mobile layout, navigation in drawer.
+
+Material handles these automatically. The commitment: every page tested at 360px, 768px, and 1440px before merge.
+
+### 11.7 Search and navigation
+
+- Site search keyboard shortcut: `/`. Visible in the header.
+- Top nav: Get started · Tutorials · How-to · Reference · Concepts · Operations · Contributing.
+- Sidebar reflects the section the user is in (Material's `navigation.tabs.sticky`).
+- "Edit this page" link bottom of every page → GitHub source.
+- Footer: copyright + GitHub link + license.
+
+### 11.8 Code-sample standards
+
+- Every snippet runs as-is. If a snippet depends on prior setup, link to the setup section.
+- Output shown in a separate code block immediately after, prefixed with a `# output:` comment for shell, or no prefix for plain output.
+- Highlight specific lines with Material's `hl_lines` extension when the example is long enough that the reader's eye needs help.
+- Filenames in titles: `title="momentum.qkt"` on the code block.
+
+### 11.9 Visual review checklist (per page, before merge)
+
+- [ ] Renders correctly in light mode.
+- [ ] Renders correctly in dark mode.
+- [ ] No horizontal scroll at 360px viewport.
+- [ ] All code blocks have a language tag and copy button visible.
+- [ ] All cross-links resolve (`mkdocs build --strict` passes).
+- [ ] Diagrams readable in both modes.
+- [ ] Page title is a complete phrase (not just a noun).
+- [ ] H2/H3 nesting consistent.
+- [ ] Page ends with a "References" section linking source-of-truth.
+
+A short PR template enforces this checklist for any docs PR.
+
+### 11.10 Accessibility floor
+
+- Material handles WCAG AA color contrast by default; verified via the palette choice.
+- All images have `alt` text describing the visual or "Decorative" if not load-bearing.
+- All interactive elements (toggles, search, copy buttons) keyboard-reachable.
+- Skip-to-content link at the top of every page (Material default, kept enabled).
+
+Not aiming for AAA; the audience is technical users on modern browsers. AA + keyboard navigation is the floor.
+
+### 11.11 What we deliberately don't do
+
+- **No custom theme.** Material palette + small `extra.css` only. Custom themes drift; defaults stay current.
+- **No animations beyond Material defaults.** No scroll-triggered reveals, no auto-playing demos. Distraction is worse than dryness for technical docs.
+- **No third-party comment / chat widgets.** GitHub issues are the discussion surface.
+- **No pop-ups or banners** (no "subscribe to the newsletter", no cookie banners — we don't track).
+- **No analytics with PII.** Plausible or simple GitHub Pages logs only, if any.
+
+---
+
+## 12. References
 
 - [Diátaxis framework](https://diataxis.fr/) — content typology this plan adopts
 - [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) — theme
