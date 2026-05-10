@@ -44,7 +44,7 @@ Status legend:
 - `progress` — Tick-feed accuracy audit: `qkt audit-ticks` framework shipped (TV vs MT5 drift); operator-driven runs against live feeds (see [phase 19](phases/phase-19.md))
 - `tbd` — End-to-end portfolio daemon test (deferred from Phase 14 — see `docs/phases/phase-14.md` known limitations)
 - `progress` — Pristine test sweep + memory leak audit: code-review audit complete, two leaks fixed (Observability executor, OrderManager risk map); two future fixes documented (CandleHub.unregister, Broker.shutdown lifecycle) (see [phase 19](phases/phase-19.md))
-- `tbd` — Documentation MVP: KDoc + Dokka for code reference, MkDocs Material for end-user docs, Mermaid for architecture diagrams, served via GitHub Pages with auto-deploy CI
+- `progress` — Documentation MVP: top-level QUICKSTART.md + docker-compose stack shipped (Phase 20); full plan committed at `docs/superpowers/specs/2026-05-10-documentation-plan-design.md`; MkDocs/Dokka site implementation pending (see [phase 20](phases/phase-20.md))
 
 ---
 
@@ -52,7 +52,7 @@ Status legend:
 
 - `done` — MT5 broker (multi-profile via mt5-gateway) + LiveSession typed-broker dispatch (see [phase 17](phases/phase-17.md), [phase 18](phases/phase-18.md))
 - `done` — Standardized logging guide: MDC keys documented, console + file patterns specified, conventions for strategy authors + engine contributors (see [docs/logging.md](logging.md))
-- `tbd` — Packaging and one-shot install: Docker image, single binary or self-contained zip, documented `qkt up` on a fresh machine
+- `progress` — Packaging and one-shot install: full docker-compose stack (qkt + mt5-gateway) shipped (Phase 20); single-binary install pending
 - `tbd` — CI/CD: GitHub Actions for build, test, ktlint, release artifacts, docs deploy
 
 ---

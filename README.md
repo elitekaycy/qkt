@@ -6,7 +6,9 @@ An event-driven trading engine in Kotlin with backtest replay, parameter sweeps,
 
 ## Status
 
-Pre-1.0. Latest release: [`v0.21.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.22.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+
+For a 5-minute getting-started, see [`QUICKSTART.md`](QUICKSTART.md).
 
 See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-process.md`](docs/release-process.md) for versioning.
 
