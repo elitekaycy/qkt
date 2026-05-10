@@ -1,19 +1,38 @@
 name: check
 
+# Full Gradle build (compile + ktlint + unit tests + assemble) on every PR and main push.
+# Complements the local scripts/precheck.sh — the local script may skip Gradle on docs-only
+# branches; this workflow always runs it, so main is protected regardless.
+# All template expressions reference internal step outputs only.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v3
-      - run: ./gradlew check --no-daemon
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build + test + ktlint
+        run: ./gradlew build --no-daemon
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+          retention-days: 7

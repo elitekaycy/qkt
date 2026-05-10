@@ -1,12 +1,15 @@
 # qkt
 
 [![check](https://github.com/elitekaycy/qkt/actions/workflows/check.yml/badge.svg)](https://github.com/elitekaycy/qkt/actions/workflows/check.yml)
+[![docs](https://github.com/elitekaycy/qkt/actions/workflows/docs.yml/badge.svg)](https://github.com/elitekaycy/qkt/actions/workflows/docs.yml)
 
 An event-driven trading engine in Kotlin with backtest replay, parameter sweeps, attribution-aware risk, and a future SQL-like DSL.
 
+**[Full documentation site](https://elitekaycy.github.io/qkt/)** — quickstart, DSL grammar, CLI reference, deployment guides, architecture diagrams, KDoc API reference.
+
 ## Status
 
-Pre-1.0. Latest release: [`v0.22.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.23.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
 For a 5-minute getting-started, see [`QUICKSTART.md`](QUICKSTART.md).
 
