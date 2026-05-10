@@ -252,7 +252,7 @@ Scope: ship the docs site infrastructure, migrate existing content, fill the hig
 - MkDocs Material setup at `mkdocs.yml`.
 - Dokka Gradle plugin + KDoc audit.
 - GitHub Actions workflow building + deploying to `gh-pages` on push to main.
-- Migrate existing `docs/` contents into the new IA.
+- Migrate(dont actually delete..) existing `docs/` contents into the new IA.
 - Land:
   - Get-started: install, quickstart (already exists at root, link), deploy-paper.
   - Reference: dsl-grammar, cli-commands (auto-gen script), config-schema.
