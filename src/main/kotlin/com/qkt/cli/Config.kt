@@ -6,6 +6,12 @@ import java.nio.file.Path
 import org.snakeyaml.engine.v2.api.Load
 import org.snakeyaml.engine.v2.api.LoadSettings
 
+/**
+ * Parsed `qkt.config.yaml` — the operator-facing config file.
+ *
+ * Source-of-truth schema: see [reference/config-schema](https://elitekaycy.github.io/qkt/reference/config-schema/).
+ * Env-var references like `${EXNESS_GATEWAY_URL}` are expanded at load time.
+ */
 data class Config(
     val source: String = "tv",
     val dataRoot: String = "./data",
@@ -18,6 +24,7 @@ data class Config(
     companion object {
         private val varRegex = Regex("\\$\\{([A-Z_][A-Z_0-9]*)}")
 
+        /** Reads the YAML at [path] and parses it. Returns built-in defaults if the file is missing. */
         fun load(path: Path): Config {
             if (!Files.exists(path)) return defaults()
             val raw = Files.readString(path)

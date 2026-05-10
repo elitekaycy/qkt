@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
 
+/** `qkt stop <name> [--flatten]` — graceful shutdown of a deployed strategy via the control plane. */
 class StopCommand(
     private val args: Args,
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },

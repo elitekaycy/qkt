@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
+/** `qkt deploy <strategy.qkt> [--as <name>]` — register and start a strategy in a running daemon. */
 class DeployCommand(
     private val args: Args,
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },

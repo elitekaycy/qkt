@@ -5,6 +5,12 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlinx.serialization.json.JsonObject
 
+/**
+ * Bounded ring buffer of recent strategy events, exposed at `/events`.
+ *
+ * Each strategy keeps the last [capacity] entries (default 1000). Listeners can
+ * subscribe for live streaming; older entries fall off the back as new ones arrive.
+ */
 class EventRing(
     private val capacity: Int = 1000,
 ) {

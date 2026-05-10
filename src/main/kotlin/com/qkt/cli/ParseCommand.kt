@@ -5,6 +5,7 @@ import com.qkt.dsl.parse.ParseResult
 import java.nio.file.Files
 import java.nio.file.Path
 
+/** `qkt parse <strategy.qkt>` — parse-only DSL check, prints errors with line:col coordinates. */
 class ParseCommand(
     private val args: Args,
 ) {

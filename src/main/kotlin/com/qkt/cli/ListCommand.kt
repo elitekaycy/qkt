@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
+/** `qkt list` — table of every deployed strategy: uptime, port, trades, state. */
 class ListCommand(
     private val args: Args,
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },

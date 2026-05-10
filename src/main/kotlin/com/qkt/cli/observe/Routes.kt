@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/** HTTP route handlers wired into [ObservabilityServer] — `/health`, `/status`, `/events`, `/stop`. */
 object Routes {
     private val json = Json { encodeDefaults = true }
 

@@ -16,6 +16,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
+/** `qkt backtest <strategy.qkt>` — historical replay producing a backtest report. */
 class BacktestCommand(
     private val args: Args,
 ) {

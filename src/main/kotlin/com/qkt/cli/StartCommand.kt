@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
 
+/** `qkt start <portfolio>/<child>` — clears the operator-stop flag on a portfolio child. */
 class StartCommand(
     private val args: Args,
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },

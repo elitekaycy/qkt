@@ -24,6 +24,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/**
+ * `qkt run <strategy.qkt>` — foreground paper-trading of a single strategy.
+ *
+ * The strategy runs in the current process and exits when the user terminates with
+ * Ctrl-C. Useful for development and one-off manual runs. For long-lived operation,
+ * use `qkt daemon` + `qkt deploy`.
+ */
 class RunCommand(
     private val args: Args,
     private val sourceFactory: (List<String>) -> MarketSource = ::defaultTradingViewSource,

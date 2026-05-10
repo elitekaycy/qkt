@@ -10,6 +10,13 @@ import com.qkt.marketdata.source.MarketSource
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 
+/**
+ * `qkt daemon` — long-lived process hosting many strategies via the control plane.
+ *
+ * Subcommands: `daemon start`, `daemon stop`, `daemon status`. Auto-deploys every
+ * `.qkt` file in `--load-dir` at startup; new deployments arrive through the
+ * HTTP-on-127.0.0.1 control plane (`qkt deploy`, `qkt list`, etc).
+ */
 class DaemonCommand(
     private val args: Args,
     private val sourceFactory: (List<String>) -> MarketSource = ::defaultTradingViewSource,

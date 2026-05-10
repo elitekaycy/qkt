@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
 
+/** `qkt logs <name> [-f]` — tail per-strategy log files via the daemon control plane. */
 class LogsCommand(
     private val args: Args,
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },
