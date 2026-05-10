@@ -1,5 +1,7 @@
 package com.qkt.backtest
 
+import com.qkt.backtest.metrics.DrawdownAnalyzer
+import com.qkt.backtest.metrics.MonteCarlo
 import com.qkt.backtest.metrics.calmar
 import com.qkt.backtest.metrics.profitFactor
 import com.qkt.backtest.metrics.sharpe
@@ -53,6 +55,20 @@ object ReportBuilder {
         val drawdown = DrawdownTracker.fromCurve(equityCurve.map { it.equity })
         val sharpeR = sharpe(equityCurve.map { it.equity }, annualizationFactor)
         val calmarR = calmar(finalRealized.add(finalUnrealized), drawdown)
+        val drawdownPeriods = DrawdownAnalyzer.analyze(equityCurve, BigDecimal("-0.01"))
+        val startingEquity =
+            equityCurve.firstOrNull()?.equity ?: BigDecimal.ZERO
+        val monteCarlo =
+            if (trades.size >= 30) {
+                MonteCarlo.run(
+                    tradeReturns = realizeds,
+                    startingEquity = startingEquity,
+                    simulations = 1000,
+                    seed = 42L,
+                )
+            } else {
+                null
+            }
 
         return PerformanceReport(
             realizedTotal = finalRealized.setScale(Money.SCALE, Money.ROUNDING),
@@ -70,6 +86,8 @@ object ReportBuilder {
             sharpeRatio = sharpeR,
             calmarRatio = calmarR,
             equityCurve = equityCurve,
+            drawdownPeriods = drawdownPeriods,
+            monteCarlo = monteCarlo,
         )
     }
 }

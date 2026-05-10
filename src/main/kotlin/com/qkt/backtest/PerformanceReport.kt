@@ -18,4 +18,6 @@ data class PerformanceReport(
     val sharpeRatio: BigDecimal?,
     val calmarRatio: BigDecimal?,
     val equityCurve: List<EquitySample>,
+    val drawdownPeriods: List<DrawdownPeriod> = emptyList(),
+    val monteCarlo: MonteCarloSummary? = null,
 )
