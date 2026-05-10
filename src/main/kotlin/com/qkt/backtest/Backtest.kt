@@ -133,6 +133,7 @@ class Backtest(
                 strategyIds = strategies.map { it.first },
             )
 
+        val pipelineHolder = arrayOfNulls<com.qkt.app.TradingPipeline>(1)
         val pipeline =
             TradingPipeline(
                 clock = clock,
@@ -155,11 +156,13 @@ class Backtest(
                 candleWindow = candleWindow,
                 candleHub = candleHub,
                 onFilled = { trade, realized, strategyId ->
-                    tradeRecords.add(TradeRecord(trade, realized, strategyId))
+                    val risk = pipelineHolder[0]?.orderManager?.riskUsdFor(trade.orderId)
+                    tradeRecords.add(TradeRecord(trade, realized, strategyId, risk))
                 },
                 onRejected = { e -> rejections.add(e) },
                 onCandle = {},
             )
+        pipelineHolder[0] = pipeline
 
         if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && symbols.isNotEmpty()) {
             IndicatorWarmer(source, pipeline).warmup(

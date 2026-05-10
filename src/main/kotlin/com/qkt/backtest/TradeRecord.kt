@@ -7,4 +7,5 @@ data class TradeRecord(
     val trade: Trade,
     val realized: BigDecimal,
     val strategyId: String,
+    val riskUsd: BigDecimal? = null,
 )
