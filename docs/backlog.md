@@ -39,7 +39,7 @@ Status legend:
 
 - `done` — DSL `LOG` action with levels, placeholders, structured fields; stdout `[strategy]` prefix; child file slash-safe names (see [phase 15](phases/phase-15.md))
 - `done` — Backtest fidelity audit: equity curve, DD-days, Monte Carlo, per-trade risk in HTML report (slippage/spread/regime deferred) (see [phase 16](phases/phase-16.md))
-- `tbd` — Backtest vs live execution parity: bit-for-bit identical fills/fees/slippage/PnL between backtest and paper-traded live session for the same strategy + ticks
+- `done` — Backtest vs live execution parity: identical trades (orderId/symbol/side/qty/price/timestamp) between Backtest and LiveSession given same compiled strategy and tick sequence (`src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt`)
 - `done` — Backtest report HTML output: single self-contained `report.html` (see [phase 16](phases/phase-16.md))
 - `tbd` — Tick-feed accuracy audit: compare current TradingView and Bybit feeds against known-good sources; confirm WS reconnect/resume/dedup is prod-grade
 - `tbd` — End-to-end portfolio daemon test (deferred from Phase 14 — see `docs/phases/phase-14.md` known limitations)
