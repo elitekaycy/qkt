@@ -60,7 +60,8 @@ Status legend:
 - `done` — MT5 broker (multi-profile via mt5-gateway) + LiveSession typed-broker dispatch (see [phase 17](phases/phase-17.md), [phase 18](phases/phase-18.md))
 - `done` — Standardized logging guide: MDC keys documented, console + file patterns specified, conventions for strategy authors + engine contributors (see [docs/logging.md](logging.md))
 - `progress` — Packaging and one-shot install: full docker-compose stack (qkt + mt5-gateway) shipped (Phase 20); single-binary install pending
-- `progress` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint/release CI still pending
+- `progress` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint CI green via `check.yml`; release artifact CI still pending
+- `tbd` — Phase 22: KDoc the public API — every Tier 1 type gets a class-level + per-member KDoc, Dokka site becomes useful as reference (spec: `docs/superpowers/specs/2026-05-10-phase22-kdoc-public-api-design.md`)
 
 ---
 
