@@ -60,7 +60,7 @@ Should show your `exness` profile with the resolved gateway URL.
 
 ## 5. Write a live strategy
 
-```kotlin title="strategies/live_eur.qkt"
+```qkt title="strategies/live_eur.qkt"
 STRATEGY live_eur VERSION 1
 
 SYMBOLS
