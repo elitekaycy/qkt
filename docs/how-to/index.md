@@ -1,18 +1,58 @@
-# How-to guides
+# Recipes
 
-Task-oriented recipes — "I have a problem, what do I do?"
+Task-oriented walkthroughs. Each page is one problem and one copy-paste-able solution.
 
-!!! note "Coming soon"
-    How-to guides are queued for v2. The doc plan lists the planned recipes:
+<div class="grid cards" markdown>
 
-    - Write a strategy (DSL basics, indicators, conditions)
-    - Handle bracket orders (SL + TP semantics, fallback path)
-    - Use STACK pyramiding for layered entries
-    - Configure an MT5 broker (`qkt.config.yaml`, extends, env vars)
-    - Run multiple accounts on the same MT5 broker
-    - Audit the tick feed (`qkt audit-ticks` workflow)
-    - Interpret the HTML backtest report
-    - Debug a rejected order (risk halts, broker rejections, log levels)
-    - Rotate logs (logback override patterns)
+- :material-chart-line:{ .lg .middle } **EMA crossover strategy**
 
-In the meantime, the [phase changelogs](../phases/index.md) include usage cookbooks for every shipped feature.
+    ---
+
+    The "hello world" of trend-following — fast EMA crosses slow EMA, with a bracket.
+
+    [:octicons-arrow-right-24: Build it](ema-crossover.md)
+
+- :material-shield-half-full:{ .lg .middle } **Add a stop-loss**
+
+    ---
+
+    Every flavor of stop: fixed-price, ATR-based, trailing. When to use which.
+
+    [:octicons-arrow-right-24: Add a stop-loss](add-stop-loss.md)
+
+- :material-grid:{ .lg .middle } **Run a parameter sweep**
+
+    ---
+
+    Grid-search over EMA periods, plot the heatmap, pick the winner.
+
+    [:octicons-arrow-right-24: Sweep parameters](parameter-sweep.md)
+
+- :material-bug:{ .lg .middle } **Debug a strategy that isn't firing**
+
+    ---
+
+    Six things that go wrong, in order of how often they happen, with fixes.
+
+    [:octicons-arrow-right-24: Debug it](debug-not-firing.md)
+
+- :material-cash:{ .lg .middle } **Deploy live on Exness (MT5)**
+
+    ---
+
+    Docker stack, VNC login, profile config, first paper trade — end-to-end.
+
+    [:octicons-arrow-right-24: Deploy live](deploy-exness.md)
+
+</div>
+
+## Need something else?
+
+These recipes cover the highest-frequency questions. For more depth:
+
+- [DSL grammar](../reference/dsl-grammar.md) — every keyword and operator
+- [Architecture](../concepts/architecture.md) — what happens when a rule fires
+- [Backtest model](../concepts/backtest-model.md) — what the engine guarantees and doesn't
+- [Phases](../phases/index.md) — every shipped feature has a worked-example cookbook
+
+Missing a recipe you'd find useful? [Open an issue](https://github.com/elitekaycy/qkt/issues/new) — that's how the next batch gets prioritised.
