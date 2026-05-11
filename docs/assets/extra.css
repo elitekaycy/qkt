@@ -696,7 +696,208 @@ body,
   color: var(--qkt-accent);
 }
 
-/* --- homepage hero ------------------------------------------------------ */
+/* --- homepage hero, split layout --------------------------------------- */
+.qkt-hero--split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 3.5rem;
+  align-items: start;
+}
+
+.qkt-hero--split .qkt-ticker {
+  grid-column: 1 / -1;
+}
+
+.qkt-hero__left,
+.qkt-hero__right {
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .qkt-hero--split {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+.qkt-hero__meta .pill--warn {
+  color: var(--qkt-down);
+  border-color: var(--qkt-down);
+  background: color-mix(in srgb, var(--qkt-down) 8%, transparent);
+  font-weight: 600;
+}
+
+.qkt-hero__ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 1.5rem;
+}
+
+.qkt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  font-family: var(--qkt-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--qkt-line-strong);
+  background: transparent;
+  color: var(--qkt-fg);
+  padding: 0.85em 1.4em;
+  text-decoration: none !important;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.qkt-btn:hover {
+  border-color: var(--qkt-accent);
+  background: color-mix(in srgb, var(--qkt-accent) 6%, transparent);
+  color: var(--qkt-accent);
+}
+
+.qkt-btn--primary {
+  border-color: var(--qkt-accent);
+  color: var(--qkt-accent);
+  background: color-mix(in srgb, var(--qkt-accent) 10%, transparent);
+  font-weight: 600;
+}
+
+.qkt-btn--primary:hover {
+  background: color-mix(in srgb, var(--qkt-accent) 22%, transparent);
+  color: var(--qkt-accent);
+}
+
+.qkt-btn__arrow {
+  transition: transform 0.15s ease;
+}
+
+.qkt-btn:hover .qkt-btn__arrow {
+  transform: translateX(4px);
+}
+
+.qkt-codeframe {
+  border: 1px solid var(--qkt-line);
+  background: var(--qkt-bg-sunk);
+  font-family: var(--qkt-font-mono);
+  position: relative;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.qkt-codeframe__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.7em 1.1em;
+  border-bottom: 1px solid var(--qkt-line);
+  background: var(--qkt-bg-elev);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  color: var(--qkt-fg-mute);
+}
+
+.qkt-codeframe__file { color: var(--qkt-fg); }
+.qkt-codeframe__lang {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--qkt-accent);
+}
+
+.qkt-codeframe__body {
+  margin: 0;
+  padding: 1.2em 1.4em;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.qkt-codeframe__body code {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+}
+
+.qkt-codeframe__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  padding: 0.8em 1.4em;
+  border-top: 1px dashed var(--qkt-line);
+  background: var(--qkt-bg);
+  font-size: 0.72rem;
+  color: var(--qkt-fg-mute);
+}
+
+.qkt-codeframe__cmd .sigil {
+  color: var(--qkt-accent);
+  margin-right: 0.4em;
+}
+
+.qkt-twoup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.4rem;
+  margin: 2rem 0;
+}
+
+.qkt-twoup__yes,
+.qkt-twoup__no {
+  background: var(--qkt-bg-elev);
+  border: 1px solid var(--qkt-line);
+  padding: 1.5rem 1.6rem;
+  position: relative;
+}
+
+.qkt-twoup__yes { border-left: 2px solid var(--qkt-up); }
+.qkt-twoup__no  { border-left: 2px solid var(--qkt-down); }
+
+.qkt-twoup h3 {
+  font-family: var(--qkt-font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  margin: 0 0 1.2em;
+  font-weight: 600;
+}
+
+.qkt-twoup__yes h3 { color: var(--qkt-up); }
+.qkt-twoup__no  h3 { color: var(--qkt-down); }
+
+.qkt-twoup ul {
+  margin: 0;
+  padding-left: 1.1em;
+  list-style: none;
+}
+
+.qkt-twoup li {
+  position: relative;
+  margin-bottom: 0.7em;
+  line-height: 1.55;
+  color: var(--qkt-fg);
+}
+
+.qkt-twoup li::before {
+  position: absolute;
+  left: -1.1em;
+  font-family: var(--qkt-font-mono);
+  font-size: 0.9em;
+  top: 0.05em;
+}
+
+.qkt-twoup__yes li::before { content: "+"; color: var(--qkt-up); font-weight: 700; }
+.qkt-twoup__no  li::before { content: "\2212"; color: var(--qkt-down); font-weight: 700; }
+
+@media (max-width: 720px) {
+  .qkt-twoup { grid-template-columns: 1fr; }
+}
+
+/* --- legacy hero (kept for compatibility) ------------------------------ */
 .qkt-hero {
   margin: -1.6rem -0.5rem 3rem;
   padding: 4rem 0.5rem 3rem;
@@ -1018,6 +1219,31 @@ body,
 }
 [data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb:hover {
   background: var(--qkt-accent-dim);
+}
+
+/* --- layout width ------------------------------------------------------ */
+/* Material's default grid is too narrow for IBM Plex Sans + code-heavy content.
+   Push max-width up so code blocks breathe and prose lines stay scannable. */
+.md-grid {
+  max-width: 76rem;
+}
+
+/* On the homepage (hidden nav + toc), give the content full grid width. */
+.md-content {
+  max-width: none;
+}
+
+/* Sub-page content column — wider but still readable. */
+@media (min-width: 76.25em) {
+  .md-content__inner {
+    max-width: 56rem;
+    margin: 0 auto;
+  }
+}
+
+/* Homepage with hidden nav goes wide. */
+body[data-md-color-primary] .md-content__inner:has(.qkt-hero) {
+  max-width: none;
 }
 
 /* --- print fallback ---------------------------------------------------- */

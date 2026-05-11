@@ -51,6 +51,16 @@ qkt is built in numbered phases. Each phase has a post-merge changelog with usag
 
 - [Phase 8 — Strategy context and P&L attribution](phase-8-strategy-context-and-pnl-attribution.md)
 
+## Foundations
+
+- [Phase 1 — Core engine MVP](phase-1-engine.md)
+- [Phase 2a — Event bus + SLF4J](phase-2a-event-bus.md)
+- [Phase 2b — Candle aggregator](phase-2b-candles.md)
+- [Phase 3 — Risk engine + P&L](phase-3-risk-pnl.md)
+- [Phase 4 — Backtest harness](phase-4-backtest.md)
+- [Phase 5 — Indicator catalog](phase-5-indicators.md)
+- [Phase 6 — Historical data layer](phase-6-historical-data.md)
+
 ## Phase 7 — Live runtime
 
 - [Phase 7 — Live runtime](phase-7-live-runtime.md)
