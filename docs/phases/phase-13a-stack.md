@@ -72,7 +72,7 @@ No breaking changes. All additions are opt-in:
 
 The most common use: buy N times as price climbs, with a shared bracket per layer.
 
-```
+```qkt
 STRATEGY btc_pyramid VERSION 1
 SYMBOLS
     btc = BYBIT:BTCUSDT EVERY 1m
@@ -98,7 +98,7 @@ buy(btc, sizing = sizeQty(num("0.1"))) {
 
 Enter more as price drops, anticipating a bounce.
 
-```
+```qkt
 WHEN rsi(btc.close, 14) < 30
 THEN BUY btc SIZING 0.1
      STACK 3 SPACING 100 BELOW
@@ -120,7 +120,7 @@ buy(btc, sizing = sizeQty(num("0.1"))) {
 
 Full control: each layer specifies its own sizing, order type, and trigger relative to `entry`.
 
-```
+```qkt
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
 THEN BUY btc STACK [
        0.1,                             -- layer 1: market at signal
@@ -149,7 +149,7 @@ buy(btc) {
 
 Each layer can use a different sizing form. Sizing is evaluated when that layer fires, not when the stack is submitted.
 
-```
+```qkt
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
 THEN BUY btc STACK [
        0.1 AT entry,                   -- fixed qty
@@ -178,7 +178,7 @@ buy(btc) {
 
 Cancel pending layers if price never reaches them within a time window.
 
-```
+```qkt
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
 THEN BUY btc SIZING 0.1
      STACK 3 SPACING 100 WITHIN 1h
@@ -202,7 +202,7 @@ Duration units: `s` (seconds), `m` (minutes), `h` (hours), `d` (days).
 
 STACK works symmetrically on the short side. Default direction for SELL is downward (with-trend = price falling).
 
-```
+```qkt
 WHEN rsi(btc.close, 14) > 70
 THEN SELL btc SIZING 0.1
      STACK 3 SPACING 100
@@ -215,7 +215,7 @@ Layer 1 sells at market. Layers 2 and 3 trigger at `anchor - 100` and `anchor - 
 
 STACK composes naturally with the FOR/EACH iteration construct; each symbol gets its own independent stack.
 
-```
+```qkt
 RULES
     FOR EACH s IN [btc, eth, sol] DO
         WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)

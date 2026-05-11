@@ -2,6 +2,35 @@
 
 What the backtest engine assumes — explicit, so you know what you're trusting.
 
+## What a backtest looks like
+
+A complete backtest invocation and its output:
+
+```bash
+qkt backtest strategies/momentum.qkt --from 2024-01-01 --to 2024-04-01
+```
+
+```text
+Trades:                 187
+Final realized:         1,420.50
+Final unrealized:       35.20            (open position at run end)
+Total P&L:              1,455.70
+Win rate:               0.583
+Avg win:                18.40
+Avg loss:               -11.20
+Sharpe (daily):         1.34
+Calmar:                 2.18
+Profit factor:          1.95
+Max drawdown:           -185.25          (-3.7% peak-to-trough)
+DD duration:            9 trading days
+Max consecutive losses: 4
+
+Report: ./reports/momentum-20240501-103245.html
+```
+
+Each row corresponds to something defined below. The HTML report unpacks every metric into a chart or table — equity curve, drawdown periods, Monte Carlo fan, per-trade risk table.
+
+
 ## Fills
 
 - Market orders fill at the `MarketPriceTracker`'s last-known price for the symbol at the moment the order is submitted.

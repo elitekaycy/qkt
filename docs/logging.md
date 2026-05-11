@@ -16,7 +16,7 @@ The console pattern in `src/main/resources/logback.xml` includes `[%X{strategy:-
 
 ## Console pattern
 
-```
+```text
 12:34:56.789 [qkt-live-engine] INFO  [mybook/trend] com.qkt.dsl.strategy - buy at 50125.00
 └─ time     └─ thread          level └─ strategy   logger                  message
 ```
@@ -32,7 +32,7 @@ The console pattern in `src/main/resources/logback.xml` includes `[%X{strategy:-
 
 Per-strategy files at `${QKT_STATE_DIR:-~/.local/state/qkt}/logs/<strategy>.log`:
 
-```
+```text
 2026-05-10T12:34:56.789 [INFO] buy at 50125.00
 ```
 
@@ -55,7 +55,7 @@ Common overrides:
 
 Strategies emit log lines via the DSL:
 
-```
+```qkt
 THEN LOG "buy at {price}" price=btc.close
 THEN LOG WARN "drawdown high"
 THEN LOG ERROR "broker rejected" code=42 retry=3
@@ -79,7 +79,7 @@ Operators reading logs see the rendered message; tooling reading via JSON append
 
 Keep messages short. Put values in placeholder fields, not embedded text:
 
-```
+```qkt
 # good
 THEN LOG "entry" symbol=eur.symbol price=eur.close size=0.1
 

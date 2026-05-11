@@ -33,26 +33,26 @@ Phase 15 turns the DSL `LOG` action from a literal-only print statement into a p
 
 ### Simple log
 
-```
+```qkt
 WHEN btc.close > 100
 THEN LOG "buy condition met"
 ```
 
 Stdout:
 
-```
+```text
 12:34:56.789 [qkt-live-engine] INFO  [my-strategy] com.qkt.dsl.strategy - buy condition met
 ```
 
 File `logs/my-strategy.log`:
 
-```
+```text
 2026-05-10T12:34:56.789 [INFO] buy condition met
 ```
 
 ### Levels — WARN and ERROR
 
-```
+```qkt
 WHEN account.equity < 9000
 THEN LOG WARN "drawdown crossing 10%"
 
@@ -62,27 +62,27 @@ THEN LOG ERROR "risk halt: trading suspended"
 
 Stdout (one line per emit):
 
-```
+```text
 12:34:56.789 [qkt-live-engine] WARN  [my-strategy] com.qkt.dsl.strategy - drawdown crossing 10%
 12:34:57.012 [qkt-live-engine] ERROR [my-strategy] com.qkt.dsl.strategy - risk halt: trading suspended
 ```
 
 ### Placeholder interpolation
 
-```
+```qkt
 WHEN sma(btc, 9) crosses ABOVE sma(btc, 21)
 THEN LOG "ema cross at {price}" price=btc.close
 ```
 
 Renders:
 
-```
+```text
 ema cross at 50125.00
 ```
 
 ### Structured fields (no placeholder)
 
-```
+```qkt
 THEN LOG "trade" qty=1 price=btc.close side="BUY"
 ```
 
@@ -90,7 +90,7 @@ Message: `trade`. The kvs are attached as MDC entries (`log.qty=1`, `log.price=5
 
 ### Combined
 
-```
+```qkt
 THEN LOG ERROR "broker rejected order {id}" id=42 retry=3
 ```
 
@@ -98,7 +98,7 @@ Renders `broker rejected order 42` at ERROR level with `log.id=42` and `log.retr
 
 ### DEBUG (filtered by default)
 
-```
+```qkt
 THEN LOG DEBUG "tick {n}" n=tick_count
 ```
 
@@ -108,13 +108,13 @@ The root logback level is `INFO`, so DEBUG lines are written but suppressed by t
 
 A child strategy `mybook/trend` emitting:
 
-```
+```qkt
 THEN LOG WARN "trend reversal at {price}" price=btc.close
 ```
 
 Stdout:
 
-```
+```text
 12:34:56.789 [qkt-live-engine] WARN  [mybook/trend] com.qkt.dsl.strategy - trend reversal at 50125.00
 ```
 

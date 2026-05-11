@@ -105,7 +105,7 @@ btc = BACKTEST:BTCUSDT EVERY 1d
 
 **Diagnose:** check `qkt list`:
 
-```
+```text
 NAME              KIND       PORT     TRADES   STATE
 my-strategy       strategy   47291    0        running
 ```

@@ -46,7 +46,7 @@ gh release upload v0.X.Y build/distributions/qkt-0.X.Y.tar
 
 The release body should document install:
 
-```
+```bash
 curl -L -o qkt.tar https://github.com/<owner>/<repo>/releases/download/v0.X.Y/qkt-0.X.Y.tar
 tar -xf qkt.tar
 export PATH="$PWD/qkt-0.X.Y/bin:$PATH"

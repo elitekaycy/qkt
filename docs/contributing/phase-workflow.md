@@ -4,7 +4,7 @@ qkt is built in numbered **phases** — each phase ships a coherent slice of cap
 
 ## The lifecycle
 
-```
+```text
 brainstorm → spec → plan → implement → merge → changelog
 ```
 

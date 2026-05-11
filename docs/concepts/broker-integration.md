@@ -37,18 +37,31 @@ Every broker (Paper, Bybit, MT5) implements this. The CompositeBroker routes by 
 
 Stream label = profile name = venue identity:
 
-```
+```qkt
 SYMBOLS
     eur = EXNESS:EURUSD EVERY 1m
 ```
 
 `EXNESS:` resolves to the profile named `exness` in the broker registry, regardless of what protocol it uses today (MT5) or tomorrow (REST, native SDK). The DSL doesn't know about MT5.
 
+The profile is configured in `qkt.config.yaml`:
+
+```yaml title="qkt.config.yaml"
+brokers:
+  exness:                          # this name becomes the EXNESS: prefix
+    type: mt5                      # protocol — implementation detail
+    extends: exness                # inherits built-in suffix + tz settings
+    gateway_url: http://localhost:5001
+    magic: 4242
+```
+
+When the DSL sees `EXNESS:EURUSD`, it looks up `exness` in this registry and routes orders through whatever broker type is configured. Change `type: mt5` to `type: native-exness` tomorrow and **the strategy file doesn't change** — only the config does. This is the principle: **venue identity in the DSL, protocol detail in the config**.
+
 ## MT5 specifics
 
 ### Symbol translation
 
-```
+```text
 qkt symbol → alias (if any) → + suffix
 "EURUSD" → "EURUSD"           + "m"     → "EURUSDm"   (Exness)
 "NAS100" → "USTEC"            + "m"     → "USTECm"    (Exness)

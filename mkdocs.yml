@@ -110,6 +110,18 @@ nav:
       - Quickstart: get-started/quickstart.md
       - Deploy paper: get-started/deploy-paper.md
       - Deploy MT5: get-started/deploy-mt5.md
+  - Examples:
+      - examples/index.md
+      - Trend-follow (EMA crossover): examples/trend-follow.md
+      - Mean-reversion (RSI fade): examples/mean-reversion.md
+      - Breakout (Donchian channels): examples/breakout.md
+      - Pyramiding (STACK): examples/pyramiding.md
+      - Risk-managed strategy: examples/risk-managed.md
+      - Regime-gated portfolio: examples/portfolio.md
+      - Cross-broker portfolio: examples/cross-broker.md
+      - Full-stack starter:
+          - examples/full-stack/index.md
+          - Walkthrough: examples/full-stack/walkthrough.md
   - Recipes:
       - how-to/index.md
       - EMA crossover strategy: how-to/ema-crossover.md
@@ -126,7 +138,21 @@ nav:
       - Why qkt vs alternatives: concepts/why-qkt.md
   - Reference:
       - reference/index.md
-      - DSL grammar: reference/dsl-grammar.md
+      - DSL deep-dive:
+          - reference/dsl/index.md
+          - STRATEGY block: reference/dsl/strategy-block.md
+          - Streams (SYMBOLS): reference/dsl/streams.md
+          - LET and DEFAULTS: reference/dsl/let-defaults.md
+          - Conditions (WHEN): reference/dsl/conditions.md
+          - Indicators: reference/dsl/indicators.md
+          - Expressions: reference/dsl/expressions.md
+          - Actions (BUY/SELL/CLOSE): reference/dsl/actions.md
+          - SIZING: reference/dsl/sizing.md
+          - BRACKET: reference/dsl/bracket.md
+          - STACK (pyramiding): reference/dsl/stack.md
+          - FOR EACH: reference/dsl/foreach.md
+          - PORTFOLIO files: reference/dsl/portfolio.md
+      - DSL grammar (cheat sheet): reference/dsl-grammar.md
       - CLI commands: reference/cli-commands.md
       - Config schema: reference/config-schema.md
   - Operations:

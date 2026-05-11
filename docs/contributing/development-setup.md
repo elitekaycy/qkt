@@ -58,7 +58,7 @@ For full local parity with the GitHub Actions deploy, also run `./gradlew dokkaH
 
 ## Where things live
 
-```
+```text
 src/main/kotlin/com/qkt/        # production code (one package per domain)
 src/test/kotlin/com/qkt/        # tests (mirrors prod tree)
 docs/                           # MkDocs site

@@ -43,7 +43,7 @@ No DSL or file-format changes — a `PORTFOLIO ...` file written for 13b deploys
 
 A portfolio file with two children, gated by a parent-level condition:
 
-```
+```qkt
 PORTFOLIO mybook VERSION 1
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1h
@@ -56,7 +56,7 @@ RULES
 
 Deploy:
 
-```
+```bash
 $ qkt deploy mybook.qkt
 {"name":"mybook","kind":"portfolio","state":"running",
  "startedAt":"2026-05-10T12:34:56.789Z",
@@ -68,7 +68,7 @@ $ qkt deploy mybook.qkt
 
 ### Listing entries (CLI)
 
-```
+```bash
 $ qkt list
 NAME                KIND       UPTIME   PORT     TRADES   STATE
 mybook              portfolio  00:01:23 -        -        running
@@ -79,7 +79,7 @@ rsi-only            strategy   00:05:00 54210    17       running
 
 ### Per-child drill-down
 
-```
+```bash
 $ qkt status mybook/trend
 {"strategy":"mybook/trend","kind":"child","parent":"mybook","alias":"trend",
  "gateActive":true,"operatorStop":false,"hold":false,
@@ -89,7 +89,7 @@ $ qkt status mybook/trend
 
 ### Aggregate portfolio view
 
-```
+```bash
 $ qkt status mybook
 {"name":"mybook","kind":"portfolio","version":1,"startedAt":"...",
  "uptimeMs":123456,"supervisorRunning":true,
@@ -107,7 +107,7 @@ $ qkt status mybook
 
 ### Operator-stopping and resuming a child
 
-```
+```bash
 $ qkt stop mybook/trend
 {"name":"mybook/trend","state":"operator_stopped","trades":28}
 
@@ -121,7 +121,7 @@ $ qkt start mybook/trend
 
 ### Cascade stop
 
-```
+```bash
 $ qkt stop mybook
 {"name":"mybook","state":"stopped","trades":42}
 ```
@@ -130,7 +130,7 @@ Cascade stop halts the supervisor first, then for each child: flattens (if no HO
 
 ### Following a child's logs
 
-```
+```bash
 $ qkt logs mybook/trend --lines 50 --follow
 2026-05-10 12:34:56.789 INFO  [mybook/trend] entry buy 0.1 BTCUSDT @ 50125.00
 ...
@@ -138,7 +138,7 @@ $ qkt logs mybook/trend --lines 50 --follow
 
 The supervisor logs gate transitions to `mybook.log`:
 
-```
+```bash
 $ qkt logs mybook
 2026-05-10 12:34:01.123 INFO  [mybook] trend activated
 2026-05-10 12:34:31.456 INFO  [mybook] range deactivated, hold=true
@@ -148,7 +148,7 @@ $ qkt logs mybook
 
 A daemon can run portfolios and standalone strategies side-by-side. They live in the same registry, distinguished by `kind`:
 
-```
+```bash
 $ qkt deploy rsi-only.qkt
 $ qkt deploy mybook.qkt
 $ qkt list

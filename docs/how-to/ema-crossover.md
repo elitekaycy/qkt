@@ -55,7 +55,7 @@ qkt backtest strategies/ema-cross.qkt --from 2024-01-01 --to 2024-02-01
 
 Output (truncated):
 
-```
+```text
 Trades:           14
 Final realized:   234.50
 Win rate:         0.571

@@ -80,7 +80,7 @@ SweepReportWriter(dir).write(result)
 
 Output layout:
 
-```
+```text
 <dir>/
 ├── sweep_summary.csv        # one row per run with key metrics
 ├── sweep_summary.json       # structured equivalent
