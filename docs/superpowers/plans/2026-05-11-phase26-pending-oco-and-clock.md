@@ -766,36 +766,17 @@ fun `OCO same-bar dual breach picks the leg with the closer trigger to candle op
 
 ---
 
-### Task 14 — MT5 broker StandaloneOCO verification
+### Task 14 — MT5 broker StandaloneOCO routing — DEFERRED to Phase 26b
 
-**Files:**
-- Read: `src/main/kotlin/com/qkt/broker/mt5/Mt5Broker.kt`
-- Test: `src/test/kotlin/com/qkt/broker/mt5/Mt5OcoTest.kt` (new)
+Reconnaissance during Task 1 found that `MT5OrderTranslator.kt:12-20` rejects every `OrderRequest` shape other than `Market` and `Bracket`. Routing `StandaloneOCO` (and `Stop`/`Limit`) through MT5 natively is a ~5-7 day broker-integration phase, not a single-task verification.
 
-- [ ] **Step 1: Verify the MT5 broker translates `StandaloneOCO` into two `BUY_STOP`/`SELL_STOP` MT5 order requests.**
+Phase 26b will:
+- Add `translateStop`, `translateLimit`, `translateStandaloneOCO` to `MT5OrderTranslator`.
+- Verify or implement cancel-on-fill linkage in `OrderManager` (group two MT5 tickets, cancel survivor on fill).
+- Expand `MT5Broker.submit` to accept pending shapes.
+- Cover with translator unit tests + integration tests against `FakeMt5Client`.
 
-If today's routing rejects or drops StandaloneOCO, add the translation:
-- Submit leg1 as MT5 pending stop order, capture ticket.
-- Submit leg2 as MT5 pending stop order, capture ticket.
-- Tag both with the same `groupId` in `ManagedOrder`.
-
-- [ ] **Step 2: Add cancel-on-fill behavior in `OrderManager` or Mt5Broker — when a fill event arrives for one ticket, look up its `groupId`, find the sibling, submit a `cancelOrder` for the sibling.**
-
-- [ ] **Step 3: Integration test using fake MT5 client.**
-
-```kotlin
-@Test
-fun `MT5 broker submits both legs and cancels survivor on fill`() {
-    val mt5 = FakeMt5Client()
-    val broker = Mt5Broker(mt5)
-    broker.submit(OrderRequest.StandaloneOCO(/* … */))
-    assertThat(mt5.orderSentCount()).isEqualTo(2)
-    mt5.deliverFillFor(ticket = 1001)
-    assertThat(mt5.cancelOrderCalls()).contains(1002)
-}
-```
-
-- [ ] **Step 4: Run, confirm green, commit.**
+For Phase 26a (this plan), this task is a **no-op**: skip it and continue. The hedge-straddle example will note "live runtime on MT5 ships in Phase 26b" in its README. Backtest works end-to-end via the mock broker covered in Task 13.
 
 ---
 
