@@ -45,12 +45,19 @@ class IndicatorRegistryTest {
 
     @Test
     fun `phase 23 catalog expansion is registered`() {
-        val expected = listOf(
-            "SMA", "WMA",
-            "MACD", "MACD_SIGNAL", "MACD_HIST",
-            "BOLLINGER_UPPER", "BOLLINGER_MIDDLE", "BOLLINGER_LOWER",
-            "HIGHEST", "LOWEST",
-        )
+        val expected =
+            listOf(
+                "SMA",
+                "WMA",
+                "MACD",
+                "MACD_SIGNAL",
+                "MACD_HIST",
+                "BOLLINGER_UPPER",
+                "BOLLINGER_MIDDLE",
+                "BOLLINGER_LOWER",
+                "HIGHEST",
+                "LOWEST",
+            )
         for (name in expected) {
             assertThat(IndicatorRegistry.has(name))
                 .withFailMessage("indicator %s missing from registry", name)

@@ -34,7 +34,7 @@ class StrategyPositionTracker {
         val signedTradeQty = if (trade.side == Side.BUY) trade.quantity else trade.quantity.negate()
 
         if (current == null) {
-            positions[trade.symbol] = Position(trade.symbol, signedTradeQty, trade.price)
+            positions[trade.symbol] = Position(trade.symbol, signedTradeQty, trade.price, openedAt = trade.timestamp)
             return Money.ZERO
         }
 
@@ -50,7 +50,7 @@ class StrategyPositionTracker {
                     .add(trade.price.multiply(trade.quantity))
                     .divide(totalQty.abs(), Money.CONTEXT)
                     .setScale(Money.SCALE, Money.ROUNDING)
-            positions[trade.symbol] = Position(trade.symbol, totalQty, newAvg)
+            positions[trade.symbol] = Position(trade.symbol, totalQty, newAvg, openedAt = current.openedAt)
             return Money.ZERO
         }
 
@@ -67,9 +67,9 @@ class StrategyPositionTracker {
         when {
             remainingQty.signum() == 0 -> positions.remove(trade.symbol)
             remainingQty.signum() == currentQty.signum() ->
-                positions[trade.symbol] = Position(trade.symbol, remainingQty, currentAvg)
+                positions[trade.symbol] = Position(trade.symbol, remainingQty, currentAvg, openedAt = current.openedAt)
             else ->
-                positions[trade.symbol] = Position(trade.symbol, remainingQty, trade.price)
+                positions[trade.symbol] = Position(trade.symbol, remainingQty, trade.price, openedAt = trade.timestamp)
         }
         return realized
     }

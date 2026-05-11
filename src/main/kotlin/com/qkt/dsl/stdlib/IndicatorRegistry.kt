@@ -72,7 +72,9 @@ object IndicatorRegistry {
                     val m = MACD(fast = args[0].toInt(), slow = args[1].toInt(), signal = args[2].toInt())
                     object : Indicator<BigDecimal> {
                         override fun update(input: BigDecimal) = m.update(input)
+
                         override fun value(): BigDecimal? = m.lines()?.signal
+
                         override val isReady: Boolean get() = m.isReady
                         override val warmupBars: Int = m.warmupBars
                     }
@@ -82,7 +84,9 @@ object IndicatorRegistry {
                     val m = MACD(fast = args[0].toInt(), slow = args[1].toInt(), signal = args[2].toInt())
                     object : Indicator<BigDecimal> {
                         override fun update(input: BigDecimal) = m.update(input)
+
                         override fun value(): BigDecimal? = m.lines()?.histogram
+
                         override val isReady: Boolean get() = m.isReady
                         override val warmupBars: Int = m.warmupBars
                     }
@@ -93,7 +97,9 @@ object IndicatorRegistry {
                     val b = BollingerBands(period = args[0].toInt(), stddevK = args[1].toDouble())
                     object : Indicator<BigDecimal> {
                         override fun update(input: BigDecimal) = b.update(input)
+
                         override fun value(): BigDecimal? = b.bands()?.upper
+
                         override val isReady: Boolean get() = b.isReady
                         override val warmupBars: Int = b.warmupBars
                     }
@@ -103,7 +109,9 @@ object IndicatorRegistry {
                     val b = BollingerBands(period = args[0].toInt(), stddevK = args[1].toDouble())
                     object : Indicator<BigDecimal> {
                         override fun update(input: BigDecimal) = b.update(input)
+
                         override fun value(): BigDecimal? = b.bands()?.middle
+
                         override val isReady: Boolean get() = b.isReady
                         override val warmupBars: Int = b.warmupBars
                     }
@@ -113,7 +121,9 @@ object IndicatorRegistry {
                     val b = BollingerBands(period = args[0].toInt(), stddevK = args[1].toDouble())
                     object : Indicator<BigDecimal> {
                         override fun update(input: BigDecimal) = b.update(input)
+
                         override fun value(): BigDecimal? = b.bands()?.lower
+
                         override val isReady: Boolean get() = b.isReady
                         override val warmupBars: Int = b.warmupBars
                     }

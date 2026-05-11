@@ -46,4 +46,41 @@ class ParserExprAccountTest {
         val e = expr("SYMBOL") as Ref
         assertThat(e.name).isEqualTo("__SYMBOL__")
     }
+
+    @Test
+    fun `parses POSITION dot quantity`() {
+        val e = expr("POSITION.btc.quantity") as PositionRef
+        assertThat(e.stream).isEqualTo("btc")
+    }
+
+    @Test
+    fun `parses POSITION dot entry_price`() {
+        val e = expr("POSITION.btc.entry_price") as StateAccessor
+        assertThat(e.source).isEqualTo(StateSource.POSITION_AVG_PRICE)
+        assertThat(e.key).isEqualTo("btc")
+    }
+
+    @Test
+    fun `parses POSITION dot pnl`() {
+        val e = expr("POSITION.btc.pnl") as StateAccessor
+        assertThat(e.source).isEqualTo(StateSource.POSITION_PNL)
+    }
+
+    @Test
+    fun `parses POSITION dot unrealized_pnl`() {
+        val e = expr("POSITION.btc.unrealized_pnl") as StateAccessor
+        assertThat(e.source).isEqualTo(StateSource.POSITION_UNREALIZED_PNL)
+    }
+
+    @Test
+    fun `parses POSITION dot realized_pnl`() {
+        val e = expr("POSITION.btc.realized_pnl") as StateAccessor
+        assertThat(e.source).isEqualTo(StateSource.POSITION_REALIZED_PNL)
+    }
+
+    @Test
+    fun `parses POSITION dot holding_duration`() {
+        val e = expr("POSITION.btc.holding_duration") as StateAccessor
+        assertThat(e.source).isEqualTo(StateSource.POSITION_HOLDING_DURATION)
+    }
 }
