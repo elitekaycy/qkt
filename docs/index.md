@@ -8,24 +8,24 @@ hide:
 <section class="qkt-hero qkt-hero--split" markdown="0">
   <div class="qkt-hero__left">
     <div class="qkt-hero__meta">
-      <span class="pill pill--accent">qkt / 0.24.0</span>
-      <span class="pill">kotlin · jdk 21</span>
-      <span class="pill pill--warn">do not trade real money yet</span>
+      <span class="pill pill--accent">qkt v0.24</span>
+      <span class="pill">free &amp; open source</span>
+      <span class="pill pill--warn">pre-1.0 — paper accounts only</span>
     </div>
 
-    <h1 class="qkt-hero__lede">One <em>strategy file.</em><br>Three execution modes.<br>Identical trades.</h1>
+    <h1 class="qkt-hero__lede">From idea to live trade — in <em>one file.</em></h1>
 
     <p class="qkt-hero__sub">
-      qkt is a Kotlin trading engine where the <strong>same <code>.qkt</code> file</strong> backtests, paper-trades, and runs live on MT5 — and a regression test enforces that the trades come out bit-identical across all three.
+      qkt is a free, open-source trading engine. Write your strategy in one small file, then test it against years of real market data, run it on fake money to make sure it behaves, and connect it to your broker when you're ready. We work with <strong>Bybit</strong>, <strong>MT5 brokers</strong> (Exness, ICMarkets, FTMO, Pepperstone), and <strong>TradingView feeds</strong> today — more brokers (Alpaca, IBKR) on the way.
     </p>
 
     <div class="qkt-hero__ctas">
       <a class="qkt-btn qkt-btn--primary" href="get-started/quickstart/">
-        <span>Run it in 5 minutes</span>
+        <span>Run your first strategy in 5 min</span>
         <span class="qkt-btn__arrow">→</span>
       </a>
-      <a class="qkt-btn" href="concepts/determinism/">Why determinism matters</a>
-      <a class="qkt-btn" href="concepts/architecture/">Read the architecture</a>
+      <a class="qkt-btn" href="how-to/ema-crossover/">See a worked example</a>
+      <a class="qkt-btn" href="concepts/broker-integration/">Which brokers work?</a>
     </div>
   </div>
 
@@ -51,9 +51,9 @@ hide:
          <span class="p">}</span>
 </code></pre>
       <footer class="qkt-codeframe__foot">
-        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt backtest strategies/momentum.qkt</span>
-        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt run strategies/momentum.qkt</span>
-        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt deploy strategies/momentum.qkt</span>
+        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt backtest strategies/momentum.qkt <span class="qkt-cmd__note">test it</span></span>
+        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt run strategies/momentum.qkt <span class="qkt-cmd__note">paper-trade it</span></span>
+        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt deploy strategies/momentum.qkt <span class="qkt-cmd__note">go live</span></span>
       </footer>
     </div>
   </aside>
@@ -90,30 +90,27 @@ hide:
 
 <div class="qkt-section__head" markdown="0">
   <span class="qkt-section__num">§ 01</span>
-  <h2 class="qkt-section__title">qkt is for you if…</h2>
+  <h2 class="qkt-section__title">How qkt works, in three steps</h2>
   <span class="qkt-section__rule"></span>
 </div>
 
-<div class="qkt-twoup" markdown="0">
-  <div class="qkt-twoup__yes">
-    <h3>Pick qkt when</h3>
-    <ul>
-      <li>You want one strategy file that backtests <em>and</em> runs live with bit-identical fills.</li>
-      <li>You're on the JVM and want a small, readable Kotlin engine you can step through.</li>
-      <li>You're targeting MT5 (Exness, ICMarkets, FTMO, Pepperstone) and want a Docker stack.</li>
-      <li>You care about determinism and reproducibility — same ticks → same trades, enforced by tests.</li>
-      <li>You want a SQL-like DSL for strategies instead of writing Python class boilerplate.</li>
-    </ul>
+<div class="qkt-steps" markdown="0">
+  <div class="qkt-step">
+    <div class="qkt-step__num">1</div>
+    <h3>Write your strategy</h3>
+    <p>You write a small file that says <em>"when this happens, do that"</em> — for example: when the 9-period moving average crosses above the 21-period one, buy Bitcoin with a stop-loss. The syntax reads like English, so you don't need to be a software engineer to follow it.</p>
   </div>
-  <div class="qkt-twoup__no">
-    <h3>Pick something else when</h3>
-    <ul>
-      <li>You need a battle-tested production framework — qkt is pre-1.0, no real-money users yet.</li>
-      <li>You want a huge indicator library (ta-lib parity). qkt ships ~10 indicators, not 200.</li>
-      <li>You need market-microstructure backtesting (order-book reconstruction, queue position).</li>
-      <li>You're a pure Python shop and don't want JVM in your stack.</li>
-      <li>You want managed cloud execution. qkt runs on your hardware. <a href="concepts/why-qkt/">Compare alternatives →</a></li>
-    </ul>
+
+  <div class="qkt-step">
+    <div class="qkt-step__num">2</div>
+    <h3>Test it on real data</h3>
+    <p>Run the same file against years of historical market data — Bitcoin, EURUSD, gold, stocks. qkt reports how the strategy would have performed: how many trades, win rate, profit, the deepest drawdown. You'll know whether the idea is worth more time before you risk anything.</p>
+  </div>
+
+  <div class="qkt-step">
+    <div class="qkt-step__num">3</div>
+    <h3>Go live, when you're ready</h3>
+    <p>Point the same strategy file at a paper-trading account first to watch it in real-time. When you're satisfied, connect it to your real broker. qkt is designed so the trades you saw in testing match what happens live — the engine doesn't behave differently between modes.</p>
   </div>
 </div>
 
@@ -123,21 +120,51 @@ hide:
 
 <div class="qkt-section__head" markdown="0">
   <span class="qkt-section__num">§ 02</span>
-  <h2 class="qkt-section__title">The parity contract</h2>
+  <h2 class="qkt-section__title">What you can build</h2>
   <span class="qkt-section__rule"></span>
 </div>
 
-The same strategy file produces the same trades whether you're replaying historical data or running live on MT5. This isn't marketing — it's enforced by [a regression test in `src/test/kotlin/com/qkt/parity/`](concepts/determinism.md) that fails the build if the two diverge by one tick.
+A few examples of what people use qkt for:
 
-Three primitives make it possible:
+<div class="grid cards" markdown>
 
-| primitive | what it does |
-| --- | --- |
-| `Clock` | Time always flows through this interface. Backtest uses `FixedClock`, live uses `SystemClock`. Strategies never read wall-clock directly. |
-| `IdGenerator` / `SequenceGenerator` | Every order id, every event id, comes from a deterministic generator. Same inputs → same ids. |
-| `EventBus` | Single backbone. Every component subscribes — no hidden direct calls. The event stream is the audit log. |
+- :material-chart-bell-curve:{ .lg .middle } **Test a trading idea**
 
-When your backtest says you'd have made $X, live execution on the same ticks produces $X. Slippage and venue-side latency are modeled separately and opt-in.
+    ---
+
+    You've read about a momentum or mean-reversion strategy and want to see whether it actually works on real markets. Write it as a `.qkt` file, run it against historical data, look at the numbers.
+
+- :material-shield-check:{ .lg .middle } **Validate before risking money**
+
+    ---
+
+    Paper-trade your strategy for a few weeks. Watch how it reacts to news events, weekends, and unusual price moves — without losing a penny.
+
+- :material-cog-sync:{ .lg .middle } **Run multiple strategies at once**
+
+    ---
+
+    qkt's daemon hosts many strategies side by side, each with its own observability port, log file, and risk budget. Combine them into a portfolio when you're ready.
+
+- :material-tune:{ .lg .middle } **Tune your parameters honestly**
+
+    ---
+
+    Run a parameter sweep across hundreds of combinations to find what worked, then walk-forward test to make sure it's not overfit to one period of data.
+
+- :material-bridge:{ .lg .middle } **Connect to your broker**
+
+    ---
+
+    Bybit (spot + linear), MT5 brokers (Exness, ICMarkets, FTMO, Pepperstone), TradingView feeds. Adding a new broker is a small adapter — Alpaca and IBKR are on the roadmap.
+
+- :material-source-branch:{ .lg .middle } **Read and modify the engine**
+
+    ---
+
+    qkt is small (~30k lines of Kotlin), open-source under Apache 2.0, and designed to be read end-to-end. Forking and changing behavior is encouraged.
+
+</div>
 
 </section>
 
@@ -155,49 +182,49 @@ When your backtest says you'd have made $X, live execution on the same ticks pro
 
     ---
 
-    Clone, build, run your first paper strategy. Real fills in your terminal.
+    Clone, build, run your first paper-traded strategy. Real fills land in your terminal.
 
-    [:octicons-arrow-right-24: Quickstart](get-started/quickstart.md)
+    [:octicons-arrow-right-24: Get started](get-started/quickstart.md)
 
-- :material-school:{ .lg .middle } **Recipes**
+- :material-school:{ .lg .middle } **Browse the recipes**
 
     ---
 
-    Copy-paste guides for common tasks — EMA crossover, stop-loss, parameter sweep, debug.
+    Copy-paste guides for the most common tasks — moving-average crossovers, stop-losses, parameter sweeps, debugging.
 
-    [:octicons-arrow-right-24: Recipes](how-to/index.md)
+    [:octicons-arrow-right-24: Open the cookbook](how-to/index.md)
 
 - :material-cash:{ .lg .middle } **Deploy live on MT5**
 
     ---
 
-    Docker compose stack, broker profiles, Exness / ICMarkets / FTMO / Pepperstone.
+    Docker stack walkthrough for Exness (or ICMarkets, FTMO, Pepperstone). About 10 minutes end-to-end.
 
-    [:octicons-arrow-right-24: Deploy MT5](get-started/deploy-mt5.md)
+    [:octicons-arrow-right-24: Deploy on MT5](how-to/deploy-exness.md)
 
-- :material-graph:{ .lg .middle } **Architecture**
-
-    ---
-
-    Tick → bus → strategy → order → broker → trade. Four diagrams, twenty minutes.
-
-    [:octicons-arrow-right-24: System overview](concepts/architecture.md)
-
-- :material-code-tags:{ .lg .middle } **DSL reference**
+- :material-scale-balance:{ .lg .middle } **qkt vs alternatives**
 
     ---
 
-    Every keyword, every action, every operator the `.qkt` parser accepts.
+    Honest comparison with Lean, Backtrader, freqtrade, NautilusTrader, QuantConnect. When to pick qkt — and when not to.
+
+    [:octicons-arrow-right-24: Compare](concepts/why-qkt.md)
+
+- :material-code-tags:{ .lg .middle } **Learn the strategy language**
+
+    ---
+
+    Every keyword qkt understands, with examples. Indicators, conditions, orders, brackets, pyramiding.
 
     [:octicons-arrow-right-24: DSL grammar](reference/dsl-grammar.md)
 
-- :material-scale-balance:{ .lg .middle } **Why qkt?**
+- :material-graph:{ .lg .middle } **How the engine works inside**
 
     ---
 
-    Honest comparison vs. Lean, Backtrader, freqtrade, QuantConnect.
+    Tick → strategy → order → broker → trade. Four diagrams, twenty minutes — if you want to understand the internals.
 
-    [:octicons-arrow-right-24: Compare](concepts/why-qkt.md)
+    [:octicons-arrow-right-24: System overview](concepts/architecture.md)
 
 </div>
 
@@ -207,43 +234,18 @@ When your backtest says you'd have made $X, live execution on the same ticks pro
 
 <div class="qkt-section__head" markdown="0">
   <span class="qkt-section__num">§ 04</span>
-  <h2 class="qkt-section__title">What's in the box</h2>
+  <h2 class="qkt-section__title">Before you trade real money</h2>
   <span class="qkt-section__rule"></span>
 </div>
 
-| capability | status |
-| --- | --- |
-| Deterministic event-driven engine | shipped |
-| SQL-like strategy DSL (`.qkt` files) | shipped |
-| Backtest replay with HTML report | shipped |
-| Paper trading + per-strategy observability port | shipped |
-| Live MT5 (Exness/ICMarkets/FTMO/Pepperstone via gateway) | shipped |
-| Bybit Spot + Linear (USDT) | shipped |
-| TradingView free-tier live ticks | shipped |
-| Parameter sweeps + walk-forward | shipped |
-| Portfolio composition (regime-gated children) | shipped |
-| STACK pyramiding + BRACKET orders | shipped |
-| Per-strategy P&L attribution, risk halts, drawdown caps | shipped |
-| Real-money use | **not yet — pre-1.0** |
+!!! warning "qkt is pre-1.0 — please don't connect a funded account yet"
+    qkt is open-source software built by a single developer. The engine works and is well-tested on historical and paper data, but it has not yet been used in production with real funds. A few honest caveats:
 
-</section>
+    - **No third-party security review.** The code is open and auditable, but no one has paid auditors to look at it.
+    - **No real-money users yet.** That means edge cases that only show up under live trading conditions haven't all been found.
+    - **Breaking changes between minor versions.** The strategy language is stable; the engine internals still move.
+    - **The MT5 connector is a community wrapper**, not officially supported by MetaQuotes.
 
-<section class="qkt-section" markdown="1">
-
-<div class="qkt-section__head" markdown="0">
-  <span class="qkt-section__num">§ 05</span>
-  <h2 class="qkt-section__title">Status &amp; safety</h2>
-  <span class="qkt-section__rule"></span>
-</div>
-
-!!! warning "Pre-1.0 — do not connect to a funded account"
-    qkt is single-developer, fast-moving, and not yet battle-tested. The engine produces deterministic results on synthetic and historical data, and the parity test guarantees backtest = live-paper. But:
-
-    - No third-party security review
-    - No production users with real money
-    - Breaking changes happen between minor versions
-    - The MT5 gateway is a community wrapper, not officially supported by MetaQuotes
-
-    Use it with paper accounts and demo brokers. Wait for 1.0 before considering live capital.
+    Use qkt with paper accounts and demo brokers. Wait for the 1.0 release before considering live capital. If you find something broken, [open an issue](https://github.com/elitekaycy/qkt/issues/new) — that's how it gets fixed.
 
 </section>
