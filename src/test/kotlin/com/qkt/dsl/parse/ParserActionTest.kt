@@ -63,4 +63,37 @@ class ParserActionTest {
         assertThat(r.level).isEqualTo(com.qkt.dsl.ast.LogLevel.INFO)
         assertThat(r.fields).isEmpty()
     }
+
+    @Test
+    fun `multi-action rule with semicolon separator parses as Block`() {
+        val src =
+            """
+            STRATEGY s VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSD EVERY 1m
+            RULES
+                WHEN btc.close > 0 THEN BUY btc SIZING 0.01 ; LOG "long"
+            """.trimIndent()
+        val ast = (Parser(Lexer(src).tokenize()).parseStrategy() as ParseResult.Success).value
+        val rule = ast.rules[0] as com.qkt.dsl.ast.WhenThen
+        val block = rule.action as com.qkt.dsl.ast.Block
+        assertThat(block.actions).hasSize(2)
+        assertThat(block.actions[0]).isInstanceOf(Buy::class.java)
+        assertThat(block.actions[1]).isInstanceOf(Log::class.java)
+    }
+
+    @Test
+    fun `single action stays single, not wrapped in Block`() {
+        val src =
+            """
+            STRATEGY s VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSD EVERY 1m
+            RULES
+                WHEN btc.close > 0 THEN BUY btc SIZING 0.01
+            """.trimIndent()
+        val ast = (Parser(Lexer(src).tokenize()).parseStrategy() as ParseResult.Success).value
+        val rule = ast.rules[0] as com.qkt.dsl.ast.WhenThen
+        assertThat(rule.action).isInstanceOf(Buy::class.java)
+    }
 }

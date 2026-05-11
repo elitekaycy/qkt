@@ -59,8 +59,33 @@ class LexerTest {
     }
 
     @Test
+    fun `tokenizes double-quoted strings`() {
+        val tokens = Lexer("\"hello world\"").tokenize()
+        assertThat(tokens[0].kind).isEqualTo(TokenKind.STRING)
+        assertThat(tokens[0].lexeme).isEqualTo("hello world")
+    }
+
+    @Test
+    fun `double-quoted strings support escapes`() {
+        val tokens = Lexer(""""she said \"hi\" and \\smiled"""").tokenize()
+        assertThat(tokens[0].lexeme).isEqualTo("""she said "hi" and \smiled""")
+    }
+
+    @Test
+    fun `single quotes pass through double-quoted strings unescaped`() {
+        val tokens = Lexer(""""don't fire"""").tokenize()
+        assertThat(tokens[0].lexeme).isEqualTo("don't fire")
+    }
+
+    @Test
     fun `unterminated string errors`() {
         assertThatThrownBy { Lexer("'oops").tokenize() }
+            .isInstanceOf(IllegalStateException::class.java)
+    }
+
+    @Test
+    fun `unterminated double-quoted string errors`() {
+        assertThatThrownBy { Lexer("\"oops").tokenize() }
             .isInstanceOf(IllegalStateException::class.java)
     }
 

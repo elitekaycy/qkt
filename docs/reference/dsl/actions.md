@@ -156,7 +156,7 @@ There is no explicit `LOG INFO` keyword form — INFO is reached by omitting the
 
 ## Combining actions
 
-Multiple actions per rule, separated by `;` or newlines:
+Multiple actions per rule, separated by `;`:
 
 ```qkt
 WHEN regime_changed
