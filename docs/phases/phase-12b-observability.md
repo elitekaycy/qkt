@@ -32,7 +32,7 @@ Purely additive on top of 12a. Existing 12a invocations (`qkt run foo.qkt`) gain
 
 ### Default (kernel-assigned port, localhost-only)
 
-```
+```bash
 $ qkt run strategies/momentum.qkt
 [INFO] qkt 0.12.0 — strategy momentum_basket v1 — paper-trading
 [INFO] subscribed: BYBIT:BTCUSDT, INTERACTIVE:XAUUSD, ALPACA:AAPL
@@ -43,7 +43,7 @@ QKT_PORT=47291
 
 ### Inspect status from another terminal
 
-```
+```bash
 $ curl -s http://127.0.0.1:47291/status | jq
 {
   "strategy": "momentum_basket",
@@ -73,7 +73,7 @@ $ curl -s http://127.0.0.1:47291/health
 
 ### Tail live events via SSE
 
-```
+```bash
 $ curl -N http://127.0.0.1:47291/events
 event: trade
 data: {"side":"BUY","symbol":"BTCUSDT","qty":"0.001","price":"68234.50","realized":"0.00"}
@@ -88,7 +88,7 @@ Browser-friendly: `EventSource('http://localhost:47291/events').onmessage = e =>
 
 ### Query historical events
 
-```
+```bash
 $ curl -s "http://127.0.0.1:47291/logs?limit=5" | jq
 [
   {"ts": 1715177525000, "kind": "trade", "payload": {"side": "BUY", ...}},
@@ -100,7 +100,7 @@ $ curl -s "http://127.0.0.1:47291/logs?since=1715177528000&limit=10"
 
 ### Graceful remote shutdown
 
-```
+```bash
 $ curl -s -X POST http://127.0.0.1:47291/stop
 {"status":"accepted","action":"graceful_shutdown"}
 
@@ -111,7 +111,7 @@ $ curl -s -X POST http://127.0.0.1:47291/stop
 
 `?flatten=true` flattens positions before exit:
 
-```
+```bash
 $ curl -s -X POST 'http://127.0.0.1:47291/stop?flatten=true'
 ```
 
@@ -136,7 +136,7 @@ curl http://127.0.0.1:$port/status
 
 ### Pin a port (e.g. for a stable Grafana scrape)
 
-```
+```bash
 $ qkt run strategies/momentum.qkt --port 47291
 ```
 
@@ -144,7 +144,7 @@ If port 47291 is in use, the bind fails fast with a clear error.
 
 ### Privileged port (Docker + `CAP_NET_BIND_SERVICE`)
 
-```
+```bash
 $ qkt run strategies/momentum.qkt --port 80
 qkt: error: port 80 is privileged (< 1024); add --allow-privileged-port to override.
 $ qkt run strategies/momentum.qkt --port 80 --allow-privileged-port
@@ -153,7 +153,7 @@ $ qkt run strategies/momentum.qkt --port 80 --allow-privileged-port
 
 ### Minimal-footprint mode
 
-```
+```bash
 $ qkt run strategies/momentum.qkt --no-observe
 # No HTTP server. No QKT_PORT line. Same as 12a behaviour.
 ```

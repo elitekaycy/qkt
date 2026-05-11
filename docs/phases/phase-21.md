@@ -36,7 +36,7 @@ dokka = "1.9.20"
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 ```
 
-```
+```text
 # .gitignore gains:
 site/
 .cache/

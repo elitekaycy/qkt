@@ -83,7 +83,7 @@ Phase 12c collapses the "one terminal per strategy" UX into a single daemon proc
 
 Terminal 1 (or systemd / launchd / Docker PID 1):
 
-```
+```bash
 $ qkt daemon
 [INFO] qkt 0.13.0 daemon starting
 [INFO] state directory: /home/dickson/.local/state/qkt
@@ -93,7 +93,7 @@ $ qkt daemon
 
 Terminal 2 (management):
 
-```
+```bash
 $ qkt deploy strategies/ema-crossover.qkt --as ema-fast
 NAME       PORT     STATE     STARTED
 ema-fast   47291    running   2026-05-08T15:02:14Z
@@ -122,7 +122,7 @@ $ qkt daemon stop
 
 ### Auto-deploy strategies on startup
 
-```
+```bash
 $ qkt daemon --load-dir /opt/strategies
 [INFO] auto-deploying ema-fast (from /opt/strategies/ema-fast.qkt)
 [INFO] auto-deploying momentum-basket (from /opt/strategies/momentum-basket.qkt)
@@ -133,7 +133,7 @@ $ qkt daemon --load-dir /opt/strategies
 
 Pull the published image and run as the container's PID 1:
 
-```
+```bash
 $ docker pull ghcr.io/elitekaycy/qkt:0.13.0
 $ docker run -d --name qkt-prop \
     -v $(pwd)/strategies:/strategies \
@@ -159,14 +159,14 @@ COPY qkt.config.yaml /etc/qkt/qkt.config.yaml
 # CMD inherited from base: qkt daemon --load-dir /strategies
 ```
 
-```
+```bash
 $ docker build -t my-prop:0.1 .
 $ docker run -d -p 47000-47100:47000-47100 my-prop:0.1
 ```
 
 ### Shared CandleHub — automatic dedup
 
-```
+```bash
 $ qkt daemon &
 $ qkt deploy ema-on-btc.qkt --as ema      # registers (BYBIT, BTCUSDT, 1m)
 $ qkt deploy rsi-on-btc.qkt --as rsi      # also registers (BYBIT, BTCUSDT, 1m)
@@ -177,7 +177,7 @@ $ qkt deploy rsi-on-btc.qkt --as rsi      # also registers (BYBIT, BTCUSDT, 1m)
 
 Each strategy's output lands in its own file:
 
-```
+```bash
 $ qkt deploy ema-fast.qkt --as ema
 $ ls ~/.local/state/qkt/logs/
 ema.log

@@ -90,7 +90,7 @@ Env vars override YAML fields without editing the file.
 
 ### Inspect resolved profiles
 
-```
+```bash
 $ qkt brokers list
 NAME              KIND  GATEWAY                  SUFFIX  TZ  MAGIC
 exness            mt5   http://localhost:5005    m       2   10001

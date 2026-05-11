@@ -30,7 +30,7 @@ Single change for downstream code: `application.mainClass` no longer points at t
 
 ### Build and install
 
-```
+```bash
 $ ./gradlew installDist
 $ export PATH="$PWD/build/install/qkt/bin:$PATH"
 $ qkt --version
@@ -41,7 +41,7 @@ For a portable distribution: `./gradlew distTar` produces `build/distributions/q
 
 ### `qkt parse`
 
-```
+```bash
 $ qkt parse strategies/momentum.qkt
 ok
 
@@ -57,7 +57,7 @@ Useful in editor save-hooks and CI lint passes.
 
 ### `qkt backtest`
 
-```
+```bash
 $ qkt backtest strategies/momentum.qkt \
     --from 2024-01-01 --to 2024-06-01 \
     --data-root ./data \
@@ -72,7 +72,7 @@ Max drawdown:     -340.20
 
 Lazy-install missing days via Dukascopy:
 
-```
+```bash
 $ qkt backtest strategies/momentum.qkt \
     --from 2024-01-01 --to 2024-06-01 \
     --data-root ./data \
@@ -81,14 +81,14 @@ $ qkt backtest strategies/momentum.qkt \
 
 JSON output for `jq` / monitoring / CI:
 
-```
+```bash
 $ qkt backtest strategies/momentum.qkt --from … --to … --data-root ./data --json | jq '.finalRealized'
 1247.50
 ```
 
 ### `qkt run`
 
-```
+```bash
 $ qkt run strategies/momentum.qkt
 [INFO] qkt 0.11.6 — strategy momentum_basket v1 — paper-trading
 [INFO] subscribed: BYBIT:BTCUSDT, INTERACTIVE:XAUUSD, ALPACA:AAPL

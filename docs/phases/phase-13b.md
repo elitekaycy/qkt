@@ -55,7 +55,7 @@ Phase 13b is additive across all three pieces. One small refactor: `Signal.Cance
 
 ### CANCEL inside a strategy
 
-```
+```qkt
 STRATEGY guard VERSION 1
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1m
@@ -71,7 +71,7 @@ When price drops below 49000, all pending stack layers (and any non-stack pendin
 
 ### ChildRr in stack outerBracket
 
-```
+```qkt
 BUY btc SIZING 0.1
 STACK 3 SPACING 100
 BRACKET { STOP LOSS BY 50, TAKE PROFIT RR 2.0 }
@@ -81,7 +81,7 @@ Each layer's TP fires at `fill_price + (50 × 2.0) = fill_price + 100`. SL at `f
 
 ### Regime-switched portfolio
 
-```
+```qkt
 PORTFOLIO trend_or_range VERSION 1
 
 SYMBOLS
@@ -99,7 +99,7 @@ One child active at any time. When the gate flips, the deactivated child's open 
 
 ### Always-on bundle
 
-```
+```qkt
 PORTFOLIO multi VERSION 1
 
 IMPORT 'ema9.qkt' AS ema9
@@ -114,7 +114,7 @@ Both children active throughout. Their signals share the portfolio's PnL/positio
 
 ### HOLD — keep child positions across deactivation
 
-```
+```qkt
 PORTFOLIO mixed VERSION 1
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1m

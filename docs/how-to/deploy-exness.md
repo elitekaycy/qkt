@@ -102,7 +102,7 @@ docker compose exec qkt qkt audit-ticks EXNESS:EURUSD --duration 60s
 
 Output:
 
-```
+```text
 audit-ticks EXNESS:EURUSD
   ticks received:    312
   bid range:         1.0828–1.0834
@@ -143,7 +143,7 @@ docker compose exec qkt qkt deploy /strategies/eur-paper.qkt --as eur-paper
 
 Output:
 
-```
+```text
 [INFO] deployed eur-paper
 QKT_PORT=47291
 ```
@@ -154,7 +154,7 @@ Verify it's running:
 docker compose exec qkt qkt list
 ```
 
-```
+```text
 NAME              KIND       UPTIME   PORT     TRADES   STATE
 eur-paper         strategy   00:00:42 47291    0        running
 ```

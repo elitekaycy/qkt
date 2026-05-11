@@ -11,7 +11,7 @@ The repo ships a [`docker-compose.yml`](https://github.com/elitekaycy/qkt/blob/m
 
 ## Stack layout
 
-```
+```bash
 docker compose up -d
    │
    ├─ mt5-gateway   (Wine + MT5 + Flask)

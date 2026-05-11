@@ -33,6 +33,20 @@ Live runs against a real broker (MT5, Bybit) lose this property because:
 
 The backtest model treats fills as immediate at the tracker's last price. Live runs are subject to real-world execution. The gap between them is what `qkt audit-ticks` and the backtest-vs-live audit programs exist to quantify.
 
+## Concrete example: same ticks, same trades
+
+Two backtest runs on identical input produce identical output. Here's the property:
+
+```kotlin
+val ticks = HistoricalTickFeed.fromCsv(Path.of("data/btc.csv")).toList()
+val r1 = Backtest(strategies, rules, ticks, candleWindow = ONE_MINUTE, initialTimestamp = 0L).run()
+val r2 = Backtest(strategies, rules, ticks, candleWindow = ONE_MINUTE, initialTimestamp = 0L).run()
+assertThat(r1.trades).isEqualTo(r2.trades)       // every Trade id, price, qty matches
+assertThat(r1.totalPnL).isEqualTo(r2.totalPnL)   // exact BigDecimal equality
+```
+
+No tolerance, no `isCloseTo`. Exact equality. This is what makes parameter sweeps and walk-forward validation trustworthy — re-runs always produce the same numbers.
+
 ## The parity contract
 
 ```kotlin

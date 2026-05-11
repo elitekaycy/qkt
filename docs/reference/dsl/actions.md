@@ -1,0 +1,221 @@
+# Actions — BUY, SELL, CLOSE, CANCEL, LOG
+
+The verbs that go after `THEN`. Each action is a complete imperative — "do this exact thing." A rule can have multiple actions separated by `;` or newlines.
+
+## The action verbs
+
+| Verb | What it does |
+| --- | --- |
+| `BUY <stream> ...` | Open or add to a long position |
+| `SELL <stream> ...` | Open or add to a short position |
+| `CLOSE <stream>` | Flatten the position on this stream |
+| `CLOSE_ALL` | Flatten every open position |
+| `CANCEL <stream>` | Cancel any pending orders on this stream |
+| `CANCEL_ALL` | Cancel every pending order |
+| `LOG [level] "<msg>" [field=expr ...]` | Emit a structured log line |
+| `FLATTEN` | Synonym for `CLOSE_ALL` |
+
+## `BUY <stream>` and `SELL <stream>`
+
+The entry verbs. Both take the same set of modifiers.
+
+```qkt
+BUY <stream>
+    [ SIZING <size_spec> ]
+    [ <order_type_modifier> ]
+    [ BRACKET { ... } ]
+    [ TRAILING_STOP BY <amount> ]
+    [ STACK ... ]
+    [ TIF <gtc|ioc|fok|day> ]
+```
+
+### Minimal BUY (uses DEFAULTS)
+
+```qkt
+WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+THEN BUY btc
+```
+
+This is valid only if `DEFAULTS { sizing = ... }` is set (otherwise the parser complains). Sizing is the only field without a sensible compile-time default.
+
+### Full BUY
+
+```qkt
+BUY btc
+    SIZING 1.0 PCT RISK
+    BRACKET {
+      STOP_LOSS AT btc.close - atr(btc, 14) * 2,
+      TAKE_PROFIT AT btc.close + atr(btc, 14) * 6
+    }
+    TIF GTC
+```
+
+`SELL` is identical in shape, just opens a short instead of a long.
+
+### Order type modifiers
+
+By default `BUY`/`SELL` submit market orders. To submit a limit order:
+
+```qkt
+BUY btc SIZING 0.1 LIMIT AT 67000      -- limit order at $67,000
+```
+
+To submit a stop entry (buy on breakout above a level):
+
+```qkt
+BUY btc SIZING 0.1 STOP AT 67500       -- triggers when price hits $67,500
+```
+
+Stop-limit (trigger at one price, place a limit at another):
+
+```qkt
+BUY btc SIZING 0.1 STOP_LIMIT AT 67500 LIMIT_PRICE 67550
+```
+
+If-touched (similar to stop but can trigger in either direction):
+
+```qkt
+BUY btc SIZING 0.1 IF_TOUCHED AT 67000      -- buys when price touches $67,000
+```
+
+The order type modifier replaces the default `MARKET` and goes right after the stream/sizing.
+
+## `CLOSE <stream>` and `CLOSE_ALL`
+
+`CLOSE <stream>` flattens the position on that stream at market. No sizing needed — it closes the full current position.
+
+```qkt
+WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
+ AND position(btc) > 0
+THEN CLOSE btc
+```
+
+`CLOSE_ALL` does the same for every open position across all symbols. Use sparingly — usually you want to be precise.
+
+```qkt
+WHEN account.equity < 5000
+THEN CLOSE_ALL
+     LOG WARN "equity below safety threshold — flattening"
+```
+
+`FLATTEN` is a synonym for `CLOSE_ALL`.
+
+## `CANCEL <stream>` and `CANCEL_ALL`
+
+Cancels working orders without touching open positions.
+
+```qkt
+CANCEL btc           -- cancel any pending orders on btc, leaves the position alone
+CANCEL_ALL           -- cancel every pending order
+```
+
+Use case: a STACK strategy with unfilled layers — you want to cancel the rest when conditions change.
+
+```qkt
+WHEN regime_changed
+THEN CANCEL btc      -- abandon unfilled stack layers
+     CLOSE btc       -- close the already-filled portion
+```
+
+## `LOG`
+
+Emits a structured log line. Three levels (`INFO`, `WARN`, `ERROR`, `DEBUG`) and optional structured fields.
+
+```qkt
+LOG [LEVEL] "<msg>" [<key>=<expr> ...]
+```
+
+### Simple message
+
+```qkt
+THEN LOG INFO "entered long position"
+```
+
+Output (with the default logback config):
+
+```text
+2026-05-11T10:23:45.123 [main] INFO  com.qkt.app.LiveSession - [my-strategy] entered long position
+```
+
+### With placeholders
+
+`{name}` placeholders in the message string get filled from the structured fields:
+
+```qkt
+THEN LOG INFO "long entry at {price} with stop at {stop}"
+     price=btc.close
+     stop=btc.close - atr(btc, 14) * 2
+```
+
+The `{price}` and `{stop}` in the string are replaced with the evaluated values. The fields **also** appear in the JSON output (if you're using structured logging) under `log.price` and `log.stop`.
+
+### Levels
+
+```qkt
+LOG INFO  "..."        -- routine info
+LOG WARN  "..."        -- something unusual but not fatal
+LOG ERROR "..."        -- something failed
+LOG DEBUG "..."        -- low-level detail; usually filtered out in production
+```
+
+If you omit the level, `INFO` is the default.
+
+## Combining actions
+
+Multiple actions per rule, separated by `;` or newlines:
+
+```qkt
+WHEN regime_changed
+THEN
+    CANCEL btc ;                                  -- cancel any pending btc orders
+    CLOSE btc ;                                   -- flatten btc position
+    LOG INFO "regime change" old=old_regime new=new_regime
+```
+
+Actions fire in order. The next action sees the state after the previous one (so `LOG` after `CLOSE` sees the closed position).
+
+## Optional clauses, in order
+
+When you stack modifiers on a `BUY`/`SELL`, the order matters but the parser is forgiving:
+
+1. `<stream>` (required)
+2. `SIZING <spec>` (or inherited from `DEFAULTS`)
+3. Order-type modifier (`LIMIT AT`, `STOP AT`, etc.) — defaults to market
+4. `BRACKET { ... }` (or `STOP_LOSS ... TAKE_PROFIT ...` bare)
+5. `TRAILING_STOP BY <amount>` (alone or in addition to a BRACKET)
+6. `STACK <n> SPACING <points> ABOVE|BELOW [WITHIN <duration>]` — pyramiding
+7. `TIF <mode>` — time-in-force
+8. `LOG ...` — usually a separate action after `;` but can be inline-chained
+
+The most common patterns:
+
+```qkt
+-- Simple market buy with bracket
+BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+
+-- Limit entry with bracket
+BUY btc SIZING 0.1 LIMIT AT 67000 BRACKET { ... }
+
+-- Risk-sized with bare stop (no take-profit, exit via rule)
+BUY btc SIZING 1.0 PCT RISK STOP_LOSS AT btc.close - atr(btc, 14) * 2
+
+-- Stacked with shared bracket
+BUY btc SIZING 0.1 STACK 3 SPACING 200 ABOVE WITHIN 4h
+    BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 1000 }
+```
+
+## Common gotchas
+
+- **`BUY btc` without `SIZING` and without `DEFAULTS.sizing` is a parse error.** Sizing is required at exactly one of: action, DEFAULTS.
+- **`CLOSE` doesn't take a size.** It closes the whole position. To exit partially, use a `BRACKET` with scale-out targets or a `SELL` that fires when long.
+- **Edge-trigger gotcha for entries.** Without `AND position(<stream>) = 0`, a `BUY` rule fires once on signal — then if the signal stays true, it doesn't re-fire (edge-trigger). If you want re-entry capability, ensure the position guard is in place.
+- **`LOG` is not an exit.** Logging doesn't change strategy state. Use `CLOSE` or `CANCEL` for actions; `LOG` for the audit trail.
+- **`TRAILING_STOP` requires broker support.** Some venues (paper, MT5) handle it natively; others (Bybit Spot) get an engine-managed approximation. See [broker integration](../../concepts/broker-integration.md).
+
+## What this composes with
+
+- [SIZING](sizing.md) — every way to specify position size
+- [BRACKET](bracket.md) — stop-loss and take-profit groups
+- [STACK](stack.md) — pyramiding multiple entries from one signal
+- [Streams](streams.md) — what `<stream>` refers to
+- [LOG/Logging](../../operations/logging.md) — log routing, MDC keys, file outputs

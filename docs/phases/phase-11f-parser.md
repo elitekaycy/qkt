@@ -49,7 +49,7 @@ val strategy = AstCompiler().compile(ast)
 
 ### Single-stream market buy
 
-```
+```qkt
 STRATEGY single_stream VERSION 1
 
 SYMBOLS
@@ -62,7 +62,7 @@ RULES
 
 ### Multi-timeframe, cross-timeframe condition
 
-```
+```qkt
 STRATEGY mtf VERSION 1
 
 SYMBOLS
@@ -76,7 +76,7 @@ RULES
 
 ### Multi-broker
 
-```
+```qkt
 STRATEGY mb VERSION 1
 
 SYMBOLS
@@ -95,7 +95,7 @@ RULES
 
 ### `FOR EACH` macro — cross-asset entry rule
 
-```
+```qkt
 STRATEGY fe VERSION 1
 
 SYMBOLS
@@ -111,7 +111,7 @@ RULES
 
 ### `DEFAULTS` with `SYMBOL` placeholder
 
-```
+```qkt
 STRATEGY ds VERSION 1
 
 DEFAULTS {

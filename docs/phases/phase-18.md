@@ -40,7 +40,7 @@ brokers:
     gateway_url: http://localhost:5001
 ```
 
-```
+```qkt
 # ./momentum.qkt
 STRATEGY momentum VERSION 1
 SYMBOLS
@@ -50,7 +50,7 @@ RULES
     THEN BUY eur SIZING 0.1 BRACKET STOP_LOSS BY 50 PCT TAKE_PROFIT BY 100 PCT
 ```
 
-```
+```bash
 $ qkt daemon &                                  # loads exness profile
 $ qkt deploy momentum.qkt
 ```
@@ -59,7 +59,7 @@ The strategy's BUY signal routes to `MT5Broker(profile=exness)` → `mt5-gateway
 
 ### Mixed-venue strategy (MT5 + paper)
 
-```
+```qkt
 SYMBOLS
     eur = EXNESS:EURUSD EVERY 1m
     btc = BACKTEST:BTCUSDT EVERY 1m

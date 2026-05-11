@@ -83,7 +83,7 @@ WalkForwardReportWriter(dir).write(result)
 
 Output:
 
-```
+```text
 <dir>/
 ├── walkforward_summary.json     # full structured report
 ├── walkforward_summary.csv      # one row per fold

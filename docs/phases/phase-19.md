@@ -45,7 +45,7 @@ Phase 19 ships the operational hardening needed before putting investor money on
 
 ### Run the E2E smoke test
 
-```
+```bash
 $ ./gradlew test --tests com.qkt.parity.MT5DaemonE2ETest
 ```
 
@@ -55,7 +55,7 @@ Validates Phase 17 + 18 wiring. Run after any change to broker dispatch, MT5 cli
 
 Before going live with a strategy that depends on tight stops:
 
-```
+```bash
 $ qkt audit-ticks --symbol EURUSD --duration 300 --mt5-profile exness
 qkt audit-ticks: symbol=EURUSD duration=300s profile=exness poll=250ms
 samples:        1180
