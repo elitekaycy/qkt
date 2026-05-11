@@ -15,6 +15,8 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.NowAccessor
+import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
@@ -55,7 +57,28 @@ class ExprCompiler(
             is FuncCall -> compileFuncCall(expr, ruleAlias)
             is Ref -> compileRef(expr, ruleAlias)
             is Aggregate -> compileAggregate(expr, ruleAlias)
+            is NowAccessor -> compileNow(expr)
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
+        }
+
+    private fun compileNow(acc: NowAccessor): CompiledExpr =
+        CompiledExpr { ctx ->
+            val nowMs = ctx.strategyContext.clock.now()
+            when (acc.field) {
+                NowField.EPOCH_MS -> Value.Num(BigDecimal.valueOf(nowMs))
+                else -> {
+                    val z = java.time.Instant.ofEpochMilli(nowMs).atZone(java.time.ZoneOffset.UTC)
+                    val n =
+                        when (acc.field) {
+                            NowField.HOUR_UTC -> z.hour
+                            NowField.MINUTE_UTC -> z.minute
+                            NowField.WEEKDAY -> z.dayOfWeek.value - 1
+                            NowField.DATE_UTC -> z.toLocalDate().toEpochDay().toInt()
+                            NowField.EPOCH_MS -> error("handled above")
+                        }
+                    Value.Num(BigDecimal.valueOf(n.toLong()))
+                }
+            }
         }
 
     private fun compileAggregate(

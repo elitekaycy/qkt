@@ -9,6 +9,7 @@ import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SnapshotOpen
@@ -59,6 +60,7 @@ class AstCompiler {
                 val primary: ActionAst =
                     when (val a = rule.action) {
                         is Block -> a.actions.firstOrNull { it !is Log } ?: a.actions.first()
+                        is OcoEntry -> a.leg1
                         else -> a
                     }
                 val streamAlias: String? =

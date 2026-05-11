@@ -94,6 +94,8 @@ enum class TokenKind {
 
     ACCOUNT,
     SYMBOL,
+    NOW,
+    OCO_ENTRY,
 
     TRUE,
     FALSE,

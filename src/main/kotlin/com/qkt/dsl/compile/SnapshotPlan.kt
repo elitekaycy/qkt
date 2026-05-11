@@ -12,6 +12,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
@@ -98,7 +99,7 @@ data class SnapshotPlan(
                 is Aggregate -> walk(expr.series, onBuy, onSell, onOpen, rolling)
                 is FuncCall -> expr.args.forEach { walk(it, onBuy, onSell, onOpen, rolling) }
                 is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
-                is PositionRef, is StateAccessor, is StackEntryRef,
+                is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
                 -> {}
             }
         }
