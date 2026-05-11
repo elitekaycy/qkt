@@ -40,6 +40,9 @@ Status legend:
 - `done` — Phase 20: top-level QUICKSTART + docker-compose stack
 - `done` — Phase 21: documentation site — MkDocs Material, Mermaid, Dokka, GitHub Pages
 - `done` — Phase 22: KDoc the public API — every Tier 1 type, style guide, SKILL rule for future work
+- `done` — Phase 23: DSL catalog expansion — register SMA/WMA/MACD/Bollinger, add HIGHEST/LOWEST, position dot accessors, `#` comments
+- `tbd`  — Phase 24: risk-sizing primitives — `SIZING N PCT RISK`, `WARMUP N BARS`, `IS NULL` / `IS NOT NULL`, `FLATTEN` DSL action
+- `tbd`  — Phase 25: operator tooling — `qkt fetch` CLI, `TRAILING_STOP` wiring, `per_strategy:` risk config block, VWAP DSL registration (needs TICK_SERIES input plumbing)
 
 ---
 
