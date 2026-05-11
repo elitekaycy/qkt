@@ -20,24 +20,19 @@ not_in_nav: |
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
-  font:
-    text: Inter
-    code: JetBrains Mono
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  font: false
   features:
     - navigation.tabs
     - navigation.tabs.sticky
@@ -65,6 +60,17 @@ plugins:
   - search
   - mermaid2:
       version: 10.9.0
+      arguments:
+        theme: 'dark'
+        themeVariables:
+          background: '#0a0a0c'
+          primaryColor: '#16161a'
+          primaryTextColor: '#e8e6e1'
+          primaryBorderColor: '#3a3833'
+          lineColor: '#9a958c'
+          secondaryColor: '#25241f'
+          tertiaryColor: '#16161a'
+          fontFamily: 'JetBrains Mono, monospace'
 
 markdown_extensions:
   - admonition
@@ -93,6 +99,9 @@ markdown_extensions:
   - pymdownx.keys
   - pymdownx.mark
   - pymdownx.tilde
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 nav:
   - Home: index.md
