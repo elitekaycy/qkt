@@ -95,23 +95,21 @@ hide:
 </div>
 
 <div class="qkt-steps" markdown="0">
-  <div class="qkt-step">
-    <div class="qkt-step__num">1</div>
-    <h3>Write your strategy</h3>
-    <p>You write a small file that says <em>"when this happens, do that"</em> — for example: when the 9-period moving average crosses above the 21-period one, buy Bitcoin with a stop-loss. The syntax reads like English, so you don't need to be a software engineer to follow it.</p>
-  </div>
-
-  <div class="qkt-step">
-    <div class="qkt-step__num">2</div>
-    <h3>Test it on real data</h3>
-    <p>Run the same file against years of historical market data — Bitcoin, EURUSD, gold, stocks. qkt reports how the strategy would have performed: how many trades, win rate, profit, the deepest drawdown. You'll know whether the idea is worth more time before you risk anything.</p>
-  </div>
-
-  <div class="qkt-step">
-    <div class="qkt-step__num">3</div>
-    <h3>Go live, when you're ready</h3>
-    <p>Point the same strategy file at a paper-trading account first to watch it in real-time. When you're satisfied, connect it to your real broker. qkt is designed so the trades you saw in testing match what happens live — the engine doesn't behave differently between modes.</p>
-  </div>
+<div class="qkt-step">
+<div class="qkt-step__num">1</div>
+<h3>Write your strategy</h3>
+<p>You write a small file that says <em>"when this happens, do that"</em> — for example: when the 9-period moving average crosses above the 21-period one, buy Bitcoin with a stop-loss. The syntax reads like English, so you don't need to be a software engineer to follow it.</p>
+</div>
+<div class="qkt-step">
+<div class="qkt-step__num">2</div>
+<h3>Test it on real data</h3>
+<p>Run the same file against years of historical market data — Bitcoin, EURUSD, gold, stocks. qkt reports how the strategy would have performed: how many trades, win rate, profit, the deepest drawdown. You'll know whether the idea is worth more time before you risk anything.</p>
+</div>
+<div class="qkt-step">
+<div class="qkt-step__num">3</div>
+<h3>Go live, when you're ready</h3>
+<p>Point the same strategy file at a paper-trading account first to watch it in real-time. When you're satisfied, connect it to your real broker. qkt is designed so the trades you saw in testing match what happens live — the engine doesn't behave differently between modes.</p>
+</div>
 </div>
 
 </section>
