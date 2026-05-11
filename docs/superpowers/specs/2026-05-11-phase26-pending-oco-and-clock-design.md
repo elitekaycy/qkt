@@ -108,7 +108,16 @@ The example is added to `tests/smoke-install.sh` as a parse-only step (it requir
 
 **Win-rate circuit breaker.** Hedge-straddle's `wrCircuitWindow` / `wrCircuitPause` features. This belongs at the daemon layer, not the strategy DSL — a daemon-level kill switch that pauses any strategy whose recent win-rate drops below a threshold. Out of scope here.
 
-**Stack / pyramid in WINNER phase.** Hedge-straddle's `stackLevels` and `stackTiers` features. qkt already has a `STACK` DSL clause from Phase 13a; whether it covers hedge-straddle's specific patterns is a separate audit. Not blocking the initial port.
+**Stack / pyramid in WINNER phase — known omission.** Hedge-straddle's `stackLevels` and `stackTiers` (`types.ts:214-235`) cannot be modeled by qkt's existing `STACK` clause. Four concrete gaps:
+
+1. **Per-layer brackets.** qkt's STACK uses one shared SL+TP for the combined position; hedge-straddle's stacks each have their own SL (200p) and TP (varies by tier) because each stack is an independent micro-trade that must stop out fast on reversal.
+2. **Simultaneous triggering.** qkt's STACK layers fire in order (layer 2 waits for layer 1 to fill, then watches for its spacing); hedge-straddle's `stackLevels` all fire on the same candle after the cut.
+3. **Triggered during WINNER phase.** qkt's STACK exists from the moment the seed fires, modulated only by price/time; hedge-straddle's stacks fire conditionally on a strategy state transition (cut event) that qkt's stack lifecycle doesn't model.
+4. **MFE-and-elapsed-time gating.** `stackTiers` fires when `winnerMfe >= tier.mfePips AND elapsed_minutes <= tier.maxMinutes`; qkt's STACK has spacing-based price triggers and a single `WITHIN` cancellation deadline.
+
+**P&L impact:** the README's analysis shows `stackLevels=[{1000,200,0.30},{2000,200,0.30},{3000,200,0.30}]` boosts 6-month P&L from $1,478 → $3,673 (+148%). Stacking is a primary profit driver, not optional polish.
+
+**Phasing:** Phase 26 ships hedge-straddle *without stacking*. The pre-stack version is still a real strategy (~$3,697 over 6 years at 0.01L per the README) and exercises the full live pipeline. Phase 27 (separate spec, written when Phase 26 is closer to shipping) adds **conditional bracketed stacks** as a real model change: `STACK_AT MFE >= N PIPS WITHIN M MINUTES BRACKET { ... }`, with each stack tracked as a sibling position with its own broker tickets and bracket. That's a multi-leg-shaped change in constrained form (1 primary + N satellites), 2-3 weeks of work, and depends on broker capability surface (MT5: yes; Bybit Linear hedge-mode: yes; Bybit Spot: no).
 
 **Adaptive ATR thresholds.** Hedge-straddle's `cutAtrMultiple`, `pendingRegimes`, etc. Easily expressed in the DSL today via `atr(gold, 14)` arithmetic. No new engine work needed.
 

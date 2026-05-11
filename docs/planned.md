@@ -46,7 +46,17 @@ Spec: [`docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.m
 | `TIF GTD UNTIL now + <duration>` | Auto-expire pending orders after a relative window | Use `TIF GTD UNTIL <absolute-epoch-ms>` and compute the timestamp at strategy-author time (only works in offline contexts) |
 | MT5 broker OCO routing verified | Confidence that `OCO_ENTRY` actually works on live MT5 | Phase 17 broker exists; OCO path is currently untested |
 
-## Phase 27+ — exploratory
+## Phase 27 — conditional bracketed stacks
+
+Spec to be written when Phase 26 is closer to shipping. Adds **independent stacks during a live position's lifecycle**, MFE-and-time gated, each with its own bracket. Unlocks the full hedge-straddle P&L profile (Phase 26 ports the pre-stack version which captures the strategy logic but misses ~148% of the P&L per the production backtest).
+
+| Feature | What you'll be able to write | Workaround today |
+| --- | --- | --- |
+| `STACK_AT MFE >= N PIPS WITHIN M MINUTES BRACKET { ... }` (one clause per stack tier) | Independent micro-trades opened opportunistically when the primary winner proves conviction | None — qkt's `STACK` clause models pyramiding-into-trend with shared bracket and sequential triggering; hedge-straddle stacks need per-layer brackets, simultaneous firing, and conditional triggering during WINNER phase |
+| `StackPosition` sibling of `Position` | Each stack tracked with its own broker ticket and bracket | None — the position model assumes one net position per symbol |
+| Per-broker stack capability declaration | Compile-time error if a strategy uses `STACK_AT` against a netting-only broker | None — runtime failures only |
+
+## Phase 28+ — exploratory
 
 These are ideas with no scheduled phase yet. Tell us if you'd use them (open an issue):
 
