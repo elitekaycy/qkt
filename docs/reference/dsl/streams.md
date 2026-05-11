@@ -25,7 +25,7 @@ SYMBOLS
 
 RULES
     WHEN btc.close > 50000
-    THEN LOG INFO "above 50k"
+    THEN LOG "above 50k"
 ```
 
 `btc` becomes a first-class reference for the rest of the file. `btc.close`, `btc.high`, `btc.volume`, etc. all work.
@@ -59,7 +59,6 @@ The broker prefix tells the engine which venue this stream lives on. Built-in pr
 | `BACKTEST` | The historical data store (`~/.qkt/data/`) | Backtesting; `qkt backtest`, `qkt run` in paper mode |
 | `BYBIT_SPOT` | Bybit Spot via REST + WebSocket | Live trading spot crypto |
 | `BYBIT_LINEAR` | Bybit USDT-denominated perpetuals | Live trading futures |
-| `TRADINGVIEW` | TradingView free-tier ticks | Live ticks for paper trading; no execution |
 | `EXNESS`, `ICMARKETS`, `FTMO`, `PEPPERSTONE` | MT5 brokers via `mt5-gateway` | Live trading FX, indices, commodities |
 
 Plus any custom profile you define in `qkt.config.yaml`:
@@ -187,7 +186,7 @@ FOR EACH s IN btc, eth, sol DO
 
 ## What this composes with
 
-- [Conditions](conditions.md) — references like `btc.close` and the `position(btc)` function expect stream aliases declared here
+- [Conditions](conditions.md) — references like `btc.close` and the `POSITION.btc` function expect stream aliases declared here
 - [Indicators](indicators.md) — indicator function calls take stream-field expressions
 - [FOR EACH](foreach.md) — iterates over streams
 - [SIZING](sizing.md) and [BRACKET](bracket.md) — refer to the stream's price for percent/absolute calculations

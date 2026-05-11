@@ -100,23 +100,21 @@ The engine attaches the stop atomically with the entry. No take-profit means the
 
 ## Trailing stop
 
-`TRAILING_STOP BY <amount>` ratchets the stop in the favorable direction as price moves. Use alongside or instead of a fixed bracket:
+!!! info "Coming in Phase 25"
+    `TRAILING_STOP BY <amount>` is **planned but not yet shipped**. The `TRAILING` token is recognised by the parser but the action-compiler → broker dispatch path isn't wired. See [Planned features](../../planned.md#phase-25-operator-tooling-dsl-extensions).
 
-```qkt
-BUY btc SIZING 0.1
-    BRACKET { STOP_LOSS BY 2 PCT, TAKE_PROFIT BY 10 PCT }
-    TRAILING_STOP BY 1 PCT
-```
+    **Workaround today:** track the position high in a rule and close manually when price retreats by the trail distance:
 
-The fixed stop caps worst case (2%); the trailing stop captures gains beyond the take-profit if the move keeps going. Whichever stop is closer to the current price is the binding one.
+    ```qkt
+    LET runHigh = highest(btc.close, 50)
+    LET trailDist = atr(btc, 14) * 2
 
-`TRAILING_STOP BY <atr_expression>` works too:
-
-```qkt
-TRAILING_STOP BY atr(btc, 14) * 1.5
-```
-
-Recomputed once per bar; the stop only moves favorably (never widens).
+    RULES
+        WHEN POSITION.btc > 0
+         AND btc.close < runHigh - trailDist
+        THEN CLOSE btc
+             LOG "trailing-stop exit at {price}" price=btc.close
+    ```
 
 ## How the bracket reaches the broker
 
@@ -151,7 +149,7 @@ RULES
 - **Wrong side stop direction.** For a `BUY`, the stop must be **below** the entry price. The parser does check this for absolute prices but can't always check expressions (`btc.close + 100` for a long stop is a logic error). Test on backtest before live.
 - **Scale-out fractions > 1.0** — parse error. ≤ 1.0; the remainder stays open as a runner.
 - **Bracket stop too close** — MT5 brokers enforce `tradeStopsLevel` minimum distance. Orders too tight reject at the venue. Use `atr * <multiplier>` to scale; if the multiplier produces too-tight stops in low-vol regimes, the order rejects.
-- **`TRAILING_STOP` without venue support** — Bybit Spot REST doesn't support trailing stops natively. qkt's order manager emulates by polling and updating the stop. Behavior is approximate, especially during gaps.
+- **`TRAILING_STOP` not yet shipped** — see the admonition above. Use a rule-based trail until Phase 25.
 - **Limit-entry bracket execution.** When the entry is a limit order (`BUY btc LIMIT AT 67000 BRACKET ...`), the bracket only activates after the limit fills. If the limit never fills, the bracket never sends.
 
 ## What this composes with

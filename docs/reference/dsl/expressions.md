@@ -88,33 +88,40 @@ Treat them as numbers — they slot into any arithmetic context.
 ## Account references
 
 ```qkt
-account.equity         -- cash + open P&L
-account.balance        -- cash only
-account.realized       -- realized P&L since strategy start
-account.unrealized     -- open-position P&L right now
+ACCOUNT.equity         -- cash + open P&L
+ACCOUNT.balance        -- cash only
+ACCOUNT.realized_pnl   -- realized P&L since strategy start
+ACCOUNT.unrealized_pnl -- open-position P&L right now
+ACCOUNT.total_pnl      -- realized + unrealized
 ```
 
 ```qkt
-SIZING account.equity * 0.01 / atr(btc, 14)    -- risk-based size (manual)
+LET riskUsd = ACCOUNT.equity * 0.01            -- 1% of equity at risk
+LET riskQty = riskUsd / (atr(btc, 14) * 2)     -- size that loses riskUsd on a 2-ATR stop
 ```
 
 ## Position references
 
 ```qkt
-position(<stream>)                          -- net quantity (signed)
-position(<stream>).pnl                      -- open P&L
-position(<stream>).realized                 -- total realized P&L on this symbol
-position(<stream>).entry_price              -- average entry price
-position(<stream>).holding_duration         -- ms since entry
+POSITION.<stream>                           -- net quantity (signed) — same as POSITION.<stream>.quantity
+POSITION.<stream>.quantity                  -- explicit form
+POSITION.<stream>.entry_price               -- average entry price
+POSITION.<stream>.pnl                       -- strategy realized + this-symbol unrealized
+POSITION.<stream>.realized_pnl              -- strategy-level realized P&L (see note)
+POSITION.<stream>.unrealized_pnl            -- open P&L on this position
+POSITION.<stream>.holding_duration          -- ms since the position was opened
 ```
 
 ```qkt
-WHEN position(btc) > 0
- AND position(btc).pnl > position(btc).entry_price * 0.05    -- 5% in profit
+WHEN POSITION.btc > 0
+ AND POSITION.btc.unrealized_pnl > POSITION.btc.entry_price * 0.05    -- 5% in profit
 THEN CLOSE btc
 ```
 
-Note `position(<stream>)` returns a signed quantity. `position(btc) > 0` means long; `position(btc) < 0` means short; `position(btc) = 0` means flat. Many strategies guard entries with `position(btc) = 0`.
+`POSITION.<stream>` returns a signed quantity. `POSITION.btc > 0` means long; `POSITION.btc < 0` means short; `POSITION.btc = 0` means flat. Most entry rules guard with `POSITION.btc = 0`.
+
+!!! note "realized_pnl is currently strategy-level"
+    `POSITION.<stream>.realized_pnl` returns the strategy's total realized P&L, not the per-symbol slice. True per-symbol realized requires lot-level accounting — tracked on the [backlog](../../planned.md#phase-26-exploratory).
 
 ## Conditional expressions (`CASE`)
 
@@ -188,14 +195,8 @@ Expressions return `null` when:
 
 `null` propagates through arithmetic: `null + 5 = null`. Comparisons with `null` always return `false`. This means **conditions short-circuit safely during warmup** — your rule simply doesn't fire while data is missing.
 
-To explicitly check for null:
-
-```qkt
-WHEN ema(btc.close, 200) IS NOT NULL AND btc.close > ema(btc.close, 200)
-THEN LOG INFO "above 200 EMA, and indicator is warm"
-```
-
-`IS NULL` and `IS NOT NULL` are the explicit checks. In practice you rarely need them; the silent short-circuit handles 99% of cases.
+!!! info "Explicit `IS NULL` / `IS NOT NULL` coming in Phase 24"
+    Phase 24 will add the explicit checks. See [Planned features](../../planned.md#phase-24-risk-sizing-primitives). Today, the silent short-circuit handles every case where you'd want them — your rule simply doesn't fire while an indicator is null.
 
 ## Type rules (loose)
 
@@ -216,7 +217,7 @@ Mixing types in arithmetic produces a compile error: `5 + "hello"` is a parse-ti
 - **Operator precedence.** `AND` binds tighter than `OR`. Parentheses are free.
 - **`a == b` vs `a = b`** — both work. Pick one and stick with it for the project.
 - **No string operations in conditions.** Strings are for `LOG` only. Don't try `WHEN btc.symbol = "BTCUSDT"` (the parser doesn't expose `symbol` on streams).
-- **`null` is opinionated.** Treating null-comparisons as false simplifies most code but can hide bugs. Use `IS NOT NULL` explicitly if you need stricter semantics.
+- **`null` is opinionated.** Treating null-comparisons as false simplifies most code but can hide bugs. Explicit `IS NULL`/`IS NOT NULL` lands in Phase 24.
 
 ## What this composes with
 

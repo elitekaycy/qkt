@@ -25,8 +25,13 @@ LET slowPeriod = 50
 SYMBOLS
     eur = BACKTEST:EURUSD EVERY 15m
 
-LET fastMa = ema(eur.close, fastPeriod)
-LET slowMa = ema(eur.close, slowPeriod)
+LET fastMa   = ema(eur.close, fastPeriod)
+LET slowMa   = ema(eur.close, slowPeriod)
+
+# Manual risk-sizing until SIZING N PCT RISK ships in Phase 24
+LET stopDist = atr(eur, 14) * 2
+LET riskUsd  = ACCOUNT.equity * 0.01      # 1% of equity at risk per trade
+LET riskQty  = riskUsd / stopDist
 
 RULES
     -- only enter in long-term uptrend
@@ -34,24 +39,24 @@ RULES
     WHEN fastMa > slowMa
      AND eur.close > fastMa
      AND eur.low <= fastMa             -- touched the MA this bar
-     AND position(eur) = 0
-    THEN BUY eur SIZING 1.0 PCT RISK
-         STOP_LOSS AT eur.close - atr(eur, 14) * 2
-         TAKE_PROFIT AT eur.close + atr(eur, 14) * 6   -- 3R target
-         LOG INFO "pullback long" risk_pct=1.0 atr=atr(eur, 14)
+     AND POSITION.eur = 0
+    THEN BUY eur SIZING riskQty
+         STOP_LOSS AT eur.close - stopDist
+         TAKE_PROFIT AT eur.close + stopDist * 3      -- 3R target
+         LOG "pullback long" risk_qty=riskQty atr=atr(eur, 14)
 
     -- exit if the trend breaks
     WHEN fastMa < slowMa
-     AND position(eur) > 0
+     AND POSITION.eur > 0
     THEN CLOSE eur
-         LOG INFO "trend broken — exit"
+         LOG "trend broken — exit"
 ```
 
 Key points:
 
-- `SIZING 1.0 PCT RISK` — risk-based sizing. The engine computes position size from `(equity * 0.01) / stop_distance`. If equity is $10,000 and the stop is $50 away from entry, position size = $10,000 * 0.01 / $50 = $2 (in quote currency for FX).
-- `STOP_LOSS AT eur.close - atr(eur, 14) * 2` — stop at 2× ATR below entry. Adapts to volatility.
-- `TAKE_PROFIT AT eur.close + atr(eur, 14) * 6` — 6× ATR target = 3× the risk (3R reward/risk).
+- **Manual risk-sizing.** `riskQty = (equity × 0.01) / stop_distance` produces a position size that costs exactly 1% of equity if the stop hits. Phase 24 will add `SIZING 1.0 PCT RISK` as a one-line shortcut for this — see [Planned features](../planned.md).
+- **Stop adapts to volatility.** `stopDist = atr(eur, 14) * 2` widens during news, tightens in calm sessions. Position size adapts inversely — big stops get small positions; tight stops get bigger.
+- **3R target.** Take-profit at `stopDist * 3` above entry means each winner is 3× the size of each loser. The strategy can win 40% of the time and still be profitable.
 
 ## The risk config
 
@@ -82,7 +87,7 @@ Risk rules apply across **every strategy hosted by the daemon**. If you deploy t
 ## How to run it
 
 ```bash
-qkt fetch EURUSD --from 2024-01-01 --to 2024-04-01
+./scripts/fetch-dukascopy.sh EURUSD 2024-01-01 2024-04-01
 qkt backtest strategies/risk-managed.qkt \
     --config qkt.config.yaml \
     --from 2024-01-01 --to 2024-04-01
@@ -106,10 +111,12 @@ Notice the **avg risk per trade** is stable at ~$100 even though position sizes 
 
 ### Larger / smaller per-trade risk
 
+Change the multiplier on the `riskUsd` LET:
+
 ```qkt
-BUY eur SIZING 2.0 PCT RISK         -- 2% per trade
+LET riskUsd = ACCOUNT.equity * 0.02      -- 2% per trade (aggressive)
 -- or
-BUY eur SIZING 0.5 PCT RISK         -- 0.5% per trade
+LET riskUsd = ACCOUNT.equity * 0.005     -- 0.5% per trade (conservative)
 ```
 
 The Kelly-optimal sizing is typically 0.5–1% for most retail strategies. Anything above 2% is aggressive and produces volatile equity curves.
@@ -124,42 +131,26 @@ The Kelly-optimal sizing is typically 0.5–1% for most retail strategies. Anyth
 
 This kicks you out of the market faster on bad days. The trade-off: more halts means more missed recovery rallies. Tune to your stomach.
 
-### Per-strategy halts (instead of daemon-wide)
+### Per-strategy halts (Phase 25)
 
-```yaml
-risk:
-  per_strategy:
-    - type: max-trades-per-day
-      count: 5
-    - type: cooloff-after-loss
-      duration: 1h        # don't enter a new trade for 1h after a loss
-```
-
-These rules apply per-strategy, not across the daemon. Useful when one strategy is misbehaving but you want others to keep running.
+!!! info "Coming in Phase 25"
+    `per_strategy:` risk rules (e.g. `max-trades-per-day`, `cooloff-after-loss` scoped to one strategy) are **planned but not yet implemented**. See [Planned features](../planned.md). Today, risk rules apply daemon-wide.
 
 ### Manual resume after a drawdown halt
 
-When the `max-drawdown` rule fires with `reset: manual`, the daemon will refuse to trade until an operator clears it:
-
-```bash
-qkt risk-status                     # shows active halts
-qkt risk-resume risk_managed        # clear the halt for this strategy
-```
-
-This is the kill-switch by design. Don't auto-resume drawdown halts — investigate why before reactivating.
+When the `max-drawdown` rule fires with `reset: manual`, the daemon refuses to trade until an operator clears it. Today, the way to clear is **restart the daemon** — the halt state persists in `~/.qkt/state/` but you can edit it manually or restart fresh. A `qkt risk-status` / `qkt risk-resume` CLI is on the [roadmap](../planned.md).
 
 ## Common gotchas
 
-- **Risk sizing depends on the stop being set correctly.** If your strategy uses `SIZING X PCT RISK` but doesn't declare a stop, the engine rejects the order (it can't compute size). Always pair risk sizing with an explicit `STOP_LOSS`.
-- **ATR depends on warmup.** First 14 bars produce no ATR; the rule won't fire. Add `WARMUP 14 BARS` or let the implicit warmer handle it.
-- **Halts persist across daemon restarts.** `reset: manual` halts survive a daemon restart — the state file in `~/.qkt/state/` remembers them. Use `qkt risk-resume` to clear.
-- **Max-position-pct can be too tight.** If your strategy uses `SIZING 1.0 PCT RISK` but the stop is very tight (small denominator), the computed size may exceed `max-position-pct`. The engine rejects the trade. Either widen the stop or relax the cap.
+- **The manual sizing computation needs the stop and equity to be valid.** If `stopDist` evaluates to null (ATR not warm), `riskQty` is null and the rule doesn't fire — by design. Wait through warmup.
+- **ATR depends on warmup.** First 14 bars produce no ATR; the rule won't fire. The compiler infers warmup automatically.
+- **Daemon-wide halts.** Any halt triggered by any strategy stops every strategy in the daemon. Per-strategy scoping lands in Phase 25.
+- **Max-position-pct can be too tight.** If `riskQty` × current price exceeds `max-position-pct × equity`, the engine rejects the trade. Either widen the stop (smaller `riskQty`) or relax the cap.
 
 ## What this example demonstrates
 
-- Risk-based sizing (`SIZING N PCT RISK`)
+- Risk-based sizing via `LET` arithmetic (the `SIZING N PCT RISK` shortcut lands in Phase 24)
 - Bare `STOP_LOSS` + `TAKE_PROFIT` (alternative to `BRACKET`)
-- Risk-rule configuration in `qkt.config.yaml`
-- Daemon-wide vs per-strategy halts
-- The `LET` keyword used to alias an indicator for reuse in multiple conditions
+- Risk-rule configuration in `qkt.config.yaml` (daemon-wide today; per-strategy in Phase 25)
+- The `LET` keyword aliasing computations for reuse across conditions and sizing
 - The relationship between trade-level risk (DSL) and account-level risk (config)

@@ -175,25 +175,28 @@ STRATEGY btc_trend VERSION 1
 
 LET fast = 12
 LET slow = 48
-LET riskPct = 1.0
+
+# Manual risk-sizing — Phase 24 will add `SIZING 1.0 PCT RISK` as a shortcut
+LET btcStopDist = atr(btc, 14) * 2
+LET btcRiskQty  = ACCOUNT.equity * 0.01 / btcStopDist     # 1% risk per trade
 
 SYMBOLS
     btc = BYBIT_SPOT:BTCUSDT EVERY 1h
 
 RULES
     WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
-     AND position(btc) = 0
-    THEN BUY btc SIZING riskPct PCT RISK
-         STOP_LOSS AT btc.close - atr(btc, 14) * 2
-         LOG INFO "long entry"
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING btcRiskQty
+         STOP_LOSS AT btc.close - btcStopDist
+         LOG "long entry"
              fast=ema(btc.close, fast)
              slow=ema(btc.close, slow)
              atr=atr(btc, 14)
 
     WHEN ema(btc.close, fast) CROSSES BELOW ema(btc.close, slow)
-     AND position(btc) > 0
+     AND POSITION.btc > 0
     THEN CLOSE btc
-         LOG INFO "exit on cross-below"
+         LOG "exit on cross-below"
 ```
 
 ## `strategies/eur-meanrev.qkt`
@@ -207,20 +210,23 @@ STRATEGY eur_meanrev VERSION 1
 SYMBOLS
     eur = EXNESS:EURUSD EVERY 15m
 
+LET eurStopDist = atr(eur, 14) * 2
+LET eurRiskQty  = ACCOUNT.equity * 0.01 / eurStopDist     # 1% risk per trade
+
 RULES
     WHEN rsi(eur.close, 2) < 10
      AND eur.close > sma(eur.close, 200)        -- trend filter
-     AND position(eur) = 0
-    THEN BUY eur SIZING 1.0 PCT RISK
+     AND POSITION.eur = 0
+    THEN BUY eur SIZING eurRiskQty
          BRACKET {
-           STOP_LOSS AT eur.close - atr(eur, 14) * 2,
+           STOP_LOSS AT eur.close - eurStopDist,
            TAKE_PROFIT {
              0.33 AT eur.close * 1.001,
              0.33 AT eur.close * 1.002,
              0.34 AT eur.close * 1.004
            }
          }
-         LOG INFO "oversold entry" rsi=rsi(eur.close, 2)
+         LOG "oversold entry" rsi=rsi(eur.close, 2)
 ```
 
 ## See also

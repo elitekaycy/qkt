@@ -19,14 +19,17 @@ STRATEGY btc_bybit VERSION 1
 SYMBOLS
     btc = BYBIT_SPOT:BTCUSDT EVERY 1h
 
+LET btcStopDist = atr(btc, 14) * 2
+LET btcRiskQty  = ACCOUNT.equity * 0.005 / btcStopDist   # 0.5% per trade
+
 RULES
     WHEN ema(btc.close, 12) CROSSES ABOVE ema(btc.close, 48)
-     AND position(btc) = 0
-    THEN BUY btc SIZING 0.5 PCT RISK
-         STOP_LOSS AT btc.close - atr(btc, 14) * 2
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING btcRiskQty
+         STOP_LOSS AT btc.close - btcStopDist
 
     WHEN ema(btc.close, 12) CROSSES BELOW ema(btc.close, 48)
-     AND position(btc) > 0
+     AND POSITION.btc > 0
     THEN CLOSE btc
 ```
 
@@ -36,15 +39,21 @@ STRATEGY eur_exness VERSION 1
 SYMBOLS
     eur = EXNESS:EURUSD EVERY 15m
 
+LET eurStopDist = atr(eur, 14) * 2
+LET eurRiskQty  = ACCOUNT.equity * 0.005 / eurStopDist
+
 RULES
     WHEN rsi(eur.close, 2) < 5
-     AND position(eur) = 0
-    THEN BUY eur SIZING 0.5 PCT RISK
+     AND POSITION.eur = 0
+    THEN BUY eur SIZING eurRiskQty
          BRACKET {
-           STOP_LOSS AT eur.close - atr(eur, 14) * 2,
-           TAKE_PROFIT AT eur.close + atr(eur, 14) * 4
+           STOP_LOSS AT eur.close - eurStopDist,
+           TAKE_PROFIT AT eur.close + eurStopDist * 2
          }
 ```
+
+!!! note "Manual risk-sizing"
+    Each strategy computes its own `riskQty` via `LET` arithmetic — `equity × risk_pct / stop_distance`. Phase 24 will collapse this into `SIZING 0.5 PCT RISK`. See [Planned features](../planned.md).
 
 ## The config
 
@@ -183,21 +192,10 @@ docker compose down
 
 Bybit + MT5 + TradingView (for free-tier ticks):
 
-```yaml title="qkt.config.yaml additions"
-brokers:
-  tradingview:
-    type: tradingview                  # free-tier, paper-only
-```
+Bybit + MT5 already gives you crypto + FX/indices/commodities. Adding more brokers is mostly a matter of writing a new `type:` adapter and exposing its prefix.
 
-```qkt title="strategies/spy-trend.qkt"
-STRATEGY spy_trend VERSION 1
-SYMBOLS
-    spx = TRADINGVIEW:SPX500 EVERY 5m
-RULES
-    ...
-```
-
-TradingView is **paper-only** at the qkt level — it provides ticks but doesn't execute orders. To trade SPX live you'd need to route through a broker that supports it (IBKR, when supported).
+!!! info "TradingView is a data source, not a broker"
+    TradingView is supported as a **market-data vendor** for ticks (used in paper trading and the `qkt run` foreground mode), but it's not a broker — you can't route orders through it. Strategies that want SPX exposure today need a broker that supports it (IBKR adapter is on the [roadmap](../planned.md)).
 
 ### Same symbol, two venues (arbitrage)
 

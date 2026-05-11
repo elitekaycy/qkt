@@ -23,11 +23,11 @@ RULES
            STOP_LOSS BY 50 PCT,
            TAKE_PROFIT BY 200 PCT
          }
-         LOG INFO "long entry on cross above"
+         LOG "long entry on cross above"
 
     WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
     THEN CLOSE btc
-         LOG INFO "exit on cross below"
+         LOG "exit on cross below"
 ```
 
 What's going on:
@@ -39,13 +39,15 @@ What's going on:
 
 ## 2. Get some data
 
-If you don't have historical BTCUSDT yet, fetch a month:
+If you don't have historical BTCUSDT yet, populate the local data store via the bundled Dukascopy script:
 
 ```bash
-qkt fetch BTCUSDT --from 2024-01-01 --to 2024-02-01
+./scripts/fetch-dukascopy.sh BTCUSDT 2024-01-01 2024-02-01
 ```
 
-qkt stores it at `~/.qkt/data/symbols/BTCUSDT/`. Subsequent runs read from cache.
+This writes daily-partitioned gzipped CSVs at `~/.qkt/data/symbols/BTCUSDT/`. Subsequent runs read from cache. A `qkt fetch` CLI wrapper is on the [roadmap](../planned.md).
+
+Don't have or want Dukascopy? The repo ships a tiny sample under `data/sample/symbols/BTCUSD/` — pass `--data-root data/sample` to use it for a smoke run.
 
 ## 3. Backtest it
 
@@ -69,29 +71,16 @@ Open the HTML report — equity curve, drawdown periods, Monte Carlo fan, per-tr
 
 ## 4. Tune it
 
-Try a different fast/slow pair without touching the file:
-
-```bash
-qkt backtest strategies/ema-cross.qkt --param fast=12 --param slow=26
-```
-
-The `--param` flag substitutes literals at compile time. To make the strategy fully parameterized, use `LET`:
+To try a different fast/slow pair, edit the `LET` lines at the top of the strategy file:
 
 ```qkt
-STRATEGY ema_cross VERSION 1
-
-LET fast = 9
-LET slow = 21
-
-SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
-
-RULES
-    WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
-    THEN BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 200 PCT }
+LET fast = 12
+LET slow = 26
 ```
 
-Then `--param fast=12 --param slow=26` overrides the LETs.
+`LET` clauses are how qkt strategies expose tunable parameters — they're substituted at compile time wherever they're referenced.
+
+(A `--param key=value` CLI override is on the roadmap — see [Planned features](../planned.md). For now, edit the file and re-run.)
 
 ## 5. Run a sweep
 

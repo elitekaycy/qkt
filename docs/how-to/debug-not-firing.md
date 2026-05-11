@@ -13,7 +13,7 @@ If your condition is true on the very first candle, it never fires.
 ```qkt
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
 THEN BUY btc SIZING 0.1
-     LOG INFO "edge transition fired" fast=ema(btc.close, 9) slow=ema(btc.close, 21)
+     LOG "edge transition fired" fast=ema(btc.close, 9) slow=ema(btc.close, 21)
 ```
 
 If you see the LOG but no BUY, jump to step 2. If you see neither, the condition isn't transitioning.
@@ -32,9 +32,9 @@ If you see something like `reason=daily-loss-halt` or `reason=max-position`, tha
 
 - The rule is correct and you should respect it
 - The rule's too tight for the strategy — tune `qkt.config.yaml` rules
-- The halt is stuck — operator-driven resume needed: `qkt resume my-strategy`
+- The halt is stuck — restart the daemon to clear stateful halts (a `qkt resume` CLI is on the roadmap; see [Planned features](../planned.md))
 
-See [Phase 9 — Risk engine](../phases/phase-9-risk-engine.md) for the full halt/resume protocol.
+See [Phase 9 — Risk engine](../phases/phase-9-risk-engine.md) for the full halt protocol.
 
 ## 3. Broker rejected the order
 
@@ -66,14 +66,9 @@ qkt status my-strategy
 
 Look for `warmup.complete: true`. If it's still false after many ticks, your `WarmupSpec` isn't being honored.
 
-**Fix:** declare warmup explicitly:
+**Fix:** the DSL compiler infers warmup from your indicator periods automatically — a strategy using `EMA(close, 200)` won't fire signals until 200 bars have arrived. If the strategy is starting fresh against a short tick stream, give it more historical data, or back-test on a date range that gives enough lead-in.
 
-```qkt
-STRATEGY my_strat VERSION 1
-WARMUP 100 BARS
-```
-
-For DSL strategies the compiler tries to infer warmup from indicator periods, but it's worth being explicit when you depend on long-lookback indicators (50-period EMA, 200-period SMA).
+(An explicit `WARMUP N BARS` declaration is on the roadmap for Phase 24 — see [Planned features](../planned.md). For now, the implicit warmup from indicator periods is usually enough.)
 
 ## 5. The wrong candle window
 
@@ -87,11 +82,7 @@ qkt status my-strategy --verbose
 
 Look at the candle source. If `candles_received: 0` despite the strategy running for minutes, the data feed doesn't match the timeframe.
 
-**Fix:** either fetch tick-level data:
-
-```bash
-qkt fetch BTCUSDT --resolution tick --from 2024-01-01
-```
+**Fix:** either populate the data store with tick-level data (via `./scripts/fetch-dukascopy.sh` today; a `qkt fetch` CLI is on the roadmap — see [Planned features](../planned.md))…
 
 …or adjust the strategy's timeframe to match what you have:
 

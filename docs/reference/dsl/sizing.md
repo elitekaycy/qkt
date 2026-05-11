@@ -2,7 +2,7 @@
 
 Every way to specify the size of a `BUY` or `SELL` order. Sizing is the single mandatory field on entry actions (unless `DEFAULTS.sizing` is set).
 
-## The six forms
+## The forms available today
 
 | Form | Meaning |
 | --- | --- |
@@ -10,8 +10,10 @@ Every way to specify the size of a `BUY` or `SELL` order. Sizing is the single m
 | `SIZING <pct> PCT OF EQUITY` | Percentage of total equity (cash + open P&L) |
 | `SIZING <pct> PCT OF BALANCE` | Percentage of cash balance only |
 | `SIZING <usd> USD` | Fixed USD notional value |
-| `SIZING <pct> PCT RISK` | Risk-based — sized so the stop costs exactly N% |
-| `SIZING POSITION(<stream>)` | The full current position quantity (for closes/scaling) |
+| `SIZING POSITION.<stream>` | The full current position quantity (for closes/scaling) |
+
+!!! info "Coming in Phase 24"
+    `SIZING N PCT RISK` — size the position so a stop-out costs exactly N% of equity — is **planned but not yet shipped**. See [Planned features](../../planned.md#phase-24-risk-sizing-primitives) for the workaround.
 
 ## Fixed quantity
 
@@ -23,7 +25,7 @@ Buys 0.1 of whatever the venue's unit is. For Bybit spot BTC, that's 0.1 BTC. Fo
 
 **When to use:** prototyping, simple strategies, when the venue's lot size aligns with your risk budget at known prices.
 
-**Gotcha:** doesn't scale with account size. A `0.1 lots` size on a $1,000 account is risky; on $100,000 it's tiny. Use percent or risk-based sizing for portable strategies.
+**Gotcha:** doesn't scale with account size. A `0.1 lots` size on a $1,000 account is risky; on $100,000 it's tiny. Use percent-based sizing for portable strategies.
 
 ## Percent of equity
 
@@ -31,20 +33,18 @@ Buys 0.1 of whatever the venue's unit is. For Bybit spot BTC, that's 0.1 BTC. Fo
 BUY btc SIZING 5.0 PCT OF EQUITY
 ```
 
-Sizes the position at 5% of `account.equity`. If equity is $10,000, the order is sized to represent $500 of position value (at current price).
+Sizes the position at 5% of `ACCOUNT.equity`. If equity is $10,000, the order is sized to represent $500 of position value (at current price).
 
 **Variants:**
 
 ```qkt
-SIZING 5.0 PCT OF EQUITY    -- 5% of equity
-SIZING 10  PCT OF BALANCE   -- 10% of cash balance only (ignores open P&L)
+SIZING 5.0 PCT OF EQUITY    -- 5% of equity (includes open P&L)
+SIZING 10 PCT OF BALANCE    -- 10% of cash balance only (ignores open P&L)
 ```
 
 The difference matters when you have unrealized P&L: `EQUITY` includes it (the size scales with open profit/loss), `BALANCE` doesn't.
 
 **When to use:** position sizing that scales with account performance. Good for compounding strategies.
-
-**Gotcha:** doesn't account for stop distance. A 5% position with a tight stop loses very little; with a wide stop loses a lot. Use `PCT RISK` for stop-aware sizing.
 
 ## Fixed USD notional
 
@@ -52,72 +52,52 @@ The difference matters when you have unrealized P&L: `EQUITY` includes it (the s
 BUY btc SIZING 1000 USD
 ```
 
-Sizes the position to represent exactly $1000 of notional value (at current price). For BTC at $50k, that's 0.02 BTC. For BTC at $60k, that's 0.01666... BTC.
+Sizes the position to represent exactly $1000 of notional value (at current price). For BTC at $50k, that's 0.02 BTC. For BTC at $60k, that's 0.01666… BTC.
 
 **When to use:** consistent dollar exposure across symbols of different price levels. "I want $1000 of BTC and $1000 of EUR regardless of how each is priced."
-
-**Gotcha:** doesn't scale with account growth. Set once, stays static.
-
-## Risk-based
-
-```qkt
-BUY btc SIZING 1.0 PCT RISK STOP_LOSS AT btc.close - atr(btc, 14) * 2
-```
-
-Sizes the position so that **hitting the stop-loss costs exactly 1% of equity**. The engine computes:
-
-```text
-size = (equity * risk_pct / 100) / stop_distance
-```
-
-Where `stop_distance = entry_price - stop_loss_price` for longs.
-
-This is the professional risk-management standard. Every trade risks the same dollar amount regardless of how far the stop is — wide stops get small positions; tight stops get bigger ones.
-
-**Requires a `STOP_LOSS` on the same action.** If you write `SIZING 1.0 PCT RISK` without a stop, the parser rejects it (the engine can't compute size without a stop distance).
-
-**When to use:** any serious live-trading strategy. The discipline alone is worth it.
-
-**Gotcha:** if the stop is very tight, the computed size may exceed `max-position-pct` in your risk rules. The engine rejects the order. Either widen the stop or relax the cap.
 
 ## Position-based (for partial closes)
 
 ```qkt
-SELL btc SIZING POSITION(btc)
+SELL btc SIZING POSITION.btc
 ```
 
-Sells exactly the current position size — equivalent to `CLOSE btc`. Mostly used in scale-out logic where you want to express "sell half of the current position":
+Sells exactly the current position size — equivalent to `CLOSE btc`. Mostly used in scale-out logic:
 
 ```qkt
-SELL btc SIZING POSITION(btc) * 0.5     -- partial close: 50% of position
+SELL btc SIZING POSITION.btc * 0.5     -- partial close: 50% of position
 ```
 
-You can multiply, divide, or do any arithmetic on `POSITION(stream)`.
+You can multiply, divide, or do any arithmetic on `POSITION.<stream>`.
 
-## Using LET to share sizing logic
+## Computing risk-based size manually (Phase 24 workaround)
 
-A common pattern is naming a sizing computation:
+Until `SIZING N PCT RISK` ships, the same effect is achievable with `USD` sizing and a `LET` expression:
 
 ```qkt
-LET riskPct = 1.0
 LET stopDist = atr(btc, 14) * 2
+LET riskUsd  = ACCOUNT.equity * 0.01           # 1% of equity at risk
+LET riskQty  = riskUsd / stopDist              # size that loses riskUsd if stop hits
 
 RULES
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
-    THEN BUY btc SIZING riskPct PCT RISK
-         STOP_LOSS AT btc.close - stopDist
+    THEN BUY btc SIZING riskQty
+         BRACKET { STOP_LOSS AT btc.close - stopDist, TAKE_PROFIT AT btc.close + stopDist * 3 }
 ```
 
-Or via `DEFAULTS`:
+This produces the same behaviour as `SIZING 1.0 PCT RISK` will once Phase 24 lands — you compute the size from `equity_at_risk / stop_distance` yourself. Not as elegant, but works today.
+
+## Defaults via DEFAULTS
+
+If most of your strategies use the same sizing, hoist it:
 
 ```qkt
 DEFAULTS {
-  sizing = 1.0 PCT RISK
-  stopLoss = atr(SYMBOL, 14) * 2
+  sizing = 0.1
 }
 
 RULES
-    WHEN ... THEN BUY btc     -- inherits both
+    WHEN ... THEN BUY btc     -- inherits sizing = 0.1
 ```
 
 ## Multiple sizings per stack
@@ -133,21 +113,20 @@ BUY btc STACK [
 BRACKET { ... }
 ```
 
-See [STACK](stack.md) for the full layer-list grammar.
+See [STACK](stack.md).
 
 ## Common gotchas
 
 - **Sizing is required.** Either on the action or via `DEFAULTS.sizing`. Both missing = parse error.
-- **Percent-of-equity ignores stop distance.** Risk-based sizing is usually what you want.
-- **Risk-based requires a stop.** Without `STOP_LOSS ...` on the same action, the parser rejects it.
-- **Broker minimum sizes.** MT5 brokers enforce a minimum lot (`volumeMin`) and step (`volumeStep`). If your computed size is below the minimum, the order rejects. The error message is broker-specific.
+- **Percent-of-equity ignores stop distance.** A 5% position with a tight stop loses very little; with a wide stop loses a lot. Use the manual workaround above to factor in the stop.
+- **Broker minimum sizes.** MT5 brokers enforce a minimum lot (`volumeMin`) and step (`volumeStep`). If your computed size is below the minimum, the order rejects.
 - **Whole-number lots on some venues.** Futures often require integer contracts. A computed size of `0.327` will round (typically down) or reject. Check your venue's specs.
-- **Sizing in DSL is venue-side units.** A "size of 0.1" means 0.1 of the venue's unit (lots, contracts, base currency) — not 0.1 USD or 0.1% of anything. Read the broker docs.
+- **Sizing units are venue-side.** A "size of 0.1" means 0.1 of the venue's unit (lots, contracts, base currency) — not 0.1 USD or 0.1% of anything.
 
 ## What this composes with
 
 - [Actions](actions.md) — `SIZING` is a modifier on `BUY` / `SELL`
-- [BRACKET](bracket.md) — `PCT RISK` sizing requires `STOP_LOSS` in the bracket (or bare)
-- [LET](let-defaults.md) — name a sizing value for reuse
-- [DEFAULTS](let-defaults.md#defaults) — set a default sizing for the whole strategy
-- [Risk-managed example](../../examples/risk-managed.md) — full deployment using `PCT RISK`
+- [BRACKET](bracket.md) — pair sizing with `STOP_LOSS`/`TAKE_PROFIT`
+- [LET](let-defaults.md) — name a sizing computation for reuse
+- [DEFAULTS](let-defaults.md) — set a default sizing for the whole strategy
+- [Planned features](../../planned.md) — `PCT RISK` and what's coming

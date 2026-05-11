@@ -61,30 +61,23 @@ The stop adapts: wide when the market's choppy, tight when calm. The 3× ATR tar
 
 ## Trailing stop
 
-Locks in profit as the position moves favorably.
+!!! info "Coming in Phase 25"
+    `TRAILING_STOP BY <amount>` (and `TRAILING_STOP BY <pct> PCT`) are **planned but not yet wired**. The `TRAILING` token is recognised by the parser; the action-compiler → broker dispatch path is the missing piece. See [Planned features](../planned.md).
 
-```qkt
-BUY btc SIZING 0.1
-TRAILING_STOP BY atr(btc, 14) * 2
-```
+    **Workaround today** — track the position's running high in a rule and close manually when price retreats by the trail distance:
 
-The stop ratchets in the favorable direction only — never widens. If BTC runs from $67000 to $69000, the stop moves with it; if BTC falls back, the stop stays put.
+    ```qkt
+    LET runHigh   = highest(btc.close, 50)
+    LET trailDist = atr(btc, 14) * 2
 
-For a percent trail:
+    RULES
+        WHEN POSITION.btc > 0
+         AND btc.close < runHigh - trailDist
+        THEN CLOSE btc
+             LOG "trailing-stop exit at {price}" price=btc.close
+    ```
 
-```qkt
-TRAILING_STOP BY 1.5 PCT
-```
-
-**When to use:** trend-following where you don't know how far the move will go. Combine with a regular bracket for safety:
-
-```qkt
-BUY btc SIZING 0.1
-BRACKET { STOP_LOSS BY 2 PCT, TAKE_PROFIT BY 10 PCT }
-TRAILING_STOP BY 1 PCT
-```
-
-The fixed bracket caps the worst case; the trailing stop captures gains beyond the take-profit if the move keeps going.
+    This produces the same behaviour as `TRAILING_STOP BY atr(btc, 14) * 2` will once Phase 25 lands. The `highest(btc.close, 50)` is the lookback window — long enough to track the position's peak, short enough that old highs roll off.
 
 ## Engine-managed vs venue-managed
 

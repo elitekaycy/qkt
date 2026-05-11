@@ -66,7 +66,7 @@ FOR EACH s IN btc, eth, sol DO
 
 FOR EACH s IN btc, eth, sol DO
     WHEN ema(s.close, 9) CROSSES BELOW ema(s.close, 21)
-     AND position(s) > 0
+     AND POSITION.s > 0
     THEN CLOSE s
 ```
 
@@ -79,7 +79,7 @@ This expands to 6 rules (3 entry rules + 3 exit rules). Note the iteration varia
 ```qkt
 RULES
     -- Special rule for BTC only
-    WHEN btc.close > 70000 AND position(btc) = 0
+    WHEN btc.close > 70000 AND POSITION.btc = 0
     THEN BUY btc SIZING 0.5
 
 FOR EACH s IN eth, sol, ada DO
@@ -92,13 +92,13 @@ Order: explicit `RULES` first, then `FOR EACH` blocks. The DSL parser handles bo
 
 ## Iteration variables in nested expressions
 
-`s` is replaced anywhere in the rule body — in stream-field access, in indicator calls, in `position(s)`, in `BUY s`:
+`s` is replaced anywhere in the rule body — in stream-field access, in indicator calls, in `POSITION.s`, in `BUY s`:
 
 ```qkt
 FOR EACH s IN btc, eth DO
     WHEN ema(s.close, 9) > sma(s.close, 50)             -- s.close
      AND rsi(s.close, 14) > 50
-     AND position(s) = 0                                -- position(s)
+     AND POSITION.s = 0                                -- POSITION.s
     THEN BUY s SIZING 1.0 PCT RISK                      -- BUY s
          STOP_LOSS AT s.close - atr(s, 14) * 2          -- atr(s, 14)
 ```

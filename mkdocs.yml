@@ -210,6 +210,7 @@ nav:
           - Phase 2a — Event bus: phases/phase-2a-event-bus.md
           - Phase 1 — Core engine: phases/phase-1-engine.md
           - Backlog: backlog.md
+          - Planned features: planned.md
 
 extra:
   social:

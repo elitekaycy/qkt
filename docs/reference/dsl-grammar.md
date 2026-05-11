@@ -128,9 +128,9 @@ Pyramiding — one signal becomes N price-triggered entries.
 
 ### Account / position references
 
-- `account.equity`, `account.balance`
-- `position(<stream>)` — current quantity
-- `position(<stream>).pnl`, `.entry_price`, `.holding_duration`
+- `ACCOUNT.equity`, `ACCOUNT.balance`, `ACCOUNT.realized_pnl`, `ACCOUNT.unrealized_pnl`, `ACCOUNT.total_pnl`
+- `POSITION.<stream>` — current quantity (signed)
+- `POSITION.<stream>.entry_price`, `.pnl`, `.unrealized_pnl`, `.realized_pnl`, `.holding_duration`
 
 ## Defaults
 
