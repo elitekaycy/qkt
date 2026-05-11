@@ -25,6 +25,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.OcoAst
+import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
@@ -104,6 +105,7 @@ private fun subst(
         is Close -> if (action.stream == v) Close(alias) else action
         is Cancel -> if (action.stream == v) Cancel(alias) else action
         is Block -> Block(action.actions.map { subst(it, v, alias) })
+        is OcoEntry -> OcoEntry(subst(action.leg1, v, alias), subst(action.leg2, v, alias))
         else -> action
     }
 

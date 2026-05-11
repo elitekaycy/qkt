@@ -9,6 +9,7 @@ import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
+import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
@@ -41,6 +42,8 @@ import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
+import com.qkt.dsl.ast.NowAccessor
+import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
@@ -392,6 +395,10 @@ class Parser(
                 advance()
                 NumLit(BigDecimal(t.lexeme))
             }
+            TokenKind.DURATION -> {
+                val d = parseDuration()
+                NumLit(BigDecimal.valueOf(d.millis))
+            }
             TokenKind.STRING -> {
                 advance()
                 StringLit(t.lexeme)
@@ -448,6 +455,28 @@ class Parser(
             TokenKind.SYMBOL -> {
                 advance()
                 Ref("__SYMBOL__")
+            }
+            TokenKind.NOW -> {
+                advance()
+                if (peek().kind == TokenKind.DOT) {
+                    advance()
+                    val fieldTok = expect(TokenKind.IDENT, "expected NOW field name")
+                    val field =
+                        when (fieldTok.lexeme.uppercase()) {
+                            "HOUR_UTC" -> NowField.HOUR_UTC
+                            "MINUTE_UTC" -> NowField.MINUTE_UTC
+                            "WEEKDAY" -> NowField.WEEKDAY
+                            "DATE_UTC" -> NowField.DATE_UTC
+                            "EPOCH_MS" -> NowField.EPOCH_MS
+                            else -> {
+                                errors += ParseError(fieldTok.line, fieldTok.col, "unknown NOW field: ${fieldTok.lexeme}")
+                                NowField.EPOCH_MS
+                            }
+                        }
+                    NowAccessor(field)
+                } else {
+                    NowAccessor(NowField.EPOCH_MS)
+                }
             }
             TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE -> {
                 if (inStackLayerAt && t.kind == TokenKind.IDENT && t.lexeme == "entry") {
@@ -671,7 +700,8 @@ class Parser(
             k == TokenKind.CLOSE_ALL ||
             k == TokenKind.CANCEL ||
             k == TokenKind.CANCEL_ALL ||
-            k == TokenKind.LOG
+            k == TokenKind.LOG ||
+            k == TokenKind.OCO_ENTRY
 
     private fun parseForEach(): List<RuleAst> {
         expect(TokenKind.FOR, "expected FOR")
@@ -723,8 +753,25 @@ class Parser(
                 CancelAll
             }
             TokenKind.LOG -> parseLogAction()
+            TokenKind.OCO_ENTRY -> parseOcoEntry()
             else -> error("expected action keyword, got '${peek().lexeme}'")
         }
+
+    private fun parseOcoEntry(): ActionAst {
+        expect(TokenKind.OCO_ENTRY, "expected OCO_ENTRY")
+        expect(TokenKind.LBRACE, "expected '{' after OCO_ENTRY")
+        val leg1 = parseAction()
+        if (leg1 !is Buy && leg1 !is Sell) {
+            error("OCO_ENTRY legs must be BUY or SELL, got ${leg1::class.simpleName}")
+        }
+        expect(TokenKind.COMMA, "expected ',' between OCO_ENTRY legs")
+        val leg2 = parseAction()
+        if (leg2 !is Buy && leg2 !is Sell) {
+            error("OCO_ENTRY legs must be BUY or SELL, got ${leg2::class.simpleName}")
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close OCO_ENTRY (exactly two legs)")
+        return OcoEntry(leg1, leg2)
+    }
 
     private fun parseLogAction(): Log {
         expect(TokenKind.LOG, "expected LOG")

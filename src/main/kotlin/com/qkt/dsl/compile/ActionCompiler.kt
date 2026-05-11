@@ -21,6 +21,7 @@ import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackEntryRef
@@ -50,8 +51,36 @@ class ActionCompiler(
             is Cancel -> compileCancel(action.stream)
             is CancelAll -> compileCancelAll()
             is Block -> compileBlock(action)
+            is OcoEntry -> compileOcoEntry(action)
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
+
+    private fun compileOcoEntry(action: OcoEntry): (EvalContext) -> List<Signal> {
+        val leg1Compiled = compile(action.leg1)
+        val leg2Compiled = compile(action.leg2)
+        return { ctx ->
+            val sigs1 = leg1Compiled(ctx)
+            val sigs2 = leg2Compiled(ctx)
+            val req1 =
+                (sigs1.singleOrNull() as? Signal.Submit)?.request
+                    ?: error("OCO_ENTRY leg1 must compile to exactly one Signal.Submit, got $sigs1")
+            val req2 =
+                (sigs2.singleOrNull() as? Signal.Submit)?.request
+                    ?: error("OCO_ENTRY leg2 must compile to exactly one Signal.Submit, got $sigs2")
+            val oco =
+                OrderRequest.StandaloneOCO(
+                    id = ids.next(),
+                    symbol = req1.symbol,
+                    side = req1.side,
+                    quantity = req1.quantity,
+                    leg1 = req1,
+                    leg2 = req2,
+                    timeInForce = req1.timeInForce,
+                    timestamp = ctx.strategyContext.clock.now(),
+                )
+            listOf(Signal.Submit(oco))
+        }
+    }
 
     private fun compileBlock(action: Block): (EvalContext) -> List<Signal> {
         val children = action.actions.map { compile(it) }
