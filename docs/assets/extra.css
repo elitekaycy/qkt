@@ -84,7 +84,7 @@
 /* --- typography --------------------------------------------------------- */
 :root {
   --qkt-font-display: "Fraunces", ui-serif, Georgia, serif;
-  --qkt-font-body:    "Source Serif 4", "Source Serif Pro", Iowan, "Apple Garamond", Georgia, serif;
+  --qkt-font-body:    "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --qkt-font-mono:    "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
 
   --md-text-font:         var(--qkt-font-body);
@@ -95,13 +95,19 @@ html,
 body,
 .md-typeset {
   font-family: var(--qkt-font-body);
-  font-feature-settings: "ss01", "ss02", "kern", "liga", "calt";
-  font-size: 16.5px;
+  font-feature-settings: "ss01", "ss02", "ss03", "kern", "liga", "calt";
+  font-size: 16px;
 }
 
 .md-typeset {
-  line-height: 1.72;
-  letter-spacing: 0.005em;
+  line-height: 1.64;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+.md-typeset p,
+.md-typeset li {
+  color: var(--qkt-fg);
 }
 
 .md-typeset h1,
@@ -448,35 +454,109 @@ body,
   user-select: none;
 }
 
-/* syntax highlight tuning (Pygments classes) */
-.highlight .k,  /* keyword */
+/* ----------------------------------------------------------------------
+   syntax highlighting — pygments token classes
+   palette: amber accent, sage green strings, lilac numbers, sky variables
+   ---------------------------------------------------------------------- */
+
+/* keywords — block-level (STRATEGY, RULES, SYMBOLS, fun, class, ...) */
+.highlight .k,
 .highlight .kd,
 .highlight .kn,
-.highlight .kp,
 .highlight .kr,
-.highlight .kt { color: var(--qkt-accent); font-weight: 500; }
+.highlight .kt        { color: #ffb84d; font-weight: 600; }
 
-.highlight .s,  /* strings */
+/* keyword reserved (BUY/SELL/LOG/CANCEL — action verbs) */
+.highlight .kr        { color: #ff8c42; font-weight: 600; }
+
+/* keyword pseudo (SIZING/BRACKET/BY/PCT/EVERY — modifiers) */
+.highlight .kp        { color: #d8a86a; font-weight: 500; }
+
+/* keyword constant (TRUE/FALSE/INFO/null) */
+.highlight .kc        { color: #c8a8e0; font-weight: 500; font-style: italic; }
+
+/* operator-words (AND/OR/NOT/CROSSES/ABOVE/BELOW) */
+.highlight .ow        { color: #ffd28a; font-style: italic; }
+
+/* strings */
+.highlight .s,
 .highlight .s1,
 .highlight .s2,
 .highlight .sb,
 .highlight .sc,
-.highlight .sd { color: #b8d8a8; }
+.highlight .sd        { color: #b8d8a8; }
 
-.highlight .c,  /* comments */
+/* string interpolation `{name}` inside log strings */
+.highlight .si        { color: #ffd84d; font-weight: 500; }
+
+/* comments */
+.highlight .c,
 .highlight .c1,
 .highlight .cm,
-.highlight .ch { color: var(--qkt-fg-faint); font-style: italic; }
+.highlight .ch        { color: #6a665e; font-style: italic; }
 
-.highlight .n,  /* names */
-.highlight .nb,
-.highlight .nc,
+/* identifiers — default name */
+.highlight .n         { color: #e8e6e1; }
+
+/* function calls — indicator and helper functions like ema(), rsi() */
 .highlight .nf,
-.highlight .nx { color: var(--qkt-fg); }
+.highlight .fm        { color: #82c4ff; }
 
-.highlight .mi, .highlight .mf, .highlight .mo { color: #c8a8e0; }
-.highlight .o { color: var(--qkt-fg-mute); }
-.highlight .p { color: var(--qkt-fg-faint); }
+/* class name — broker prefix EXNESS, BACKTEST, BYBIT_SPOT */
+.highlight .nc        { color: #ff8c42; font-weight: 600; letter-spacing: 0.02em; }
+
+/* uppercase constant — BTCUSDT, EURUSD on RHS of `:` */
+.highlight .no        { color: #ffd84d; }
+
+/* variable — stream alias before `.`  (btc.close → btc) */
+.highlight .nv        { color: #8ec5fc; font-style: italic; }
+
+/* attribute — field after `.` (btc.close → close) */
+.highlight .na        { color: #c0b9ad; }
+
+/* builtin name */
+.highlight .nb,
+.highlight .nx        { color: #e8e6e1; }
+
+/* numbers */
+.highlight .mi,
+.highlight .mf,
+.highlight .mo,
+.highlight .mh        { color: #c8a8e0; }
+
+/* operators + punctuation */
+.highlight .o         { color: #ffb84d; }
+.highlight .p         { color: #6e6a62; }
+
+/* light-mode rebalance */
+[data-md-color-scheme="default"] .highlight .k,
+[data-md-color-scheme="default"] .highlight .kd,
+[data-md-color-scheme="default"] .highlight .kn,
+[data-md-color-scheme="default"] .highlight .kr,
+[data-md-color-scheme="default"] .highlight .kt        { color: #a55a00; }
+[data-md-color-scheme="default"] .highlight .kr        { color: #c84a14; }
+[data-md-color-scheme="default"] .highlight .kp        { color: #8a5a14; }
+[data-md-color-scheme="default"] .highlight .kc        { color: #6b3fa0; }
+[data-md-color-scheme="default"] .highlight .ow        { color: #a06914; font-style: italic; }
+[data-md-color-scheme="default"] .highlight .s,
+[data-md-color-scheme="default"] .highlight .s1,
+[data-md-color-scheme="default"] .highlight .s2,
+[data-md-color-scheme="default"] .highlight .sb       { color: #2a6b35; }
+[data-md-color-scheme="default"] .highlight .si        { color: #8a6a00; font-weight: 500; }
+[data-md-color-scheme="default"] .highlight .c,
+[data-md-color-scheme="default"] .highlight .c1,
+[data-md-color-scheme="default"] .highlight .cm       { color: #807968; }
+[data-md-color-scheme="default"] .highlight .nf,
+[data-md-color-scheme="default"] .highlight .fm       { color: #1d5a8a; }
+[data-md-color-scheme="default"] .highlight .nc       { color: #c84a14; font-weight: 600; }
+[data-md-color-scheme="default"] .highlight .no       { color: #8a6a00; }
+[data-md-color-scheme="default"] .highlight .nv       { color: #2862a3; font-style: italic; }
+[data-md-color-scheme="default"] .highlight .na       { color: #57534b; }
+[data-md-color-scheme="default"] .highlight .mi,
+[data-md-color-scheme="default"] .highlight .mf,
+[data-md-color-scheme="default"] .highlight .mo       { color: #6b3fa0; }
+[data-md-color-scheme="default"] .highlight .o        { color: #a55a00; }
+[data-md-color-scheme="default"] .highlight .p        { color: #807968; }
 
 .md-clipboard {
   color: var(--qkt-fg-faint);

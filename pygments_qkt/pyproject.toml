@@ -1,0 +1,17 @@
+[project]
+name = "pygments-qkt"
+version = "0.1.0"
+description = "Pygments lexer for the qkt strategy DSL"
+requires-python = ">=3.10"
+dependencies = ["pygments>=2.0"]
+
+[project.entry-points."pygments.lexers"]
+qkt = "pygments_qkt:QktLexer"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pygments_qkt*"]

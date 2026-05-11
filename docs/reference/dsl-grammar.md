@@ -14,7 +14,7 @@ Every `.qkt` file is one of:
 
 ## STRATEGY
 
-```
+```qkt
 STRATEGY <name> VERSION <int>
 
 [ DEFAULTS { ... } ]
@@ -35,7 +35,7 @@ RULES
 
 ## PORTFOLIO
 
-```
+```qkt
 PORTFOLIO <name> VERSION <int>
 
 [ SYMBOLS ... ]
@@ -52,7 +52,7 @@ RULES
 
 ## Stream declaration
 
-```
+```qkt
 <alias> = <BROKER>:<symbol> EVERY <timeframe>
 ```
 
@@ -74,7 +74,7 @@ RULES
 
 ### Sizing
 
-```
+```qkt
 SIZING <quantity>
 SIZING <pct> PCT OF (EQUITY | BALANCE)
 SIZING <usd> USD
@@ -83,7 +83,7 @@ SIZING POSITION(<stream>)              -- full current position
 
 ### Bracket
 
-```
+```qkt
 BRACKET STOP_LOSS BY <pct> PCT TAKE_PROFIT BY <pct> PCT
 BRACKET STOP_LOSS AT <price-expr> TAKE_PROFIT AT <price-expr>
 BRACKET STOP_LOSS BY ATR(<symbol>, 14) * 2
@@ -93,7 +93,7 @@ The compiler routes `BRACKET` to native broker support if the broker has the `BR
 
 ### Stack (Phase 13a)
 
-```
+```qkt
 BUY btc SIZING 0.1 STACK 3 SPACING 100 ABOVE WITHIN 1h
 BUY btc STACK [ 0.1, 0.2 AT entry + 100, 0.3 LIMIT AT entry + 200 ]
 ```
@@ -134,7 +134,7 @@ Pyramiding — one signal becomes N price-triggered entries.
 
 ## Defaults
 
-```
+```qkt
 DEFAULTS {
     sizing = 1.0
     stopLoss = childBy(atr(SYMBOL, 14) * 2)
@@ -147,7 +147,7 @@ Apply to every action that doesn't override.
 
 ## LET clauses
 
-```
+```qkt
 LET dailyAtr = atr(btc, 14)
 RULES
     WHEN btc.close > btc.close - dailyAtr
@@ -158,7 +158,7 @@ Reusable expression aliases. Evaluated lazily per tick.
 
 ## FOR EACH
 
-```
+```qkt
 FOR EACH s IN btc, gold, aapl DO
     rule { whenever(s.close gt 0) then { buy(s) } }
 ```

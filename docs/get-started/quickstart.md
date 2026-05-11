@@ -20,7 +20,7 @@ You should see `qkt 0.22.0` or later.
 
 Create `momentum.qkt` in your working dir:
 
-```kotlin title="momentum.qkt"
+```qkt title="momentum.qkt"
 STRATEGY momentum VERSION 1
 
 SYMBOLS

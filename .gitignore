@@ -10,3 +10,5 @@ tt.txt
 site/
 .cache/
 .venv-docs/
+*.egg-info/
+__pycache__/
