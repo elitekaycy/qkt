@@ -110,6 +110,11 @@ nav:
       - Quickstart: get-started/quickstart.md
       - Deploy paper: get-started/deploy-paper.md
       - Deploy MT5: get-started/deploy-mt5.md
+  - Tutorials:
+      - tutorials/index.md
+      - Tutorial 1 — Your first strategy: tutorials/first-strategy.md
+      - Tutorial 2 — Backtest to live: tutorials/backtest-to-live.md
+      - Tutorial 3 — Composing strategies: tutorials/compose-portfolio.md
   - Examples:
       - examples/index.md
       - Trend-follow (EMA crossover): examples/trend-follow.md
@@ -158,7 +163,9 @@ nav:
   - Operations:
       - operations/index.md
       - Deploy with Docker: operations/deploy-docker.md
+      - Monitoring: operations/monitoring.md
       - Logging: operations/logging.md
+      - Troubleshooting: operations/troubleshooting.md
   - Contributing:
       - contributing/index.md
       - Development setup: contributing/development-setup.md

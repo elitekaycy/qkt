@@ -12,15 +12,37 @@ Running qkt in production: deployment, monitoring, troubleshooting.
 
     [:octicons-arrow-right-24: Deploy with Docker](deploy-docker.md)
 
+- :material-monitor-dashboard:{ .lg .middle } **Monitoring**
+
+    ---
+
+    Liveness, equity, P&L, alerts. What to scrape and what to page on.
+
+    [:octicons-arrow-right-24: Monitoring](monitoring.md)
+
 - :material-text-box-outline:{ .lg .middle } **Logging**
 
     ---
 
-    MDC keys, console + file patterns, logback overrides, troubleshooting.
+    MDC keys, console + file patterns, logback overrides, JSON output.
 
     [:octicons-arrow-right-24: Logging](logging.md)
 
+- :material-stethoscope:{ .lg .middle } **Troubleshooting**
+
+    ---
+
+    Symptom → cause → fix matrix. Use when something's wrong.
+
+    [:octicons-arrow-right-24: Troubleshooting](troubleshooting.md)
+
 </div>
 
-!!! note "More coming"
-    The doc plan also targets: monitor (`/status`, `/logs`, control-plane endpoints), alert (what to page on), upgrade (version migration + rollback), troubleshoot (symptom → cause matrix), capacity (strategies-per-daemon, port allocation). Pages stubbed for v2.
+## Not yet covered
+
+- **Upgrade / rollback** — versioning, schema migrations between phases, downgrade strategy
+- **Backup & restore** — `qkt-state` volume contents, position-recovery on restart
+- **Capacity planning** — strategies-per-daemon ceiling, port allocation, JVM heap sizing
+- **Alerting playbook** — concrete runbooks per alert type
+
+Pages stubbed for a future operations-depth phase. If you need one urgently, [open an issue](https://github.com/elitekaycy/qkt/issues/new).
