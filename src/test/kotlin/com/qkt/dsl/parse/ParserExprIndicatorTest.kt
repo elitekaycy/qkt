@@ -34,8 +34,8 @@ class ParserExprIndicatorTest {
 
     @Test
     fun `zero-arg call`() {
-        val e = expr("NOW()") as IndicatorCall
-        assertThat(e.name).isEqualTo("NOW")
+        val e = expr("rand()") as IndicatorCall
+        assertThat(e.name).isEqualTo("rand")
         assertThat(e.args).isEmpty()
     }
 }
