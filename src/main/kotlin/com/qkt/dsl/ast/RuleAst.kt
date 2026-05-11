@@ -38,3 +38,7 @@ data class Log(
     val messageFormat: String,
     val fields: Map<String, ExprAst>,
 ) : ActionAst
+
+data class Block(
+    val actions: List<ActionAst>,
+) : ActionAst

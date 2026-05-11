@@ -28,6 +28,21 @@ class ParserExprComparisonTest {
     }
 
     @Test
+    fun `equality with single-equals in WHEN condition`() {
+        val src =
+            """
+            STRATEGY s VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSD EVERY 1m
+            RULES
+                WHEN POSITION.btc = 0 THEN LOG 'flat'
+            """.trimIndent()
+        val r = Parser(Lexer(src).tokenize()).parseStrategy() as ParseResult.Success
+        val cond = (r.value.rules[0] as com.qkt.dsl.ast.WhenThen).cond as CmpOp
+        assertThat(cond.op).isEqualTo(Cmp.EQ)
+    }
+
+    @Test
     fun `not equal`() {
         val e = expr("a != b") as CmpOp
         assertThat(e.op).isEqualTo(Cmp.NE)

@@ -1,5 +1,7 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.ast.ActionAst
+import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
@@ -54,13 +56,19 @@ class AstCompiler {
 
         val rules: List<CompiledRule> =
             whenThens.zip(resolvedConditions).map { (rule, cond) ->
-                val streamAlias: String? =
+                val primary: ActionAst =
                     when (val a = rule.action) {
-                        is Buy -> a.stream
-                        is Sell -> a.stream
-                        is Close -> a.stream
-                        is Cancel -> a.stream
+                        is Block -> a.actions.firstOrNull { it !is Log } ?: a.actions.first()
+                        else -> a
+                    }
+                val streamAlias: String? =
+                    when (primary) {
+                        is Buy -> primary.stream
+                        is Sell -> primary.stream
+                        is Close -> primary.stream
+                        is Cancel -> primary.stream
                         is CloseAll, is CancelAll, is Log -> null
+                        else -> null
                     }
                 val ruleAlias =
                     streamAlias
@@ -72,8 +80,8 @@ class AstCompiler {
                 val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
                 val mergedAction = mergeDefaults(rule.action, ast.defaults)
                 val action = actionCompiler.compile(mergedAction)
-                val isBuy = mergedAction is Buy
-                val isSell = mergedAction is Sell
+                val isBuy = primary is Buy
+                val isSell = primary is Sell
                 CompiledRule(
                     condition = compiledCond,
                     action = action,

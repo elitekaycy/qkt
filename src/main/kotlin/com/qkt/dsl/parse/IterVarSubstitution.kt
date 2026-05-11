@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
@@ -102,6 +103,7 @@ private fun subst(
         is Sell -> Sell(if (action.stream == v) alias else action.stream, subst(action.opts, v, alias))
         is Close -> if (action.stream == v) Close(alias) else action
         is Cancel -> if (action.stream == v) Cancel(alias) else action
+        is Block -> Block(action.actions.map { subst(it, v, alias) })
         else -> action
     }
 
