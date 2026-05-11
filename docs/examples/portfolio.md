@@ -5,7 +5,7 @@ Three strategies — trend-follow, mean-revert, breakout — hosted in one `PORT
 ## What it does
 
 - **Three child strategies**, each appropriate for a different market regime
-- **A regime detector** based on ADX (trend strength) decides which one is active
+- **A regime detector** based on the MA-stack spread (a proxy for trend strength) decides which one is active
 - **Only one strategy trades at a time** — the others have positions closed when they deactivate
 - **Daemon-level fan-out** — each child gets its own observability port, log file, and risk slice
 
@@ -31,7 +31,7 @@ STRATEGY meanrev VERSION 1
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1h
 RULES
-    WHEN rsi(btc.close, 2) < 10 AND position(btc) = 0
+    WHEN rsi(btc.close, 2) < 10 AND POSITION.btc = 0
     THEN BUY btc SIZING 0.05 BRACKET {
            STOP_LOSS AT btc.close - atr(btc, 14) * 2,
            TAKE_PROFIT AT btc.close + atr(btc, 14) * 2
@@ -43,9 +43,9 @@ STRATEGY breakout VERSION 1
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1h
 RULES
-    WHEN btc.close > highest(btc.close, 20) AND position(btc) = 0
+    WHEN btc.close > highest(btc.close, 20) AND POSITION.btc = 0
     THEN BUY btc SIZING 0.05 STOP_LOSS AT btc.close - atr(btc, 14) * 2
-    WHEN btc.close < lowest(btc.close, 10) AND position(btc) > 0
+    WHEN btc.close < lowest(btc.close, 10) AND POSITION.btc > 0
     THEN CLOSE btc
 ```
 
@@ -61,25 +61,28 @@ IMPORT 'trend.qkt'     AS trend
 IMPORT 'meanrev.qkt'   AS meanrev
 IMPORT 'breakout.qkt'  AS breakout
 
-LET adxValue = adx(btc, 14)
+# Trend-strength proxy: distance between fast and slow MAs, scaled by ATR.
+# Big positive = strong uptrend; near zero = ranging; big negative = strong downtrend.
+LET maSpread = (ema(btc.close, 20) - ema(btc.close, 50)) / atr(btc, 14)
 
 RULES
-    -- strong trend: run the trend-follower
-    WHEN adxValue > 30  RUN trend
+    -- strong trend either direction: run the trend-follower
+    WHEN maSpread > 1.5 OR maSpread < -1.5  RUN trend
 
     -- weak trend / ranging: run mean-reversion
-    WHEN adxValue < 20  RUN meanrev
+    WHEN maSpread BETWEEN -0.5 AND 0.5  RUN meanrev
 
-    -- transitional / breakout candidate: run breakout
-    WHEN adxValue BETWEEN 20 AND 30  RUN breakout
+    -- transitional: run breakout
+    WHEN (maSpread BETWEEN 0.5 AND 1.5)
+      OR (maSpread BETWEEN -1.5 AND -0.5)  RUN breakout
 ```
 
-`ADX` (Average Directional Index) measures trend strength on a 0–100 scale. Above 30 = strong trend. Below 20 = ranging. The portfolio rules pick the right child for each regime.
+The MA-spread-over-ATR proxy works for trend strength without needing a dedicated ADX indicator. Adjust the thresholds to your asset's volatility — what counts as "strong trend" on BTC at 1h isn't the same as on EURUSD at 5m. A proper `ADX` indicator is on the backlog.
 
 ## How to run it
 
 ```bash
-qkt fetch BTCUSDT --from 2024-01-01 --to 2024-06-01 --resolution 1h
+./scripts/fetch-dukascopy.sh BTCUSDT 2024-01-01 2024-06-01
 qkt backtest strategies/portfolio.qkt --from 2024-01-01 --to 2024-06-01
 ```
 
@@ -119,7 +122,7 @@ Max drawdown:   -315.00
 
 ## How to adapt it
 
-### Regime detector based on something other than ADX
+### Regime detector based on something other than MA-spread
 
 Realized volatility (rolling stddev of returns):
 
@@ -183,10 +186,10 @@ This clears the regime gate for that child and keeps it active until you stop it
 
 ## Common gotchas
 
-- **Regime detectors are themselves indicators with warmup.** ADX(14) needs ~14 bars to produce values. Until then, no child is active. Add a fallback or extend the warmup.
+- **Regime detectors are themselves indicators with warmup.** EMAs and ATR each need their own warmup. Until then, all branch conditions are null/false and no child is active. Add a fallback `WHEN TRUE RUN someDefault` rule if you want to always have something running.
 - **Children share the symbol declaration.** All three children in this example trade the same BTCUSDT 1h stream. The portfolio's SYMBOLS block dominates; children inherit. If you need different symbols per child, declare them in the child files and don't reference them in the portfolio rules.
 - **Risk halts apply daemon-wide.** A child triggering `max-daily-loss` halts the whole portfolio (and every other strategy in the daemon). This is by design — risk is account-level.
-- **Switching children flat-closes by default.** A trend child that's holding a position when ADX drops below 30 will get its position closed at market when `meanrev` takes over. Use `HOLD` if that's not what you want.
+- **Switching children flat-closes by default.** A trend child that's holding a position when the regime flips will get its position closed at market when `meanrev` takes over. Use `HOLD` if that's not what you want.
 
 ## What this example demonstrates
 

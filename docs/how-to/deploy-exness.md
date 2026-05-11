@@ -97,13 +97,13 @@ If `ok: false`, the login didn't take — back into the VNC GUI.
 Before deploying a real strategy, verify the gateway's ticks match what you expect. The `audit-ticks` CLI captures live ticks for a few minutes and reports any anomalies:
 
 ```bash
-docker compose exec qkt qkt audit-ticks EXNESS:EURUSD --duration 60s
+docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 --mt5-profile exness
 ```
 
 Output:
 
 ```text
-audit-ticks EXNESS:EURUSD
+audit-ticks EURUSD via exness
   ticks received:    312
   bid range:         1.0828–1.0834
   ask range:         1.0829–1.0835
@@ -130,7 +130,7 @@ RULES
     WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)
     THEN BUY eur SIZING 0.01
          BRACKET { STOP_LOSS BY 30 PCT, TAKE_PROFIT BY 60 PCT }
-         LOG INFO "long entry" price=eur.close
+         LOG "long entry" price=eur.close
 ```
 
 Note: `SIZING 0.01` is 0.01 lots — the minimum on most MT5 accounts, ~$1000 notional on EURUSD.

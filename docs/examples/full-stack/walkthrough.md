@@ -123,22 +123,23 @@ If `exness` is missing, the `qkt.config.yaml` didn't load — check the bind-mou
 This is the step new operators skip and regret. Capture a minute of ticks from each venue and check for anomalies:
 
 ```bash
-docker compose exec qkt qkt audit-ticks BYBIT_SPOT:BTCUSDT --duration 60s
-docker compose exec qkt qkt audit-ticks EXNESS:EURUSD --duration 60s
+docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 --mt5-profile exness
 ```
 
-Expected output (for each):
+Expected output:
 
 ```text
-audit-ticks BYBIT_SPOT:BTCUSDT
+audit-ticks EURUSD via exness
   ticks received:    412
-  bid range:         67400.00–67450.50
-  ask range:         67401.00–67451.50
-  spread (avg):      1.0 points
+  bid range:         1.0828–1.0834
+  ask range:         1.0829–1.0835
+  spread (avg):      1.2 points
   duplicates:        0
   out-of-order:      0
   gaps > 5s:         0
 ```
+
+Today `qkt audit-ticks` is MT5-only (it requires a `--mt5-profile` and uses the gateway directly). Auditing the Bybit feed is on the roadmap as part of broader broker-tick audit support — see [Planned features](../../planned.md).
 
 If you see gaps, out-of-order ticks, or duplicates — investigate before deploying. A flaky feed wrecks even a good strategy.
 

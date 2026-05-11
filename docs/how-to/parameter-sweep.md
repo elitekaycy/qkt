@@ -1,122 +1,161 @@
 # Run a parameter sweep
 
-Grid-search over your strategy's parameters to find what worked on historical data — then walk-forward to check it generalizes.
+Grid-search over your strategy's parameters to find what worked on historical data.
+
+!!! info "CLI wrapper coming in Phase 25"
+    The **parameter-sweep harness exists** in the engine (`com.qkt.backtest.sweep.BacktestSweep`), but a `qkt sweep` CLI command isn't shipped yet. See [Planned features](../planned.md#phase-25-operator-tooling-dsl-extensions). Today you drive sweeps **programmatically from Kotlin**. This page shows that workflow.
+
+    A `qkt walkforward` CLI is also planned for the same phase.
 
 !!! warning "Overfitting is real"
-    A sweep with 100 parameter combos and 50 trades per combo will find ~5 winners by chance alone. Walk-forward validation is mandatory before you trust any sweep result. See [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) for the proper protocol.
+    A sweep with 100 parameter combos and 50 trades per combo will find ~5 winners by chance alone. Always walk-forward validate. See [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) for the protocol.
 
-## 1. Parameterize your strategy
+## What you can do today
 
-Use `LET` clauses for anything you want to sweep:
+The `BacktestSweep` class takes a Kotlin lambda that builds a strategy per parameter combination, runs each on the same tick stream, and returns ranked results. It's a small wrapper around `Backtest.run()`.
 
-```qkt title="strategies/ema-cross.qkt"
-STRATEGY ema_cross VERSION 1
+### Sketch — a Kotlin sweep harness
 
-LET fast = 9
-LET slow = 21
-LET stopPct = 1.0
+```kotlin title="src/test/kotlin/com/qkt/sweeps/EmaCrossSweep.kt"
+package com.qkt.sweeps
 
-SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
+import com.qkt.backtest.sweep.BacktestSweep
+import com.qkt.indicators.catalog.EMA
+import com.qkt.marketdata.HistoricalTickFeed
+import com.qkt.strategy.samples.EmaCrossoverStrategy
+import org.junit.jupiter.api.Test
+import java.nio.file.Path
 
-RULES
-    WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
-    THEN BUY btc SIZING 0.1
-         BRACKET { STOP_LOSS BY stopPct PCT, TAKE_PROFIT BY stopPct * 3 PCT }
+class EmaCrossSweep {
+    @Test
+    fun `find best EMA pair on BTC`() {
+        val ticks = HistoricalTickFeed.fromCsv(Path.of("data/btc-2024.csv.gz")).toList()
+
+        data class Config(val fast: Int, val slow: Int)
+
+        val configs = (5..15 step 2).flatMap { fast ->
+            (20..40 step 5).map { slow -> Config(fast, slow) }
+        }
+
+        val sweep = BacktestSweep<Config>(
+            configs = configs,
+            buildStrategy = { c -> EmaCrossoverStrategy(fast = c.fast, slow = c.slow) },
+            rules = emptyList(),
+            ticks = ticks,
+        )
+
+        val results = sweep.run()
+        val ranked = results.sortedByDescending { it.result.totalPnL }
+
+        println("top 5:")
+        ranked.take(5).forEach { run ->
+            println("  fast=${run.config.fast} slow=${run.config.slow} " +
+                    "pnl=${run.result.totalPnL} sharpe=${run.result.global.sharpeRatio}")
+        }
+    }
+}
 ```
 
-## 2. Run the sweep
+Run it the same way you run any test:
 
 ```bash
-qkt sweep strategies/ema-cross.qkt \
-    --from 2024-01-01 --to 2024-06-01 \
-    --param "fast=5,9,12,15" \
-    --param "slow=20,25,30,40" \
-    --param "stopPct=0.5,1.0,2.0" \
-    --output reports/sweep
+./gradlew test --tests com.qkt.sweeps.EmaCrossSweep
 ```
 
-This runs `4 × 4 × 3 = 48` backtests. With default parallelism it'll take a few minutes on a laptop.
+### What `BacktestSweep` returns
 
-To bound parallelism (e.g., on a constrained machine):
+A `SweepResult<C>` for each config, containing:
 
-```bash
-qkt sweep ... --parallel 4
+- `config: C` — the input parameter combination
+- `result: BacktestResult` — full backtest output (trades, equity curve, drawdown, Sharpe, Calmar, profit factor)
+
+You decide how to rank, filter, and report — pure Kotlin from there.
+
+### Parallel vs sequential
+
+`BacktestSweep` accepts a parallelism parameter; sequential by default. For a few dozen configs, sequential is fast enough. For hundreds, bump it:
+
+```kotlin
+val sweep = BacktestSweep(
+    configs = configs,
+    buildStrategy = ::buildStrategy,
+    rules = emptyList(),
+    ticks = ticks,
+    parallelism = 4,         // run 4 backtests concurrently
+)
 ```
 
-## 3. Read the output
+The engine is single-threaded per strategy; parallelism here means multiple strategies running in parallel on independent tick replays.
 
-Two files land in `reports/sweep/`:
+### Walk-forward — manual today
 
-- **`summary.html`** — ranked table of all runs by Sharpe, with sortable columns
-- **`summary.csv`** — same data, machine-readable
+Phase 10c shipped walk-forward as a Kotlin API. Until the CLI lands:
 
-The summary ranks by Sharpe ratio by default. Other useful columns:
+```kotlin
+val fullTicks: List<Tick> = ...
+val trainDays = 60
+val testDays  = 14
+val msPerDay  = 86_400_000L
 
-| column | what it means |
-| --- | --- |
-| `params` | The parameter combo for this run |
-| `tradeCount` | How many trades fired — discard anything < 30 (statistically unreliable) |
-| `winRate` | Fraction of trades that closed profitable |
-| `sharpe` | Annualized Sharpe |
-| `calmar` | Annualized return / max drawdown |
-| `maxDD` | Worst peak-to-trough drawdown |
-| `pf` | Profit factor (gross profit / gross loss) |
+var cursor = fullTicks.first().timestamp
+val testResults = mutableListOf<SweepResult<Config>>()
 
-## 4. Walk-forward validate
+while (cursor + (trainDays + testDays) * msPerDay <= fullTicks.last().timestamp) {
+    val trainEnd = cursor + trainDays * msPerDay
+    val testEnd  = trainEnd + testDays * msPerDay
 
-A high in-sample Sharpe means nothing if the winning params crash on out-of-sample data. Run walk-forward:
+    val trainTicks = fullTicks.filter { it.timestamp in cursor until trainEnd }
+    val testTicks  = fullTicks.filter { it.timestamp in trainEnd until testEnd }
 
-```bash
-qkt walkforward strategies/ema-cross.qkt \
-    --from 2024-01-01 --to 2024-06-01 \
-    --param "fast=5,9,12,15" \
-    --param "slow=20,25,30,40" \
-    --train-days 60 \
-    --test-days 14 \
-    --output reports/walkforward
+    val trainSweep = BacktestSweep(configs, ::buildStrategy, emptyList(), trainTicks).run()
+    val bestOnTrain = trainSweep.maxByOrNull { it.result.totalPnL }!!.config
+
+    val testRun = Backtest(
+        strategies = listOf(buildStrategy(bestOnTrain)),
+        rules = emptyList(),
+        ticks = testTicks,
+    ).run()
+    testResults.add(SweepResult(bestOnTrain, testRun))
+
+    cursor = trainEnd     // roll forward
+}
+
+// Aggregate testResults — that's your honest out-of-sample performance
 ```
 
-What this does:
+Verbose, but it's the protocol — and once the CLI ships in Phase 25 it'll wrap this exact loop.
 
-1. Optimizes params on days 1–60 (training window) using the sweep harness
-2. Forward-tests the winner on days 61–74 (test window) — out-of-sample
-3. Rolls the windows forward by `test-days` and repeats
-4. Aggregates the test-window results into a "true" performance estimate
-
-The honest performance is whatever the test windows show. Anything that only looks good in training is overfit and will likely lose money live.
-
-## 5. Pick a winner
+## How to pick a winner from the results
 
 A robust winner has:
 
-- **Trade count ≥ 100** across the full period (statistical confidence)
-- **Walk-forward Sharpe ≥ 1.0** on out-of-sample windows
-- **Walk-forward Sharpe / in-sample Sharpe ≥ 0.5** (degradation is normal, but >50% drop is a red flag)
-- **Max drawdown your account can survive** (your risk tolerance, not the strategy's preference)
+- **Trade count ≥ 100** across the full period — fewer than that and you're fitting to noise.
+- **Walk-forward Sharpe ≥ 1.0** on out-of-sample windows.
+- **Walk-forward Sharpe / in-sample Sharpe ≥ 0.5** — degradation is normal, but a >50% drop suggests overfitting.
+- **Max drawdown your account can survive** — your risk tolerance, not the strategy's preference.
 
 If multiple combos qualify, pick the one with the **simplest** params (fewer free variables = harder to overfit).
 
-## 6. Lock the winner in
+## Lock the winner in
 
 Hard-code the winning params back into the strategy file:
 
 ```qkt
 LET fast = 12
 LET slow = 26
-LET stopPct = 1.5
 ```
 
-Re-run a full backtest with the locked params to confirm. Then [deploy paper](deploy-exness.md) and watch live behaviour for at least 2 weeks before going anywhere near a funded account.
+Re-run a full backtest with the locked params to confirm. Then paper-trade for at least 2 weeks before considering anything else.
 
 ## Performance tips
 
 - **Date range matters more than param count.** 5 years of data beats 5 params.
-- **Use `EVERY 5m` or `EVERY 15m`** for sweeps; 1-minute candles produce 5–15× more data without much added signal.
-- **Sweep the right things.** Indicator periods, stop/target ratios, regime filters. Don't sweep things like `LET symbol = "BTCUSDT"` — you're not deciding which market to trade, you're decision-tree-fitting.
+- **Use `EVERY 5m` or `EVERY 15m`** for sweeps — 1-minute candles produce 5–15× more data without much added signal.
+- **Sweep the right things.** Indicator periods, stop/target ratios, regime filters. Don't sweep things like `LET symbol = "BTCUSDT"` — you're not choosing which market to trade.
 
 ## See also
 
-- [Phase 10b — Parameter sweep](../phases/phase-10b-parameter-sweep.md) — sweep internals
-- [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) — the proper validation protocol
-- [Backtest model](../concepts/backtest-model.md) — what the report numbers actually mean
+- [Phase 10b — Parameter sweep](../phases/phase-10b-parameter-sweep.md) — internals
+- [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) — protocol
+- [Backtest model](../concepts/backtest-model.md) — what the report numbers mean
+- [Planned features](../planned.md) — when the CLI wrapper lands

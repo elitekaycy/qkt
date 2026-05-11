@@ -124,7 +124,7 @@ WHEN btc.close > highest(btc.close, 20)     -- breakout above 20-bar high
 THEN BUY btc SIZING 0.1
 
 WHEN btc.close < lowest(btc.close, 10)      -- breakdown below 10-bar low
- AND position(btc) > 0
+ AND POSITION.btc > 0
 THEN CLOSE btc
 ```
 

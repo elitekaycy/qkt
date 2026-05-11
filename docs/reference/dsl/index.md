@@ -58,7 +58,7 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     ---
 
-    Arithmetic, comparisons, account references (`account.equity`), position references (`position(stream)`).
+    Arithmetic, comparisons, account references (`account.equity`), position references (`POSITION.stream`).
 
     [:octicons-arrow-right-24: Expressions](expressions.md)
 

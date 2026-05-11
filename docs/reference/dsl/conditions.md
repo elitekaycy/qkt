@@ -40,9 +40,9 @@ This fires the **first** tick where `btc.close > 50000`. If `btc.close` stays ab
 If you want true level-triggered firing (do something **every** tick the condition holds), gate the action with a position-state check that resets:
 
 ```qkt
-WHEN btc.close > 50000 AND position(btc) = 0
+WHEN btc.close > 50000 AND POSITION.btc = 0
 THEN BUY btc SIZING 0.1     -- fires once per bar where we're flat AND above 50k
-                            -- (after a fill, position(btc) != 0 so it doesn't re-fire)
+                            -- (after a fill, POSITION.btc != 0 so it doesn't re-fire)
 ```
 
 ## Comparison operators
@@ -61,7 +61,7 @@ Both `=` and `==` work for equality; `!=` and `<>` both work for inequality. The
 ```qkt
 WHEN rsi(btc.close, 14) < 30 THEN LOG INFO "oversold"
 WHEN account.equity >= 10000 THEN BUY btc SIZING 0.5 PCT
-WHEN position(btc) = 0 THEN ...
+WHEN POSITION.btc = 0 THEN ...
 ```
 
 ## Boolean combinators
@@ -77,7 +77,7 @@ Combine freely:
 ```qkt
 WHEN ema(btc.close, 9) > ema(btc.close, 21)
  AND rsi(btc.close, 14) > 50
- AND NOT (position(btc) > 0)
+ AND NOT (POSITION.btc > 0)
 THEN BUY btc SIZING 0.1
 ```
 
@@ -140,19 +140,19 @@ These functions/properties act like read-only stream-field accesses:
 | --- | --- |
 | `account.equity` | Current account equity (cash + open P&L) |
 | `account.balance` | Cash balance only (excludes unrealized P&L) |
-| `position(<stream>)` | Net position quantity (positive=long, negative=short, 0=flat) |
-| `position(<stream>).pnl` | Open P&L on the current position |
-| `position(<stream>).entry_price` | Average entry price |
-| `position(<stream>).holding_duration` | How long the position has been open (ms) |
+| `POSITION.<stream>` | Net position quantity (positive=long, negative=short, 0=flat) |
+| `POSITION.<stream>.pnl` | Open P&L on the current position |
+| `POSITION.<stream>.entry_price` | Average entry price |
+| `POSITION.<stream>.holding_duration` | How long the position has been open (ms) |
 
 ```qkt
-WHEN position(btc) = 0
+WHEN POSITION.btc = 0
  AND account.equity > 1000
 THEN BUY btc SIZING 0.1
 
-WHEN position(btc) > 0
- AND position(btc).holding_duration > 4 * 60 * 60 * 1000     -- 4h
- AND position(btc).pnl < 0
+WHEN POSITION.btc > 0
+ AND POSITION.btc.holding_duration > 4 * 60 * 60 * 1000     -- 4h
+ AND POSITION.btc.pnl < 0
 THEN CLOSE btc                                                -- time-stop on a losing position
 ```
 
@@ -161,14 +161,14 @@ THEN CLOSE btc                                                -- time-stop on a 
 The most common entry guard pattern:
 
 ```qkt
-WHEN <signal_condition> AND position(btc) = 0
+WHEN <signal_condition> AND POSITION.btc = 0
 THEN BUY btc ...                  -- enter only when flat
 ```
 
 The most common exit pattern:
 
 ```qkt
-WHEN <exit_condition> AND position(btc) > 0
+WHEN <exit_condition> AND POSITION.btc > 0
 THEN CLOSE btc                    -- exit only when long
 ```
 
@@ -210,7 +210,7 @@ Both streams are evaluated on every candle close (whoever closes first triggers 
 
 ## Common gotchas
 
-- **Bare comparisons don't repeat-fire.** A rule with `WHEN btc.close > 50000` fires once when the condition first becomes true. To fire repeatedly, gate with position-state (`AND position(btc) = 0`) and act on every tick the gate is open.
+- **Bare comparisons don't repeat-fire.** A rule with `WHEN btc.close > 50000` fires once when the condition first becomes true. To fire repeatedly, gate with position-state (`AND POSITION.btc = 0`) and act on every tick the gate is open.
 - **`null` propagates.** If any indicator in a condition isn't warm yet, the whole condition evaluates to `false`. Your rule won't fire during warmup — by design, but surprises beginners.
 - **Precedence trap.** `WHEN a AND b OR c` is `(a AND b) OR c`, which is often not what you meant. Use parentheses.
 - **`=` vs `==`.** Both work — the parser accepts either. Pick a convention for your project and stick with it.

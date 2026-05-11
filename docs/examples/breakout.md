@@ -19,34 +19,38 @@ STRATEGY breakout_donchian VERSION 1
 
 LET entryWindow = 20
 LET exitWindow  = 10
-LET riskPct     = 0.5    -- risk 0.5% of equity per trade
+
+# Risk-sized via LET arithmetic until SIZING N PCT RISK ships in Phase 24
+LET stopDist    = atr(btc, 14) * 2
+LET riskUsd     = ACCOUNT.equity * 0.005     # risk 0.5% of equity per trade
+LET riskQty     = riskUsd / stopDist
 
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1h
 
 RULES
     WHEN btc.close > highest(btc.close, entryWindow)
-     AND position(btc) = 0
-    THEN BUY btc SIZING riskPct PCT RISK
-         STOP_LOSS AT btc.close - atr(btc, 14) * 2
-         LOG INFO "breakout long" high=highest(btc.close, entryWindow) atr=atr(btc, 14)
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING riskQty
+         STOP_LOSS AT btc.close - stopDist
+         LOG "breakout long" high=highest(btc.close, entryWindow) atr=atr(btc, 14)
 
     WHEN btc.close < lowest(btc.close, exitWindow)
-     AND position(btc) > 0
+     AND POSITION.btc > 0
     THEN CLOSE btc
-         LOG INFO "exit on lowest-low"
+         LOG "exit on lowest-low"
 ```
 
 A few things to notice:
 
-- **`SIZING riskPct PCT RISK`** — sizes the position so that hitting the stop loses exactly 0.5% of equity. The engine computes size from `riskPct * equity / (entry - stop)`.
+- **Risk-sized via `LET` arithmetic.** `riskQty = (equity × risk_pct) / stop_distance` gives a position that loses exactly 0.5% of equity if the stop hits. Once Phase 24 lands you'll be able to write `SIZING 0.5 PCT RISK STOP_LOSS …` and the engine does this math for you. See [Planned features](../planned.md).
 - **No bracket here** — the take-profit logic is the exit rule (lowest-low), not a price target. We use a bare `STOP_LOSS` instead of a full bracket.
 - **`highest(stream.close, N)`** and **`lowest(stream.close, N)`** are the Donchian channel functions; they return the rolling max/min over the last N closed candles.
 
 ## How to run it
 
 ```bash
-qkt fetch BTCUSDT --from 2023-01-01 --to 2024-12-31 --resolution 1h
+./scripts/fetch-dukascopy.sh BTCUSDT 2023-01-01 2024-12-31
 qkt backtest strategies/breakout-donchian.qkt --from 2023-01-01 --to 2024-12-31
 ```
 
@@ -87,9 +91,9 @@ The Turtle System never entered against the long-term trend. Add a 200-period fi
 ```qkt
 WHEN btc.close > highest(btc.close, entryWindow)
  AND btc.close > sma(btc.close, 200)        -- in long-term uptrend
- AND position(btc) = 0
-THEN BUY btc SIZING 0.5 PCT RISK
-     STOP_LOSS AT btc.close - atr(btc, 14) * 2
+ AND POSITION.btc = 0
+THEN BUY btc SIZING riskQty
+     STOP_LOSS AT btc.close - stopDist
 ```
 
 ### Short side
@@ -97,12 +101,12 @@ THEN BUY btc SIZING 0.5 PCT RISK
 ```qkt
 WHEN btc.close < lowest(btc.close, entryWindow)
  AND btc.close < sma(btc.close, 200)
- AND position(btc) = 0
-THEN SELL btc SIZING 0.5 PCT RISK
-     STOP_LOSS AT btc.close + atr(btc, 14) * 2
+ AND POSITION.btc = 0
+THEN SELL btc SIZING riskQty
+     STOP_LOSS AT btc.close + stopDist
 
 WHEN btc.close > highest(btc.close, exitWindow)
- AND position(btc) < 0
+ AND POSITION.btc < 0
 THEN CLOSE btc
 ```
 
@@ -129,7 +133,7 @@ SYMBOLS
 ## What this example demonstrates
 
 - `highest()` / `lowest()` rolling-extreme indicators
-- Risk-based sizing (`SIZING N PCT RISK`)
+- Risk-based sizing via `LET` arithmetic (the `SIZING N PCT RISK` shortcut lands in Phase 24)
 - Bare `STOP_LOSS` (no `BRACKET` because the take-profit is rule-driven, not price-driven)
 - Multiple rules cooperating (one for entry, another for exit)
-- `position(stream) = 0` / `> 0` for entry/exit gating
+- `POSITION.stream = 0` / `> 0` for entry/exit gating

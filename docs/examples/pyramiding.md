@@ -22,14 +22,14 @@ SYMBOLS
 
 RULES
     WHEN ema(btc.close, 12) CROSSES ABOVE ema(btc.close, 48)
-     AND position(btc) = 0
+     AND POSITION.btc = 0
     THEN BUY btc SIZING 0.05
          STACK 3 SPACING 200 ABOVE WITHIN 4h
          BRACKET {
            STOP_LOSS BY 300,
            TAKE_PROFIT BY 1000
          }
-         LOG INFO "pyramid start"
+         LOG "pyramid start"
 ```
 
 What `STACK 3 SPACING 200 ABOVE WITHIN 4h` means:
@@ -51,7 +51,7 @@ If price hits $67,500 then reverses to $66,700 (stop) — only layers 1+2 filled
 ## How to run it
 
 ```bash
-qkt fetch BTCUSDT --from 2024-01-01 --to 2024-06-01 --resolution 1h
+./scripts/fetch-dukascopy.sh BTCUSDT 2024-01-01 2024-06-01
 qkt backtest strategies/pyramid.qkt --from 2024-01-01 --to 2024-06-01
 ```
 

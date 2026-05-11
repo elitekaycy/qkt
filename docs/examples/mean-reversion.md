@@ -27,7 +27,7 @@ SYMBOLS
 
 RULES
     WHEN rsi(eur.close, 2) < 10
-     AND position(eur) = 0           -- only enter when flat
+     AND POSITION.eur = 0           -- only enter when flat
     THEN BUY eur SIZING 0.1
          BRACKET {
            STOP_LOSS AT eur.close - atr(eur, 14) * stopMul,
@@ -37,13 +37,13 @@ RULES
              0.34 AT eur.close * (1 + t3)
            }
          }
-         LOG INFO "oversold entry" rsi=rsi(eur.close, 2) price=eur.close
+         LOG "oversold entry" rsi=rsi(eur.close, 2) price=eur.close
 ```
 
 ## How to run it
 
 ```bash
-qkt fetch EURUSD --from 2024-01-01 --to 2024-04-01
+./scripts/fetch-dukascopy.sh EURUSD 2024-01-01 2024-04-01
 qkt backtest strategies/mean-rev-rsi.qkt --from 2024-01-01 --to 2024-04-01
 ```
 
@@ -80,7 +80,7 @@ You'll get fewer trades but higher win rate.
 ```qkt
 RULES
     WHEN rsi(eur.close, 2) > 90
-     AND position(eur) = 0
+     AND POSITION.eur = 0
     THEN SELL eur SIZING 0.1
          BRACKET {
            STOP_LOSS AT eur.close + atr(eur, 14) * stopMul,
@@ -114,7 +114,7 @@ TAKE_PROFIT {
 ```qkt
 WHEN rsi(eur.close, 2) < 10
  AND eur.close > sma(eur.close, 200)    -- only fade when above long MA
- AND position(eur) = 0
+ AND POSITION.eur = 0
 THEN BUY eur ...
 ```
 
@@ -129,7 +129,7 @@ This single filter often improves mean-reversion strategies dramatically — it 
 
 ## What this example demonstrates
 
-- `position(stream)` for entry gating
+- `POSITION.stream` for entry gating
 - Multi-leg scale-out brackets
 - ATR-based stop sizing
 - Arithmetic in bracket prices (`eur.close * (1 + t1)`)
