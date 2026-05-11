@@ -35,16 +35,26 @@ Tracked in `docs/backlog.md`. Heavier scope; multiple sub-tasks.
 | `per_strategy:` risk-config block | Per-strategy risk rules (e.g. cooloff-after-loss for one strategy without affecting others) | Use daemon-wide rules in `risk: rules:` for now |
 | `IF_TOUCHED`, `STOP_LIMIT` order types | Additional order shapes beyond MARKET/LIMIT/STOP | Compose manually with multiple rules + `WHEN` triggers |
 
-## Phase 26 — pending-entry OCO and clock accessors
+## Phase 26a — pending-entry OCO DSL surface + clock accessors
 
-Spec: [`docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.md`](superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.md). Unlocks pending-order straddle strategies. The execution-layer primitive (`StandaloneOCO`) is already present; this phase adds the DSL surface to reach it, plus DSL-visible time accessors.
+Spec: [`docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.md`](superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.md). DSL surface only — hedge-straddle becomes authorable, parseable, and backtestable. Live MT5 runtime ships in 26b.
 
 | Feature | What you'll be able to write | Workaround today |
 | --- | --- | --- |
 | `OCO_ENTRY { BUY ..., SELL ... }` | Two pending entries linked one-cancels-other; whichever fills, the other auto-cancels | None — the only way today is two independent `Signal.Submit` calls from Kotlin code with no link |
 | `NOW.hour_utc`, `NOW.minute_utc`, `NOW.weekday`, `NOW.date_utc`, `NOW.epoch_ms` | Session-window gating from inside `.qkt` files | None — strategies can't read the wall clock at all from the DSL |
 | `TIF GTD UNTIL now + <duration>` | Auto-expire pending orders after a relative window | Use `TIF GTD UNTIL <absolute-epoch-ms>` and compute the timestamp at strategy-author time (only works in offline contexts) |
-| MT5 broker OCO routing verified | Confidence that `OCO_ENTRY` actually works on live MT5 | Phase 17 broker exists; OCO path is currently untested |
+| Mock broker OCO fidelity verified | Confidence that backtests of OCO_ENTRY strategies are deterministic and correct | None — `StandaloneOCO` mock-broker behavior is currently unverified |
+
+## Phase 26b — MT5 native pending + OCO routing
+
+Spec to be written when Phase 26a merges. The MT5 broker today translates only `Market` and `Bracket` (`MT5OrderTranslator.kt:12-20`); all other shapes hit an `error("MT5 v1 does not natively translate ...")`. Phase 26b adds native MT5 translation for the pending-order family and the cancel-on-fill linkage that hedge-straddle's pending mode requires.
+
+| Feature | What you'll be able to do | Workaround today |
+| --- | --- | --- |
+| MT5 native pending stop / limit orders | Run any DSL strategy that uses `STOP AT` / `LIMIT AT` on Exness/ICMarkets/FTMO/Pepperstone live | Strategies that submit pending orders are rejected at broker submit time |
+| MT5 OCO routing | Run hedge-straddle and other pending-OCO strategies live on MT5 | Backtest-only after Phase 26a |
+| Cancel-on-fill across two MT5 tickets | Reliable single-leg fill semantics for OCO groups | Not applicable — OCO doesn't route at all today |
 
 ## Phase 27 — conditional bracketed stacks
 

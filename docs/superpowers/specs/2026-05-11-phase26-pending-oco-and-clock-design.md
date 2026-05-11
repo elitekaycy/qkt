@@ -2,6 +2,13 @@
 
 > Spec for the surface that unlocks pending-order straddle strategies. Builds directly on the execution-layer `StandaloneOCO` primitive (already present in `com.qkt.execution.OrderRequest`) by adding a DSL syntax to express it, and on the engine's pervasive `Clock` injection by adding DSL-visible time accessors.
 
+> **Scope split (added 2026-05-11 after Task 1 reconnaissance).** The original spec assumed MT5 broker would route `StandaloneOCO` natively or near-natively. Reading `MT5OrderTranslator.kt:12-20` revealed the MT5 broker today translates **only** `OrderRequest.Market` and `OrderRequest.Bracket` — every other shape (`Stop`, `Limit`, `StandaloneOCO`, `OTO`, `TrailingStop`) hits an `error("MT5 v1 does not natively translate ...; OrderManager should use engine-managed fallback")`. The work to land OCO on MT5 live is therefore ~5-7 days of broker-integration work, not "verification". To keep review focus tight, this phase is split:
+>
+> - **Phase 26a (this spec)** — DSL surface (`OCO_ENTRY`, `NOW.<field>`), AST + parser + compiler, mock broker fidelity, hedge-straddle authoring + parse + backtest. **Cannot go live on MT5 yet.** ~5 days.
+> - **Phase 26b (separate spec, written next)** — `MT5OrderTranslator` extensions for `Stop`, `Limit`, `StandaloneOCO`; OrderManager cancel-on-fill verification; integration tests against `FakeMt5Client`. Unlocks live MT5 runtime. ~5-7 days.
+>
+> Sections below are unchanged unless marked. Acceptance criteria narrowed to 26a; broker work (originally Task 14) is moved to 26b and that task becomes a no-op skip-with-link.
+
 ## Goal
 
 Make pending-entry OCO strategies — particularly the production hedge-straddle — expressible as a single `.qkt` file and runnable through the existing live pipeline. The change is bounded: DSL surface only, plus broker capability verification. No changes to the position model, no new strategy runtime concepts.
