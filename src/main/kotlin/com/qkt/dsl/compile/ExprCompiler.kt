@@ -202,19 +202,50 @@ class ExprCompiler(
             Value.Num(qty)
         }
 
-    private fun compileStateAccessor(ref: StateAccessor): CompiledExpr {
-        require(ref.source == StateSource.POSITION_AVG_PRICE) {
-            "StateAccessor source ${ref.source} is not supported in 11c1"
+    private fun compileStateAccessor(ref: StateAccessor): CompiledExpr =
+        when (ref.source) {
+            StateSource.POSITION_AVG_PRICE ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val price =
+                        ctx.strategyContext.positions
+                            .positionFor(symbol)
+                            ?.avgEntryPrice ?: BigDecimal.ZERO
+                    Value.Num(price)
+                }
+            // pnl = strategy-level realized + this-symbol unrealized.
+            // Strategy-level realized isn't tracked per-symbol in StrategyPnL today;
+            // a future enhancement could surface true per-symbol realized.
+            StateSource.POSITION_PNL ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val realized = ctx.strategyContext.pnl.realized()
+                    val unrealized = ctx.strategyContext.pnl.unrealizedFor(symbol)
+                    Value.Num(realized.add(unrealized))
+                }
+            // Strategy-level realized P&L (not symbol-scoped). Per-symbol realized
+            // requires lot-level accounting; see backlog.
+            StateSource.POSITION_REALIZED_PNL ->
+                CompiledExpr { ctx ->
+                    Value.Num(ctx.strategyContext.pnl.realized())
+                }
+            StateSource.POSITION_UNREALIZED_PNL ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    Value.Num(ctx.strategyContext.pnl.unrealizedFor(symbol))
+                }
+            StateSource.POSITION_HOLDING_DURATION ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val openedAt =
+                        ctx.strategyContext.positions
+                            .positionFor(symbol)
+                            ?.openedAt
+                    val durationMs = if (openedAt == null) 0L else ctx.strategyContext.clock.now() - openedAt
+                    Value.Num(BigDecimal(durationMs))
+                }
+            else -> throw IllegalArgumentException("StateAccessor source ${ref.source} is not supported")
         }
-        return CompiledExpr { ctx ->
-            val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
-            val price =
-                ctx.strategyContext.positions
-                    .positionFor(symbol)
-                    ?.avgEntryPrice ?: BigDecimal.ZERO
-            Value.Num(price)
-        }
-    }
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {
         require(ref.field in setOf("realized_pnl", "unrealized_pnl", "total_pnl", "equity", "balance")) {

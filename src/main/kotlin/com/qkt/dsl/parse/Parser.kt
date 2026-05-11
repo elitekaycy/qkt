@@ -412,7 +412,26 @@ class Parser(
             TokenKind.POSITION -> {
                 advance()
                 expect(TokenKind.DOT, "expected '.' after POSITION")
-                PositionRef(expectFieldName().lexeme)
+                val streamAlias = expectFieldName().lexeme
+                if (peek().kind == TokenKind.DOT) {
+                    advance()
+                    val accessor = expectFieldName().lexeme
+                    when (accessor) {
+                        "quantity", "qty" -> PositionRef(streamAlias)
+                        "entry_price", "avg_price", "avg_entry_price" ->
+                            StateAccessor(StateSource.POSITION_AVG_PRICE, streamAlias)
+                        "pnl" -> StateAccessor(StateSource.POSITION_PNL, streamAlias)
+                        "realized_pnl" -> StateAccessor(StateSource.POSITION_REALIZED_PNL, streamAlias)
+                        "unrealized_pnl" -> StateAccessor(StateSource.POSITION_UNREALIZED_PNL, streamAlias)
+                        "holding_duration" -> StateAccessor(StateSource.POSITION_HOLDING_DURATION, streamAlias)
+                        else -> {
+                            errors += ParseError(t.line, t.col, "unknown POSITION accessor: $accessor")
+                            PositionRef(streamAlias)
+                        }
+                    }
+                } else {
+                    PositionRef(streamAlias)
+                }
             }
             TokenKind.POSITION_AVG_PRICE -> {
                 advance()

@@ -139,4 +139,32 @@ class LexerTest {
             TokenKind.EOF,
         )
     }
+
+    @Test
+    fun `hash line comments are skipped`() {
+        val src =
+            """
+            # opening note
+            STRATEGY hi VERSION 1
+            # mid comment
+            SYMBOLS
+                btc = X:Y EVERY 1m
+            """.trimIndent()
+        val kinds = Lexer(src).tokenize().map { it.kind }
+        assertThat(kinds).contains(TokenKind.STRATEGY, TokenKind.SYMBOLS, TokenKind.EVERY)
+    }
+
+    @Test
+    fun `mixed comment styles all work`() {
+        val src =
+            """
+            -- dash comment
+            # hash comment
+            /* block
+               comment */
+            STRATEGY x VERSION 1
+            """.trimIndent()
+        val kinds = Lexer(src).tokenize().map { it.kind }
+        assertThat(kinds).containsSequence(TokenKind.STRATEGY, TokenKind.IDENT, TokenKind.VERSION)
+    }
 }

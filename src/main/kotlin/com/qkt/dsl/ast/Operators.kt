@@ -10,4 +10,13 @@ enum class CrossDir { ABOVE, BELOW }
 
 enum class AggFn { MIN, MAX, MEAN, SUM }
 
-enum class StateSource { ACCOUNT, POSITION, POSITION_AVG_PRICE, OPEN_ORDERS }
+enum class StateSource {
+    ACCOUNT,
+    POSITION,
+    POSITION_AVG_PRICE,
+    POSITION_PNL,
+    POSITION_REALIZED_PNL,
+    POSITION_UNREALIZED_PNL,
+    POSITION_HOLDING_DURATION,
+    OPEN_ORDERS,
+}

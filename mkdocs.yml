@@ -167,6 +167,7 @@ nav:
       - Phase workflow: contributing/phase-workflow.md
       - Release changelogs:
           - phases/index.md
+          - Phase 23 — DSL catalog expansion: phases/phase-23.md
           - Phase 22 — KDoc public API: phases/phase-22.md
           - Phase 21 — Documentation site: phases/phase-21.md
           - Phase 20 — Quickstart + compose: phases/phase-20.md
