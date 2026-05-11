@@ -4,6 +4,7 @@ qkt is built in numbered phases. Each phase has a post-merge changelog with usag
 
 ## Recent
 
+- [Phase 23 follow-up — DSL corrections and packaging](phase-23-followup.md)
 - [Phase 23 — DSL catalog expansion](phase-23.md)
 - [Phase 22 — KDoc the public API](phase-22.md)
 - [Phase 21 — Documentation site](phase-21.md)

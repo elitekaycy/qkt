@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
@@ -308,6 +309,7 @@ class Parser(
                     TokenKind.GE -> Cmp.GE
                     TokenKind.LE -> Cmp.LE
                     TokenKind.EQEQ -> Cmp.EQ
+                    TokenKind.EQ -> Cmp.EQ
                     TokenKind.NEQ -> Cmp.NE
                     else -> null
                 }
@@ -652,9 +654,24 @@ class Parser(
         expect(TokenKind.WHEN, "expected WHEN")
         val cond = parseExpr()
         expect(TokenKind.THEN, "expected THEN after WHEN condition")
-        val action = parseAction()
-        return WhenThen(cond, action)
+        val first = parseAction()
+        if (peek().kind != TokenKind.SEMICOLON) return WhenThen(cond, first)
+        val actions = mutableListOf(first)
+        while (match(TokenKind.SEMICOLON)) {
+            if (!isActionStart(peek().kind)) break
+            actions.add(parseAction())
+        }
+        return WhenThen(cond, Block(actions))
     }
+
+    private fun isActionStart(k: TokenKind): Boolean =
+        k == TokenKind.BUY ||
+            k == TokenKind.SELL ||
+            k == TokenKind.CLOSE ||
+            k == TokenKind.CLOSE_ALL ||
+            k == TokenKind.CANCEL ||
+            k == TokenKind.CANCEL_ALL ||
+            k == TokenKind.LOG
 
     private fun parseForEach(): List<RuleAst> {
         expect(TokenKind.FOR, "expected FOR")

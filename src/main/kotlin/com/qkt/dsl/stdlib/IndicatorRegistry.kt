@@ -139,9 +139,9 @@ object IndicatorRegistry {
                 },
         )
 
-    fun has(name: String): Boolean = table.containsKey(name)
+    fun has(name: String): Boolean = table.containsKey(name.uppercase())
 
-    fun spec(name: String): IndicatorSpec? = table[name]
+    fun spec(name: String): IndicatorSpec? = table[name.uppercase()]
 
     fun create(
         name: String,

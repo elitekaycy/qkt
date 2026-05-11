@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
@@ -48,8 +49,18 @@ class ActionCompiler(
             is CloseAll -> compileCloseAll()
             is Cancel -> compileCancel(action.stream)
             is CancelAll -> compileCancelAll()
+            is Block -> compileBlock(action)
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
+
+    private fun compileBlock(action: Block): (EvalContext) -> List<Signal> {
+        val children = action.actions.map { compile(it) }
+        return { ctx ->
+            val out = mutableListOf<Signal>()
+            for (child in children) out.addAll(child(ctx))
+            out
+        }
+    }
 
     private fun compileCloseAll(): (EvalContext) -> List<Signal> =
         { ctx ->

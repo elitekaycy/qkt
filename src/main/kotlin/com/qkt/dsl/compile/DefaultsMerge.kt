@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.CaseWhen
@@ -50,6 +51,7 @@ fun mergeDefaults(
     return when (action) {
         is Buy -> Buy(action.stream, mergeOpts(action.opts, defaults, action.stream))
         is Sell -> Sell(action.stream, mergeOpts(action.opts, defaults, action.stream))
+        is Block -> Block(action.actions.map { mergeDefaults(it, defaults) })
         else -> action
     }
 }

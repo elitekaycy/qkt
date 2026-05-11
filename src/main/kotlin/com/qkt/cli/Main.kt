@@ -47,14 +47,34 @@ private fun printHelp() {
         USAGE
             qkt <subcommand> [arguments]
 
-        SUBCOMMANDS
+        STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
-            backtest <file> ...     run a one-shot backtest
+            backtest <file> ...     run a one-shot backtest against historical data
             run <file> ...          run a strategy in foreground (paper-trading)
 
-        SEE ALSO
-            qkt --version
-            qkt help <subcommand>
+        DAEMON LIFECYCLE
+            daemon start            start the long-lived daemon process
+            daemon stop             stop the running daemon
+            daemon status           show daemon health
+
+        DAEMON OPERATIONS
+            deploy <file> --as <n>  register and start a strategy in the daemon
+            list                    list deployed strategies
+            status [<name>]         show status of one strategy or all
+            logs <name> [-f]        tail per-strategy log file
+            stop <name> [--flatten] gracefully stop a deployed strategy
+            start <portfolio>/<c>   clear operator-stop on a portfolio child
+
+        VENUE / FEED
+            brokers list            list configured broker profiles
+            audit-ticks ...         capture and audit live MT5 ticks
+
+        FLAGS
+            --version, -v           print qkt version
+            --help, help            this message
+
+        DOCS
+            https://elitekaycy.github.io/qkt/
         """.trimIndent(),
     )
 }

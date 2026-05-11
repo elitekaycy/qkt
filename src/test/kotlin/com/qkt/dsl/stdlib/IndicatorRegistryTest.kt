@@ -44,6 +44,14 @@ class IndicatorRegistryTest {
     }
 
     @Test
+    fun `lookup is case-insensitive`() {
+        assertThat(IndicatorRegistry.has("ema")).isTrue()
+        assertThat(IndicatorRegistry.has("Ema")).isTrue()
+        assertThat(IndicatorRegistry.spec("rsi")).isNotNull()
+        assertThat(IndicatorRegistry.create("atr", listOf(java.math.BigDecimal("14")))).isNotNull()
+    }
+
+    @Test
     fun `phase 23 catalog expansion is registered`() {
         val expected =
             listOf(
