@@ -456,77 +456,87 @@ body,
 
 /* ----------------------------------------------------------------------
    syntax highlighting — pygments token classes
-   palette: amber accent, sage green strings, lilac numbers, sky variables
+   scoped to both .highlight (mkdocs Pygments output) and the hero codeframe
+   palette: amber accent, sage strings, lilac numbers, sky variables
    ---------------------------------------------------------------------- */
 
-/* keywords — block-level (STRATEGY, RULES, SYMBOLS, fun, class, ...) */
 .highlight .k,
 .highlight .kd,
 .highlight .kn,
+.highlight .kt,
+.qkt-codeframe__body .k,
+.qkt-codeframe__body .kd,
+.qkt-codeframe__body .kn,
+.qkt-codeframe__body .kt        { color: #ffb84d; font-weight: 600; }
+
 .highlight .kr,
-.highlight .kt        { color: #ffb84d; font-weight: 600; }
+.qkt-codeframe__body .kr        { color: #ff8c42; font-weight: 600; }
 
-/* keyword reserved (BUY/SELL/LOG/CANCEL — action verbs) */
-.highlight .kr        { color: #ff8c42; font-weight: 600; }
+.highlight .kp,
+.qkt-codeframe__body .kp        { color: #d8a86a; font-weight: 500; }
 
-/* keyword pseudo (SIZING/BRACKET/BY/PCT/EVERY — modifiers) */
-.highlight .kp        { color: #d8a86a; font-weight: 500; }
+.highlight .kc,
+.qkt-codeframe__body .kc        { color: #c8a8e0; font-weight: 500; font-style: italic; }
 
-/* keyword constant (TRUE/FALSE/INFO/null) */
-.highlight .kc        { color: #c8a8e0; font-weight: 500; font-style: italic; }
+.highlight .ow,
+.qkt-codeframe__body .ow        { color: #ffd28a; font-style: italic; }
 
-/* operator-words (AND/OR/NOT/CROSSES/ABOVE/BELOW) */
-.highlight .ow        { color: #ffd28a; font-style: italic; }
-
-/* strings */
 .highlight .s,
 .highlight .s1,
 .highlight .s2,
 .highlight .sb,
 .highlight .sc,
-.highlight .sd        { color: #b8d8a8; }
+.highlight .sd,
+.qkt-codeframe__body .s,
+.qkt-codeframe__body .s1,
+.qkt-codeframe__body .s2          { color: #b8d8a8; }
 
-/* string interpolation `{name}` inside log strings */
-.highlight .si        { color: #ffd84d; font-weight: 500; }
+.highlight .si,
+.qkt-codeframe__body .si          { color: #ffd84d; font-weight: 500; }
 
-/* comments */
 .highlight .c,
 .highlight .c1,
 .highlight .cm,
-.highlight .ch        { color: #6a665e; font-style: italic; }
+.highlight .ch,
+.qkt-codeframe__body .c,
+.qkt-codeframe__body .c1,
+.qkt-codeframe__body .cm          { color: #6a665e; font-style: italic; }
 
-/* identifiers — default name */
-.highlight .n         { color: #e8e6e1; }
+.highlight .n,
+.qkt-codeframe__body .n           { color: #e8e6e1; }
 
-/* function calls — indicator and helper functions like ema(), rsi() */
 .highlight .nf,
-.highlight .fm        { color: #82c4ff; }
+.highlight .fm,
+.qkt-codeframe__body .nf          { color: #82c4ff; }
 
-/* class name — broker prefix EXNESS, BACKTEST, BYBIT_SPOT */
-.highlight .nc        { color: #ff8c42; font-weight: 600; letter-spacing: 0.02em; }
+.highlight .nc,
+.qkt-codeframe__body .nc          { color: #ff8c42; font-weight: 600; letter-spacing: 0.02em; }
 
-/* uppercase constant — BTCUSDT, EURUSD on RHS of `:` */
-.highlight .no        { color: #ffd84d; }
+.highlight .no,
+.qkt-codeframe__body .no          { color: #ffd84d; }
 
-/* variable — stream alias before `.`  (btc.close → btc) */
-.highlight .nv        { color: #8ec5fc; font-style: italic; }
+.highlight .nv,
+.qkt-codeframe__body .nv          { color: #8ec5fc; font-style: italic; }
 
-/* attribute — field after `.` (btc.close → close) */
-.highlight .na        { color: #c0b9ad; }
+.highlight .na,
+.qkt-codeframe__body .na          { color: #c0b9ad; }
 
-/* builtin name */
 .highlight .nb,
-.highlight .nx        { color: #e8e6e1; }
+.highlight .nx,
+.qkt-codeframe__body .nb          { color: #e8e6e1; }
 
-/* numbers */
 .highlight .mi,
 .highlight .mf,
 .highlight .mo,
-.highlight .mh        { color: #c8a8e0; }
+.highlight .mh,
+.qkt-codeframe__body .mi,
+.qkt-codeframe__body .mf          { color: #c8a8e0; }
 
-/* operators + punctuation */
-.highlight .o         { color: #ffb84d; }
-.highlight .p         { color: #6e6a62; }
+.highlight .o,
+.qkt-codeframe__body .o           { color: #ffb84d; }
+
+.highlight .p,
+.qkt-codeframe__body .p           { color: #6e6a62; }
 
 /* light-mode rebalance */
 [data-md-color-scheme="default"] .highlight .k,
@@ -834,9 +844,84 @@ body,
   color: var(--qkt-fg-mute);
 }
 
+.qkt-codeframe__cmd {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+}
+
 .qkt-codeframe__cmd .sigil {
   color: var(--qkt-accent);
   margin-right: 0.4em;
+}
+
+.qkt-cmd__note {
+  margin-left: auto;
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--qkt-fg-faint);
+  white-space: nowrap;
+}
+
+/* three-step "how it works" block */
+.qkt-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.4rem;
+  margin: 2rem 0;
+}
+
+@media (max-width: 980px) {
+  .qkt-steps { grid-template-columns: 1fr; }
+}
+
+.qkt-step {
+  background: var(--qkt-bg-elev);
+  border: 1px solid var(--qkt-line);
+  padding: 1.6rem 1.8rem 1.8rem;
+  position: relative;
+  border-top: 2px solid var(--qkt-accent-dim);
+}
+
+.qkt-step__num {
+  font-family: var(--qkt-font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--qkt-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9em;
+  height: 1.9em;
+  border: 1px solid var(--qkt-accent-dim);
+  border-radius: 50%;
+  margin-bottom: 0.4em;
+}
+
+.qkt-step h3 {
+  font-family: var(--qkt-font-display);
+  font-variation-settings: "SOFT" 35, "opsz" 96;
+  font-weight: 500;
+  font-size: 1.35rem;
+  letter-spacing: -0.012em;
+  margin: 0.5em 0 0.6em;
+  color: var(--qkt-fg);
+  text-transform: none;
+}
+
+.qkt-step p {
+  color: var(--qkt-fg);
+  font-size: 0.96rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.qkt-step em {
+  font-style: italic;
+  color: var(--qkt-accent);
+  font-weight: 500;
 }
 
 .qkt-twoup {
