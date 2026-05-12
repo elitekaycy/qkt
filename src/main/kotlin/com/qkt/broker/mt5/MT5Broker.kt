@@ -47,11 +47,27 @@ class MT5Broker(
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol)
-    private val poller = MT5PositionPoller(client, profile, mt5Symbol, bus, clock)
+    private val poller =
+        MT5PositionPoller(
+            client,
+            profile,
+            mt5Symbol,
+            bus,
+            clock,
+            onPositionOpened = ::onPendingPositionOpened,
+        )
     private val stateRecovery = MT5StateRecovery(client, profile, mt5Symbol, bus)
 
     /** orderId → MT5 ticket. Populated on pending placement; used by [cancel]. */
     private val pendingTickets: MutableMap<String, Long> = ConcurrentHashMap()
+
+    /** Reverse: MT5 ticket → metadata for emitting OrderFilled when the pending fills. */
+    private val pendingByTicket: MutableMap<Long, PendingMeta> = ConcurrentHashMap()
+
+    private data class PendingMeta(
+        val orderId: String,
+        val strategyId: String,
+    )
 
     init {
         try {
@@ -111,10 +127,13 @@ class MT5Broker(
                 ),
             )
         } else {
-            // Pending: track ticket so we can cancel by orderId later
+            // Pending: track ticket so we can correlate fill events and cancel by orderId.
             resp.result.order
                 .takeIf { it != 0L }
-                ?.let { pendingTickets[request.id] = it }
+                ?.let { ticket ->
+                    pendingTickets[request.id] = ticket
+                    pendingByTicket[ticket] = PendingMeta(request.id, request.strategyId)
+                }
         }
         return SubmitAck(
             clientOrderId = request.id,
@@ -183,6 +202,7 @@ class MT5Broker(
 
     override fun cancel(orderId: String) {
         val ticket = pendingTickets.remove(orderId) ?: return
+        pendingByTicket.remove(ticket)
         runCatching { client.cancelOrder(ticket) }
             .onSuccess {
                 bus.publish(
@@ -197,6 +217,38 @@ class MT5Broker(
             }.onFailure { e ->
                 log.warn("MT5Broker ${profile.name} cancel($orderId, ticket=$ticket) failed: ${e.message}")
             }
+    }
+
+    /**
+     * Called by [MT5PositionPoller] when a venue position appears that wasn't in the
+     * last snapshot. If the position's ticket matches a tracked pending order, this
+     * means the pending filled — emit [BrokerEvent.OrderFilled] with the original
+     * client orderId so [com.qkt.app.OrderManager] can:
+     *   1. mark the order FILLED
+     *   2. iterate `siblings[orderId]` and cancel any OCO siblings
+     *   3. update strategy-side position state
+     *
+     * If the ticket isn't in [pendingByTicket], the position is external (manual user
+     * trade or another qkt instance with the same magic) — ignore it; reconciliation
+     * is a separate concern.
+     */
+    private fun onPendingPositionOpened(position: MT5Position) {
+        val meta = pendingByTicket.remove(position.ticket) ?: return
+        pendingTickets.remove(meta.orderId)
+        val qktSymbol = mt5Symbol.toQkt(position.symbol)
+        val filledSide = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = meta.orderId,
+                brokerOrderId = position.ticket.toString(),
+                symbol = qktSymbol,
+                side = filledSide,
+                price = position.priceOpen,
+                quantity = position.volume,
+                strategyId = meta.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
     }
 
     fun shutdown() {
