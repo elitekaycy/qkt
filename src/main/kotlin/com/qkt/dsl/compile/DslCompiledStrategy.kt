@@ -19,6 +19,23 @@ interface DslCompiledStrategy : Strategy {
     /** Per-key history retention required by the strategy's indicators. */
     val retentionByKey: Map<HubKey, Int>
 
+    /**
+     * Per-strategy stack registry. The action compiler populates this when a
+     * `STACK_AT`-bearing BUY/SELL emits its primary submit; the runtime consumes it on
+     * the matching [com.qkt.events.BrokerEvent.OrderFilled]. Strategies with no
+     * `STACK_AT` clauses have an empty registry that's never written to.
+     */
+    val pendingStacks: PendingStacks
+
+    /**
+     * Symbols on which this strategy will create more than one concurrent leg via
+     * `STACK_AT`. The runtime verifies that the routing broker for each such symbol
+     * declares [com.qkt.broker.OrderTypeCapability.MULTI_POSITION_PER_SYMBOL] before
+     * the strategy goes live. Empty for strategies with no `STACK_AT` clauses.
+     */
+    val multiPositionPerSymbolSymbols: Set<String>
+        get() = emptySet()
+
     /** Subscribes this strategy to the shared [CandleHub] for hub-driven dispatch. */
     fun bindToHub(
         hub: CandleHub,

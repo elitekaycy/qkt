@@ -100,6 +100,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: STACK](stack.md)
 
+- :material-stairs:{ .lg .middle } **STACK_AT conditional stacks**
+
+    ---
+
+    Fire independent micro-trades when the primary leg's MFE crosses thresholds within time windows. Each stack tracks as its own leg with its own bracket.
+
+    [:octicons-arrow-right-24: STACK_AT](stack-at.md)
+
 </div>
 
 ## Looping and composition

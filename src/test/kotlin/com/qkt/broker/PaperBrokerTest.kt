@@ -210,4 +210,122 @@ class PaperBrokerTest {
 
         assertThat(fills.map { it.clientOrderId }).containsExactly("c1", "c2")
     }
+
+    @Test
+    fun `declares MULTI_POSITION_PER_SYMBOL capability`() {
+        val bus = newBus()
+        val b = PaperBroker(bus, FixedClock(0L), MarketPriceTracker())
+        assertThat(b.capabilities).contains(OrderTypeCapability.MULTI_POSITION_PER_SYMBOL)
+    }
+
+    @Test
+    fun `multiple market fills on the same symbol each emit a distinct OrderFilled`() {
+        val tracker = MarketPriceTracker()
+        tracker.update("EURUSD", Money.of("1.10"))
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        val b = PaperBroker(bus, FixedClock(0L), tracker)
+
+        for (idx in 0..2) {
+            b.submit(
+                OrderRequest.Market(
+                    id = "c$idx",
+                    symbol = "EURUSD",
+                    side = Side.BUY,
+                    quantity = Money.of("0.1"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                    strategyId = "alpha",
+                ),
+            )
+        }
+
+        // PaperBroker does not net — each submit produces its own fill with its own id.
+        assertThat(fills.map { it.clientOrderId }).containsExactly("c0", "c1", "c2")
+        assertThat(fills.map { it.quantity }).allMatch { it.compareTo(Money.of("0.1")) == 0 }
+    }
+
+    @Test
+    fun `concurrent limit + stop on the same symbol fire independently as price prints`() {
+        val tracker = MarketPriceTracker()
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        val b = PaperBroker(bus, FixedClock(0L), tracker)
+
+        // BUY-limit at 1.09 (fires when price ≤ 1.09)
+        b.submit(
+            OrderRequest.Limit(
+                id = "limit-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.1"),
+                limitPrice = Money.of("1.09"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        // BUY-stop at 1.11 (fires when price ≥ 1.11)
+        b.submit(
+            OrderRequest.Stop(
+                id = "stop-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.1"),
+                stopPrice = Money.of("1.11"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        b.onTick(tick("EURUSD", "1.12")) // crosses the stop only
+        assertThat(fills.map { it.clientOrderId }).containsExactly("stop-1")
+        b.onTick(tick("EURUSD", "1.08")) // crosses the limit
+        assertThat(fills.map { it.clientOrderId }).containsExactly("stop-1", "limit-1")
+    }
+
+    @Test
+    fun `stack-shape multi-fill on same symbol does not commingle quantities`() {
+        // Mirrors the STACK_AT stack-entry market shape: each tier's entry comes through
+        // with its own client id and its own qty. PaperBroker treats them as independent.
+        val tracker = MarketPriceTracker()
+        tracker.update("EURUSD", Money.of("1.10"))
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        val b = PaperBroker(bus, FixedClock(0L), tracker)
+
+        // Primary entry
+        b.submit(
+            OrderRequest.Market(
+                id = "primary-1-entry",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.20"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        // Stack tier-0 entry at a later (favorable) price
+        tracker.update("EURUSD", Money.of("1.106"))
+        b.submit(
+            OrderRequest.Market(
+                id = "primary-1-stack-tier0-entry",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.06"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        assertThat(fills).hasSize(2)
+        assertThat(fills[0].clientOrderId).isEqualTo("primary-1-entry")
+        assertThat(fills[0].quantity).isEqualByComparingTo("0.20")
+        assertThat(fills[0].price).isEqualByComparingTo("1.10")
+        assertThat(fills[1].clientOrderId).isEqualTo("primary-1-stack-tier0-entry")
+        assertThat(fills[1].quantity).isEqualByComparingTo("0.06")
+        assertThat(fills[1].price).isEqualByComparingTo("1.106")
+    }
 }

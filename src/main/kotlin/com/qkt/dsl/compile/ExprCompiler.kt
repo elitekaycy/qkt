@@ -270,6 +270,12 @@ class ExprCompiler(
                     val durationMs = if (openedAt == null) 0L else ctx.strategyContext.clock.now() - openedAt
                     Value.Num(BigDecimal(durationMs))
                 }
+            StateSource.POSITION_MFE ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val mfe = ctx.strategyContext.positions.mfeFor(symbol) ?: BigDecimal.ZERO
+                    Value.Num(mfe)
+                }
             else -> throw IllegalArgumentException("StateAccessor source ${ref.source} is not supported")
         }
 
