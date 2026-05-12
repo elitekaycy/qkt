@@ -45,6 +45,7 @@ data class CompiledStackTier(
 class StackEngine(
     val parentLegId: String,
     val parentSymbol: String,
+    val closeWatchIds: Set<String> = emptySet(),
     private val parentSide: Side,
     private val parentEntryPrice: BigDecimal,
     private val tiers: List<CompiledStackTier>,

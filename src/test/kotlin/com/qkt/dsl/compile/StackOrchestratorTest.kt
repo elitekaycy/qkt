@@ -108,6 +108,40 @@ class StackOrchestratorTest {
     }
 
     @Test
+    fun `onPossibleClose removes engines whose closeWatchIds match the id`() {
+        val captured = mutableListOf<Signal>()
+        val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
+        orch.onPrimaryFilled(
+            parentLegId = "p1",
+            parentSymbol = "EURUSD",
+            parentSide = Side.BUY,
+            parentEntryPrice = BigDecimal("1.1000"),
+            tiers = listOf(tier()),
+            closeWatchIds = setOf("p1-bracket-tp", "p1-bracket-sl"),
+        )
+        assertThat(orch.activeCount()).isEqualTo(1)
+        orch.onPossibleClose("p1-bracket-tp") // TP fired → parent closed
+        assertThat(orch.activeCount()).isEqualTo(0)
+        orch.onTick("EURUSD", BigDecimal("1.1500"))
+        assertThat(captured).isEmpty()
+    }
+
+    @Test
+    fun `onPossibleClose with unmatched id leaves engines untouched`() {
+        val orch = StackOrchestrator(FixedClock(time = 1_000L)) { }
+        orch.onPrimaryFilled(
+            parentLegId = "p1",
+            parentSymbol = "EURUSD",
+            parentSide = Side.BUY,
+            parentEntryPrice = BigDecimal("1.1000"),
+            tiers = listOf(tier()),
+            closeWatchIds = setOf("p1-bracket-tp"),
+        )
+        orch.onPossibleClose("some-unrelated-id")
+        assertThat(orch.activeCount()).isEqualTo(1)
+    }
+
+    @Test
     fun `multiple engines on same symbol all fire on a qualifying tick`() {
         val captured = mutableListOf<Signal>()
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }

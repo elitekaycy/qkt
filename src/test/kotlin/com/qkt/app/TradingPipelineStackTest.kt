@@ -180,6 +180,59 @@ class TradingPipelineStackTest {
     }
 
     @Test
+    fun `OrderFilled on a bracket close-watch id terminates the engine`() {
+        val pendingStacks = PendingStacks()
+        pendingStacks.register(
+            PendingStack(
+                parentClientOrderId = "parent-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                tiers = listOf(tier()),
+                closeWatchIds = setOf("bracket-1-tp", "bracket-1-sl"),
+            ),
+        )
+        val strategy = StubDslStrategy(pendingStacks)
+        val (_, bus) = newPipeline(strategy)
+
+        val stackOrders = mutableListOf<OrderRequest>()
+        bus.subscribe<OrderEvent> { e ->
+            if (e.request is OrderRequest.Bracket) stackOrders.add(e.request)
+        }
+
+        // Primary entry fills — engine constructed
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "parent-1",
+                brokerOrderId = "parent-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                price = BigDecimal("1.1000"),
+                quantity = BigDecimal("0.10"),
+                strategyId = "alpha",
+                timestamp = 0L,
+            ),
+        )
+
+        // Bracket TP fires (parent leg closed) BEFORE any favorable tick
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "bracket-1-tp",
+                brokerOrderId = "bracket-1-tp",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                price = BigDecimal("1.1200"),
+                quantity = BigDecimal("0.10"),
+                strategyId = "alpha",
+                timestamp = 100L,
+            ),
+        )
+
+        // Subsequent favorable tick must NOT fire any stack — engine was removed
+        bus.publish(TickEvent(Tick("EURUSD", BigDecimal("1.1500"), 200L)))
+        assertThat(stackOrders).isEmpty()
+    }
+
+    @Test
     fun `OrderFilled for a different strategyId is ignored`() {
         val pendingStacks = PendingStacks()
         pendingStacks.register(

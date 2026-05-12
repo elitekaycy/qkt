@@ -6,12 +6,18 @@ import com.qkt.common.Side
  * One pending stack registration — the action has emitted a [com.qkt.strategy.Signal.Submit]
  * for the parent leg but no fill has arrived yet. When [com.qkt.events.BrokerEvent.OrderFilled]
  * arrives for [parentClientOrderId], the runtime constructs a [StackEngine] from these tiers.
+ *
+ * [closeWatchIds] are clientOrderIds whose later fill signals that the parent leg has
+ * closed (typically the bracket's TP/SL child ids predicted from the OrderManager
+ * fallback convention). When the runtime sees a fill for any of these, it terminates
+ * the engine to prevent stacks from firing against a closed parent.
  */
 data class PendingStack(
     val parentClientOrderId: String,
     val symbol: String,
     val side: Side,
     val tiers: List<CompiledStackTier>,
+    val closeWatchIds: Set<String> = emptySet(),
 )
 
 /**

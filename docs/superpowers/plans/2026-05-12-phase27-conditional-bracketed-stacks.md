@@ -12,6 +12,31 @@
 
 ---
 
+## Status & known gaps (2026-05-12)
+
+Tasks 1-12 (compile-time pipeline, runtime orchestrator wiring, PaperBroker close detection) have shipped on `phase-27-impl`. The happy path — DSL `STACK_AT` → engine constructed on parent fill → tier fires on MFE crossing → stack signal flows through standard emit → parent-bracket close terminates engine — works end-to-end against PaperBroker.
+
+Known gaps that follow-up tasks must close:
+
+1. **`StrategyPositionTracker.applyFill` does not call `addStackLeg`.** All fills (including stack tier fills) get averaged into the PRIMARY leg via `apply()`. `LegBook`'s multi-leg schema is correct but inert. Future per-leg PnL, leg-level MFE, drift reconciliation are all wrong until fill routing learns to distinguish stack fills from primary fills (needs `parent_leg_id` correlation on the fill event).
+2. **Parent-close detection only covers PaperBroker bracket-fallback.** The `closeWatchIds` mechanism in `ActionCompiler.closeWatchIdsFor` hardcodes the `${b.id}-tp` / `${b.id}-sl` naming from `OrderManager.submitBracketFallback`. Plain Market parents, native MT5 brackets, and strategy-emitted manual closes are not detected — engines keep firing after parent close. Clean fix needs a higher-level `BrokerEvent.LegClosed(strategyId, parentLegId, …)` driven by `parent_leg_id` correlation.
+3. **STACK_AT + OCO and STACK_AT + STACK now reject at compile time** (Task 12 fixed Gaps #3 and #4 from the architecture review) — both combinations would have silently dropped the conditional clauses.
+4. **No retroactive fire** — the engine first evaluates on the tick after `onPrimaryFilled`. If the parent fills already past a threshold, the tier won't fire until the next tick.
+5. **Engine state is in-memory only** — no persistence across session restart.
+
+Remaining tasks (Phase 27a):
+
+- Task 13 — `POSITION.<stream>.mfe` DSL accessor (depends on tracker-side `MfeTracker` integration with `applyFill`)
+- Task 14 — Compile-time capability gate for `MULTI_POSITION_PER_SYMBOL`
+- Task 15 — Backtest fidelity test
+- Task 16 — End-to-end backtest test
+- Task 17 — Update hedge-straddle example
+- Task 18 — DSL docs
+- Task 19 — Phase 27 changelog
+- Task 20-22 — Pre-merge verification, P&L sanity check, production scaffold
+
+---
+
 ### Task 1 — Recon: read position model surface
 
 **Files:**
