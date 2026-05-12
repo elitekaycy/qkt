@@ -12,13 +12,13 @@ class StackEngineTest {
     private fun tier(
         mfeThreshold: String,
         withinMs: Long = 30 * 60 * 1000L,
-        sizingFactor: String = "0.5",
+        stackQuantity: String = "0.05",
         sl: String = "0.005",
         tp: String = "0.020",
     ) = CompiledStackTier(
         mfeThreshold = BigDecimal(mfeThreshold),
         withinMs = withinMs,
-        sizingFactor = BigDecimal(sizingFactor),
+        stackQuantity = BigDecimal(stackQuantity),
         slDistance = BigDecimal(sl),
         tpDistance = BigDecimal(tp),
     )
@@ -29,7 +29,6 @@ class StackEngineTest {
         captured: MutableList<Signal> = mutableListOf(),
         parentSide: Side = Side.BUY,
         parentEntryPrice: String = "1.1000",
-        parentQuantity: String = "0.1",
     ): Pair<StackEngine, MutableList<Signal>> {
         val engine =
             StackEngine(
@@ -37,7 +36,6 @@ class StackEngineTest {
                 parentSymbol = "EURUSD",
                 parentSide = parentSide,
                 parentEntryPrice = BigDecimal(parentEntryPrice),
-                parentQuantity = BigDecimal(parentQuantity),
                 tiers = tiers,
                 clock = clock,
                 emit = { captured.add(it) },
@@ -63,7 +61,7 @@ class StackEngineTest {
         val sig = captured[0] as Signal.Submit
         val bracket = sig.request as OrderRequest.Bracket
         assertThat(bracket.side).isEqualTo(Side.BUY)
-        assertThat(bracket.quantity).isEqualByComparingTo("0.05") // 0.1 × 0.5
+        assertThat(bracket.quantity).isEqualByComparingTo("0.05") // absolute, from tier
         // SL = currentPrice - slDistance = 1.1055 - 0.005 = 1.1005
         assertThat(bracket.stopLoss).isEqualByComparingTo("1.1005")
         // TP = currentPrice + tpDistance = 1.1055 + 0.020 = 1.1255
@@ -131,7 +129,7 @@ class StackEngineTest {
     fun `SELL parent direction inverts excursion and bracket sides`() {
         val (engine, captured) =
             newEngine(
-                listOf(tier("0.005", sizingFactor = "1.0")),
+                listOf(tier("0.005", stackQuantity = "0.1")),
                 parentSide = Side.SELL,
                 parentEntryPrice = "1.1000",
             )
