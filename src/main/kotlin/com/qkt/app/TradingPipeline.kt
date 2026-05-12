@@ -127,7 +127,8 @@ class TradingPipeline(
                 bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
             }
         }
-        bus.subscribe<TickEvent> { _ ->
+        bus.subscribe<TickEvent> { e ->
+            strategyPositions.onTick(e.tick.symbol, e.tick.price)
             riskState.onTick()
             riskEngine.evaluateHaltRules()
         }
