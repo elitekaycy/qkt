@@ -26,6 +26,18 @@ data class StreamFieldRef(
     val field: String,
 ) : ExprAst
 
+data class NowAccessor(
+    val field: NowField,
+) : ExprAst
+
+enum class NowField {
+    HOUR_UTC,
+    MINUTE_UTC,
+    WEEKDAY,
+    DATE_UTC,
+    EPOCH_MS,
+}
+
 data class IndicatorCall(
     val name: String,
     val args: List<ExprAst>,

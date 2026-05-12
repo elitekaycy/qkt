@@ -24,6 +24,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
+import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Sell
@@ -52,6 +53,7 @@ fun mergeDefaults(
         is Buy -> Buy(action.stream, mergeOpts(action.opts, defaults, action.stream))
         is Sell -> Sell(action.stream, mergeOpts(action.opts, defaults, action.stream))
         is Block -> Block(action.actions.map { mergeDefaults(it, defaults) })
+        is OcoEntry -> OcoEntry(mergeDefaults(action.leg1, defaults), mergeDefaults(action.leg2, defaults))
         else -> action
     }
 }
