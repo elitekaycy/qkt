@@ -108,6 +108,47 @@ class MT5Client(
         return resp.use { it.body?.string().orEmpty() }
     }
 
+    /**
+     * Modify a working order. Returns the gateway's [MT5OrderResponse] — successful when
+     * [MT5OrderResult.retcode] is `MT5_TRADE_RETCODE_DONE`.
+     *
+     * If the gateway doesn't implement `/modify-order` it returns 404; the response
+     * carries a non-success retcode and the caller treats it as a rejection.
+     */
+    fun modifyOrder(
+        ticket: Long,
+        mods: MT5OrderModification,
+    ): MT5OrderResponse {
+        val body = encodeModification(mods).toRequestBody(JSON_MEDIA)
+        val request =
+            Request
+                .Builder()
+                .url("$gatewayUrl/modify-order/$ticket")
+                .post(body)
+                .build()
+        val resp = http.newCall(request).execute()
+        resp.use {
+            val raw = it.body?.string().orEmpty()
+            if (!it.isSuccessful) {
+                return MT5OrderResponse(
+                    result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
+                    errorMessage = "HTTP ${it.code}: $raw",
+                )
+            }
+            return parseOrderResponse(raw)
+        }
+    }
+
+    private fun encodeModification(m: MT5OrderModification): String {
+        val fields = mutableListOf<String>()
+        if (m.price != null) fields += "\"price\":${m.price.toPlainString()}"
+        if (m.sl != null) fields += "\"sl\":${m.sl.toPlainString()}"
+        if (m.tp != null) fields += "\"tp\":${m.tp.toPlainString()}"
+        if (m.slDistance != null) fields += "\"sl_distance\":${m.slDistance}"
+        if (m.expiration != null) fields += "\"expiration\":${m.expiration}"
+        return "{" + fields.joinToString(",") + "}"
+    }
+
     private fun getWithRetry(url: String): String? {
         var attempt = 0
         var lastError: Exception? = null
