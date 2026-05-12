@@ -42,3 +42,8 @@ data class Log(
 data class Block(
     val actions: List<ActionAst>,
 ) : ActionAst
+
+data class OcoEntry(
+    val leg1: ActionAst, // Buy or Sell
+    val leg2: ActionAst, // Buy or Sell
+) : ActionAst

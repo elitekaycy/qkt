@@ -12,6 +12,7 @@ The verbs that go after `THEN`. Each action is a complete imperative — "do thi
 | `CLOSE_ALL` | Flatten every open position |
 | `CANCEL <stream>` | Cancel any pending orders on this stream |
 | `CANCEL_ALL` | Cancel every pending order |
+| `OCO_ENTRY { leg1, leg2 }` | Two pending entries linked one-cancels-other; whichever fills, the other auto-cancels |
 | `LOG [WARN|ERROR|DEBUG] "<msg>" [field=expr ...]` | Emit a structured log line (default level is INFO) |
 
 !!! info "Phase 24 — more actions coming"
@@ -108,6 +109,44 @@ WHEN regime_changed
 THEN CANCEL btc      -- abandon unfilled stack layers
      CLOSE btc       -- close the already-filled portion
 ```
+
+## `OCO_ENTRY { leg1, leg2 }`
+
+Submits two pending entry orders linked one-cancels-other. When either leg fills, the broker auto-cancels the other. Use for breakout straddles where you don't know which direction will resolve first.
+
+```qkt
+OCO_ENTRY {
+    BUY  gold SIZING 0.20 ORDER_TYPE = STOP AT gold.close + 50
+         BRACKET { STOP LOSS BY 180, TAKE PROFIT BY 150 }
+         TIF GTD UNTIL NOW + 10m,
+    SELL gold SIZING 0.20 ORDER_TYPE = STOP AT gold.close - 50
+         BRACKET { STOP LOSS BY 180, TAKE PROFIT BY 150 }
+         TIF GTD UNTIL NOW + 10m
+}
+```
+
+Both legs are submitted to the broker as pending orders (typically `STOP AT` or `LIMIT AT`). Whichever triggers first becomes the live position; the OrderManager cancels the sibling on receipt of the fill event. Each leg carries its own `BRACKET` — when a leg fills, its stop-loss and take-profit attach to that position automatically.
+
+### Children
+
+- **Exactly two legs.** `OCO_ENTRY { ... }` with 0, 1, or 3+ legs is a parse error.
+- **Each leg must be `BUY` or `SELL`.** Including `LOG`, `CLOSE`, or `CANCEL` inside an `OCO_ENTRY` block is a parse error.
+- **Same stream or different streams.** The DSL doesn't restrict; the broker decides. Same-symbol opposite-side is the hedge-straddle case; different-symbol same-side is a pairs-trading entry.
+
+### Time-in-force
+
+The two legs typically share a `TIF GTD UNTIL NOW + <duration>` clause so both expire together if neither triggers. See [NOW](now.md) for relative deadlines.
+
+### Common gotchas
+
+- **Same-bar dual breach.** If a single candle's high and low cross both stop prices, the tiebreak is broker-dependent. In backtest, the leg with the closer trigger to the candle's open fills first.
+- **Broker capability.** Bybit Spot is netting-only and does not support pending-pair OCO. Bybit Linear with hedge-mode and MT5 brokers (Phase 17) do. MT5 native pending-stop routing ships in Phase 26b — until then, OCO_ENTRY strategies run in backtest only.
+- **Pending orders aren't positions.** `POSITION.<stream> = 0` returns true while OCO legs are pending; gate entries with `POSITION.<stream> = 0 AND not has_pending_oco(...)` if you need that distinction.
+
+### What this composes with
+
+- [NOW](now.md) — session-hour gating + `NOW + duration` for GTD expiry
+- [BRACKET](bracket.md) — per-leg SL/TP attached to the surviving fill
 
 ## `LOG`
 

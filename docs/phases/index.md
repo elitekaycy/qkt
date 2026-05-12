@@ -4,6 +4,7 @@ qkt is built in numbered phases. Each phase has a post-merge changelog with usag
 
 ## Recent
 
+- [Phase 26a — Pending-entry OCO DSL surface and clock accessors](phase-26a-pending-oco-and-clock.md)
 - [Phase 23 follow-up — DSL corrections and packaging](phase-23-followup.md)
 - [Phase 23 — DSL catalog expansion](phase-23.md)
 - [Phase 22 — KDoc the public API](phase-22.md)

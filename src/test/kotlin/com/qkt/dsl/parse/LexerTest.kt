@@ -90,6 +90,18 @@ class LexerTest {
     }
 
     @Test
+    fun `NOW and OCO_ENTRY are case-insensitive keywords`() {
+        val tokens = Lexer("NOW now Now OCO_ENTRY oco_entry").tokenize()
+        assertThat(tokens.dropLast(1).map { it.kind }).containsExactly(
+            TokenKind.NOW,
+            TokenKind.NOW,
+            TokenKind.NOW,
+            TokenKind.OCO_ENTRY,
+            TokenKind.OCO_ENTRY,
+        )
+    }
+
+    @Test
     fun `tokenizes comparison operators with longest-match`() {
         val tokens = Lexer("> < >= <= == != =").tokenize()
         assertThat(tokens.dropLast(1).map { it.kind }).containsExactly(

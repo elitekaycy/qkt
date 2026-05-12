@@ -112,6 +112,12 @@ STRAT
     || die "qkt parse failed on smoke strategy"
 ok "qkt parse OK"
 
+# Parse the hedge-straddle example — exercises Phase 26a surface (OCO_ENTRY, NOW).
+# Live MT5 runtime ships in Phase 26b; backtest data isn't bundled here.
+"$INSTALL_QKT" parse "$REPO_ROOT/examples/hedge-straddle/hedge-straddle.qkt" >>"$LOG_FILE" 2>&1 \
+    || die "qkt parse failed on hedge-straddle example"
+ok "hedge-straddle example parses"
+
 # ──────────────────────────────────────────────────────────────────────── #
 # Step 4 — Backtest
 # ──────────────────────────────────────────────────────────────────────── #
