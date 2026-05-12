@@ -1,0 +1,40 @@
+STRATEGY hedge_straddle VERSION 1
+
+# Pending-mode hedge straddle. Places opposite-side STOP entries before each
+# session-hour open. Whichever side breaks first becomes the live position;
+# the other pending order auto-cancels.
+#
+# Designed for XAUUSD on Exness M5, but the same shape works for any liquid
+# instrument with reliable directional moves at session opens.
+#
+# Phase 26a: parse + backtest only. Live MT5 routing ships in Phase 26b.
+# Phase 27 adds conditional-bracketed stacks (the ~148% P&L driver).
+
+SYMBOLS
+    gold = EXNESS:XAUUSD EVERY 5m
+
+DEFAULTS
+    sizing = 0.20
+
+RULES
+    # Pre-session pending placement.
+    # Place orders 5 minutes before each session-hour open, so the pending
+    # stops are live when the hour-open candle prints. The 10-minute GTD
+    # expiry catches sessions that don't move.
+    WHEN NOW.hour_utc IN [6, 7, 12, 13, 14, 15]
+     AND NOW.minute_utc = 55
+     AND POSITION.gold = 0
+    THEN OCO_ENTRY {
+        BUY  gold ORDER_TYPE = STOP AT gold.close + 5
+             BRACKET { STOP LOSS BY 18, TAKE PROFIT BY 15 }
+             TIF GTD UNTIL NOW + 10m,
+        SELL gold ORDER_TYPE = STOP AT gold.close - 5
+             BRACKET { STOP LOSS BY 18, TAKE PROFIT BY 15 }
+             TIF GTD UNTIL NOW + 10m
+    }
+
+    # Winner timeout: flatten after 2 hours regardless of P&L state.
+    # holding_duration is seconds since position open.
+    WHEN POSITION.gold != 0
+     AND POSITION.gold.holding_duration > 7200
+    THEN CLOSE gold ; LOG "winner timeout" pnl=POSITION.gold.pnl
