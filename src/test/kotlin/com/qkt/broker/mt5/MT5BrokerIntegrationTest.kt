@@ -150,6 +150,70 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `pending fill propagates via position poller (phase 26c)`() {
+        // Use a fresh broker with a fast poll interval so the test can observe the open detection.
+        broker.shutdown()
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100,
+            )
+        val fastBroker = MT5Broker(fastProfile, bus, FixedClock(time = 1_700_000_000_000L))
+
+        // Place pending stop
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":777,"deal":0,"price":"1.1050","comment":"ok"}}""",
+            ),
+        )
+        val req =
+            OrderRequest.Stop(
+                id = "stop-26c",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        captured.clear()
+        fastBroker.submit(req)
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>()).hasSize(1)
+
+        // Now the poller will tick every 100ms — enqueue a `/positions` response with our
+        // ticket. The broker's onPendingPositionOpened callback should fire and emit OrderFilled.
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":777,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1050",""" +
+                    """"sl":"0","tp":"0","profit":"0","magic":10001,"open_time":"1700000000","comment":"stop-26c"}]""",
+            ),
+        )
+
+        // Allow time for the poller to tick at least once
+        val deadline = System.currentTimeMillis() + 3_000L
+        while (System.currentTimeMillis() < deadline &&
+            captured.none { it is BrokerEvent.OrderFilled && it.clientOrderId == "stop-26c" }
+        ) {
+            Thread.sleep(50)
+        }
+        fastBroker.shutdown()
+
+        val filled =
+            captured.filterIsInstance<BrokerEvent.OrderFilled>().firstOrNull { it.clientOrderId == "stop-26c" }
+                ?: error("OrderFilled with clientOrderId=stop-26c never published; captured=$captured")
+        assertThat(filled.brokerOrderId).isEqualTo("777")
+        assertThat(filled.symbol).isEqualTo("EURUSD")
+        assertThat(filled.side).isEqualTo(Side.BUY)
+        assertThat(filled.price).isEqualByComparingTo("1.1050")
+        assertThat(filled.strategyId).isEqualTo("s1")
+    }
+
+    @Test
     fun `IfTouched is rejected since DSL surface and translator both miss it`() {
         val req =
             OrderRequest.IfTouched(

@@ -46,15 +46,15 @@ Spec: [`docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.m
 | `TIF GTD UNTIL now + <duration>` | Auto-expire pending orders after a relative window | Use `TIF GTD UNTIL <absolute-epoch-ms>` and compute the timestamp at strategy-author time (only works in offline contexts) |
 | Mock broker OCO fidelity verified | Confidence that backtests of OCO_ENTRY strategies are deterministic and correct | None — `StandaloneOCO` mock-broker behavior is currently unverified |
 
-## Phase 26c — pending-order fill-event lifecycle
+## Phase 26d — `/orders` endpoint, PERCENT trailing, order modification
 
-Spec to be written. Phase 26b shipped native MT5 translation for `Stop`, `Limit`, `StopLimit`, `StandaloneOCO`, and `TrailingStop`, plus capability declarations. Pending placements succeed live, but qkt-side `OrderFilled` events for these shapes arrive lazily via the existing position poller (which detects new positions appearing on the venue). Phase 26c adds a dedicated pending-order poller that:
+Spec to be written. Phase 26c shipped pending-order fill-event detection via the position poller, which closes the OCO sibling cancel-on-fill loop end-to-end live on MT5. Three remaining gaps depend on mt5-gateway-side capabilities:
 
 | Feature | What you'll be able to do | Workaround today |
 | --- | --- | --- |
-| Pending-order poller | Detect fills/cancels for pending shapes within seconds, not minutes | Position poller catches fills eventually; OCO sibling cancel-on-fill may lag |
-| OCO native sibling cancellation across MT5 tickets | Sub-second cancel-on-fill propagation via fill-event correlation | Place OCO works; cancellation of the survivor happens via the OrderManager's existing `siblings[]` map but only after the fill event propagates back through the lazy poller |
-| Pending order modification | Modify SL/TP or trigger price on a working pending order | None — modify a position post-fill, or cancel + re-submit |
+| `/orders` endpoint integration | Detect GTD-expired and externally-cancelled pending orders in qkt's local state | Stale pending tickets accumulate in `MT5Broker.pendingByTicket` until daemon restart |
+| PERCENT mode trailing stops | `OrderRequest.TrailingStop` with `trailMode = PERCENT` on MT5 live | Use ABSOLUTE mode (already supported) and compute the equivalent absolute distance at strategy-author time |
+| Order modification surface | Modify a working pending order's trigger price, SL, or TP without cancel+resubmit | Cancel + resubmit |
 
 ## Phase 27 — conditional bracketed stacks
 
