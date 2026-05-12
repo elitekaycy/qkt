@@ -9,7 +9,6 @@ import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
-import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
@@ -46,6 +45,7 @@ import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
+import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
@@ -469,7 +469,8 @@ class Parser(
                             "DATE_UTC" -> NowField.DATE_UTC
                             "EPOCH_MS" -> NowField.EPOCH_MS
                             else -> {
-                                errors += ParseError(fieldTok.line, fieldTok.col, "unknown NOW field: ${fieldTok.lexeme}")
+                                errors +=
+                                    ParseError(fieldTok.line, fieldTok.col, "unknown NOW field: ${fieldTok.lexeme}")
                                 NowField.EPOCH_MS
                             }
                         }

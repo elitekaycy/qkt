@@ -8,7 +8,6 @@ import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
-import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
@@ -25,6 +24,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
+import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Sell
