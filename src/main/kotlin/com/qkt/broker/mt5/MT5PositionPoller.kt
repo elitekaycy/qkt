@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.marketdata.MarketPriceProvider
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
@@ -28,6 +29,21 @@ class MT5PositionPoller(
      * Default `null` keeps existing test fixtures backward-compatible.
      */
     private val onPositionOpened: ((MT5Position) -> Unit)? = null,
+    /**
+     * Resolves a closed position ticket to the qkt-side (clientOrderId, strategyId)
+     * pair so the synthesized [BrokerEvent.OrderFilled] flows through the per-strategy
+     * filters in [com.qkt.app.TradingPipeline]. Returns null for positions opened
+     * outside of this qkt session (manual user trades, another instance with the same
+     * magic, pre-session positions before [MT5StateRecovery] runs).
+     */
+    private val closedTicketMeta: ((Long) -> ClosedPositionMeta?)? = null,
+    /**
+     * Best-effort source for the close price. The position snapshot diff only tells
+     * us *that* a ticket closed, not at what price — the venue has already discarded
+     * the position by the time we observe it gone. The latest market tick is the
+     * closest proxy available without a separate deal-history API call.
+     */
+    private val priceProvider: MarketPriceProvider? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PositionPoller::class.java)
     private val running = AtomicBoolean(false)
@@ -64,22 +80,36 @@ class MT5PositionPoller(
         thread = null
     }
 
-    private fun tick() {
+    internal fun tick() {
         val current = client.getPositions(magic = profile.magic).associateBy { it.ticket }
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
             val p = lastSnapshot[ticket] ?: continue
             val qktSymbol = symbol.toQkt(p.symbol)
             val closeSide = if (p.type == 0) Side.SELL else Side.BUY
+            val meta = closedTicketMeta?.invoke(ticket)
+            val clientOrderId =
+                meta?.clientOrderId
+                    ?: "mt5-close-$ticket".also {
+                        log.warn(
+                            "MT5 poller for {} saw ticket {} close with no qkt-side meta — " +
+                                "emitting close event with synthetic id and blank strategyId. " +
+                                "Position was likely opened outside this qkt session.",
+                            profile.name,
+                            ticket,
+                        )
+                    }
+            val strategyId = meta?.strategyId ?: ""
+            val closePrice = priceProvider?.lastPrice(qktSymbol) ?: p.priceOpen
             bus.publish(
                 BrokerEvent.OrderFilled(
-                    clientOrderId = "mt5-close-$ticket",
+                    clientOrderId = clientOrderId,
                     brokerOrderId = ticket.toString(),
                     symbol = qktSymbol,
                     side = closeSide,
-                    price = p.priceOpen,
+                    price = closePrice,
                     quantity = p.volume,
-                    strategyId = "",
+                    strategyId = strategyId,
                     timestamp = clock.now(),
                 ),
             )
@@ -92,3 +122,14 @@ class MT5PositionPoller(
         lastSnapshot = current
     }
 }
+
+/**
+ * Meta the poller needs to publish a useful close [BrokerEvent.OrderFilled] when a
+ * ticket disappears from the venue snapshot. Populated by [MT5Broker] as positions
+ * open (either synchronously from a Market/Bracket fill, or asynchronously when a
+ * pending order transitions to a position).
+ */
+data class ClosedPositionMeta(
+    val clientOrderId: String,
+    val strategyId: String,
+)
