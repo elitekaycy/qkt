@@ -20,6 +20,14 @@ class MT5PositionPoller(
     private val symbol: MT5Symbol,
     private val bus: EventBus,
     private val clock: Clock,
+    /**
+     * Invoked when a position appears in the venue snapshot that wasn't there last tick.
+     *
+     * Phase 26c: the broker uses this to correlate a venue ticket back to a qkt-side
+     * pending order id and emit the matching [com.qkt.events.BrokerEvent.OrderFilled].
+     * Default `null` keeps existing test fixtures backward-compatible.
+     */
+    private val onPositionOpened: ((MT5Position) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PositionPoller::class.java)
     private val running = AtomicBoolean(false)
@@ -75,6 +83,11 @@ class MT5PositionPoller(
                     timestamp = clock.now(),
                 ),
             )
+        }
+        val opened = current.keys - lastSnapshot.keys
+        for (ticket in opened) {
+            val p = current[ticket] ?: continue
+            onPositionOpened?.invoke(p)
         }
         lastSnapshot = current
     }
