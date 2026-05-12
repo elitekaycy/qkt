@@ -48,7 +48,7 @@ Spec: [`docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.m
 
 ## Phase 26d — `/orders` endpoint, PERCENT trailing, order modification
 
-Spec to be written. Phase 26c shipped pending-order fill-event detection via the position poller, which closes the OCO sibling cancel-on-fill loop end-to-end live on MT5. Three remaining gaps depend on mt5-gateway-side capabilities:
+Spec: [`docs/superpowers/specs/2026-05-12-phase26d-orders-percent-modify-design.md`](superpowers/specs/2026-05-12-phase26d-orders-percent-modify-design.md). Three independent capabilities that together complete the MT5 broker. Each has its own mt5-gateway dependency — they ship piecewise as gateway-side capabilities arrive, but live in one phase because they share the same audit and integration test surface.
 
 | Feature | What you'll be able to do | Workaround today |
 | --- | --- | --- |
@@ -58,13 +58,14 @@ Spec to be written. Phase 26c shipped pending-order fill-event detection via the
 
 ## Phase 27 — conditional bracketed stacks
 
-Spec to be written when Phase 26 is closer to shipping. Adds **independent stacks during a live position's lifecycle**, MFE-and-time gated, each with its own bracket. Unlocks the full hedge-straddle P&L profile (Phase 26 ports the pre-stack version which captures the strategy logic but misses ~148% of the P&L per the production backtest).
+Spec: [`docs/superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md`](superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md). Adds **independent stacks during a live position's lifecycle**, MFE-and-time gated, each with its own bracket. Unlocks the full hedge-straddle P&L profile (Phase 26 ports the pre-stack version which captures the strategy logic but misses ~148% of the P&L per the production backtest). Requires a real model change: multi-position-per-symbol tracking with per-position lifecycles.
 
 | Feature | What you'll be able to write | Workaround today |
 | --- | --- | --- |
-| `STACK_AT MFE >= N PIPS WITHIN M MINUTES BRACKET { ... }` (one clause per stack tier) | Independent micro-trades opened opportunistically when the primary winner proves conviction | None — qkt's `STACK` clause models pyramiding-into-trend with shared bracket and sequential triggering; hedge-straddle stacks need per-layer brackets, simultaneous firing, and conditional triggering during WINNER phase |
-| `StackPosition` sibling of `Position` | Each stack tracked with its own broker ticket and bracket | None — the position model assumes one net position per symbol |
-| Per-broker stack capability declaration | Compile-time error if a strategy uses `STACK_AT` against a netting-only broker | None — runtime failures only |
+| `STACK_AT MFE >= N WITHIN M BRACKET { ... }` (one clause per stack tier) | Independent micro-trades opened opportunistically when the primary winner proves conviction | None — qkt's `STACK` clause models pyramiding-into-trend with shared bracket and sequential triggering; hedge-straddle stacks need per-layer brackets, simultaneous firing, and conditional triggering during WINNER phase |
+| `LegBook` replaces singular `Position` per symbol | Each stack tracked with its own broker ticket, leg id, and bracket | None — the position model assumes one net position per symbol |
+| `POSITION.<stream>.mfe` accessor | Max favorable excursion since the position opened, available in DSL conditions | None — strategies can't read MFE from the DSL |
+| `OrderTypeCapability.MULTI_POSITION_PER_SYMBOL` declaration | Compile-time error if a strategy uses `STACK_AT` against a netting-only broker (Bybit Spot, Bybit Linear in one-way mode) | None — runtime failures only |
 
 ## Phase 28+ — exploratory
 
