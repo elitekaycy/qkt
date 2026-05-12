@@ -73,6 +73,17 @@ class MT5Client(
         return arr.map { parsePosition(it.jsonObject) }
     }
 
+    /**
+     * Fetch the venue's working (pending) orders. Empty list if the gateway doesn't
+     * expose `/orders` (returns 404 → handled by [getWithRetry] returning null).
+     */
+    fun getPendingOrders(magic: Int? = null): List<MT5PendingOrder> {
+        val url = if (magic != null) "$gatewayUrl/orders?magic=$magic" else "$gatewayUrl/orders"
+        val raw = getWithRetry(url) ?: return emptyList()
+        val arr = json.parseToJsonElement(raw).jsonArray
+        return arr.map { parsePendingOrder(it.jsonObject) }
+    }
+
     fun getTick(brokerSymbol: String): MT5Tick? {
         val url = "$gatewayUrl/tick?symbol=$brokerSymbol"
         val raw = getWithRetry(url) ?: return null
@@ -176,6 +187,24 @@ class MT5Client(
             profit = obj["profit"]!!.jsonPrimitive.content.toBigDecimal(),
             magic = obj["magic"]!!.jsonPrimitive.content.toInt(),
             openTime = rawTime - tzOffsetMs,
+            comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
+        )
+    }
+
+    private fun parsePendingOrder(obj: JsonObject): MT5PendingOrder {
+        val rawTime = obj["time_setup"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        val rawExp = obj["time_expiration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        return MT5PendingOrder(
+            ticket = obj["ticket"]!!.jsonPrimitive.content.toLong(),
+            symbol = obj["symbol"]!!.jsonPrimitive.content,
+            type = obj["type"]!!.jsonPrimitive.content,
+            volume = obj["volume"]!!.jsonPrimitive.content.toBigDecimal(),
+            priceOpen = obj["price_open"]!!.jsonPrimitive.content.toBigDecimal(),
+            sl = obj["sl"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            tp = obj["tp"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            timeSetup = rawTime - tzOffsetMs,
+            timeExpiration = if (rawExp == 0L) 0L else rawExp - tzOffsetMs,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
         )
     }
