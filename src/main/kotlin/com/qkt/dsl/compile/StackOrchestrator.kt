@@ -1,0 +1,64 @@
+package com.qkt.dsl.compile
+
+import com.qkt.common.Clock
+import com.qkt.common.Side
+import com.qkt.strategy.Signal
+import java.math.BigDecimal
+
+/**
+ * Per-strategy registry of live [StackEngine]s.
+ *
+ * Phase 27: holds one engine per active PRIMARY leg that has `STACK_AT` clauses.
+ * The runtime feeds the orchestrator three event streams:
+ *   - [onPrimaryFilled]: when a primary BUY/SELL fills — construct an engine for the
+ *     parent leg with its fill price + the action's compiled tiers
+ *   - [onTick]: per market tick — dispatch to every engine whose [parentSymbol] matches
+ *   - [onPrimaryClosed]: when the parent leg closes — destroy the engine
+ *
+ * Stack legs themselves do NOT spawn nested stack engines: only primary fills register
+ * with the orchestrator.
+ */
+class StackOrchestrator(
+    private val clock: Clock,
+    private val emit: (Signal) -> Unit,
+) {
+    private val engines: MutableMap<String, StackEngine> = mutableMapOf()
+
+    fun onPrimaryFilled(
+        parentLegId: String,
+        parentSymbol: String,
+        parentSide: Side,
+        parentEntryPrice: BigDecimal,
+        tiers: List<CompiledStackTier>,
+    ) {
+        if (tiers.isEmpty()) return
+        check(parentLegId !in engines) { "StackEngine already registered for $parentLegId" }
+        engines[parentLegId] =
+            StackEngine(
+                parentLegId = parentLegId,
+                parentSymbol = parentSymbol,
+                parentSide = parentSide,
+                parentEntryPrice = parentEntryPrice,
+                tiers = tiers,
+                clock = clock,
+                emit = emit,
+            )
+    }
+
+    fun onTick(
+        symbol: String,
+        price: BigDecimal,
+    ) {
+        for (engine in engines.values) {
+            if (engine.parentSymbol == symbol) engine.onTick(price)
+        }
+    }
+
+    fun onPrimaryClosed(parentLegId: String) {
+        engines.remove(parentLegId)
+    }
+
+    fun activeCount(): Int = engines.size
+
+    fun hasEngineFor(parentLegId: String): Boolean = parentLegId in engines
+}
