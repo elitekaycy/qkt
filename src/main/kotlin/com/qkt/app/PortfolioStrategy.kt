@@ -8,6 +8,7 @@ import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.EvalContext
 import com.qkt.dsl.compile.ExprCompiler
 import com.qkt.dsl.compile.HubKey
+import com.qkt.dsl.compile.PendingStacks
 import com.qkt.dsl.compile.Value
 import com.qkt.dsl.portfolio.CompiledChild
 import com.qkt.dsl.portfolio.PortfolioCompiled
@@ -44,6 +45,10 @@ class PortfolioStrategy(
 
     override val declaredStreams: Map<String, HubKey> =
         compiled.ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) }
+
+    // Portfolio gate rules cannot themselves carry STACK_AT — only the child strategies
+    // do. The runtime accesses each child's pendingStacks via its DslCompiledStrategy.
+    override val pendingStacks: PendingStacks = PendingStacks()
 
     override val retentionByKey: Map<HubKey, Int> =
         declaredStreams.values.associateWith { 1 } +
