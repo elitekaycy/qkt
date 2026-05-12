@@ -36,6 +36,7 @@ class ActionCompiler(
     private val exprCompiler: ExprCompiler,
     private val strategyLogger: Logger = LoggerFactory.getLogger("com.qkt.dsl.strategy"),
     private val ids: IdGenerator = SequentialIdGenerator(prefix = "dsl-anonymous-"),
+    private val pendingStacks: PendingStacks? = null,
 ) {
     private val orderTypeCompiler = OrderTypeCompiler(exprCompiler)
     private val childPriceResolver = ChildPriceResolver(exprCompiler)
@@ -200,12 +201,17 @@ class ActionCompiler(
 
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING")
 
-        // Fast path: plain market + default TIF + no bracket/OCO/stack + direct qty sizing → emit Signal.Buy/Sell
+        // Pre-compile STACK_AT tiers if present so we can register them on each emit.
+        val stackAtTiers: List<CompiledStackTier> =
+            if (opts.stackAts.isNotEmpty()) StackAtCompiler.compileAll(opts.stackAts) else emptyList()
+
+        // Fast path: plain market + default TIF + no bracket/OCO/stack/stack-at + direct qty sizing → emit Signal.Buy/Sell
         val isFastPath =
             (opts.orderType == null || opts.orderType == Market) &&
                 opts.tif == null &&
                 opts.bracket == null &&
                 opts.oco == null &&
+                stackAtTiers.isEmpty() &&
                 sizing is SizeQty
         if (isFastPath) {
             val qtyExpr = exprCompiler.compile((sizing as SizeQty).expr)
@@ -302,9 +308,31 @@ class ActionCompiler(
                     else -> entryReq
                 }
 
+            if (stackAtTiers.isNotEmpty() && pendingStacks != null) {
+                pendingStacks.register(
+                    PendingStack(
+                        parentClientOrderId = parentClientOrderIdFor(request),
+                        symbol = symbol,
+                        side = side,
+                        tiers = stackAtTiers,
+                    ),
+                )
+            }
+
             listOf(Signal.Submit(request))
         }
     }
+
+    /**
+     * The clientOrderId the broker echoes back on [com.qkt.events.BrokerEvent.OrderFilled]
+     * for the parent leg's primary entry. For a plain Market submit it's the request id;
+     * for a Bracket parent the broker fills the inner entry, so it's [OrderRequest.Bracket.entry.id].
+     */
+    private fun parentClientOrderIdFor(request: OrderRequest): String =
+        when (request) {
+            is OrderRequest.Bracket -> request.entry.id
+            else -> request.id
+        }
 
     private fun compileStack(
         stream: String,

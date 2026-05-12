@@ -32,7 +32,8 @@ class AstCompiler {
         val exprCompiler = ExprCompiler(bindings, aggregates)
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
         val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
-        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids)
+        val pendingStacks = PendingStacks()
+        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids, pendingStacks)
 
         val whenThens: List<WhenThen> =
             ast.rules.map {
@@ -112,6 +113,7 @@ class AstCompiler {
             letCompiledRhs = letCompiledRhs,
             transitions = PositionTransitions(),
             rules = rules,
+            pendingStacks = pendingStacks,
         )
     }
 }
@@ -126,6 +128,7 @@ private class CompiledStrategy(
     private val letCompiledRhs: Map<String, CompiledExpr>,
     private val transitions: PositionTransitions,
     private val rules: List<CompiledRule>,
+    override val pendingStacks: PendingStacks,
 ) : DslCompiledStrategy {
     private val subscribedSymbols: Set<String> = streams.values.map { it.symbol }.toSet()
     private var hubBound: Boolean = false
