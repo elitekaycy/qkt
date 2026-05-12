@@ -36,6 +36,7 @@ class ActionCompiler(
     private val exprCompiler: ExprCompiler,
     private val strategyLogger: Logger = LoggerFactory.getLogger("com.qkt.dsl.strategy"),
     private val ids: IdGenerator = SequentialIdGenerator(prefix = "dsl-anonymous-"),
+    private val pendingStacks: PendingStacks? = null,
 ) {
     private val orderTypeCompiler = OrderTypeCompiler(exprCompiler)
     private val childPriceResolver = ChildPriceResolver(exprCompiler)
@@ -195,17 +196,34 @@ class ActionCompiler(
     ): (EvalContext) -> List<Signal> {
         // Stack path: STACK is mutually exclusive with BRACKET/OCO on the same action.
         if (opts.stack != null) {
+            // Phase 27: STACK_AT cannot combine with STACK pyramiding — the runtime
+            // would silently drop the conditional clauses. Reject loudly at compile time.
+            require(opts.stackAts.isEmpty()) {
+                "STACK_AT cannot be combined with STACK on the same action"
+            }
             return compileStack(stream, opts, side)
         }
 
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING")
 
-        // Fast path: plain market + default TIF + no bracket/OCO/stack + direct qty sizing → emit Signal.Buy/Sell
+        // Phase 27: STACK_AT on an OCO parent is silently broken — the OCO id is never
+        // echoed back on a broker fill (the broker fills leg1.id or leg2.id), so the
+        // engine would never be constructed. Reject loudly until OCO leg-id wiring lands.
+        require(!(opts.oco != null && opts.stackAts.isNotEmpty())) {
+            "STACK_AT cannot be combined with OCO on the same action"
+        }
+
+        // Pre-compile STACK_AT tiers if present so we can register them on each emit.
+        val stackAtTiers: List<CompiledStackTier> =
+            if (opts.stackAts.isNotEmpty()) StackAtCompiler.compileAll(opts.stackAts) else emptyList()
+
+        // Fast path: plain market + default TIF + no bracket/OCO/stack/stack-at + direct qty sizing → emit Signal.Buy/Sell
         val isFastPath =
             (opts.orderType == null || opts.orderType == Market) &&
                 opts.tif == null &&
                 opts.bracket == null &&
                 opts.oco == null &&
+                stackAtTiers.isEmpty() &&
                 sizing is SizeQty
         if (isFastPath) {
             val qtyExpr = exprCompiler.compile((sizing as SizeQty).expr)
@@ -302,9 +320,47 @@ class ActionCompiler(
                     else -> entryReq
                 }
 
+            if (stackAtTiers.isNotEmpty() && pendingStacks != null) {
+                pendingStacks.register(
+                    PendingStack(
+                        parentClientOrderId = parentClientOrderIdFor(request),
+                        symbol = symbol,
+                        side = side,
+                        tiers = stackAtTiers,
+                        closeWatchIds = closeWatchIdsFor(request),
+                    ),
+                )
+            }
+
             listOf(Signal.Submit(request))
         }
     }
+
+    /**
+     * The clientOrderId the broker echoes back on [com.qkt.events.BrokerEvent.OrderFilled]
+     * for the parent leg's primary entry. For a plain Market submit it's the request id;
+     * for a Bracket parent the broker fills the inner entry, so it's [OrderRequest.Bracket.entry.id].
+     */
+    private fun parentClientOrderIdFor(request: OrderRequest): String =
+        when (request) {
+            is OrderRequest.Bracket -> request.entry.id
+            else -> request.id
+        }
+
+    /**
+     * Predicted clientOrderIds whose fill signals that the parent leg has closed. For
+     * Bracket parents this matches the deterministic naming in
+     * [com.qkt.app.OrderManager.submitBracketFallback]: `<bracket-id>-tp` and `<bracket-id>-sl`.
+     *
+     * Phase 27 limitation: this covers the paper/backtest path where bracket-fallback
+     * controls the child ids. Native broker brackets (e.g. MT5) and strategy-initiated
+     * manual closes rely on leg-aware fill routing (a separate task).
+     */
+    private fun closeWatchIdsFor(request: OrderRequest): Set<String> =
+        when (request) {
+            is OrderRequest.Bracket -> setOf("${request.id}-tp", "${request.id}-sl")
+            else -> emptySet()
+        }
 
     private fun compileStack(
         stream: String,

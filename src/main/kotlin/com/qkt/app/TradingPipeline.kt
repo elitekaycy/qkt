@@ -117,15 +117,18 @@ class TradingPipeline(
                 if (gate()) rawEmit(sig)
             }
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
+                requireMultiPositionCapability(strategyId, strategy)
                 for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention)
                 strategy.bindToHub(candleHub, ctx, emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
+                wireStackOrchestrator(strategy, strategyId, emit)
             } else {
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
                 bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
             }
         }
-        bus.subscribe<TickEvent> { _ ->
+        bus.subscribe<TickEvent> { e ->
+            strategyPositions.onTick(e.tick.symbol, e.tick.price)
             riskState.onTick()
             riskEngine.evaluateHaltRules()
         }
@@ -189,5 +192,87 @@ class TradingPipeline(
 
     fun ingestForWarmup(tick: Tick) {
         bus.publish(WarmupTickEvent(tick))
+    }
+
+    /**
+     * Phase 27: refuse to deploy a strategy whose `STACK_AT` symbols route to a broker
+     * that doesn't declare [com.qkt.broker.OrderTypeCapability.MULTI_POSITION_PER_SYMBOL].
+     * The capability is checked per-symbol via [com.qkt.broker.Broker.capabilitiesFor]
+     * so [com.qkt.broker.CompositeBroker] routing differences across symbols are honored.
+     */
+    private fun requireMultiPositionCapability(
+        strategyId: String,
+        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
+    ) {
+        for (symbol in strategy.multiPositionPerSymbolSymbols) {
+            val caps = broker.capabilitiesFor(symbol)
+            require(com.qkt.broker.OrderTypeCapability.MULTI_POSITION_PER_SYMBOL in caps) {
+                "Strategy '$strategyId' uses STACK_AT on $symbol but routing broker " +
+                    "'${broker.name}' does not declare MULTI_POSITION_PER_SYMBOL"
+            }
+        }
+    }
+
+    /**
+     * Phase 27: per-DSL-strategy stack lifecycle. The orchestrator owns one [com.qkt.dsl.compile.StackEngine]
+     * per active PRIMARY leg with `STACK_AT` clauses. On parent-fill it consumes the
+     * matching [com.qkt.dsl.compile.PendingStack] populated by the action compiler.
+     * Stack-emitted signals go through the same [emit] path as user-emitted signals so
+     * risk / ordering / id allocation behave uniformly.
+     *
+     * Parent close detection: when an [BrokerEvent.OrderFilled] for the strategy is NOT
+     * a known primary entry (no pending entry to consume), it's treated as a possible
+     * close — engines watching that id terminate. The action compiler predicts a
+     * Bracket parent's TP/SL ids using OrderManager's deterministic naming. Native
+     * broker brackets and manual closes are not yet covered.
+     */
+    private fun wireStackOrchestrator(
+        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
+        strategyId: String,
+        emit: (com.qkt.strategy.Signal) -> Unit,
+    ) {
+        val orch =
+            com.qkt.dsl.compile.StackOrchestrator(
+                clock = clock,
+                emit = emit,
+                onStackBracketEmit = { bracket, parentLegId ->
+                    // Pre-register the stack's entry fill → STACK leg open, and the bracket's
+                    // TP/SL ids → STACK leg close (using OrderManager.submitBracketFallback's
+                    // deterministic `${bracket.id}-tp` / `-sl` naming).
+                    strategyPositions.registerStackOpen(
+                        strategyId = strategyId,
+                        clientOrderId = bracket.entry.id,
+                        stackLegId = bracket.id,
+                        parentLegId = parentLegId,
+                    )
+                    strategyPositions.registerStackClose(
+                        strategyId = strategyId,
+                        clientOrderId = "${bracket.id}-tp",
+                        stackLegId = bracket.id,
+                    )
+                    strategyPositions.registerStackClose(
+                        strategyId = strategyId,
+                        clientOrderId = "${bracket.id}-sl",
+                        stackLegId = bracket.id,
+                    )
+                },
+            )
+        bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
+        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            if (e.strategyId != strategyId) return@subscribe
+            val pending = strategy.pendingStacks.consume(e.clientOrderId)
+            if (pending != null) {
+                orch.onPrimaryFilled(
+                    parentLegId = pending.parentClientOrderId,
+                    parentSymbol = pending.symbol,
+                    parentSide = pending.side,
+                    parentEntryPrice = e.price,
+                    tiers = pending.tiers,
+                    closeWatchIds = pending.closeWatchIds,
+                )
+            } else {
+                orch.onPossibleClose(e.clientOrderId)
+            }
+        }
     }
 }

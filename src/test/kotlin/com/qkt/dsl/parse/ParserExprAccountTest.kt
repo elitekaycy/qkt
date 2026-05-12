@@ -83,4 +83,11 @@ class ParserExprAccountTest {
         val e = expr("POSITION.btc.holding_duration") as StateAccessor
         assertThat(e.source).isEqualTo(StateSource.POSITION_HOLDING_DURATION)
     }
+
+    @Test
+    fun `parses POSITION dot mfe`() {
+        val e = expr("POSITION.btc.mfe") as StateAccessor
+        assertThat(e.source).isEqualTo(StateSource.POSITION_MFE)
+        assertThat(e.key).isEqualTo("btc")
+    }
 }

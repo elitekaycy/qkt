@@ -67,6 +67,7 @@ import com.qkt.dsl.ast.SnapshotOpen
 import com.qkt.dsl.ast.SnapshotSell
 import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StackAst
+import com.qkt.dsl.ast.StackAtClause
 import com.qkt.dsl.ast.StackDirection
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StackLayer
@@ -433,6 +434,7 @@ class Parser(
                         "realized_pnl" -> StateAccessor(StateSource.POSITION_REALIZED_PNL, streamAlias)
                         "unrealized_pnl" -> StateAccessor(StateSource.POSITION_UNREALIZED_PNL, streamAlias)
                         "holding_duration" -> StateAccessor(StateSource.POSITION_HOLDING_DURATION, streamAlias)
+                        "mfe" -> StateAccessor(StateSource.POSITION_MFE, streamAlias)
                         else -> {
                             errors += ParseError(t.line, t.col, "unknown POSITION accessor: $accessor")
                             PositionRef(streamAlias)
@@ -818,6 +820,7 @@ class Parser(
         var bracket: BracketAst? = null
         var oco: OcoAst? = null
         var stack: StackAst? = null
+        var stackAts: List<StackAtClause> = emptyList()
         loop@ while (true) {
             when (peek().kind) {
                 TokenKind.SIZING -> {
@@ -845,6 +848,9 @@ class Parser(
                     advance()
                     stack = parseStackClause()
                 }
+                TokenKind.STACK_AT -> {
+                    stackAts += parseStackAtClause()
+                }
                 else -> break@loop
             }
         }
@@ -854,7 +860,32 @@ class Parser(
                 "STACK layer-list cannot be combined with outer SIZING; specify size on each layer or remove the layer list",
             )
         }
-        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco, finalStack)
+        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco, finalStack, stackAts)
+    }
+
+    /**
+     * Phase 27: `STACK_AT MFE >= <expr> WITHIN <duration> SIZING <sizing> BRACKET { ... }`.
+     *
+     * The clause attaches to its parent BUY/SELL action. The stack engine fires the stack
+     * when the parent leg's MFE crosses the threshold within the duration window.
+     */
+    private fun parseStackAtClause(): StackAtClause {
+        expect(TokenKind.STACK_AT, "expected STACK_AT")
+        expect(TokenKind.MFE, "expected MFE after STACK_AT")
+        expect(TokenKind.GE, "expected '>=' after MFE in STACK_AT")
+        val threshold = parseExpr()
+        expect(TokenKind.WITHIN, "expected WITHIN after MFE threshold in STACK_AT")
+        val duration = parseDuration()
+        expect(TokenKind.SIZING, "expected SIZING in STACK_AT clause")
+        val sizing = parseSizing()
+        expect(TokenKind.BRACKET, "expected BRACKET in STACK_AT clause")
+        val bracket = parseBracket()
+        return StackAtClause(
+            mfeThreshold = threshold,
+            withinDuration = duration,
+            sizing = sizing,
+            bracket = bracket,
+        )
     }
 
     internal fun parseStackClause(): StackAst {

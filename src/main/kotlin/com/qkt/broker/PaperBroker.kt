@@ -46,6 +46,8 @@ class PaperBroker(
             OrderTypeCapability.STOP,
             OrderTypeCapability.STOP_LIMIT,
             OrderTypeCapability.IF_TOUCHED,
+            // PaperBroker trivially supports multi-leg — each working order has its own id.
+            OrderTypeCapability.MULTI_POSITION_PER_SYMBOL,
         )
 
     override fun submit(request: OrderRequest): SubmitAck {
