@@ -34,4 +34,13 @@ enum class OrderTypeCapability {
 
     /** Server-side trailing stop that follows the favorable price by a fixed distance. */
     TRAILING_STOP,
+
+    /**
+     * The broker supports holding multiple positions on the same symbol simultaneously.
+     *
+     * Phase 27: required for strategies that use `STACK_AT` clauses. MT5 supports this
+     * natively (each ticket is independent). Bybit Linear supports it in hedge mode only.
+     * Bybit Spot is netting-only and does not.
+     */
+    MULTI_POSITION_PER_SYMBOL,
 }
