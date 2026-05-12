@@ -96,6 +96,8 @@ enum class TokenKind {
     SYMBOL,
     NOW,
     OCO_ENTRY,
+    STACK_AT,
+    MFE,
 
     TRUE,
     FALSE,
