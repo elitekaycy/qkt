@@ -57,7 +57,13 @@ class LegBookTest {
         assertThat(book.netQuantity()).isEqualByComparingTo("0.3")
         val view = book.netView()!!
         // weighted: (0.1 × 1.10 + 0.2 × 1.12) / 0.3 = 0.334/0.3 = 1.11333...
-        assertThat(view.avgEntryPrice).isCloseTo(BigDecimal("1.11333333"), org.assertj.core.data.Offset.offset(BigDecimal("0.00001")))
+        assertThat(
+            view.avgEntryPrice,
+        ).isCloseTo(
+            BigDecimal("1.11333333"),
+            org.assertj.core.data.Offset
+                .offset(BigDecimal("0.00001")),
+        )
         assertThat(book.stacks()).hasSize(1)
         assertThat(book.stacks()[0].legId).isEqualTo("s1")
     }
