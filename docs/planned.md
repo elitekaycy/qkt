@@ -46,16 +46,6 @@ Spec: [`docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.m
 | `TIF GTD UNTIL now + <duration>` | Auto-expire pending orders after a relative window | Use `TIF GTD UNTIL <absolute-epoch-ms>` and compute the timestamp at strategy-author time (only works in offline contexts) |
 | Mock broker OCO fidelity verified | Confidence that backtests of OCO_ENTRY strategies are deterministic and correct | None — `StandaloneOCO` mock-broker behavior is currently unverified |
 
-## Phase 26d — `/orders` endpoint, PERCENT trailing, order modification
-
-Spec: [`docs/superpowers/specs/2026-05-12-phase26d-orders-percent-modify-design.md`](superpowers/specs/2026-05-12-phase26d-orders-percent-modify-design.md). Three independent capabilities that together complete the MT5 broker. Each has its own mt5-gateway dependency — they ship piecewise as gateway-side capabilities arrive, but live in one phase because they share the same audit and integration test surface.
-
-| Feature | What you'll be able to do | Workaround today |
-| --- | --- | --- |
-| `/orders` endpoint integration | Detect GTD-expired and externally-cancelled pending orders in qkt's local state | Stale pending tickets accumulate in `MT5Broker.pendingByTicket` until daemon restart |
-| PERCENT mode trailing stops | `OrderRequest.TrailingStop` with `trailMode = PERCENT` on MT5 live | Use ABSOLUTE mode (already supported) and compute the equivalent absolute distance at strategy-author time |
-| Order modification surface | Modify a working pending order's trigger price, SL, or TP without cancel+resubmit | Cancel + resubmit |
-
 ## Phase 27 — conditional bracketed stacks
 
 Spec: [`docs/superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md`](superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md). Adds **independent stacks during a live position's lifecycle**, MFE-and-time gated, each with its own bracket. Unlocks the full hedge-straddle P&L profile (Phase 26 ports the pre-stack version which captures the strategy logic but misses ~148% of the P&L per the production backtest). Requires a real model change: multi-position-per-symbol tracking with per-position lifecycles.

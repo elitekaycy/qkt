@@ -177,9 +177,10 @@ class MT5BrokerIntegrationTest {
                             }
                         }
                         path.startsWith("/orders") -> MockResponse().setBody("[]")
-                        path.startsWith("/order") -> MockResponse().setBody(
-                            """{"result":{"retcode":10009,"order":777,"deal":0,"price":"1.1050","comment":"ok"}}""",
-                        )
+                        path.startsWith("/order") ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":777,"deal":0,"price":"1.1050","comment":"ok"}}""",
+                            )
                         else -> MockResponse().setResponseCode(404)
                     }
                 }
@@ -255,9 +256,10 @@ class MT5BrokerIntegrationTest {
                                 MockResponse().setBody("[]")
                             }
                         }
-                        path.startsWith("/order") -> MockResponse().setBody(
-                            """{"result":{"retcode":10009,"order":999,"deal":0,"price":"1.1050","comment":"ok"}}""",
-                        )
+                        path.startsWith("/order") ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":999,"deal":0,"price":"1.1050","comment":"ok"}}""",
+                            )
                         else -> MockResponse().setResponseCode(404)
                     }
                 }
@@ -302,7 +304,9 @@ class MT5BrokerIntegrationTest {
         fastBroker.shutdown()
 
         val cancelled =
-            captured.filterIsInstance<BrokerEvent.OrderCancelled>().firstOrNull { it.clientOrderId == "stop-26d-cancel" }
+            captured.filterIsInstance<BrokerEvent.OrderCancelled>().firstOrNull {
+                it.clientOrderId == "stop-26d-cancel"
+            }
                 ?: error("OrderCancelled with clientOrderId=stop-26d-cancel never published; captured=$captured")
         assertThat(cancelled.brokerOrderId).isEqualTo("999")
         assertThat(cancelled.reason).contains("external or gtd-expired")
