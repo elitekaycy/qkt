@@ -125,20 +125,46 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
-    fun `non-native order type returns rejection without HTTP call`() {
-        val limit =
-            OrderRequest.Limit(
-                id = "l-1",
+    fun `submit pending stop emits accepted but defers filled`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":42,"deal":0,"price":"1.1050","comment":"ok"}}""",
+            ),
+        )
+        val req =
+            OrderRequest.Stop(
+                id = "stop-1",
                 symbol = "EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
-                limitPrice = BigDecimal("1.1000"),
+                stopPrice = BigDecimal("1.1050"),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
             )
-        val ack = broker.submit(limit)
+        val ack = broker.submit(req)
+        assertThat(ack.accepted).isTrue
+        // OrderAccepted but no OrderFilled — pending fills arrive via the position poller in Phase 26c.
+        assertThat(captured).hasSize(1)
+        assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
+    }
+
+    @Test
+    fun `IfTouched is rejected since DSL surface and translator both miss it`() {
+        val req =
+            OrderRequest.IfTouched(
+                id = "it-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                triggerPrice = BigDecimal("1.1050"),
+                onTrigger = com.qkt.execution.TriggerType.MARKET,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val ack = broker.submit(req)
         assertThat(ack.accepted).isFalse
-        assertThat(ack.rejectReason).contains("not natively")
+        assertThat(ack.rejectReason).containsIgnoringCase("does not translate")
     }
 }
