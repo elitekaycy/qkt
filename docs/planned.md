@@ -46,15 +46,15 @@ Spec: [`docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.m
 | `TIF GTD UNTIL now + <duration>` | Auto-expire pending orders after a relative window | Use `TIF GTD UNTIL <absolute-epoch-ms>` and compute the timestamp at strategy-author time (only works in offline contexts) |
 | Mock broker OCO fidelity verified | Confidence that backtests of OCO_ENTRY strategies are deterministic and correct | None — `StandaloneOCO` mock-broker behavior is currently unverified |
 
-## Phase 26b — MT5 native pending + OCO routing
+## Phase 26c — pending-order fill-event lifecycle
 
-Spec to be written when Phase 26a merges. The MT5 broker today translates only `Market` and `Bracket` (`MT5OrderTranslator.kt:12-20`); all other shapes hit an `error("MT5 v1 does not natively translate ...")`. Phase 26b adds native MT5 translation for the pending-order family and the cancel-on-fill linkage that hedge-straddle's pending mode requires.
+Spec to be written. Phase 26b shipped native MT5 translation for `Stop`, `Limit`, `StopLimit`, `StandaloneOCO`, and `TrailingStop`, plus capability declarations. Pending placements succeed live, but qkt-side `OrderFilled` events for these shapes arrive lazily via the existing position poller (which detects new positions appearing on the venue). Phase 26c adds a dedicated pending-order poller that:
 
 | Feature | What you'll be able to do | Workaround today |
 | --- | --- | --- |
-| MT5 native pending stop / limit orders | Run any DSL strategy that uses `STOP AT` / `LIMIT AT` on Exness/ICMarkets/FTMO/Pepperstone live | Strategies that submit pending orders are rejected at broker submit time |
-| MT5 OCO routing | Run hedge-straddle and other pending-OCO strategies live on MT5 | Backtest-only after Phase 26a |
-| Cancel-on-fill across two MT5 tickets | Reliable single-leg fill semantics for OCO groups | Not applicable — OCO doesn't route at all today |
+| Pending-order poller | Detect fills/cancels for pending shapes within seconds, not minutes | Position poller catches fills eventually; OCO sibling cancel-on-fill may lag |
+| OCO native sibling cancellation across MT5 tickets | Sub-second cancel-on-fill propagation via fill-event correlation | Place OCO works; cancellation of the survivor happens via the OrderManager's existing `siblings[]` map but only after the fill event propagates back through the lazy poller |
+| Pending order modification | Modify SL/TP or trigger price on a working pending order | None — modify a position post-fill, or cancel + re-submit |
 
 ## Phase 27 — conditional bracketed stacks
 

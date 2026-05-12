@@ -140,7 +140,7 @@ The two legs typically share a `TIF GTD UNTIL NOW + <duration>` clause so both e
 ### Common gotchas
 
 - **Same-bar dual breach.** If a single candle's high and low cross both stop prices, the tiebreak is broker-dependent. In backtest, the leg with the closer trigger to the candle's open fills first.
-- **Broker capability.** Bybit Spot is netting-only and does not support pending-pair OCO. Bybit Linear with hedge-mode and MT5 brokers (Phase 17) do. MT5 native pending-stop routing ships in Phase 26b — until then, OCO_ENTRY strategies run in backtest only.
+- **Broker capability.** Bybit Spot is netting-only and does not support pending-pair OCO. Bybit Linear with hedge-mode and MT5 brokers (Phase 17 + 26b) do. As of Phase 26b, MT5 translates the pending family natively (BUY_STOP, SELL_STOP, BUY_LIMIT, SELL_LIMIT, BUY_STOP_LIMIT, SELL_STOP_LIMIT, server-side trailing). Async fill-event lifecycle (cancel-on-fill across MT5 tickets) lands in Phase 26c — until then, pending placements succeed live but qkt-side fill events for pending shapes arrive lazily via the position poller.
 - **Pending orders aren't positions.** `POSITION.<stream> = 0` returns true while OCO legs are pending; gate entries with `POSITION.<stream> = 0 AND not has_pending_oco(...)` if you need that distinction.
 
 ### What this composes with

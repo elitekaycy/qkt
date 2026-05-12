@@ -7,6 +7,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
@@ -20,6 +21,13 @@ import org.slf4j.LoggerFactory
  * The profile determines venue identity, symbol policy (suffix translation), magic
  * number, and capability restrictions. See [MT5DefaultProfiles] for shipped templates
  * (Exness, ICMarkets, FTMO, Pepperstone) and [MT5BrokerProfileLoader] for YAML config.
+ *
+ * Phase 26b note: market/bracket orders publish `OrderFilled` synchronously after
+ * successful placement (the venue fills immediately). Pending shapes (Stop, Limit,
+ * StopLimit, TrailingStop, StandaloneOCO) publish `OrderAccepted` and rely on the
+ * position poller for eventual fill detection. End-to-end pending-order lifecycle
+ * (fill detection via position deltas, OCO sibling cancel-on-fill via ticket
+ * correlation) is Phase 26c.
  */
 class MT5Broker(
     private val profile: MT5BrokerProfile,
@@ -42,6 +50,9 @@ class MT5Broker(
     private val poller = MT5PositionPoller(client, profile, mt5Symbol, bus, clock)
     private val stateRecovery = MT5StateRecovery(client, profile, mt5Symbol, bus)
 
+    /** orderId → MT5 ticket. Populated on pending placement; used by [cancel]. */
+    private val pendingTickets: MutableMap<String, Long> = ConcurrentHashMap()
+
     init {
         try {
             stateRecovery.recover()
@@ -54,37 +65,29 @@ class MT5Broker(
     override fun supports(symbol: String): Boolean = true
 
     override fun submit(request: OrderRequest): SubmitAck {
-        if (request !is OrderRequest.Market && request !is OrderRequest.Bracket) {
-            return SubmitAck(
-                clientOrderId = request.id,
-                brokerOrderId = null,
-                accepted = false,
-                rejectReason =
-                    "MT5 v1 does not natively support ${request::class.simpleName}; " +
-                        "engine fallback required",
-            )
+        val translation =
+            runCatching { translator.translate(request) }.getOrElse { ex ->
+                return reject(request, ex.message ?: "translation failed")
+            }
+
+        return when (translation) {
+            is MT5Translation.Single -> submitSingle(request, translation.request)
+            is MT5Translation.Composite -> submitComposite(request, translation)
         }
-        val mt5Req = translator.translate(request)
-        val resp = client.placeOrder(mt5Req)
+    }
+
+    private fun submitSingle(
+        request: OrderRequest,
+        wire: MT5OrderRequest,
+    ): SubmitAck {
+        val resp = client.placeOrder(wire)
         if (!isOrderSuccessful(resp.result.retcode)) {
-            val reason = resp.errorMessage ?: "retcode=${resp.result.retcode}"
-            bus.publish(
-                BrokerEvent.OrderRejected(
-                    clientOrderId = request.id,
-                    brokerOrderId = null,
-                    reason = reason,
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
-            return SubmitAck(
-                clientOrderId = request.id,
-                brokerOrderId = null,
-                accepted = false,
-                rejectReason = reason,
-            )
+            return reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
         }
-        val brokerOrderId = resp.result.deal.toString()
+        val brokerOrderId =
+            resp.result.order
+                .takeIf { it != 0L }
+                ?.toString() ?: resp.result.deal.toString()
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
@@ -93,18 +96,26 @@ class MT5Broker(
                 timestamp = clock.now(),
             ),
         )
-        bus.publish(
-            BrokerEvent.OrderFilled(
-                clientOrderId = request.id,
-                brokerOrderId = brokerOrderId,
-                symbol = request.symbol,
-                side = request.side,
-                price = resp.result.price,
-                quantity = request.quantity,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
+        // Market/Bracket fill synchronously; pending shapes wait for the position poller.
+        if (request is OrderRequest.Market || request is OrderRequest.Bracket) {
+            bus.publish(
+                BrokerEvent.OrderFilled(
+                    clientOrderId = request.id,
+                    brokerOrderId = brokerOrderId,
+                    symbol = request.symbol,
+                    side = request.side,
+                    price = resp.result.price,
+                    quantity = request.quantity,
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+        } else {
+            // Pending: track ticket so we can cancel by orderId later
+            resp.result.order
+                .takeIf { it != 0L }
+                ?.let { pendingTickets[request.id] = it }
+        }
         return SubmitAck(
             clientOrderId = request.id,
             brokerOrderId = brokerOrderId,
@@ -112,8 +123,80 @@ class MT5Broker(
         )
     }
 
+    private fun submitComposite(
+        request: OrderRequest,
+        composite: MT5Translation.Composite,
+    ): SubmitAck {
+        // Submit each leg; if any leg rejects, the OCO group is degraded.
+        // The OrderManager already tracks sibling relationships in `siblings[]`.
+        val firstBrokerId =
+            composite.requests
+                .mapIndexed { _, wire ->
+                    val resp = client.placeOrder(wire)
+                    if (!isOrderSuccessful(resp.result.retcode)) {
+                        log.warn(
+                            "MT5Broker ${profile.name} OCO leg ${wire.comment} rejected: " +
+                                "${resp.errorMessage ?: "retcode=${resp.result.retcode}"}",
+                        )
+                        null
+                    } else {
+                        resp.result.order
+                    }
+                }.firstOrNull { it != null && it != 0L }
+                ?.toString() ?: composite.groupId
+
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = request.id,
+                brokerOrderId = firstBrokerId,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        return SubmitAck(
+            clientOrderId = request.id,
+            brokerOrderId = firstBrokerId,
+            accepted = true,
+        )
+    }
+
+    private fun reject(
+        request: OrderRequest,
+        reason: String,
+    ): SubmitAck {
+        bus.publish(
+            BrokerEvent.OrderRejected(
+                clientOrderId = request.id,
+                brokerOrderId = null,
+                reason = reason,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        return SubmitAck(
+            clientOrderId = request.id,
+            brokerOrderId = null,
+            accepted = false,
+            rejectReason = reason,
+        )
+    }
+
     override fun cancel(orderId: String) {
-        // v1: no native pending orders — nothing to cancel server-side.
+        val ticket = pendingTickets.remove(orderId) ?: return
+        runCatching { client.cancelOrder(ticket) }
+            .onSuccess {
+                bus.publish(
+                    BrokerEvent.OrderCancelled(
+                        clientOrderId = orderId,
+                        brokerOrderId = ticket.toString(),
+                        reason = "user cancel",
+                        strategyId = "",
+                        timestamp = clock.now(),
+                    ),
+                )
+            }.onFailure { e ->
+                log.warn("MT5Broker ${profile.name} cancel($orderId, ticket=$ticket) failed: ${e.message}")
+            }
     }
 
     fun shutdown() {

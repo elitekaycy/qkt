@@ -25,11 +25,11 @@ class DaemonCommand(
         // Sub-subcommand dispatch (implemented further in Task 9): `qkt daemon stop|status`.
         // The sub-subcommand, if present, is always argv[1] before any flags.
         return when (val sub = args.firstNonOption()) {
-            null -> startDaemon()
+            null, "start" -> startDaemon()
             "stop" -> stopDaemon()
             "status" -> statusDaemon()
             else -> {
-                System.err.println("qkt: unknown daemon subcommand '$sub'")
+                System.err.println("qkt: unknown daemon subcommand '$sub' (expected: start, stop, status)")
                 ExitCodes.ARG_ERROR
             }
         }
