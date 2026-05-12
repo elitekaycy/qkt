@@ -58,6 +58,8 @@ class MT5Broker(
             bus,
             clock,
             onPositionOpened = ::onPendingPositionOpened,
+            closedTicketMeta = ::lookupClosedTicketMeta,
+            priceProvider = priceTracker,
         )
     private val pendingPoller =
         MT5PendingOrderPoller(
@@ -72,6 +74,16 @@ class MT5Broker(
 
     /** Reverse: MT5 ticket → metadata for emitting OrderFilled when the pending fills. */
     private val pendingByTicket: MutableMap<Long, PendingMeta> = ConcurrentHashMap()
+
+    /**
+     * Open positions opened by this qkt session, keyed by MT5 ticket. Lets
+     * [MT5PositionPoller] resolve a closed ticket back to (clientOrderId, strategyId)
+     * when it observes the ticket disappear. Populated by:
+     *   - [submitSingle] on synchronous Market/Bracket fills
+     *   - [onPendingPositionOpened] when a pending order transitions to a position
+     * Entries are removed when the poller publishes the close event.
+     */
+    private val positionMetaByTicket: MutableMap<Long, PendingMeta> = ConcurrentHashMap()
 
     /**
      * Tickets that just transitioned from pending → position. The pending-order poller
@@ -144,6 +156,15 @@ class MT5Broker(
                     timestamp = clock.now(),
                 ),
             )
+            // Register the position ticket so [MT5PositionPoller] can resolve a close
+            // event back to this strategy. Use whichever of `order` / `deal` is non-zero;
+            // for instant-fill markets MT5 typically returns `order=0` and `deal=N`.
+            val positionTicket =
+                resp.result.order.takeIf { it != 0L }
+                    ?: resp.result.deal.takeIf { it != 0L }
+            if (positionTicket != null) {
+                positionMetaByTicket[positionTicket] = PendingMeta(request.id, request.strategyId)
+            }
         } else {
             // Pending: track ticket so we can correlate fill events and cancel by orderId.
             resp.result.order
@@ -297,6 +318,8 @@ class MT5Broker(
         // Mark the ticket as recently filled so the pending-order poller doesn't
         // mistake the subsequent "disappeared from /orders" for an external cancel.
         recentlyFilledTickets[position.ticket] = clock.now()
+        // Keep the meta accessible to the position poller for the eventual close event.
+        positionMetaByTicket[position.ticket] = meta
         val qktSymbol = mt5Symbol.toQkt(position.symbol)
         val filledSide = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL
         bus.publish(
@@ -311,6 +334,16 @@ class MT5Broker(
                 timestamp = clock.now(),
             ),
         )
+    }
+
+    /**
+     * [MT5PositionPoller] calls this when a ticket disappears from the venue snapshot
+     * to resolve which qkt strategy and clientOrderId originally opened it. Removes
+     * the entry on lookup — the poller publishes exactly one close event per ticket.
+     */
+    private fun lookupClosedTicketMeta(ticket: Long): ClosedPositionMeta? {
+        val meta = positionMetaByTicket.remove(ticket) ?: return null
+        return ClosedPositionMeta(clientOrderId = meta.orderId, strategyId = meta.strategyId)
     }
 
     /**
