@@ -33,6 +33,43 @@ data class MT5Position(
     val comment: String? = null,
 )
 
+/**
+ * Fields modifiable on a working order. Only non-null fields are sent.
+ *
+ * MT5's `OrderModify` accepts changes to the entry trigger price ([price]), SL/TP
+ * absolute prices ([sl], [tp]), trailing distance ([slDistance], in MT5 points),
+ * and pending expiry ([expiration]).
+ */
+data class MT5OrderModification(
+    val price: BigDecimal? = null,
+    val sl: BigDecimal? = null,
+    val tp: BigDecimal? = null,
+    val slDistance: Long? = null,
+    val expiration: Long? = null,
+)
+
+/**
+ * Pending (working) order reported by the gateway. Distinct from [MT5Position] which
+ * tracks filled positions. The pending order is consumed when it triggers (becoming
+ * a position) or expires/cancels (disappearing without becoming a position).
+ *
+ * Used by [MT5PendingOrderPoller] to detect external cancellations and GTD expiries
+ * — events the gateway's position poller can't see.
+ */
+data class MT5PendingOrder(
+    val ticket: Long,
+    val symbol: String,
+    val type: String,
+    val volume: BigDecimal,
+    val priceOpen: BigDecimal,
+    val sl: BigDecimal,
+    val tp: BigDecimal,
+    val magic: Int,
+    val timeSetup: Long,
+    val timeExpiration: Long,
+    val comment: String? = null,
+)
+
 /** Symbol metadata reported by the venue — used for size/price validation. */
 data class MT5SymbolInfo(
     val ask: BigDecimal,
