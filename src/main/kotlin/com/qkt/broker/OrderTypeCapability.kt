@@ -28,4 +28,10 @@ enum class OrderTypeCapability {
 
     /** Broker accepts [OrderModification] on a working order. */
     MODIFY,
+
+    /** Two pending orders linked one-cancels-other; whichever fills, the other auto-cancels. */
+    OCO,
+
+    /** Server-side trailing stop that follows the favorable price by a fixed distance. */
+    TRAILING_STOP,
 }
