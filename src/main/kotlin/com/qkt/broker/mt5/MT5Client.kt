@@ -133,6 +133,8 @@ class MT5Client(
         if (req.price != null) field("price", req.price.toPlainString())
         if (req.sl != null) field("sl", req.sl.toPlainString())
         if (req.tp != null) field("tp", req.tp.toPlainString())
+        if (req.stopLimit != null) field("stoplimit", req.stopLimit.toPlainString())
+        if (req.slDistance != null) field("sl_distance", req.slDistance.toString())
         field("deviation", req.deviation.toString())
         field("magic", req.magic.toString())
         field("comment", "\"${req.comment}\"", last = true)

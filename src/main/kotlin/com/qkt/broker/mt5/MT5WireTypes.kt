@@ -44,7 +44,16 @@ data class MT5SymbolInfo(
     val volumeStep: BigDecimal,
 )
 
-/** JSON wire shape for `POST /order` to the gateway. */
+/**
+ * JSON wire shape for `POST /order` to the gateway.
+ *
+ * [stopLimit] is set for `BUY_STOP_LIMIT`/`SELL_STOP_LIMIT` shapes — the limit price
+ * that activates once [price] (the stop trigger) prints.
+ *
+ * [slDistance] is set for trailing stops — the distance in MT5 *points* that the
+ * server-side trail follows the favorable price. Mutually exclusive with [sl]
+ * (server manages the trail; clients shouldn't also set a fixed SL).
+ */
 data class MT5OrderRequest(
     val symbol: String,
     val volume: BigDecimal,
@@ -52,6 +61,8 @@ data class MT5OrderRequest(
     val price: BigDecimal? = null,
     val sl: BigDecimal? = null,
     val tp: BigDecimal? = null,
+    val stopLimit: BigDecimal? = null,
+    val slDistance: Long? = null,
     val deviation: Int = 20,
     val magic: Int,
     val comment: String,
