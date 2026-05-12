@@ -9,18 +9,26 @@ A pending-order straddle for XAUUSD on Exness M5. At each configured session-hou
 - `TIF GTD UNTIL NOW + 10m` — relative-deadline GTD expiry; cancellation propagates back to qkt within one poll cycle
 - `POSITION.<stream>.holding_duration` — time-based exit (Phase 23 accessor)
 - Per-leg `BRACKET` — SL and TP attach to whichever leg fills, MT5-native
+- `STACK_AT MFE >= N WITHIN M ... BRACKET { ... }` — conditional stacks per side, three tiers each (Phase 27)
 
 ## Strategy logic
 
-1. **Pre-session pending placement.** Five minutes before each session hour, place `BUY STOP` 5 points above the current price and `SELL STOP` 5 points below. Both legs share a 10-minute GTD expiry.
+1. **Pre-session pending placement.** Five minutes before each session hour, place `BUY STOP` 5 points above the current price and `SELL STOP` 5 points below. Both legs share a 10-minute GTD expiry. Each leg carries three `STACK_AT` clauses that fire after the leg goes live.
 2. **Whichever side breaks wins.** The first leg to trigger fills as the live position; its bracket (180-point SL, 150-point TP) attaches automatically. The other pending order is cancelled.
-3. **Winner timeout.** If the position is still open 2 hours after the fill, close it at market regardless of P&L. Prevents drift into overnight or off-session moves.
+3. **Stacking the winner.** Once the winner is live, MFE is tracked from the fill price. As MFE crosses 10/20/30 points within 30/60/90 minutes respectively, three independent stack orders fire — each with its own 2/20 bracket, sized at 0.06 lots. Stacks track as independent legs and close on their own brackets, not the winner's.
+4. **Winner timeout.** If the position is still open 2 hours after the fill, close it at market regardless of P&L. Prevents drift into overnight or off-session moves.
 
 Session hours configured: 06–07, 12–15 UTC (London + NY opens).
 
+## Stacking semantics
+
+Each side's three `STACK_AT` clauses are independent:
+- **Threshold + window.** A clause fires once when MFE first reaches its threshold, provided the elapsed time since the parent leg opened is under the window. If the window expires before the threshold is reached, the clause is abandoned for this lifecycle.
+- **Independent bracket.** Each stack leg gets its own SL/TP bracket from the `BRACKET { ... }` block — closing the parent does not close stacks, and a stack hitting its own TP does not affect the parent or other stacks.
+- **Per-side independence.** The BUY side's stacks attach only to a BUY winner; SELL side's stacks only to a SELL winner. Since `OCO_ENTRY` cancels the losing side before it fills, only one side's stacks ever activate per session.
+
 ## What's *not* here yet
 
-- **Stacking.** The production hedge-straddle adds 3 independent micro-trades when the winner shows conviction. Per the pa-quant analysis, stacking boosts 6-month P&L by ~148% (`$1,478 → $3,673`). qkt's existing `STACK` clause uses shared brackets and sequential triggering, which can't model the per-stack-bracket simultaneous-fire pattern hedge-straddle needs. Phase 27 (in progress) ships this — see `docs/superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md`.
 - **Whipsaw filter (`cutClosePips`).** The production strategy requires the candle to close at least 20 points from entry before considering a breach valid, filtering out wicks that immediately retrace. Easily added as a `WHEN` condition once you have intrabar data.
 - **Win-rate circuit breaker.** Daemon-level concern, not a strategy DSL feature.
 - **Adaptive ATR thresholds.** Easily added: replace fixed `5` with `atr(gold, 14) * 0.5` etc.
@@ -70,7 +78,7 @@ Live trading via MT5 is supported as of Phase 26b/c/d:
 
 The production scaffold at `~/Desktop/personal/qkt-strategies-live/` has docker-compose + `.env.example` + a `deploy.sh` helper. See its README for the go-live checklist (credentials, prereq check, paper-mode validation, lot-sizing tier-up).
 
-**Stacking is still ahead** (Phase 27). Expect P&L tracking the no-stack profile in the table below until Phase 27 lands.
+**Phase 27 status:** the qkt strategy file now carries the three-tier `STACK_AT` clauses per side. End-to-end stack lifecycle (engine construction on parent fill, MFE-driven tier firing, parent-bracket close detection) works for the PaperBroker backtest path. Tracker-side stack-leg routing (so the `LegBook` reflects PRIMARY + STACK legs distinctly) is a follow-up; until it lands, stack fills currently average into the primary leg in the position view.
 
 ## Expected performance
 
@@ -88,7 +96,7 @@ Per the pa-quant backtest (6 years XAUUSD M5, 1.0 pip spread simulation, `cutClo
 
 2025 dominates because of the gold bull-market regime — large directional sessions resolve cleanly. The strategy is regime-sensitive; ranging years lose small amounts.
 
-The qkt port omits stacks until Phase 27 ships. The analysis shows stacking roughly doubles 6-month P&L; expect the table above to track the no-stack profile until then.
+The table above is the no-stack profile. Per the pa-quant analysis, the three-tier stacking adds roughly +148% on top (6-month P&L `$1,478 → $3,673`). qkt's stack-bearing port should approach those numbers once the tracker-side routing lands.
 
 ## References
 
