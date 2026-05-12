@@ -65,9 +65,9 @@ class DaemonCommand(
         val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 profile.name.lowercase() to
-                    { bus, clock, _ ->
+                    { bus, clock, priceTracker ->
                         com.qkt.broker.mt5
-                            .MT5Broker(profile, bus, clock)
+                            .MT5Broker(profile, bus, clock, priceTracker)
                     }
             }
 

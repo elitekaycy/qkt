@@ -7,6 +7,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
+import com.qkt.marketdata.MarketPriceProvider
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
@@ -33,6 +34,7 @@ class MT5Broker(
     private val profile: MT5BrokerProfile,
     private val bus: EventBus,
     private val clock: Clock,
+    private val priceTracker: MarketPriceProvider? = null,
     private val client: MT5Client =
         MT5Client(
             gatewayUrl = profile.gatewayUrl,
@@ -46,7 +48,7 @@ class MT5Broker(
 
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
-    private val translator = MT5OrderTranslator(profile, mt5Symbol)
+    private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
     private val poller =
         MT5PositionPoller(
             client,

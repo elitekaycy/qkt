@@ -3,6 +3,7 @@ package com.qkt.broker.mt5
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TrailMode
+import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
@@ -27,10 +28,18 @@ sealed interface MT5Translation {
     ) : MT5Translation
 }
 
-/** Converts qkt [OrderRequest]s into the JSON wire shape understood by `mt5-gateway`. */
+/**
+ * Converts qkt [OrderRequest]s into the JSON wire shape understood by `mt5-gateway`.
+ *
+ * [priceTracker] is needed for `PERCENT` mode trailing stops — the translator needs
+ * the current mid-price to compute an absolute distance at submit time. `null` means
+ * PERCENT mode rejects with a clear error (Phase 26b behavior preserved when
+ * the broker isn't configured with a tracker).
+ */
 class MT5OrderTranslator(
     private val profile: MT5BrokerProfile,
     private val symbol: MT5Symbol,
+    private val priceTracker: MarketPriceProvider? = null,
 ) {
     fun translate(req: OrderRequest): MT5Translation =
         when (req) {
@@ -127,18 +136,36 @@ class MT5OrderTranslator(
      * on MT5 will fail with a clear error here until that work lands.
      */
     private fun translateTrailingStop(req: OrderRequest.TrailingStop): MT5OrderRequest {
-        require(req.trailMode == TrailMode.ABSOLUTE) {
-            "MT5 trailing stop currently supports ABSOLUTE trailAmount only; got ${req.trailMode}. " +
-                "PERCENT mode needs a current-price seed at submit time (deferred)."
-        }
+        // Resolve absolute distance first — PERCENT errors should surface before unrelated
+        // profile-config errors so the user knows exactly which knob is wrong.
+        val absoluteDistance: BigDecimal =
+            when (req.trailMode) {
+                TrailMode.ABSOLUTE -> req.trailAmount
+                TrailMode.PERCENT -> {
+                    val tracker =
+                        priceTracker
+                            ?: error(
+                                "PERCENT trailing requires a MarketPriceProvider; " +
+                                    "configure the broker constructor with priceTracker " +
+                                    "or use TrailMode.ABSOLUTE",
+                            )
+                    val mid =
+                        tracker.lastPrice(req.symbol)
+                            ?: error(
+                                "PERCENT trailing requires lastPrice for ${req.symbol}; " +
+                                    "ensure the tick stream is active before submitting",
+                            )
+                    mid.multiply(req.trailAmount).divide(BigDecimal(100), MathContext.DECIMAL64)
+                }
+            }
         val point = pointFor(req.symbol)
         val distancePoints =
-            req.trailAmount
+            absoluteDistance
                 .divide(point, MathContext.DECIMAL64)
                 .setScale(0, RoundingMode.HALF_UP)
                 .toLong()
         require(distancePoints > 0) {
-            "TrailingStop distance ${req.trailAmount} resolves to 0 MT5 points (point size $point); too tight"
+            "TrailingStop distance $absoluteDistance resolves to 0 MT5 points (point size $point); too tight"
         }
         return MT5OrderRequest(
             symbol = symbol.toBroker(req.symbol),
