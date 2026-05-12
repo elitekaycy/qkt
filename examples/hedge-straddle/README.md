@@ -4,11 +4,11 @@ A pending-order straddle for XAUUSD on Exness M5. At each configured session-hou
 
 ## What this exercises
 
-- `OCO_ENTRY { ... }` — Phase 26a entry-pair OCO surface
-- `NOW.hour_utc`, `NOW.minute_utc` — Phase 26a clock accessors
-- `TIF GTD UNTIL NOW + 10m` — relative-deadline GTD expiry
+- `OCO_ENTRY { ... }` — entry-pair OCO submitted natively to MT5 as two pending stops linked one-cancels-other
+- `NOW.hour_utc`, `NOW.minute_utc` — clock accessors for session-window gating
+- `TIF GTD UNTIL NOW + 10m` — relative-deadline GTD expiry; cancellation propagates back to qkt within one poll cycle
 - `POSITION.<stream>.holding_duration` — time-based exit (Phase 23 accessor)
-- Per-leg `BRACKET` — SL and TP attach to whichever leg fills
+- Per-leg `BRACKET` — SL and TP attach to whichever leg fills, MT5-native
 
 ## Strategy logic
 
@@ -20,8 +20,7 @@ Session hours configured: 06–07, 12–15 UTC (London + NY opens).
 
 ## What's *not* here yet
 
-- **Stacking.** The production hedge-straddle adds 3 independent micro-trades when the winner shows conviction. Per the pa-quant analysis, stacking boosts 6-month P&L by ~148% (`$1,478 → $3,673`). qkt's existing `STACK` clause uses shared brackets and sequential triggering, which can't model the per-stack-bracket simultaneous-fire pattern hedge-straddle needs. Phase 27 ships this.
-- **End-to-end pending-order lifecycle on MT5.** Phase 26b added native MT5 translation for `Stop`, `Limit`, `StopLimit`, `StandaloneOCO`, and `TrailingStop` — placements route to MT5 as `BUY_STOP` / `SELL_STOP` / `BUY_STOP_LIMIT` / etc. wire requests, with OCO legs tagged with a shared `oco:<id>` comment. Phase 26c closes the fill-event loop: when a pending order fills on the venue, the position poller detects the new position, the broker correlates the ticket back to the original `clientOrderId`, and publishes `OrderFilled`. OCO sibling cancel-on-fill propagates via `OrderManager.siblings[]` (Phase 26a engine wiring). End-to-end latency: bounded by `pollIntervalMs` (1s default) — acceptable for 5-minute candle strategies. Phase 26d closes the remaining gaps: detect GTD expiry / external cancellations via a `/orders` endpoint, PERCENT trailing mode, order modification.
+- **Stacking.** The production hedge-straddle adds 3 independent micro-trades when the winner shows conviction. Per the pa-quant analysis, stacking boosts 6-month P&L by ~148% (`$1,478 → $3,673`). qkt's existing `STACK` clause uses shared brackets and sequential triggering, which can't model the per-stack-bracket simultaneous-fire pattern hedge-straddle needs. Phase 27 (in progress) ships this — see `docs/superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md`.
 - **Whipsaw filter (`cutClosePips`).** The production strategy requires the candle to close at least 20 points from entry before considering a breach valid, filtering out wicks that immediately retrace. Easily added as a `WHEN` condition once you have intrabar data.
 - **Win-rate circuit breaker.** Daemon-level concern, not a strategy DSL feature.
 - **Adaptive ATR thresholds.** Easily added: replace fixed `5` with `atr(gold, 14) * 0.5` etc.
@@ -62,9 +61,16 @@ docker run --rm \
     --json
 ```
 
-### Live (Phase 26b)
+### Live on MT5 (Exness)
 
-Live trading via MT5 (Exness) is not yet supported for this strategy. Phase 26b adds the native pending-stop and OCO routing through the MT5 gateway. Until then, the bracket-based fills and the OCO-cancel logic only run in backtest via the engine's `OrderManager`.
+Live trading via MT5 is supported as of Phase 26b/c/d:
+- **Phase 26b** — native MT5 translation for `BUY_STOP` / `SELL_STOP` / `BUY_STOP_LIMIT` / `SELL_STOP_LIMIT` / trailing stops + OCO group tagging
+- **Phase 26c** — position poller detects pending → position transitions; OCO sibling cancel-on-fill propagates within one poll cycle
+- **Phase 26d** — `/orders` poller detects GTD-expired and externally-cancelled pendings; PERCENT trailing mode; order modification
+
+The production scaffold at `~/Desktop/personal/qkt-strategies-live/` has docker-compose + `.env.example` + a `deploy.sh` helper. See its README for the go-live checklist (credentials, prereq check, paper-mode validation, lot-sizing tier-up).
+
+**Stacking is still ahead** (Phase 27). Expect P&L tracking the no-stack profile in the table below until Phase 27 lands.
 
 ## Expected performance
 
@@ -82,10 +88,14 @@ Per the pa-quant backtest (6 years XAUUSD M5, 1.0 pip spread simulation, `cutClo
 
 2025 dominates because of the gold bull-market regime — large directional sessions resolve cleanly. The strategy is regime-sensitive; ranging years lose small amounts.
 
-The qkt port omits stacks (Phase 27), which the analysis shows roughly doubles 6-month P&L. So expect Phase 26a backtest numbers to track the table above; Phase 27 unlocks the full profile.
+The qkt port omits stacks until Phase 27 ships. The analysis shows stacking roughly doubles 6-month P&L; expect the table above to track the no-stack profile until then.
 
 ## References
 
-- Phase 26a spec: `docs/superpowers/specs/2026-05-11-phase26-pending-oco-and-clock-design.md`
+- Phase 26a — DSL surface (`OCO_ENTRY`, `NOW.<field>`): `docs/phases/phase-26a-pending-oco-and-clock.md`
+- Phase 26b — MT5 native pending translation: `docs/phases/phase-26b-mt5-pending-family.md`
+- Phase 26c — Pending fill-event lifecycle: `docs/phases/phase-26c-pending-fill-lifecycle.md`
+- Phase 26d — `/orders` poller, PERCENT, modify: `docs/phases/phase-26d-orders-percent-modify.md`
+- Phase 27 spec (stacks): `docs/superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md`
 - Production source: `../fxquant/pa-quant/src/strategies/hedge-straddle/`
 - README in pa-quant: `../fxquant/pa-quant/src/strategies/hedge-straddle/README.md`
