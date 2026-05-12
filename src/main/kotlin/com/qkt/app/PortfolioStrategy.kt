@@ -50,6 +50,14 @@ class PortfolioStrategy(
     // do. The runtime accesses each child's pendingStacks via its DslCompiledStrategy.
     override val pendingStacks: PendingStacks = PendingStacks()
 
+    // Aggregate STACK_AT symbols across children so the broker capability check at
+    // TradingPipeline.init covers the symbols any child will actually stack on.
+    override val multiPositionPerSymbolSymbols: Set<String> =
+        compiled.children
+            .mapNotNull { it.compiled as? DslCompiledStrategy }
+            .flatMap { it.multiPositionPerSymbolSymbols }
+            .toSet()
+
     override val retentionByKey: Map<HubKey, Int> =
         declaredStreams.values.associateWith { 1 } +
             compiled.children
