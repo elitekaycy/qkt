@@ -8,29 +8,39 @@ STRATEGY hedge_straddle VERSION 1
 # instrument with reliable directional moves at session opens.
 #
 # Phase 26a: parse + backtest only. Live MT5 routing ships in Phase 26b.
-# Phase 27 adds conditional-bracketed stacks (the ~148% P&L driver).
+# Phase 27: STACK_AT conditional-bracketed stacks layer on top — three tiers
+# per winning side fire as MFE crosses 10/20/30 points within the first
+# 30/60/90 minutes. Stacks track as independent legs with their own brackets.
+
+DEFAULTS {
+    SIZING = 0.20
+}
 
 SYMBOLS
     gold = EXNESS:XAUUSD EVERY 5m
-
-DEFAULTS
-    sizing = 0.20
 
 RULES
     # Pre-session pending placement.
     # Place orders 5 minutes before each session-hour open, so the pending
     # stops are live when the hour-open candle prints. The 10-minute GTD
-    # expiry catches sessions that don't move.
+    # expiry catches sessions that don't move. Whichever side fills attaches
+    # three conditional stacks; the unfilled side auto-cancels via OCO.
     WHEN NOW.hour_utc IN [6, 7, 12, 13, 14, 15]
      AND NOW.minute_utc = 55
      AND POSITION.gold = 0
     THEN OCO_ENTRY {
         BUY  gold ORDER_TYPE = STOP AT gold.close + 5
              BRACKET { STOP LOSS BY 18, TAKE PROFIT BY 15 }
-             TIF GTD UNTIL NOW + 10m,
+             TIF GTD NOW + 10m
+             STACK_AT MFE >= 10 WITHIN 30m SIZING 0.06 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }
+             STACK_AT MFE >= 20 WITHIN 60m SIZING 0.06 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }
+             STACK_AT MFE >= 30 WITHIN 90m SIZING 0.06 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 },
         SELL gold ORDER_TYPE = STOP AT gold.close - 5
              BRACKET { STOP LOSS BY 18, TAKE PROFIT BY 15 }
-             TIF GTD UNTIL NOW + 10m
+             TIF GTD NOW + 10m
+             STACK_AT MFE >= 10 WITHIN 30m SIZING 0.06 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }
+             STACK_AT MFE >= 20 WITHIN 60m SIZING 0.06 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }
+             STACK_AT MFE >= 30 WITHIN 90m SIZING 0.06 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }
     }
 
     # Winner timeout: flatten after 2 hours regardless of P&L state.
