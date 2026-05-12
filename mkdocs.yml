@@ -172,6 +172,7 @@ nav:
       - Conventions: contributing/conventions.md
       - KDoc style: contributing/kdoc-style.md
       - Phase workflow: contributing/phase-workflow.md
+      - Adding a broker: contributing/adding-a-broker.md
       - Release changelogs:
           - phases/index.md
           - Phase 23 — DSL catalog expansion: phases/phase-23.md
