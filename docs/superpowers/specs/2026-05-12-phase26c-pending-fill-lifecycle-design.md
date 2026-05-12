@@ -97,25 +97,11 @@ val distancePoints = absoluteDistance.divide(point, MathContext.DECIMAL64).toLon
 
 `MarketPriceTracker` is already used throughout the engine; injecting it into the translator is a small wiring change.
 
-**E. Order modification surface** (~120 LOC + tests)
+**E. Order modification — DEFERRED to Phase 26d**
 
-MT5 supports `OrderModify` for changing SL, TP, or trigger price on an existing order or position. qkt's `OrderManager` calls `Broker.modify(...)` in some paths today, but `MT5Broker` doesn't implement it.
+`Broker.modify(orderId, OrderModification)` interface exists with `UnsupportedOperationException` default. `MT5Client` has no `modifyOrder` method today, and I can't verify autonomously whether mt5-gateway exposes a modify endpoint. Adding the wire call without gateway-side support produces silent failures.
 
-Add:
-
-```kotlin
-// Broker.kt — new interface method (already exists in some form?)
-fun modify(orderId: String, modification: OrderModification)
-
-// MT5Broker.kt — implementation
-override fun modify(orderId: String, modification: OrderModification) {
-    val ticket = pendingTickets[orderId] ?: positionTickets[orderId] ?: return
-    client.modifyOrder(ticket, modification.toMt5())
-    // Reconciliation will pick up the change; no immediate event publishing needed
-}
-```
-
-Verify `OrderModification` shape — likely has fields for new SL, new TP, new trigger price. Wire through MT5Client.
+Phase 26d covers this together with the `/orders` endpoint check (both depend on mt5-gateway capabilities).
 
 **F. Comprehensive integration tests via `FakeMt5Client`** (~250 LOC)
 
