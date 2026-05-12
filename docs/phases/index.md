@@ -4,6 +4,7 @@ qkt is built in numbered phases. Each phase has a post-merge changelog with usag
 
 ## Recent
 
+- [Phase 27 — Conditional bracketed stacks (`STACK_AT`)](phase-27-conditional-bracketed-stacks.md)
 - [Phase 26d — `/orders` poller, PERCENT trailing, order modification](phase-26d-orders-percent-modify.md)
 - [Phase 26c — Pending-order fill-event lifecycle on MT5](phase-26c-pending-fill-lifecycle.md)
 - [Phase 26b — MT5 native pending family + OCO + trailing](phase-26b-mt5-pending-family.md)
