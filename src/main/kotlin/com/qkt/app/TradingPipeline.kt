@@ -231,8 +231,31 @@ class TradingPipeline(
         emit: (com.qkt.strategy.Signal) -> Unit,
     ) {
         val orch =
-            com.qkt.dsl.compile
-                .StackOrchestrator(clock, emit)
+            com.qkt.dsl.compile.StackOrchestrator(
+                clock = clock,
+                emit = emit,
+                onStackBracketEmit = { bracket, parentLegId ->
+                    // Pre-register the stack's entry fill → STACK leg open, and the bracket's
+                    // TP/SL ids → STACK leg close (using OrderManager.submitBracketFallback's
+                    // deterministic `${bracket.id}-tp` / `-sl` naming).
+                    strategyPositions.registerStackOpen(
+                        strategyId = strategyId,
+                        clientOrderId = bracket.entry.id,
+                        stackLegId = bracket.id,
+                        parentLegId = parentLegId,
+                    )
+                    strategyPositions.registerStackClose(
+                        strategyId = strategyId,
+                        clientOrderId = "${bracket.id}-tp",
+                        stackLegId = bracket.id,
+                    )
+                    strategyPositions.registerStackClose(
+                        strategyId = strategyId,
+                        clientOrderId = "${bracket.id}-sl",
+                        stackLegId = bracket.id,
+                    )
+                },
+            )
         bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe
