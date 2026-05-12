@@ -120,6 +120,7 @@ class TradingPipeline(
                 for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention)
                 strategy.bindToHub(candleHub, ctx, emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
+                wireStackOrchestrator(strategy, strategyId, emit)
             } else {
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
                 bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
@@ -189,5 +190,38 @@ class TradingPipeline(
 
     fun ingestForWarmup(tick: Tick) {
         bus.publish(WarmupTickEvent(tick))
+    }
+
+    /**
+     * Phase 27: per-DSL-strategy stack lifecycle. The orchestrator owns one [com.qkt.dsl.compile.StackEngine]
+     * per active PRIMARY leg with `STACK_AT` clauses. On parent-fill it consumes the
+     * matching [com.qkt.dsl.compile.PendingStack] populated by the action compiler.
+     * Stack-emitted signals go through the same [emit] path as user-emitted signals so
+     * risk / ordering / id allocation behave uniformly.
+     *
+     * Parent-leg close detection lands in a follow-up; until then engines age out by
+     * tier exhaustion (fire-or-abandon) and contribute negligible per-tick overhead
+     * once terminal.
+     */
+    private fun wireStackOrchestrator(
+        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
+        strategyId: String,
+        emit: (com.qkt.strategy.Signal) -> Unit,
+    ) {
+        val orch =
+            com.qkt.dsl.compile
+                .StackOrchestrator(clock, emit)
+        bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
+        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            if (e.strategyId != strategyId) return@subscribe
+            val pending = strategy.pendingStacks.consume(e.clientOrderId) ?: return@subscribe
+            orch.onPrimaryFilled(
+                parentLegId = pending.parentClientOrderId,
+                parentSymbol = pending.symbol,
+                parentSide = pending.side,
+                parentEntryPrice = e.price,
+                tiers = pending.tiers,
+            )
+        }
     }
 }
