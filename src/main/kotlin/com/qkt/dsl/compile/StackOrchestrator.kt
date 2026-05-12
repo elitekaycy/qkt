@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.common.Clock
 import com.qkt.common.Side
+import com.qkt.execution.OrderRequest
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 
@@ -20,6 +21,7 @@ import java.math.BigDecimal
  */
 class StackOrchestrator(
     private val clock: Clock,
+    private val onStackBracketEmit: (bracket: OrderRequest.Bracket, parentLegId: String) -> Unit = { _, _ -> },
     private val emit: (Signal) -> Unit,
 ) {
     private val engines: MutableMap<String, StackEngine> = mutableMapOf()
@@ -34,6 +36,13 @@ class StackOrchestrator(
     ) {
         if (tiers.isEmpty()) return
         check(parentLegId !in engines) { "StackEngine already registered for $parentLegId" }
+        val engineEmit: (Signal) -> Unit = { sig ->
+            if (sig is Signal.Submit) {
+                val req = sig.request
+                if (req is OrderRequest.Bracket) onStackBracketEmit(req, parentLegId)
+            }
+            emit(sig)
+        }
         engines[parentLegId] =
             StackEngine(
                 parentLegId = parentLegId,
@@ -43,7 +52,7 @@ class StackOrchestrator(
                 parentEntryPrice = parentEntryPrice,
                 tiers = tiers,
                 clock = clock,
-                emit = emit,
+                emit = engineEmit,
             )
     }
 

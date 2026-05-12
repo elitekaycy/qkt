@@ -26,8 +26,65 @@ class StrategyPositionTracker {
     /** Monotonic counter for engine-internal PRIMARY leg ids. */
     private val primaryLegSeq = AtomicLong()
 
+    /**
+     * Pre-registered stack-leg open intents. Key is `"$strategyId|$clientOrderId"`.
+     * When [applyFill] sees a matching clientOrderId, the resulting fill is added as a
+     * STACK leg (with the bracket id as legId) instead of being averaged into the
+     * primary. Populated by [com.qkt.dsl.compile.StackOrchestrator] at engine emit time.
+     */
+    private val pendingStackOpens: MutableMap<String, StackOpenIntent> = ConcurrentHashMap()
+
+    /**
+     * Pre-registered stack-leg close ids. Key is `"$strategyId|$clientOrderId"`, value
+     * is the stack legId to close. Populated for predicted bracket TP/SL ids of stack
+     * orders so that those fills close the right stack leg and realize its PnL without
+     * touching the primary.
+     */
+    private val pendingStackCloses: MutableMap<String, String> = ConcurrentHashMap()
+
+    private data class StackOpenIntent(
+        val stackLegId: String,
+        val parentLegId: String,
+    )
+
+    /**
+     * Phase 27: declare that a future [BrokerEvent.OrderFilled] with [clientOrderId]
+     * should open a STACK leg (not average into PRIMARY). The [stackLegId] becomes the
+     * new leg's id and is correlated to [parentLegId] via [PositionLeg.parentLegId].
+     */
+    fun registerStackOpen(
+        strategyId: String,
+        clientOrderId: String,
+        stackLegId: String,
+        parentLegId: String,
+    ) {
+        pendingStackOpens["$strategyId|$clientOrderId"] = StackOpenIntent(stackLegId, parentLegId)
+    }
+
+    /**
+     * Phase 27: declare that a future [BrokerEvent.OrderFilled] with [clientOrderId]
+     * should close stack leg [stackLegId] (typically a stack-bracket TP or SL fill).
+     * Returns realized PnL on that fill via the normal [applyFill] return path.
+     */
+    fun registerStackClose(
+        strategyId: String,
+        clientOrderId: String,
+        stackLegId: String,
+    ) {
+        pendingStackCloses["$strategyId|$clientOrderId"] = stackLegId
+    }
+
     fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal {
         if (event.strategyId.isBlank()) return Money.ZERO
+
+        val key = "${event.strategyId}|${event.clientOrderId}"
+
+        pendingStackOpens.remove(key)?.let { intent ->
+            return applyStackOpen(event, intent)
+        }
+        pendingStackCloses.remove(key)?.let { stackLegId ->
+            return applyStackClose(event, stackLegId)
+        }
 
         val trade =
             Trade(
@@ -39,6 +96,46 @@ class StrategyPositionTracker {
                 timestamp = event.timestamp,
             )
         return apply(event.strategyId, trade)
+    }
+
+    private fun applyStackOpen(
+        event: BrokerEvent.OrderFilled,
+        intent: StackOpenIntent,
+    ): BigDecimal {
+        val books = byStrategy.getOrPut(event.strategyId) { ConcurrentHashMap() }
+        val book = books.getOrPut(event.symbol) { LegBook(event.symbol) }
+        book.add(
+            PositionLeg(
+                legId = intent.stackLegId,
+                symbol = event.symbol,
+                side = event.side,
+                quantity = event.quantity,
+                entryPrice = event.price,
+                openedAt = event.timestamp,
+                role = LegRole.STACK,
+                parentLegId = intent.parentLegId,
+            ),
+        )
+        return Money.ZERO
+    }
+
+    private fun applyStackClose(
+        event: BrokerEvent.OrderFilled,
+        stackLegId: String,
+    ): BigDecimal {
+        val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return Money.ZERO
+        val closed = book.close(stackLegId) ?: return Money.ZERO
+        val priceDiff =
+            if (closed.side == Side.BUY) {
+                event.price.subtract(closed.entryPrice)
+            } else {
+                closed.entryPrice.subtract(event.price)
+            }
+        val realized = closed.quantity.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
+        if (book.isEmpty()) {
+            byStrategy[event.strategyId]?.remove(event.symbol)
+        }
+        return realized
     }
 
     fun apply(
