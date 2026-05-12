@@ -103,6 +103,11 @@ class AstCompiler {
         val retentionByKey: Map<HubKey, Int> =
             streams.values.associateWith { retention }
 
+        val stackAtSymbols: Set<String> =
+            whenThens
+                .flatMap { collectStackAtSymbols(it.action, streams) }
+                .toSet()
+
         return CompiledStrategy(
             streams = streams,
             retentionByKey = retentionByKey,
@@ -114,7 +119,36 @@ class AstCompiler {
             transitions = PositionTransitions(),
             rules = rules,
             pendingStacks = pendingStacks,
+            multiPositionPerSymbolSymbols = stackAtSymbols,
         )
+    }
+
+    private fun collectStackAtSymbols(
+        action: ActionAst,
+        streams: Map<String, HubKey>,
+    ): Set<String> {
+        val out = mutableSetOf<String>()
+
+        fun walk(a: ActionAst) {
+            when (a) {
+                is Buy ->
+                    if (a.opts.stackAts.isNotEmpty()) {
+                        streams[a.stream]?.symbol?.let { out.add(it) }
+                    }
+                is Sell ->
+                    if (a.opts.stackAts.isNotEmpty()) {
+                        streams[a.stream]?.symbol?.let { out.add(it) }
+                    }
+                is Block -> a.actions.forEach { walk(it) }
+                is OcoEntry -> {
+                    walk(a.leg1)
+                    walk(a.leg2)
+                }
+                else -> {} // other actions don't carry stackAts
+            }
+        }
+        walk(action)
+        return out
     }
 }
 
@@ -129,6 +163,7 @@ private class CompiledStrategy(
     private val transitions: PositionTransitions,
     private val rules: List<CompiledRule>,
     override val pendingStacks: PendingStacks,
+    override val multiPositionPerSymbolSymbols: Set<String>,
 ) : DslCompiledStrategy {
     private val subscribedSymbols: Set<String> = streams.values.map { it.symbol }.toSet()
     private var hubBound: Boolean = false

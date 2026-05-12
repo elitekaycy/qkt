@@ -38,6 +38,7 @@ import org.junit.jupiter.api.Test
 class TradingPipelineStackTest {
     private class StubDslStrategy(
         override val pendingStacks: PendingStacks,
+        override val multiPositionPerSymbolSymbols: Set<String> = emptySet(),
     ) : DslCompiledStrategy {
         override val declaredStreams: Map<String, HubKey> = emptyMap()
         override val retentionByKey: Map<HubKey, Int> = emptyMap()

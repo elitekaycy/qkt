@@ -14,7 +14,7 @@
 
 ## Status & known gaps (2026-05-12)
 
-Tasks 1-12 (compile-time pipeline, runtime orchestrator wiring, PaperBroker close detection) have shipped on `phase-27-impl`. The happy path — DSL `STACK_AT` → engine constructed on parent fill → tier fires on MFE crossing → stack signal flows through standard emit → parent-bracket close terminates engine — works end-to-end against PaperBroker.
+Tasks 1-12 (compile-time pipeline, runtime orchestrator wiring, PaperBroker close detection) and Task 14 (capability gate) have shipped on `phase-27-impl`. The happy path — DSL `STACK_AT` → engine constructed on parent fill → tier fires on MFE crossing → stack signal flows through standard emit → parent-bracket close terminates engine — works end-to-end against PaperBroker.
 
 Known gaps that follow-up tasks must close:
 
@@ -27,7 +27,6 @@ Known gaps that follow-up tasks must close:
 Remaining tasks (Phase 27a):
 
 - Task 13 — `POSITION.<stream>.mfe` DSL accessor (depends on tracker-side `MfeTracker` integration with `applyFill`)
-- Task 14 — Compile-time capability gate for `MULTI_POSITION_PER_SYMBOL`
 - Task 15 — Backtest fidelity test
 - Task 16 — End-to-end backtest test
 - Task 17 — Update hedge-straddle example

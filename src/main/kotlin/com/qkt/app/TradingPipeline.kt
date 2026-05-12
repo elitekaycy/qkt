@@ -117,6 +117,7 @@ class TradingPipeline(
                 if (gate()) rawEmit(sig)
             }
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
+                requireMultiPositionCapability(strategyId, strategy)
                 for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention)
                 strategy.bindToHub(candleHub, ctx, emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
@@ -190,6 +191,25 @@ class TradingPipeline(
 
     fun ingestForWarmup(tick: Tick) {
         bus.publish(WarmupTickEvent(tick))
+    }
+
+    /**
+     * Phase 27: refuse to deploy a strategy whose `STACK_AT` symbols route to a broker
+     * that doesn't declare [com.qkt.broker.OrderTypeCapability.MULTI_POSITION_PER_SYMBOL].
+     * The capability is checked per-symbol via [com.qkt.broker.Broker.capabilitiesFor]
+     * so [com.qkt.broker.CompositeBroker] routing differences across symbols are honored.
+     */
+    private fun requireMultiPositionCapability(
+        strategyId: String,
+        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
+    ) {
+        for (symbol in strategy.multiPositionPerSymbolSymbols) {
+            val caps = broker.capabilitiesFor(symbol)
+            require(com.qkt.broker.OrderTypeCapability.MULTI_POSITION_PER_SYMBOL in caps) {
+                "Strategy '$strategyId' uses STACK_AT on $symbol but routing broker " +
+                    "'${broker.name}' does not declare MULTI_POSITION_PER_SYMBOL"
+            }
+        }
     }
 
     /**
