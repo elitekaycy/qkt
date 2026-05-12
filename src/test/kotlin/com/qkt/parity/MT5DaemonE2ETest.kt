@@ -120,7 +120,8 @@ class MT5DaemonE2ETest {
             // Wait briefly for ticks to drain through the live session
             Thread.sleep(500)
 
-            // Drain the recovery + poller-seed requests
+            // Drain the recovery + poller-seed requests (state, position seed, pending-order seed)
+            server.takeRequest(2, TimeUnit.SECONDS)
             server.takeRequest(2, TimeUnit.SECONDS)
             server.takeRequest(2, TimeUnit.SECONDS)
             // The actual order request

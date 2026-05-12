@@ -191,10 +191,10 @@ class MT5OrderTranslatorTest {
     }
 
     @Test
-    fun `TrailingStop PERCENT mode rejected with clear error`() {
+    fun `TrailingStop PERCENT without priceTracker rejects with actionable message`() {
         val req =
             OrderRequest.TrailingStop(
-                id = "tr-2",
+                id = "tr-pct-none",
                 symbol = "EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
@@ -204,8 +204,93 @@ class MT5OrderTranslatorTest {
                 timestamp = 1L,
             )
         assertThatThrownBy { translator.translate(req) }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageContaining("PERCENT")
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("MarketPriceProvider")
+    }
+
+    @Test
+    fun `TrailingStop PERCENT with priceTracker computes slDistance from current price`() {
+        val tracker =
+            object : com.qkt.marketdata.MarketPriceProvider {
+                override fun lastPrice(symbol: String): BigDecimal? =
+                    if (symbol == "EURUSD") BigDecimal("1.10000") else null
+            }
+        val profileWithOverride =
+            profile.copy(
+                instrumentOverrides =
+                    mapOf(
+                        "EURUSD" to
+                            InstrumentSpec(
+                                minVolume = BigDecimal("0.01"),
+                                volumeStep = BigDecimal("0.01"),
+                                pointSize = BigDecimal("0.00001"),
+                                digits = 5,
+                                tradeStopsLevelPoints = 10,
+                            ),
+                    ),
+            )
+        val translator =
+            MT5OrderTranslator(
+                profileWithOverride,
+                MT5Symbol(profileWithOverride.symbolPolicy),
+                tracker,
+            )
+        val req =
+            OrderRequest.TrailingStop(
+                id = "tr-pct",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                // 0.5% of 1.10000 = 0.00550 = 550 points at 0.00001/point
+                trailAmount = BigDecimal("0.5"),
+                trailMode = TrailMode.PERCENT,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+            )
+        val mt5 = (translator.translate(req) as MT5Translation.Single).request
+        assertThat(mt5.slDistance).isEqualTo(550L)
+    }
+
+    @Test
+    fun `TrailingStop PERCENT with priceTracker but no lastPrice fails actionably`() {
+        val tracker =
+            object : com.qkt.marketdata.MarketPriceProvider {
+                override fun lastPrice(symbol: String): BigDecimal? = null
+            }
+        val profileWithOverride =
+            profile.copy(
+                instrumentOverrides =
+                    mapOf(
+                        "EURUSD" to
+                            InstrumentSpec(
+                                minVolume = BigDecimal("0.01"),
+                                volumeStep = BigDecimal("0.01"),
+                                pointSize = BigDecimal("0.00001"),
+                                digits = 5,
+                                tradeStopsLevelPoints = 10,
+                            ),
+                    ),
+            )
+        val translator =
+            MT5OrderTranslator(
+                profileWithOverride,
+                MT5Symbol(profileWithOverride.symbolPolicy),
+                tracker,
+            )
+        val req =
+            OrderRequest.TrailingStop(
+                id = "tr-pct-nolast",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                trailAmount = BigDecimal("0.5"),
+                trailMode = TrailMode.PERCENT,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+            )
+        assertThatThrownBy { translator.translate(req) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("tick stream")
     }
 
     @Test
