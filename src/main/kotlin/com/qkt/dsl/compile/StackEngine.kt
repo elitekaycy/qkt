@@ -9,18 +9,19 @@ import com.qkt.strategy.Signal
 import java.math.BigDecimal
 
 /**
- * One compiled `STACK_AT` tier. All [com.qkt.dsl.ast.StackAtClause] expressions are
- * resolved to numeric values at parent-fill time (when the [StackEngine] is constructed)
- * so the per-tick path doesn't pay for expression evaluation.
+ * One compiled `STACK_AT` tier. [com.qkt.dsl.ast.StackAtClause] expressions are
+ * constant-evaluated at compile time so the per-tick path doesn't pay for expression
+ * evaluation.
  *
- * [slDistance] / [tpDistance] are in price units (not pips, not points) — the same units
- * as [com.qkt.dsl.ast.BracketAst]'s `BY` clause produces. Applied to the parent's fill
- * price at stack-order construction time.
+ * [stackQuantity] is the absolute size of the stack leg in the action's sizing units
+ * (lots for `SizeQty`), matching the spec on [com.qkt.dsl.ast.StackAtClause].
+ * [slDistance] / [tpDistance] are in price units — the same units as the `BY` clause in
+ * [com.qkt.dsl.ast.BracketAst].
  */
 data class CompiledStackTier(
     val mfeThreshold: BigDecimal,
     val withinMs: Long,
-    val sizingFactor: BigDecimal,
+    val stackQuantity: BigDecimal,
     val slDistance: BigDecimal,
     val tpDistance: BigDecimal,
 )
@@ -43,10 +44,9 @@ data class CompiledStackTier(
  */
 class StackEngine(
     val parentLegId: String,
-    private val parentSymbol: String,
+    val parentSymbol: String,
     private val parentSide: Side,
     private val parentEntryPrice: BigDecimal,
-    private val parentQuantity: BigDecimal,
     private val tiers: List<CompiledStackTier>,
     private val clock: Clock,
     private val emit: (Signal) -> Unit,
@@ -85,15 +85,14 @@ class StackEngine(
 
     /**
      * Build the stack signal: a [OrderRequest.Bracket] on the same symbol and side as
-     * the parent, sized as `parentQuantity × tier.sizingFactor`, with SL and TP
-     * computed from the current price ± tier distance.
+     * the parent, sized to [CompiledStackTier.stackQuantity], with SL and TP computed
+     * from the current price ± tier distance.
      */
     private fun buildStackSignal(
         tierIdx: Int,
         tier: CompiledStackTier,
         currentPrice: BigDecimal,
     ): Signal {
-        val stackQty = parentQuantity.multiply(tier.sizingFactor)
         val (sl, tp) =
             when (parentSide) {
                 Side.BUY -> currentPrice.subtract(tier.slDistance) to currentPrice.add(tier.tpDistance)
@@ -106,7 +105,7 @@ class StackEngine(
                 id = "$stackLegId-entry",
                 symbol = parentSymbol,
                 side = parentSide,
-                quantity = stackQty,
+                quantity = tier.stackQuantity,
                 timeInForce = TimeInForce.GTC,
                 timestamp = ts,
             )
@@ -115,7 +114,7 @@ class StackEngine(
                 id = stackLegId,
                 symbol = parentSymbol,
                 side = parentSide,
-                quantity = stackQty,
+                quantity = tier.stackQuantity,
                 entry = market,
                 takeProfit = tp,
                 stopLoss = sl,
