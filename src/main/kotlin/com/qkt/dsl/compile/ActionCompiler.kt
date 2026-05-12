@@ -196,10 +196,22 @@ class ActionCompiler(
     ): (EvalContext) -> List<Signal> {
         // Stack path: STACK is mutually exclusive with BRACKET/OCO on the same action.
         if (opts.stack != null) {
+            // Phase 27: STACK_AT cannot combine with STACK pyramiding — the runtime
+            // would silently drop the conditional clauses. Reject loudly at compile time.
+            require(opts.stackAts.isEmpty()) {
+                "STACK_AT cannot be combined with STACK on the same action"
+            }
             return compileStack(stream, opts, side)
         }
 
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING")
+
+        // Phase 27: STACK_AT on an OCO parent is silently broken — the OCO id is never
+        // echoed back on a broker fill (the broker fills leg1.id or leg2.id), so the
+        // engine would never be constructed. Reject loudly until OCO leg-id wiring lands.
+        require(!(opts.oco != null && opts.stackAts.isNotEmpty())) {
+            "STACK_AT cannot be combined with OCO on the same action"
+        }
 
         // Pre-compile STACK_AT tiers if present so we can register them on each emit.
         val stackAtTiers: List<CompiledStackTier> =
@@ -315,6 +327,7 @@ class ActionCompiler(
                         symbol = symbol,
                         side = side,
                         tiers = stackAtTiers,
+                        closeWatchIds = closeWatchIdsFor(request),
                     ),
                 )
             }
@@ -332,6 +345,21 @@ class ActionCompiler(
         when (request) {
             is OrderRequest.Bracket -> request.entry.id
             else -> request.id
+        }
+
+    /**
+     * Predicted clientOrderIds whose fill signals that the parent leg has closed. For
+     * Bracket parents this matches the deterministic naming in
+     * [com.qkt.app.OrderManager.submitBracketFallback]: `<bracket-id>-tp` and `<bracket-id>-sl`.
+     *
+     * Phase 27 limitation: this covers the paper/backtest path where bracket-fallback
+     * controls the child ids. Native broker brackets (e.g. MT5) and strategy-initiated
+     * manual closes rely on leg-aware fill routing (a separate task).
+     */
+    private fun closeWatchIdsFor(request: OrderRequest): Set<String> =
+        when (request) {
+            is OrderRequest.Bracket -> setOf("${request.id}-tp", "${request.id}-sl")
+            else -> emptySet()
         }
 
     private fun compileStack(

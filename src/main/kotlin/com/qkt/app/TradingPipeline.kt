@@ -199,9 +199,11 @@ class TradingPipeline(
      * Stack-emitted signals go through the same [emit] path as user-emitted signals so
      * risk / ordering / id allocation behave uniformly.
      *
-     * Parent-leg close detection lands in a follow-up; until then engines age out by
-     * tier exhaustion (fire-or-abandon) and contribute negligible per-tick overhead
-     * once terminal.
+     * Parent close detection: when an [BrokerEvent.OrderFilled] for the strategy is NOT
+     * a known primary entry (no pending entry to consume), it's treated as a possible
+     * close — engines watching that id terminate. The action compiler predicts a
+     * Bracket parent's TP/SL ids using OrderManager's deterministic naming. Native
+     * broker brackets and manual closes are not yet covered.
      */
     private fun wireStackOrchestrator(
         strategy: com.qkt.dsl.compile.DslCompiledStrategy,
@@ -214,14 +216,19 @@ class TradingPipeline(
         bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe
-            val pending = strategy.pendingStacks.consume(e.clientOrderId) ?: return@subscribe
-            orch.onPrimaryFilled(
-                parentLegId = pending.parentClientOrderId,
-                parentSymbol = pending.symbol,
-                parentSide = pending.side,
-                parentEntryPrice = e.price,
-                tiers = pending.tiers,
-            )
+            val pending = strategy.pendingStacks.consume(e.clientOrderId)
+            if (pending != null) {
+                orch.onPrimaryFilled(
+                    parentLegId = pending.parentClientOrderId,
+                    parentSymbol = pending.symbol,
+                    parentSide = pending.side,
+                    parentEntryPrice = e.price,
+                    tiers = pending.tiers,
+                    closeWatchIds = pending.closeWatchIds,
+                )
+            } else {
+                orch.onPossibleClose(e.clientOrderId)
+            }
         }
     }
 }

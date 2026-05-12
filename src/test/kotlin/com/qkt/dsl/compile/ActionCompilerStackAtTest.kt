@@ -7,15 +7,19 @@ import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.DurationAst
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackAtClause
+import com.qkt.dsl.ast.StackDirection
+import com.qkt.dsl.ast.StackSpacing
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class ActionCompilerStackAtTest {
@@ -140,6 +144,44 @@ class ActionCompilerStackAtTest {
             )
         ActionCompiler(ExprCompiler(), pendingStacks = pending).compile(action).invoke(makeCtx())
         assertThat(pending.size()).isEqualTo(0)
+    }
+
+    @Test
+    fun `STACK_AT combined with OCO on the same action is rejected at compile time`() {
+        val action =
+            Buy(
+                stream = "eur",
+                opts =
+                    ActionOpts(
+                        sizing = SizeQty(NumLit(BigDecimal("0.1"))),
+                        oco =
+                            OcoAst(
+                                stop = ChildBy(NumLit(BigDecimal("0.005"))),
+                                limit = ChildBy(NumLit(BigDecimal("0.020"))),
+                            ),
+                        stackAts = listOf(stackAtClause()),
+                    ),
+            )
+        assertThatThrownBy { ActionCompiler(ExprCompiler()).compile(action) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("STACK_AT cannot be combined with OCO")
+    }
+
+    @Test
+    fun `STACK_AT combined with STACK on the same action is rejected at compile time`() {
+        val action =
+            Buy(
+                stream = "eur",
+                opts =
+                    ActionOpts(
+                        sizing = SizeQty(NumLit(BigDecimal("0.1"))),
+                        stack = StackSpacing(2, NumLit(BigDecimal("0.005")), StackDirection.TRADE_DIRECTION),
+                        stackAts = listOf(stackAtClause()),
+                    ),
+            )
+        assertThatThrownBy { ActionCompiler(ExprCompiler()).compile(action) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("STACK_AT cannot be combined with STACK")
     }
 
     @Test

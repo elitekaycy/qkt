@@ -30,6 +30,7 @@ class StackOrchestrator(
         parentSide: Side,
         parentEntryPrice: BigDecimal,
         tiers: List<CompiledStackTier>,
+        closeWatchIds: Set<String> = emptySet(),
     ) {
         if (tiers.isEmpty()) return
         check(parentLegId !in engines) { "StackEngine already registered for $parentLegId" }
@@ -37,6 +38,7 @@ class StackOrchestrator(
             StackEngine(
                 parentLegId = parentLegId,
                 parentSymbol = parentSymbol,
+                closeWatchIds = closeWatchIds,
                 parentSide = parentSide,
                 parentEntryPrice = parentEntryPrice,
                 tiers = tiers,
@@ -56,6 +58,20 @@ class StackOrchestrator(
 
     fun onPrimaryClosed(parentLegId: String) {
         engines.remove(parentLegId)
+    }
+
+    /**
+     * Treat [clientOrderId] as a potential close signal. Iterates the registered engines
+     * and removes any whose [StackEngine.closeWatchIds] contains the id. A typical use:
+     * BrokerEvent.OrderFilled arrives for a bracket's TP or SL — the parent leg has just
+     * closed via its risk children, so its stack engine must stop firing.
+     */
+    fun onPossibleClose(clientOrderId: String) {
+        val toRemove =
+            engines.values
+                .filter { clientOrderId in it.closeWatchIds }
+                .map { it.parentLegId }
+        for (legId in toRemove) engines.remove(legId)
     }
 
     fun activeCount(): Int = engines.size
