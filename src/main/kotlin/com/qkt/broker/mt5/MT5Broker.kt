@@ -58,6 +58,12 @@ class MT5Broker(
             clock,
             onPositionOpened = ::onPendingPositionOpened,
         )
+    private val pendingPoller =
+        MT5PendingOrderPoller(
+            client,
+            profile,
+            onPendingDisappeared = ::onPendingDisappeared,
+        )
     private val stateRecovery = MT5StateRecovery(client, profile, mt5Symbol, bus)
 
     /** orderId → MT5 ticket. Populated on pending placement; used by [cancel]. */
@@ -65,6 +71,14 @@ class MT5Broker(
 
     /** Reverse: MT5 ticket → metadata for emitting OrderFilled when the pending fills. */
     private val pendingByTicket: MutableMap<Long, PendingMeta> = ConcurrentHashMap()
+
+    /**
+     * Tickets that just transitioned from pending → position. The pending-order poller
+     * will subsequently see them disappear from `/orders`; this set disambiguates
+     * "filled" (already emitted [BrokerEvent.OrderFilled]) from "external cancel."
+     * Entries expire after [DISAMBIGUATION_TTL_MULTIPLIER] × [profile.pollIntervalMs].
+     */
+    private val recentlyFilledTickets: MutableMap<Long, Long> = ConcurrentHashMap()
 
     private data class PendingMeta(
         val orderId: String,
@@ -75,6 +89,7 @@ class MT5Broker(
         try {
             stateRecovery.recover()
             poller.start()
+            pendingPoller.start()
         } catch (e: Exception) {
             log.warn("MT5Broker ${profile.name} startup degraded: ${e.message}")
         }
@@ -237,6 +252,9 @@ class MT5Broker(
     private fun onPendingPositionOpened(position: MT5Position) {
         val meta = pendingByTicket.remove(position.ticket) ?: return
         pendingTickets.remove(meta.orderId)
+        // Mark the ticket as recently filled so the pending-order poller doesn't
+        // mistake the subsequent "disappeared from /orders" for an external cancel.
+        recentlyFilledTickets[position.ticket] = clock.now()
         val qktSymbol = mt5Symbol.toQkt(position.symbol)
         val filledSide = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL
         bus.publish(
@@ -253,7 +271,55 @@ class MT5Broker(
         )
     }
 
+    /**
+     * Called by [MT5PendingOrderPoller] when a tracked ticket leaves `/orders`.
+     *
+     * Resolves the fill-vs-cancel ambiguity:
+     *
+     *   1. If the ticket was very recently filled (within the TTL), [onPendingPositionOpened]
+     *      already emitted [BrokerEvent.OrderFilled]. Consume the marker and exit.
+     *
+     *   2. Otherwise the pending was cancelled externally or its GTD expired. Emit
+     *      [BrokerEvent.OrderCancelled] with a clear reason.
+     *
+     *   3. If we don't track this ticket, it's an external pending (manual MetaTrader
+     *      placement, another qkt instance with the same magic) — ignore.
+     */
+    private fun onPendingDisappeared(ticket: Long) {
+        val meta = pendingByTicket.remove(ticket) ?: return
+        pendingTickets.entries.removeIf { it.value == ticket }
+        val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
+        val recentlyFilledAt = recentlyFilledTickets[ticket]
+        val now = clock.now()
+        if (recentlyFilledAt != null && now - recentlyFilledAt < ttlMs) {
+            recentlyFilledTickets.remove(ticket)
+            return
+        }
+        // Evict stale entries opportunistically — cheap and prevents unbounded growth
+        // if positions close before their pending-disappearance signal arrives.
+        recentlyFilledTickets.entries.removeIf { now - it.value >= ttlMs }
+        bus.publish(
+            BrokerEvent.OrderCancelled(
+                clientOrderId = meta.orderId,
+                brokerOrderId = ticket.toString(),
+                reason = "external or gtd-expired (pending disappeared from venue)",
+                strategyId = meta.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+    }
+
     fun shutdown() {
         poller.stop()
+        pendingPoller.stop()
+    }
+
+    companion object {
+        /**
+         * Multiplier applied to [MT5BrokerProfile.pollIntervalMs] for the
+         * fill-vs-cancel disambiguation TTL. 3 cycles is enough headroom for the
+         * position poller to tick at least once after the pending poller does.
+         */
+        private const val DISAMBIGUATION_TTL_MULTIPLIER: Long = 3L
     }
 }
