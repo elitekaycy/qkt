@@ -30,5 +30,6 @@ object MT5Protocol {
             OrderTypeCapability.STOP_LIMIT,
             OrderTypeCapability.OCO,
             OrderTypeCapability.TRAILING_STOP,
+            OrderTypeCapability.MODIFY,
         )
 }

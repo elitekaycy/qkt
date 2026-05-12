@@ -89,6 +89,22 @@ sealed interface BrokerEvent : Event {
     ) : OrderEvent
 
     /**
+     * The venue accepted a modification to a working order.
+     *
+     * Brokers publish this after [com.qkt.broker.Broker.modify] succeeds. The qkt-side
+     * order manager updates its tracked SL/TP/trigger from the [OrderModification] the
+     * caller supplied — the event itself doesn't carry the new values to keep the
+     * payload small.
+     */
+    data class OrderModified(
+        override val clientOrderId: String,
+        override val brokerOrderId: String?,
+        override val strategyId: String = "",
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : OrderEvent
+
+    /**
      * Account balances refreshed from the venue.
      *
      * The `source` field identifies which broker emitted them — useful when a

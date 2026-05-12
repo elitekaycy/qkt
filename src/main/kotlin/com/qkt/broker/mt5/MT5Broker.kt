@@ -1,6 +1,7 @@
 package com.qkt.broker.mt5
 
 import com.qkt.broker.Broker
+import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
@@ -234,6 +235,47 @@ class MT5Broker(
             }.onFailure { e ->
                 log.warn("MT5Broker ${profile.name} cancel($orderId, ticket=$ticket) failed: ${e.message}")
             }
+    }
+
+    override fun modify(
+        orderId: String,
+        changes: OrderModification,
+    ): SubmitAck {
+        val ticket =
+            pendingTickets[orderId] ?: return SubmitAck(
+                clientOrderId = orderId,
+                brokerOrderId = null,
+                accepted = false,
+                rejectReason = "modify: no working order with id=$orderId",
+            )
+        val mt5Mods =
+            MT5OrderModification(
+                price = changes.newStopPrice ?: changes.newLimitPrice,
+            )
+        val resp = client.modifyOrder(ticket, mt5Mods)
+        if (!isOrderSuccessful(resp.result.retcode)) {
+            val reason = resp.errorMessage ?: "modify rejected: retcode=${resp.result.retcode}"
+            log.warn("MT5Broker ${profile.name} modify($orderId, ticket=$ticket) rejected: $reason")
+            return SubmitAck(
+                clientOrderId = orderId,
+                brokerOrderId = ticket.toString(),
+                accepted = false,
+                rejectReason = reason,
+            )
+        }
+        bus.publish(
+            BrokerEvent.OrderModified(
+                clientOrderId = orderId,
+                brokerOrderId = ticket.toString(),
+                strategyId = "",
+                timestamp = clock.now(),
+            ),
+        )
+        return SubmitAck(
+            clientOrderId = orderId,
+            brokerOrderId = ticket.toString(),
+            accepted = true,
+        )
     }
 
     /**

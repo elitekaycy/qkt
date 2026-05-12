@@ -157,9 +157,34 @@ class MT5BrokerIntegrationTest {
     fun `pending fill propagates via position poller (phase 26c)`() {
         // Use a fresh broker with a fast poll interval so the test can observe the open detection.
         broker.shutdown()
-        server.enqueue(MockResponse().setBody("[]"))
-        server.enqueue(MockResponse().setBody("[]"))
-        server.enqueue(MockResponse().setBody("[]")) // pending-poller seed
+
+        // Route /positions and /orders independently so the two pollers don't race on a FIFO queue.
+        var positionsHasFill = false
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/positions") -> {
+                            if (positionsHasFill) {
+                                MockResponse().setBody(
+                                    """[{"ticket":777,"symbol":"EURUSDm","type":0,"volume":"0.1",""" +
+                                        """"price_open":"1.1050","sl":"0","tp":"0","profit":"0","magic":10001,""" +
+                                        """"open_time":"1700000000","comment":"stop-26c"}]""",
+                                )
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/order") -> MockResponse().setBody(
+                            """{"result":{"retcode":10009,"order":777,"deal":0,"price":"1.1050","comment":"ok"}}""",
+                        )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+
         val fastProfile =
             MT5DefaultProfiles.exness.copy(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
@@ -169,12 +194,6 @@ class MT5BrokerIntegrationTest {
             )
         val fastBroker = MT5Broker(fastProfile, bus, FixedClock(time = 1_700_000_000_000L))
 
-        // Place pending stop
-        server.enqueue(
-            MockResponse().setBody(
-                """{"result":{"retcode":10009,"order":777,"deal":0,"price":"1.1050","comment":"ok"}}""",
-            ),
-        )
         val req =
             OrderRequest.Stop(
                 id = "stop-26c",
@@ -190,16 +209,10 @@ class MT5BrokerIntegrationTest {
         fastBroker.submit(req)
         assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>()).hasSize(1)
 
-        // Now the poller will tick every 100ms — enqueue a `/positions` response with our
-        // ticket. The broker's onPendingPositionOpened callback should fire and emit OrderFilled.
-        server.enqueue(
-            MockResponse().setBody(
-                """[{"ticket":777,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1050",""" +
-                    """"sl":"0","tp":"0","profit":"0","magic":10001,"open_time":"1700000000","comment":"stop-26c"}]""",
-            ),
-        )
+        // Now flip the dispatcher so /positions returns the new position. The poller
+        // observes the open and emits OrderFilled with the original clientOrderId.
+        positionsHasFill = true
 
-        // Allow time for the poller to tick at least once
         val deadline = System.currentTimeMillis() + 3_000L
         while (System.currentTimeMillis() < deadline &&
             captured.none { it is BrokerEvent.OrderFilled && it.clientOrderId == "stop-26c" }
@@ -293,6 +306,54 @@ class MT5BrokerIntegrationTest {
                 ?: error("OrderCancelled with clientOrderId=stop-26d-cancel never published; captured=$captured")
         assertThat(cancelled.brokerOrderId).isEqualTo("999")
         assertThat(cancelled.reason).contains("external or gtd-expired")
+    }
+
+    @Test
+    fun `modify a working pending order sends new trigger price (phase 26d)`() {
+        // Place a pending first so pendingTickets has an entry
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":555,"deal":0,"price":"1.1050","comment":"ok"}}""",
+            ),
+        )
+        val req =
+            OrderRequest.Stop(
+                id = "stop-modify",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        broker.submit(req)
+
+        // Now modify
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":555,"deal":0,"price":"1.1075","comment":"ok"}}""",
+            ),
+        )
+        val ack = broker.modify("stop-modify", com.qkt.broker.OrderModification(newStopPrice = BigDecimal("1.1075")))
+        assertThat(ack.accepted).isTrue
+        assertThat(ack.brokerOrderId).isEqualTo("555")
+
+        // Consume setup + placement requests, then assert the modify wire shape
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        server.takeRequest() // POST /order placement
+        val modifyRequest = server.takeRequest()
+        assertThat(modifyRequest.path).isEqualTo("/modify-order/555")
+        assertThat(modifyRequest.body.readUtf8()).contains("\"price\":1.1075")
+    }
+
+    @Test
+    fun `modify with unknown order id is rejected without HTTP call`() {
+        val ack = broker.modify("unknown", com.qkt.broker.OrderModification(newStopPrice = BigDecimal("1.0")))
+        assertThat(ack.accepted).isFalse
+        assertThat(ack.rejectReason).contains("no working order")
     }
 
     @Test
