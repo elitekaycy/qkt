@@ -27,6 +27,23 @@ class StrategyPositionTracker {
     private val primaryLegSeq = AtomicLong()
 
     /**
+     * Per-(strategyId, symbol) MFE trackers for the current PRIMARY leg. Maintained in
+     * sync with the leg-book by [syncPrimaryMfeTracker] after every fill, and updated on
+     * each market tick via [onTick]. Reads land via [primaryMfeFor], which backs the DSL
+     * accessor `POSITION.<stream>.mfe`.
+     *
+     * Same-direction averaging fills re-anchor the tracker to the new weighted entry —
+     * MFE resets to zero from the new reference point, matching the "favorable excursion
+     * from current best-estimate entry" semantic.
+     */
+    private val primaryMfeTrackers: MutableMap<Pair<String, String>, LegMfe> = ConcurrentHashMap()
+
+    private data class LegMfe(
+        val legId: String,
+        val tracker: MfeTracker,
+    )
+
+    /**
      * Pre-registered stack-leg open intents. Key is `"$strategyId|$clientOrderId"`.
      * When [applyFill] sees a matching clientOrderId, the resulting fill is added as a
      * STACK leg (with the bracket id as legId) instead of being averaged into the
@@ -95,7 +112,47 @@ class StrategyPositionTracker {
                 side = event.side,
                 timestamp = event.timestamp,
             )
-        return apply(event.strategyId, trade)
+        val realized = apply(event.strategyId, trade)
+        syncPrimaryMfeTracker(event.strategyId, trade.symbol)
+        return realized
+    }
+
+    /**
+     * Drive the per-PRIMARY MFE trackers with a market tick. Called by the runtime on
+     * every [com.qkt.events.TickEvent]; cheap when there are no positions on the symbol.
+     */
+    fun onTick(
+        symbol: String,
+        price: BigDecimal,
+    ) {
+        for ((key, lm) in primaryMfeTrackers) {
+            if (key.second == symbol) lm.tracker.onTick(price)
+        }
+    }
+
+    /**
+     * Current MFE of the PRIMARY leg on [symbol] for [strategyId], or null if no primary
+     * exists. Backs the DSL accessor `POSITION.<stream>.mfe`.
+     */
+    fun primaryMfeFor(
+        strategyId: String,
+        symbol: String,
+    ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.value()
+
+    private fun syncPrimaryMfeTracker(
+        strategyId: String,
+        symbol: String,
+    ) {
+        val key = Pair(strategyId, symbol)
+        val primary = byStrategy[strategyId]?.get(symbol)?.primary()
+        if (primary == null) {
+            primaryMfeTrackers.remove(key)
+            return
+        }
+        val existing = primaryMfeTrackers[key]
+        if (existing == null || existing.legId != primary.legId) {
+            primaryMfeTrackers[key] = LegMfe(primary.legId, MfeTracker(primary.side, primary.entryPrice))
+        }
     }
 
     private fun applyStackOpen(

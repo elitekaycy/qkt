@@ -1,8 +1,12 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.StateAccessor
+import com.qkt.dsl.ast.StateSource
 import com.qkt.marketdata.Candle
 import com.qkt.pnl.StrategyPnLView
+import com.qkt.positions.Position
+import com.qkt.positions.StrategyPositionView
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -216,6 +220,47 @@ class ExprCompilerStateTest {
                         .StateAccessor(com.qkt.dsl.ast.StateSource.POSITION_AVG_PRICE, "btc"),
                 ).evaluate(ec) as Value.Num
         assertThat(v.v).isEqualByComparingTo("105.50")
+    }
+
+    @Test
+    fun `POSITION_MFE reads from positions view mfeFor`() {
+        val pos =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String): Position? = null
+
+                override fun allPositions(): Map<String, Position> = emptyMap()
+
+                override fun mfeFor(symbol: String): BigDecimal =
+                    if (symbol == "BTCUSDT") BigDecimal("12.34") else BigDecimal.ZERO
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_MFE, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("12.34")
+    }
+
+    @Test
+    fun `POSITION_MFE returns zero when view has no mfe data`() {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_MFE, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("0")
     }
 
     @Test
