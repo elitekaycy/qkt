@@ -216,8 +216,9 @@ When you stack modifiers on a `BUY`/`SELL`, the order matters but the parser is 
 3. Order-type modifier (`LIMIT AT`, `STOP AT`) — defaults to market
 4. `BRACKET { ... }` (or `STOP_LOSS ... TAKE_PROFIT ...` bare)
 5. `STACK <n> SPACING <points> ABOVE|BELOW [WITHIN <duration>]` — pyramiding
-6. `TIF <mode>` — time-in-force
-7. `LOG ...` — usually a separate action after `;` but can be inline-chained
+6. `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <qty> BRACKET { ... }` — conditional bracketed stacks (multiple per action allowed; see [STACK_AT](stack-at.md))
+7. `TIF <mode>` — time-in-force
+8. `LOG ...` — usually a separate action after `;` but can be inline-chained
 
 The most common patterns:
 
@@ -249,5 +250,6 @@ BUY btc SIZING 0.1 STACK 3 SPACING 200 ABOVE WITHIN 4h
 - [SIZING](sizing.md) — every way to specify position size
 - [BRACKET](bracket.md) — stop-loss and take-profit groups
 - [STACK](stack.md) — pyramiding multiple entries from one signal
+- [STACK_AT](stack-at.md) — conditional bracketed stacks fired by MFE thresholds
 - [Streams](streams.md) — what `<stream>` refers to
 - [LOG/Logging](../../operations/logging.md) — log routing, MDC keys, file outputs
