@@ -22,7 +22,10 @@ data class Config(
     val brokers: Map<String, Map<String, String>> = emptyMap(),
 ) {
     companion object {
-        private val varRegex = Regex("\\$\\{([A-Z_][A-Z_0-9]*)}")
+        // Matches `${NAME}` and `${NAME:-default}`. The default is used when the env
+        // var / system property is unset; without it, the literal `${...}` stays in the
+        // string and broker init logs a degraded-config warning.
+        private val varRegex = Regex("\\$\\{([A-Z_][A-Z_0-9]*)(?::-([^}]*))?}")
 
         /** Reads the YAML at [path] and parses it. Returns built-in defaults if the file is missing. */
         fun load(path: Path): Config {
@@ -72,7 +75,8 @@ data class Config(
         private fun expandVars(s: String): String =
             varRegex.replace(s) { m ->
                 val name = m.groupValues[1]
-                System.getenv(name) ?: System.getProperty(name) ?: m.value
+                val default = m.groups[2]?.value
+                System.getenv(name) ?: System.getProperty(name) ?: default ?: m.value
             }
     }
 }
