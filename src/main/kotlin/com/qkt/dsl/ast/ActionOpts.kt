@@ -7,6 +7,32 @@ data class ActionOpts(
     val bracket: BracketAst? = null,
     val oco: OcoAst? = null,
     val stack: StackAst? = null,
+    /**
+     * Phase 27: conditional bracketed stacks. Each clause fires once when its MFE
+     * threshold is reached within its time window. Multiple clauses on one action are
+     * independent of each other and of the parent's own bracket.
+     */
+    val stackAts: List<StackAtClause> = emptyList(),
+)
+
+/**
+ * One `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <sizing> BRACKET {...}`
+ * clause attached to a BUY/SELL action.
+ *
+ * Phase 27: the clause fires (emits a stack order) when the parent leg's MFE crosses
+ * [mfeThreshold] within [withinDuration] of the parent's open. Each stack has its own
+ * [bracket] and tracks independently as a STACK leg in the [com.qkt.positions.LegBook].
+ *
+ * [sizing] uses the same `SizingAst` shape as the parent's sizing; the stack engine
+ * resolves it at fire time using the parent's filled quantity as the reference. A
+ * `SizeQty(0.30)` is a literal 0.30 lots; the "0.30 of main" pattern is expressed via
+ * the regular sizing surface (no new sub-grammar).
+ */
+data class StackAtClause(
+    val mfeThreshold: ExprAst,
+    val withinDuration: DurationAst,
+    val sizing: SizingAst,
+    val bracket: BracketAst,
 )
 
 sealed interface SizingAst
