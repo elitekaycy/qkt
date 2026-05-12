@@ -12,8 +12,8 @@ import java.math.BigDecimal
  * around it: order management, P&L attribution, position tracking, risk.
  *
  * Implementations: [PaperBroker] (in-process simulator), [com.qkt.broker.mt5.MT5Broker]
- * (MetaTrader 5 via gateway), [com.qkt.broker.bybit.BybitSpotBroker] /
- * [com.qkt.broker.bybit.BybitLinearBroker] (Bybit REST/WS),
+ * (MetaTrader 5 via gateway), [com.qkt.broker.bybit.spot.BybitSpotBroker] /
+ * [com.qkt.broker.bybit.linear.BybitLinearBroker] (Bybit REST/WS),
  * [com.qkt.broker.composite.CompositeBroker] (multi-venue router).
  */
 interface Broker {

@@ -1,5 +1,6 @@
-package com.qkt.broker.bybit
+package com.qkt.broker.bybit.spot
 
+import com.qkt.broker.bybit.FakeBybitClient
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
