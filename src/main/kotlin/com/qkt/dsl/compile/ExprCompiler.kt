@@ -67,7 +67,10 @@ class ExprCompiler(
             when (acc.field) {
                 NowField.EPOCH_MS -> Value.Num(BigDecimal.valueOf(nowMs))
                 else -> {
-                    val z = java.time.Instant.ofEpochMilli(nowMs).atZone(java.time.ZoneOffset.UTC)
+                    val z =
+                        java.time.Instant
+                            .ofEpochMilli(nowMs)
+                            .atZone(java.time.ZoneOffset.UTC)
                     val n =
                         when (acc.field) {
                             NowField.HOUR_UTC -> z.hour

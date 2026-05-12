@@ -14,7 +14,10 @@ import org.junit.jupiter.api.Test
 
 class NowAccessorEvalTest {
     // 2026-05-11 13:45:00 UTC — a Monday
-    private val mondayMs = java.time.Instant.parse("2026-05-11T13:45:00Z").toEpochMilli()
+    private val mondayMs =
+        java.time.Instant
+            .parse("2026-05-11T13:45:00Z")
+            .toEpochMilli()
 
     private fun ec(clock: FixedClock): EvalContext =
         EvalContext(
@@ -46,7 +49,9 @@ class NowAccessorEvalTest {
         val ctx = ec(FixedClock(time = mondayMs))
         val ec = ExprCompiler()
         assertThat((ec.compile(NowAccessor(NowField.HOUR_UTC)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("13")
-        assertThat((ec.compile(NowAccessor(NowField.MINUTE_UTC)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("45")
+        assertThat(
+            (ec.compile(NowAccessor(NowField.MINUTE_UTC)).evaluate(ctx) as Value.Num).v,
+        ).isEqualByComparingTo("45")
         assertThat((ec.compile(NowAccessor(NowField.WEEKDAY)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("0")
         assertThat((ec.compile(NowAccessor(NowField.EPOCH_MS)).evaluate(ctx) as Value.Num).v)
             .isEqualByComparingTo(BigDecimal.valueOf(mondayMs))
