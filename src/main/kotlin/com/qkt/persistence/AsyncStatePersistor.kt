@@ -35,7 +35,8 @@ class AsyncStatePersistor(
     private val log = LoggerFactory.getLogger(AsyncStatePersistor::class.java)
 
     private val callerRunsCount: java.util.concurrent.atomic.AtomicLong =
-        java.util.concurrent.atomic.AtomicLong(0)
+        java.util.concurrent.atomic
+            .AtomicLong(0)
 
     private val executor: ThreadPoolExecutor =
         ThreadPoolExecutor(
