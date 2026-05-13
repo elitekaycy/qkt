@@ -42,6 +42,20 @@ tasks.register<JavaExec>("runDemo") {
     mainClass.set("com.qkt.app.MainKt")
 }
 
+tasks.register<JavaExec>("runParityBarsXauusd") {
+    group = "verification"
+    description = "Compare TradingView vs MT5 historical M5 bars for XAUUSD"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.qkt.tools.parity.ParityBarsXauusdKt")
+}
+
+tasks.register<JavaExec>("runParityTicksXauusd") {
+    group = "verification"
+    description = "Compare live TradingView vs MT5 ticks for XAUUSD over a fixed window"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.qkt.tools.parity.ParityTicksXauusdKt")
+}
+
 tasks.test {
     useJUnitPlatform {
         val included =
