@@ -18,14 +18,21 @@ import org.slf4j.LoggerFactory
  */
 internal class StateFileWriter(
     private val rootDir: Path,
+    private val slowWriteThresholdMs: Long = 100L,
 ) {
     private val log = LoggerFactory.getLogger(StateFileWriter::class.java)
+
+    val totalWrites: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
+    val totalBytesWritten: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
+    val slowWrites: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
+    val failedWrites: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
 
     fun write(
         strategyName: String,
         fileName: String,
         json: String,
     ) {
+        val start = System.nanoTime()
         try {
             val dir = rootDir.resolve(strategyName)
             Files.createDirectories(dir)
@@ -49,7 +56,22 @@ internal class StateFileWriter(
                 // ATOMIC_MOVE not supported on this filesystem; fall back to non-atomic.
                 Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
             }
+            totalWrites.incrementAndGet()
+            totalBytesWritten.addAndGet(json.length.toLong())
+            val elapsedMs = (System.nanoTime() - start) / 1_000_000L
+            if (elapsedMs > slowWriteThresholdMs) {
+                slowWrites.incrementAndGet()
+                log.warn(
+                    "StateFileWriter.write slow: {}ms for {}/{} ({} bytes) — threshold {}ms",
+                    elapsedMs,
+                    strategyName,
+                    fileName,
+                    json.length,
+                    slowWriteThresholdMs,
+                )
+            }
         } catch (e: Exception) {
+            failedWrites.incrementAndGet()
             log.warn("StateFileWriter.write failed for $strategyName/$fileName: ${e.message}")
         }
     }
