@@ -41,11 +41,29 @@ class BybitLinearBrokerTest {
 
         val positions = broker.getOpenPositions()
         assertThat(positions.keys).containsExactlyInAnyOrder("BYBIT_LINEAR:BTCUSDT", "BYBIT_LINEAR:ETHUSDT")
-        val btc = positions["BYBIT_LINEAR:BTCUSDT"]!!
+        val btc = positions["BYBIT_LINEAR:BTCUSDT"]!!.single()
         assertThat(btc.quantity.toPlainString()).isEqualTo("0.10")
         assertThat(btc.avgEntryPrice.toPlainString()).isEqualTo("60000.5")
-        val eth = positions["BYBIT_LINEAR:ETHUSDT"]!!
+        val eth = positions["BYBIT_LINEAR:ETHUSDT"]!!.single()
         assertThat(eth.quantity.toPlainString()).isEqualTo("-1.5") // Sell flips sign
+    }
+
+    @Test
+    fun `getOpenPositions preserves hedge-mode long+short on same symbol as separate entries`() {
+        val client = FakeBybitClient()
+        val broker = makeBroker(client)
+        client.responses["/v5/position/list"] =
+            """
+            {"retCode":0,"retMsg":"OK","result":{"list":[
+              {"symbol":"BTCUSDT","side":"Buy","size":"0.10","avgPrice":"60000"},
+              {"symbol":"BTCUSDT","side":"Sell","size":"0.05","avgPrice":"60200"}
+            ]}}
+            """.trimIndent()
+        val positions = broker.getOpenPositions()
+        val btcLegs = positions["BYBIT_LINEAR:BTCUSDT"]!!
+        assertThat(btcLegs).hasSize(2)
+        assertThat(btcLegs.map { it.quantity.toPlainString() })
+            .containsExactlyInAnyOrder("0.10", "-0.05")
     }
 
     @Test

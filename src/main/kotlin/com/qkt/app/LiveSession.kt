@@ -93,8 +93,7 @@ class LiveSession(
         val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
         for ((strategyId, _) in strategies) {
             for (symbol in symbols) {
-                val brokerForSymbol =
-                    brokerByQktSymbol[symbol]?.let { listOf(it) } ?: emptyList()
+                val brokerForSymbol = brokerByQktSymbol[symbol] ?: emptyList()
                 val outcome = reconciler.reconcile(strategyId, symbol, brokerForSymbol)
                 when (outcome) {
                     is com.qkt.persistence.LegBookReconciler.Outcome.Attached -> {
