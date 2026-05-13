@@ -18,7 +18,7 @@ class ExprCompilerIndicatorTest {
         val compiled = ExprCompiler(bindings).compile(expr)
         val candle =
             Candle(
-                "BTCUSDT",
+                "BACKTEST:BTCUSDT",
                 BigDecimal("100"),
                 BigDecimal("100"),
                 BigDecimal("100"),
@@ -47,7 +47,7 @@ class ExprCompilerIndicatorTest {
         for (price in listOf("100", "110", "120")) {
             val c =
                 Candle(
-                    "BTCUSDT",
+                    "BACKTEST:BTCUSDT",
                     BigDecimal(price),
                     BigDecimal(price),
                     BigDecimal(price),

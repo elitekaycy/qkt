@@ -105,10 +105,10 @@ RULES
 
         // Feed three ticks that span two minute boundaries, closing one or two candles.
         val base = 1_705_276_800_000L // top of a minute
-        sharedHub.feed(Tick("BTCUSDT", BigDecimal("100"), base))
-        sharedHub.feed(Tick("BTCUSDT", BigDecimal("110"), base + 30_000))
+        sharedHub.feed(Tick("BACKTEST:BTCUSDT", BigDecimal("100"), base))
+        sharedHub.feed(Tick("BACKTEST:BTCUSDT", BigDecimal("110"), base + 30_000))
         // Cross the minute boundary to close the first candle.
-        sharedHub.feed(Tick("BTCUSDT", BigDecimal("120"), base + 65_000))
+        sharedHub.feed(Tick("BACKTEST:BTCUSDT", BigDecimal("120"), base + 65_000))
 
         synchronized(received) {
             // Each closed candle is delivered to both listeners with the same endTime.

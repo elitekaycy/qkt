@@ -36,7 +36,7 @@ class Mt5TickFeedSourceTest {
             val source =
                 Mt5TickFeedSource(
                     baseUrl = server.url("/").toString().trimEnd('/'),
-                    symbols = listOf("XAUUSDm"),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
                     pollIntervalMs = 5L,
                     http = OkHttpClient(),
                 )

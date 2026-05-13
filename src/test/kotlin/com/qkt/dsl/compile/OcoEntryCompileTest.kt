@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 class OcoEntryCompileTest {
     private val candle =
         Candle(
-            "XAUUSD",
+            "BACKTEST:XAUUSD",
             BigDecimal("2000"),
             BigDecimal("2000"),
             BigDecimal("2000"),

@@ -43,15 +43,12 @@ class PortfolioDeployer(
                 children.add(handle)
                 childWrappers.add(wrapper)
             }
-            val tvSymbols =
-                compiled.ast.streams
-                    .map { "${it.broker}:${it.symbol}" }
-                    .distinct()
+            val symbols = compiled.ast.streams.map { it.qktSymbol }.distinct()
             val supervisor =
                 PortfolioSupervisor(
                     ast = compiled.ast,
                     children = childWrappers,
-                    marketSource = if (tvSymbols.isEmpty()) null else marketSourceProvider(tvSymbols),
+                    marketSource = if (symbols.isEmpty()) null else marketSourceProvider(symbols),
                 )
             supervisor.start()
 

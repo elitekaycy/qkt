@@ -25,7 +25,7 @@ class AstCompilerMultiPositionSymbolsTest {
                         BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }
             """.trimIndent()
         val s = compile(src)
-        assertThat(s.multiPositionPerSymbolSymbols).containsExactlyInAnyOrder("BTCUSDT")
+        assertThat(s.multiPositionPerSymbolSymbols).containsExactlyInAnyOrder("BACKTEST:BTCUSDT")
     }
 
     @Test
@@ -58,7 +58,7 @@ class AstCompilerMultiPositionSymbolsTest {
                 }
             """.trimIndent()
         val s = compile(src)
-        assertThat(s.multiPositionPerSymbolSymbols).containsExactlyInAnyOrder("XAUUSD")
+        assertThat(s.multiPositionPerSymbolSymbols).containsExactlyInAnyOrder("BACKTEST:XAUUSD")
     }
 
     @Test
@@ -76,6 +76,6 @@ class AstCompilerMultiPositionSymbolsTest {
                     STACK_AT MFE >= 5 WITHIN 30m SIZING 0.1 BRACKET { STOP LOSS BY 1, TAKE PROFIT BY 5 }
             """.trimIndent()
         val s = compile(src)
-        assertThat(s.multiPositionPerSymbolSymbols).containsExactlyInAnyOrder("BTCUSDT", "ETHUSDT")
+        assertThat(s.multiPositionPerSymbolSymbols).containsExactlyInAnyOrder("BACKTEST:BTCUSDT", "BACKTEST:ETHUSDT")
     }
 }

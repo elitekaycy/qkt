@@ -48,7 +48,7 @@ class OrderSurfaceEndToEndTest {
         val ctx = testStrategyContext()
         val c =
             Candle(
-                "BTCUSDT",
+                "BACKTEST:BTCUSDT",
                 BigDecimal("110"),
                 BigDecimal("110"),
                 BigDecimal("110"),

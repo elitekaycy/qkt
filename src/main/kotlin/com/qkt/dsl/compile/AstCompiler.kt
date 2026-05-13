@@ -78,7 +78,7 @@ class AstCompiler {
                         ?: streams.keys.firstOrNull()
                         ?: error("Strategy must declare at least one stream")
                 val ruleSymbol =
-                    streams[ruleAlias]?.symbol
+                    streams[ruleAlias]?.qktSymbol
                         ?: error("Unknown stream alias: $ruleAlias")
                 val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
                 val mergedAction = mergeDefaults(rule.action, ast.defaults)
@@ -133,11 +133,11 @@ class AstCompiler {
             when (a) {
                 is Buy ->
                     if (a.opts.stackAts.isNotEmpty()) {
-                        streams[a.stream]?.symbol?.let { out.add(it) }
+                        streams[a.stream]?.qktSymbol?.let { out.add(it) }
                     }
                 is Sell ->
                     if (a.opts.stackAts.isNotEmpty()) {
-                        streams[a.stream]?.symbol?.let { out.add(it) }
+                        streams[a.stream]?.qktSymbol?.let { out.add(it) }
                     }
                 is Block -> a.actions.forEach { walk(it) }
                 is OcoEntry -> {
@@ -165,7 +165,7 @@ private class CompiledStrategy(
     override val pendingStacks: PendingStacks,
     override val multiPositionPerSymbolSymbols: Set<String>,
 ) : DslCompiledStrategy {
-    private val subscribedSymbols: Set<String> = streams.values.map { it.symbol }.toSet()
+    private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
     private var hubBound: Boolean = false
     private var boundHub: CandleHub? = null
 
@@ -204,7 +204,7 @@ private class CompiledStrategy(
                 currentAlias = alias,
             )
 
-        val symbol = streams[alias]!!.symbol
+        val symbol = streams[alias]!!.qktSymbol
 
         // 1. Position transitions for the alias's symbol
         val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
@@ -272,7 +272,7 @@ private class CompiledStrategy(
 
         // 1. Position transitions for this candle's symbol
         for ((alias, key) in streams) {
-            val symbol = key.symbol
+            val symbol = key.qktSymbol
             if (candle.symbol != symbol) continue
             val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
             val transition = transitions.observe(symbol, qty)
@@ -298,7 +298,7 @@ private class CompiledStrategy(
             val rhs = letCompiledRhs[name] ?: continue
             val v = rhs.evaluate(ec)
             for ((alias, key) in streams) {
-                if (key.symbol != candle.symbol) continue
+                if (key.qktSymbol != candle.symbol) continue
                 snapshotStore.pushRolling(alias, name, if (v is Value.Num) v.v else null)
             }
         }
@@ -306,7 +306,7 @@ private class CompiledStrategy(
         // 4. Aggregate updates
         for (b in aggregates.all()) {
             if (b.window is SinceOpen) {
-                val symbol = streams[b.ruleAlias]?.symbol
+                val symbol = streams[b.ruleAlias]?.qktSymbol
                 val curQty = symbol?.let { ctx.positions.positionFor(it)?.quantity } ?: BigDecimal.ZERO
                 if (curQty.signum() != 0) b.update(ec)
             } else {

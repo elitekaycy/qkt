@@ -26,7 +26,7 @@ class StackOrchestratorTest {
     fun `no engines registered means ticks are no-ops`() {
         val captured = mutableListOf<Signal>()
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
-        orch.onTick("EURUSD", BigDecimal("1.1050"))
+        orch.onTick("BACKTEST:EURUSD", BigDecimal("1.1050"))
         assertThat(orch.activeCount()).isEqualTo(0)
         assertThat(captured).isEmpty()
     }
@@ -37,7 +37,7 @@ class StackOrchestratorTest {
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
         orch.onPrimaryFilled(
             parentLegId = "p1",
-            parentSymbol = "EURUSD",
+            parentSymbol = "BACKTEST:EURUSD",
             parentSide = Side.BUY,
             parentEntryPrice = BigDecimal("1.1000"),
             tiers = emptyList(),
@@ -52,16 +52,16 @@ class StackOrchestratorTest {
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
         orch.onPrimaryFilled(
             parentLegId = "p1",
-            parentSymbol = "EURUSD",
+            parentSymbol = "BACKTEST:EURUSD",
             parentSide = Side.BUY,
             parentEntryPrice = BigDecimal("1.1000"),
             tiers = listOf(tier()),
         )
         assertThat(orch.activeCount()).isEqualTo(1)
-        orch.onTick("EURUSD", BigDecimal("1.1060")) // MFE = 0.006, fires
+        orch.onTick("BACKTEST:EURUSD", BigDecimal("1.1060")) // MFE = 0.006, fires
         assertThat(captured).hasSize(1)
         val req = (captured[0] as Signal.Submit).request as OrderRequest.Bracket
-        assertThat(req.symbol).isEqualTo("EURUSD")
+        assertThat(req.symbol).isEqualTo("BACKTEST:EURUSD")
         assertThat(req.side).isEqualTo(Side.BUY)
     }
 
@@ -69,24 +69,24 @@ class StackOrchestratorTest {
     fun `onTick only dispatches to engines for the matching symbol`() {
         val captured = mutableListOf<Signal>()
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
-        orch.onPrimaryFilled("p-eur", "EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
+        orch.onPrimaryFilled("p-eur", "BACKTEST:EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
         orch.onPrimaryFilled("p-gbp", "GBPUSD", Side.BUY, BigDecimal("1.2500"), listOf(tier()))
         // Tick on EURUSD only — only p-eur should fire
-        orch.onTick("EURUSD", BigDecimal("1.1060"))
+        orch.onTick("BACKTEST:EURUSD", BigDecimal("1.1060"))
         assertThat(captured).hasSize(1)
         val req = (captured[0] as Signal.Submit).request as OrderRequest.Bracket
-        assertThat(req.symbol).isEqualTo("EURUSD")
+        assertThat(req.symbol).isEqualTo("BACKTEST:EURUSD")
     }
 
     @Test
     fun `onPrimaryClosed removes the engine and stops further ticks affecting it`() {
         val captured = mutableListOf<Signal>()
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
-        orch.onPrimaryFilled("p1", "EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
+        orch.onPrimaryFilled("p1", "BACKTEST:EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
         assertThat(orch.activeCount()).isEqualTo(1)
         orch.onPrimaryClosed("p1")
         assertThat(orch.activeCount()).isEqualTo(0)
-        orch.onTick("EURUSD", BigDecimal("1.1100"))
+        orch.onTick("BACKTEST:EURUSD", BigDecimal("1.1100"))
         assertThat(captured).isEmpty()
     }
 
@@ -100,9 +100,9 @@ class StackOrchestratorTest {
     @Test
     fun `registering the same parentLegId twice fails loudly`() {
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { }
-        orch.onPrimaryFilled("p1", "EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
+        orch.onPrimaryFilled("p1", "BACKTEST:EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
         assertThatThrownBy {
-            orch.onPrimaryFilled("p1", "EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
+            orch.onPrimaryFilled("p1", "BACKTEST:EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
         }.isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("already registered")
     }
@@ -113,7 +113,7 @@ class StackOrchestratorTest {
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
         orch.onPrimaryFilled(
             parentLegId = "p1",
-            parentSymbol = "EURUSD",
+            parentSymbol = "BACKTEST:EURUSD",
             parentSide = Side.BUY,
             parentEntryPrice = BigDecimal("1.1000"),
             tiers = listOf(tier()),
@@ -122,7 +122,7 @@ class StackOrchestratorTest {
         assertThat(orch.activeCount()).isEqualTo(1)
         orch.onPossibleClose("p1-bracket-tp") // TP fired → parent closed
         assertThat(orch.activeCount()).isEqualTo(0)
-        orch.onTick("EURUSD", BigDecimal("1.1500"))
+        orch.onTick("BACKTEST:EURUSD", BigDecimal("1.1500"))
         assertThat(captured).isEmpty()
     }
 
@@ -131,7 +131,7 @@ class StackOrchestratorTest {
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { }
         orch.onPrimaryFilled(
             parentLegId = "p1",
-            parentSymbol = "EURUSD",
+            parentSymbol = "BACKTEST:EURUSD",
             parentSide = Side.BUY,
             parentEntryPrice = BigDecimal("1.1000"),
             tiers = listOf(tier()),
@@ -145,9 +145,9 @@ class StackOrchestratorTest {
     fun `multiple engines on same symbol all fire on a qualifying tick`() {
         val captured = mutableListOf<Signal>()
         val orch = StackOrchestrator(FixedClock(time = 1_000L)) { captured.add(it) }
-        orch.onPrimaryFilled("p1", "EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
-        orch.onPrimaryFilled("p2", "EURUSD", Side.BUY, BigDecimal("1.1010"), listOf(tier()))
-        orch.onTick("EURUSD", BigDecimal("1.1080"))
+        orch.onPrimaryFilled("p1", "BACKTEST:EURUSD", Side.BUY, BigDecimal("1.1000"), listOf(tier()))
+        orch.onPrimaryFilled("p2", "BACKTEST:EURUSD", Side.BUY, BigDecimal("1.1010"), listOf(tier()))
+        orch.onTick("BACKTEST:EURUSD", BigDecimal("1.1080"))
         // p1: MFE = 0.008 (≥ 0.005), fires. p2: MFE = 0.007 (≥ 0.005), fires.
         assertThat(captured).hasSize(2)
     }

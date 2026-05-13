@@ -104,7 +104,7 @@ class Backtest(
             for (key in s.declaredStreams.values) {
                 brokerSymbols
                     .getOrPut(key.broker) { mutableSetOf() }
-                    .add(key.symbol)
+                    .add(key.qktSymbol)
             }
         }
         val broker: com.qkt.broker.Broker =

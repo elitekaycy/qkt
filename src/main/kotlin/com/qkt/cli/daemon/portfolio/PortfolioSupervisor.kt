@@ -135,7 +135,7 @@ class PortfolioSupervisor(
 
     private fun tickLoop() {
         val source = marketSource ?: return
-        val symbols = ast.streams.map { it.symbol }.distinct()
+        val symbols = ast.streams.map { it.qktSymbol }.distinct()
         if (symbols.isEmpty()) return
 
         val window = TimeWindow.parse(ast.streams.first().timeframe)

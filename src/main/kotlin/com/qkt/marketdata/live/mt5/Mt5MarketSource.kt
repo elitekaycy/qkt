@@ -45,12 +45,13 @@ class Mt5MarketSource(
 
     override fun liveTicks(symbols: List<String>): TickFeed {
         require(symbols.all { supports(it) }) { "$name cannot serve $symbols" }
-        val wireSymbols = symbols.map { symbolMap.toBroker(it.removePrefix(prefix)) }
+        val wireToQkt: Map<String, String> =
+            symbols.associateBy { qkt -> symbolMap.toBroker(qkt.removePrefix(prefix)) }
         return LiveTickFeed(
             source =
                 Mt5TickFeedSource(
                     baseUrl = profile.gatewayUrl,
-                    symbols = wireSymbols,
+                    symbolMap = wireToQkt,
                     pollIntervalMs = profile.pollIntervalMs,
                     http = http,
                     clock = clock,
