@@ -6,6 +6,7 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
+import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.live.LiveTickFeed
@@ -21,11 +22,16 @@ import okhttp3.OkHttpClient
  * Routes symbols prefixed `<NAME>:` where `<NAME>` is `profile.name.uppercase()`. The
  * prefix is stripped before applying [profile]'s symbol policy, so `EXNESS:XAUUSD`
  * resolves on the wire to `XAUUSDm` for an Exness profile with `suffix = "m"`.
+ *
+ * [calendar] gates the live-ticks poller: when supplied and the calendar reports
+ * out-of-session for the wire symbols, the poller idles instead of hitting the gateway.
+ * Defaults to [TradingCalendar.fxDefault] for FX/metals semantics.
  */
 class Mt5MarketSource(
     private val profile: MT5BrokerProfile,
     private val http: OkHttpClient = OkHttpClient(),
     private val clock: Clock = SystemClock(),
+    private val calendar: TradingCalendar? = TradingCalendar.fxDefault(),
 ) : MarketSource,
     AutoCloseable {
     override val name: String = "MT5:${profile.name}"
@@ -48,6 +54,7 @@ class Mt5MarketSource(
                     pollIntervalMs = profile.pollIntervalMs,
                     http = http,
                     clock = clock,
+                    calendar = calendar,
                 ),
             queueCapacity = 10_000,
         )
