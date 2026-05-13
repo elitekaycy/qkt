@@ -29,6 +29,14 @@ data class Config(
      * strategy the daemon hosts shares these limits.
      */
     val risk: Map<String, String> = emptyMap(),
+    /**
+     * Engine state persistence settings (Phase 29). Knobs:
+     *   - `enabled` — `true` (default) wires [com.qkt.persistence.FileStatePersistor]; `false`
+     *     uses [com.qkt.persistence.NoopStatePersistor] (no disk I/O, no restart recovery).
+     *   - `dir` — root directory for state files. `~/` is expanded against `$HOME`.
+     *     Default: `~/.qkt/state`.
+     */
+    val state: Map<String, String> = emptyMap(),
 ) {
     /**
      * Effective `max_daily_loss` from [risk], or [DEFAULT_MAX_DAILY_LOSS]. Operators set
@@ -36,6 +44,28 @@ data class Config(
      */
     val maxDailyLoss: BigDecimal
         get() = risk["max_daily_loss"]?.let(::BigDecimal) ?: DEFAULT_MAX_DAILY_LOSS
+
+    /** Effective `state.enabled` from config; defaults to `true`. */
+    val stateEnabled: Boolean
+        get() = state["enabled"]?.lowercase()?.let { it != "false" } ?: true
+
+    /** Effective `state.dir`; defaults to `~/.qkt/state`. `~/` expanded against `$HOME`. */
+    val stateDir: String
+        get() = (state["dir"] ?: "~/.qkt/state").replaceFirst("~/", System.getProperty("user.home") + "/")
+
+    /**
+     * Returns the [com.qkt.persistence.StatePersistor] for this config. `NoopStatePersistor`
+     * if `state.enabled = false`; `FileStatePersistor` rooted at [stateDir] otherwise.
+     */
+    fun statePersistor(): com.qkt.persistence.StatePersistor =
+        if (!stateEnabled) {
+            com.qkt.persistence.NoopStatePersistor()
+        } else {
+            com.qkt.persistence.FileStatePersistor(
+                java.nio.file.Path
+                    .of(stateDir),
+            )
+        }
 
     companion object {
         /**
@@ -72,6 +102,7 @@ data class Config(
                 fetchers = parseNested(map["fetchers"]),
                 brokers = parseNested(map["brokers"]),
                 risk = parseFlat(map["risk"]),
+                state = parseFlat(map["state"]),
             )
         }
 
