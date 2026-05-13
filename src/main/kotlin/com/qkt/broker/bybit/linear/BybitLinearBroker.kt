@@ -157,6 +157,51 @@ class BybitLinearBroker(
         return ack
     }
 
+    override fun getOpenPositions(): Map<String, com.qkt.positions.Position> {
+        val raw =
+            try {
+                transport.postSigned("/v5/position/list", """{"category":"linear","settleCoin":"USDT"}""")
+            } catch (e: Exception) {
+                log.warn("BybitLinear getOpenPositions failed: {}", e.message)
+                return emptyMap()
+            }
+        val tree = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return emptyMap()
+        if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return emptyMap()
+        val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return emptyMap()
+        val out = mutableMapOf<String, com.qkt.positions.Position>()
+        for (entry in list) {
+            val obj = entry.jsonObject
+            val bareSym = obj["symbol"]?.jsonPrimitive?.content ?: continue
+            val rawSize = obj["size"]?.jsonPrimitive?.content ?: continue
+            if (rawSize.isBlank()) continue
+            val size = java.math.BigDecimal(rawSize)
+            if (size.signum() == 0) continue
+            val side = obj["side"]?.jsonPrimitive?.content ?: continue
+            val signed = if (side == "Sell") size.negate() else size
+            val avg = java.math.BigDecimal(obj["avgPrice"]?.jsonPrimitive?.content ?: "0")
+            val qktSymbol = "BYBIT_LINEAR:$bareSym"
+            // Bybit linear can hold both long and short on the same symbol in hedge mode;
+            // collapse to net for the reconciler's Position view. Hedge-mode separate
+            // tracking is future work.
+            val existing = out[qktSymbol]
+            if (existing == null) {
+                out[qktSymbol] = com.qkt.positions.Position(qktSymbol, signed, avg)
+            } else {
+                val netQty = existing.quantity.add(signed)
+                val notional = existing.avgEntryPrice.multiply(existing.quantity.abs()).add(avg.multiply(size))
+                val absSum = existing.quantity.abs().add(size)
+                val newAvg =
+                    if (absSum.signum() == 0) {
+                        java.math.BigDecimal.ZERO
+                    } else {
+                        notional.divide(absSum, com.qkt.common.Money.CONTEXT)
+                    }
+                out[qktSymbol] = com.qkt.positions.Position(qktSymbol, netQty, newAvg)
+            }
+        }
+        return out
+    }
+
     override fun cancel(orderId: String) {
         val symbol = symbolByClientOrderId[orderId] ?: return
         val body = BybitOrderTranslator.toCancelBody(symbol = symbol, orderLinkId = orderId)

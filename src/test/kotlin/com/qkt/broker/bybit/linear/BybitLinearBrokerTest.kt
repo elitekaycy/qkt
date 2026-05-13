@@ -28,6 +28,50 @@ class BybitLinearBrokerTest {
     }
 
     @Test
+    fun `getOpenPositions parses linear position list and emits BYBIT_LINEAR symbol`() {
+        val client = FakeBybitClient()
+        val broker = makeBroker(client)
+        client.responses["/v5/position/list"] =
+            """
+            {"retCode":0,"retMsg":"OK","result":{"list":[
+              {"symbol":"BTCUSDT","side":"Buy","size":"0.10","avgPrice":"60000.5"},
+              {"symbol":"ETHUSDT","side":"Sell","size":"1.5","avgPrice":"3200.0"}
+            ]}}
+            """.trimIndent()
+
+        val positions = broker.getOpenPositions()
+        assertThat(positions.keys).containsExactlyInAnyOrder("BYBIT_LINEAR:BTCUSDT", "BYBIT_LINEAR:ETHUSDT")
+        val btc = positions["BYBIT_LINEAR:BTCUSDT"]!!
+        assertThat(btc.quantity.toPlainString()).isEqualTo("0.10")
+        assertThat(btc.avgEntryPrice.toPlainString()).isEqualTo("60000.5")
+        val eth = positions["BYBIT_LINEAR:ETHUSDT"]!!
+        assertThat(eth.quantity.toPlainString()).isEqualTo("-1.5") // Sell flips sign
+    }
+
+    @Test
+    fun `getOpenPositions returns empty on non-zero retCode`() {
+        val client = FakeBybitClient()
+        val broker = makeBroker(client)
+        client.responses["/v5/position/list"] = """{"retCode":10001,"retMsg":"err","result":{"list":[]}}"""
+        assertThat(broker.getOpenPositions()).isEmpty()
+    }
+
+    @Test
+    fun `getOpenPositions skips entries with zero size`() {
+        val client = FakeBybitClient()
+        val broker = makeBroker(client)
+        client.responses["/v5/position/list"] =
+            """
+            {"retCode":0,"retMsg":"OK","result":{"list":[
+              {"symbol":"BTCUSDT","side":"Buy","size":"0","avgPrice":"60000"},
+              {"symbol":"ETHUSDT","side":"Buy","size":"0.5","avgPrice":"3200"}
+            ]}}
+            """.trimIndent()
+        val positions = broker.getOpenPositions()
+        assertThat(positions.keys).containsExactly("BYBIT_LINEAR:ETHUSDT")
+    }
+
+    @Test
     fun `name capabilities and supports`() {
         val broker = makeBroker(FakeBybitClient())
         assertThat(broker.name).isEqualTo("BybitLinear")
