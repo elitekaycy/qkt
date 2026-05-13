@@ -33,6 +33,20 @@ class StateDir private constructor(
 
     fun logFile(name: String): Path = logsDir.resolve("${name.replace("/", "__")}.log")
 
+    /**
+     * Resolves a per-strategy state file path under `<root>/state/<name>/<fileName>`.
+     *
+     * Portfolio children embed `/` in their name (`parent/alias`); kept as-is to make the
+     * on-disk layout mirror the in-memory naming. Caller is responsible for creating the
+     * parent directory before writing.
+     */
+    fun stateFor(
+        name: String,
+        fileName: String,
+    ): Path = root.resolve("state").resolve(name).resolve(fileName)
+
+    val stateRoot: Path = root.resolve("state")
+
     companion object {
         fun resolve(override: String? = null): StateDir {
             val root =
