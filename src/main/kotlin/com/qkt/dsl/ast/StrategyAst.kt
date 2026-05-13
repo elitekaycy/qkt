@@ -29,6 +29,8 @@ data class StreamDecl(
         require(symbol.isNotBlank()) { "StreamDecl.symbol must not be blank" }
         require(timeframe.isNotBlank()) { "StreamDecl.timeframe must not be blank" }
     }
+
+    val qktSymbol: String get() = "$broker:$symbol"
 }
 
 data class ConstantDecl(
