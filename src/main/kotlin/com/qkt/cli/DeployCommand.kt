@@ -24,9 +24,10 @@ class DeployCommand(
         val name = args.option("as") ?: path.fileName.toString().removeSuffix(".qkt")
         val stateDir = StateDir.resolve(args.option("state-dir"))
         val client = clientFactory(stateDir)
+        val ignoreMismatches = args.option("reconcile") == "ignore-mismatches"
         val body =
             try {
-                client.deploy(name, path)
+                client.deploy(name, path, ignoreMismatches)
             } catch (e: ControlClient.NoDaemonRunningException) {
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR

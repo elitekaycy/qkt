@@ -59,6 +59,15 @@ interface Broker {
         orderId: String,
         changes: OrderModification,
     ): SubmitAck = throw UnsupportedOperationException("$name does not support modify")
+
+    /**
+     * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol.
+     *
+     * Used at strategy deploy time by [com.qkt.persistence.LegBookReconciler] to merge
+     * broker reality with persisted state. Default returns an empty map — only brokers
+     * with venue-side state (MT5, Bybit) override. Paper brokers have nothing to report.
+     */
+    fun getOpenPositions(): Map<String, com.qkt.positions.Position> = emptyMap()
 }
 
 /**

@@ -79,8 +79,8 @@ RULES
                 Files.writeString(it, strategySrc.replace("STRATEGY shared", "STRATEGY beta_strat"))
             }
 
-        val alpha = factory.create("alpha", alphaFile)
-        val beta = factory.create("beta", betaFile)
+        val alpha = factory.create("alpha", alphaFile, false)
+        val beta = factory.create("beta", betaFile, false)
         try {
             assertThat(sharedHub.keys()).hasSize(1)
             val key = HubKey("BACKTEST", "BTCUSDT", "1m")

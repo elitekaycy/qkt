@@ -433,6 +433,8 @@ object ControlRoutes {
         if (!Files.exists(path)) {
             return respond(ex, 400, """{"error":"file not found: $file"}""")
         }
+        val params = parseQuery(ex.requestURI.rawQuery)
+        val ignoreMismatches = params["reconcile"] == "ignore-mismatches"
 
         val parsed =
             when (
@@ -451,7 +453,10 @@ object ControlRoutes {
             is com.qkt.dsl.parse.ParsedFile.StrategyFile -> {
                 val handle =
                     try {
-                        registry.deploy(name, path)
+                        registry.deploy(name, path, ignoreMismatches)
+                    } catch (e: com.qkt.app.ReconcileException) {
+                        val msg = (e.message ?: "reconcile mismatch").replace("\"", "'")
+                        return respond(ex, 409, """{"error":"$msg","kind":"reconcile-mismatch"}""")
                     } catch (e: IllegalStateException) {
                         val msg = (e.message ?: "conflict").replace("\"", "'")
                         return respond(ex, 409, """{"error":"$msg"}""")

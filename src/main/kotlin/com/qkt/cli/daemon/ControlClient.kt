@@ -115,16 +115,18 @@ class ControlClient(
     fun deploy(
         name: String,
         file: Path,
+        ignoreMismatches: Boolean = false,
     ): String {
         val body =
             """{"file":"${file.toAbsolutePath()}","name":"$name"}"""
                 .toRequestBody(JSON_MEDIA)
+        val q = if (ignoreMismatches) "?reconcile=ignore-mismatches" else ""
         val resp =
             http
                 .newCall(
                     Request
                         .Builder()
-                        .url("${baseUrl()}/deploy")
+                        .url("${baseUrl()}/deploy$q")
                         .post(body)
                         .build(),
                 ).execute()

@@ -48,6 +48,7 @@ class StrategyHandle(
         fun create(
             name: String,
             file: Path,
+            ignoreMismatches: Boolean,
         ): StrategyHandle
     }
 
@@ -71,6 +72,7 @@ class StrategyHandle(
         override fun create(
             name: String,
             file: Path,
+            ignoreMismatches: Boolean,
         ): StrategyHandle {
             val ast =
                 when (val parsed = Dsl.parseFile(file)) {
@@ -130,6 +132,7 @@ class StrategyHandle(
                     },
                     brokerFactories = brokerFactories,
                     persistor = persistor,
+                    ignoreMismatches = ignoreMismatches,
                 ).start()
 
             val server =
