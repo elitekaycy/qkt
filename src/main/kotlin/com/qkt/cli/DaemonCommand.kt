@@ -1,18 +1,12 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfile
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
-import com.qkt.marketdata.live.bybit.BybitLinearMarketSource
-import com.qkt.marketdata.live.bybit.BybitSpotMarketSource
-import com.qkt.marketdata.live.mt5.Mt5MarketSource
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
-import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.MarketSource
-import com.qkt.marketdata.source.SymbolPattern
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 
@@ -84,7 +78,7 @@ class DaemonCommand(
             }
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
-            sourceFactory ?: buildCompositeMarketSourceFactory(mt5Profiles) { TradingViewMarketSource.connect() }
+            sourceFactory ?: MarketSourceFactory.composite(mt5Profiles)
 
         val registry =
             StrategyRegistry(
@@ -230,31 +224,6 @@ class DaemonCommand(
     }
 
     private fun controlClient(stateDir: StateDir): ControlClient = ControlClient(stateDir)
-
-    /**
-     * Builds the production [CompositeMarketSource] for this daemon's loaded broker
-     * profiles. One [Mt5MarketSource] per MT5 profile (prefix derived from
-     * `profile.name.uppercase()+:`), plus [BybitSpotMarketSource] and
-     * [BybitLinearMarketSource] (unconditional — public endpoints, lazy WS open),
-     * with [TradingViewMarketSource] as fallback.
-     *
-     * Returns a closure that ignores its `symbols` parameter and yields the single
-     * composite. The composite is built once, shared across every strategy and
-     * portfolio child.
-     */
-    internal fun buildCompositeMarketSourceFactory(
-        mt5Profiles: List<MT5BrokerProfile>,
-        fallbackProvider: () -> MarketSource,
-    ): (List<String>) -> MarketSource {
-        val routes = mutableListOf<Pair<SymbolPattern, MarketSource>>()
-        for (p in mt5Profiles) {
-            routes.add(SymbolPattern.prefix("${p.name.uppercase()}:") to Mt5MarketSource(p))
-        }
-        routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())
-        routes.add(SymbolPattern.prefix("BYBIT_PERP:") to BybitLinearMarketSource())
-        val composite = CompositeMarketSource(routes = routes, fallback = fallbackProvider())
-        return { _ -> composite }
-    }
 
     companion object {
         @Suppress("UNUSED_PARAMETER")
