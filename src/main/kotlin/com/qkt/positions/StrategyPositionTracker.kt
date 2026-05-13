@@ -20,8 +20,18 @@ import java.util.concurrent.atomic.AtomicLong
  * Stack legs are added via [addStackLeg] — they bypass the [apply] averaging logic which
  * would otherwise commingle them into the primary's entry-price math.
  */
-class StrategyPositionTracker {
+class StrategyPositionTracker(
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+) {
     private val byStrategy: MutableMap<String, MutableMap<String, LegBook>> = ConcurrentHashMap()
+
+    private fun persistBook(
+        strategyId: String,
+        symbol: String,
+    ) {
+        val book = byStrategy[strategyId]?.get(symbol) ?: LegBook(symbol)
+        runCatching { persistor.saveLegBook(strategyId, symbol, book) }
+    }
 
     /** Monotonic counter for engine-internal PRIMARY leg ids. */
     private val primaryLegSeq = AtomicLong()
@@ -97,10 +107,14 @@ class StrategyPositionTracker {
         val key = "${event.strategyId}|${event.clientOrderId}"
 
         pendingStackOpens.remove(key)?.let { intent ->
-            return applyStackOpen(event, intent)
+            val realized = applyStackOpen(event, intent)
+            persistBook(event.strategyId, event.symbol)
+            return realized
         }
         pendingStackCloses.remove(key)?.let { stackLegId ->
-            return applyStackClose(event, stackLegId)
+            val realized = applyStackClose(event, stackLegId)
+            persistBook(event.strategyId, event.symbol)
+            return realized
         }
 
         val trade =
@@ -114,6 +128,7 @@ class StrategyPositionTracker {
             )
         val realized = apply(event.strategyId, trade)
         syncPrimaryMfeTracker(event.strategyId, trade.symbol)
+        persistBook(event.strategyId, event.symbol)
         return realized
     }
 
@@ -310,6 +325,7 @@ class StrategyPositionTracker {
         val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
+        persistBook(strategyId, leg.symbol)
     }
 
     /**
@@ -326,6 +342,7 @@ class StrategyPositionTracker {
         if (book.isEmpty()) {
             byStrategy[strategyId]?.remove(symbol)
         }
+        persistBook(strategyId, symbol)
         return closed
     }
 
