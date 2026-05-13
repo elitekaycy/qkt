@@ -48,9 +48,14 @@ class StackOrchestrator(
         val persistedTiers =
             runCatching { persistor.loadPendingStacks(strategyId)[parentLegId] }.getOrNull()
         val initialFired: Set<Int> =
-            persistedTiers?.tiers?.filter { it.fired }?.map { it.index }?.toSet() ?: emptySet()
+            persistedTiers
+                ?.tiers
+                ?.filter { it.fired }
+                ?.map { it.index }
+                ?.toSet() ?: emptySet()
         val initialFiredLegIds: Map<Int, String> =
-            persistedTiers?.tiers
+            persistedTiers
+                ?.tiers
                 ?.mapNotNull { t -> t.firedLegId?.let { t.index to it } }
                 ?.toMap()
                 ?: emptyMap()
