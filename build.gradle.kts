@@ -56,6 +56,13 @@ tasks.register<JavaExec>("runParityTicksXauusd") {
     mainClass.set("com.qkt.tools.parity.ParityTicksXauusdKt")
 }
 
+tasks.register<JavaExec>("runStateDemo") {
+    group = "verification"
+    description = "Write a sample engine-state snapshot to /tmp/qkt-demo-state and list the files"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.qkt.tools.persistence.StateDemoKt")
+}
+
 tasks.test {
     useJUnitPlatform {
         val included =
