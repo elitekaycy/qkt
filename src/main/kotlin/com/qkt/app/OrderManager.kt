@@ -46,6 +46,7 @@ class OrderManager(
     private val bus: EventBus,
     private val priceProvider: MarketPriceProvider,
     private val clock: Clock,
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
 ) {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -743,6 +744,7 @@ class OrderManager(
 
     private fun track(managed: ManagedOrder) {
         orders[managed.id] = managed
+        persistAll()
     }
 
     private fun update(
@@ -750,6 +752,48 @@ class OrderManager(
         change: (ManagedOrder) -> ManagedOrder,
     ) {
         orders[id]?.let { orders[id] = change(it) }
+        persistAll()
+    }
+
+    /**
+     * Snapshot pending orders + bracket pairs per strategy to the configured persistor.
+     * Best-effort: failures inside the persistor are swallowed so the order pipeline keeps
+     * running. Called after every state mutation by [track] / [update] / [recordSiblings].
+     */
+    private fun persistAll() {
+        runCatching {
+            val pendingByStrategy: MutableMap<String, MutableMap<String, com.qkt.execution.OrderRequest>> =
+                mutableMapOf()
+            val pairsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.BracketPair>> = mutableMapOf()
+
+            for ((id, managed) in orders) {
+                if (managed.state == OrderState.PENDING || managed.state == OrderState.CREATED) {
+                    val sid = managed.request.strategyId
+                    if (sid.isBlank()) continue
+                    pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = managed.request
+                }
+            }
+            for ((entryId, siblingIds) in siblings) {
+                val entry = orders[entryId] ?: continue
+                val sid = entry.request.strategyId
+                if (sid.isBlank()) continue
+                val sl = siblingIds.firstOrNull { it.contains("-sl") || (orders[it]?.request is com.qkt.execution.OrderRequest.Stop) }
+                val tp = siblingIds.firstOrNull { it != sl }
+                pairsByStrategy.getOrPut(sid) { mutableListOf() }.add(
+                    com.qkt.persistence.BracketPair(
+                        entryClientOrderId = entryId,
+                        stopLossClientOrderId = sl,
+                        takeProfitClientOrderId = tp,
+                        legId = null,
+                    ),
+                )
+            }
+            val strategies = (pendingByStrategy.keys + pairsByStrategy.keys).toSet()
+            for (sid in strategies) {
+                persistor.savePendingOrders(sid, pendingByStrategy[sid] ?: emptyMap())
+                persistor.saveBracketPairs(sid, pairsByStrategy[sid] ?: emptyList())
+            }
+        }
     }
 
     private fun onAccepted(e: BrokerEvent.OrderAccepted) {
