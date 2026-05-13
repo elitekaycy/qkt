@@ -2,7 +2,6 @@ package com.qkt.persistence
 
 import com.qkt.execution.OrderRequest
 import com.qkt.positions.LegBook
-import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
@@ -50,7 +49,10 @@ class AsyncStatePersistor(
 
     private val shutdownTimeoutMs: Long = shutdownTimeoutMs
 
-    private fun submit(label: String, action: () -> Unit) {
+    private fun submit(
+        label: String,
+        action: () -> Unit,
+    ) {
         if (executor.isShutdown) {
             log.warn("$label dropped: executor is shut down")
             return
@@ -105,7 +107,8 @@ class AsyncStatePersistor(
         }
     }
 
-    override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> = delegate.loadPendingOrders(strategyId)
+    override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> =
+        delegate.loadPendingOrders(strategyId)
 
     override fun savePendingStacks(
         strategyId: String,

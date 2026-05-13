@@ -71,7 +71,8 @@ data class Config(
         if (!stateEnabled) return com.qkt.persistence.NoopStatePersistor()
         val file =
             com.qkt.persistence.FileStatePersistor(
-                java.nio.file.Path.of(stateDir),
+                java.nio.file.Path
+                    .of(stateDir),
             )
         return if (stateAsync) com.qkt.persistence.AsyncStatePersistor(file) else file
     }
