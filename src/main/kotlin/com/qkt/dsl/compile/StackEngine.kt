@@ -52,9 +52,14 @@ class StackEngine(
     private val clock: Clock,
     private val emit: (Signal) -> Unit,
     private val idGenerator: () -> String = { defaultId(parentLegId) },
+    private val strategyId: String = "",
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    private val primaryClientOrderId: String = parentLegId,
 ) {
     private val mfeTracker = MfeTracker(parentSide, parentEntryPrice)
     private val firedTierIndices: MutableSet<Int> = mutableSetOf()
+    private val firedAtBy: MutableMap<Int, Long> = mutableMapOf()
+    private val firedLegIdBy: MutableMap<Int, String> = mutableMapOf()
     private val abandonedTierIndices: MutableSet<Int> = mutableSetOf()
     private val openedAt: Long = clock.now()
 
@@ -62,18 +67,49 @@ class StackEngine(
         mfeTracker.onTick(price)
         val mfe = mfeTracker.value()
         val elapsed = clock.now() - openedAt
+        var firedAny = false
         for ((idx, tier) in tiers.withIndex()) {
             if (idx in firedTierIndices || idx in abandonedTierIndices) continue
             when {
                 mfe >= tier.mfeThreshold && elapsed <= tier.withinMs -> {
-                    emit(buildStackSignal(idx, tier, price))
+                    val (signal, stackLegId) = buildStackSignal(idx, tier, price)
+                    emit(signal)
                     firedTierIndices += idx
+                    firedAtBy[idx] = clock.now()
+                    firedLegIdBy[idx] = stackLegId
+                    firedAny = true
                 }
                 elapsed > tier.withinMs -> {
                     abandonedTierIndices += idx
                 }
             }
         }
+        if (firedAny && strategyId.isNotBlank()) {
+            runCatching { persistTiers() }
+        }
+    }
+
+    private fun persistTiers() {
+        val persistedTiers =
+            tiers.mapIndexed { idx, tier ->
+                com.qkt.persistence.PersistedTier(
+                    index = idx,
+                    mfeThreshold = tier.mfeThreshold,
+                    withinMs = tier.withinMs,
+                    stackQuantity = tier.stackQuantity,
+                    slDistance = tier.slDistance,
+                    tpDistance = tier.tpDistance,
+                    fired = idx in firedTierIndices,
+                    firedAt = firedAtBy[idx],
+                    firedLegId = firedLegIdBy[idx],
+                )
+            }
+        val state =
+            com.qkt.persistence.PersistedTierState(
+                primaryClientOrderId = primaryClientOrderId,
+                tiers = persistedTiers,
+            )
+        persistor.savePendingStacks(strategyId, mapOf(parentLegId to state))
     }
 
     fun mfe(): BigDecimal = mfeTracker.value()
@@ -93,7 +129,7 @@ class StackEngine(
         tierIdx: Int,
         tier: CompiledStackTier,
         currentPrice: BigDecimal,
-    ): Signal {
+    ): Pair<Signal, String> {
         val (sl, tp) =
             when (parentSide) {
                 Side.BUY -> currentPrice.subtract(tier.slDistance) to currentPrice.add(tier.tpDistance)
@@ -110,19 +146,21 @@ class StackEngine(
                 timeInForce = TimeInForce.GTC,
                 timestamp = ts,
             )
-        return Signal.Submit(
-            OrderRequest.Bracket(
-                id = stackLegId,
-                symbol = parentSymbol,
-                side = parentSide,
-                quantity = tier.stackQuantity,
-                entry = market,
-                takeProfit = tp,
-                stopLoss = sl,
-                timeInForce = TimeInForce.GTC,
-                timestamp = ts,
-            ),
-        )
+        val signal =
+            Signal.Submit(
+                OrderRequest.Bracket(
+                    id = stackLegId,
+                    symbol = parentSymbol,
+                    side = parentSide,
+                    quantity = tier.stackQuantity,
+                    entry = market,
+                    takeProfit = tp,
+                    stopLoss = sl,
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = ts,
+                ),
+            )
+        return signal to stackLegId
     }
 
     private companion object {

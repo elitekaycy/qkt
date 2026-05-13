@@ -777,7 +777,11 @@ class OrderManager(
                 val entry = orders[entryId] ?: continue
                 val sid = entry.request.strategyId
                 if (sid.isBlank()) continue
-                val sl = siblingIds.firstOrNull { it.contains("-sl") || (orders[it]?.request is com.qkt.execution.OrderRequest.Stop) }
+                val sl =
+                    siblingIds.firstOrNull {
+                        it.contains("-sl") ||
+                            (orders[it]?.request is com.qkt.execution.OrderRequest.Stop)
+                    }
                 val tp = siblingIds.firstOrNull { it != sl }
                 pairsByStrategy.getOrPut(sid) { mutableListOf() }.add(
                     com.qkt.persistence.BracketPair(
