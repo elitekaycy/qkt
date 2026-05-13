@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
 class ActionCompilerTest {
     private val candle =
         Candle(
-            "BTCUSDT",
+            "BACKTEST:BTCUSDT",
             BigDecimal.ONE,
             BigDecimal.ONE,
             BigDecimal.ONE,
@@ -42,7 +42,7 @@ class ActionCompilerTest {
                 opts = ActionOpts(sizing = SizeQty(NumLit(BigDecimal("2"))), orderType = Market),
             )
         val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
-        assertThat(sigs).containsExactly(Signal.Buy("BTCUSDT", BigDecimal("2")))
+        assertThat(sigs).containsExactly(Signal.Buy("BACKTEST:BTCUSDT", BigDecimal("2")))
     }
 
     @Test
@@ -50,7 +50,7 @@ class ActionCompilerTest {
         val action =
             Sell(stream = "btc", opts = ActionOpts(sizing = SizeQty(NumLit(BigDecimal("3")))))
         val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(ctx)
-        assertThat(sigs).containsExactly(Signal.Sell("BTCUSDT", BigDecimal("3")))
+        assertThat(sigs).containsExactly(Signal.Sell("BACKTEST:BTCUSDT", BigDecimal("3")))
     }
 
     @Test

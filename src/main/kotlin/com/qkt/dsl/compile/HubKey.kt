@@ -17,4 +17,6 @@ data class HubKey(
         require(symbol.isNotBlank()) { "HubKey.symbol must not be blank" }
         require(timeframe.isNotBlank()) { "HubKey.timeframe must not be blank" }
     }
+
+    val qktSymbol: String get() = "$broker:$symbol"
 }

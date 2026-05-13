@@ -137,8 +137,8 @@ class ExprCompilerStateTest {
         val pos =
             object : com.qkt.positions.StrategyPositionView {
                 override fun positionFor(symbol: String) =
-                    if (symbol == "BTCUSDT") {
-                        com.qkt.positions.Position("BTCUSDT", BigDecimal("2.5"), BigDecimal("100"))
+                    if (symbol == "BACKTEST:BTCUSDT") {
+                        com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("2.5"), BigDecimal("100"))
                     } else {
                         null
                     }
@@ -202,7 +202,7 @@ class ExprCompilerStateTest {
         val pos =
             object : com.qkt.positions.StrategyPositionView {
                 override fun positionFor(symbol: String) =
-                    com.qkt.positions.Position("BTCUSDT", BigDecimal("1"), BigDecimal("105.50"))
+                    com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("1"), BigDecimal("105.50"))
 
                 override fun allPositions() = emptyMap<String, com.qkt.positions.Position>()
             }
@@ -231,7 +231,7 @@ class ExprCompilerStateTest {
                 override fun allPositions(): Map<String, Position> = emptyMap()
 
                 override fun mfeFor(symbol: String): BigDecimal =
-                    if (symbol == "BTCUSDT") BigDecimal("12.34") else BigDecimal.ZERO
+                    if (symbol == "BACKTEST:BTCUSDT") BigDecimal("12.34") else BigDecimal.ZERO
             }
         val ec =
             EvalContext(

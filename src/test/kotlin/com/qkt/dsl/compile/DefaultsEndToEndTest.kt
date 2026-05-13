@@ -55,7 +55,7 @@ class DefaultsEndToEndTest {
         val captured = mutableListOf<Signal>()
         val c =
             Candle(
-                "BTCUSDT",
+                "BACKTEST:BTCUSDT",
                 BigDecimal("110"),
                 BigDecimal("110"),
                 BigDecimal("110"),

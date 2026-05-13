@@ -17,7 +17,7 @@ class SizingCompilerTest {
         EvalContext(
             candle =
                 Candle(
-                    "BTCUSDT",
+                    "BACKTEST:BTCUSDT",
                     BigDecimal("100"),
                     BigDecimal("100"),
                     BigDecimal("100"),

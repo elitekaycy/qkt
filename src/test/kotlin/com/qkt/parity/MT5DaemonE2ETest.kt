@@ -90,7 +90,7 @@ class MT5DaemonE2ETest {
         val ticks =
             (0 until 3).map {
                 Tick(
-                    symbol = "EURUSD",
+                    symbol = "EXNESS:EURUSD",
                     price = BigDecimal("1.10").add(BigDecimal("0.0001").multiply(BigDecimal(it))),
                     timestamp = 1_705_276_800_000L + it * 60_000L,
                 )

@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test
 class HandwrittenEquivalenceTest {
     private fun ticks(prices: List<String>): List<Tick> =
         prices.mapIndexed { i, p ->
-            Tick(symbol = "BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
+            Tick(symbol = "BACKTEST:BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
         }
 
     private val sample =
@@ -97,7 +97,7 @@ class HandwrittenEquivalenceTest {
 
         val dslStrategy = AstCompiler().compile(ast)
         val handStrategy =
-            ThresholdStrategy(symbol = "BTCUSDT", threshold = BigDecimal("100"), qty = BigDecimal.ONE)
+            ThresholdStrategy(symbol = "BACKTEST:BTCUSDT", threshold = BigDecimal("100"), qty = BigDecimal.ONE)
 
         val dslResult =
             Backtest(

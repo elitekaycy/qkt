@@ -23,7 +23,7 @@ class NowAccessorEvalTest {
         EvalContext(
             candle =
                 Candle(
-                    symbol = "BTCUSDT",
+                    symbol = "BACKTEST:BTCUSDT",
                     open = BigDecimal.ZERO,
                     high = BigDecimal.ZERO,
                     low = BigDecimal.ZERO,

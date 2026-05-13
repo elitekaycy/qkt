@@ -50,7 +50,7 @@ class SizingCompiler(
             is SizePositionFull -> {
                 CompiledSize { ec, _ ->
                     val symbol =
-                        ec.streams[sizing.stream]?.symbol
+                        ec.streams[sizing.stream]?.qktSymbol
                             ?: error("Unknown stream alias: ${sizing.stream}")
                     ec.strategyContext.positions
                         .positionFor(symbol)

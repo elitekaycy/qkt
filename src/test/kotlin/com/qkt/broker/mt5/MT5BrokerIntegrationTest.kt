@@ -64,7 +64,7 @@ class MT5BrokerIntegrationTest {
         val req =
             OrderRequest.Market(
                 id = "ord-1",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 timeInForce = TimeInForce.GTC,
@@ -77,7 +77,7 @@ class MT5BrokerIntegrationTest {
         assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
         assertThat(captured[1]).isInstanceOf(BrokerEvent.OrderFilled::class.java)
         val filled = captured[1] as BrokerEvent.OrderFilled
-        assertThat(filled.symbol).isEqualTo("EURUSD")
+        assertThat(filled.symbol).isEqualTo("EXNESS:EURUSD")
         assertThat(filled.price).isEqualByComparingTo("1.1234")
         // gateway received translated symbol — consume the 3 setup calls then the actual order
         server.takeRequest() // state recovery
@@ -99,7 +99,7 @@ class MT5BrokerIntegrationTest {
         val entry =
             OrderRequest.Market(
                 id = "ent-1",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 timeInForce = TimeInForce.GTC,
@@ -109,7 +109,7 @@ class MT5BrokerIntegrationTest {
         val bracket =
             OrderRequest.Bracket(
                 id = "br-1",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 entry = entry,
@@ -138,7 +138,7 @@ class MT5BrokerIntegrationTest {
         val req =
             OrderRequest.Stop(
                 id = "stop-1",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 stopPrice = BigDecimal("1.1050"),
@@ -198,7 +198,7 @@ class MT5BrokerIntegrationTest {
         val req =
             OrderRequest.Stop(
                 id = "stop-26c",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 stopPrice = BigDecimal("1.1050"),
@@ -226,7 +226,7 @@ class MT5BrokerIntegrationTest {
             captured.filterIsInstance<BrokerEvent.OrderFilled>().firstOrNull { it.clientOrderId == "stop-26c" }
                 ?: error("OrderFilled with clientOrderId=stop-26c never published; captured=$captured")
         assertThat(filled.brokerOrderId).isEqualTo("777")
-        assertThat(filled.symbol).isEqualTo("EURUSD")
+        assertThat(filled.symbol).isEqualTo("EXNESS:EURUSD")
         assertThat(filled.side).isEqualTo(Side.BUY)
         assertThat(filled.price).isEqualByComparingTo("1.1050")
         assertThat(filled.strategyId).isEqualTo("s1")
@@ -278,7 +278,7 @@ class MT5BrokerIntegrationTest {
         val req =
             OrderRequest.Stop(
                 id = "stop-26d-cancel",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 stopPrice = BigDecimal("1.1050"),
@@ -323,7 +323,7 @@ class MT5BrokerIntegrationTest {
         val req =
             OrderRequest.Stop(
                 id = "stop-modify",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 stopPrice = BigDecimal("1.1050"),
@@ -365,7 +365,7 @@ class MT5BrokerIntegrationTest {
         val req =
             OrderRequest.IfTouched(
                 id = "it-1",
-                symbol = "EURUSD",
+                symbol = "EXNESS:EURUSD",
                 side = Side.BUY,
                 quantity = BigDecimal("0.1"),
                 triggerPrice = BigDecimal("1.1050"),

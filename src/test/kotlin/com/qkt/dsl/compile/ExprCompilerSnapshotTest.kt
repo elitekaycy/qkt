@@ -13,7 +13,16 @@ import org.junit.jupiter.api.Test
 
 class ExprCompilerSnapshotTest {
     private val candle =
-        Candle("BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
+        Candle(
+            "BACKTEST:BTCUSDT",
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ZERO,
+            0L,
+            1L,
+        )
 
     private fun ctx(store: SnapshotStore): EvalContext =
         EvalContext(
@@ -27,8 +36,8 @@ class ExprCompilerSnapshotTest {
     @Test
     fun `Ref with SnapshotBuy reads slot via ruleSymbol`() {
         val store = SnapshotStore(emptyMap())
-        store.captureSlot("BTCUSDT", "fast", SnapshotBuy, BigDecimal("123"))
-        val compiled = ExprCompiler().compile(Ref("fast", SnapshotBuy), ruleAlias = "BTCUSDT")
+        store.captureSlot("BACKTEST:BTCUSDT", "fast", SnapshotBuy, BigDecimal("123"))
+        val compiled = ExprCompiler().compile(Ref("fast", SnapshotBuy), ruleAlias = "BACKTEST:BTCUSDT")
         val v = compiled.evaluate(ctx(store)) as Value.Num
         assertThat(v.v).isEqualByComparingTo("123")
     }
@@ -36,17 +45,17 @@ class ExprCompilerSnapshotTest {
     @Test
     fun `unset slot returns Undefined`() {
         val store = SnapshotStore(emptyMap())
-        val compiled = ExprCompiler().compile(Ref("fast", SnapshotOpen), ruleAlias = "BTCUSDT")
+        val compiled = ExprCompiler().compile(Ref("fast", SnapshotOpen), ruleAlias = "BACKTEST:BTCUSDT")
         assertThat(compiled.evaluate(ctx(store))).isEqualTo(Value.Undefined)
     }
 
     @Test
     fun `Ref with SnapshotTPast reads rolling buffer`() {
         val store = SnapshotStore(maxRollingPerName = mapOf("close" to 2))
-        store.pushRolling("BTCUSDT", "close", BigDecimal("100"))
-        store.pushRolling("BTCUSDT", "close", BigDecimal("110"))
-        store.pushRolling("BTCUSDT", "close", BigDecimal("120"))
-        val compiled = ExprCompiler().compile(Ref("close", SnapshotTPast(2)), ruleAlias = "BTCUSDT")
+        store.pushRolling("BACKTEST:BTCUSDT", "close", BigDecimal("100"))
+        store.pushRolling("BACKTEST:BTCUSDT", "close", BigDecimal("110"))
+        store.pushRolling("BACKTEST:BTCUSDT", "close", BigDecimal("120"))
+        val compiled = ExprCompiler().compile(Ref("close", SnapshotTPast(2)), ruleAlias = "BACKTEST:BTCUSDT")
         val v = compiled.evaluate(ctx(store)) as Value.Num
         assertThat(v.v).isEqualByComparingTo("100")
     }
@@ -61,7 +70,7 @@ class ExprCompilerSnapshotTest {
     @Test
     fun `bare Ref reaching ExprCompiler errors`() {
         assertThatThrownBy {
-            ExprCompiler().compile(Ref("fast"), ruleAlias = "BTCUSDT")
+            ExprCompiler().compile(Ref("fast"), ruleAlias = "BACKTEST:BTCUSDT")
         }.isInstanceOf(IllegalStateException::class.java)
     }
 }

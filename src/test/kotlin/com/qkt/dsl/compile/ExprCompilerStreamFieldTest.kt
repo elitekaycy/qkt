@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 class ExprCompilerStreamFieldTest {
     private val candle =
         Candle(
-            symbol = "BTCUSDT",
+            symbol = "BACKTEST:BTCUSDT",
             open = BigDecimal("100"),
             high = BigDecimal("110"),
             low = BigDecimal("90"),

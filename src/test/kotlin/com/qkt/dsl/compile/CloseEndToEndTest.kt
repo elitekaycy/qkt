@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 class CloseEndToEndTest {
     private fun ticks(prices: List<String>): List<Tick> =
         prices.mapIndexed { i, p ->
-            Tick(symbol = "BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
+            Tick(symbol = "BACKTEST:BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
         }
 
     @Test

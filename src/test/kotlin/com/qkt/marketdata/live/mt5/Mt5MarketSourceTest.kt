@@ -54,9 +54,9 @@ class Mt5MarketSourceTest {
             val tick = feed.next()
             feed.close()
             assertThat(tick).isNotNull
-            // wire symbol is XAUUSDm (suffix applied)
-            assertThat(tick!!.symbol).isEqualTo("XAUUSDm")
-            // path on the gateway should have hit /symbol_info_tick/XAUUSDm
+            // tick emits the qkt-prefixed symbol; the wire form XAUUSDm
+            // (suffix applied) lives only in the gateway path
+            assertThat(tick!!.symbol).isEqualTo("EXNESS:XAUUSD")
             val req = server.takeRequest()
             assertThat(req.path).isEqualTo("/symbol_info_tick/XAUUSDm")
         } finally {

@@ -14,7 +14,16 @@ import org.junit.jupiter.api.Test
 
 class EquitySizingTest {
     private val candle =
-        Candle("BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
+        Candle(
+            "BACKTEST:BTCUSDT",
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ZERO,
+            0L,
+            1L,
+        )
 
     private fun ctx(
         equityValue: BigDecimal,

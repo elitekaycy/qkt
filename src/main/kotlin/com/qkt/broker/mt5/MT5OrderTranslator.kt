@@ -41,6 +41,10 @@ class MT5OrderTranslator(
     private val symbol: MT5Symbol,
     private val priceTracker: MarketPriceProvider? = null,
 ) {
+    private val prefix: String = "${profile.name.uppercase()}:"
+
+    private fun bare(qktSymbol: String): String = qktSymbol.removePrefix(prefix)
+
     fun translate(req: OrderRequest): MT5Translation =
         when (req) {
             is OrderRequest.Market -> MT5Translation.Single(translateMarket(req))
@@ -56,7 +60,7 @@ class MT5OrderTranslator(
 
     private fun translateMarket(req: OrderRequest.Market): MT5OrderRequest =
         MT5OrderRequest(
-            symbol = symbol.toBroker(req.symbol),
+            symbol = symbol.toBroker(bare(req.symbol)),
             volume = req.quantity,
             type = if (req.side == Side.BUY) "BUY" else "SELL",
             price = null,
@@ -85,7 +89,7 @@ class MT5OrderTranslator(
                 else -> error("MT5 bracket entry must be Market/Stop/Limit, got ${entry::class.simpleName}")
             }
         return MT5OrderRequest(
-            symbol = symbol.toBroker(req.symbol),
+            symbol = symbol.toBroker(bare(req.symbol)),
             volume = req.quantity,
             type = type,
             price = price,
@@ -99,7 +103,7 @@ class MT5OrderTranslator(
 
     private fun translateStop(req: OrderRequest.Stop): MT5OrderRequest =
         MT5OrderRequest(
-            symbol = symbol.toBroker(req.symbol),
+            symbol = symbol.toBroker(bare(req.symbol)),
             volume = req.quantity,
             type = if (req.side == Side.BUY) "BUY_STOP" else "SELL_STOP",
             price = req.stopPrice,
@@ -112,7 +116,7 @@ class MT5OrderTranslator(
 
     private fun translateLimit(req: OrderRequest.Limit): MT5OrderRequest =
         MT5OrderRequest(
-            symbol = symbol.toBroker(req.symbol),
+            symbol = symbol.toBroker(bare(req.symbol)),
             volume = req.quantity,
             type = if (req.side == Side.BUY) "BUY_LIMIT" else "SELL_LIMIT",
             price = req.limitPrice,
@@ -125,7 +129,7 @@ class MT5OrderTranslator(
 
     private fun translateStopLimit(req: OrderRequest.StopLimit): MT5OrderRequest =
         MT5OrderRequest(
-            symbol = symbol.toBroker(req.symbol),
+            symbol = symbol.toBroker(bare(req.symbol)),
             volume = req.quantity,
             type = if (req.side == Side.BUY) "BUY_STOP_LIMIT" else "SELL_STOP_LIMIT",
             price = req.stopPrice,
@@ -175,7 +179,7 @@ class MT5OrderTranslator(
                     mid.multiply(req.trailAmount).divide(BigDecimal(100), MathContext.DECIMAL64)
                 }
             }
-        val point = pointFor(req.symbol)
+        val point = pointFor(bare(req.symbol))
         val distancePoints =
             absoluteDistance
                 .divide(point, MathContext.DECIMAL64)
@@ -185,7 +189,7 @@ class MT5OrderTranslator(
             "TrailingStop distance $absoluteDistance resolves to 0 MT5 points (point size $point); too tight"
         }
         return MT5OrderRequest(
-            symbol = symbol.toBroker(req.symbol),
+            symbol = symbol.toBroker(bare(req.symbol)),
             volume = req.quantity,
             type = if (req.side == Side.BUY) "BUY" else "SELL",
             price = null,

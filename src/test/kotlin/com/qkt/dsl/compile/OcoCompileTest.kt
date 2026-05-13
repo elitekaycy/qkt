@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory
 class OcoCompileTest {
     private val candle =
         Candle(
-            "BTCUSDT",
+            "BACKTEST:BTCUSDT",
             BigDecimal("100"),
             BigDecimal("100"),
             BigDecimal("100"),

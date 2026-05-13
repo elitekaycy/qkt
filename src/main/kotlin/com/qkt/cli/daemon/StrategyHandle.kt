@@ -83,15 +83,14 @@ class StrategyHandle(
                     }
                 }
             val strategy = AstCompiler().compile(ast)
-            val symbols = ast.streams.map { it.symbol }.distinct()
-            val tvSymbols = ast.streams.map { "${it.broker}:${it.symbol}" }.distinct()
+            val symbols = ast.streams.map { it.qktSymbol }.distinct()
             val candleWindow: TimeWindow? =
                 ast.streams
                     .firstOrNull()
                     ?.timeframe
                     ?.let { TimeWindow.parse(it) }
 
-            val source = marketSourceProvider(tvSymbols)
+            val source = marketSourceProvider(symbols)
             val ring = EventRing(capacity = ringSize)
             val startMs = System.currentTimeMillis()
             val startedAt = Instant.ofEpochMilli(startMs)
