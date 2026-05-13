@@ -26,7 +26,8 @@ class Mt5MarketSource(
     private val profile: MT5BrokerProfile,
     private val http: OkHttpClient = OkHttpClient(),
     private val clock: Clock = SystemClock(),
-) : MarketSource, AutoCloseable {
+) : MarketSource,
+    AutoCloseable {
     override val name: String = "MT5:${profile.name}"
     override val capabilities: Set<MarketSourceCapability> =
         setOf(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
