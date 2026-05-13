@@ -345,7 +345,6 @@ object ControlRoutes {
         if (name == null) {
             return respond(ex, 400, """{"error":"missing name in path"}""")
         }
-        // ?flatten=true and ?timeout=<ms> are accepted on strategy stops; preserved for compatibility.
         val params = parseQuery(ex.requestURI.rawQuery)
         if (params.containsKey("timeout")) {
             val t = params["timeout"]?.toLongOrNull()
@@ -353,19 +352,21 @@ object ControlRoutes {
                 return respond(ex, 400, """{"error":"invalid 'timeout' query param"}""")
             }
         }
-        if (params.containsKey("flatten")) {
-            val f = params["flatten"]
-            if (f != "true" && f != "false") {
-                return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
+        val flattenOverride: Boolean? =
+            when (val raw = params["flatten"]) {
+                null -> null
+                "true" -> true
+                "false" -> false
+                else -> return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
             }
-        }
 
         registry.getPortfolio(name)?.let { record ->
             record.supervisor.stop()
             var totalTrades = 0
             for (child in record.children) {
                 val meta = child.childMeta
-                if (meta != null && !meta.hold) {
+                val shouldFlatten = flattenOverride ?: (meta != null && !meta.hold)
+                if (shouldFlatten) {
                     runCatching { child.live.flatten() }
                 }
                 totalTrades += child.tradeCount
@@ -382,7 +383,8 @@ object ControlRoutes {
         if (meta != null) {
             meta.operatorStop.set(true)
             meta.gateActive.set(false)
-            if (!meta.hold) runCatching { handle.live.flatten() }
+            val shouldFlatten = flattenOverride ?: !meta.hold
+            if (shouldFlatten) runCatching { handle.live.flatten() }
             return respond(
                 ex,
                 200,
@@ -390,6 +392,7 @@ object ControlRoutes {
             )
         }
         val trades = handle.tradeCount
+        if (flattenOverride == true) runCatching { handle.live.flatten() }
         registry.stop(name)
         respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades}""")
     }

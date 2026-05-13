@@ -13,7 +13,9 @@ import java.math.BigDecimal
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -25,17 +27,22 @@ import org.junit.jupiter.api.io.TempDir
 
 class StopRouteTest {
     private val opened = mutableListOf<AutoCloseable>()
+    private val flattenCalls = ConcurrentHashMap<String, AtomicInteger>()
 
     @AfterEach
     fun cleanup() {
         for (c in opened.reversed()) runCatching { c.close() }
         opened.clear()
+        flattenCalls.clear()
     }
+
+    private fun flattens(name: String): Int = flattenCalls[name]?.get() ?: 0
 
     private fun stubFactory(stateDir: StateDir): StrategyHandle.Factory =
         StrategyHandle.Factory { name, _ ->
             val ring = EventRing(capacity = 8)
             val running = AtomicBoolean(true)
+            val counter = flattenCalls.computeIfAbsent(name) { AtomicInteger(0) }
             val live =
                 object : LiveSessionHandle {
                     override val running: Boolean get() = running.get()
@@ -52,7 +59,9 @@ class StopRouteTest {
                     override fun pendingStackLayerInfos(): List<com.qkt.app.OrderManager.PendingStackLayerInfo> =
                         emptyList()
 
-                    override fun flatten() = Unit
+                    override fun flatten() {
+                        counter.incrementAndGet()
+                    }
                 }
             val server =
                 ObservabilityServer(
@@ -152,7 +161,7 @@ class StopRouteTest {
     }
 
     @Test
-    fun `POST stop accepts flatten and timeout query params`(
+    fun `POST stop with flatten true on top-level strategy calls live flatten`(
         @TempDir tmp: Path,
     ) {
         val stateDir = StateDir.resolve(tmp.toString())
@@ -169,6 +178,69 @@ class StopRouteTest {
                         .build(),
                 ).execute()
         assertThat(resp.code).isEqualTo(200)
+        assertThat(flattens("foo")).isEqualTo(1)
+    }
+
+    @Test
+    fun `POST stop without flatten on top-level strategy does not call live flatten`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val (registry, plane) = newPlane(stateDir)
+        registry.deploy("foo", tmp.resolve("foo.qkt"))
+        val client = OkHttpClient()
+        val resp =
+            client
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("http://127.0.0.1:${plane.boundPort}/stop/foo")
+                        .post("".toRequestBody("application/json".toMediaType()))
+                        .build(),
+                ).execute()
+        assertThat(resp.code).isEqualTo(200)
+        assertThat(flattens("foo")).isEqualTo(0)
+    }
+
+    @Test
+    fun `POST stop with flatten false on top-level strategy does not call live flatten`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val (registry, plane) = newPlane(stateDir)
+        registry.deploy("foo", tmp.resolve("foo.qkt"))
+        val client = OkHttpClient()
+        val resp =
+            client
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("http://127.0.0.1:${plane.boundPort}/stop/foo?flatten=false")
+                        .post("".toRequestBody("application/json".toMediaType()))
+                        .build(),
+                ).execute()
+        assertThat(resp.code).isEqualTo(200)
+        assertThat(flattens("foo")).isEqualTo(0)
+    }
+
+    @Test
+    fun `POST stop with invalid flatten returns 400`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val (registry, plane) = newPlane(stateDir)
+        registry.deploy("foo", tmp.resolve("foo.qkt"))
+        val client = OkHttpClient()
+        val resp =
+            client
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("http://127.0.0.1:${plane.boundPort}/stop/foo?flatten=maybe")
+                        .post("".toRequestBody("application/json".toMediaType()))
+                        .build(),
+                ).execute()
+        assertThat(resp.code).isEqualTo(400)
     }
 
     @Test
