@@ -891,30 +891,9 @@ private class BybitLiveTickSource(
 
 ---
 
-### Task 16 — `BybitBrokerProfile` (config shape for data side)
+### Task 16 — *(removed during Task 1 recon — `BybitBrokerProfile` not needed)*
 
-**Files:**
-- Read: `src/main/kotlin/com/qkt/broker/bybit/` for existing profile shape (if any).
-- Create: `src/main/kotlin/com/qkt/broker/bybit/BybitBrokerProfile.kt` (only if not already present)
-- Modify: `src/main/kotlin/com/qkt/cli/Config.kt` (if profile loading needs extension)
-
-- [ ] If a Bybit profile already exists with a `category: spot|linear` field, this task is just verifying it. If not, add minimal:
-
-```kotlin
-data class BybitBrokerProfile(
-    val name: String,
-    val category: BybitCategory, // SPOT, LINEAR
-    val apiKey: String,
-    val apiSecret: String,
-    // public data doesn't need auth, but executing does
-)
-
-enum class BybitCategory { SPOT, LINEAR }
-```
-
-- [ ] Profile loader extracts `type: bybit`, `category: spot|linear` from `brokers:` config.
-- [ ] Test: profile parses correctly from YAML.
-- [ ] Commit: `feat(broker): BybitBrokerProfile distinguishes spot vs linear (data side reuse)` — only if shipping new code.
+The public-WS data side requires no auth or config. Bybit broker execution profiles are out of Phase 28's scope. Public sources are registered unconditionally in Task 17.
 
 ---
 
@@ -927,24 +906,20 @@ enum class BybitCategory { SPOT, LINEAR }
 - [ ] Replace `defaultTradingViewSource` with a composite-builder:
 
 ```kotlin
-private fun buildMarketSource(
-    mt5Profiles: List<MT5BrokerProfile>,
-    bybitProfiles: List<BybitBrokerProfile>,
-): MarketSource {
+private fun buildMarketSource(mt5Profiles: List<MT5BrokerProfile>): MarketSource {
     val routes = mutableListOf<Pair<SymbolPattern, MarketSource>>()
     for (p in mt5Profiles) {
         routes.add(SymbolPattern.prefix("${p.name.uppercase()}:") to Mt5MarketSource(p))
     }
-    val hasSpot = bybitProfiles.any { it.category == BybitCategory.SPOT }
-    val hasLinear = bybitProfiles.any { it.category == BybitCategory.LINEAR }
-    if (hasSpot) routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())
-    if (hasLinear) routes.add(SymbolPattern.prefix("BYBIT_PERP:") to BybitLinearMarketSource())
+    // Bybit public sources are always registered. WS open is lazy (first liveTicks call).
+    routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())
+    routes.add(SymbolPattern.prefix("BYBIT_PERP:") to BybitLinearMarketSource())
     return CompositeMarketSource(routes = routes, fallback = TradingViewMarketSource.connect())
 }
 ```
 
-- [ ] In `startDaemon`, replace `sourceFactory = ::defaultTradingViewSource` with `sourceFactory = { _ -> buildMarketSource(mt5Profiles, bybitProfiles) }`. The single composite is reused across strategies.
-- [ ] Test: given 2 MT5 profiles + 1 Bybit-spot profile, `buildMarketSource(...).supports("EXNESS:XAUUSD")` is true, `supports("BYBIT_SPOT:BTCUSDT")` is true, `supports("OANDA:SPY")` is true (TV fallback regex).
+- [ ] In `startDaemon`, replace `sourceFactory = ::defaultTradingViewSource` with `sourceFactory = { _ -> buildMarketSource(mt5Profiles) }`. The single composite is reused across strategies.
+- [ ] Test: given 2 MT5 profiles, `buildMarketSource(...).supports("EXNESS:XAUUSD")` is true, `supports("BYBIT_SPOT:BTCUSDT")` is true (registered unconditionally), `supports("OANDA:SPY")` is true (TV fallback regex).
 - [ ] Run: passes.
 - [ ] Commit: `feat(cli): wire CompositeMarketSource at daemon boot from broker profiles`.
 
