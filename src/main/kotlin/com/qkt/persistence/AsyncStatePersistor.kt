@@ -34,6 +34,9 @@ class AsyncStatePersistor(
     AutoCloseable {
     private val log = LoggerFactory.getLogger(AsyncStatePersistor::class.java)
 
+    private val callerRunsCount: java.util.concurrent.atomic.AtomicLong =
+        java.util.concurrent.atomic.AtomicLong(0)
+
     private val executor: ThreadPoolExecutor =
         ThreadPoolExecutor(
             1,
@@ -42,12 +45,29 @@ class AsyncStatePersistor(
             TimeUnit.MILLISECONDS,
             LinkedBlockingQueue(queueCapacity),
             { r -> Thread(r, "qkt-persistence-async").apply { isDaemon = true } },
-            // CallerRuns: if the queue is full, the producer thread runs the write itself
-            // (back-pressure into the bus). Better than dropping silently.
-            ThreadPoolExecutor.CallerRunsPolicy(),
-        )
+        ).also { it.rejectedExecutionHandler = CountingCallerRunsPolicy(callerRunsCount) }
 
     private val shutdownTimeoutMs: Long = shutdownTimeoutMs
+
+    /** Current depth of the pending-write queue. Operators can watch for sustained high values. */
+    val queueSize: Int get() = executor.queue.size
+
+    /** Cumulative count of writes that fell back to caller-runs because the queue was full. */
+    val callerRunsTotal: Long get() = callerRunsCount.get()
+
+    private class CountingCallerRunsPolicy(
+        private val counter: java.util.concurrent.atomic.AtomicLong,
+    ) : java.util.concurrent.RejectedExecutionHandler {
+        private val delegate = ThreadPoolExecutor.CallerRunsPolicy()
+
+        override fun rejectedExecution(
+            r: Runnable,
+            executor: ThreadPoolExecutor,
+        ) {
+            counter.incrementAndGet()
+            delegate.rejectedExecution(r, executor)
+        }
+    }
 
     private fun submit(
         label: String,

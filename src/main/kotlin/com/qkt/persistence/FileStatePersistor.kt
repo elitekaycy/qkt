@@ -23,6 +23,18 @@ class FileStatePersistor(
 ) : StatePersistor {
     private val log = LoggerFactory.getLogger(FileStatePersistor::class.java)
     private val writer = StateFileWriter(rootDir)
+
+    /** Cumulative count of save operations that hit disk. */
+    val totalWrites: Long get() = writer.totalWrites.get()
+
+    /** Cumulative count of save operations whose latency exceeded the slow-write threshold (default 100ms). */
+    val slowWrites: Long get() = writer.slowWrites.get()
+
+    /** Cumulative count of save operations that threw an IOException (disk full, permission denied, ...). */
+    val failedWrites: Long get() = writer.failedWrites.get()
+
+    /** Cumulative JSON bytes written across all save operations. */
+    val totalBytesWritten: Long get() = writer.totalBytesWritten.get()
     private val json =
         Json {
             ignoreUnknownKeys = true
