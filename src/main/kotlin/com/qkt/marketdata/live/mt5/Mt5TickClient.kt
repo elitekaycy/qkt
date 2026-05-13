@@ -47,7 +47,7 @@ class Mt5TickClient(
         }
     }
 
-    private fun fetchOnce(
+    internal fun fetchOnce(
         symbol: String,
         capturedAtMs: Long,
     ): Mt5Tick {
