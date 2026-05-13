@@ -157,7 +157,7 @@ class BybitLinearBroker(
         return ack
     }
 
-    override fun getOpenPositions(): Map<String, com.qkt.positions.Position> {
+    override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
         val raw =
             try {
                 transport.postSigned("/v5/position/list", """{"category":"linear","settleCoin":"USDT"}""")
@@ -168,7 +168,7 @@ class BybitLinearBroker(
         val tree = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return emptyMap()
         if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return emptyMap()
         val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return emptyMap()
-        val out = mutableMapOf<String, com.qkt.positions.Position>()
+        val out: MutableMap<String, MutableList<com.qkt.positions.Position>> = mutableMapOf()
         for (entry in list) {
             val obj = entry.jsonObject
             val bareSym = obj["symbol"]?.jsonPrimitive?.content ?: continue
@@ -180,24 +180,11 @@ class BybitLinearBroker(
             val signed = if (side == "Sell") size.negate() else size
             val avg = java.math.BigDecimal(obj["avgPrice"]?.jsonPrimitive?.content ?: "0")
             val qktSymbol = "BYBIT_LINEAR:$bareSym"
-            // Bybit linear can hold both long and short on the same symbol in hedge mode;
-            // collapse to net for the reconciler's Position view. Hedge-mode separate
-            // tracking is future work.
-            val existing = out[qktSymbol]
-            if (existing == null) {
-                out[qktSymbol] = com.qkt.positions.Position(qktSymbol, signed, avg)
-            } else {
-                val netQty = existing.quantity.add(signed)
-                val notional = existing.avgEntryPrice.multiply(existing.quantity.abs()).add(avg.multiply(size))
-                val absSum = existing.quantity.abs().add(size)
-                val newAvg =
-                    if (absSum.signum() == 0) {
-                        java.math.BigDecimal.ZERO
-                    } else {
-                        notional.divide(absSum, com.qkt.common.Money.CONTEXT)
-                    }
-                out[qktSymbol] = com.qkt.positions.Position(qktSymbol, netQty, newAvg)
-            }
+            // Hedge-mode-aware: each long/short ticket on the same symbol is preserved
+            // separately so the reconciler can match against persisted legs individually.
+            out.getOrPut(qktSymbol) { mutableListOf() }.add(
+                com.qkt.positions.Position(qktSymbol, signed, avg),
+            )
         }
         return out
     }

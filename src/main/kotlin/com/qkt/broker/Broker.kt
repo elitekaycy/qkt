@@ -63,11 +63,16 @@ interface Broker {
     /**
      * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol.
      *
+     * Returns a **list per symbol** because hedge-mode-capable brokers (MT5, Bybit linear)
+     * can hold a long and a short on the same symbol as two distinct tickets — the
+     * reconciler needs to see each one separately to match against persisted legs.
+     * One-way-mode brokers and PaperBroker return at most one entry per symbol.
+     *
      * Used at strategy deploy time by [com.qkt.persistence.LegBookReconciler] to merge
      * broker reality with persisted state. Default returns an empty map — only brokers
-     * with venue-side state (MT5, Bybit) override. Paper brokers have nothing to report.
+     * with venue-side state override.
      */
-    fun getOpenPositions(): Map<String, com.qkt.positions.Position> = emptyMap()
+    fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> = emptyMap()
 }
 
 /**
