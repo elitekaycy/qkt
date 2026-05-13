@@ -80,6 +80,7 @@ class DaemonCommand(
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: MarketSourceFactory.composite(mt5Profiles)
 
+        val statePersistor = cfg.statePersistor()
         val registry =
             StrategyRegistry(
                 StrategyHandle.RealFactory(
@@ -88,6 +89,7 @@ class DaemonCommand(
                     candleHub = sharedHub,
                     brokerFactories = brokerFactories,
                     maxDailyLoss = cfg.maxDailyLoss,
+                    persistor = statePersistor,
                 ),
             )
         val startedAt = Instant.now()
@@ -100,6 +102,7 @@ class DaemonCommand(
                     marketSourceProvider = effectiveSourceFactory,
                     brokerFactories = brokerFactories,
                     maxDailyLoss = cfg.maxDailyLoss,
+                    persistor = statePersistor,
                 )
         val plane =
             ControlPlane(

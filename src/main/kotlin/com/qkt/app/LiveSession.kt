@@ -69,6 +69,7 @@ class LiveSession(
     private val onSignal: (Signal) -> Unit = {},
     private val gate: () -> Boolean = { true },
     private val brokerFactories: Map<String, BrokerFactory> = emptyMap(),
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -106,7 +107,12 @@ class LiveSession(
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
         val pnl = PnLCalculator(positions, priceTracker)
-        val strategyPositions = StrategyPositionTracker()
+        val strategyPositions = StrategyPositionTracker(persistor)
+        for ((strategyId, _) in strategies) {
+            for (symbol in symbols) {
+                runCatching { strategyPositions.preloadFromPersistor(strategyId, symbol) }
+            }
+        }
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val paperBroker = PaperBroker(bus, clock, priceTracker)
@@ -145,6 +151,7 @@ class LiveSession(
                     onTrade(trade, realized, strategyId)
                 },
                 gate = gate,
+                persistor = persistor,
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }

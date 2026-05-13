@@ -55,11 +55,13 @@ class StackEngine(
     private val strategyId: String = "",
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     private val primaryClientOrderId: String = parentLegId,
+    initialFiredTierIndices: Set<Int> = emptySet(),
+    initialFiredLegIds: Map<Int, String> = emptyMap(),
 ) {
     private val mfeTracker = MfeTracker(parentSide, parentEntryPrice)
-    private val firedTierIndices: MutableSet<Int> = mutableSetOf()
+    private val firedTierIndices: MutableSet<Int> = initialFiredTierIndices.toMutableSet()
     private val firedAtBy: MutableMap<Int, Long> = mutableMapOf()
-    private val firedLegIdBy: MutableMap<Int, String> = mutableMapOf()
+    private val firedLegIdBy: MutableMap<Int, String> = initialFiredLegIds.toMutableMap()
     private val abandonedTierIndices: MutableSet<Int> = mutableSetOf()
     private val openedAt: Long = clock.now()
 

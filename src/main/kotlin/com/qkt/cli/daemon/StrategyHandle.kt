@@ -66,6 +66,7 @@ class StrategyHandle(
          * when no config is loaded).
          */
         private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
+        private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     ) : Factory {
         override fun create(
             name: String,
@@ -128,6 +129,7 @@ class StrategyHandle(
                         }
                     },
                     brokerFactories = brokerFactories,
+                    persistor = persistor,
                 ).start()
 
             val server =

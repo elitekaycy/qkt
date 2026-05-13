@@ -33,6 +33,23 @@ class StrategyPositionTracker(
         runCatching { persistor.saveLegBook(strategyId, symbol, book) }
     }
 
+    /**
+     * Phase 29a: rebuild a [LegBook] from on-disk state. Called at deploy time so a
+     * restarted daemon resumes with its prior leg metadata (PRIMARY/STACK roles,
+     * parentLegId linkage) intact. No-op when the persistor has no record for this
+     * (strategyId, symbol).
+     */
+    fun preloadFromPersistor(
+        strategyId: String,
+        symbol: String,
+    ) {
+        val persisted = runCatching { persistor.loadLegBook(strategyId, symbol) }.getOrNull() ?: return
+        if (persisted.legs.isEmpty()) return
+        val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
+        val book = books.getOrPut(symbol) { LegBook(symbol) }
+        for (leg in persisted.legs) book.add(leg.toPositionLeg())
+    }
+
     /** Monotonic counter for engine-internal PRIMARY leg ids. */
     private val primaryLegSeq = AtomicLong()
 

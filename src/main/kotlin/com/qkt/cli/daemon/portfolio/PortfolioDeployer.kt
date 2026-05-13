@@ -29,6 +29,7 @@ class PortfolioDeployer(
      * `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
      */
     private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
 ) {
     fun deploy(
         portfolioName: String,
@@ -135,6 +136,7 @@ class PortfolioDeployer(
                 },
                 gate = effectiveActive,
                 brokerFactories = brokerFactories,
+                persistor = persistor,
             ).start()
 
         val server =

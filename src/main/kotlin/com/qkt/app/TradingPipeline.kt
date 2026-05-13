@@ -70,10 +70,11 @@ class TradingPipeline(
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
     val gate: () -> Boolean = { true },
+    val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
-    val orderManager: OrderManager = OrderManager(broker, bus, priceTracker, clock)
+    val orderManager: OrderManager = OrderManager(broker, bus, priceTracker, clock, persistor)
 
     init {
         require(strategies.map { it.first }.toSet().size == strategies.size) {
@@ -235,6 +236,8 @@ class TradingPipeline(
             com.qkt.dsl.compile.StackOrchestrator(
                 clock = clock,
                 emit = emit,
+                strategyId = strategyId,
+                persistor = persistor,
                 onStackBracketEmit = { bracket, parentLegId ->
                     // Pre-register the stack's entry fill → STACK leg open, and the bracket's
                     // TP/SL ids → STACK leg close (using OrderManager.submitBracketFallback's
