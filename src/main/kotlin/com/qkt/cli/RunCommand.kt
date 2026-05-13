@@ -33,7 +33,13 @@ import kotlinx.serialization.json.put
  */
 class RunCommand(
     private val args: Args,
-    private val sourceFactory: (List<String>) -> MarketSource = ::defaultTradingViewSource,
+    /**
+     * Test seam. When `null` (production default), the run command builds a
+     * [com.qkt.marketdata.source.CompositeMarketSource] from the loaded MT5 broker
+     * profiles plus Bybit public spot/linear sources, with TradingView as fallback.
+     * Tests pass an explicit factory to swap in a fake.
+     */
+    private val sourceFactory: ((List<String>) -> MarketSource)? = null,
 ) {
     fun run(): Int {
         val file = args.requirePositional(0, "<strategy.qkt>")
@@ -94,7 +100,27 @@ class RunCommand(
                 ?.timeframe
                 ?.let { TimeWindow.parse(it) }
 
-        val marketSource = sourceFactory(tvSymbols)
+        val effectiveSourceFactory: (List<String>) -> MarketSource =
+            sourceFactory ?: run {
+                val configPath =
+                    args.option("config")?.let { Path.of(it) } ?: Path.of("./qkt.config.yaml")
+                val cfg = Config.load(configPath)
+                val mt5Profiles =
+                    try {
+                        com.qkt.broker.mt5
+                            .MT5BrokerProfileLoader()
+                            .load(
+                                raw = cfg.brokers,
+                                defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
+                                env = System.getenv(),
+                            )
+                    } catch (e: Exception) {
+                        println("[WARN] mt5 profile load failed: ${e.message}")
+                        emptyList()
+                    }
+                MarketSourceFactory.composite(mt5Profiles)
+            }
+        val marketSource = effectiveSourceFactory(tvSymbols)
 
         println("[INFO] qkt ${BuildInfo.VERSION} — strategy ${ast.name} v${ast.version} — paper-trading")
         println("[INFO] subscribed: ${tvSymbols.joinToString(", ")}")

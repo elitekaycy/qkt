@@ -35,8 +35,6 @@ class DaemonCommandSourceWiringTest {
         ): Sequence<Candle> = emptySequence()
     }
 
-    private val cmd = DaemonCommand(Args(arrayOf("daemon")))
-
     @Test
     fun `composite routes EXNESS prefix to Mt5MarketSource`() {
         val exness =
@@ -46,14 +44,14 @@ class DaemonCommandSourceWiringTest {
                 symbolPolicy = SymbolPolicy(suffix = "m"),
                 magic = 1,
             )
-        val factory = cmd.buildCompositeMarketSourceFactory(listOf(exness)) { StubFallback() }
+        val factory = MarketSourceFactory.composite(listOf(exness)) { StubFallback() }
         val composite = factory(emptyList())
         assertThat(composite.supports("EXNESS:XAUUSD")).isTrue
     }
 
     @Test
     fun `composite routes BYBIT_SPOT prefix unconditionally`() {
-        val factory = cmd.buildCompositeMarketSourceFactory(emptyList()) { StubFallback() }
+        val factory = MarketSourceFactory.composite(emptyList()) { StubFallback() }
         val composite = factory(emptyList())
         assertThat(composite.supports("BYBIT_SPOT:BTCUSDT")).isTrue
         assertThat(composite.supports("BYBIT_PERP:BTCUSDT")).isTrue
@@ -61,7 +59,7 @@ class DaemonCommandSourceWiringTest {
 
     @Test
     fun `composite falls through to fallback for unknown prefix`() {
-        val factory = cmd.buildCompositeMarketSourceFactory(emptyList()) { StubFallback() }
+        val factory = MarketSourceFactory.composite(emptyList()) { StubFallback() }
         val composite = factory(emptyList())
         // StubFallback.supports returns true for anything
         assertThat(composite.supports("UNKNOWN:FOO")).isTrue
@@ -69,7 +67,7 @@ class DaemonCommandSourceWiringTest {
 
     @Test
     fun `factory returns the same composite instance across calls`() {
-        val factory = cmd.buildCompositeMarketSourceFactory(emptyList()) { StubFallback() }
+        val factory = MarketSourceFactory.composite(emptyList()) { StubFallback() }
         val first = factory(emptyList())
         val second = factory(listOf("EXNESS:XAUUSD"))
         assertThat(first).isSameAs(second)
@@ -77,7 +75,7 @@ class DaemonCommandSourceWiringTest {
 
     @Test
     fun `with no MT5 profiles, EXNESS prefix delegates to fallback`() {
-        val factory = cmd.buildCompositeMarketSourceFactory(emptyList()) { StubFallback() }
+        val factory = MarketSourceFactory.composite(emptyList()) { StubFallback() }
         val composite = factory(emptyList())
         // No MT5 routes registered; EXNESS: falls through to fallback (StubFallback)
         // StubFallback.supports returns true so EXNESS:XAUUSD is accepted by the composite.
