@@ -39,7 +39,7 @@ class StopRouteTest {
     private fun flattens(name: String): Int = flattenCalls[name]?.get() ?: 0
 
     private fun stubFactory(stateDir: StateDir): StrategyHandle.Factory =
-        StrategyHandle.Factory { name, _ ->
+        StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 8)
             val running = AtomicBoolean(true)
             val counter = flattenCalls.computeIfAbsent(name) { AtomicInteger(0) }

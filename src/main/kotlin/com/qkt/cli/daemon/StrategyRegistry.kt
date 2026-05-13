@@ -14,11 +14,12 @@ class StrategyRegistry(
     fun deploy(
         name: String,
         file: Path,
+        ignoreMismatches: Boolean = false,
     ): StrategyHandle {
         require(name.matches(NAME_REGEX)) { "invalid strategy name: $name" }
         check(!handles.containsKey(name)) { "strategy '$name' already deployed" }
         check(!portfolios.containsKey(name)) { "name '$name' already deployed as portfolio" }
-        val handle = factory.create(name, file)
+        val handle = factory.create(name, file, ignoreMismatches)
         handles[name] = handle
         return handle
     }

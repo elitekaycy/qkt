@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 
 class ControlPlaneTest {
     private val noopFactory =
-        StrategyHandle.Factory { _, _ ->
+        StrategyHandle.Factory { _, _, _ ->
             error("noop factory should not be invoked in this test")
         }
 

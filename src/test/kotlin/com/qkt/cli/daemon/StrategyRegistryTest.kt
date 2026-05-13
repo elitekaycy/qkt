@@ -30,7 +30,7 @@ class StrategyRegistryTest {
     }
 
     private fun fakeFactory(stateDir: StateDir): StrategyHandle.Factory =
-        StrategyHandle.Factory { name, _ ->
+        StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 16)
             val running = AtomicBoolean(true)
             val live =

@@ -115,7 +115,7 @@ class MT5DaemonE2ETest {
                 brokerFactories = brokerFactories,
             )
         val file = Path.of("src/test/resources/parity/mt5_e2e_strategy.qkt")
-        val handle = factory.create("smoke", file)
+        val handle = factory.create("smoke", file, false)
         try {
             // Wait briefly for ticks to drain through the live session
             Thread.sleep(500)

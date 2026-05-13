@@ -239,6 +239,37 @@ class MT5Broker(
         )
     }
 
+    override fun getOpenPositions(): Map<String, com.qkt.positions.Position> {
+        val positions =
+            runCatching { client.getPositions(magic = profile.magic) }
+                .onFailure { e -> log.warn("MT5Broker ${profile.name} getOpenPositions failed: ${e.message}") }
+                .getOrElse { return emptyMap() }
+        val grouped: MutableMap<String, MutableList<MT5Position>> = mutableMapOf()
+        for (p in positions) {
+            val qktSymbol = mt5Symbol.toQkt(p.symbol)
+            grouped.getOrPut(qktSymbol) { mutableListOf() }.add(p)
+        }
+        return grouped.mapValues { (sym, list) ->
+            // MT5 reports one row per ticket; net them into a single signed Position.
+            // Sum signed quantities and compute weighted-average entry price.
+            var signedQty = java.math.BigDecimal.ZERO
+            var notional = java.math.BigDecimal.ZERO
+            for (p in list) {
+                val q = if (p.type == 0) p.volume else p.volume.negate()
+                signedQty = signedQty.add(q)
+                notional = notional.add(p.priceOpen.multiply(p.volume))
+            }
+            val absSum = list.fold(java.math.BigDecimal.ZERO) { acc, p -> acc.add(p.volume) }
+            val avgPx =
+                if (absSum.signum() == 0) {
+                    java.math.BigDecimal.ZERO
+                } else {
+                    notional.divide(absSum, com.qkt.common.Money.CONTEXT)
+                }
+            com.qkt.positions.Position(symbol = sym, quantity = signedQty, avgEntryPrice = avgPx)
+        }
+    }
+
     override fun cancel(orderId: String) {
         val ticket = pendingTickets.remove(orderId) ?: return
         pendingByTicket.remove(ticket)

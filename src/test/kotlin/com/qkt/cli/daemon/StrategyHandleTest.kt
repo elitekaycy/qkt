@@ -65,7 +65,7 @@ class StrategyHandleTest {
                 marketSourceProvider = { FakeSource(ticks) },
             )
         val file = Path.of("src/test/resources/cli/valid_strategy.qkt")
-        val handle = factory.create("alpha", file)
+        val handle = factory.create("alpha", file, false)
         try {
             assertThat(handle.name).isEqualTo("alpha")
             assertThat(handle.port).isGreaterThan(0)
@@ -98,7 +98,7 @@ class StrategyHandleTest {
                 marketSourceProvider = { FakeSource(emptyList()) },
             )
         val broken = tmp.resolve("broken.qkt").also { Files.writeString(it, "STRATEGY") }
-        val err = runCatching { factory.create("bad", broken) }.exceptionOrNull()
+        val err = runCatching { factory.create("bad", broken, false) }.exceptionOrNull()
         assertThat(err).isNotNull
         assertThat(err!!.message).contains("parse failure")
     }

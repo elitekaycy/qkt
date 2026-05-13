@@ -31,7 +31,7 @@ class StatusProxyTest {
     }
 
     private fun stubFactory(stateDir: StateDir): StrategyHandle.Factory =
-        StrategyHandle.Factory { name, _ ->
+        StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 8)
             val running = AtomicBoolean(true)
             val live =

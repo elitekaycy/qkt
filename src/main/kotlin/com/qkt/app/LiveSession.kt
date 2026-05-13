@@ -70,8 +70,85 @@ class LiveSession(
     private val gate: () -> Boolean = { true },
     private val brokerFactories: Map<String, BrokerFactory> = emptyMap(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    /**
+     * When `false` (default), a mismatch between broker positions and persisted leg
+     * state at deploy time throws [com.qkt.app.ReconcileException] — the strategy
+     * refuses to start. Operators set this to `true` to attach broker positions as
+     * fresh PRIMARY legs and proceed (the `qkt deploy --reconcile=ignore-mismatches`
+     * CLI flag).
+     */
+    private val ignoreMismatches: Boolean = false,
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
+
+    /**
+     * Three-way reconcile: persisted leg state + broker positions → attached LegBook
+     * or refusal. Runs once at startup before the engine thread takes ticks.
+     */
+    private fun reconcileOrPreload(
+        strategyPositions: com.qkt.positions.StrategyPositionTracker,
+        broker: Broker,
+    ) {
+        val brokerByQktSymbol = runCatching { broker.getOpenPositions() }.getOrElse { emptyMap() }
+        val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
+        for ((strategyId, _) in strategies) {
+            for (symbol in symbols) {
+                val brokerForSymbol =
+                    brokerByQktSymbol[symbol]?.let { listOf(it) } ?: emptyList()
+                val outcome = reconciler.reconcile(strategyId, symbol, brokerForSymbol)
+                when (outcome) {
+                    is com.qkt.persistence.LegBookReconciler.Outcome.Attached -> {
+                        for (leg in outcome.legBook.all()) {
+                            if (leg.role == com.qkt.positions.LegRole.PRIMARY) {
+                                // Primary preload uses applyFill semantics — but the engine
+                                // hasn't run yet, so we rebuild via the persistor preload path.
+                                strategyPositions.preloadFromPersistor(strategyId, symbol)
+                            }
+                        }
+                    }
+                    is com.qkt.persistence.LegBookReconciler.Outcome.Mismatch -> {
+                        if (!ignoreMismatches) {
+                            throw ReconcileException(
+                                "$strategyId/$symbol: ${outcome.details}. " +
+                                    "Pass --reconcile=ignore-mismatches to attach broker positions as PRIMARY.",
+                            )
+                        }
+                        log.warn(
+                            "Reconcile mismatch (ignored): {}/{} — {}",
+                            strategyId,
+                            symbol,
+                            outcome.details,
+                        )
+                        // Attach broker positions as fresh PRIMARY legs.
+                        for (pos in brokerForSymbol) {
+                            val side =
+                                if (pos.quantity.signum() >= 0) {
+                                    com.qkt.common.Side.BUY
+                                } else {
+                                    com.qkt.common.Side.SELL
+                                }
+                            strategyPositions.addStackLeg(
+                                strategyId,
+                                com.qkt.positions.PositionLeg(
+                                    legId = "$strategyId-$symbol-reconciled-${pos.quantity}",
+                                    parentLegId = "$strategyId-$symbol-reconciled-primary",
+                                    symbol = symbol,
+                                    side = side,
+                                    quantity = pos.quantity.abs(),
+                                    entryPrice = pos.avgEntryPrice,
+                                    openedAt = clock.now(),
+                                    role = com.qkt.positions.LegRole.STACK,
+                                ),
+                            )
+                        }
+                    }
+                    com.qkt.persistence.LegBookReconciler.Outcome.NothingPersisted -> {
+                        // Clean state. Nothing to do.
+                    }
+                }
+            }
+        }
+    }
 
     private fun buildBroker(
         paperBroker: PaperBroker,
@@ -108,15 +185,15 @@ class LiveSession(
         val positions = PositionTracker()
         val pnl = PnLCalculator(positions, priceTracker)
         val strategyPositions = StrategyPositionTracker(persistor)
-        for ((strategyId, _) in strategies) {
-            for (symbol in symbols) {
-                runCatching { strategyPositions.preloadFromPersistor(strategyId, symbol) }
-            }
-        }
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val paperBroker = PaperBroker(bus, clock, priceTracker)
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker)
+
+        // Reconcile persisted leg state against broker positions BEFORE the engine starts
+        // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
+        reconcileOrPreload(strategyPositions, broker)
+
         val engine = Engine(bus, priceTracker)
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
         val riskEngine = RiskEngine(rules, haltRules, positions, riskState)

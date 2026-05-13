@@ -31,7 +31,7 @@ class ListRouteTest {
     }
 
     private fun stubFactory(stateDir: StateDir): StrategyHandle.Factory =
-        StrategyHandle.Factory { name, _ ->
+        StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 8)
             val running = AtomicBoolean(true)
             val live =
@@ -130,7 +130,7 @@ class ListRouteTest {
     ) {
         val stateDir = StateDir.resolve(tmp.toString())
         val registry =
-            StrategyRegistry(StrategyHandle.Factory { _, _ -> error("no deploys expected") })
+            StrategyRegistry(StrategyHandle.Factory { _, _, _ -> error("no deploys expected") })
         val plane = ControlPlane(registry, port = 0)
         plane.start()
         opened.add(plane)
