@@ -27,7 +27,7 @@ class ActionCompilerStackAtTest {
         val close = BigDecimal("1.1000")
         val candle =
             Candle(
-                "EURUSD",
+                "BACKTEST:EURUSD",
                 close,
                 close,
                 close,
@@ -83,7 +83,7 @@ class ActionCompilerStackAtTest {
 
         assertThat(pending.size()).isEqualTo(1)
         val entry = pending.consume(req.id)!!
-        assertThat(entry.symbol).isEqualTo("EURUSD")
+        assertThat(entry.symbol).isEqualTo("BACKTEST:EURUSD")
         assertThat(entry.side).isEqualTo(Side.BUY)
         assertThat(entry.tiers).hasSize(2)
         assertThat(entry.tiers[0].mfeThreshold).isEqualByComparingTo("0.005")

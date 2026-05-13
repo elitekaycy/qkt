@@ -69,4 +69,16 @@ class StrategyAstTest {
             StreamDecl(alias = "", broker = "BACKTEST", symbol = "BTCUSDT", timeframe = "1m")
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
+
+    @Test
+    fun `StreamDecl qktSymbol joins broker and symbol with colon`() {
+        val s = StreamDecl(alias = "gold", broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")
+        assertThat(s.qktSymbol).isEqualTo("EXNESS:XAUUSD")
+    }
+
+    @Test
+    fun `StreamDecl qktSymbol works for multi-segment broker prefix`() {
+        val s = StreamDecl(alias = "btc", broker = "BYBIT_LINEAR", symbol = "BTCUSDT", timeframe = "1m")
+        assertThat(s.qktSymbol).isEqualTo("BYBIT_LINEAR:BTCUSDT")
+    }
 }

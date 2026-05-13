@@ -24,7 +24,7 @@ class PendingStacksTest {
         val entry =
             PendingStack(
                 parentClientOrderId = "ord-1",
-                symbol = "EURUSD",
+                symbol = "BACKTEST:EURUSD",
                 side = Side.BUY,
                 tiers = listOf(tier()),
             )
@@ -49,7 +49,7 @@ class PendingStacksTest {
         val entry =
             PendingStack(
                 parentClientOrderId = "ord-1",
-                symbol = "EURUSD",
+                symbol = "BACKTEST:EURUSD",
                 side = Side.BUY,
                 tiers = listOf(tier()),
             )
@@ -62,10 +62,10 @@ class PendingStacksTest {
     @Test
     fun `multiple distinct ids coexist`() {
         val stacks = PendingStacks()
-        stacks.register(PendingStack("a", "EURUSD", Side.BUY, listOf(tier())))
+        stacks.register(PendingStack("a", "BACKTEST:EURUSD", Side.BUY, listOf(tier())))
         stacks.register(PendingStack("b", "GBPUSD", Side.SELL, listOf(tier())))
         assertThat(stacks.size()).isEqualTo(2)
-        assertThat(stacks.consume("a")?.symbol).isEqualTo("EURUSD")
+        assertThat(stacks.consume("a")?.symbol).isEqualTo("BACKTEST:EURUSD")
         assertThat(stacks.consume("b")?.side).isEqualTo(Side.SELL)
     }
 }

@@ -21,7 +21,7 @@ class CandleHubTest {
     fun `register then feed accumulates closed candles in history`() {
         val hub = CandleHub()
         hub.register(key1m, retention = 5)
-        for (t in 0L..180_000L step 30_000L) hub.feed(tick("BTCUSDT", t))
+        for (t in 0L..180_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         assertThat(hub.latest(key1m)).isNotNull
         assertThat(hub.history(key1m, 0)).isEqualTo(hub.latest(key1m))
     }
@@ -46,7 +46,7 @@ class CandleHubTest {
     fun `register after feed adds a new key`() {
         val hub = CandleHub()
         hub.register(key1m, retention = 5)
-        hub.feed(tick("BTCUSDT", 0L))
+        hub.feed(tick("BYBIT:BTCUSDT", 0L))
         // Daemon scope: late-registering a new key (e.g. when a second strategy deploys after
         // ticks have started flowing) is allowed. The new key simply has no prior history.
         hub.register(keyEth1m, retention = 5)
@@ -59,7 +59,7 @@ class CandleHubTest {
         hub.register(key1m, retention = 100)
         hub.register(key1h, retention = 100)
         // 90 minutes of ticks at 30s cadence
-        for (t in 0L..(90L * 60_000L) step 30_000L) hub.feed(tick("BTCUSDT", t))
+        for (t in 0L..(90L * 60_000L) step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         // 1m closes ~89 candles in this span; 1h closes ~1 candle (the 0..3_600_000 boundary at the 60min tick).
         assertThat(hub.historySize(key1m)).isGreaterThan(60)
         assertThat(hub.historySize(key1h)).isLessThanOrEqualTo(2)
@@ -69,7 +69,7 @@ class CandleHubTest {
     fun `feed for unrelated symbol does not affect any key`() {
         val hub = CandleHub()
         hub.register(key1m, retention = 10)
-        for (t in 0L..180_000L step 30_000L) hub.feed(tick("ETHUSDT", t))
+        for (t in 0L..180_000L step 30_000L) hub.feed(tick("BYBIT:ETHUSDT", t))
         assertThat(hub.historySize(key1m)).isEqualTo(0)
         assertThat(hub.latest(key1m)).isNull()
     }
@@ -78,7 +78,7 @@ class CandleHubTest {
     fun `retention bounds the ring buffer`() {
         val hub = CandleHub()
         hub.register(key1m, retention = 3)
-        for (t in 0L..(10L * 60_000L) step 30_000L) hub.feed(tick("BTCUSDT", t))
+        for (t in 0L..(10L * 60_000L) step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         assertThat(hub.historySize(key1m)).isLessThanOrEqualTo(3)
         // Latest is the most recent close
         assertThat(hub.history(key1m, 0)).isEqualTo(hub.latest(key1m))
@@ -88,7 +88,7 @@ class CandleHubTest {
     fun `history out of range returns null`() {
         val hub = CandleHub()
         hub.register(key1m, retention = 5)
-        for (t in 0L..180_000L step 30_000L) hub.feed(tick("BTCUSDT", t))
+        for (t in 0L..180_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         assertThat(hub.history(key1m, -1)).isNull()
         assertThat(hub.history(key1m, 9999)).isNull()
     }
@@ -99,7 +99,7 @@ class CandleHubTest {
         hub.register(key1m, retention = 10)
         val received = mutableListOf<Long>()
         hub.onClosed(key1m) { c -> received.add(c.endTime) }
-        for (t in 0L..240_000L step 30_000L) hub.feed(tick("BTCUSDT", t))
+        for (t in 0L..240_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         // Crossing 60_000 / 120_000 / 180_000 / 240_000 boundaries
         assertThat(received).isNotEmpty
         // Strictly monotonic

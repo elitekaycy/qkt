@@ -35,7 +35,7 @@ class ActionCompilerStackTest {
     private fun makeCtx(): EvalContext {
         val candle =
             Candle(
-                "BTCUSDT",
+                "BACKTEST:BTCUSDT",
                 entryPrice,
                 entryPrice,
                 entryPrice,

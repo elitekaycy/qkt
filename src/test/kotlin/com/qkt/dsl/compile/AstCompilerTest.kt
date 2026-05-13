@@ -69,7 +69,7 @@ class AstCompilerTest {
         for (price in listOf("100", "101", "102", "103", "104", "110", "120")) {
             val c =
                 Candle(
-                    "BTCUSDT",
+                    "BACKTEST:BTCUSDT",
                     BigDecimal(price),
                     BigDecimal(price),
                     BigDecimal(price),

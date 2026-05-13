@@ -19,7 +19,7 @@ class ChildPriceResolverTest {
         EvalContext(
             candle =
                 Candle(
-                    "BTCUSDT",
+                    "BACKTEST:BTCUSDT",
                     BigDecimal.ONE,
                     BigDecimal.ONE,
                     BigDecimal.ONE,

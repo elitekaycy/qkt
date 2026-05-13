@@ -45,10 +45,10 @@ class ExprCompilerCrossesTest {
                 rhs = NumLit(BigDecimal("100")),
             )
         val compiled = ExprCompiler().compile(expr)
-        assertThat(compiled.evaluate(ctxFor(candleAt("BTCUSDT", "99")))).isEqualTo(Value.Undefined)
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "99"))) as Value.Bool).v).isFalse()
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "101"))) as Value.Bool).v).isTrue()
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "102"))) as Value.Bool).v).isFalse()
+        assertThat(compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "99")))).isEqualTo(Value.Undefined)
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "99"))) as Value.Bool).v).isFalse()
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "101"))) as Value.Bool).v).isTrue()
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "102"))) as Value.Bool).v).isFalse()
     }
 
     @Test
@@ -60,10 +60,10 @@ class ExprCompilerCrossesTest {
                 rhs = NumLit(BigDecimal("100")),
             )
         val compiled = ExprCompiler().compile(expr)
-        assertThat(compiled.evaluate(ctxFor(candleAt("BTCUSDT", "101")))).isEqualTo(Value.Undefined)
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "101"))) as Value.Bool).v).isFalse()
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "99"))) as Value.Bool).v).isTrue()
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "98"))) as Value.Bool).v).isFalse()
+        assertThat(compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "101")))).isEqualTo(Value.Undefined)
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "101"))) as Value.Bool).v).isFalse()
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "99"))) as Value.Bool).v).isTrue()
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "98"))) as Value.Bool).v).isFalse()
     }
 
     @Test
@@ -75,9 +75,9 @@ class ExprCompilerCrossesTest {
                 rhs = NumLit(BigDecimal("100")),
             )
         val compiled = ExprCompiler().compile(expr)
-        assertThat(compiled.evaluate(ctxFor(candleAt("BTCUSDT", "99")))).isEqualTo(Value.Undefined)
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "99"))) as Value.Bool).v).isFalse()
+        assertThat(compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "99")))).isEqualTo(Value.Undefined)
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "99"))) as Value.Bool).v).isFalse()
         assertThat(compiled.evaluate(ctxFor(candleAt("OTHER", "200")))).isEqualTo(Value.Undefined)
-        assertThat((compiled.evaluate(ctxFor(candleAt("BTCUSDT", "101"))) as Value.Bool).v).isTrue()
+        assertThat((compiled.evaluate(ctxFor(candleAt("BACKTEST:BTCUSDT", "101"))) as Value.Bool).v).isTrue()
     }
 }

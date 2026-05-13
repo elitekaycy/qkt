@@ -14,7 +14,16 @@ import org.slf4j.LoggerFactory
 
 class ActionCompilerExtensionsTest {
     private val candle =
-        Candle("BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
+        Candle(
+            "BACKTEST:BTCUSDT",
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ZERO,
+            0L,
+            1L,
+        )
     private val ctx =
         EvalContext(
             candle = candle,
@@ -47,13 +56,13 @@ class ActionCompilerExtensionsTest {
         val pos =
             object : com.qkt.positions.StrategyPositionView {
                 override fun positionFor(symbol: String) =
-                    if (symbol == "BTCUSDT") {
-                        com.qkt.positions.Position("BTCUSDT", BigDecimal("2.5"), BigDecimal("100"))
+                    if (symbol == "BACKTEST:BTCUSDT") {
+                        com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("2.5"), BigDecimal("100"))
                     } else {
                         null
                     }
 
-                override fun allPositions() = mapOf("BTCUSDT" to positionFor("BTCUSDT")!!)
+                override fun allPositions() = mapOf("BACKTEST:BTCUSDT" to positionFor("BACKTEST:BTCUSDT")!!)
             }
         val ec =
             EvalContext(
@@ -70,9 +79,9 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ec)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
             com.qkt.strategy.Signal
-                .Sell("BTCUSDT", BigDecimal("2.5")),
+                .Sell("BACKTEST:BTCUSDT", BigDecimal("2.5")),
         )
     }
 
@@ -81,13 +90,13 @@ class ActionCompilerExtensionsTest {
         val pos =
             object : com.qkt.positions.StrategyPositionView {
                 override fun positionFor(symbol: String) =
-                    if (symbol == "BTCUSDT") {
-                        com.qkt.positions.Position("BTCUSDT", BigDecimal("-1.5"), BigDecimal("100"))
+                    if (symbol == "BACKTEST:BTCUSDT") {
+                        com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("-1.5"), BigDecimal("100"))
                     } else {
                         null
                     }
 
-                override fun allPositions() = mapOf("BTCUSDT" to positionFor("BTCUSDT")!!)
+                override fun allPositions() = mapOf("BACKTEST:BTCUSDT" to positionFor("BACKTEST:BTCUSDT")!!)
             }
         val ec =
             EvalContext(
@@ -104,9 +113,9 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ec)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
             com.qkt.strategy.Signal
-                .Buy("BTCUSDT", BigDecimal("1.5")),
+                .Buy("BACKTEST:BTCUSDT", BigDecimal("1.5")),
         )
     }
 
@@ -120,7 +129,7 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ctx)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
         )
     }
 
@@ -134,7 +143,7 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ctx)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
         )
     }
 
@@ -157,9 +166,9 @@ class ActionCompilerExtensionsTest {
                 .invoke(multiCtx)
         assertThat(sigs).containsExactlyInAnyOrder(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("ETHUSDT"),
+                .CancelPendingForSymbol("BACKTEST:ETHUSDT"),
         )
     }
 
@@ -171,8 +180,10 @@ class ActionCompilerExtensionsTest {
 
                 override fun allPositions() =
                     mapOf(
-                        "BTCUSDT" to com.qkt.positions.Position("BTCUSDT", BigDecimal("2"), BigDecimal("100")),
-                        "ETHUSDT" to com.qkt.positions.Position("ETHUSDT", BigDecimal("-3"), BigDecimal("50")),
+                        "BACKTEST:BTCUSDT" to
+                            com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("2"), BigDecimal("100")),
+                        "BACKTEST:ETHUSDT" to
+                            com.qkt.positions.Position("BACKTEST:ETHUSDT", BigDecimal("-3"), BigDecimal("50")),
                         "ZERO" to com.qkt.positions.Position("ZERO", BigDecimal.ZERO, BigDecimal("10")),
                     )
             }
@@ -189,11 +200,11 @@ class ActionCompilerExtensionsTest {
                 .invoke(ec)
         assertThat(sigs).containsExactlyInAnyOrder(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
             com.qkt.strategy.Signal
-                .Sell("BTCUSDT", BigDecimal("2")),
+                .Sell("BACKTEST:BTCUSDT", BigDecimal("2")),
             com.qkt.strategy.Signal
-                .Buy("ETHUSDT", BigDecimal("3")),
+                .Buy("BACKTEST:ETHUSDT", BigDecimal("3")),
         )
     }
 }

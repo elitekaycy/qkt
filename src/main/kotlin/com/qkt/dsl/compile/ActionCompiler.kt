@@ -96,7 +96,7 @@ class ActionCompiler(
         { ctx ->
             val out = mutableListOf<Signal>()
             for (streamAlias in ctx.streams.keys) {
-                val sym = ctx.streams[streamAlias]?.symbol ?: continue
+                val sym = ctx.streams[streamAlias]?.qktSymbol ?: continue
                 out.add(Signal.CancelPendingForSymbol(sym))
             }
             for ((symbol, position) in ctx.strategyContext.positions.allPositions()) {
@@ -111,7 +111,7 @@ class ActionCompiler(
 
     private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> =
         { ctx ->
-            val symbol = ctx.streams[streamAlias]?.symbol ?: error("Unknown stream alias: $streamAlias")
+            val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
             val qty =
                 ctx.strategyContext.positions
                     .positionFor(symbol)
@@ -127,14 +127,14 @@ class ActionCompiler(
 
     private fun compileCancel(streamAlias: String): (EvalContext) -> List<Signal> =
         { ctx ->
-            val symbol = ctx.streams[streamAlias]?.symbol ?: error("Unknown stream alias: $streamAlias")
+            val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
             listOf(Signal.CancelPendingForSymbol(symbol))
         }
 
     private fun compileCancelAll(): (EvalContext) -> List<Signal> =
         { ctx ->
             ctx.streams.values
-                .map { it.symbol }
+                .map { it.qktSymbol }
                 .distinct()
                 .map { Signal.CancelPendingForSymbol(it) }
         }
@@ -228,7 +228,7 @@ class ActionCompiler(
         if (isFastPath) {
             val qtyExpr = exprCompiler.compile((sizing as SizeQty).expr)
             return { ctx ->
-                val symbol = ctx.streams[stream]?.symbol ?: error("Unknown stream alias: $stream")
+                val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
                 val v = qtyExpr.evaluate(ctx)
                 require(v is Value.Num) { "SIZING must be numeric, got $v" }
                 val sig = if (side == Side.BUY) Signal.Buy(symbol, v.v) else Signal.Sell(symbol, v.v)
@@ -253,7 +253,7 @@ class ActionCompiler(
         val compiledOcoLeg2 = opts.oco?.limit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
 
         return { ctx ->
-            val symbol = ctx.streams[stream]?.symbol ?: error("Unknown stream alias: $stream")
+            val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
             val ts = ctx.strategyContext.clock.now()
             val entry = compiledOrderType.entryPrice.evaluate(ctx)
             val qty = compiledSize.evaluate(ctx, entry)
@@ -379,7 +379,7 @@ class ActionCompiler(
             }
 
         return { ctx ->
-            val symbol = ctx.streams[stream]?.symbol ?: error("Unknown stream alias: $stream")
+            val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
             val ts = ctx.strategyContext.clock.now()
             val currentPrice = ctx.candle.close
 

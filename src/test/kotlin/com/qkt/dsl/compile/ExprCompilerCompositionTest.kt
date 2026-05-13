@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 class ExprCompilerCompositionTest {
     private fun candle(price: String) =
         Candle(
-            "BTCUSDT",
+            "BACKTEST:BTCUSDT",
             BigDecimal(price),
             BigDecimal(price),
             BigDecimal(price),

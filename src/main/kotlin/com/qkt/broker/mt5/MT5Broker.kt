@@ -246,7 +246,7 @@ class MT5Broker(
                 .getOrElse { return emptyMap() }
         val out: MutableMap<String, MutableList<com.qkt.positions.Position>> = mutableMapOf()
         for (p in positions) {
-            val qktSymbol = mt5Symbol.toQkt(p.symbol)
+            val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(p.symbol)}"
             val signedQty = if (p.type == 0) p.volume else p.volume.negate()
             out.getOrPut(qktSymbol) { mutableListOf() }.add(
                 com.qkt.positions.Position(
@@ -340,7 +340,7 @@ class MT5Broker(
         recentlyFilledTickets[position.ticket] = clock.now()
         // Keep the meta accessible to the position poller for the eventual close event.
         positionMetaByTicket[position.ticket] = meta
-        val qktSymbol = mt5Symbol.toQkt(position.symbol)
+        val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(position.symbol)}"
         val filledSide = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL
         bus.publish(
             BrokerEvent.OrderFilled(

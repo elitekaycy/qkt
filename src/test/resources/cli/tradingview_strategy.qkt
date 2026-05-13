@@ -1,0 +1,8 @@
+STRATEGY tv_smoke VERSION 1
+
+SYMBOLS
+    fx = OANDA:EURUSD EVERY 1m
+
+RULES
+    WHEN fx.close > 0
+    THEN LOG "tick" price=fx.close
