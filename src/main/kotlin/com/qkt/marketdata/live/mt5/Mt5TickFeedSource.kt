@@ -3,8 +3,10 @@ package com.qkt.marketdata.live.mt5
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.SystemClock
+import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickSource
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.OkHttpClient
 
@@ -13,6 +15,10 @@ import okhttp3.OkHttpClient
  *
  * Round-robins across [symbols] each iteration, dedupes per-symbol by `time_msc`, sleeps
  * [pollIntervalMs] between rounds. One daemon thread per source instance.
+ *
+ * When [calendar] is supplied, the poller skips iterations outside the trading session
+ * (sleeps [outOfSessionSleepMs] instead). Saves ~30% of polls for FX/metals across a week
+ * and avoids log spam from stale ticks.
  */
 class Mt5TickFeedSource(
     private val baseUrl: String,
@@ -20,6 +26,8 @@ class Mt5TickFeedSource(
     private val pollIntervalMs: Long = 50L,
     private val http: OkHttpClient = OkHttpClient(),
     private val clock: Clock = SystemClock(),
+    private val calendar: TradingCalendar? = null,
+    private val outOfSessionSleepMs: Long = 60_000L,
 ) : LiveTickSource {
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
@@ -36,6 +44,18 @@ class Mt5TickFeedSource(
             Thread({
                 try {
                     while (running.get()) {
+                        if (calendar != null &&
+                            symbols.isNotEmpty() &&
+                            !calendar.isInSession(symbols.first(), Instant.ofEpochMilli(clock.now()))
+                        ) {
+                            try {
+                                Thread.sleep(outOfSessionSleepMs)
+                            } catch (e: InterruptedException) {
+                                Thread.currentThread().interrupt()
+                                return@Thread
+                            }
+                            continue
+                        }
                         for (sym in symbols) {
                             if (!running.get()) break
                             try {

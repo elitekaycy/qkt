@@ -49,7 +49,7 @@ class Mt5MarketSourceTest {
                 ),
             )
             val profile = exness.copy(gatewayUrl = server.url("/").toString().trimEnd('/'), pollIntervalMs = 5L)
-            val source = Mt5MarketSource(profile)
+            val source = Mt5MarketSource(profile, calendar = null)
             val feed = source.liveTicks(listOf("EXNESS:XAUUSD"))
             val tick = feed.next()
             feed.close()
