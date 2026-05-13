@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -66,6 +67,48 @@ class ConfigTest {
         val c = Config.load(cfg)
         assertThat(c.brokers["exness"]?.get("gateway_url"))
             .isEqualTo("http://override.local:9999")
+    }
+
+    @Test
+    fun `risk max_daily_loss reads from config`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            risk:
+              max_daily_loss: 250
+            """.trimIndent(),
+        )
+        val c = Config.load(cfg)
+        assertThat(c.maxDailyLoss).isEqualByComparingTo("250")
+    }
+
+    @Test
+    fun `risk max_daily_loss defaults when absent`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(cfg, "source: tv\n")
+        val c = Config.load(cfg)
+        assertThat(c.maxDailyLoss).isEqualByComparingTo(Config.DEFAULT_MAX_DAILY_LOSS)
+    }
+
+    @Test
+    fun `risk max_daily_loss of zero disables the rule`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            risk:
+              max_daily_loss: 0
+            """.trimIndent(),
+        )
+        val c = Config.load(cfg)
+        assertThat(c.maxDailyLoss).isEqualByComparingTo(BigDecimal.ZERO)
     }
 
     @Test

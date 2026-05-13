@@ -78,6 +78,7 @@ class DaemonCommand(
                     marketSourceProvider = sourceFactory,
                     candleHub = sharedHub,
                     brokerFactories = brokerFactories,
+                    maxDailyLoss = cfg.maxDailyLoss,
                 ),
             )
         val startedAt = Instant.now()
@@ -89,6 +90,7 @@ class DaemonCommand(
                     stateDir = stateDir,
                     marketSourceProvider = sourceFactory,
                     brokerFactories = brokerFactories,
+                    maxDailyLoss = cfg.maxDailyLoss,
                 )
         val plane =
             ControlPlane(

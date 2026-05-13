@@ -58,6 +58,14 @@ class StrategyHandle(
         private val ringSize: Int = 1000,
         private val bind: String = "127.0.0.1",
         private val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = emptyMap(),
+        /**
+         * Daemon-level daily-loss cap. When realized P&L for the day breaches the
+         * negation of this value, [com.qkt.risk.rules.MaxDailyLoss] halts and the risk
+         * engine rejects further submissions. Set to `BigDecimal.ZERO` to disable;
+         * default comes from [com.qkt.cli.Config.maxDailyLoss] (or [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS]
+         * when no config is loaded).
+         */
+        private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
     ) : Factory {
         override fun create(
             name: String,
@@ -85,9 +93,19 @@ class StrategyHandle(
             val startMs = System.currentTimeMillis()
             val startedAt = Instant.ofEpochMilli(startMs)
 
+            val haltRules: List<com.qkt.risk.HaltRule> =
+                if (maxDailyLoss.signum() > 0) {
+                    listOf(
+                        com.qkt.risk.rules
+                            .MaxDailyLoss(maxDailyLoss),
+                    )
+                } else {
+                    emptyList()
+                }
             val session =
                 LiveSession(
                     strategies = listOf(ast.name to strategy),
+                    haltRules = haltRules,
                     source = source,
                     symbols = symbols,
                     candleWindow = candleWindow,

@@ -24,6 +24,11 @@ class PortfolioDeployer(
     private val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = emptyMap(),
     private val ringSize: Int = 1000,
     private val bind: String = "127.0.0.1",
+    /**
+     * Daemon-level daily-loss cap shared across every child of every portfolio. Set to
+     * `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
+     */
+    private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
 ) {
     fun deploy(
         portfolioName: String,
@@ -91,9 +96,19 @@ class PortfolioDeployer(
                 ?.timeframe
                 ?.let { TimeWindow.parse(it) }
 
+        val haltRules: List<com.qkt.risk.HaltRule> =
+            if (maxDailyLoss.signum() > 0) {
+                listOf(
+                    com.qkt.risk.rules
+                        .MaxDailyLoss(maxDailyLoss),
+                )
+            } else {
+                emptyList()
+            }
         val session =
             LiveSession(
                 strategies = listOf(compiledChild.strategyId to compiledChild.compiled),
+                haltRules = haltRules,
                 source = source,
                 symbols = compiledChild.symbols,
                 candleWindow = candleWindow,

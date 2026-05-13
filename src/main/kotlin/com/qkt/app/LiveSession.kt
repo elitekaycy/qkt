@@ -22,6 +22,7 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
+import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RiskState
@@ -54,6 +55,7 @@ import org.slf4j.LoggerFactory
 class LiveSession(
     private val strategies: List<Pair<String, Strategy>>,
     private val rules: List<RiskRule> = emptyList(),
+    private val haltRules: List<HaltRule> = emptyList(),
     private val source: MarketSource,
     private val symbols: List<String>,
     private val candleWindow: TimeWindow? = null,
@@ -111,7 +113,7 @@ class LiveSession(
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker)
         val engine = Engine(bus, priceTracker)
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
-        val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
+        val riskEngine = RiskEngine(rules, haltRules, positions, riskState)
 
         val trades: MutableList<Trade> = CopyOnWriteArrayList()
 

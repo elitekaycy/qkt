@@ -20,8 +20,32 @@ data class Config(
     val tv: Map<String, String> = emptyMap(),
     val fetchers: Map<String, Map<String, String>> = emptyMap(),
     val brokers: Map<String, Map<String, String>> = emptyMap(),
+    /**
+     * Daemon-level risk knobs. Currently honored:
+     *   - `max_daily_loss` — global daily-loss cap in account currency (BigDecimal).
+     *     Defaults to [DEFAULT_MAX_DAILY_LOSS] when unset. Set to "0" to disable.
+     *
+     * Per-strategy risk DSL is a separate, larger surface (Phase 28+); for now every
+     * strategy the daemon hosts shares these limits.
+     */
+    val risk: Map<String, String> = emptyMap(),
 ) {
+    /**
+     * Effective `max_daily_loss` from [risk], or [DEFAULT_MAX_DAILY_LOSS]. Operators set
+     * `risk.max_daily_loss: 0` to disable the halt rule entirely.
+     */
+    val maxDailyLoss: BigDecimal
+        get() = risk["max_daily_loss"]?.let(::BigDecimal) ?: DEFAULT_MAX_DAILY_LOSS
+
     companion object {
+        /**
+         * Conservative default for `risk.max_daily_loss` when the config doesn't set one.
+         * Live daemons that hit this halt all strategies for the rest of the trading day.
+         * Tuned for a small starting balance — operators with bigger accounts should set
+         * an explicit `risk.max_daily_loss` in `qkt.config.yaml`.
+         */
+        val DEFAULT_MAX_DAILY_LOSS: BigDecimal = BigDecimal("1000")
+
         // Matches `${NAME}` and `${NAME:-default}`. The default is used when the env
         // var / system property is unset; without it, the literal `${...}` stays in the
         // string and broker init logs a degraded-config warning.
@@ -47,6 +71,7 @@ data class Config(
                 tv = parseFlat(map["tv"]),
                 fetchers = parseNested(map["fetchers"]),
                 brokers = parseNested(map["brokers"]),
+                risk = parseFlat(map["risk"]),
             )
         }
 
