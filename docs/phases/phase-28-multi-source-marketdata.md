@@ -250,6 +250,66 @@ ws.deliver(
 
 ---
 
+## 0.26.0 follow-up: symbol convention normalization
+
+**Released:** `v0.26.0` (2026-05-13).
+**Spec:** [`../superpowers/specs/2026-05-13-symbol-convention-normalization-design.md`](../superpowers/specs/2026-05-13-symbol-convention-normalization-design.md)
+**Plan:** [`../superpowers/plans/2026-05-13-symbol-convention-normalization.md`](../superpowers/plans/2026-05-13-symbol-convention-normalization.md)
+**PR:** [#10](https://github.com/elitekaycy/qkt/pull/10)
+
+### What was broken
+
+Phase 28 introduced `CompositeMarketSource` with prefix-based routing (`EXNESS:` → MT5, `BYBIT_SPOT:` → Bybit, fallback → TradingView). The composite's contract required every call to receive `BROKER:SYMBOL` strings. But the engine call sites — `RunCommand`, `StrategyHandle`, `PortfolioDeployer` — extracted only `StreamDecl.symbol` (the bare ticker) and passed that to `source.liveTicks(symbols)`. `TradingViewMarketSource.supports()` rejected the bare form with a regex error, so a fresh-install deploy of any TV-routable strategy died at `LiveSession.kt:248`:
+
+```
+qkt: error: deploy failed (400):
+  {"error":"TradingView symbols must match EXCHANGE:SYMBOL form: [XAUUSD]"}
+```
+
+CI didn't catch it because every test source overrode `supports = true` and ignored its `symbols` argument. The prod regex was never exercised from the engine side.
+
+`MT5Broker.getOpenPositions` emitted bare keys (`XAUUSD`) while `BybitBroker.getOpenPositions` emitted prefixed keys (`BYBIT_LINEAR:BTCUSDT`). Mixed inventory would have silently collided on the global `PositionTracker`.
+
+### What changed
+
+The qkt symbol (`BROKER:BARE`) is now the single in-engine identifier. Sources, brokers, and strategies all speak it; wire forms (`XAUUSDm`, etc.) live only inside `Mt5MarketSource` and `MT5OrderTranslator` at the venue boundary.
+
+- `StreamDecl.qktSymbol` and `HubKey.qktSymbol` getters return `"$broker:$symbol"`.
+- `AstCompiler`, `ExprCompiler`, `ActionCompiler`, `IndicatorBinding`, `SizingCompiler`, and `CandleHub.feed` all key positions and compare candle symbols by `qktSymbol`.
+- `RunCommand`, `StrategyHandle`, `PortfolioDeployer`, `PortfolioSupervisor` pass the prefixed form through to `LiveSession` and the source factory.
+- `LiveSession` and `Backtest` build the broker-routing prefix set from `qktSymbol`, so `CompositeBroker` finds a route for every emitted signal.
+- `Mt5MarketSource.liveTicks` builds a `wire→qkt` map and threads it through `Mt5TickFeedSource`; the feed polls by wire symbol and emits ticks with the qkt symbol.
+- `MT5Broker.getOpenPositions`, `MT5Broker.onPendingPositionOpened`, and `MT5PositionPoller` prefix their emitted keys with `profile.name.uppercase()` to match Bybit's existing convention.
+- `MT5OrderTranslator` strips the prefix at the wire boundary via a `bare()` helper so `MT5Symbol.toBroker(...)` and `profile.instrumentOverrides[...]` continue to receive the bare form they already expected.
+- `ActionCompiler.compileCancelAll` emits `Signal.CancelPendingForSymbol` with the qkt-prefixed symbol so the broker layer can route it.
+
+### New invariant
+
+> **In-engine symbol = `BROKER:BARE`.** Anything else (wire form, bare alias) is local to the source/broker translator at the venue boundary.
+
+The lock: `StrategyHandleTradingViewDeployTest` deploys a strategy with `OANDA:EURUSD` through `StrategyHandle.RealFactory` wired to a **real** `TradingViewMarketSource(FakeTradingViewWebSocket())`. The fake-WS-only stops the real network call; the regex check still runs. Any future engine-side regression that hands a bare symbol to a source will surface at this test before reaching prod.
+
+### Migration (breaking)
+
+State files written by `0.25.0` or earlier are keyed by bare symbols. After upgrading to `0.26.0`, broker emits arrive prefixed and won't reconcile against the stored bare keys.
+
+**Operator action:** `rm -rf state/` between versions before `docker compose up -d`. The engine will reconcile fresh against the broker's open positions on next deploy (Phase 29's normal reconcile path). Acceptable because there are no live production users yet; documented in the spec as the explicit migration path.
+
+### File-level summary
+
+| Layer | Files |
+|---|---|
+| AST / DSL surface | `StrategyAst.kt`, `HubKey.kt` |
+| DSL compile | `AstCompiler.kt`, `ExprCompiler.kt`, `ActionCompiler.kt`, `IndicatorBinding.kt`, `SizingCompiler.kt`, `CandleHub.kt` |
+| CLI / wiring | `RunCommand.kt`, `StrategyHandle.kt`, `PortfolioDeployer.kt`, `PortfolioSupervisor.kt` |
+| Engine session | `LiveSession.kt`, `Backtest.kt` |
+| MT5 source | `Mt5MarketSource.kt`, `Mt5TickFeedSource.kt` |
+| MT5 broker | `MT5Broker.kt`, `MT5PositionPoller.kt`, `MT5OrderTranslator.kt` |
+| Test (regression-catcher) | `StrategyHandleTradingViewDeployTest.kt`, `tradingview_strategy.qkt` |
+| Test fixture sweep | ~50 DSL compile / broker / source tests now feed `BROKER:SYMBOL` ticks |
+
+---
+
 ## References
 
 - Spec: [`../superpowers/specs/2026-05-13-phase28-multi-source-marketdata-design.md`](../superpowers/specs/2026-05-13-phase28-multi-source-marketdata-design.md)
