@@ -85,7 +85,7 @@ class MT5PositionPoller(
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
             val p = lastSnapshot[ticket] ?: continue
-            val qktSymbol = symbol.toQkt(p.symbol)
+            val qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(p.symbol)}"
             val closeSide = if (p.type == 0) Side.SELL else Side.BUY
             val meta = closedTicketMeta?.invoke(ticket)
             val clientOrderId =

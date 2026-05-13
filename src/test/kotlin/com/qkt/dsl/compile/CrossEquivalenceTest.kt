@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test
 class CrossEquivalenceTest {
     private fun ticks(prices: List<String>): List<Tick> =
         prices.mapIndexed { i, p ->
-            Tick(symbol = "BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
+            Tick(symbol = "BACKTEST:BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
         }
 
     private val sample =
@@ -73,7 +73,7 @@ class CrossEquivalenceTest {
             }
 
         val dslStrategy = AstCompiler().compile(ast)
-        val handStrategy = EmaCrossoverStrategy(symbol = "BTCUSDT", fastPeriod = 3, slowPeriod = 7)
+        val handStrategy = EmaCrossoverStrategy(symbol = "BACKTEST:BTCUSDT", fastPeriod = 3, slowPeriod = 7)
 
         val dslResult =
             Backtest(

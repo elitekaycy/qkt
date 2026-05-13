@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory
 class BracketCompileTest {
     private val candle =
         Candle(
-            "BTCUSDT",
+            "BACKTEST:BTCUSDT",
             BigDecimal("100"),
             BigDecimal("100"),
             BigDecimal("100"),

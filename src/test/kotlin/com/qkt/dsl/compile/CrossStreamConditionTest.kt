@@ -56,7 +56,7 @@ class CrossStreamConditionTest {
         hub.register(goldKey, retention = 5)
         // current candle is gold; btc has no closes yet
         val expr = StreamFieldRef("btc", "close")
-        val v = ExprCompiler().compile(expr).evaluate(ec(candle("XAUUSD", "2000"), hub))
+        val v = ExprCompiler().compile(expr).evaluate(ec(candle("INTERACTIVE:XAUUSD", "2000"), hub))
         assertThat(v).isEqualTo(Value.Undefined)
     }
 
@@ -66,13 +66,13 @@ class CrossStreamConditionTest {
         hub.register(btcKey, retention = 5)
         hub.register(goldKey, retention = 5)
         // Drive btc closes
-        for (t in 0L..120_000L step 30_000L) hub.feed(tick("BTCUSDT", "100", t))
+        for (t in 0L..120_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", "100", t))
         // Now feed a gold candle — the current candle's symbol is gold, but rule reads btc.close
         val expr = StreamFieldRef("btc", "close")
         val v =
             ExprCompiler()
                 .compile(expr)
-                .evaluate(ec(candle("XAUUSD", "2000", ts = 150_000L), hub)) as Value.Num
+                .evaluate(ec(candle("INTERACTIVE:XAUUSD", "2000", ts = 150_000L), hub)) as Value.Num
         assertThat(v.v).isEqualByComparingTo("100")
     }
 
@@ -81,13 +81,13 @@ class CrossStreamConditionTest {
         val hub = CandleHub()
         hub.register(btcKey, retention = 5)
         // Drive a btc close at price 100
-        for (t in 0L..120_000L step 30_000L) hub.feed(tick("BTCUSDT", "100", t))
+        for (t in 0L..120_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", "100", t))
         // Live candle for btc with newer price 105
         val expr = StreamFieldRef("btc", "close")
         val v =
             ExprCompiler()
                 .compile(expr)
-                .evaluate(ec(candle("BTCUSDT", "105", ts = 150_000L), hub)) as Value.Num
+                .evaluate(ec(candle("BYBIT:BTCUSDT", "105", ts = 150_000L), hub)) as Value.Num
         assertThat(v.v).isEqualByComparingTo("105")
     }
 
@@ -96,12 +96,12 @@ class CrossStreamConditionTest {
         val hub = CandleHub()
         hub.register(btcKey, retention = 5)
         hub.register(goldKey, retention = 5)
-        for (t in 0L..120_000L step 30_000L) hub.feed(tick("BTCUSDT", "120", t))
+        for (t in 0L..120_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", "120", t))
         val expr = CmpOp(Cmp.GT, StreamFieldRef("btc", "close"), NumLit(BigDecimal("100")))
         val v =
             ExprCompiler()
                 .compile(expr)
-                .evaluate(ec(candle("XAUUSD", "2000", ts = 150_000L), hub))
+                .evaluate(ec(candle("INTERACTIVE:XAUUSD", "2000", ts = 150_000L), hub))
         assertThat(v).isEqualTo(Value.Bool(true))
     }
 
@@ -111,7 +111,7 @@ class CrossStreamConditionTest {
         hub.register(btcKey, retention = 5)
         hub.register(goldKey, retention = 5)
         val expr = CmpOp(Cmp.GT, StreamFieldRef("btc", "close"), NumLit(BigDecimal("100")))
-        val v = ExprCompiler().compile(expr).evaluate(ec(candle("XAUUSD", "2000"), hub))
+        val v = ExprCompiler().compile(expr).evaluate(ec(candle("INTERACTIVE:XAUUSD", "2000"), hub))
         assertThat(v).isEqualTo(Value.Undefined)
     }
 }

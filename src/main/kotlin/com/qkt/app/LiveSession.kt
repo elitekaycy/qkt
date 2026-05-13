@@ -163,7 +163,7 @@ class LiveSession(
             for (key in s.declaredStreams.values) {
                 brokerSymbols
                     .getOrPut(key.broker.lowercase()) { mutableSetOf() }
-                    .add(key.symbol)
+                    .add(key.qktSymbol)
             }
         }
         if (brokerSymbols.isEmpty()) return paperBroker

@@ -72,7 +72,7 @@ class MT5PositionPollerCloseTest {
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
 
         val registry = mapOf(7001L to ClosedPositionMeta("dsl-strat-42", "alpha"))
-        val priceTracker = MarketPriceTracker().apply { update("XAUUSD", BigDecimal("1.1200")) }
+        val priceTracker = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) }
 
         val poller =
             MT5PositionPoller(
@@ -93,7 +93,7 @@ class MT5PositionPollerCloseTest {
         assertThat(e.clientOrderId).isEqualTo("dsl-strat-42")
         assertThat(e.strategyId).isEqualTo("alpha")
         assertThat(e.brokerOrderId).isEqualTo("7001")
-        assertThat(e.symbol).isEqualTo("XAUUSD")
+        assertThat(e.symbol).isEqualTo("TEST-MT5:XAUUSD")
         // type=0 (BUY) → close side is SELL
         assertThat(e.side).isEqualTo(Side.SELL)
         // Price comes from the priceProvider, NOT priceOpen
@@ -115,7 +115,7 @@ class MT5PositionPollerCloseTest {
                 bus = bus,
                 clock = clock,
                 closedTicketMeta = { null },
-                priceProvider = MarketPriceTracker().apply { update("XAUUSD", BigDecimal("2040.00")) },
+                priceProvider = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("2040.00")) },
             )
         poller.tick()
         poller.tick()

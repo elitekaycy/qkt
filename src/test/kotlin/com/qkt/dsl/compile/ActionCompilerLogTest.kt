@@ -21,7 +21,7 @@ import org.slf4j.MDC
 
 class ActionCompilerLogTest {
     private val candle =
-        Candle("BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
+        Candle("BACKTEST:BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
     private val ctx =
         EvalContext(
             candle = candle,

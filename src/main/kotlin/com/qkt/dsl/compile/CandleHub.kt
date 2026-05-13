@@ -51,7 +51,7 @@ class CandleHub {
 
     fun feed(tick: Tick) {
         for ((key, slot) in slots) {
-            if (key.symbol == tick.symbol) slot.aggregator.onTick(tick)
+            if (key.qktSymbol == tick.symbol) slot.aggregator.onTick(tick)
         }
     }
 

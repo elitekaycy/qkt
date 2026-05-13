@@ -33,7 +33,7 @@ class StackEngineTest {
         val engine =
             StackEngine(
                 parentLegId = "parent-1",
-                parentSymbol = "EURUSD",
+                parentSymbol = "BACKTEST:EURUSD",
                 parentSide = parentSide,
                 parentEntryPrice = BigDecimal(parentEntryPrice),
                 tiers = tiers,

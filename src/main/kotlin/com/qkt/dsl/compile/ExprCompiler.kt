@@ -220,7 +220,7 @@ class ExprCompiler(
 
     private fun compilePositionRef(ref: PositionRef): CompiledExpr =
         CompiledExpr { ctx ->
-            val symbol = ctx.streams[ref.stream]?.symbol ?: error("Unknown stream alias: ${ref.stream}")
+            val symbol = ctx.streams[ref.stream]?.qktSymbol ?: error("Unknown stream alias: ${ref.stream}")
             val qty =
                 ctx.strategyContext.positions
                     .positionFor(symbol)
@@ -232,7 +232,7 @@ class ExprCompiler(
         when (ref.source) {
             StateSource.POSITION_AVG_PRICE ->
                 CompiledExpr { ctx ->
-                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
                     val price =
                         ctx.strategyContext.positions
                             .positionFor(symbol)
@@ -244,7 +244,7 @@ class ExprCompiler(
             // a future enhancement could surface true per-symbol realized.
             StateSource.POSITION_PNL ->
                 CompiledExpr { ctx ->
-                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
                     val realized = ctx.strategyContext.pnl.realized()
                     val unrealized = ctx.strategyContext.pnl.unrealizedFor(symbol)
                     Value.Num(realized.add(unrealized))
@@ -257,12 +257,12 @@ class ExprCompiler(
                 }
             StateSource.POSITION_UNREALIZED_PNL ->
                 CompiledExpr { ctx ->
-                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
                     Value.Num(ctx.strategyContext.pnl.unrealizedFor(symbol))
                 }
             StateSource.POSITION_HOLDING_DURATION ->
                 CompiledExpr { ctx ->
-                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
                     val openedAt =
                         ctx.strategyContext.positions
                             .positionFor(symbol)
@@ -272,7 +272,7 @@ class ExprCompiler(
                 }
             StateSource.POSITION_MFE ->
                 CompiledExpr { ctx ->
-                    val symbol = ctx.streams[ref.key]?.symbol ?: error("Unknown stream alias: ${ref.key}")
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
                     val mfe = ctx.strategyContext.positions.mfeFor(symbol) ?: BigDecimal.ZERO
                     Value.Num(mfe)
                 }
@@ -314,7 +314,7 @@ class ExprCompiler(
             val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
             val candle =
                 if (ctx.currentAlias == ref.stream ||
-                    (ctx.currentAlias == null && ctx.candle.symbol == key.symbol)
+                    (ctx.currentAlias == null && ctx.candle.symbol == key.qktSymbol)
                 ) {
                     ctx.candle
                 } else {

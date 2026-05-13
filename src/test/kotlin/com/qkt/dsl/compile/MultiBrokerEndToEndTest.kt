@@ -35,9 +35,9 @@ class MultiBrokerEndToEndTest {
         val ticks: List<Tick> =
             (0L..120_000L step 30_000L).flatMap { t ->
                 listOf(
-                    tick("BTCUSDT", "100", t),
-                    tick("XAUUSD", "2000", t + 1_000L),
-                    tick("AAPL", "150", t + 2_000L),
+                    tick("BYBIT:BTCUSDT", "100", t),
+                    tick("INTERACTIVE:XAUUSD", "2000", t + 1_000L),
+                    tick("ALPACA:AAPL", "150", t + 2_000L),
                 )
             }
 
@@ -51,7 +51,7 @@ class MultiBrokerEndToEndTest {
         // Each symbol's 1m candle closes at t=60_000 and t=120_000 (boundaries crossed).
         // 2 fires per symbol × 3 symbols = 6 trades.
         val symbols = result.trades.map { it.trade.symbol }.toSet()
-        assertThat(symbols).containsExactlyInAnyOrder("BTCUSDT", "XAUUSD", "AAPL")
+        assertThat(symbols).containsExactlyInAnyOrder("BYBIT:BTCUSDT", "INTERACTIVE:XAUUSD", "ALPACA:AAPL")
         assertThat(result.trades).hasSizeGreaterThanOrEqualTo(3)
     }
 }

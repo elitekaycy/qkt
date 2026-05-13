@@ -92,8 +92,7 @@ class RunCommand(
         }
 
         val strategy = AstCompiler().compile(ast)
-        val symbols = ast.streams.map { it.symbol }.distinct()
-        val tvSymbols = ast.streams.map { "${it.broker}:${it.symbol}" }.distinct()
+        val symbols = ast.streams.map { it.qktSymbol }.distinct()
         val candleWindow: TimeWindow? =
             ast.streams
                 .firstOrNull()
@@ -120,10 +119,10 @@ class RunCommand(
                     }
                 MarketSourceFactory.composite(mt5Profiles)
             }
-        val marketSource = effectiveSourceFactory(tvSymbols)
+        val marketSource = effectiveSourceFactory(symbols)
 
         println("[INFO] qkt ${BuildInfo.VERSION} — strategy ${ast.name} v${ast.version} — paper-trading")
-        println("[INFO] subscribed: ${tvSymbols.joinToString(", ")}")
+        println("[INFO] subscribed: ${symbols.joinToString(", ")}")
 
         val ring = EventRing(capacity = ringSize)
         val startMs = System.currentTimeMillis()

@@ -22,7 +22,7 @@ class OrderTypeCompilerTest {
         EvalContext(
             candle =
                 Candle(
-                    "BTCUSDT",
+                    "BACKTEST:BTCUSDT",
                     BigDecimal(closePrice),
                     BigDecimal(closePrice),
                     BigDecimal(closePrice),
@@ -58,7 +58,7 @@ class OrderTypeCompilerTest {
                 ts = 0L,
             ) as OrderRequest.Limit
         assertThat(req.limitPrice).isEqualByComparingTo("99.5")
-        assertThat(req.symbol).isEqualTo("BTCUSDT")
+        assertThat(req.symbol).isEqualTo("BACKTEST:BTCUSDT")
         assertThat(req.side).isEqualTo(Side.BUY)
     }
 

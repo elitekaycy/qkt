@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test
 class SnapshotEndToEndTest {
     private fun ticks(prices: List<String>): List<Tick> =
         prices.mapIndexed { i, p ->
-            Tick(symbol = "BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
+            Tick(symbol = "BACKTEST:BTCUSDT", price = Money.of(p), timestamp = i * 60_000L)
         }
 
     private class TrailingStopRef(
@@ -147,7 +147,7 @@ class SnapshotEndToEndTest {
             }
 
         val dslStrategy = AstCompiler().compile(ast)
-        val refStrategy = TrailingStopRef("BTCUSDT", 3, 7, BigDecimal("5"))
+        val refStrategy = TrailingStopRef("BACKTEST:BTCUSDT", 3, 7, BigDecimal("5"))
 
         val dsl =
             Backtest(

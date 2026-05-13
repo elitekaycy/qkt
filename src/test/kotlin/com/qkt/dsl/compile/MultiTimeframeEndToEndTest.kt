@@ -36,7 +36,7 @@ class MultiTimeframeEndToEndTest {
 
         // 90 minutes of ticks at 30s cadence, price always 120 (above threshold)
         val ticks: List<Tick> =
-            (0L..(90L * 60_000L) step 30_000L).map { t -> tick("BTCUSDT", "120", t) }
+            (0L..(90L * 60_000L) step 30_000L).map { t -> tick("BACKTEST:BTCUSDT", "120", t) }
 
         val result =
             Backtest(
@@ -73,7 +73,7 @@ class MultiTimeframeEndToEndTest {
 
         // 90 minutes of ticks at 30s, price 120
         val ticks: List<Tick> =
-            (0L..(90L * 60_000L) step 30_000L).map { t -> tick("BTCUSDT", "120", t) }
+            (0L..(90L * 60_000L) step 30_000L).map { t -> tick("BACKTEST:BTCUSDT", "120", t) }
 
         val result =
             Backtest(

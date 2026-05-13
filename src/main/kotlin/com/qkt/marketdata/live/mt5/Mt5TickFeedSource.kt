@@ -22,13 +22,15 @@ import okhttp3.OkHttpClient
  */
 class Mt5TickFeedSource(
     private val baseUrl: String,
-    private val symbols: List<String>,
+    private val symbolMap: Map<String, String>,
     private val pollIntervalMs: Long = 50L,
     private val http: OkHttpClient = OkHttpClient(),
     private val clock: Clock = SystemClock(),
     private val calendar: TradingCalendar? = null,
     private val outOfSessionSleepMs: Long = 60_000L,
 ) : LiveTickSource {
+    private val symbols: List<String> = symbolMap.keys.toList()
+
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
 
@@ -65,7 +67,7 @@ class Mt5TickFeedSource(
                                     lastBrokerMs[sym] = tick.brokerTimeMs
                                     onTick(
                                         Tick(
-                                            symbol = sym,
+                                            symbol = symbolMap[sym] ?: sym,
                                             price = tick.last.setScale(Money.SCALE, Money.ROUNDING),
                                             timestamp = clock.now(),
                                             bid = tick.bid.setScale(Money.SCALE, Money.ROUNDING),

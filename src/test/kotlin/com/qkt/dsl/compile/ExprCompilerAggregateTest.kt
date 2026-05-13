@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test
 class ExprCompilerAggregateTest {
     private fun candle(price: String) =
         Candle(
-            "BTCUSDT",
+            "BACKTEST:BTCUSDT",
             BigDecimal(price),
             BigDecimal(price),
             BigDecimal(price),
@@ -37,7 +37,7 @@ class ExprCompilerAggregateTest {
         val aggBag = AggregateBinding.Bag()
         val ec = ExprCompiler(aggregates = aggBag)
         val expr = Aggregate(AggFn.MAX, StreamFieldRef("btc", "close"), SinceOpen)
-        val compiled = ec.compile(expr, ruleAlias = "BTCUSDT")
+        val compiled = ec.compile(expr, ruleAlias = "BACKTEST:BTCUSDT")
         val c1 = ctx(candle("100"))
         assertThat(compiled.evaluate(c1)).isEqualTo(Value.Undefined)
         aggBag.all().forEach { it.update(c1) }
@@ -55,7 +55,7 @@ class ExprCompilerAggregateTest {
         val aggBag = AggregateBinding.Bag()
         val ec = ExprCompiler(aggregates = aggBag)
         val expr = Aggregate(AggFn.MEAN, StreamFieldRef("btc", "close"), SinceTPast(3))
-        val compiled = ec.compile(expr, ruleAlias = "BTCUSDT")
+        val compiled = ec.compile(expr, ruleAlias = "BACKTEST:BTCUSDT")
         for (price in listOf("100", "110")) {
             val c = ctx(candle(price))
             aggBag.all().forEach { it.update(c) }

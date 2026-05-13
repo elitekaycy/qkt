@@ -13,7 +13,7 @@ class ActionCompilerCancelTest {
     private fun makeCtx(streams: Map<String, HubKey>): EvalContext {
         val candle =
             Candle(
-                symbol = streams.values.firstOrNull()?.symbol ?: "BTCUSDT",
+                symbol = streams.values.firstOrNull()?.symbol ?: "BACKTEST:BTCUSDT",
                 open = BigDecimal.ONE,
                 high = BigDecimal.ONE,
                 low = BigDecimal.ONE,
@@ -34,7 +34,7 @@ class ActionCompilerCancelTest {
     fun `CANCEL emits CancelPendingForSymbol for the stream`() {
         val ctx = makeCtx(mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")))
         val signals = ActionCompiler(ExprCompiler()).compile(Cancel("btc")).invoke(ctx)
-        assertThat(signals).containsExactly(Signal.CancelPendingForSymbol("BTCUSDT"))
+        assertThat(signals).containsExactly(Signal.CancelPendingForSymbol("BACKTEST:BTCUSDT"))
     }
 
     @Test
@@ -48,8 +48,8 @@ class ActionCompilerCancelTest {
             )
         val signals = ActionCompiler(ExprCompiler()).compile(CancelAll).invoke(ctx)
         assertThat(signals).containsExactlyInAnyOrder(
-            Signal.CancelPendingForSymbol("BTCUSDT"),
-            Signal.CancelPendingForSymbol("ETHUSDT"),
+            Signal.CancelPendingForSymbol("BACKTEST:BTCUSDT"),
+            Signal.CancelPendingForSymbol("BACKTEST:ETHUSDT"),
         )
     }
 }

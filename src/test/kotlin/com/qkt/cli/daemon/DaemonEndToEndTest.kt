@@ -68,7 +68,7 @@ class DaemonEndToEndTest {
         val ticks =
             (0 until 4).map {
                 Tick(
-                    symbol = "BTCUSDT",
+                    symbol = "BACKTEST:BTCUSDT",
                     price = BigDecimal("42000.0").add(BigDecimal(it * 10)),
                     timestamp = 1_705_276_800_000L + it * 60_000L,
                 )
