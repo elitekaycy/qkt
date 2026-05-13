@@ -22,10 +22,18 @@ internal class StateFileWriter(
 ) {
     private val log = LoggerFactory.getLogger(StateFileWriter::class.java)
 
-    val totalWrites: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
-    val totalBytesWritten: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
-    val slowWrites: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
-    val failedWrites: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong(0)
+    val totalWrites: java.util.concurrent.atomic.AtomicLong =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+    val totalBytesWritten: java.util.concurrent.atomic.AtomicLong =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+    val slowWrites: java.util.concurrent.atomic.AtomicLong =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+    val failedWrites: java.util.concurrent.atomic.AtomicLong =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
 
     fun write(
         strategyName: String,
