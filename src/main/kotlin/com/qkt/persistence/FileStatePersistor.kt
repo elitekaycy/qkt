@@ -33,6 +33,7 @@ class FileStatePersistor(
         const val LEGBOOK_FILE = "legbook.json"
         const val BRACKET_PAIRS_FILE = "bracket-pairs.json"
         const val PENDING_ORDERS_FILE = "pending-orders.json"
+        const val PENDING_STACKS_FILE = "pending-stacks.json"
         const val SCHEMA_VERSION = 1
     }
 
@@ -152,12 +153,44 @@ class FileStatePersistor(
         strategyId: String,
         perPrimary: Map<String, PersistedTierState>,
     ) {
-        // Implemented in Task 8.
+        val dto =
+            PendingStacksDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                perPrimary =
+                    perPrimary.map { (primaryLegId, state) ->
+                        PrimaryTierStateDto(
+                            primaryLegId = primaryLegId,
+                            primaryClientOrderId = state.primaryClientOrderId,
+                            tiers = state.tiers.map { TierDto.fromDomain(it) },
+                        )
+                    },
+            )
+        runCatching { json.encodeToString(PendingStacksDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, PENDING_STACKS_FILE, it) }
+            .onFailure { e -> log.warn("savePendingStacks encode failed for $strategyId: ${e.message}") }
     }
 
     override fun loadPendingStacks(strategyId: String): Map<String, PersistedTierState> {
-        // Implemented in Task 8.
-        return emptyMap()
+        val raw = writer.read(strategyId, PENDING_STACKS_FILE) ?: return emptyMap()
+        val dto =
+            try {
+                json.decodeFromString(PendingStacksDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadPendingStacks parse failed for $strategyId: ${e.message}")
+                return emptyMap()
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadPendingStacks schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return emptyMap()
+        }
+        return dto.perPrimary.associate { entry ->
+            entry.primaryLegId to
+                PersistedTierState(
+                    primaryClientOrderId = entry.primaryClientOrderId,
+                    tiers = entry.tiers.map { it.toDomain() },
+                )
+        }
     }
 
     override fun clearStrategy(strategyId: String) {
@@ -315,6 +348,61 @@ private data class OrderRequestDto(
                     )
                 else -> null // non-persistable variant (Bracket, ScaleOut, TimeExit, Stack, etc.)
             }
+    }
+}
+
+@Serializable
+private data class PendingStacksDto(
+    val version: Int,
+    val strategyId: String,
+    val perPrimary: List<PrimaryTierStateDto>,
+)
+
+@Serializable
+private data class PrimaryTierStateDto(
+    val primaryLegId: String,
+    val primaryClientOrderId: String,
+    val tiers: List<TierDto>,
+)
+
+@Serializable
+private data class TierDto(
+    val index: Int,
+    val mfeThreshold: String,
+    val withinMs: Long,
+    val stackQuantity: String,
+    val slDistance: String,
+    val tpDistance: String,
+    val fired: Boolean,
+    val firedAt: Long? = null,
+    val firedLegId: String? = null,
+) {
+    fun toDomain(): PersistedTier =
+        PersistedTier(
+            index = index,
+            mfeThreshold = BigDecimal(mfeThreshold),
+            withinMs = withinMs,
+            stackQuantity = BigDecimal(stackQuantity),
+            slDistance = BigDecimal(slDistance),
+            tpDistance = BigDecimal(tpDistance),
+            fired = fired,
+            firedAt = firedAt,
+            firedLegId = firedLegId,
+        )
+
+    companion object {
+        fun fromDomain(t: PersistedTier): TierDto =
+            TierDto(
+                index = t.index,
+                mfeThreshold = t.mfeThreshold.toPlainString(),
+                withinMs = t.withinMs,
+                stackQuantity = t.stackQuantity.toPlainString(),
+                slDistance = t.slDistance.toPlainString(),
+                tpDistance = t.tpDistance.toPlainString(),
+                fired = t.fired,
+                firedAt = t.firedAt,
+                firedLegId = t.firedLegId,
+            )
     }
 }
 
