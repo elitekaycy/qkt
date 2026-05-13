@@ -54,18 +54,27 @@ data class Config(
         get() = (state["dir"] ?: "~/.qkt/state").replaceFirst("~/", System.getProperty("user.home") + "/")
 
     /**
-     * Returns the [com.qkt.persistence.StatePersistor] for this config. `NoopStatePersistor`
-     * if `state.enabled = false`; `FileStatePersistor` rooted at [stateDir] otherwise.
+     * Effective `state.async`. When `true`, wraps the file persistor in [com.qkt.persistence.AsyncStatePersistor]
+     * so disk I/O runs on a background thread instead of the bus dispatch thread. Defaults to
+     * `false` — synchronous is fine for typical trade-event rates.
      */
-    fun statePersistor(): com.qkt.persistence.StatePersistor =
-        if (!stateEnabled) {
-            com.qkt.persistence.NoopStatePersistor()
-        } else {
+    val stateAsync: Boolean
+        get() = state["async"]?.lowercase() == "true"
+
+    /**
+     * Returns the [com.qkt.persistence.StatePersistor] for this config. Layered by flag:
+     *   - `state.enabled = false`              → [com.qkt.persistence.NoopStatePersistor].
+     *   - `state.enabled = true`, `async = false` → [com.qkt.persistence.FileStatePersistor] (synchronous).
+     *   - `state.enabled = true`, `async = true`  → [com.qkt.persistence.AsyncStatePersistor] wrapping [com.qkt.persistence.FileStatePersistor].
+     */
+    fun statePersistor(): com.qkt.persistence.StatePersistor {
+        if (!stateEnabled) return com.qkt.persistence.NoopStatePersistor()
+        val file =
             com.qkt.persistence.FileStatePersistor(
-                java.nio.file.Path
-                    .of(stateDir),
+                java.nio.file.Path.of(stateDir),
             )
-        }
+        return if (stateAsync) com.qkt.persistence.AsyncStatePersistor(file) else file
+    }
 
     companion object {
         /**
