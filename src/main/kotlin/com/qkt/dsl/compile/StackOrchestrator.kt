@@ -22,6 +22,8 @@ import java.math.BigDecimal
 class StackOrchestrator(
     private val clock: Clock,
     private val onStackBracketEmit: (bracket: OrderRequest.Bracket, parentLegId: String) -> Unit = { _, _ -> },
+    private val strategyId: String = "",
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     private val emit: (Signal) -> Unit,
 ) {
     private val engines: MutableMap<String, StackEngine> = mutableMapOf()
@@ -43,6 +45,15 @@ class StackOrchestrator(
             }
             emit(sig)
         }
+        val persistedTiers =
+            runCatching { persistor.loadPendingStacks(strategyId)[parentLegId] }.getOrNull()
+        val initialFired: Set<Int> =
+            persistedTiers?.tiers?.filter { it.fired }?.map { it.index }?.toSet() ?: emptySet()
+        val initialFiredLegIds: Map<Int, String> =
+            persistedTiers?.tiers
+                ?.mapNotNull { t -> t.firedLegId?.let { t.index to it } }
+                ?.toMap()
+                ?: emptyMap()
         engines[parentLegId] =
             StackEngine(
                 parentLegId = parentLegId,
@@ -53,6 +64,10 @@ class StackOrchestrator(
                 tiers = tiers,
                 clock = clock,
                 emit = engineEmit,
+                strategyId = strategyId,
+                persistor = persistor,
+                initialFiredTierIndices = initialFired,
+                initialFiredLegIds = initialFiredLegIds,
             )
     }
 
