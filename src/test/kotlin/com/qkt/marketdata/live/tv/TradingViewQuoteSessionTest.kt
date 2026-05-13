@@ -93,6 +93,23 @@ class TradingViewQuoteSessionTest {
     }
 
     @Test
+    fun `onConnected after initial subscribe does not double-send commands`() {
+        val ws = FakeTradingViewWebSocket()
+        val session = TradingViewQuoteSession(ws, clock = FixedClock(time = 0L), sessionIdGenerator = { "qs_test" })
+        session.subscribe(listOf("OANDA:EURUSD"), {}, {}, {})
+        val afterSubscribe = ws.commandsSent.size
+
+        ws.simulateConnect()
+
+        assertThat(ws.commandsSent.size)
+            .withFailMessage(
+                "onConnected without a prior disconnect must not re-send subscribe commands; " +
+                    "got ${ws.commandsSent.size - afterSubscribe} extra: " +
+                    "${ws.commandsSent.drop(afterSubscribe).map { it.first }}",
+            ).isEqualTo(afterSubscribe)
+    }
+
+    @Test
     fun `reconnect re-issues subscribe commands`() {
         val ws = FakeTradingViewWebSocket()
         val session = TradingViewQuoteSession(ws, clock = FixedClock(time = 0L), sessionIdGenerator = { "qs_test" })
