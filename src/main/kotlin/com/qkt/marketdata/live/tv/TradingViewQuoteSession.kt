@@ -26,6 +26,7 @@ class TradingViewQuoteSession(
     private var onTick: ((Tick) -> Unit)? = null
     private var onError: ((Throwable) -> Unit)? = null
     private var onDisconnect: (() -> Unit)? = null
+    private var hasDisconnected: Boolean = false
 
     fun subscribe(
         symbols: List<String>,
@@ -68,13 +69,14 @@ class TradingViewQuoteSession(
     }
 
     override fun onConnected() {
-        if (symbols.isNotEmpty()) {
+        if (hasDisconnected && symbols.isNotEmpty()) {
             sendSubscribeCommands()
         }
     }
 
     override fun onDisconnected(reason: String) {
         log.warn("TradingViewQuoteSession disconnected: $reason")
+        hasDisconnected = true
         onDisconnect?.invoke()
     }
 
