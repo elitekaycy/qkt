@@ -1,4 +1,4 @@
-package com.qkt.tools.parity
+package com.qkt.marketdata.live.mt5
 
 import java.math.BigDecimal
 import kotlinx.serialization.json.Json

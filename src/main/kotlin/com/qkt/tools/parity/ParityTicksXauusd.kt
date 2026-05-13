@@ -1,6 +1,7 @@
 package com.qkt.tools.parity
 
 import com.qkt.common.SystemClock
+import com.qkt.marketdata.live.mt5.Mt5TickClient
 import com.qkt.marketdata.live.tv.TradingViewFrame
 import com.qkt.marketdata.live.tv.TradingViewListener
 import com.qkt.marketdata.live.tv.TradingViewQuoteSession
