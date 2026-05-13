@@ -7,8 +7,6 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
-import com.qkt.marketdata.live.bybit.BybitSpotMarketSource
-import com.qkt.marketdata.live.mt5.Mt5MarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import org.assertj.core.api.Assertions.assertThat
