@@ -67,18 +67,35 @@ class MT5OrderTranslator(
             comment = req.id,
         )
 
-    private fun translateBracket(req: OrderRequest.Bracket): MT5OrderRequest =
-        MT5OrderRequest(
+    private fun translateBracket(req: OrderRequest.Bracket): MT5OrderRequest {
+        // Dispatch the entry order type — a Bracket can be a market entry (BUY/SELL)
+        // OR a pending entry (BUY_STOP/SELL_STOP, BUY_LIMIT/SELL_LIMIT). Previously
+        // every bracket translated to a market order regardless, which silently
+        // dropped the entry trigger for STOP-entry brackets (the hedge-straddle
+        // shape). MT5 accepts SL/TP fields on pending orders, so we attach
+        // [req.stopLoss] / [req.takeProfit] alongside the entry type.
+        val (type, price) =
+            when (val entry = req.entry) {
+                is OrderRequest.Market ->
+                    (if (req.side == Side.BUY) "BUY" else "SELL") to null
+                is OrderRequest.Stop ->
+                    (if (req.side == Side.BUY) "BUY_STOP" else "SELL_STOP") to entry.stopPrice
+                is OrderRequest.Limit ->
+                    (if (req.side == Side.BUY) "BUY_LIMIT" else "SELL_LIMIT") to entry.limitPrice
+                else -> error("MT5 bracket entry must be Market/Stop/Limit, got ${entry::class.simpleName}")
+            }
+        return MT5OrderRequest(
             symbol = symbol.toBroker(req.symbol),
             volume = req.quantity,
-            type = if (req.side == Side.BUY) "BUY" else "SELL",
-            price = null,
+            type = type,
+            price = price,
             sl = req.stopLoss,
             tp = req.takeProfit,
             deviation = profile.deviationPoints,
             magic = profile.magic,
             comment = req.id,
         )
+    }
 
     private fun translateStop(req: OrderRequest.Stop): MT5OrderRequest =
         MT5OrderRequest(

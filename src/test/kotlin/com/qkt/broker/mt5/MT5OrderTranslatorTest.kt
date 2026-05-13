@@ -73,6 +73,101 @@ class MT5OrderTranslatorTest {
     }
 
     @Test
+    fun `Bracket with Stop entry translates to BUY_STOP with stopPrice plus SL TP`() {
+        val stopEntry =
+            OrderRequest.Stop(
+                id = "br-2-entry",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br-2",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                entry = stopEntry,
+                takeProfit = BigDecimal("1.1200"),
+                stopLoss = BigDecimal("1.0900"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val mt5 = single(bracket)
+        assertThat(mt5.type).isEqualTo("BUY_STOP")
+        assertThat(mt5.price).isEqualByComparingTo("1.1050")
+        assertThat(mt5.sl).isEqualByComparingTo("1.0900")
+        assertThat(mt5.tp).isEqualByComparingTo("1.1200")
+    }
+
+    @Test
+    fun `Bracket with SELL Stop entry translates to SELL_STOP`() {
+        val stopEntry =
+            OrderRequest.Stop(
+                id = "br-3-entry",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.0950"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br-3",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.1"),
+                entry = stopEntry,
+                takeProfit = BigDecimal("1.0800"),
+                stopLoss = BigDecimal("1.1100"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val mt5 = single(bracket)
+        assertThat(mt5.type).isEqualTo("SELL_STOP")
+        assertThat(mt5.price).isEqualByComparingTo("1.0950")
+    }
+
+    @Test
+    fun `Bracket with Limit entry translates to BUY_LIMIT with limitPrice`() {
+        val limitEntry =
+            OrderRequest.Limit(
+                id = "br-4-entry",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                limitPrice = BigDecimal("1.0950"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br-4",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                entry = limitEntry,
+                takeProfit = BigDecimal("1.1100"),
+                stopLoss = BigDecimal("1.0800"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val mt5 = single(bracket)
+        assertThat(mt5.type).isEqualTo("BUY_LIMIT")
+        assertThat(mt5.price).isEqualByComparingTo("1.0950")
+    }
+
+    @Test
     fun `BUY Stop translates to BUY_STOP with price`() {
         val req =
             OrderRequest.Stop(
