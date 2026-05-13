@@ -116,7 +116,9 @@ class FileStatePersistor(
             orders.mapNotNull { (cid, req) ->
                 val dto = OrderRequestDto.fromDomain(req)
                 if (dto == null) {
-                    log.warn("savePendingOrders: skipping non-persistable variant ${req::class.simpleName} for $strategyId/$cid")
+                    log.warn(
+                        "savePendingOrders: skipping non-persistable variant ${req::class.simpleName} for $strategyId/$cid",
+                    )
                     null
                 } else {
                     cid to dto
@@ -241,9 +243,13 @@ private data class OrderRequestDto(
     val onTrigger: String? = null,
 ) {
     fun toDomain(): com.qkt.execution.OrderRequest {
-        val sideEnum = com.qkt.common.Side.valueOf(side)
+        val sideEnum =
+            com.qkt.common.Side
+                .valueOf(side)
         val qty = java.math.BigDecimal(quantity)
-        val tif = com.qkt.execution.TimeInForce.valueOf(timeInForce)
+        val tif =
+            com.qkt.execution.TimeInForce
+                .valueOf(timeInForce)
         return when (type) {
             "Market" ->
                 com.qkt.execution.OrderRequest.Market(
@@ -283,8 +289,14 @@ private data class OrderRequestDto(
                     symbol = symbol,
                     side = sideEnum,
                     quantity = qty,
-                    triggerPrice = java.math.BigDecimal(requireNotNull(triggerPrice) { "IfTouched DTO missing triggerPrice" }),
-                    onTrigger = com.qkt.execution.TriggerType.valueOf(requireNotNull(onTrigger) { "IfTouched DTO missing onTrigger" }),
+                    triggerPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(triggerPrice) { "IfTouched DTO missing triggerPrice" },
+                        ),
+                    onTrigger =
+                        com.qkt.execution.TriggerType.valueOf(
+                            requireNotNull(onTrigger) { "IfTouched DTO missing onTrigger" },
+                        ),
                     limitPrice = limitPrice?.let { java.math.BigDecimal(it) },
                     timeInForce = tif,
                     timestamp = timestamp,

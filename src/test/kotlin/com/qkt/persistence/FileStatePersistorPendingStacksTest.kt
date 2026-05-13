@@ -62,7 +62,8 @@ class FileStatePersistorPendingStacksTest {
         val persistor = FileStatePersistor(tmp)
         val state =
             mapOf(
-                "leg-1" to PersistedTierState("c-1", listOf(tier(0, "10", fired = true, firedAt = 1L, firedLegId = "leg-2"))),
+                "leg-1" to
+                    PersistedTierState("c-1", listOf(tier(0, "10", fired = true, firedAt = 1L, firedLegId = "leg-2"))),
                 "leg-3" to PersistedTierState("c-3", listOf(tier(0, "5", fired = false))),
             )
         persistor.savePendingStacks("hedge", state)
