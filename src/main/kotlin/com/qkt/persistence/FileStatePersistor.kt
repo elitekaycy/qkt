@@ -31,6 +31,7 @@ class FileStatePersistor(
 
     private companion object {
         const val LEGBOOK_FILE = "legbook.json"
+        const val BRACKET_PAIRS_FILE = "bracket-pairs.json"
         const val SCHEMA_VERSION = 1
     }
 
@@ -78,12 +79,31 @@ class FileStatePersistor(
         strategyId: String,
         pairs: List<BracketPair>,
     ) {
-        // Implemented in Task 6.
+        val dto =
+            BracketPairsDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                pairs = pairs.map { BracketPairDto.fromDomain(it) },
+            )
+        runCatching { json.encodeToString(BracketPairsDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, BRACKET_PAIRS_FILE, it) }
+            .onFailure { e -> log.warn("saveBracketPairs encode failed for $strategyId: ${e.message}") }
     }
 
     override fun loadBracketPairs(strategyId: String): List<BracketPair> {
-        // Implemented in Task 6.
-        return emptyList()
+        val raw = writer.read(strategyId, BRACKET_PAIRS_FILE) ?: return emptyList()
+        val dto =
+            try {
+                json.decodeFromString(BracketPairsDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadBracketPairs parse failed for $strategyId: ${e.message}")
+                return emptyList()
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadBracketPairs schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return emptyList()
+        }
+        return dto.pairs.map { it.toDomain() }
     }
 
     override fun savePendingOrders(
@@ -127,6 +147,39 @@ private data class LegBookDto(
     val symbol: String,
     val legs: List<LegDto>,
 )
+
+@Serializable
+private data class BracketPairsDto(
+    val version: Int,
+    val strategyId: String,
+    val pairs: List<BracketPairDto>,
+)
+
+@Serializable
+private data class BracketPairDto(
+    val entryClientOrderId: String,
+    val stopLossClientOrderId: String? = null,
+    val takeProfitClientOrderId: String? = null,
+    val legId: String? = null,
+) {
+    fun toDomain(): BracketPair =
+        BracketPair(
+            entryClientOrderId = entryClientOrderId,
+            stopLossClientOrderId = stopLossClientOrderId,
+            takeProfitClientOrderId = takeProfitClientOrderId,
+            legId = legId,
+        )
+
+    companion object {
+        fun fromDomain(p: BracketPair): BracketPairDto =
+            BracketPairDto(
+                entryClientOrderId = p.entryClientOrderId,
+                stopLossClientOrderId = p.stopLossClientOrderId,
+                takeProfitClientOrderId = p.takeProfitClientOrderId,
+                legId = p.legId,
+            )
+    }
+}
 
 @Serializable
 private data class LegDto(
