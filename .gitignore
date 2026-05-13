@@ -10,6 +10,7 @@ tt.txt
 help.txt
 hs_err_pid*.log
 replay_pid*.log
+.claude/scheduled_tasks.lock
 site/
 .cache/
 .venv-docs/
