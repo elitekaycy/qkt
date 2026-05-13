@@ -43,7 +43,10 @@ class PortfolioDeployer(
                 children.add(handle)
                 childWrappers.add(wrapper)
             }
-            val symbols = compiled.ast.streams.map { it.qktSymbol }.distinct()
+            val symbols =
+                compiled.ast.streams
+                    .map { it.qktSymbol }
+                    .distinct()
             val supervisor =
                 PortfolioSupervisor(
                     ast = compiled.ast,
@@ -79,11 +82,11 @@ class PortfolioDeployer(
         val operatorStop = AtomicBoolean(false)
         val effectiveActive: () -> Boolean = { gateActive.get() && !operatorStop.get() }
 
-        val tvSymbols =
+        val symbols =
             compiledChild.ast.streams
-                .map { "${it.broker}:${it.symbol}" }
+                .map { it.qktSymbol }
                 .distinct()
-        val source = marketSourceProvider(tvSymbols)
+        val source = marketSourceProvider(symbols)
         val ring = EventRing(capacity = ringSize)
         val startMs = System.currentTimeMillis()
         val startedAt = Instant.ofEpochMilli(startMs)

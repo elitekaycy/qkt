@@ -14,7 +14,16 @@ import org.slf4j.LoggerFactory
 
 class ActionCompilerExtensionsTest {
     private val candle =
-        Candle("BACKTEST:BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
+        Candle(
+            "BACKTEST:BTCUSDT",
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ZERO,
+            0L,
+            1L,
+        )
     private val ctx =
         EvalContext(
             candle = candle,
@@ -171,8 +180,10 @@ class ActionCompilerExtensionsTest {
 
                 override fun allPositions() =
                     mapOf(
-                        "BACKTEST:BTCUSDT" to com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("2"), BigDecimal("100")),
-                        "BACKTEST:ETHUSDT" to com.qkt.positions.Position("BACKTEST:ETHUSDT", BigDecimal("-3"), BigDecimal("50")),
+                        "BACKTEST:BTCUSDT" to
+                            com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("2"), BigDecimal("100")),
+                        "BACKTEST:ETHUSDT" to
+                            com.qkt.positions.Position("BACKTEST:ETHUSDT", BigDecimal("-3"), BigDecimal("50")),
                         "ZERO" to com.qkt.positions.Position("ZERO", BigDecimal.ZERO, BigDecimal("10")),
                     )
             }

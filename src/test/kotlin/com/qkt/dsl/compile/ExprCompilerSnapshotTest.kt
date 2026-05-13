@@ -13,7 +13,16 @@ import org.junit.jupiter.api.Test
 
 class ExprCompilerSnapshotTest {
     private val candle =
-        Candle("BACKTEST:BTCUSDT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0L, 1L)
+        Candle(
+            "BACKTEST:BTCUSDT",
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ONE,
+            BigDecimal.ZERO,
+            0L,
+            1L,
+        )
 
     private fun ctx(store: SnapshotStore): EvalContext =
         EvalContext(
