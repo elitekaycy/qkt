@@ -32,6 +32,7 @@ class FileStatePersistor(
     private companion object {
         const val LEGBOOK_FILE = "legbook.json"
         const val BRACKET_PAIRS_FILE = "bracket-pairs.json"
+        const val PENDING_ORDERS_FILE = "pending-orders.json"
         const val SCHEMA_VERSION = 1
     }
 
@@ -110,12 +111,41 @@ class FileStatePersistor(
         strategyId: String,
         orders: Map<String, OrderRequest>,
     ) {
-        // Implemented in Task 7.
+        val entries =
+            orders.mapNotNull { (cid, req) ->
+                val dto = OrderRequestDto.fromDomain(req)
+                if (dto == null) {
+                    log.warn("savePendingOrders: skipping non-persistable variant ${req::class.simpleName} for $strategyId/$cid")
+                    null
+                } else {
+                    cid to dto
+                }
+            }
+        val dto =
+            PendingOrdersDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                orders = entries.map { (cid, req) -> PendingOrderEntryDto(clientOrderId = cid, request = req) },
+            )
+        runCatching { json.encodeToString(PendingOrdersDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, PENDING_ORDERS_FILE, it) }
+            .onFailure { e -> log.warn("savePendingOrders encode failed for $strategyId: ${e.message}") }
     }
 
     override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> {
-        // Implemented in Task 7.
-        return emptyMap()
+        val raw = writer.read(strategyId, PENDING_ORDERS_FILE) ?: return emptyMap()
+        val dto =
+            try {
+                json.decodeFromString(PendingOrdersDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadPendingOrders parse failed for $strategyId: ${e.message}")
+                return emptyMap()
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadPendingOrders schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return emptyMap()
+        }
+        return dto.orders.associate { it.clientOrderId to it.request.toDomain() }
     }
 
     override fun savePendingStacks(
@@ -147,6 +177,146 @@ private data class LegBookDto(
     val symbol: String,
     val legs: List<LegDto>,
 )
+
+@Serializable
+private data class PendingOrdersDto(
+    val version: Int,
+    val strategyId: String,
+    val orders: List<PendingOrderEntryDto>,
+)
+
+@Serializable
+private data class PendingOrderEntryDto(
+    val clientOrderId: String,
+    val request: OrderRequestDto,
+)
+
+@Serializable
+private data class OrderRequestDto(
+    val type: String,
+    val id: String,
+    val symbol: String,
+    val side: String,
+    val quantity: String,
+    val timeInForce: String,
+    val timestamp: Long,
+    val strategyId: String = "",
+    // Variant-specific fields:
+    val limitPrice: String? = null,
+    val stopPrice: String? = null,
+    val triggerPrice: String? = null,
+    val onTrigger: String? = null,
+) {
+    fun toDomain(): com.qkt.execution.OrderRequest {
+        val sideEnum = com.qkt.common.Side.valueOf(side)
+        val qty = java.math.BigDecimal(quantity)
+        val tif = com.qkt.execution.TimeInForce.valueOf(timeInForce)
+        return when (type) {
+            "Market" ->
+                com.qkt.execution.OrderRequest.Market(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                )
+            "Limit" ->
+                com.qkt.execution.OrderRequest.Limit(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    limitPrice = java.math.BigDecimal(requireNotNull(limitPrice) { "Limit DTO missing limitPrice" }),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                )
+            "Stop" ->
+                com.qkt.execution.OrderRequest.Stop(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    stopPrice = java.math.BigDecimal(requireNotNull(stopPrice) { "Stop DTO missing stopPrice" }),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                )
+            "IfTouched" ->
+                com.qkt.execution.OrderRequest.IfTouched(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    triggerPrice = java.math.BigDecimal(requireNotNull(triggerPrice) { "IfTouched DTO missing triggerPrice" }),
+                    onTrigger = com.qkt.execution.TriggerType.valueOf(requireNotNull(onTrigger) { "IfTouched DTO missing onTrigger" }),
+                    limitPrice = limitPrice?.let { java.math.BigDecimal(it) },
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                )
+            else -> error("Unknown OrderRequest type in persisted state: $type")
+        }
+    }
+
+    companion object {
+        fun fromDomain(req: com.qkt.execution.OrderRequest): OrderRequestDto? =
+            when (req) {
+                is com.qkt.execution.OrderRequest.Market ->
+                    OrderRequestDto(
+                        type = "Market",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                    )
+                is com.qkt.execution.OrderRequest.Limit ->
+                    OrderRequestDto(
+                        type = "Limit",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        limitPrice = req.limitPrice.toPlainString(),
+                    )
+                is com.qkt.execution.OrderRequest.Stop ->
+                    OrderRequestDto(
+                        type = "Stop",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        stopPrice = req.stopPrice.toPlainString(),
+                    )
+                is com.qkt.execution.OrderRequest.IfTouched ->
+                    OrderRequestDto(
+                        type = "IfTouched",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        triggerPrice = req.triggerPrice.toPlainString(),
+                        onTrigger = req.onTrigger.name,
+                        limitPrice = req.limitPrice?.toPlainString(),
+                    )
+                else -> null // non-persistable variant (Bracket, ScaleOut, TimeExit, Stack, etc.)
+            }
+    }
+}
 
 @Serializable
 private data class BracketPairsDto(
