@@ -1,10 +1,10 @@
 package com.qkt.persistence
 
+import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.positions.LegBook
 import com.qkt.positions.LegRole
 import com.qkt.positions.PositionLeg
-import com.qkt.common.Side
 import java.math.BigDecimal
 
 /**

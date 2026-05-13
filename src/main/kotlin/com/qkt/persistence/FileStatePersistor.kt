@@ -6,8 +6,8 @@ import com.qkt.positions.LegBook
 import com.qkt.positions.LegRole
 import java.math.BigDecimal
 import java.nio.file.Path
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
@@ -23,7 +23,11 @@ class FileStatePersistor(
 ) : StatePersistor {
     private val log = LoggerFactory.getLogger(FileStatePersistor::class.java)
     private val writer = StateFileWriter(rootDir)
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            prettyPrint = false
+        }
 
     private companion object {
         const val LEGBOOK_FILE = "legbook.json"
