@@ -27,6 +27,26 @@ class Mt5DataClient(
         numBars: Int,
     ): List<Candle> {
         val url = "$baseUrl/fetch_data_pos?symbol=$symbol&timeframe=$timeframe&num_bars=$numBars"
+        return fetchAndParse(url, symbol, timeframe)
+    }
+
+    fun fetchBarsByRange(
+        symbol: String,
+        timeframe: String,
+        startIso: String,
+        endIso: String,
+    ): List<Candle> {
+        val s = java.net.URLEncoder.encode(startIso, "UTF-8")
+        val e = java.net.URLEncoder.encode(endIso, "UTF-8")
+        val url = "$baseUrl/fetch_data_range?symbol=$symbol&timeframe=$timeframe&start=$s&end=$e"
+        return fetchAndParse(url, symbol, timeframe)
+    }
+
+    private fun fetchAndParse(
+        url: String,
+        symbol: String,
+        timeframe: String,
+    ): List<Candle> {
         val req = Request.Builder().url(url).build()
         val raw =
             http.newCall(req).execute().use { resp ->
