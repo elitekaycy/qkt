@@ -81,4 +81,30 @@ class MT5ClientTest {
         server.enqueue(MockResponse().setResponseCode(503))
         assertThat(client.isReady()).isFalse
     }
+
+    private val pendingOrderJson =
+        """{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1","price_open":"4700.0","sl":"4682.0","tp":"4712.0","magic":10001,"time_setup":1700000000,"time_expiration":1700000600,"comment":"x"}"""
+
+    @Test
+    fun `getPendingOrders parses a wrapped orders object`() {
+        server.enqueue(MockResponse().setBody("""{"orders":[$pendingOrderJson],"total":1}"""))
+        val orders = client.getPendingOrders(magic = 10001)
+        assertThat(orders).hasSize(1)
+        assertThat(orders[0].ticket).isEqualTo(7L)
+        assertThat(orders[0].symbol).isEqualTo("XAUUSDm")
+    }
+
+    @Test
+    fun `getPendingOrders parses a bare array`() {
+        server.enqueue(MockResponse().setBody("""[$pendingOrderJson]"""))
+        val orders = client.getPendingOrders(magic = 10001)
+        assertThat(orders).hasSize(1)
+        assertThat(orders[0].ticket).isEqualTo(7L)
+    }
+
+    @Test
+    fun `getPendingOrders returns empty for an object without orders`() {
+        server.enqueue(MockResponse().setBody("""{"total":0}"""))
+        assertThat(client.getPendingOrders(magic = 10001)).isEmpty()
+    }
 }
