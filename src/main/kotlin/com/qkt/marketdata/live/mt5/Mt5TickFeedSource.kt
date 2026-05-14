@@ -68,7 +68,12 @@ class Mt5TickFeedSource(
                                     onTick(
                                         Tick(
                                             symbol = symbolMap[sym] ?: sym,
-                                            price = tick.last.setScale(Money.SCALE, Money.ROUNDING),
+                                            // Quote-driven instruments (FX, metals) report last = 0
+                                            // — no last-traded price exists. Fall back to the
+                                            // bid/ask mid so candles carry a real price, not zero.
+                                            price =
+                                                (if (tick.last.signum() > 0) tick.last else tick.mid)
+                                                    .setScale(Money.SCALE, Money.ROUNDING),
                                             timestamp = clock.now(),
                                             bid = tick.bid.setScale(Money.SCALE, Money.ROUNDING),
                                             ask = tick.ask.setScale(Money.SCALE, Money.ROUNDING),
