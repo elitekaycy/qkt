@@ -3,6 +3,7 @@ package com.qkt.broker.mt5
 import java.math.BigDecimal
 import java.time.Duration
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -80,7 +81,14 @@ class MT5Client(
     fun getPendingOrders(magic: Int? = null): List<MT5PendingOrder> {
         val url = if (magic != null) "$gatewayUrl/orders?magic=$magic" else "$gatewayUrl/orders"
         val raw = getWithRetry(url) ?: return emptyList()
-        val arr = json.parseToJsonElement(raw).jsonArray
+        // The gateway's /orders shape varies by version: some return a bare
+        // array, others wrap it as {"orders": [...], "total": N}. Accept both.
+        val arr =
+            when (val root = json.parseToJsonElement(raw)) {
+                is JsonArray -> root
+                is JsonObject -> root["orders"]?.jsonArray ?: return emptyList()
+                else -> return emptyList()
+            }
         return arr.map { parsePendingOrder(it.jsonObject) }
     }
 
