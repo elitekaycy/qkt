@@ -57,4 +57,41 @@ class Mt5TickFeedSourceTest {
             server.shutdown()
         }
     }
+
+    @Test
+    fun `falls back to bid-ask mid when last is zero`() {
+        val server = MockWebServer()
+        val counter = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    // Quote-driven instrument: bid/ask populated, last = 0 (Exness XAUUSD).
+                    val ms = 1778662794911L + counter.incrementAndGet()
+                    return MockResponse().setBody(
+                        """{"bid":4700.0,"ask":4700.4,"last":0.0,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}""",
+                    )
+                }
+            }
+        server.start()
+        try {
+            val source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
+                    pollIntervalMs = 5L,
+                    http = OkHttpClient(),
+                )
+            val captured = CopyOnWriteArrayList<Tick>()
+            source.start(onTick = { captured.add(it) }, onError = { it.printStackTrace() }, onDisconnect = {})
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (captured.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
+            source.stop()
+            assertThat(captured).isNotEmpty
+            assertThat(captured.first().price.toPlainString()).isEqualTo("4700.20000000")
+        } finally {
+            server.shutdown()
+        }
+    }
 }
