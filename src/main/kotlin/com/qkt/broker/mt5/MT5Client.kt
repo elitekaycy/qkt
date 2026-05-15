@@ -68,7 +68,7 @@ class MT5Client(
     }
 
     fun getPositions(magic: Int? = null): List<MT5Position> {
-        val url = if (magic != null) "$gatewayUrl/positions?magic=$magic" else "$gatewayUrl/positions"
+        val url = if (magic != null) "$gatewayUrl/get_positions?magic=$magic" else "$gatewayUrl/get_positions"
         val raw = getWithRetry(url) ?: return emptyList()
         val arr = json.parseToJsonElement(raw).jsonArray
         return arr.map { parsePosition(it.jsonObject) }
@@ -113,8 +113,7 @@ class MT5Client(
     }
 
     fun getTick(brokerSymbol: String): MT5Tick? {
-        val url = "$gatewayUrl/tick?symbol=$brokerSymbol"
-        val raw = getWithRetry(url) ?: return null
+        val raw = getWithRetry("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
         val rawTime = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         return MT5Tick(
@@ -125,23 +124,37 @@ class MT5Client(
         )
     }
 
+    /**
+     * Cancel a working order via `DELETE /orders/{ticket}`.
+     *
+     * Returns the raw response body on success, or an empty string on HTTP failure.
+     * The caller logs a warning when the body indicates a non-success retcode so a
+     * 404/4xx no longer masquerades as a successful cancel — the prior `POST /cancel/...`
+     * shape silently succeeded against gateways that returned an HTML 404 page.
+     */
     fun cancelOrder(ticket: Long): String {
         val request =
             Request
                 .Builder()
-                .url("$gatewayUrl/cancel/$ticket")
-                .post("".toRequestBody(JSON_MEDIA))
+                .url("$gatewayUrl/orders/$ticket")
+                .delete()
                 .build()
         val resp = http.newCall(request).execute()
-        return resp.use { it.body?.string().orEmpty() }
+        resp.use {
+            val raw = it.body?.string().orEmpty()
+            if (!it.isSuccessful) {
+                log.warn("MT5Client cancelOrder($ticket) HTTP ${it.code}: $raw")
+                return ""
+            }
+            return raw
+        }
     }
 
     /**
-     * Modify a working order. Returns the gateway's [MT5OrderResponse] — successful when
-     * [MT5OrderResult.retcode] is `MT5_TRADE_RETCODE_DONE`.
-     *
-     * If the gateway doesn't implement `/modify-order` it returns 404; the response
-     * carries a non-success retcode and the caller treats it as a rejection.
+     * Modify a working order via `PUT /orders/{ticket}`. Returns the gateway's
+     * [MT5OrderResponse] — successful when [MT5OrderResult.retcode] is
+     * `MT5_TRADE_RETCODE_DONE`. A non-2xx response is captured in [MT5OrderResponse.errorMessage]
+     * so the broker layer can reject deterministically.
      */
     fun modifyOrder(
         ticket: Long,
@@ -151,8 +164,8 @@ class MT5Client(
         val request =
             Request
                 .Builder()
-                .url("$gatewayUrl/modify-order/$ticket")
-                .post(body)
+                .url("$gatewayUrl/orders/$ticket")
+                .put(body)
                 .build()
         val resp = http.newCall(request).execute()
         resp.use {
