@@ -299,8 +299,10 @@ class MT5Broker(
                             "for ${wire.symbol} (input=${wire.volume.toPlainString()})",
                     )
             }
-        // Submit each leg; if any leg rejects, the OCO group is degraded.
-        // The OrderManager already tracks sibling relationships in `siblings[]`.
+        // Submit each leg. Each leg's ticket must be registered in [pendingByTicket]
+        // so [MT5PositionPoller] can correlate the eventual fill back to a strategy.
+        // Without this, the poller sees a new position appear but `onPendingPositionOpened`
+        // silently returns — strategy never receives the OrderFilled event for an OCO leg.
         val firstBrokerId =
             prepared
                 .mapIndexed { _, wire ->
@@ -312,7 +314,13 @@ class MT5Broker(
                         )
                         null
                     } else {
-                        resp.result.order
+                        val ticket = resp.result.order
+                        if (ticket != 0L) {
+                            val legOrderId = decodeOcoLegOrderId(wire.comment) ?: request.id
+                            pendingTickets[legOrderId] = ticket
+                            pendingByTicket[ticket] = PendingMeta(legOrderId, request.strategyId)
+                        }
+                        ticket
                     }
                 }.firstOrNull { it != null && it != 0L }
                 ?.toString() ?: composite.groupId
@@ -330,6 +338,21 @@ class MT5Broker(
             brokerOrderId = firstBrokerId,
             accepted = true,
         )
+    }
+
+    /**
+     * Recover the per-leg client order id from an OCO wire comment.
+     *
+     * [MT5OrderTranslator.translateStandaloneOCO] prepends `"oco:<parent-id>/"` to each
+     * leg's original comment (which is the leg's `OrderRequest.id`). The qkt-side comment
+     * is full-length even though MT5 truncates to 16 chars on the venue side — we decode
+     * before sending, so truncation is not an issue here.
+     */
+    private fun decodeOcoLegOrderId(comment: String): String? {
+        if (!comment.startsWith("oco:")) return null
+        val slash = comment.indexOf('/')
+        if (slash < 0 || slash == comment.length - 1) return null
+        return comment.substring(slash + 1)
     }
 
     private fun reject(
