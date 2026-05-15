@@ -68,6 +68,60 @@ class MT5ClientTest {
         assertThat(positions).hasSize(1)
         assertThat(positions[0].ticket).isEqualTo(1L)
         assertThat(positions[0].openTime).isEqualTo(expectedUtcMs)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/get_positions?magic=10001")
+        assertThat(recorded.method).isEqualTo("GET")
+    }
+
+    @Test
+    fun `cancelOrder issues DELETE on the orders ticket route`() {
+        server.enqueue(MockResponse().setBody("""{"message":"Order cancelled successfully"}"""))
+        val body = client.cancelOrder(ticket = 555L)
+        assertThat(body).contains("cancelled successfully")
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/orders/555")
+        assertThat(recorded.method).isEqualTo("DELETE")
+    }
+
+    @Test
+    fun `cancelOrder returns empty string and logs on HTTP 404`() {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"not found"}"""))
+        val body = client.cancelOrder(ticket = 999L)
+        assertThat(body).isEmpty()
+    }
+
+    @Test
+    fun `modifyOrder issues PUT with json body and parses the result`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":42,"deal":0,"price":"1.1075","comment":"ok"}}""",
+            ),
+        )
+        val resp =
+            client.modifyOrder(
+                ticket = 42L,
+                mods = MT5OrderModification(price = BigDecimal("1.1075")),
+            )
+        assertThat(resp.result.retcode).isEqualTo(10009)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/orders/42")
+        assertThat(recorded.method).isEqualTo("PUT")
+        assertThat(recorded.body.readUtf8()).contains("\"price\":1.1075")
+    }
+
+    @Test
+    fun `getTick hits symbol_info_tick and applies tz offset`() {
+        val serverEpochMs = 1_700_000_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """{"bid":"4561.510","ask":"4561.818","time":$serverEpochMs}""",
+            ),
+        )
+        val tick = client.getTick("XAUUSDm")!!
+        assertThat(tick.bid).isEqualByComparingTo("4561.510")
+        assertThat(tick.ask).isEqualByComparingTo("4561.818")
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/symbol_info_tick/XAUUSDm")
     }
 
     @Test
