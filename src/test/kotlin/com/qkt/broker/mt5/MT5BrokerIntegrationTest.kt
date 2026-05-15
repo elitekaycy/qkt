@@ -373,7 +373,9 @@ class MT5BrokerIntegrationTest {
         broker.shutdown()
         val leg1Ticket = 7001L
         val leg2Ticket = 7002L
-        val sentOrders = java.util.concurrent.atomic.AtomicInteger(0)
+        val sentOrders =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
         var positionsHasFill = false
         server.dispatcher =
             object : okhttp3.mockwebserver.Dispatcher() {
