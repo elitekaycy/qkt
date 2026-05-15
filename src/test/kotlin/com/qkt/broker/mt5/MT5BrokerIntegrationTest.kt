@@ -365,6 +365,114 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `OCO leg fill propagates via position poller with the leg's clientOrderId`() {
+        // Regression test for the v0.26.6 fix. Before that fix, submitComposite never
+        // registered per-leg tickets in pendingByTicket, so when an OCO leg filled the
+        // position poller's onPendingPositionOpened callback silently returned and the
+        // strategy never received the OrderFilled event.
+        broker.shutdown()
+        val leg1Ticket = 7001L
+        val leg2Ticket = 7002L
+        val sentOrders = java.util.concurrent.atomic.AtomicInteger(0)
+        var positionsHasFill = false
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/get_positions") -> {
+                            if (positionsHasFill) {
+                                MockResponse().setBody(
+                                    """[{"ticket":$leg2Ticket,"symbol":"EURUSDm","type":1,"volume":"0.1",""" +
+                                        """"price_open":"1.0950","sl":"0","tp":"0","profit":"0","magic":10001,""" +
+                                        """"open_time":"1700000000","comment":"oco:oco-leg-fill/sell-leg"}]""",
+                                )
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/order") -> {
+                            val n = sentOrders.incrementAndGet()
+                            val ticket = if (n == 1) leg1Ticket else leg2Ticket
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":$ticket,"deal":0,"price":"1.0950","comment":"ok"}}""",
+                            )
+                        }
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker = MT5Broker(fastProfile, bus, FixedClock(time = 1L))
+
+        val buyLeg =
+            OrderRequest.Stop(
+                id = "buy-leg",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val sellLeg =
+            OrderRequest.Stop(
+                id = "sell-leg",
+                symbol = "EXNESS:EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.0950"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val oco =
+            OrderRequest.StandaloneOCO(
+                id = "oco-leg-fill",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                leg1 = buyLeg,
+                leg2 = sellLeg,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        captured.clear()
+        fastBroker.submit(oco)
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>()).hasSize(1)
+
+        // Now flip the dispatcher so the SELL leg's position appears. The poller must
+        // resolve ticket 7002 back to clientOrderId "sell-leg" — not the parent "oco-leg-fill".
+        positionsHasFill = true
+
+        val deadline = System.currentTimeMillis() + 3_000L
+        while (System.currentTimeMillis() < deadline &&
+            captured.none { it is BrokerEvent.OrderFilled && it.clientOrderId == "sell-leg" }
+        ) {
+            Thread.sleep(50)
+        }
+        fastBroker.shutdown()
+
+        val filled =
+            captured.filterIsInstance<BrokerEvent.OrderFilled>().firstOrNull { it.clientOrderId == "sell-leg" }
+                ?: error("OrderFilled for sell-leg never published; captured=$captured")
+        assertThat(filled.brokerOrderId).isEqualTo(leg2Ticket.toString())
+        assertThat(filled.side).isEqualTo(Side.SELL)
+        assertThat(filled.symbol).isEqualTo("EXNESS:EURUSD")
+        assertThat(filled.strategyId).isEqualTo("s1")
+    }
+
+    @Test
     fun `price fields are rounded to profile digits before placement`() {
         // XAUUSD has digits=3. An 8-decimal wire price like 4562.16412345 must hit
         // MT5 as 4562.164 — anything more precise gets retcode=10015 INVALID_PRICE.
