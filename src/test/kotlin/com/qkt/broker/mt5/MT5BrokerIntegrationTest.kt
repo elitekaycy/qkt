@@ -364,6 +364,60 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `price fields are rounded to profile digits before placement`() {
+        // XAUUSD has digits=3. An 8-decimal wire price like 4562.16412345 must hit
+        // MT5 as 4562.164 — anything more precise gets retcode=10015 INVALID_PRICE.
+        val xauProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:XAUUSD" to TEST_XAUUSD_SPEC),
+            )
+        broker.shutdown()
+        val xauBroker = MT5Broker(xauProfile, bus, FixedClock(time = 1L))
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"4562.164","comment":"ok"}}""",
+            ),
+        )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br-xau",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                entry =
+                    OrderRequest.Stop(
+                        id = "ent-stop",
+                        symbol = "EXNESS:XAUUSD",
+                        side = Side.BUY,
+                        quantity = BigDecimal("0.10"),
+                        stopPrice = BigDecimal("4562.16412345"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 1L,
+                        strategyId = "s1",
+                    ),
+                takeProfit = BigDecimal("4574.16412345"),
+                stopLoss = BigDecimal("4544.16412345"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        xauBroker.submit(bracket)
+        xauBroker.shutdown()
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"price\":4562.164")
+        assertThat(body).contains("\"sl\":4544.164")
+        assertThat(body).contains("\"tp\":4574.164")
+        assertThat(body).doesNotContain("4562.16412345")
+    }
+
+    @Test
     fun `volume is quantized down to profile volumeStep before placement`() {
         // 0.1944... lots at step 0.01 must hit the wire as 0.19 — the pa-quant /
         // hedge-straddle sizing footgun that crashed live 02:55 / 09:55 placements.
@@ -492,6 +546,15 @@ class MT5BrokerIntegrationTest {
                 volumeStep = BigDecimal("0.01"),
                 pointSize = BigDecimal("0.00001"),
                 digits = 5,
+                tradeStopsLevelPoints = 0,
+            )
+
+        private val TEST_XAUUSD_SPEC =
+            InstrumentSpec(
+                minVolume = BigDecimal("0.01"),
+                volumeStep = BigDecimal("0.01"),
+                pointSize = BigDecimal("0.001"),
+                digits = 3,
                 tradeStopsLevelPoints = 0,
             )
     }

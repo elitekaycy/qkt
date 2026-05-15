@@ -127,6 +127,25 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `getPendingOrders survives a transient row missing ticket and price_open`() {
+        // Gateway has been observed emitting partially-populated rows mid-placement;
+        // before defensive parsing, every poll during a rejection cycle killed the poller.
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1",""" +
+                    """"price_open":"4700.0","sl":"0","tp":"0","magic":10001,""" +
+                    """"time_setup":1700000000,"time_expiration":0,"comment":"good"},""" +
+                    """{"symbol":"XAUUSDm","type":"BUY_STOP","magic":10001}]""",
+            ),
+        )
+        val orders = client.getPendingOrders(magic = 10001)
+        assertThat(orders).hasSize(2)
+        assertThat(orders[0].ticket).isEqualTo(7L)
+        assertThat(orders[1].ticket).isEqualTo(0L)
+        assertThat(orders[1].priceOpen).isEqualByComparingTo("0")
+    }
+
+    @Test
     fun `getSymbolInfo returns null when gateway returns 404`() {
         server.enqueue(MockResponse().setResponseCode(404).setBody(""))
         assertThat(client.getSymbolInfo("UNKNOWN")).isNull()
