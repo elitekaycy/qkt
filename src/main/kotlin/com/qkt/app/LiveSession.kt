@@ -201,12 +201,15 @@ class LiveSession(
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
-        val pnl = PnLCalculator(positions, priceTracker)
         val strategyPositions = StrategyPositionTracker(persistor)
-        val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val paperBroker = PaperBroker(bus, clock, priceTracker)
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker)
+        // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
+        // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
+        val instruments = buildInstrumentRegistry()
+        val pnl = PnLCalculator(positions, priceTracker, instruments)
+        val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
 
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
@@ -247,7 +250,7 @@ class LiveSession(
                 },
                 gate = gate,
                 persistor = persistor,
-                instruments = buildInstrumentRegistry(),
+                instruments = instruments,
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }

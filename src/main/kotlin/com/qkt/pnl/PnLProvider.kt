@@ -1,6 +1,8 @@
 package com.qkt.pnl
 
 import com.qkt.common.Money
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
@@ -15,9 +17,19 @@ interface PnLProvider {
     fun totalPnL(): BigDecimal
 }
 
+/**
+ * Tracks realized + unrealized PnL across all positions.
+ *
+ * Phase 30: when an [InstrumentRegistry] is wired, the multiplier `contractSize` is
+ * applied to every PnL calculation — so `(price - avgEntry) * quantity * contractSize`
+ * matches what the broker venue reports for the same trade. The default
+ * [NoopInstrumentRegistry] makes that multiplier degenerate to 1, preserving pre-Phase-30
+ * test behavior for code paths that don't depend on contract-size-aware PnL.
+ */
 class PnLCalculator(
     private val positions: PositionProvider,
     private val prices: MarketPriceProvider,
+    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
 ) : PnLProvider {
     private var realizedTotal: BigDecimal = Money.ZERO
 
@@ -30,9 +42,11 @@ class PnLCalculator(
     override fun unrealizedFor(symbol: String): BigDecimal {
         val pos = positions.positionFor(symbol) ?: return Money.ZERO
         val price = prices.lastPrice(symbol) ?: return Money.ZERO
+        val cs = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
         return price
             .subtract(pos.avgEntryPrice)
             .multiply(pos.quantity)
+            .multiply(cs)
             .setScale(Money.SCALE, Money.ROUNDING)
     }
 

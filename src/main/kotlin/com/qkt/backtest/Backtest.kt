@@ -86,9 +86,9 @@ class Backtest(
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
-        val pnl = PnLCalculator(positions, priceTracker)
+        val pnl = PnLCalculator(positions, priceTracker, instruments)
         val strategyPositions = StrategyPositionTracker()
-        val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
+        val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
         for ((id, _) in strategies) {
             strategyPnL.setStartingBalance(id, startingBalance)
         }
