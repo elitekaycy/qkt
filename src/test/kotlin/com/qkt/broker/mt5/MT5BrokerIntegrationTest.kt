@@ -406,7 +406,10 @@ class MT5BrokerIntegrationTest {
         val ack = broker.submit(req)
         assertThat(ack.accepted).isFalse
         assertThat(ack.rejectReason).contains("below venue volumeMin")
-        val rejection = captured.filterIsInstance<BrokerEvent.OrderRejected>().firstOrNull { it.clientOrderId == "ord-tiny" }
+        val rejection =
+            captured
+                .filterIsInstance<BrokerEvent.OrderRejected>()
+                .firstOrNull { it.clientOrderId == "ord-tiny" }
         assertThat(rejection).isNotNull
     }
 
