@@ -1,6 +1,7 @@
 package com.qkt.parity
 
 import com.qkt.app.BrokerFactory
+import com.qkt.broker.mt5.InstrumentSpec
 import com.qkt.broker.mt5.MT5Broker
 import com.qkt.broker.mt5.MT5DefaultProfiles
 import com.qkt.cli.daemon.StateDir
@@ -102,6 +103,17 @@ class MT5DaemonE2ETest {
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
                 pollIntervalMs = 100_000,
+                instrumentOverrides =
+                    mapOf(
+                        "EXNESS:EURUSD" to
+                            InstrumentSpec(
+                                minVolume = BigDecimal("0.01"),
+                                volumeStep = BigDecimal("0.01"),
+                                pointSize = BigDecimal("0.00001"),
+                                digits = 5,
+                                tradeStopsLevelPoints = 0,
+                            ),
+                    ),
             )
         val brokerFactories: Map<String, BrokerFactory> =
             mapOf(
