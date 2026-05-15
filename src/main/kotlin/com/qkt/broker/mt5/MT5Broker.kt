@@ -143,7 +143,24 @@ class MT5Broker(
         val volumeStep: BigDecimal,
         val volumeMin: BigDecimal,
         val digits: Int,
+        val pointSize: BigDecimal,
+        val tradeStopsLevelPoints: Int,
     )
+
+    /**
+     * Outcome of the pre-placement preparation step. [Ok] carries the quantized wire
+     * shape; [Reject] carries a venue-specific reason so the broker layer can emit a
+     * descriptive [BrokerEvent.OrderRejected] without relying on the gateway round-trip.
+     */
+    private sealed interface PrepareResult {
+        data class Ok(
+            val wire: MT5OrderRequest,
+        ) : PrepareResult
+
+        data class Reject(
+            val reason: String,
+        ) : PrepareResult
+    }
 
     /**
      * Resolve [VenueRules] for [brokerSymbol].
@@ -160,6 +177,8 @@ class MT5Broker(
                 volumeStep = spec.volumeStep,
                 volumeMin = spec.minVolume,
                 digits = spec.digits,
+                pointSize = spec.pointSize,
+                tradeStopsLevelPoints = spec.tradeStopsLevelPoints,
             )
         }
         symbolMeta[brokerSymbol]?.let { info ->
@@ -167,6 +186,8 @@ class MT5Broker(
                 volumeStep = info.volumeStep,
                 volumeMin = info.volumeMin,
                 digits = info.digits,
+                pointSize = info.point,
+                tradeStopsLevelPoints = info.tradeStopsLevel,
             )
         }
         val fetched =
@@ -179,26 +200,29 @@ class MT5Broker(
             volumeStep = fetched.volumeStep,
             volumeMin = fetched.volumeMin,
             digits = fetched.digits,
+            pointSize = fetched.point,
+            tradeStopsLevelPoints = fetched.tradeStopsLevel,
         )
     }
 
     /**
-     * Quantize [wire] to the venue's `volume_step` / `digits` before placement.
+     * Prepare [wire] for placement: quantize volume + prices, enforce stops level.
      *
-     * Volume rounds DOWN to `volume_step`; any price field present (`price`, `sl`, `tp`,
-     * `stopLimit`) rounds to `digits` decimals (HALF_EVEN). Returns `null` when the lot
-     * rounds below `volume_min` — the caller turns that into an [BrokerEvent.OrderRejected].
-     * When venue rules are unavailable the original wire is passed through unchanged so
-     * the venue's own rejection becomes the surfaced error.
+     * Volume rounds DOWN to `volume_step`; price fields round to `digits` decimals
+     * (HALF_EVEN); SL/TP within `tradeStopsLevel × pointSize` of entry are rejected
+     * pre-flight. The venue would reject these anyway — surfacing locally avoids the
+     * gateway round-trip and gives the strategy a structured reason string. When venue
+     * rules are unavailable the original wire is passed through unchanged so the venue's
+     * own rejection becomes the surfaced error.
      */
-    private fun quantizeForPlacement(wire: MT5OrderRequest): MT5OrderRequest? {
+    private fun prepareForPlacement(wire: MT5OrderRequest): PrepareResult {
         val rules =
             resolveVenueRules(wire.symbol) ?: run {
                 log.warn(
                     "MT5Broker ${profile.name} no venue rules for ${wire.symbol}; " +
                         "sending unrounded wire (volume=${wire.volume.toPlainString()})",
                 )
-                return wire
+                return PrepareResult.Ok(wire)
             }
         val quantizedVolume =
             if (rules.volumeStep.signum() > 0) {
@@ -206,17 +230,45 @@ class MT5Broker(
             } else {
                 wire.volume
             }
-        if (quantizedVolume < rules.volumeMin) return null
+        if (quantizedVolume < rules.volumeMin) {
+            return PrepareResult.Reject(
+                "quantized volume below venue volumeMin for ${wire.symbol} (input=${wire.volume.toPlainString()})",
+            )
+        }
         val digits = rules.digits.coerceAtLeast(0)
 
         fun roundPrice(p: BigDecimal?): BigDecimal? = p?.setScale(digits, RoundingMode.HALF_EVEN)
-        return wire.copy(
-            volume = quantizedVolume,
-            price = roundPrice(wire.price),
-            sl = roundPrice(wire.sl),
-            tp = roundPrice(wire.tp),
-            stopLimit = roundPrice(wire.stopLimit),
-        )
+
+        val quantized =
+            wire.copy(
+                volume = quantizedVolume,
+                price = roundPrice(wire.price),
+                sl = roundPrice(wire.sl),
+                tp = roundPrice(wire.tp),
+                stopLimit = roundPrice(wire.stopLimit),
+            )
+        // Stops-level enforcement: MT5 rejects orders whose SL/TP is closer to the entry
+        // than `tradeStopsLevel × pointSize`. Reject locally with a structured reason so
+        // strategy logs surface the cause without parsing gateway error blobs.
+        if (rules.tradeStopsLevelPoints > 0 &&
+            rules.pointSize.signum() > 0 &&
+            quantized.price != null
+        ) {
+            val minDistance = rules.pointSize.multiply(BigDecimal(rules.tradeStopsLevelPoints))
+            for ((field, value) in listOf("sl" to quantized.sl, "tp" to quantized.tp)) {
+                if (value != null && value.signum() > 0) {
+                    val distance = (quantized.price - value).abs()
+                    if (distance < minDistance) {
+                        return PrepareResult.Reject(
+                            "$field too close to entry for ${wire.symbol}: " +
+                                "distance=${distance.toPlainString()} min=${minDistance.toPlainString()} " +
+                                "(tradeStopsLevel=${rules.tradeStopsLevelPoints}, pointSize=${rules.pointSize.toPlainString()})",
+                        )
+                    }
+                }
+            }
+        }
+        return PrepareResult.Ok(quantized)
     }
 
     private fun submitSingle(
@@ -224,11 +276,10 @@ class MT5Broker(
         wire: MT5OrderRequest,
     ): SubmitAck {
         val prepared =
-            quantizeForPlacement(wire)
-                ?: return reject(
-                    request,
-                    "quantized volume below venue volumeMin for ${wire.symbol} (input=${wire.volume.toPlainString()})",
-                )
+            when (val result = prepareForPlacement(wire)) {
+                is PrepareResult.Ok -> result.wire
+                is PrepareResult.Reject -> return reject(request, result.reason)
+            }
         val resp = client.placeOrder(prepared)
         if (!isOrderSuccessful(resp.result.retcode)) {
             return reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
@@ -288,16 +339,15 @@ class MT5Broker(
         request: OrderRequest,
         composite: MT5Translation.Composite,
     ): SubmitAck {
-        // Quantize both legs up-front so the OCO is atomic — if either rounds below
-        // volumeMin we reject the whole composite rather than placing a one-legged OCO.
+        // Prepare both legs up-front so the OCO is atomic — if either rejects we reject
+        // the whole composite rather than placing a one-legged OCO.
         val prepared =
             composite.requests.map { wire ->
-                quantizeForPlacement(wire)
-                    ?: return reject(
-                        request,
-                        "OCO leg ${wire.comment}: quantized volume below venue volumeMin " +
-                            "for ${wire.symbol} (input=${wire.volume.toPlainString()})",
-                    )
+                when (val result = prepareForPlacement(wire)) {
+                    is PrepareResult.Ok -> result.wire
+                    is PrepareResult.Reject ->
+                        return reject(request, "OCO leg ${wire.comment}: ${result.reason}")
+                }
             }
         // Submit each leg. Each leg's ticket must be registered in [pendingByTicket]
         // so [MT5PositionPoller] can correlate the eventual fill back to a strategy.
