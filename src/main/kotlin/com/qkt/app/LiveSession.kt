@@ -149,6 +149,9 @@ class LiveSession(
         }
     }
 
+    /** Captures the broker instances built by [buildBroker] so [buildInstrumentRegistry] can wrap MT5 brokers. */
+    private val builtBrokers: MutableList<Broker> = mutableListOf()
+
     private fun buildBroker(
         paperBroker: PaperBroker,
         bus: EventBus,
@@ -171,10 +174,26 @@ class LiveSession(
             brokerSymbols.map { (label, syms) ->
                 val factory = brokerFactories[label]
                 val instance = factory?.invoke(bus, clock, priceTracker) ?: paperBroker
+                builtBrokers.add(instance)
                 com.qkt.marketdata.source.SymbolPattern
                     .exactSet(syms.toSet()) to instance
             }
         return CompositeBroker(routes = routes, fallback = paperBroker, bus = bus)
+    }
+
+    /**
+     * Build the [InstrumentRegistry] the trading pipeline uses for SIZING RISK and PaperBroker
+     * fill PnL. If an [com.qkt.broker.mt5.MT5Broker] is in the route list, wrap it in
+     * [com.qkt.instrument.MT5InstrumentRegistry]; otherwise return [com.qkt.instrument.NoopInstrumentRegistry]
+     * so strategies that don't need contract-size-aware math keep working.
+     */
+    private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
+        val mt5 = builtBrokers.firstOrNull { it is com.qkt.broker.mt5.MT5Broker } as? com.qkt.broker.mt5.MT5Broker
+        return if (mt5 != null) {
+            com.qkt.instrument.MT5InstrumentRegistry(mt5)
+        } else {
+            com.qkt.instrument.NoopInstrumentRegistry
+        }
     }
 
     fun start(): LiveSessionHandle {
@@ -228,6 +247,7 @@ class LiveSession(
                 },
                 gate = gate,
                 persistor = persistor,
+                instruments = buildInstrumentRegistry(),
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }

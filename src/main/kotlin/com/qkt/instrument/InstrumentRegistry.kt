@@ -29,3 +29,13 @@ interface InstrumentRegistry {
                     "for backtest or ensure the live broker exposes it via /symbol_info",
             )
 }
+
+/**
+ * No-op registry — every [lookup] returns `null`, every [require] throws the standard
+ * "no InstrumentMeta" error. Used as the default in [com.qkt.strategy.StrategyContext]
+ * for test contexts that don't exercise instrument-meta-aware paths (`SizeRiskAbs`,
+ * `SizeRiskFrac`). Production paths construct a real registry explicitly.
+ */
+object NoopInstrumentRegistry : InstrumentRegistry {
+    override fun lookup(qktSymbol: String): InstrumentMeta? = null
+}

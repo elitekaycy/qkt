@@ -85,6 +85,27 @@ class BacktestCommand(
         val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
         val request = MarketRequest(symbols = symbols, from = from, to = to)
 
+        // Phase 30: load instruments.yaml so SIZING RISK and PaperBroker fill PnL see
+        // real contract sizes. Default path follows the data root; --instruments overrides.
+        // Backwards-compat: when the file is absent and no flag is set, use Noop so
+        // strategies that don't depend on contract-size math keep working.
+        val instrumentsPath: Path =
+            args
+                .option("instruments")
+                ?.let(Paths::get)
+                ?: Paths.get(dataRoot).resolve("instruments.yaml")
+        val instruments: com.qkt.instrument.InstrumentRegistry =
+            if (Files.exists(instrumentsPath)) {
+                com.qkt.instrument.YamlInstrumentRegistry
+                    .load(instrumentsPath)
+            } else {
+                if (args.option("instruments") != null) {
+                    System.err.println("qkt: error: --instruments file not found: $instrumentsPath")
+                    return ExitCodes.USER_ERROR
+                }
+                com.qkt.instrument.NoopInstrumentRegistry
+            }
+
         return try {
             val backtest =
                 Backtest.fromStore(
@@ -93,6 +114,7 @@ class BacktestCommand(
                     request = request,
                     candleWindow = candleWindow,
                     startingBalance = startingBalance,
+                    instruments = instruments,
                 )
             val result = backtest.run()
             ReportPrinter.print(result, format, System.out)
