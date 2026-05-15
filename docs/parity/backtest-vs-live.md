@@ -34,34 +34,26 @@ Each row lists the symptom, the source file the live behavior lives in, and whet
 | 4 | **Bracket entry fills** | fills at `tickPrice` the moment the trigger is crossed (`PaperBroker.fillFromTrigger`) | venue fills at actual ask (for BUY_STOP) or bid (for SELL_STOP) when the trigger prints | divergent |
 | 5 | **Spread / slippage** | uses `tick.price` (the mid set by `Mt5TickFeedSource` when `last=0`) | live pays the venue spread; volatile bars also slip | divergent |
 | 6 | **Market-order fill price** | `priceProvider.lastPrice(symbol)` — the last tracked tick (`PaperBroker.fillMarket`) | MT5 fills at venue ask/bid at submit time, with `deviation` slack | divergent |
-| 7 | **Contract size** | treats `quantity` as raw units; **no `trade_contract_size` multiplier** | MT5 sizes positions as `lot × contract_size` (XAUUSD = 100 oz/lot) | **dangerous** — see below |
-| 8 | **`tradeStopsLevel`** | not enforced | MT5 rejects orders whose SL/TP is closer to entry than `trade_stops_level × point` | divergent (not yet hit in qkt-prod) |
+| 7 | **Contract size** | reads `contractSize` from `InstrumentRegistry`; both backtest and live multiply through it | MT5 sizes positions as `lot × contract_size` (XAUUSD = 100 oz/lot) | **closed in Phase 30** |
+| 8 | **`tradeStopsLevel`** | not enforced (closing that is the simulator's job) | rejected pre-placement in `MT5Broker` since Phase 30 | live closed in Phase 30, backtest open |
 | 9 | **OCO atomicity** | both legs always coupled in memory | emulated via comment-tag prefix + position poller; cancel-on-fill has a few-ms window between the fill event and the sibling-cancel request | divergent edge case |
 | 10 | **Pending-order persistence** | always in memory of the running backtest | persists to the broker's order book; daemon restart re-reads via `MT5StateRecovery` | divergent edge case |
 | 11 | **Latency** | instantaneous tick → fill | gateway HTTP round-trip + venue execution latency | divergent |
 | 12 | **Retcode handling** | no concept | MT5-specific retcodes (`10009`, `10015`, `10015` price, etc.) translated to `OrderRejected` reasons | divergent |
 | 13 | **Trading calendar / sessions** | runs through every tick the feed produces | respects venue session hours (gaps in `/tick` during weekends, holidays) | aligned in qkt by the `TradingCalendar` injection; divergent if backtest data covers a window live wouldn't trade |
 
-## The dangerous one — contract size (#7)
+## Contract size (#7) — closed in Phase 30
 
-The hedge-straddle strategy in `qkt-prod/strategies/hedge-straddle.qkt` works around the missing contract-size primitive by dividing the `SIZING RISK $` expression by `100`:
+Phase 30 added an `InstrumentMeta` primitive resolved at strategy load via [`InstrumentRegistry`](../phases/phase-30-instrument-metadata.md). Both `PaperBroker` and live MT5 paths multiply through `contractSize`, so a backtest trade and a live trade for the same symbol now use the same dollar-per-unit-of-price math. The hedge-straddle's `/100` workaround was removed as part of the migration.
 
-```
-SIZING RISK $ ((50000 * 0.007 * <riskMult>) / 100)
-```
-
-That `/100` correction is the XAUUSD oz/lot ratio. Live MT5 then multiplies the lot back up by `trade_contract_size = 100` internally — so the qkt-side lot of `0.19` represents 19 ounces. In backtest, `PaperBroker` has no contract-size concept; a `quantity` of `0.19` represents 0.19 units of a unitless thing. The PnL math runs through the strategy's `quantity` directly.
-
-**Concrete consequence:** the backtest reports trade quantities and PnL in different units than live. The Feb 5-9 hedge-straddle backtest produced `+$13.25 net PnL` over 164 trades on a $50,000 base. That figure is computed against `PaperBroker`'s unitless quantity, not against XAUUSD's 100 oz/lot. You cannot extrapolate it to expected live PnL by any direct ratio — the strategy's `/100` workaround happens at sizing time, not at fill time, and `PaperBroker` doesn't undo it on the fill side.
-
-This is the gap that gets resolved when the engine gains an `InstrumentMeta` primitive (currently "GAP 4" in `qkt-prod/docs/PARITY.md`). Until then: **treat backtest PnL as a directional / ranking signal, not a dollar figure**.
+Historical note kept for context: before Phase 30, backtest PnL was off by a factor of `contractSize` (~100× for XAUUSD), so it could be used for ranking and drawdown comparison but not as a dollar figure. That caveat no longer applies.
 
 ## How to use the backtest safely today
 
 - **Use the backtest to compare strategies and parameters against each other.** Rule firing, signal counts, win rate, drawdown ordering, sharpe ranking all transfer.
-- **Don't quote backtest PnL as an expected live figure.** It's the right shape; it's not the right magnitude. The contract-size workaround means the magnitudes are in a different unit than live.
-- **Don't backtest a brand-new strategy and immediately wire to live without a paper-mode run.** The MT5Broker can reject orders the backtest happily accepted (rows 3, 8, 12 above).
-- **Treat `qkt backtest` as the pipeline test, not the broker test.** It's correct for what it covers; it does not cover what it doesn't cover.
+- **PnL is now in real dollars** as of Phase 30 — but **still don't expect bit-identical live numbers**. Spread, slippage, latency, and bid/ask fill prices (rows 4–6, 11) still differ. Treat backtest PnL as a defensible estimate, not a tick-perfect prediction.
+- **Don't backtest a brand-new strategy and immediately wire to live without a paper-mode run.** The MT5Broker can reject orders the backtest happily accepted (rows 3, 8 — live closed in Phase 30 but backtest still permissive — and 12).
+- **Treat `qkt backtest` as the pipeline test plus a contract-size-correct PnL test, but not yet a fill-price test.** Closing the fill-price gap is the `MT5BrokerSimulator` work.
 
 ## What would close the gap
 
