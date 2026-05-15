@@ -71,6 +71,12 @@ class TradingPipeline(
     val onCandle: (Candle) -> Unit = {},
     val gate: () -> Boolean = { true },
     val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    /**
+     * Per-instrument venue metadata (Phase 30). Default [NoopInstrumentRegistry] preserves
+     * pre-Phase-30 behavior — strategies using `SIZING RISK $` need a real registry
+     * (wired by [com.qkt.app.LiveSession] for live, by `Backtest.fromStore` for backtest).
+     */
+    val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
@@ -99,6 +105,7 @@ class TradingPipeline(
                     positions = StrategyPositionViewImpl(strategyPositions, strategyId),
                     pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
+                    instruments = instruments,
                 )
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 bus.publish(SignalEvent(sig))

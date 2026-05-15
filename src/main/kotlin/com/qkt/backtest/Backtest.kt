@@ -50,6 +50,7 @@ class Backtest(
     private val symbols: List<String> = emptyList(),
     cadence: SampleCadence? = null,
     private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
+    private val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -161,6 +162,7 @@ class Backtest(
                 },
                 onRejected = { e -> rejections.add(e) },
                 onCandle = {},
+                instruments = instruments,
             )
         pipelineHolder[0] = pipeline
 
@@ -234,6 +236,7 @@ class Backtest(
             candleWindow: TimeWindow? = null,
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
+            instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -245,6 +248,7 @@ class Backtest(
                 candleWindow = candleWindow,
                 cadence = cadence,
                 startingBalance = startingBalance,
+                instruments = instruments,
             )
         }
 
@@ -257,6 +261,7 @@ class Backtest(
             warmupSpec: WarmupSpec = WarmupSpec.None,
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
+            instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
         ): Backtest {
             require(MarketSourceCapability.TICKS in source.capabilities) {
                 "Backtest requires a MarketSource that supports TICKS; ${source.name} has ${source.capabilities}"
@@ -279,6 +284,7 @@ class Backtest(
                 symbols = request.symbols,
                 cadence = cadence,
                 startingBalance = startingBalance,
+                instruments = instruments,
             )
         }
     }

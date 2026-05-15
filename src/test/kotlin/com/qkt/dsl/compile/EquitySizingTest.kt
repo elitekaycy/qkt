@@ -55,7 +55,7 @@ class EquitySizingTest {
     fun `pct of equity divides risked equity by entry price`() {
         val s =
             SizingCompiler(ExprCompiler())
-                .compile(SizePctEquity(NumLit(BigDecimal("0.01"))), stopDistance = null)
+                .compile(SizePctEquity(NumLit(BigDecimal("0.01"))), stopDistance = null, streamAlias = "btc")
         assertThat(s.evaluate(ctx(BigDecimal("10000"), BigDecimal("10000")), entryPrice = BigDecimal("100")))
             .isEqualByComparingTo("1")
     }
@@ -64,16 +64,17 @@ class EquitySizingTest {
     fun `pct of balance divides risked balance by entry price`() {
         val s =
             SizingCompiler(ExprCompiler())
-                .compile(SizePctBalance(NumLit(BigDecimal("0.05"))), stopDistance = null)
+                .compile(SizePctBalance(NumLit(BigDecimal("0.05"))), stopDistance = null, streamAlias = "btc")
         assertThat(s.evaluate(ctx(BigDecimal("10000"), BigDecimal("8000")), entryPrice = BigDecimal("100")))
             .isEqualByComparingTo("4")
     }
 
     @Test
     fun `risk fraction divides risked equity by stop distance`() {
+        // Default test registry uses contractSize = 1 so this degenerates to equity * frac / stopDistance.
         val s =
             SizingCompiler(ExprCompiler())
-                .compile(SizeRiskFrac(NumLit(BigDecimal("0.01"))), stopDistance = BigDecimal("5"))
+                .compile(SizeRiskFrac(NumLit(BigDecimal("0.01"))), stopDistance = BigDecimal("5"), streamAlias = "btc")
         assertThat(s.evaluate(ctx(BigDecimal("10000"), BigDecimal("10000")), entryPrice = BigDecimal("100")))
             .isEqualByComparingTo("20")
     }
@@ -81,7 +82,11 @@ class EquitySizingTest {
     @Test
     fun `risk fraction without stop distance errors at compile time`() {
         assertThatThrownBy {
-            SizingCompiler(ExprCompiler()).compile(SizeRiskFrac(NumLit(BigDecimal("0.01"))), stopDistance = null)
+            SizingCompiler(ExprCompiler()).compile(
+                SizeRiskFrac(NumLit(BigDecimal("0.01"))),
+                stopDistance = null,
+                streamAlias = "btc",
+            )
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 }
