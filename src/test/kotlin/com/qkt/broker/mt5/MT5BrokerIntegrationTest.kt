@@ -166,7 +166,7 @@ class MT5BrokerIntegrationTest {
                 override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
                     val path = request.path.orEmpty()
                     return when {
-                        path.startsWith("/positions") -> {
+                        path.startsWith("/get_positions") -> {
                             if (positionsHasFill) {
                                 MockResponse().setBody(
                                     """[{"ticket":777,"symbol":"EURUSDm","type":0,"volume":"0.1",""" +
@@ -246,7 +246,7 @@ class MT5BrokerIntegrationTest {
                 override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
                     val path = request.path.orEmpty()
                     return when {
-                        path.startsWith("/positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
                         path.startsWith("/orders") -> {
                             if (ordersHasTicket) {
                                 MockResponse().setBody(
@@ -352,7 +352,8 @@ class MT5BrokerIntegrationTest {
         server.takeRequest() // pending poller seed
         server.takeRequest() // POST /order placement
         val modifyRequest = server.takeRequest()
-        assertThat(modifyRequest.path).isEqualTo("/modify-order/555")
+        assertThat(modifyRequest.path).isEqualTo("/orders/555")
+        assertThat(modifyRequest.method).isEqualTo("PUT")
         assertThat(modifyRequest.body.readUtf8()).contains("\"price\":1.1075")
     }
 
@@ -374,7 +375,7 @@ class MT5BrokerIntegrationTest {
                 override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
                     val path = request.path.orEmpty()
                     return when {
-                        path.startsWith("/positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
                         path.startsWith("/orders") -> MockResponse().setBody("[]")
                         path.startsWith("/order") -> {
                             placedBodies.add(request.body.readUtf8())
@@ -488,7 +489,7 @@ class MT5BrokerIntegrationTest {
                 override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
                     val path = request.path.orEmpty()
                     return when {
-                        path.startsWith("/positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
                         path.startsWith("/orders") -> MockResponse().setBody("[]")
                         path.startsWith("/symbol_info/") -> {
                             symbolInfoHits++
