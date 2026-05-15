@@ -541,6 +541,34 @@ class MT5Broker(
         )
     }
 
+    /**
+     * Resolve [InstrumentMeta] for a qkt-side symbol (e.g. `EXNESS:XAUUSD`).
+     *
+     * Reads through the same `/symbol_info` cache that powers v0.26.3 volume quantization
+     * and v0.26.4 price rounding — primes the cache on first call, hits memory after.
+     * Used by [com.qkt.instrument.MT5InstrumentRegistry] so the trading pipeline gets a
+     * consistent meta picture regardless of mode.
+     */
+    fun instrumentMeta(qktSymbol: String): com.qkt.instrument.InstrumentMeta? {
+        val prefix = "${profile.name.uppercase()}:"
+        val bare = qktSymbol.removePrefix(prefix)
+        val brokerSymbol = mt5Symbol.toBroker(bare)
+        val info =
+            symbolMeta[brokerSymbol]
+                ?: client.getSymbolInfo(brokerSymbol)?.also { symbolMeta[brokerSymbol] = it }
+                ?: return null
+        return com.qkt.instrument.InstrumentMeta(
+            qktSymbol = qktSymbol,
+            contractSize = info.contractSize,
+            volumeStep = info.volumeStep,
+            volumeMin = info.volumeMin,
+            volumeMax = null,
+            pointSize = info.point,
+            digits = info.digits,
+            tradeStopsLevelPoints = info.tradeStopsLevel,
+        )
+    }
+
     fun shutdown() {
         poller.stop()
         pendingPoller.stop()

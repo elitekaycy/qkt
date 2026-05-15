@@ -1,0 +1,16 @@
+instruments:
+  - qktSymbol: EXNESS:XAUUSD
+    contractSize: 100
+    volumeStep: 0.01
+    volumeMin: 0.01
+    volumeMax: 200
+    pointSize: 0.001
+    digits: 3
+    tradeStopsLevelPoints: 0
+  - qktSymbol: EXNESS:EURUSD
+    contractSize: 100000
+    volumeStep: 0.01
+    volumeMin: 0.01
+    pointSize: 0.00001
+    digits: 5
+    tradeStopsLevelPoints: 0
