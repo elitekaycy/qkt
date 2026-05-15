@@ -367,6 +367,25 @@ class MT5BrokerIntegrationTest {
     fun `price fields are rounded to profile digits before placement`() {
         // XAUUSD has digits=3. An 8-decimal wire price like 4562.16412345 must hit
         // MT5 as 4562.164 — anything more precise gets retcode=10015 INVALID_PRICE.
+        broker.shutdown()
+        val placedBodies = java.util.concurrent.CopyOnWriteArrayList<String>()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/order") -> {
+                            placedBodies.add(request.body.readUtf8())
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"4562.164","comment":"ok"}}""",
+                            )
+                        }
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
         val xauProfile =
             MT5DefaultProfiles.exness.copy(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
@@ -375,13 +394,7 @@ class MT5BrokerIntegrationTest {
                 pollIntervalMs = 100_000,
                 instrumentOverrides = mapOf("EXNESS:XAUUSD" to TEST_XAUUSD_SPEC),
             )
-        broker.shutdown()
         val xauBroker = MT5Broker(xauProfile, bus, FixedClock(time = 1L))
-        server.enqueue(
-            MockResponse().setBody(
-                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"4562.164","comment":"ok"}}""",
-            ),
-        )
         val bracket =
             OrderRequest.Bracket(
                 id = "br-xau",
@@ -407,10 +420,8 @@ class MT5BrokerIntegrationTest {
             )
         xauBroker.submit(bracket)
         xauBroker.shutdown()
-        server.takeRequest() // state recovery
-        server.takeRequest() // position poller seed
-        server.takeRequest() // pending poller seed
-        val body = server.takeRequest().body.readUtf8()
+        assertThat(placedBodies).hasSize(1)
+        val body = placedBodies[0]
         assertThat(body).contains("\"price\":4562.164")
         assertThat(body).contains("\"sl\":4544.164")
         assertThat(body).contains("\"tp\":4574.164")
