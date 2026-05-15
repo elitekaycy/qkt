@@ -109,6 +109,11 @@ class MT5Client(
             tradeStopsLevel = obj["trade_stops_level"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             volumeMin = obj["volume_min"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             volumeStep = obj["volume_step"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            // Default 1 keeps callers safe if the gateway version doesn't return the field;
+            // for known instruments the venue always populates it (XAUUSD=100, EURUSD=100000).
+            contractSize =
+                obj["trade_contract_size"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull()
+                    ?: BigDecimal.ONE,
         )
     }
 
