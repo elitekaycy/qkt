@@ -208,6 +208,7 @@ class MT5Broker(
             }
         if (quantizedVolume < rules.volumeMin) return null
         val digits = rules.digits.coerceAtLeast(0)
+
         fun roundPrice(p: BigDecimal?): BigDecimal? = p?.setScale(digits, RoundingMode.HALF_EVEN)
         return wire.copy(
             volume = quantizedVolume,
