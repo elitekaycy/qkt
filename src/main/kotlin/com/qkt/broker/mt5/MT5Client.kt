@@ -260,15 +260,21 @@ class MT5Client(
         )
     }
 
+    /**
+     * Parse one pending-order entry. Tolerant of partially-populated transient entries
+     * — the gateway has been observed emitting rows mid-placement that lack a `ticket`
+     * or `price_open` field. Defaulting those preserves the poller across a single bad
+     * snapshot rather than killing the thread and missing all subsequent events.
+     */
     private fun parsePendingOrder(obj: JsonObject): MT5PendingOrder {
         val rawTime = obj["time_setup"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         val rawExp = obj["time_expiration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         return MT5PendingOrder(
-            ticket = obj["ticket"]!!.jsonPrimitive.content.toLong(),
-            symbol = obj["symbol"]!!.jsonPrimitive.content,
-            type = obj["type"]!!.jsonPrimitive.content,
-            volume = obj["volume"]!!.jsonPrimitive.content.toBigDecimal(),
-            priceOpen = obj["price_open"]!!.jsonPrimitive.content.toBigDecimal(),
+            ticket = obj["ticket"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            symbol = obj["symbol"]?.jsonPrimitive?.contentOrNull ?: "",
+            type = obj["type"]?.jsonPrimitive?.contentOrNull ?: "",
+            volume = obj["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            priceOpen = obj["price_open"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             sl = obj["sl"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             tp = obj["tp"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,

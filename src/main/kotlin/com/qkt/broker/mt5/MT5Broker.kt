@@ -134,48 +134,88 @@ class MT5Broker(
     }
 
     /**
-     * Resolve `(volumeStep, volumeMin)` for [brokerSymbol].
+     * Venue-side rules for a symbol — used to quantize wire fields before placement.
+     *
+     * [digits] is the price scale (e.g. `3` for XAUUSD → prices in 0.001 increments).
+     * MT5 rejects orders carrying more decimals than the symbol declares.
+     */
+    private data class VenueRules(
+        val volumeStep: BigDecimal,
+        val volumeMin: BigDecimal,
+        val digits: Int,
+    )
+
+    /**
+     * Resolve [VenueRules] for [brokerSymbol].
      *
      * Lookup order: profile overrides → in-memory cache → `/symbol_info` gateway call
      * (cached on success). Returns `null` when the gateway is unreachable AND no
      * override is configured — callers fall back to pass-through and surface the venue
-     * error if the unrounded volume is rejected.
+     * error if the unrounded order is rejected.
      */
-    private fun resolveVolumeRules(brokerSymbol: String): Pair<BigDecimal, BigDecimal>? {
+    private fun resolveVenueRules(brokerSymbol: String): VenueRules? {
         val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(brokerSymbol)}"
-        profile.instrumentOverrides[qktSymbol]?.let { return it.volumeStep to it.minVolume }
-        symbolMeta[brokerSymbol]?.let { return it.volumeStep to it.volumeMin }
+        profile.instrumentOverrides[qktSymbol]?.let { spec ->
+            return VenueRules(
+                volumeStep = spec.volumeStep,
+                volumeMin = spec.minVolume,
+                digits = spec.digits,
+            )
+        }
+        symbolMeta[brokerSymbol]?.let { info ->
+            return VenueRules(
+                volumeStep = info.volumeStep,
+                volumeMin = info.volumeMin,
+                digits = info.digits,
+            )
+        }
         val fetched =
             runCatching { client.getSymbolInfo(brokerSymbol) }
                 .onFailure { e ->
                     log.warn("MT5Broker ${profile.name} getSymbolInfo($brokerSymbol) failed: ${e.message}")
                 }.getOrNull() ?: return null
         symbolMeta[brokerSymbol] = fetched
-        return fetched.volumeStep to fetched.volumeMin
+        return VenueRules(
+            volumeStep = fetched.volumeStep,
+            volumeMin = fetched.volumeMin,
+            digits = fetched.digits,
+        )
     }
 
     /**
-     * Quantize [wire] to the venue's `volume_step` and check `volume_min`.
+     * Quantize [wire] to the venue's `volume_step` / `digits` before placement.
      *
-     * Returns the quantized wire on success, or `null` when the lot rounds below
-     * `volume_min` (the caller turns that into an [BrokerEvent.OrderRejected]). When
-     * meta is unavailable from both the profile and the gateway, the original wire is
-     * passed through unchanged — the venue's own rejection becomes the surfaced error.
+     * Volume rounds DOWN to `volume_step`; any price field present (`price`, `sl`, `tp`,
+     * `stopLimit`) rounds to `digits` decimals (HALF_EVEN). Returns `null` when the lot
+     * rounds below `volume_min` — the caller turns that into an [BrokerEvent.OrderRejected].
+     * When venue rules are unavailable the original wire is passed through unchanged so
+     * the venue's own rejection becomes the surfaced error.
      */
     private fun quantizeForPlacement(wire: MT5OrderRequest): MT5OrderRequest? {
-        val (step, min) =
-            resolveVolumeRules(wire.symbol) ?: run {
+        val rules =
+            resolveVenueRules(wire.symbol) ?: run {
                 log.warn(
-                    "MT5Broker ${profile.name} no volume rules for ${wire.symbol}; " +
-                        "sending unrounded volume ${wire.volume.toPlainString()}",
+                    "MT5Broker ${profile.name} no venue rules for ${wire.symbol}; " +
+                        "sending unrounded wire (volume=${wire.volume.toPlainString()})",
                 )
                 return wire
             }
-        if (step.signum() <= 0) return wire
-        val multiples = wire.volume.divide(step, 0, RoundingMode.DOWN)
-        val quantized = multiples.multiply(step)
-        if (quantized < min) return null
-        return wire.copy(volume = quantized)
+        val quantizedVolume =
+            if (rules.volumeStep.signum() > 0) {
+                wire.volume.divide(rules.volumeStep, 0, RoundingMode.DOWN).multiply(rules.volumeStep)
+            } else {
+                wire.volume
+            }
+        if (quantizedVolume < rules.volumeMin) return null
+        val digits = rules.digits.coerceAtLeast(0)
+        fun roundPrice(p: BigDecimal?): BigDecimal? = p?.setScale(digits, RoundingMode.HALF_EVEN)
+        return wire.copy(
+            volume = quantizedVolume,
+            price = roundPrice(wire.price),
+            sl = roundPrice(wire.sl),
+            tp = roundPrice(wire.tp),
+            stopLimit = roundPrice(wire.stopLimit),
+        )
     }
 
     private fun submitSingle(
