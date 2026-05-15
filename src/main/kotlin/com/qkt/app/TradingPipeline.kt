@@ -147,10 +147,17 @@ class TradingPipeline(
             positions.reset(e.symbol, e.newQty, e.newAvgPx)
         }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
-            val realized = positions.applyFill(e)
+            // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
+            // the instrument's contractSize here so dollar amounts match what the venue
+            // reports. Default 1 preserves pre-Phase-30 behavior for symbols not in the
+            // registry.
+            val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            val rawRealized = positions.applyFill(e)
+            val realized = rawRealized.multiply(cs)
             pnl.recordRealized(realized)
 
-            val stratRealized = strategyPositions.applyFill(e)
+            val rawStratRealized = strategyPositions.applyFill(e)
+            val stratRealized = rawStratRealized.multiply(cs)
             strategyPnL.recordRealized(e.strategyId, stratRealized)
             riskState.onFill(e.strategyId, stratRealized)
             riskEngine.evaluateHaltRules()
@@ -179,10 +186,13 @@ class TradingPipeline(
                     strategyId = e.strategyId,
                     timestamp = e.timestamp,
                 )
-            val realized = positions.applyFill(asFill)
+            val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            val rawRealized = positions.applyFill(asFill)
+            val realized = rawRealized.multiply(cs)
             pnl.recordRealized(realized)
 
-            val stratRealized = strategyPositions.applyFill(asFill)
+            val rawStratRealized = strategyPositions.applyFill(asFill)
+            val stratRealized = rawStratRealized.multiply(cs)
             strategyPnL.recordRealized(e.strategyId, stratRealized)
             riskState.onFill(e.strategyId, stratRealized)
         }
