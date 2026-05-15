@@ -44,6 +44,7 @@ class MT5BrokerIntegrationTest {
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
                 pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
             )
         broker = MT5Broker(profile, bus, clock)
     }
@@ -192,6 +193,7 @@ class MT5BrokerIntegrationTest {
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
                 pollIntervalMs = 100,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
             )
         val fastBroker = MT5Broker(fastProfile, bus, FixedClock(time = 1_700_000_000_000L))
 
@@ -271,6 +273,7 @@ class MT5BrokerIntegrationTest {
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
                 pollIntervalMs = 100,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
             )
         bus.subscribe<BrokerEvent.OrderCancelled> { e -> captured.add(e) }
         val fastBroker = MT5Broker(fastProfile, bus, FixedClock(time = 1_700_000_000_000L))
@@ -361,6 +364,106 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `volume is quantized down to profile volumeStep before placement`() {
+        // 0.1944... lots at step 0.01 must hit the wire as 0.19 — the pa-quant /
+        // hedge-straddle sizing footgun that crashed live 02:55 / 09:55 placements.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":11,"deal":0,"price":"1.1234","comment":"ok"}}""",
+            ),
+        )
+        val req =
+            OrderRequest.Market(
+                id = "ord-quant",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.19444444"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        broker.submit(req)
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"volume\":0.19")
+        assertThat(body).doesNotContain("0.1944")
+    }
+
+    @Test
+    fun `volume below volumeMin is rejected without HTTP placement`() {
+        val req =
+            OrderRequest.Market(
+                id = "ord-tiny",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.005"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val ack = broker.submit(req)
+        assertThat(ack.accepted).isFalse
+        assertThat(ack.rejectReason).contains("below venue volumeMin")
+        val rejection = captured.filterIsInstance<BrokerEvent.OrderRejected>().firstOrNull { it.clientOrderId == "ord-tiny" }
+        assertThat(rejection).isNotNull
+    }
+
+    @Test
+    fun `gateway symbol_info is fetched and cached when no override is configured`() {
+        // Fresh broker WITHOUT instrumentOverrides so the broker has to call /symbol_info.
+        broker.shutdown()
+        var symbolInfoHits = 0
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/symbol_info/") -> {
+                            symbolInfoHits++
+                            MockResponse().setBody(
+                                """{"ask":1.1,"bid":1.0999,"digits":5,"point":0.00001,""" +
+                                    """"trade_stops_level":0,"volume_min":0.01,"volume_step":0.01}""",
+                            )
+                        }
+                        path.startsWith("/order") ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"1.1","comment":"ok"}}""",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fetchProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+            )
+        val fetchBroker = MT5Broker(fetchProfile, bus, FixedClock(time = 1L))
+        repeat(3) { i ->
+            fetchBroker.submit(
+                OrderRequest.Market(
+                    id = "f-$i",
+                    symbol = "EXNESS:EURUSD",
+                    side = Side.BUY,
+                    quantity = BigDecimal("0.19444"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "s1",
+                ),
+            )
+        }
+        fetchBroker.shutdown()
+        // Three placements but a single /symbol_info fetch — the cache held.
+        assertThat(symbolInfoHits).isEqualTo(1)
+    }
+
+    @Test
     fun `IfTouched is rejected since DSL surface and translator both miss it`() {
         val req =
             OrderRequest.IfTouched(
@@ -377,5 +480,16 @@ class MT5BrokerIntegrationTest {
         val ack = broker.submit(req)
         assertThat(ack.accepted).isFalse
         assertThat(ack.rejectReason).containsIgnoringCase("does not translate")
+    }
+
+    companion object {
+        private val TEST_EURUSD_SPEC =
+            InstrumentSpec(
+                minVolume = BigDecimal("0.01"),
+                volumeStep = BigDecimal("0.01"),
+                pointSize = BigDecimal("0.00001"),
+                digits = 5,
+                tradeStopsLevelPoints = 0,
+            )
     }
 }

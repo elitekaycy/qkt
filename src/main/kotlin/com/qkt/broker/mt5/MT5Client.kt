@@ -92,6 +92,26 @@ class MT5Client(
         return arr.map { parsePendingOrder(it.jsonObject) }
     }
 
+    /**
+     * Fetch the venue's symbol metadata (volume step / min, digits, point, stops level).
+     *
+     * Returns `null` if the gateway doesn't expose the symbol or the call fails — the
+     * caller decides whether to fall back to a configured override or pass-through.
+     */
+    fun getSymbolInfo(brokerSymbol: String): MT5SymbolInfo? {
+        val raw = getWithRetry("$gatewayUrl/symbol_info/$brokerSymbol") ?: return null
+        val obj = json.parseToJsonElement(raw).jsonObject
+        return MT5SymbolInfo(
+            ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            digits = obj["digits"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            point = obj["point"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            tradeStopsLevel = obj["trade_stops_level"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            volumeMin = obj["volume_min"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            volumeStep = obj["volume_step"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+        )
+    }
+
     fun getTick(brokerSymbol: String): MT5Tick? {
         val url = "$gatewayUrl/tick?symbol=$brokerSymbol"
         val raw = getWithRetry(url) ?: return null

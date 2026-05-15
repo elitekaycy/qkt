@@ -9,6 +9,8 @@ import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
@@ -69,6 +71,15 @@ class MT5Broker(
         )
     private val stateRecovery = MT5StateRecovery(client, profile, mt5Symbol, bus)
 
+    /**
+     * Cached venue symbol metadata, keyed by broker symbol (e.g. `"XAUUSDm"`). Populated
+     * lazily on first placement of a symbol via `/symbol_info`; entries never expire
+     * within a broker lifetime — the venue's `volume_step` / `volume_min` don't change
+     * mid-session for spot instruments. [MT5BrokerProfile.instrumentOverrides] takes
+     * precedence over the cache so operators can pin values without the gateway round-trip.
+     */
+    private val symbolMeta: MutableMap<String, MT5SymbolInfo> = ConcurrentHashMap()
+
     /** orderId → MT5 ticket. Populated on pending placement; used by [cancel]. */
     private val pendingTickets: MutableMap<String, Long> = ConcurrentHashMap()
 
@@ -122,11 +133,62 @@ class MT5Broker(
         }
     }
 
+    /**
+     * Resolve `(volumeStep, volumeMin)` for [brokerSymbol].
+     *
+     * Lookup order: profile overrides → in-memory cache → `/symbol_info` gateway call
+     * (cached on success). Returns `null` when the gateway is unreachable AND no
+     * override is configured — callers fall back to pass-through and surface the venue
+     * error if the unrounded volume is rejected.
+     */
+    private fun resolveVolumeRules(brokerSymbol: String): Pair<BigDecimal, BigDecimal>? {
+        val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(brokerSymbol)}"
+        profile.instrumentOverrides[qktSymbol]?.let { return it.volumeStep to it.minVolume }
+        symbolMeta[brokerSymbol]?.let { return it.volumeStep to it.volumeMin }
+        val fetched =
+            runCatching { client.getSymbolInfo(brokerSymbol) }
+                .onFailure { e ->
+                    log.warn("MT5Broker ${profile.name} getSymbolInfo($brokerSymbol) failed: ${e.message}")
+                }.getOrNull() ?: return null
+        symbolMeta[brokerSymbol] = fetched
+        return fetched.volumeStep to fetched.volumeMin
+    }
+
+    /**
+     * Quantize [wire] to the venue's `volume_step` and check `volume_min`.
+     *
+     * Returns the quantized wire on success, or `null` when the lot rounds below
+     * `volume_min` (the caller turns that into an [BrokerEvent.OrderRejected]). When
+     * meta is unavailable from both the profile and the gateway, the original wire is
+     * passed through unchanged — the venue's own rejection becomes the surfaced error.
+     */
+    private fun quantizeForPlacement(wire: MT5OrderRequest): MT5OrderRequest? {
+        val (step, min) =
+            resolveVolumeRules(wire.symbol) ?: run {
+                log.warn(
+                    "MT5Broker ${profile.name} no volume rules for ${wire.symbol}; " +
+                        "sending unrounded volume ${wire.volume.toPlainString()}",
+                )
+                return wire
+            }
+        if (step.signum() <= 0) return wire
+        val multiples = wire.volume.divide(step, 0, RoundingMode.DOWN)
+        val quantized = multiples.multiply(step)
+        if (quantized < min) return null
+        return wire.copy(volume = quantized)
+    }
+
     private fun submitSingle(
         request: OrderRequest,
         wire: MT5OrderRequest,
     ): SubmitAck {
-        val resp = client.placeOrder(wire)
+        val prepared =
+            quantizeForPlacement(wire)
+                ?: return reject(
+                    request,
+                    "quantized volume below venue volumeMin for ${wire.symbol} (input=${wire.volume.toPlainString()})",
+                )
+        val resp = client.placeOrder(prepared)
         if (!isOrderSuccessful(resp.result.retcode)) {
             return reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
         }
@@ -185,10 +247,21 @@ class MT5Broker(
         request: OrderRequest,
         composite: MT5Translation.Composite,
     ): SubmitAck {
+        // Quantize both legs up-front so the OCO is atomic — if either rounds below
+        // volumeMin we reject the whole composite rather than placing a one-legged OCO.
+        val prepared =
+            composite.requests.map { wire ->
+                quantizeForPlacement(wire)
+                    ?: return reject(
+                        request,
+                        "OCO leg ${wire.comment}: quantized volume below venue volumeMin " +
+                            "for ${wire.symbol} (input=${wire.volume.toPlainString()})",
+                    )
+            }
         // Submit each leg; if any leg rejects, the OCO group is degraded.
         // The OrderManager already tracks sibling relationships in `siblings[]`.
         val firstBrokerId =
-            composite.requests
+            prepared
                 .mapIndexed { _, wire ->
                     val resp = client.placeOrder(wire)
                     if (!isOrderSuccessful(resp.result.retcode)) {
