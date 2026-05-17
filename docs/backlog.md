@@ -92,6 +92,135 @@ Status legend:
 
 ---
 
+## Post-v0.28 backlog — ranked easy → hard
+
+Captured 2026-05-17 during the prod-readiness audit. The current focus is **getting
+hedge-straddle running cleanly on Dokploy in demo, then real money**. Everything below is
+either supportive of that focus or queued for after.
+
+### Tier 0 — current focus
+
+- `progress` — Observe hedge-straddle on prod for 1 week before flipping the broker
+  login from demo to real. Items needed to call this complete:
+  - 19:55 UTC verification fires correctly (Phase 30 contractSize math + v0.26.6 OCO fix
+    proven under live conditions).
+  - 1 week of placement windows complete without engine-side errors.
+  - Daily PnL roughly matches manually-computed expectation.
+
+### Tier 1 — staged, awaiting decision (minutes to ship)
+
+Already committed to a branch, not merged. Pick up when the next release window opens.
+
+- `progress` — Gate Bybit market-source routes on `BYBIT_API_KEY` env presence so
+  pure-MT5 deployments don't construct two idle `OkHttpClient` instances at boot. Branch:
+  [`lazy-bybit-routes`](https://github.com/elitekaycy/qkt/tree/lazy-bybit-routes) (commit
+  `6591d7e`). Tested. Decide whether worth a v0.28.3 cycle or batch with later work.
+
+### Tier 2 — operational / config (small, no engine code)
+
+- `tbd` — Wire Telegram alerts in qkt-prod: bot, chat id, `TELEGRAM_ENABLED=true`. Phase
+  31 infrastructure already shipped + dormant; flipping the env vars is the only step.
+- `tbd` — Docker daemon json-file log rotation for the qkt service in `qkt-prod`
+  `compose.yml` (`logging.driver: json-file` with `max-size` + `max-file`). Separate from
+  logback's bind-mount rotation (already done in v0.28.1).
+- `tbd` — Backup story for `qkt-prod/state/`. State persists across container restarts
+  via bind mount; not backed up off-host. If the VPS disk dies mid-trade, reconciliation
+  works only if the broker still has the positions. Document a backup cadence.
+
+### Tier 3 — Phase 31.1 (telegram alerts completion, hours)
+
+Items I deferred when shipping Phase 31. Documented in
+[`docs/phases/phase-31-telegram-alerts.md`](phases/phase-31-telegram-alerts.md) under
+"Known limitations".
+
+- `tbd` — Wire `BrokerEvent.OrderRejected` to the notifier via an `OrderManager`
+  correlation map so the message can include symbol/side/quantity (currently configurable
+  but silently no-ops).
+- `tbd` — Fire `NotificationEvent.DaemonStarted` from `DaemonCommand` at daemon boot
+  (currently defined but never fired).
+- `tbd` — Source a strategy-level `StrategyError` event — needs an `error` event on the
+  bus that strategy adapters emit on init/load failure.
+- `tbd` — Daily-rolling tracker for `equityDeltaPct`, `tradesToday`, `haltsToday` so the
+  daily summary stops rendering placeholder zeros.
+- `tbd` — Consolidate to one `DailySummaryScheduler` per daemon instead of one per
+  `LiveSession`, so multi-strategy operators get one summary message at the UTC tick
+  instead of N.
+
+### Tier 4 — Single-phase engine work (~1-3 days each)
+
+Ranked by leverage for FX/commodities quant research, highest first.
+
+- `tbd` — **Phase 32 — bid/ask tick model**. Add `bid: BigDecimal?` and `ask: BigDecimal?`
+  to `Tick`. Wire from `Mt5TickFeedSource` (the gateway already returns them in
+  `/symbol_info_tick/{sym}`). Expose in DSL via `gold.bid` / `gold.ask` / `gold.spread`.
+  Closes GAP 3 from hedge-straddle and unlocks spread-gated strategies + true pairs
+  trading. **Highest leverage for the cross-strategy / arbitrage research direction.**
+- `tbd` — **Phase 33 — `MT5BrokerSimulator`** for backtest fidelity. Closes the 5
+  remaining backtest-vs-live divergences documented in
+  [`docs/parity/backtest-vs-live.md`](parity/backtest-vs-live.md) (rows 1, 2, 3, 4-6).
+  Turns "backtest result is directional only" into "backtest matches live within
+  spread/slippage budget".
+- `tbd` — **Phase 34 — second-broker proof of life**. Add a second MT5 profile (e.g.
+  ICMARKETS) to qkt-prod, deploy a trivial no-op strategy on it, observe both run on the
+  same daemon. Proves multi-broker routing in production. Engine code already supports;
+  this is mostly config + ops.
+- `tbd` — **Phase 35 — bar-level synchronized publish for paired symbols**. Two symbols
+  you're spread-trading currently arrive on the bus in arbitrary order with arbitrary
+  skew. A `SynchronizedCandleHub` would emit two-symbol bar events at session boundaries.
+  Required for tight pairs trading.
+
+### Tier 5 — Hedge-straddle parity gaps (Phase 36+, ~1 day each)
+
+Strategy-side gaps documented in the strategy header. Each is a DSL/engine primitive
+addition. None block deploy — they keep hedge-straddle from being bit-identical to
+pa-quant.
+
+- `tbd` — **Phase 36 — armed trailing stop** (`STOP LOSS TRAIL <distance> AFTER MFE >=
+  <threshold>`). Closes hedge-straddle GAP 1. ~14% of pa-quant exits use the trail.
+- `tbd` — **Phase 37 — proportional stack sizing** (`STACK_AT SIZING <expr>` instead of
+  literal). Closes GAP 2 — stacks would scale with the main leg's hour-varying size.
+- `tbd` — **Phase 38 — GTD time-in-force** for pending orders. Closes GAP 5 — the `:10`
+  sweep rule workaround goes away.
+- `tbd` — **Phase 39 — `INSTRUMENT_META` DSL accessor**. Expose `gold.tick_size`,
+  `gold.contract_size`, etc. so strategies can introspect the instrument they trade.
+  Minor but useful for portable strategies.
+
+### Tier 6 — Asset-class expansion (multi-phase)
+
+- `tbd` — **Crypto exercised end-to-end on Bybit.** Code paths exist (`BybitSpotBroker`,
+  `BybitLinearBroker`, market sources). Never run in qkt-prod. First Bybit strategy will
+  find latent bugs.
+- `tbd` — **Equity / stocks broker adapter.** No equity broker exists. Needs new broker
+  like `MT5Broker` (Interactive Brokers / Alpaca / TradeStation) plus stock-specific
+  concepts: corporate actions, dividend adjustment, pre/post-market sessions, halts.
+  Substantial — multi-phase work.
+- `tbd` — **Futures broker adapter** (e.g. Tradovate, IBKR futures). Similar scope to
+  equities — distinct order types, session calendars, expiry roll logic.
+
+### Tier 7 — DSL surface expansion (as needed)
+
+The DSL has 28+ phases of primitives but most are exercised only by hedge-straddle. The
+following are likely to surface as the second/third strategy gets written:
+
+- `tbd` — Cross-strategy state sharing (one strategy reads another's positions or
+  equity). Currently strategies are isolated via `StrategyPositionTracker` namespacing;
+  cross-reads would need an explicit query primitive.
+- `tbd` — Symbol watch dynamic extension (already in the **Future** section above).
+- `tbd` — DSL action: `SCHEDULE` for time-of-day non-tick-driven actions (currently
+  done via `WHEN NOW.minute_utc = N`, which works but is awkward).
+
+### Tier 8 — Platform maturity (post-research-platform)
+
+- `tbd` — Inbound Telegram bot commands (`/status`, `/halt`, `/resume` from phone) —
+  needs long-polling or webhook receiver.
+- `tbd` — HTTP `/metrics` endpoint (Prometheus-compatible) for `NotifierMetrics` +
+  engine internals.
+- `tbd` — Multi-host deployment (active-passive failover for the qkt daemon).
+- `tbd` — `qkt research` REPL — interactive strategy authoring with live tick replay
+  against historical data.
+
+---
+
 ## How to maintain this file
 
 - Update the status marker in place (`done` ↔ `progress` ↔ `tbd`).
