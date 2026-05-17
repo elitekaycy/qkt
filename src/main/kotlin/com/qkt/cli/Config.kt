@@ -93,6 +93,29 @@ data class Config(
          */
         val DEFAULT_MAX_DAILY_LOSS: BigDecimal = BigDecimal("1000")
 
+        /**
+         * Standard locations qkt commands look for `qkt.config.yaml` when no explicit
+         * `--config` is passed. Order is meaningful:
+         *  1. `./qkt.config.yaml` — local-dev convenience, matches the historical hard-coded default.
+         *  2. `/etc/qkt/qkt.config.yaml` — the container-standard location (the qkt-prod compose
+         *     image mounts the operator's config here).
+         *  3. `~/.qkt/qkt.config.yaml` — per-user config for non-container deployments.
+         */
+        fun defaultSearchPaths(): List<Path> =
+            listOf(
+                Path.of("./qkt.config.yaml"),
+                Path.of("/etc/qkt/qkt.config.yaml"),
+                Path.of(System.getProperty("user.home") + "/.qkt/qkt.config.yaml"),
+            )
+
+        /**
+         * Return the first existing file from [searchPaths], or null if none exist.
+         * One-shot CLI commands that need a real config (brokers, audit-ticks) call this
+         * and fail loud on null. The daemon and run commands tolerate a missing config and
+         * fall back to defaults via [load].
+         */
+        fun locate(searchPaths: List<Path> = defaultSearchPaths()): Path? = searchPaths.firstOrNull { Files.exists(it) }
+
         // Matches `${NAME}` and `${NAME:-default}`. The default is used when the env
         // var / system property is unset; without it, the literal `${...}` stays in the
         // string and broker init logs a degraded-config warning.
