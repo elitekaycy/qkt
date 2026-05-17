@@ -245,7 +245,7 @@ class ActionCompiler(
 
         // Resolve a static stop distance for risk-based sizing, if possible
         val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
-        val compiledSize = sizingCompiler.compile(sizing, staticStopDistance)
+        val compiledSize = sizingCompiler.compile(sizing, staticStopDistance, stream)
 
         val compiledSL = opts.bracket?.stopLoss?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
         val compiledTP = opts.bracket?.takeProfit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
@@ -375,7 +375,7 @@ class ActionCompiler(
         // StackSpacing, but compiling per-layer is cheap and avoids sharing mutable state).
         val compiledSizes =
             plan.layers.map { layer ->
-                sizingCompiler.compile(layer.sizing, staticStopDistance)
+                sizingCompiler.compile(layer.sizing, staticStopDistance, stream)
             }
 
         return { ctx ->

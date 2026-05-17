@@ -24,6 +24,7 @@ class SizingCompiler(
     fun compile(
         sizing: SizingAst,
         stopDistance: BigDecimal?,
+        streamAlias: String,
     ): CompiledSize =
         when (sizing) {
             is SizeQty -> {
@@ -44,7 +45,14 @@ class SizingCompiler(
                 val e = exprCompiler.compile(sizing.usd)
                 CompiledSize { ec, _ ->
                     val amount = (e.evaluate(ec) as Value.Num).v
-                    amount.divide(stopDistance, Money.CONTEXT)
+                    val qktSymbol =
+                        ec.streams[streamAlias]?.qktSymbol
+                            ?: error("Unknown stream alias: $streamAlias")
+                    val cs =
+                        ec.strategyContext.instruments
+                            .require(qktSymbol)
+                            .contractSize
+                    amount.divide(stopDistance.multiply(cs, Money.CONTEXT), Money.CONTEXT)
                 }
             }
             is SizePositionFull -> {
@@ -83,7 +91,16 @@ class SizingCompiler(
                 CompiledSize { ec, _ ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val equity = ec.strategyContext.pnl.equity()
-                    equity.multiply(frac, Money.CONTEXT).divide(stopDistance, Money.CONTEXT)
+                    val qktSymbol =
+                        ec.streams[streamAlias]?.qktSymbol
+                            ?: error("Unknown stream alias: $streamAlias")
+                    val cs =
+                        ec.strategyContext.instruments
+                            .require(qktSymbol)
+                            .contractSize
+                    equity
+                        .multiply(frac, Money.CONTEXT)
+                        .divide(stopDistance.multiply(cs, Money.CONTEXT), Money.CONTEXT)
                 }
             }
         }

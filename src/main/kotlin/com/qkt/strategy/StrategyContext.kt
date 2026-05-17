@@ -2,6 +2,8 @@ package com.qkt.strategy
 
 import com.qkt.common.Clock
 import com.qkt.common.TradingCalendar
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.positions.StrategyPositionView
@@ -24,4 +26,13 @@ data class StrategyContext(
     val positions: StrategyPositionView,
     val pnl: StrategyPnLView,
     val risk: RiskView,
+    /**
+     * Per-instrument venue metadata (contract size, lot/price steps, stops level). Phase 30.
+     *
+     * Default [NoopInstrumentRegistry] returns null for every lookup — test code that
+     * doesn't exercise `SIZING RISK`-style sizing or contract-size-aware PnL math can
+     * keep ignoring this field. Production strategy loads wire a real registry
+     * (`MT5InstrumentRegistry` live; `YamlInstrumentRegistry` backtest).
+     */
+    val instruments: InstrumentRegistry = NoopInstrumentRegistry,
 )

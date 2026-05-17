@@ -176,8 +176,21 @@ class MT5ClientTest {
         assertThat(info.volumeMin).isEqualByComparingTo("0.01")
         assertThat(info.point).isEqualByComparingTo("0.001")
         assertThat(info.digits).isEqualTo(3)
+        assertThat(info.contractSize).isEqualByComparingTo("100")
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/symbol_info/XAUUSDm")
+    }
+
+    @Test
+    fun `getSymbolInfo defaults contractSize to 1 when missing`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ask":1.1,"bid":1.0999,"digits":5,"point":0.00001,""" +
+                    """"trade_stops_level":0,"volume_min":0.01,"volume_step":0.01}""",
+            ),
+        )
+        val info = client.getSymbolInfo("FOO")!!
+        assertThat(info.contractSize).isEqualByComparingTo("1")
     }
 
     @Test

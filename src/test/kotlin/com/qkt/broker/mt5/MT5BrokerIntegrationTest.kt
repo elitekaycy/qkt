@@ -590,6 +590,61 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `bracket with SL too close to entry is rejected pre-placement`() {
+        // Configure an override with tradeStopsLevelPoints=100 and pointSize=0.001.
+        // Min SL distance: 100 × 0.001 = 0.1.
+        // Entry 4561.000, SL 4560.95 → distance 0.05 → reject.
+        broker.shutdown()
+        val tightProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides =
+                    mapOf(
+                        "EXNESS:XAUUSD" to
+                            InstrumentSpec(
+                                minVolume = BigDecimal("0.01"),
+                                volumeStep = BigDecimal("0.01"),
+                                pointSize = BigDecimal("0.001"),
+                                digits = 3,
+                                tradeStopsLevelPoints = 100,
+                            ),
+                    ),
+            )
+        val tightBroker = MT5Broker(tightProfile, bus, FixedClock(time = 1L))
+        val entry =
+            OrderRequest.Stop(
+                id = "ent",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                stopPrice = BigDecimal("4561.000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br-tight",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                entry = entry,
+                takeProfit = BigDecimal("4561.500"),
+                stopLoss = BigDecimal("4560.950"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val ack = tightBroker.submit(bracket)
+        tightBroker.shutdown()
+        assertThat(ack.accepted).isFalse
+        assertThat(ack.rejectReason).contains("sl too close to entry")
+    }
+
+    @Test
     fun `gateway symbol_info is fetched and cached when no override is configured`() {
         // Fresh broker WITHOUT instrumentOverrides so the broker has to call /symbol_info.
         broker.shutdown()
