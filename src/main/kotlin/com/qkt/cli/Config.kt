@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.notify.NotifyConfig
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -37,6 +38,12 @@ data class Config(
      *     Default: `~/.qkt/state`.
      */
     val state: Map<String, String> = emptyMap(),
+    /**
+     * Telegram alerts (Phase 31). Defaults to [NotifyConfig.DISABLED]. Operators flip
+     * `notify.telegram.enabled` to `true` and provide bot_token + chat_id to receive
+     * critical-event and daily-summary messages on a Telegram chat.
+     */
+    val notify: NotifyConfig = NotifyConfig.DISABLED,
 ) {
     /**
      * Effective `max_daily_loss` from [risk], or [DEFAULT_MAX_DAILY_LOSS]. Operators set
@@ -113,6 +120,7 @@ data class Config(
                 brokers = parseNested(map["brokers"]),
                 risk = parseFlat(map["risk"]),
                 state = parseFlat(map["state"]),
+                notify = NotifyConfig.parse(map["notify"]),
             )
         }
 
