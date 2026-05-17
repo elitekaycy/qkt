@@ -1,6 +1,8 @@
 package com.qkt.pnl
 
 import com.qkt.common.Money
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
@@ -9,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 class StrategyPnL(
     private val strategyPositions: StrategyPositionTracker,
     private val prices: MarketPriceProvider,
+    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
 ) {
     private val realizedByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
     private val startingBalanceByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
@@ -40,9 +43,11 @@ class StrategyPnL(
     ): BigDecimal {
         val pos = strategyPositions.positionFor(strategyId, symbol) ?: return Money.ZERO
         val price = prices.lastPrice(symbol) ?: return Money.ZERO
+        val cs = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
         return price
             .subtract(pos.avgEntryPrice)
             .multiply(pos.quantity)
+            .multiply(cs)
             .setScale(Money.SCALE, Money.ROUNDING)
     }
 
