@@ -32,14 +32,20 @@ class MessageTemplateTest {
 
     @Test
     fun `Halted global renders global tag`() {
-        val out = MessageTemplate.format(NotificationEvent.Halted(strategyId = null, reason = "MaxDrawdown 12.3% > 10.0%", timestamp = ts))
+        val out =
+            MessageTemplate.format(
+                NotificationEvent.Halted(strategyId = null, reason = "MaxDrawdown 12.3% > 10.0%", timestamp = ts),
+            )
         assertThat(out).contains("[CRITICAL] qkt HALTED (global)")
         assertThat(out).contains("reason: MaxDrawdown 12.3% > 10.0%")
     }
 
     @Test
     fun `Halted per-strategy renders strategyId`() {
-        val out = MessageTemplate.format(NotificationEvent.Halted(strategyId = "hedge-straddle", reason = "daily loss", timestamp = ts))
+        val out =
+            MessageTemplate.format(
+                NotificationEvent.Halted(strategyId = "hedge-straddle", reason = "daily loss", timestamp = ts),
+            )
         assertThat(out).contains("[CRITICAL] qkt HALTED hedge-straddle")
     }
 
@@ -79,7 +85,10 @@ class MessageTemplateTest {
 
     @Test
     fun `DaemonStarted renders version and strategy list`() {
-        val out = MessageTemplate.format(NotificationEvent.DaemonStarted("0.27.0", listOf("hedge-straddle", "test"), ts))
+        val out =
+            MessageTemplate.format(
+                NotificationEvent.DaemonStarted("0.27.0", listOf("hedge-straddle", "test"), ts),
+            )
         assertThat(out).contains("[INFO] qkt 0.27.0 started")
         assertThat(out).contains("strategies: hedge-straddle, test")
     }

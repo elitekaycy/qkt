@@ -2,7 +2,9 @@ package com.qkt.notify
 
 import org.slf4j.LoggerFactory
 
-enum class NotifyEventKind(val configName: String) {
+enum class NotifyEventKind(
+    val configName: String,
+) {
     ORDER_REJECTED("order_rejected"),
     HALTED("halted"),
     RESUMED("resumed"),
@@ -58,8 +60,7 @@ data class NotifyConfig(
                         NotifyEventKind.BY_NAME[name].also {
                             if (it == null) log.warn("[notify] unknown event in config: {}", name)
                         }
-                    }
-                    ?.toSet()
+                    }?.toSet()
                     ?: emptySet()
             return NotifyConfig(
                 telegram =

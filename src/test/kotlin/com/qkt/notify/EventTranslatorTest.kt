@@ -35,14 +35,20 @@ class EventTranslatorTest {
 
     @Test
     fun `RiskEvent Halted maps strategyId and reason`() {
-        val out = EventTranslator.fromRiskHalted(RiskEvent.Halted(reason = "MaxDailyLoss", strategyId = "x", timestamp = 2L))
+        val out =
+            EventTranslator.fromRiskHalted(
+                RiskEvent.Halted(reason = "MaxDailyLoss", strategyId = "x", timestamp = 2L),
+            )
         assertThat(out.strategyId).isEqualTo("x")
         assertThat(out.reason).isEqualTo("MaxDailyLoss")
     }
 
     @Test
     fun `RiskEvent Halted with null strategyId becomes global Halted`() {
-        val out = EventTranslator.fromRiskHalted(RiskEvent.Halted(reason = "MaxDrawdown", strategyId = null, timestamp = 2L))
+        val out =
+            EventTranslator.fromRiskHalted(
+                RiskEvent.Halted(reason = "MaxDrawdown", strategyId = null, timestamp = 2L),
+            )
         assertThat(out.strategyId).isNull()
         assertThat(out.reason).isEqualTo("MaxDrawdown")
     }

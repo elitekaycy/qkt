@@ -86,7 +86,9 @@ object MessageTemplate {
                     append("$tag qkt daily summary ${event.asOfUtc}\n")
                     for (s in event.strategies) {
                         append("${s.strategyId}:\n")
-                        append("  equity: \$${s.equity.toPlainString()} (${s.equityDeltaPct.toPlainString()}% from yesterday)\n")
+                        append(
+                            "  equity: \$${s.equity.toPlainString()} (${s.equityDeltaPct.toPlainString()}% from yesterday)\n",
+                        )
                         append("  realized today: ${signed(s.realizedToday)}\n")
                         append("  unrealized: ${signed(s.unrealized)}\n")
                         append("  trades: ${s.tradesToday}\n")
