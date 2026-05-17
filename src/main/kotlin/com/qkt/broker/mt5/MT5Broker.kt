@@ -62,11 +62,18 @@ class MT5Broker(
             onPositionOpened = ::onPendingPositionOpened,
             closedTicketMeta = ::lookupClosedTicketMeta,
             priceProvider = priceTracker,
+            calendar =
+                com.qkt.common.TradingCalendar
+                    .fxDefault(),
         )
     private val pendingPoller =
         MT5PendingOrderPoller(
-            client,
-            profile,
+            client = client,
+            profile = profile,
+            clock = clock,
+            calendar =
+                com.qkt.common.TradingCalendar
+                    .fxDefault(),
             onPendingDisappeared = ::onPendingDisappeared,
         )
     private val stateRecovery = MT5StateRecovery(client, profile, mt5Symbol, bus)

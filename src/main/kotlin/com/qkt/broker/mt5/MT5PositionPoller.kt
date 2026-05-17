@@ -3,8 +3,10 @@ package com.qkt.broker.mt5
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
+import com.qkt.common.TradingCalendar
 import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceProvider
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
@@ -44,6 +46,12 @@ class MT5PositionPoller(
      * closest proxy available without a separate deal-history API call.
      */
     private val priceProvider: MarketPriceProvider? = null,
+    /**
+     * Session gate: when non-null, [tick] skips the venue HTTP call whenever the
+     * calendar reports out-of-session. Null keeps the legacy always-on behavior.
+     * Wired by [MT5Broker] to [TradingCalendar.fxDefault] for FX/metals deployments.
+     */
+    private val calendar: TradingCalendar? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PositionPoller::class.java)
     private val running = AtomicBoolean(false)
@@ -81,6 +89,9 @@ class MT5PositionPoller(
     }
 
     internal fun tick() {
+        if (calendar != null && !calendar.isInSession("", Instant.ofEpochMilli(clock.now()))) {
+            return
+        }
         val current = client.getPositions(magic = profile.magic).associateBy { it.ticket }
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
