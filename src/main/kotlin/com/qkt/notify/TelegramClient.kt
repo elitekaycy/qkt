@@ -28,15 +28,24 @@ class TelegramClient(
     sealed interface Outcome {
         object Ok : Outcome
 
-        data class RateLimited(val retryAfterMs: Long) : Outcome
+        data class RateLimited(
+            val retryAfterMs: Long,
+        ) : Outcome
 
-        data class TransientError(val code: Int) : Outcome
+        data class TransientError(
+            val code: Int,
+        ) : Outcome
 
         object AuthFailed : Outcome
 
-        data class BadRequest(val code: Int, val body: String) : Outcome
+        data class BadRequest(
+            val code: Int,
+            val body: String,
+        ) : Outcome
 
-        data class NetworkError(val message: String) : Outcome
+        data class NetworkError(
+            val message: String,
+        ) : Outcome
     }
 
     fun send(text: String): Outcome {
@@ -67,7 +76,8 @@ class TelegramClient(
     }
 
     private fun escape(s: String): String =
-        s.replace("\\", "\\\\")
+        s
+            .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
