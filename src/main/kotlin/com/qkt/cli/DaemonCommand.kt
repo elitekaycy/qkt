@@ -78,7 +78,7 @@ class DaemonCommand(
             }
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
-            sourceFactory ?: MarketSourceFactory.composite(mt5Profiles)
+            sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source)
 
         val statePersistor = cfg.statePersistor()
         val registry =
