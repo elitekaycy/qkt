@@ -22,7 +22,17 @@ class BrokersCommand(
     private fun list(): Int {
         val configPath =
             args.option("config")?.let { Path.of(it) }
-                ?: Path.of("./qkt.config.yaml")
+                ?: Config.locate()
+                ?: run {
+                    System.err.println(
+                        "qkt: no qkt.config.yaml found in any of " +
+                            Config
+                                .defaultSearchPaths()
+                                .joinToString(", "),
+                    )
+                    System.err.println("qkt: pass --config <path> or place the file at one of the above locations")
+                    return ExitCodes.USER_ERROR
+                }
         val config = Config.load(configPath)
         val profiles =
             try {
