@@ -8,6 +8,7 @@ local.properties
 out/
 tt.txt
 help.txt
+pwd.txt
 hs_err_pid*.log
 replay_pid*.log
 .claude/scheduled_tasks.lock
