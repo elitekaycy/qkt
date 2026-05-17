@@ -216,7 +216,10 @@ class LiveSession(
     }
 
     /**
-     * Subscribe notifier handlers for the bus-driven event kinds in [notifyEvents].
+     * Subscribe notifier handlers for the bus-driven event kinds in [notifyEvents]. Must be
+     * called after [bus] is constructed and before any publish — handlers registered after a
+     * publish miss that event silently.
+     *
      * Each handler is wrapped in [runCatching] so a notifier fault never propagates back into
      * the bus dispatch loop, whose semantics prevent later handlers from running if any handler
      * throws.
@@ -227,11 +230,7 @@ class LiveSession(
      *  - [NotificationEvent.DaemonStarted] / [NotificationEvent.StrategyError] — daemon-level
      *    concerns, not LiveSession-internal.
      */
-    private fun wireNotifierSubscriptions(
-        bus: EventBus,
-        strategyPnL: StrategyPnL,
-        @Suppress("UNUSED_PARAMETER") strategyPositions: StrategyPositionTracker,
-    ) {
+    private fun wireNotifierSubscriptions(bus: EventBus) {
         if (NotifyEventKind.HALTED in notifyEvents) {
             bus.subscribe<RiskEvent.Halted> { ev ->
                 runCatching { notifier.notify(EventTranslator.fromRiskHalted(ev)) }
@@ -367,7 +366,10 @@ class LiveSession(
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
 
-        wireNotifierSubscriptions(bus, strategyPnL, strategyPositions)
+        // Register notifier handlers before the warmup phase so a warmup-time risk halt
+        // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
+        // so any publish that happens after this line will see the new subscribers.
+        wireNotifierSubscriptions(bus)
         val dailyScheduler = buildDailySummaryScheduler(strategyPnL, strategyPositions)
 
         val now = Instant.ofEpochMilli(clock.now())

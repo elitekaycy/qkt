@@ -60,7 +60,7 @@ class NotifyConfigTest {
     }
 
     @Test
-    fun `parse defaults queue_capacity and daily_summary_utc when missing`() {
+    fun `parse defaults queue_capacity to 100 and disables daily_summary_utc when missing`() {
         val c =
             NotifyConfig.parse(
                 mapOf(
@@ -68,6 +68,8 @@ class NotifyConfigTest {
                 ),
             )
         assertThat(c.telegram.queueCapacity).isEqualTo(100)
-        assertThat(c.telegram.dailySummaryUtc).isEqualTo("00:00")
+        // Empty dailySummaryUtc disables the scheduler — operators must explicitly opt in by
+        // setting daily_summary_utc to a "HH:MM" value in qkt.config.yaml.
+        assertThat(c.telegram.dailySummaryUtc).isEmpty()
     }
 }
