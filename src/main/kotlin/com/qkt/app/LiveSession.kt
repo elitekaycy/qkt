@@ -11,6 +11,8 @@ import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
+import com.qkt.events.BrokerEvent
+import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
@@ -18,6 +20,13 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.notify.DailySummaryScheduler
+import com.qkt.notify.EventTranslator
+import com.qkt.notify.NoopNotifier
+import com.qkt.notify.NotificationEvent
+import com.qkt.notify.Notifier
+import com.qkt.notify.NotifyEventKind
+import com.qkt.notify.StrategySummary
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionTracker
@@ -78,6 +87,16 @@ class LiveSession(
      * CLI flag).
      */
     private val ignoreMismatches: Boolean = false,
+    /**
+     * Phase 31 — Telegram alert sink. Default [NoopNotifier] keeps existing call sites and
+     * tests unaffected. Production daemons construct a single [com.qkt.notify.TelegramNotifier]
+     * from [com.qkt.cli.Config.notify] and pass the same instance to every session.
+     */
+    private val notifier: Notifier = NoopNotifier,
+    /** Opt-in event list — empty disables every subscription, even if a real notifier is present. */
+    private val notifyEvents: Set<NotifyEventKind> = emptySet(),
+    /** Empty disables the daily-summary scheduler; otherwise `HH:MM` UTC. */
+    private val dailySummaryUtc: String = "",
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -196,6 +215,97 @@ class LiveSession(
         }
     }
 
+    /**
+     * Subscribe notifier handlers for the bus-driven event kinds in [notifyEvents]. Must be
+     * called after [bus] is constructed and before any publish — handlers registered after a
+     * publish miss that event silently.
+     *
+     * Each handler is wrapped in [runCatching] so a notifier fault never propagates back into
+     * the bus dispatch loop, whose semantics prevent later handlers from running if any handler
+     * throws.
+     *
+     * Not wired in this commit (deferred to Phase 31.1):
+     *  - [BrokerEvent.OrderRejected] — needs an OrderManager correlation hook to recover
+     *    the originating symbol/side/quantity.
+     *  - [NotificationEvent.DaemonStarted] / [NotificationEvent.StrategyError] — daemon-level
+     *    concerns, not LiveSession-internal.
+     */
+    private fun wireNotifierSubscriptions(bus: EventBus) {
+        if (NotifyEventKind.HALTED in notifyEvents) {
+            bus.subscribe<RiskEvent.Halted> { ev ->
+                runCatching { notifier.notify(EventTranslator.fromRiskHalted(ev)) }
+                    .onFailure { t -> log.warn("[notify] handler failed for Halted", t) }
+            }
+        }
+        if (NotifyEventKind.RESUMED in notifyEvents) {
+            bus.subscribe<RiskEvent.Resumed> { ev ->
+                runCatching { notifier.notify(EventTranslator.fromRiskResumed(ev)) }
+                    .onFailure { t -> log.warn("[notify] handler failed for Resumed", t) }
+            }
+        }
+        if (NotifyEventKind.POSITION_RECONCILED in notifyEvents) {
+            // Best-effort strategyId: this session typically hosts one strategy. If multiple
+            // are present, use the first; the alert still names the symbol so the operator
+            // can disambiguate from logs.
+            val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
+            bus.subscribe<BrokerEvent.PositionReconciled> { ev ->
+                runCatching {
+                    notifier.notify(
+                        EventTranslator.fromPositionReconciled(event = ev, strategyId = ownerStrategyId),
+                    )
+                }.onFailure { t -> log.warn("[notify] handler failed for PositionReconciled", t) }
+            }
+        }
+    }
+
+    /**
+     * Build the daily-summary scheduler if [dailySummaryUtc] is non-blank, else return null.
+     * The producer captures [strategyPnL] + [strategyPositions] by reference so each fire reads
+     * live state at the moment of dispatch.
+     */
+    private fun buildDailySummaryScheduler(
+        strategyPnL: StrategyPnL,
+        strategyPositions: StrategyPositionTracker,
+    ): DailySummaryScheduler? {
+        if (dailySummaryUtc.isBlank()) return null
+        val producer = {
+            val rows =
+                strategies.map { (strategyId, _) ->
+                    val positions = strategyPositions.positionsFor(strategyId)
+                    val summary =
+                        if (positions.isEmpty() ||
+                            positions.values.all { it.quantity.signum() == 0 }
+                        ) {
+                            "flat"
+                        } else {
+                            positions.entries.joinToString(", ") { (sym, p) ->
+                                "${if (p.quantity.signum() > 0) "long" else "short"} ${p.quantity.abs().toPlainString()} $sym"
+                            }
+                        }
+                    StrategySummary(
+                        strategyId = strategyId,
+                        equity = strategyPnL.equityFor(strategyId),
+                        equityDeltaPct = java.math.BigDecimal.ZERO,
+                        realizedToday = strategyPnL.realizedFor(strategyId),
+                        unrealized = strategyPnL.unrealizedTotalFor(strategyId),
+                        tradesToday = 0,
+                        haltsToday = 0,
+                        positionsSummary = summary,
+                    )
+                }
+            NotificationEvent.DailySummary(
+                asOfUtc =
+                    java.time.OffsetDateTime
+                        .now(java.time.ZoneOffset.UTC)
+                        .toLocalDate()
+                        .toString(),
+                strategies = rows,
+                timestamp = clock.now(),
+            )
+        }
+        return DailySummaryScheduler(notifier = notifier, producer = producer).also { it.startAtUtc(dailySummaryUtc) }
+    }
+
     fun start(): LiveSessionHandle {
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
@@ -256,6 +366,12 @@ class LiveSession(
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
 
+        // Register notifier handlers before the warmup phase so a warmup-time risk halt
+        // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
+        // so any publish that happens after this line will see the new subscribers.
+        wireNotifierSubscriptions(bus)
+        val dailyScheduler = buildDailySummaryScheduler(strategyPnL, strategyPositions)
+
         val now = Instant.ofEpochMilli(clock.now())
         val effectiveWarmup =
             warmupOverride
@@ -294,6 +410,21 @@ class LiveSession(
         thread.isDaemon = true
         thread.start()
 
+        // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
+        // bus because no other engine component consumes them.
+        if (NotifyEventKind.STRATEGY_STARTED in notifyEvents) {
+            for ((strategyId, _) in strategies) {
+                runCatching {
+                    notifier.notify(
+                        NotificationEvent.StrategyStarted(
+                            strategyId = strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                }.onFailure { t -> log.warn("[notify] StrategyStarted fire failed", t) }
+            }
+        }
+
         return object : LiveSessionHandle {
             override val running: Boolean get() = running.get()
 
@@ -303,6 +434,20 @@ class LiveSession(
             override fun stop() {
                 running.set(false)
                 thread.interrupt()
+                if (NotifyEventKind.STRATEGY_STOPPED in notifyEvents) {
+                    for ((strategyId, _) in strategies) {
+                        runCatching {
+                            notifier.notify(
+                                NotificationEvent.StrategyStopped(
+                                    strategyId = strategyId,
+                                    flatten = false,
+                                    timestamp = clock.now(),
+                                ),
+                            )
+                        }.onFailure { t -> log.warn("[notify] StrategyStopped fire failed", t) }
+                    }
+                }
+                dailyScheduler?.close()
             }
 
             override fun awaitTermination(timeout: Duration): Boolean =
