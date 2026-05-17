@@ -3,5 +3,5 @@ package com.qkt.cli
 /** Compile-time build metadata. Bumped per phase release. */
 object BuildInfo {
     /** Current qkt version, displayed by `qkt --version`. */
-    const val VERSION: String = "0.28.2"
+    const val VERSION: String = "0.28.3"
 }
