@@ -36,18 +36,30 @@ object MarketSourceFactory {
     fun composite(
         mt5Profiles: List<MT5BrokerProfile>,
         source: String = "tv",
+        enableBybit: Boolean = defaultEnableBybit(),
         fallbackProvider: () -> MarketSource = { defaultFallback(source) },
     ): (List<String>) -> MarketSource {
         val routes = mutableListOf<Pair<SymbolPattern, MarketSource>>()
         for (p in mt5Profiles) {
             routes.add(SymbolPattern.prefix("${p.name.uppercase()}:") to Mt5MarketSource(p))
         }
-        routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())
-        routes.add(SymbolPattern.prefix("BYBIT_PERP:") to BybitLinearMarketSource())
+        if (enableBybit) {
+            routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())
+            routes.add(SymbolPattern.prefix("BYBIT_PERP:") to BybitLinearMarketSource())
+        }
         val composite = CompositeMarketSource(routes = routes, fallback = fallbackProvider())
         return { _ -> composite }
     }
 
     private fun defaultFallback(source: String): MarketSource =
         if (source == "tv") TradingViewMarketSource.connect() else NullMarketSource
+
+    /**
+     * Default opt-in for Bybit routes: only construct them if the operator has set
+     * `BYBIT_API_KEY` in the environment. Public Bybit market data doesn't actually need
+     * auth, but the env-var presence is a reliable signal that the operator means to use
+     * Bybit — pure-MT5 deployments (like the current qkt-prod) don't set it and avoid
+     * two idle OkHttp clients sitting in memory.
+     */
+    private fun defaultEnableBybit(): Boolean = !System.getenv("BYBIT_API_KEY").isNullOrEmpty()
 }
