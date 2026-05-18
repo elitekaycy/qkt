@@ -52,7 +52,7 @@ class MT5Broker(
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
-    private val poller =
+    internal val poller =
         MT5PositionPoller(
             client,
             profile,
@@ -66,7 +66,7 @@ class MT5Broker(
                 com.qkt.common.TradingCalendar
                     .fxDefault(),
         )
-    private val pendingPoller =
+    internal val pendingPoller =
         MT5PendingOrderPoller(
             client = client,
             profile = profile,
@@ -535,7 +535,24 @@ class MT5Broker(
      * is a separate concern.
      */
     private fun onPendingPositionOpened(position: MT5Position) {
-        val meta = pendingByTicket.remove(position.ticket) ?: return
+        val meta = pendingByTicket.remove(position.ticket)
+        if (meta == null) {
+            // Already tracked? The Fix A cross-check in onPendingDisappeared may have
+            // synthesized this fill on a prior pending-poller tick; the position-poller
+            // is now seeing the same ticket in its opened-delta. Silent — already done.
+            if (positionMetaByTicket.containsKey(position.ticket)) return
+            log.warn(
+                "MT5Broker {} saw new position ticket={} symbol={} side={} magic={} with no qkt-side " +
+                    "pending meta — either externally placed or pending-poller already consumed the " +
+                    "meta (poll-ordering race).",
+                profile.name,
+                position.ticket,
+                position.symbol,
+                if (position.type == 0) "BUY" else "SELL",
+                profile.magic,
+            )
+            return
+        }
         pendingTickets.remove(meta.orderId)
         // Mark the ticket as recently filled so the pending-order poller doesn't
         // mistake the subsequent "disappeared from /orders" for an external cancel.
@@ -583,15 +600,31 @@ class MT5Broker(
      *      placement, another qkt instance with the same magic) — ignore.
      */
     private fun onPendingDisappeared(ticket: Long) {
-        val meta = pendingByTicket.remove(ticket) ?: return
-        pendingTickets.entries.removeIf { it.value == ticket }
+        val meta = pendingByTicket[ticket] ?: return
+
         val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
         val recentlyFilledAt = recentlyFilledTickets[ticket]
         val now = clock.now()
         if (recentlyFilledAt != null && now - recentlyFilledAt < ttlMs) {
+            pendingByTicket.remove(ticket)
+            pendingTickets.entries.removeIf { it.value == ticket }
             recentlyFilledTickets.remove(ticket)
             return
         }
+
+        // Cross-check /positions before treating as cancel. If the ticket is now a
+        // position, the pending-poller observed the transition before the position-poller
+        // did — synthesize the fill path here instead of phantom-cancelling.
+        val asPosition =
+            runCatching { client.getPositions(magic = profile.magic).firstOrNull { it.ticket == ticket } }
+                .getOrNull()
+        if (asPosition != null) {
+            onPendingPositionOpened(asPosition)
+            return
+        }
+
+        pendingByTicket.remove(ticket)
+        pendingTickets.entries.removeIf { it.value == ticket }
         // Evict stale entries opportunistically — cheap and prevents unbounded growth
         // if positions close before their pending-disappearance signal arrives.
         recentlyFilledTickets.entries.removeIf { now - it.value >= ttlMs }
