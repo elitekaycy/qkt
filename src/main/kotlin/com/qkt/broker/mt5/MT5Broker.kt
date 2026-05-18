@@ -303,8 +303,16 @@ class MT5Broker(
                 timestamp = clock.now(),
             ),
         )
-        // Market/Bracket fill synchronously; pending shapes wait for the position poller.
-        if (request is OrderRequest.Market || request is OrderRequest.Bracket) {
+        // A Bracket with a Market entry fills synchronously like a plain Market; a Bracket
+        // whose entry is Stop/Limit places a pending order on the venue and waits for the
+        // position poller to surface the eventual fill. Treating every Bracket as an
+        // instant fill produces a phantom OrderFilled at placement time, which marks OCO
+        // siblings FILLED before either has actually triggered on MT5 and turns the
+        // strategy's OCO into a hedge.
+        val isInstantFill =
+            request is OrderRequest.Market ||
+                (request is OrderRequest.Bracket && request.entry is OrderRequest.Market)
+        if (isInstantFill) {
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = request.id,
