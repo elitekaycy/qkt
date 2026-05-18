@@ -1,5 +1,8 @@
 package com.qkt.broker.mt5
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
@@ -14,6 +17,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 
 /**
  * Phase 26c follow-up (v0.28.5): when a pending stop transitions to a position on MT5,
@@ -201,6 +205,90 @@ class MT5PollerRaceTest {
         assertThat(cancels).hasSize(1)
         assertThat(cancels[0].clientOrderId).isEqualTo("ord-3")
         assertThat(cancels[0].reason).contains("external or gtd-expired")
+    }
+
+    @Test
+    fun `un-correlated venue position — WARN logged, no OrderFilled`() {
+        val logger = LoggerFactory.getLogger(MT5Broker::class.java) as Logger
+        val appender =
+            ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(appender)
+        try {
+            // Position-poller sees a brand-new ticket the broker never placed
+            // (e.g. manual MT5 trade with the same magic).
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"ticket":"7777","symbol":"EURUSDm","type":"1","volume":"0.05","price_open":"1.1234","sl":"0","tp":"0","profit":"0","magic":"10001","open_time":"0"}]""",
+                ),
+            )
+            broker.poller.tick()
+
+            assertThat(fills).isEmpty()
+            val warning =
+                appender.list.firstOrNull {
+                    it.level.toString() == "WARN" && it.formattedMessage.contains("no qkt-side pending meta")
+                }
+            assertThat(warning).isNotNull
+            assertThat(warning!!.formattedMessage).contains("7777")
+            assertThat(warning.formattedMessage).contains("EURUSDm")
+            assertThat(warning.formattedMessage).contains("SELL")
+        } finally {
+            logger.detachAppender(appender)
+        }
+    }
+
+    @Test
+    fun `pending-poller wins then position-poller re-observes — silent, no duplicate WARN`() {
+        // Same shape as the pending-poller-wins race test, but explicitly asserts that
+        // when the position-poller later sees the same ticket in its opened-delta, the
+        // no-meta path is silent (positionMetaByTicket already holds it) — no duplicate
+        // OrderFilled, no false-alarm WARN.
+        val logger = LoggerFactory.getLogger(MT5Broker::class.java) as Logger
+        val appender =
+            ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(appender)
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """{"result":{"retcode":10009,"order":9100,"deal":0,"price":"1.1200","comment":"ok"}}""",
+                ),
+            )
+            broker.submit(pendingBracket("ord-9100", Side.BUY, "1.1200"))
+
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"ticket":"9100","symbol":"EURUSDm","type":"4","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","magic":"10001","time_setup":"0"}]""",
+                ),
+            )
+            broker.pendingPoller.tickForTesting()
+
+            // Pending-poller wins.
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"ticket":"9100","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","open_time":"0"}]""",
+                ),
+            )
+            broker.pendingPoller.tickForTesting()
+            assertThat(fills).hasSize(1)
+
+            // Position-poller now ticks; same ticket appears in its opened-delta.
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"ticket":"9100","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","open_time":"0"}]""",
+                ),
+            )
+            broker.poller.tick()
+
+            assertThat(fills).hasSize(1)
+            val warning =
+                appender.list.firstOrNull {
+                    it.level.toString() == "WARN" && it.formattedMessage.contains("no qkt-side pending meta")
+                }
+            assertThat(warning).isNull()
+        } finally {
+            logger.detachAppender(appender)
+        }
     }
 
     companion object {

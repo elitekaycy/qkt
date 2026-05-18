@@ -535,7 +535,24 @@ class MT5Broker(
      * is a separate concern.
      */
     private fun onPendingPositionOpened(position: MT5Position) {
-        val meta = pendingByTicket.remove(position.ticket) ?: return
+        val meta = pendingByTicket.remove(position.ticket)
+        if (meta == null) {
+            // Already tracked? The Fix A cross-check in onPendingDisappeared may have
+            // synthesized this fill on a prior pending-poller tick; the position-poller
+            // is now seeing the same ticket in its opened-delta. Silent — already done.
+            if (positionMetaByTicket.containsKey(position.ticket)) return
+            log.warn(
+                "MT5Broker {} saw new position ticket={} symbol={} side={} magic={} with no qkt-side " +
+                    "pending meta — either externally placed or pending-poller already consumed the " +
+                    "meta (poll-ordering race).",
+                profile.name,
+                position.ticket,
+                position.symbol,
+                if (position.type == 0) "BUY" else "SELL",
+                profile.magic,
+            )
+            return
+        }
         pendingTickets.remove(meta.orderId)
         // Mark the ticket as recently filled so the pending-order poller doesn't
         // mistake the subsequent "disappeared from /orders" for an external cancel.
