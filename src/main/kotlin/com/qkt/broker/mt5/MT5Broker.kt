@@ -52,7 +52,7 @@ class MT5Broker(
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
-    private val poller =
+    internal val poller =
         MT5PositionPoller(
             client,
             profile,
@@ -66,7 +66,7 @@ class MT5Broker(
                 com.qkt.common.TradingCalendar
                     .fxDefault(),
         )
-    private val pendingPoller =
+    internal val pendingPoller =
         MT5PendingOrderPoller(
             client = client,
             profile = profile,
