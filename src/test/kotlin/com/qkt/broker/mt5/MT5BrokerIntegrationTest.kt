@@ -698,6 +698,165 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `pending-entry Bracket does not emit synchronous OrderFilled at submit`() {
+        // Regression: hedge-straddle wraps each OCO leg in a Bracket over a STOP entry.
+        // submitSingle previously treated ANY Bracket as instant-fill (Market-style),
+        // publishing a phantom OrderFilled at placement time. That phantom fill marked
+        // the OCO siblings FILLED before either was actually dispatched to MT5, so the
+        // sibling-cancel path turned into a local state flip — MT5 was never told to
+        // cancel the opposing leg and the strategy ran as a hedge rather than an OCO.
+        broker.shutdown()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/order") ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":9001,"deal":0,"price":"1.1050","comment":"ok"}}""",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br-pending",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                entry =
+                    OrderRequest.Stop(
+                        id = "br-pending-entry",
+                        symbol = "EXNESS:EURUSD",
+                        side = Side.BUY,
+                        quantity = BigDecimal("0.10"),
+                        stopPrice = BigDecimal("1.1050"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 1L,
+                        strategyId = "s1",
+                    ),
+                takeProfit = BigDecimal("1.1080"),
+                stopLoss = BigDecimal("1.1020"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val pendingBrokerProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val pendingBroker = MT5Broker(pendingBrokerProfile, bus, FixedClock(time = 1L))
+        captured.clear()
+        val ack = pendingBroker.submit(bracket)
+        pendingBroker.shutdown()
+
+        assertThat(ack.accepted).isTrue
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>()).hasSize(1)
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>())
+            .withFailMessage(
+                "pending-entry Bracket must NOT publish OrderFilled at placement — " +
+                    "the gateway only acknowledged the pending order, not a fill",
+            ).isEmpty()
+    }
+
+    @Test
+    fun `pending-entry Bracket emits OrderFilled with bracket-id when position appears`() {
+        // Once the pending STOP entry triggers on MT5, the position poller observes a
+        // new ticket and the broker must surface that as an OrderFilled keyed by the
+        // Bracket's clientOrderId — which is how the OCO sibling lookup in OrderManager
+        // resolves the opposing leg to cancel.
+        broker.shutdown()
+        val ticket = 9101L
+        var positionsHasFill = false
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/get_positions") -> {
+                            if (positionsHasFill) {
+                                MockResponse().setBody(
+                                    """[{"ticket":$ticket,"symbol":"EURUSDm","type":0,"volume":"0.10",""" +
+                                        """"price_open":"1.1050","sl":"1.1020","tp":"1.1080","profit":"0",""" +
+                                        """"magic":10001,"open_time":"1700000000","comment":"br-pending"}]""",
+                                )
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/order") ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":$ticket,"deal":0,"price":"1.1050","comment":"ok"}}""",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker = MT5Broker(fastProfile, bus, FixedClock(time = 1L))
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br-pending",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                entry =
+                    OrderRequest.Stop(
+                        id = "br-pending-entry",
+                        symbol = "EXNESS:EURUSD",
+                        side = Side.BUY,
+                        quantity = BigDecimal("0.10"),
+                        stopPrice = BigDecimal("1.1050"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 1L,
+                        strategyId = "s1",
+                    ),
+                takeProfit = BigDecimal("1.1080"),
+                stopLoss = BigDecimal("1.1020"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        captured.clear()
+        fastBroker.submit(bracket)
+        // Drop anything produced at submit time — we want to assert the fill that arrives
+        // AFTER the venue reports the pending triggered, not the historical phantom fill.
+        captured.clear()
+        positionsHasFill = true
+
+        val deadline = System.currentTimeMillis() + 3_000L
+        while (System.currentTimeMillis() < deadline &&
+            captured.none { it is BrokerEvent.OrderFilled && it.clientOrderId == "br-pending" }
+        ) {
+            Thread.sleep(50)
+        }
+        fastBroker.shutdown()
+
+        val filled =
+            captured.filterIsInstance<BrokerEvent.OrderFilled>().firstOrNull { it.clientOrderId == "br-pending" }
+                ?: error("OrderFilled for bracket-id never published; captured=$captured")
+        assertThat(filled.brokerOrderId).isEqualTo(ticket.toString())
+        assertThat(filled.side).isEqualTo(Side.BUY)
+        assertThat(filled.symbol).isEqualTo("EXNESS:EURUSD")
+        assertThat(filled.strategyId).isEqualTo("s1")
+    }
+
+    @Test
     fun `IfTouched is rejected since DSL surface and translator both miss it`() {
         val req =
             OrderRequest.IfTouched(
