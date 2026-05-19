@@ -117,7 +117,7 @@ class MT5DaemonE2ETest {
             )
         val brokerFactories: Map<String, BrokerFactory> =
             mapOf(
-                "exness" to { bus, clock, _ -> MT5Broker(profile, bus, clock) },
+                "exness" to { bus, clock, _, _ -> MT5Broker(profile, bus, clock) },
             )
 
         val factory =
