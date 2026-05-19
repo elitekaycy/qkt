@@ -45,6 +45,14 @@ class MT5Broker(
             httpTimeoutMs = profile.httpTimeoutMs,
             retryAttempts = profile.retryAttempts,
         ),
+    /**
+     * Owning strategy name (single-strategy LiveSession). When set, startup state recovery
+     * correlates venue-side orphan positions back to this strategy via comment-prefix match,
+     * so a server-side TP/SL close fires [com.qkt.events.BrokerEvent.OrderFilled] with the
+     * correct `strategyId`. Null in multi-strategy or test paths — recovery still publishes
+     * [com.qkt.events.BrokerEvent.PositionReconciled] but does not seed orphan attribution.
+     */
+    private val strategyName: String? = null,
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
@@ -76,7 +84,17 @@ class MT5Broker(
                     .fxDefault(),
             onPendingDisappeared = ::onPendingDisappeared,
         )
-    private val stateRecovery = MT5StateRecovery(client, profile, mt5Symbol, bus)
+    private val stateRecovery =
+        MT5StateRecovery(
+            client = client,
+            profile = profile,
+            symbol = mt5Symbol,
+            bus = bus,
+            strategyName = strategyName,
+            seedOrphan = { ticket, orderId, strategyId ->
+                positionMetaByTicket[ticket] = PendingMeta(orderId, strategyId)
+            },
+        )
 
     /**
      * Cached venue symbol metadata, keyed by broker symbol (e.g. `"XAUUSDm"`). Populated

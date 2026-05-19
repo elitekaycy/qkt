@@ -155,6 +155,7 @@ assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
 - **`IfTouched` / `OTO` / `TrailingStopLimit` still unsupported on MT5.** These shapes also lack DSL surface, so there's no point routing them through MT5 yet. Future phase adds DSL + translation together.
 - **No order-modification surface.** Pending orders today can be cancelled but not modified (move the SL, change the trigger). MT5 supports this via `OrderModify`; qkt doesn't expose it from the DSL. Future phase.
 - **OCO group is encoded in `comment` field.** MT5 has no native group concept. The qkt-side `oco:<id>/...` prefix in the comment field is parsed by Phase 26c's pending poller. If a user manually edits the comment in MetaTrader, OCO correlation breaks — defensive programming should consider this case in Phase 26c.
+- **Comment field truncates to 16 chars venue-side (v0.28.6 follow-up).** State-recovery orphan attribution does a best-effort prefix-match against the truncated comment; strategies sharing one MT5 magic MUST be prefix-disjoint or close events will misroute. `MT5StateRecovery` logs WARN whenever the matcher hits an ambiguous case (`AmbiguousTruncation` seeds with a warn; `AmbiguousOverlap` skips with a warn). See `matchOrphan` in `MT5StateRecovery.kt`.
 
 ## References
 

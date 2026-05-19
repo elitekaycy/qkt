@@ -116,18 +116,12 @@ Already committed to a branch, not merged. Pick up when the next release window 
   [`lazy-bybit-routes`](https://github.com/elitekaycy/qkt/tree/lazy-bybit-routes) (commit
   `6591d7e`). Tested. Decide whether worth a v0.28.3 cycle or batch with later work.
 
-- `tbd` — **v0.28.6: state recovery should populate `positionMetaByTicket` for orphan
-  positions.** Today `MT5StateRecovery.recover()` publishes `PositionReconciled` for each
-  open MT5 position but does NOT seed `positionMetaByTicket`, so when an orphan position
-  later closes server-side at TP/SL the position-poller's `lookupClosedTicketMeta` returns
-  null and `OrderFilled` fires with synthetic id + blank `strategyId` — strategy never
-  credits the close. Observed 2026-05-18 during v0.28.5 deploy: 3 pre-existing orphan
-  positions on MT5 (one from a 19:55 race-loss, two from a 20:55 OCO double-fill) will
-  close server-side without strategy-side `lastTrade` updates. Fix: derive `(orderId,
-  strategyId)` from the position's `comment` (already encodes the strategy via the
-  `dsl-<strategy>` prefix) and seed both `positionMetaByTicket` and a synthetic
-  client-order id so closes route correctly. The orphan's open event is irrecoverable
-  (the strategy already moved past it) but the close event becomes usable.
+- `done` — v0.28.6: `MT5StateRecovery` now correlates venue-side orphan positions back
+  to the owning strategy via comment-prefix match and seeds `positionMetaByTicket` so a
+  server-side close fires `OrderFilled` with the correct `strategyId`. MT5 truncates
+  comments to 16 chars, so the matcher tolerates truncation (`AmbiguousTruncation` →
+  seed + WARN) and rejects prefix-overlap collisions (`AmbiguousOverlap` → skip + WARN).
+  Constraint: strategies sharing one MT5 magic must be prefix-disjoint.
 
 ### Tier 2 — operational / config (small, no engine code)
 
