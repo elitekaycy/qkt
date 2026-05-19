@@ -93,7 +93,9 @@ internal sealed interface OrphanMatch {
      * Comment starts with `dsl-<strategyName>-` followed by non-digits — could be a longer
      * strategy name (e.g. `ema-cross` matching an `ema-cross-v2` position). Skip + WARN.
      */
-    data class AmbiguousOverlap(val tail: String) : OrphanMatch
+    data class AmbiguousOverlap(
+        val tail: String,
+    ) : OrphanMatch
 
     /** Comment is null, non-`dsl-`, or matches a different strategy entirely. Skip silently. */
     data object NotOurs : OrphanMatch
