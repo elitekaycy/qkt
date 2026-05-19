@@ -12,5 +12,10 @@ import com.qkt.marketdata.MarketPriceTracker
  * The DSL stream label (e.g. "EXNESS", "BYBIT") maps to one factory in the daemon's
  * registry. The factory hides the underlying protocol (MT5, REST, native SDK, ...)
  * — the venue label is the public identity, the protocol is an implementation detail.
+ *
+ * The final `String?` is the owning strategy name when the session hosts a single
+ * strategy (daemon path); null for multi-strategy or test paths. Stateful brokers (MT5)
+ * use it to correlate venue-side orphan positions back to their strategy during startup
+ * recovery; stateless brokers (Paper) ignore it.
  */
-typealias BrokerFactory = (EventBus, Clock, MarketPriceTracker) -> Broker
+typealias BrokerFactory = (EventBus, Clock, MarketPriceTracker, String?) -> Broker

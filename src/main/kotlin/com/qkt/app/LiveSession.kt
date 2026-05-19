@@ -189,10 +189,13 @@ class LiveSession(
             }
         }
         if (brokerSymbols.isEmpty()) return paperBroker
+        // Single-strategy sessions (daemon path) propagate the strategy name so MT5 brokers
+        // can correlate orphan recovery; multi-strategy sessions (LiveDemo, Main) pass null.
+        val owningStrategy = strategies.singleOrNull()?.first
         val routes =
             brokerSymbols.map { (label, syms) ->
                 val factory = brokerFactories[label]
-                val instance = factory?.invoke(bus, clock, priceTracker) ?: paperBroker
+                val instance = factory?.invoke(bus, clock, priceTracker, owningStrategy) ?: paperBroker
                 builtBrokers.add(instance)
                 com.qkt.marketdata.source.SymbolPattern
                     .exactSet(syms.toSet()) to instance
