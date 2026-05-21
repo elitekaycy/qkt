@@ -830,6 +830,12 @@ class OrderManager(
                 )
             }
         }
+        log.info(
+            "order accepted order_id={} strategy_id={} broker_order_id={}",
+            e.clientOrderId,
+            e.strategyId,
+            e.brokerOrderId,
+        )
     }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
@@ -847,6 +853,16 @@ class OrderManager(
                 lastUpdatedAt = clock.now(),
             )
         }
+        log.info(
+            "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
+            e.clientOrderId,
+            e.strategyId,
+            e.symbol,
+            e.side,
+            e.quantity,
+            e.cumulativeFilled,
+            e.price,
+        )
     }
 
     private fun onFilled(e: BrokerEvent.OrderFilled) {
@@ -859,6 +875,15 @@ class OrderManager(
                 lastUpdatedAt = clock.now(),
             )
         }
+        log.info(
+            "order filled order_id={} strategy_id={} symbol={} side={} qty={} price={}",
+            e.clientOrderId,
+            e.strategyId,
+            e.symbol,
+            e.side,
+            e.quantity,
+            e.price,
+        )
         pendingChildren.remove(e.clientOrderId)?.forEach { dispatch(it) }
         scaleOutLegs.remove(e.clientOrderId)?.let { (scaleReq, basisQty) ->
             val exitSide = if (scaleReq.side == Side.BUY) Side.SELL else Side.BUY
@@ -891,6 +916,12 @@ class OrderManager(
         update(e.clientOrderId) {
             it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
         }
+        log.info(
+            "order cancelled order_id={} strategy_id={} reason={}",
+            e.clientOrderId,
+            e.strategyId,
+            e.reason,
+        )
     }
 
     private fun evaluateTriggers(tick: Tick) {
