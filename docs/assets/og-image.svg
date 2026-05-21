@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <rect width="1280" height="640" fill="#0d1117"/>
+
+  <g transform="translate(159 149) scale(1.6)">
+    <g fill="none" stroke-width="14">
+      <g stroke="#a78bfa" stroke-linejoin="miter">
+        <path d="M174 35H152v100h22"/>
+        <path d="M427 35h22v100h-22"/>
+      </g>
+      <g stroke="#e5e7eb" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="230" cy="100" r="35"/>
+        <path d="M265 65v100"/>
+        <path d="M293 35v100"/>
+        <path d="M338 35l-45 65 35 35"/>
+        <path d="M386 50v85M366 65h40"/>
+      </g>
+    </g>
+  </g>
+
+  <text x="640" y="500" text-anchor="middle"
+    font-family="DejaVu Sans, Liberation Sans, Helvetica, sans-serif"
+    font-size="32" fill="#8b949e" letter-spacing="2">event-driven trading engine in kotlin</text>
+
+  <text x="1240" y="600" text-anchor="end"
+    font-family="DejaVu Sans Mono, Liberation Mono, monospace"
+    font-size="20" fill="#484f58">github.com/elitekaycy/qkt</text>
+</svg>

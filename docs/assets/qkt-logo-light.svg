@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" role="img" aria-label="qkt">
+  <title>qkt</title>
+  <g fill="none" stroke-width="14">
+    <g stroke="#7c3aed" stroke-linejoin="miter">
+      <path d="M174 35H152v100h22"/>
+      <path d="M427 35h22v100h-22"/>
+    </g>
+    <g stroke="#0d1117" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="230" cy="100" r="35"/>
+      <path d="M265 65v100"/>
+      <path d="M293 35v100"/>
+      <path d="M338 35l-45 65 35 35"/>
+      <path d="M386 50v85M366 65h40"/>
+    </g>
+  </g>
+</svg>
