@@ -307,7 +307,10 @@ class ExprCompiler(
     }
 
     private fun compileStreamField(ref: StreamFieldRef): CompiledExpr {
-        require(ref.field in setOf("close", "open", "high", "low", "volume", "price")) {
+        require(
+            ref.field in
+                setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread"),
+        ) {
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
         return CompiledExpr { ctx ->
@@ -323,16 +326,19 @@ class ExprCompiler(
             if (candle == null) {
                 Value.Undefined
             } else {
-                Value.Num(
+                val fieldValue: BigDecimal? =
                     when (ref.field) {
                         "close", "price" -> candle.close
                         "open" -> candle.open
                         "high" -> candle.high
                         "low" -> candle.low
                         "volume" -> candle.volume
+                        "bid" -> candle.bid
+                        "ask" -> candle.ask
+                        "spread" -> candle.spread
                         else -> error("unreachable")
-                    },
-                )
+                    }
+                if (fieldValue == null) Value.Undefined else Value.Num(fieldValue)
             }
         }
     }

@@ -1,5 +1,8 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.ast.Cmp
+import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.testStrategyContext
@@ -89,5 +92,47 @@ class ExprCompilerStreamFieldTest {
             )
         val v = ExprCompiler().compile(StreamFieldRef("btc", "close")).evaluate(otherCtx)
         assertThat(v).isEqualTo(Value.Undefined)
+    }
+
+    @Test
+    fun `bid ask spread map to candle bid ask spread`() {
+        val quoteCtx =
+            EvalContext(
+                candle = candle.copy(bid = BigDecimal("104"), ask = BigDecimal("106")),
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        val ec = ExprCompiler()
+        assertThat((ec.compile(StreamFieldRef("btc", "bid")).evaluate(quoteCtx) as Value.Num).v)
+            .isEqualByComparingTo("104")
+        assertThat((ec.compile(StreamFieldRef("btc", "ask")).evaluate(quoteCtx) as Value.Num).v)
+            .isEqualByComparingTo("106")
+        assertThat((ec.compile(StreamFieldRef("btc", "spread")).evaluate(quoteCtx) as Value.Num).v)
+            .isEqualByComparingTo("2")
+    }
+
+    @Test
+    fun `bid ask spread are Undefined when the candle has no quote`() {
+        val ec = ExprCompiler()
+        assertThat(ec.compile(StreamFieldRef("btc", "bid")).evaluate(ctx)).isEqualTo(Value.Undefined)
+        assertThat(ec.compile(StreamFieldRef("btc", "ask")).evaluate(ctx)).isEqualTo(Value.Undefined)
+        assertThat(ec.compile(StreamFieldRef("btc", "spread")).evaluate(ctx)).isEqualTo(Value.Undefined)
+    }
+
+    @Test
+    fun `spread comparison is Bool when quoted and Undefined when not`() {
+        val ec = ExprCompiler()
+        val gate = CmpOp(Cmp.LT, StreamFieldRef("btc", "spread"), NumLit(BigDecimal("5")))
+
+        val quotedCtx =
+            EvalContext(
+                candle = candle.copy(bid = BigDecimal("104"), ask = BigDecimal("106")),
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        assertThat(ec.compile(gate).evaluate(quotedCtx)).isEqualTo(Value.Bool(true))
+        assertThat(ec.compile(gate).evaluate(ctx)).isEqualTo(Value.Undefined)
     }
 }
