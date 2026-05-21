@@ -25,7 +25,7 @@ Phase 29 makes the qkt engine's in-memory state durable on disk so a daemon rest
 
 - `com.qkt.persistence.StatePersistor` — interface with eight methods: `saveLegBook` / `loadLegBook`, `saveBracketPairs` / `loadBracketPairs`, `savePendingOrders` / `loadPendingOrders`, `savePendingStacks` / `loadPendingStacks`, `clearStrategy`.
 - `com.qkt.persistence.NoopStatePersistor` — in-memory backing for tests and for the `state.enabled = false` config path.
-- `com.qkt.persistence.FileStatePersistor` — production on-disk implementation. Writes via [`StateFileWriter`](src/main/kotlin/com/qkt/persistence/StateFileWriter.kt) (atomic temp+rename); reads via `kotlinx.serialization.json`.
+- `com.qkt.persistence.FileStatePersistor` — production on-disk implementation. Writes via `StateFileWriter` (atomic temp+rename); reads via `kotlinx.serialization.json`.
 - `com.qkt.persistence.StateFileWriter` — internal helper. POSIX `ATOMIC_MOVE` rename. Read returns `null` on missing file. `deleteStrategy` walks and removes the per-strategy dir. All paths catch and log `IOException` — no throws to the engine.
 
 ### DTOs
