@@ -53,6 +53,8 @@ class CandleAggregator private constructor(
             volume = tick.volume ?: Money.ZERO,
             startTime = start,
             endTime = end,
+            bid = tick.bid,
+            ask = tick.ask,
         )
     }
 
@@ -65,15 +67,19 @@ class CandleAggregator private constructor(
         var volume: BigDecimal,
         val startTime: Long,
         val endTime: Long,
+        var bid: BigDecimal?,
+        var ask: BigDecimal?,
     ) {
         fun update(tick: Tick) {
             if (tick.price > high) high = tick.price
             if (tick.price < low) low = tick.price
             close = tick.price
             if (tick.volume != null) volume = volume.add(tick.volume)
+            bid = tick.bid
+            ask = tick.ask
         }
 
-        fun toCandle(): Candle = Candle(symbol, open, high, low, close, volume, startTime, endTime)
+        fun toCandle(): Candle = Candle(symbol, open, high, low, close, volume, startTime, endTime, bid, ask)
     }
 
     companion object {
