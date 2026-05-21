@@ -13,4 +13,7 @@ data class StreamRef(
     val volume: ExprAst = StreamFieldRef(alias, "volume")
     val price: ExprAst = StreamFieldRef(alias, "price")
     val candle: ExprAst = StreamFieldRef(alias, "candle")
+    val bid: ExprAst = StreamFieldRef(alias, "bid")
+    val ask: ExprAst = StreamFieldRef(alias, "ask")
+    val spread: ExprAst = StreamFieldRef(alias, "spread")
 }
