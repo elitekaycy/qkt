@@ -116,8 +116,13 @@ btc.high          -- high
 btc.low           -- low
 btc.close         -- close
 btc.volume        -- volume
+btc.bid           -- best bid from the last tick in the window (live feeds only)
+btc.ask           -- best ask from the last tick in the window (live feeds only)
+btc.spread        -- ask - bid (live feeds only)
 btc.timestamp     -- candle start time (ms since epoch)
 ```
+
+`bid`, `ask`, and `spread` are populated only on feeds that carry a quote — live MT5 streams do, backtest/historical feeds do not. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
 
 For historical lookback (the N-th candle ago):
 
