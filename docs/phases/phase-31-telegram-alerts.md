@@ -131,11 +131,11 @@ listed with the follow-up phase that closes it.
   `com.qkt.app.OrderManager` is the right source for those fields; wiring
   is a Phase 31.1 task. Until then, configure `order_rejected` in
   `events:` and it will silently no-op.
-- **`daemon_started` and `strategy_error` are defined but not fired.**
-  `daemon_started` is a daemon-level concern (not LiveSession-internal)
-  and needs hooking in `com.qkt.cli.DaemonCommand`. `strategy_error` has
-  no clean source today — there is no strategy-level error event on the
-  bus. Both deferred to Phase 31.1.
+- **`strategy_error` is defined but not fired.** There is no strategy-level
+  error event on the bus to source it from — deferred to Phase 31.1.
+  (`daemon_started` is now fired from `com.qkt.cli.DaemonCommand` at daemon
+  boot when `daemon_started` is an opted-in event; the daemon builds its
+  notifier via `NotifierFactory.fromConfig`.)
 - **Daily summary has placeholder fields for `equityDeltaPct`,
   `tradesToday`, and `haltsToday`.** They render as `0` / `0%` until a
   daily-rolling tracker is added in Phase 31.1. The numerically-correct

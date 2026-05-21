@@ -7,6 +7,9 @@ import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.notify.NotificationEvent
+import com.qkt.notify.NotifierFactory
+import com.qkt.notify.NotifyEventKind
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 
@@ -55,6 +58,7 @@ class DaemonCommand(
                 ?: java.nio.file.Path
                     .of("./qkt.config.yaml")
         val cfg = Config.load(configPathEarly)
+        val notifier = NotifierFactory.fromConfig(cfg.notify.telegram)
         val mt5Profiles =
             try {
                 com.qkt.broker.mt5
@@ -138,6 +142,16 @@ class DaemonCommand(
 
         println("[INFO] daemon ready")
 
+        if (NotifyEventKind.DAEMON_STARTED in cfg.notify.telegram.events) {
+            notifier.notify(
+                NotificationEvent.DaemonStarted(
+                    version = BuildInfo.VERSION,
+                    strategies = registry.list().map { it.name },
+                    timestamp = startedAt.toEpochMilli(),
+                ),
+            )
+        }
+
         val shutdown =
             Thread {
                 try {
@@ -146,6 +160,7 @@ class DaemonCommand(
                     if (n > 0) println("[INFO] gracefully stopping $n strateg${if (n == 1) "y" else "ies"}")
                     registry.stopAll()
                     plane.close()
+                    notifier.close()
                     stateDir.deleteControlPort()
                     println("[INFO] daemon stopped")
                 } finally {
@@ -160,6 +175,7 @@ class DaemonCommand(
             runCatching { Runtime.getRuntime().removeShutdownHook(shutdown) }
             runCatching { registry.stopAll() }
             runCatching { plane.close() }
+            runCatching { notifier.close() }
             runCatching { stateDir.deleteControlPort() }
             ExitCodes.SUCCESS
         } catch (_: InterruptedException) {
