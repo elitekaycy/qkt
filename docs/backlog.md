@@ -175,6 +175,14 @@ Ranked by leverage for FX/commodities quant research, highest first.
   you're spread-trading currently arrive on the bus in arbitrary order with arbitrary
   skew. A `SynchronizedCandleHub` would emit two-symbol bar events at session boundaries.
   Required for tight pairs trading.
+- `tbd` — **OCO restart-linkage gap**. `OrderManager.siblings` — the map that drives
+  cancel-on-fill and unwind-on-reject — is populated only in `submitOco`, not rebuilt on
+  daemon restart. An OCO leg rejected across a restart boundary leaves its sibling live: a
+  one-legged straddle. Fix: rehydrate sibling linkage during `MT5StateRecovery`.
+- `tbd` — **`MT5Broker.submitComposite` non-atomicity**. The half-placed-OCO bug fixed in
+  `submitOco` ([PR #27](https://github.com/elitekaycy/qkt/pull/27)) is still latent in
+  `submitComposite`. Unreachable via the `OrderManager` OCO path today (legs dispatch
+  individually), so no production impact — fix or delete when that path is next touched.
 
 ### Tier 5 — Hedge-straddle parity gaps (Phase 36+, ~1 day each)
 
