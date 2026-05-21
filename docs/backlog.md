@@ -150,8 +150,9 @@ Items I deferred when shipping Phase 31. Documented in
 - `tbd` — Wire `BrokerEvent.OrderRejected` to the notifier via an `OrderManager`
   correlation map so the message can include symbol/side/quantity (currently configurable
   but silently no-ops). ([#38](https://github.com/elitekaycy/qkt/issues/38))
-- `tbd` — Fire `NotificationEvent.DaemonStarted` from `DaemonCommand` at daemon boot
-  (currently defined but never fired). ([#39](https://github.com/elitekaycy/qkt/issues/39))
+- `done` — Fire `NotificationEvent.DaemonStarted` from `DaemonCommand` at daemon boot.
+  `NotifierFactory.fromConfig` builds the daemon notifier; the event fires when
+  `daemon_started` is opted in. ([#39](https://github.com/elitekaycy/qkt/issues/39))
 - `tbd` — Source a strategy-level `StrategyError` event — needs an `error` event on the
   bus that strategy adapters emit on init/load failure.
   ([#40](https://github.com/elitekaycy/qkt/issues/40))
