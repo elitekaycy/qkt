@@ -18,8 +18,26 @@ class FakeBroker(
 
     var emitAcceptOnSubmit: Boolean = true
 
+    val rejectOrderIds: MutableSet<String> = mutableSetOf()
+
     override fun submit(request: OrderRequest): SubmitAck {
         submits.add(request)
+        if (request.id in rejectOrderIds) {
+            bus.publish(
+                BrokerEvent.OrderRejected(
+                    clientOrderId = request.id,
+                    brokerOrderId = request.id,
+                    reason = "fake venue rejection",
+                    timestamp = clock.now(),
+                ),
+            )
+            return SubmitAck(
+                clientOrderId = request.id,
+                brokerOrderId = request.id,
+                accepted = false,
+                rejectReason = "fake venue rejection",
+            )
+        }
         if (emitAcceptOnSubmit) {
             bus.publish(
                 BrokerEvent.OrderAccepted(
