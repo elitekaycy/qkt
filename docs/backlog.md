@@ -7,6 +7,8 @@ Status legend:
 - `progress` — actively in flight (spec/plan/branch in progress, or partial implementation merged)
 - `tbd` — queued, not started
 
+**Issue tracking.** Every open item is mirrored as a GitHub issue, linked at the end of its line. The working flow: find a bug or pick up an item → the issue holds the problem statement and proposed solution → solve it → close the issue. This file stays the tiered roadmap; issues are the per-item tracker. When an item ships, flip its marker to `done` here and close its issue.
+
 ---
 
 ## Done
@@ -41,8 +43,8 @@ Status legend:
 - `done` — Phase 21: documentation site — MkDocs Material, Mermaid, Dokka, GitHub Pages
 - `done` — Phase 22: KDoc the public API — every Tier 1 type, style guide, SKILL rule for future work
 - `done` — Phase 23: DSL catalog expansion — register SMA/WMA/MACD/Bollinger, add HIGHEST/LOWEST, position dot accessors, `#` comments
-- `tbd`  — Phase 24: risk-sizing primitives — `SIZING N PCT RISK`, `WARMUP N BARS`, `IS NULL` / `IS NOT NULL`, `FLATTEN` DSL action
-- `tbd`  — Phase 25: operator tooling — `qkt fetch` CLI, `TRAILING_STOP` wiring, `per_strategy:` risk config block, VWAP DSL registration (needs TICK_SERIES input plumbing)
+- `tbd`  — Phase 24: risk-sizing primitives — `SIZING N PCT RISK`, `WARMUP N BARS`, `IS NULL` / `IS NOT NULL`, `FLATTEN` DSL action ([#52](https://github.com/elitekaycy/qkt/issues/52))
+- `tbd`  — Phase 25: operator tooling — `qkt fetch` CLI, `TRAILING_STOP` wiring, `per_strategy:` risk config block, VWAP DSL registration (needs TICK_SERIES input plumbing) ([#53](https://github.com/elitekaycy/qkt/issues/53))
 
 ---
 
@@ -52,9 +54,9 @@ Status legend:
 - `done` — Backtest fidelity audit: equity curve, DD-days, Monte Carlo, per-trade risk in HTML report (slippage/spread/regime deferred) (see [phase 16](phases/phase-16.md))
 - `done` — Backtest vs live execution parity: identical trades (orderId/symbol/side/qty/price/timestamp) between Backtest and LiveSession given same compiled strategy and tick sequence (`src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt`)
 - `done` — Backtest report HTML output: single self-contained `report.html` (see [phase 16](phases/phase-16.md))
-- `progress` — Tick-feed accuracy audit: `qkt audit-ticks` framework shipped (TV vs MT5 drift); operator-driven runs against live feeds (see [phase 19](phases/phase-19.md))
-- `tbd` — End-to-end portfolio daemon test (deferred from Phase 14 — see `docs/phases/phase-14.md` known limitations)
-- `progress` — Pristine test sweep + memory leak audit: code-review audit complete, two leaks fixed (Observability executor, OrderManager risk map); two future fixes documented (CandleHub.unregister, Broker.shutdown lifecycle) (see [phase 19](phases/phase-19.md))
+- `progress` — Tick-feed accuracy audit: `qkt audit-ticks` framework shipped (TV vs MT5 drift); operator-driven runs against live feeds (see [phase 19](phases/phase-19.md)) ([#54](https://github.com/elitekaycy/qkt/issues/54))
+- `tbd` — End-to-end portfolio daemon test (deferred from Phase 14 — see `docs/phases/phase-14.md` known limitations) ([#55](https://github.com/elitekaycy/qkt/issues/55))
+- `progress` — Pristine test sweep + memory leak audit: code-review audit complete, two leaks fixed (Observability executor, OrderManager risk map); two future fixes documented (CandleHub.unregister, Broker.shutdown lifecycle) (see [phase 19](phases/phase-19.md)) ([#56](https://github.com/elitekaycy/qkt/issues/56))
 - `done` — Documentation MVP: MkDocs Material site with Diátaxis IA, Mermaid diagrams, Dokka API reference, GitHub Pages deploy via Actions (see [phase 21](phases/phase-21.md))
 
 ---
@@ -63,32 +65,32 @@ Status legend:
 
 - `done` — MT5 broker (multi-profile via mt5-gateway) + LiveSession typed-broker dispatch (see [phase 17](phases/phase-17.md), [phase 18](phases/phase-18.md))
 - `done` — Standardized logging guide: MDC keys documented, console + file patterns specified, conventions for strategy authors + engine contributors (see [docs/logging.md](logging.md))
-- `progress` — Packaging and one-shot install: full docker-compose stack (qkt + mt5-gateway) shipped (Phase 20); single-binary install pending
-- `progress` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint CI green via `check.yml`; release artifact CI still pending
-- `tbd` — Tier 2 KDoc backfill — backtest reporting types, risk types, portfolio supervisor, indicator catalog. Phase 22 covered Tier 1; Tier 2 lands organically as features ship per the SKILL rule.
+- `progress` — Packaging and one-shot install: full docker-compose stack (qkt + mt5-gateway) shipped (Phase 20); single-binary install pending ([#57](https://github.com/elitekaycy/qkt/issues/57))
+- `progress` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint CI green via `check.yml`; release artifact CI still pending ([#58](https://github.com/elitekaycy/qkt/issues/58))
+- `tbd` — Tier 2 KDoc backfill — backtest reporting types, risk types, portfolio supervisor, indicator catalog. Phase 22 covered Tier 1; Tier 2 lands organically as features ship per the SKILL rule. ([#59](https://github.com/elitekaycy/qkt/issues/59))
 
 ---
 
 ## Performance and hardening (post-go-live)
 
-- `tbd` — Speed and latency improvements (profiling-driven)
-- `tbd` — Memory and GC tuning
-- `tbd` — Virtual threads where applicable
-- `tbd` — GraalVM native image for the CLI
-- `tbd` — JNI for hot paths if profiles show wins
-- `tbd` — Stress tests, soak tests, chaos tests
-- `tbd` — Bundle/binary size reduction
+- `tbd` — Speed and latency improvements (profiling-driven) ([#60](https://github.com/elitekaycy/qkt/issues/60))
+- `tbd` — Memory and GC tuning ([#61](https://github.com/elitekaycy/qkt/issues/61))
+- `tbd` — Virtual threads where applicable ([#62](https://github.com/elitekaycy/qkt/issues/62))
+- `tbd` — GraalVM native image for the CLI ([#63](https://github.com/elitekaycy/qkt/issues/63))
+- `tbd` — JNI for hot paths if profiles show wins ([#64](https://github.com/elitekaycy/qkt/issues/64))
+- `tbd` — Stress tests, soak tests, chaos tests ([#65](https://github.com/elitekaycy/qkt/issues/65))
+- `tbd` — Bundle/binary size reduction ([#66](https://github.com/elitekaycy/qkt/issues/66))
 
 ---
 
 ## Future
 
-- `tbd` — News pipeline: Twitter, Yahoo, economic calendar, per-symbol curation; integrates into DSL
-- `tbd` — AI strategy-tuning pipeline: train on a strategy, derive best configs, agent layer for buy/sell decisions, continuous retraining
-- `tbd` — Portfolio v3: `WEIGHT` clause for capital allocation, import-time overrides, nested portfolios (carryover from Phase 14 known limitations)
-- `tbd` — Symbol watch dynamic extension: how strategies declare and acquire data for a totally new symbol at runtime
-- `tbd` — Editor tooling: parser/linter/index/highlighting/autocomplete/template generation for `.qkt` files
-- `tbd` — Landing page
+- `tbd` — News pipeline: Twitter, Yahoo, economic calendar, per-symbol curation; integrates into DSL ([#67](https://github.com/elitekaycy/qkt/issues/67))
+- `tbd` — AI strategy-tuning pipeline: train on a strategy, derive best configs, agent layer for buy/sell decisions, continuous retraining ([#68](https://github.com/elitekaycy/qkt/issues/68))
+- `tbd` — Portfolio v3: `WEIGHT` clause for capital allocation, import-time overrides, nested portfolios (carryover from Phase 14 known limitations) ([#69](https://github.com/elitekaycy/qkt/issues/69))
+- `tbd` — Symbol watch dynamic extension: how strategies declare and acquire data for a totally new symbol at runtime ([#70](https://github.com/elitekaycy/qkt/issues/70))
+- `tbd` — Editor tooling for `.qkt` files — parser/AST/linter, syntax highlighting, language server, VSCode + Neovim extensions. Promoted to active (not parked); decomposed and tracked as epic [#71](https://github.com/elitekaycy/qkt/issues/71) with children [#82](https://github.com/elitekaycy/qkt/issues/82)–[#86](https://github.com/elitekaycy/qkt/issues/86).
+- `tbd` — Landing page ([#72](https://github.com/elitekaycy/qkt/issues/72))
 
 ---
 
@@ -106,6 +108,7 @@ either supportive of that focus or queued for after.
     proven under live conditions).
   - 1 week of placement windows complete without engine-side errors.
   - Daily PnL roughly matches manually-computed expectation.
+  - ([#33](https://github.com/elitekaycy/qkt/issues/33))
 
 ### Tier 1 — staged, awaiting decision (minutes to ship)
 
@@ -115,6 +118,7 @@ Already committed to a branch, not merged. Pick up when the next release window 
   pure-MT5 deployments don't construct two idle `OkHttpClient` instances at boot. Branch:
   [`lazy-bybit-routes`](https://github.com/elitekaycy/qkt/tree/lazy-bybit-routes) (commit
   `6591d7e`). Tested. Decide whether worth a v0.28.3 cycle or batch with later work.
+  ([#34](https://github.com/elitekaycy/qkt/issues/34))
 
 - `done` — v0.28.6: `MT5StateRecovery` now correlates venue-side orphan positions back
   to the owning strategy via comment-prefix match and seeds `positionMetaByTicket` so a
@@ -127,12 +131,15 @@ Already committed to a branch, not merged. Pick up when the next release window 
 
 - `tbd` — Wire Telegram alerts in qkt-prod: bot, chat id, `TELEGRAM_ENABLED=true`. Phase
   31 infrastructure already shipped + dormant; flipping the env vars is the only step.
+  ([#35](https://github.com/elitekaycy/qkt/issues/35))
 - `tbd` — Docker daemon json-file log rotation for the qkt service in `qkt-prod`
   `compose.yml` (`logging.driver: json-file` with `max-size` + `max-file`). Separate from
   logback's bind-mount rotation (already done in v0.28.1).
+  ([#36](https://github.com/elitekaycy/qkt/issues/36))
 - `tbd` — Backup story for `qkt-prod/state/`. State persists across container restarts
   via bind mount; not backed up off-host. If the VPS disk dies mid-trade, reconciliation
   works only if the broker still has the positions. Document a backup cadence.
+  ([#37](https://github.com/elitekaycy/qkt/issues/37))
 
 ### Tier 3 — Phase 31.1 (telegram alerts completion, hours)
 
@@ -142,47 +149,49 @@ Items I deferred when shipping Phase 31. Documented in
 
 - `tbd` — Wire `BrokerEvent.OrderRejected` to the notifier via an `OrderManager`
   correlation map so the message can include symbol/side/quantity (currently configurable
-  but silently no-ops).
+  but silently no-ops). ([#38](https://github.com/elitekaycy/qkt/issues/38))
 - `tbd` — Fire `NotificationEvent.DaemonStarted` from `DaemonCommand` at daemon boot
-  (currently defined but never fired).
+  (currently defined but never fired). ([#39](https://github.com/elitekaycy/qkt/issues/39))
 - `tbd` — Source a strategy-level `StrategyError` event — needs an `error` event on the
   bus that strategy adapters emit on init/load failure.
+  ([#40](https://github.com/elitekaycy/qkt/issues/40))
 - `tbd` — Daily-rolling tracker for `equityDeltaPct`, `tradesToday`, `haltsToday` so the
   daily summary stops rendering placeholder zeros.
+  ([#41](https://github.com/elitekaycy/qkt/issues/41))
 - `tbd` — Consolidate to one `DailySummaryScheduler` per daemon instead of one per
   `LiveSession`, so multi-strategy operators get one summary message at the UTC tick
-  instead of N.
+  instead of N. ([#42](https://github.com/elitekaycy/qkt/issues/42))
 
 ### Tier 4 — Single-phase engine work (~1-3 days each)
 
 Ranked by leverage for FX/commodities quant research, highest first.
 
-- `tbd` — **Phase 32 — bid/ask tick model**. Add `bid: BigDecimal?` and `ask: BigDecimal?`
-  to `Tick`. Wire from `Mt5TickFeedSource` (the gateway already returns them in
-  `/symbol_info_tick/{sym}`). Expose in DSL via `gold.bid` / `gold.ask` / `gold.spread`.
-  Closes GAP 3 from hedge-straddle and unlocks spread-gated strategies + true pairs
-  trading. **Highest leverage for the cross-strategy / arbitrage research direction.**
+- `done` — **Phase 32 — bid/ask DSL exposure**. `bid`/`ask` carried onto `Candle`,
+  `<stream>.bid` / `.ask` / `.spread` exposed to the DSL and the Kotlin `StreamRef`.
+  Merged `3a17386`. See [phase 32](phases/phase-32-bid-ask.md).
 - `tbd` — **Phase 33 — `MT5BrokerSimulator`** for backtest fidelity. Closes the 5
   remaining backtest-vs-live divergences documented in
   [`docs/parity/backtest-vs-live.md`](parity/backtest-vs-live.md) (rows 1, 2, 3, 4-6).
   Turns "backtest result is directional only" into "backtest matches live within
-  spread/slippage budget".
+  spread/slippage budget". ([#43](https://github.com/elitekaycy/qkt/issues/43))
 - `tbd` — **Phase 34 — second-broker proof of life**. Add a second MT5 profile (e.g.
   ICMARKETS) to qkt-prod, deploy a trivial no-op strategy on it, observe both run on the
   same daemon. Proves multi-broker routing in production. Engine code already supports;
-  this is mostly config + ops.
+  this is mostly config + ops. ([#44](https://github.com/elitekaycy/qkt/issues/44))
 - `tbd` — **Phase 35 — bar-level synchronized publish for paired symbols**. Two symbols
   you're spread-trading currently arrive on the bus in arbitrary order with arbitrary
   skew. A `SynchronizedCandleHub` would emit two-symbol bar events at session boundaries.
-  Required for tight pairs trading.
+  Required for tight pairs trading. ([#45](https://github.com/elitekaycy/qkt/issues/45))
 - `tbd` — **OCO restart-linkage gap**. `OrderManager.siblings` — the map that drives
   cancel-on-fill and unwind-on-reject — is populated only in `submitOco`, not rebuilt on
   daemon restart. An OCO leg rejected across a restart boundary leaves its sibling live: a
   one-legged straddle. Fix: rehydrate sibling linkage during `MT5StateRecovery`.
+  ([#46](https://github.com/elitekaycy/qkt/issues/46))
 - `tbd` — **`MT5Broker.submitComposite` non-atomicity**. The half-placed-OCO bug fixed in
   `submitOco` ([PR #27](https://github.com/elitekaycy/qkt/pull/27)) is still latent in
   `submitComposite`. Unreachable via the `OrderManager` OCO path today (legs dispatch
   individually), so no production impact — fix or delete when that path is next touched.
+  ([#47](https://github.com/elitekaycy/qkt/issues/47))
 
 ### Tier 5 — Hedge-straddle parity gaps (Phase 36+, ~1 day each)
 
@@ -192,25 +201,28 @@ pa-quant.
 
 - `tbd` — **Phase 36 — armed trailing stop** (`STOP LOSS TRAIL <distance> AFTER MFE >=
   <threshold>`). Closes hedge-straddle GAP 1. ~14% of pa-quant exits use the trail.
+  ([#48](https://github.com/elitekaycy/qkt/issues/48))
 - `tbd` — **Phase 37 — proportional stack sizing** (`STACK_AT SIZING <expr>` instead of
   literal). Closes GAP 2 — stacks would scale with the main leg's hour-varying size.
+  ([#49](https://github.com/elitekaycy/qkt/issues/49))
 - `tbd` — **Phase 38 — GTD time-in-force** for pending orders. Closes GAP 5 — the `:10`
-  sweep rule workaround goes away.
+  sweep rule workaround goes away. ([#50](https://github.com/elitekaycy/qkt/issues/50))
 - `tbd` — **Phase 39 — `INSTRUMENT_META` DSL accessor**. Expose `gold.tick_size`,
   `gold.contract_size`, etc. so strategies can introspect the instrument they trade.
-  Minor but useful for portable strategies.
+  Minor but useful for portable strategies. ([#51](https://github.com/elitekaycy/qkt/issues/51))
 
 ### Tier 6 — Asset-class expansion (multi-phase)
 
 - `tbd` — **Crypto exercised end-to-end on Bybit.** Code paths exist (`BybitSpotBroker`,
   `BybitLinearBroker`, market sources). Never run in qkt-prod. First Bybit strategy will
-  find latent bugs.
+  find latent bugs. ([#73](https://github.com/elitekaycy/qkt/issues/73))
 - `tbd` — **Equity / stocks broker adapter.** No equity broker exists. Needs new broker
   like `MT5Broker` (Interactive Brokers / Alpaca / TradeStation) plus stock-specific
   concepts: corporate actions, dividend adjustment, pre/post-market sessions, halts.
-  Substantial — multi-phase work.
+  Substantial — multi-phase work. ([#74](https://github.com/elitekaycy/qkt/issues/74))
 - `tbd` — **Futures broker adapter** (e.g. Tradovate, IBKR futures). Similar scope to
   equities — distinct order types, session calendars, expiry roll logic.
+  ([#75](https://github.com/elitekaycy/qkt/issues/75))
 
 ### Tier 7 — DSL surface expansion (as needed)
 
@@ -220,25 +232,32 @@ following are likely to surface as the second/third strategy gets written:
 - `tbd` — Cross-strategy state sharing (one strategy reads another's positions or
   equity). Currently strategies are isolated via `StrategyPositionTracker` namespacing;
   cross-reads would need an explicit query primitive.
-- `tbd` — Symbol watch dynamic extension (already in the **Future** section above).
+  ([#76](https://github.com/elitekaycy/qkt/issues/76))
+- `tbd` — Symbol watch dynamic extension (tracked in the **Future** section above,
+  [#70](https://github.com/elitekaycy/qkt/issues/70)).
 - `tbd` — DSL action: `SCHEDULE` for time-of-day non-tick-driven actions (currently
   done via `WHEN NOW.minute_utc = N`, which works but is awkward).
+  ([#77](https://github.com/elitekaycy/qkt/issues/77))
 
 ### Tier 8 — Platform maturity (post-research-platform)
 
 - `tbd` — Inbound Telegram bot commands (`/status`, `/halt`, `/resume` from phone) —
-  needs long-polling or webhook receiver.
+  needs long-polling or webhook receiver. ([#78](https://github.com/elitekaycy/qkt/issues/78))
 - `tbd` — HTTP `/metrics` endpoint (Prometheus-compatible) for `NotifierMetrics` +
-  engine internals.
+  engine internals. ([#79](https://github.com/elitekaycy/qkt/issues/79))
 - `tbd` — Multi-host deployment (active-passive failover for the qkt daemon).
+  ([#80](https://github.com/elitekaycy/qkt/issues/80))
 - `tbd` — `qkt research` REPL — interactive strategy authoring with live tick replay
-  against historical data.
+  against historical data. ([#81](https://github.com/elitekaycy/qkt/issues/81))
 
 ---
 
 ## How to maintain this file
 
 - Update the status marker in place (`done` ↔ `progress` ↔ `tbd`).
+- Every open item carries a GitHub issue link. When you open a new item, create its issue
+  (problem statement + proposed solution) and link it here. When an item ships, flip it to
+  `done` and close the issue.
 - When an item ships, leave it in its current section but flip to `done`. Move to the **Done** section only at the next major housekeeping pass.
 - New items go into the section that matches their priority. If unsure between immediate and future, default to future.
 - Keep entries one line each. If an item needs more detail, link to its spec/plan/changelog.

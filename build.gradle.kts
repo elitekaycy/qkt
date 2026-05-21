@@ -112,6 +112,12 @@ tasks.register<JavaExec>("runLiveDemo") {
 tasks.named<org.jetbrains.dokka.gradle.DokkaTask>("dokkaHtml") {
     moduleName.set("qkt")
     outputDirectory.set(layout.buildDirectory.dir("dokka/html"))
+    pluginsMapConfiguration.set(
+        mapOf(
+            "org.jetbrains.dokka.base.DokkaBase" to
+                """{ "customAssets": ["${rootProject.file("docs/assets/logo-icon.svg")}"], "footerMessage": "qkt - Apache 2.0" }""",
+        ),
+    )
     dokkaSourceSets.configureEach {
         includeNonPublic.set(false)
         skipDeprecated.set(false)

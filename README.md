@@ -1,7 +1,15 @@
-# qkt
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qkt-logo-dark.svg">
+    <img alt="qkt" src="docs/assets/qkt-logo-light.svg" width="260">
+  </picture>
+</p>
 
-[![check](https://github.com/elitekaycy/qkt/actions/workflows/check.yml/badge.svg)](https://github.com/elitekaycy/qkt/actions/workflows/check.yml)
-[![docs](https://github.com/elitekaycy/qkt/actions/workflows/docs.yml/badge.svg)](https://github.com/elitekaycy/qkt/actions/workflows/docs.yml)
+<p align="center">
+  <a href="https://github.com/elitekaycy/qkt/actions/workflows/check.yml"><img src="https://github.com/elitekaycy/qkt/actions/workflows/check.yml/badge.svg" alt="check"></a>
+  <a href="https://github.com/elitekaycy/qkt/actions/workflows/docs.yml"><img src="https://github.com/elitekaycy/qkt/actions/workflows/docs.yml/badge.svg" alt="docs"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="license"></a>
+</p>
 
 An event-driven trading engine in Kotlin with backtest replay, parameter sweeps, attribution-aware risk, and a future SQL-like DSL.
 
@@ -9,7 +17,7 @@ An event-driven trading engine in Kotlin with backtest replay, parameter sweeps,
 
 ## Status
 
-Pre-1.0. Latest release: [`v0.23.0`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
+Pre-1.0. Latest release: [`v0.28.8`](https://github.com/elitekaycy/qkt/releases/latest). Breaking changes happen in minor releases until `1.0.0`. The engine is functional and tested but the public API is not yet declared stable.
 
 For a 5-minute getting-started, see [`QUICKSTART.md`](QUICKSTART.md).
 
@@ -33,6 +41,16 @@ See [`docs/phases/`](docs/phases/) for per-phase changelogs and [`docs/release-p
 - **MT5 broker (multi-profile)** — talks to per-broker `mt5-gateway` HTTP services; built-in defaults for Exness, ICMarkets, FTMO, Pepperstone; override or extend via `qkt.config.yaml`; v1 ships Market + Bracket ([phase 17](docs/phases/phase-17.md)).
 - **Live broker dispatch** — `LiveSession` accepts a typed broker registry; strategies declaring `EXNESS:EURUSD` route orders through the configured profile (MT5 or any other protocol). Per-session lifecycles via `BrokerFactory` ([phase 18](docs/phases/phase-18.md)).
 - **Pre-live confidence pack** — end-to-end MT5 daemon smoke test, `qkt audit-ticks` CLI for TV-vs-MT5 drift comparison, standardized logging guide, memory leak audit + fixes ([phase 19](docs/phases/phase-19.md)).
+- **One-shot Docker stack** — `docker compose up` brings up qkt + `mt5-gateway` together; a top-level `QUICKSTART.md` for a 5-minute start ([phase 20](docs/phases/phase-20.md)).
+- **Documentation site** — MkDocs Material site with a Diátaxis structure, Mermaid diagrams, and a Dokka API reference, deployed to GitHub Pages ([phase 21](docs/phases/phase-21.md)).
+- **DSL indicator + accessor catalog** — SMA/WMA/MACD/Bollinger, `HIGHEST`/`LOWEST`, position dot-accessors, `#` comments ([phase 23](docs/phases/phase-23.md)).
+- **Native MT5 pending-order family** — pending entries, OCO, and trailing stops placed natively on MT5, with a full pending-order fill lifecycle ([phase 26](docs/phases/)).
+- **Conditional bracketed stacks** — `STACK_AT` builds price-conditional bracketed entry stacks ([phase 27](docs/phases/phase-27-conditional-bracketed-stacks.md)).
+- **Multi-source market data** — one strategy can pull different streams from different vendors at once ([phase 28](docs/phases/phase-28-multi-source-marketdata.md)).
+- **Engine state persistence** — daemon state survives restarts; in-flight orders and positions are recovered ([phase 29](docs/phases/phase-29-engine-state-persistence.md)).
+- **Instrument metadata** — contract size, tick size, and related facts resolved per instrument ([phase 30](docs/phases/phase-30-instrument-metadata.md)).
+- **Telegram alerts** — order, halt, and daily-summary notifications pushed to Telegram ([phase 31](docs/phases/phase-31-telegram-alerts.md)).
+- **bid/ask in the DSL** — `<stream>.bid` / `.ask` / `.spread` for spread-gated strategies ([phase 32](docs/phases/phase-32-bid-ask.md)).
 
 ### STACK example — 3-layer pyramid
 
@@ -68,7 +86,7 @@ qkt has three deployment shapes: foreground for one strategy, daemon for many, o
 
 ```bash
 qkt run strategies/ema-crossover.qkt
-# [INFO] qkt 0.13.0 — strategy ema-crossover v1 — paper-trading
+# [INFO] qkt 0.28.8 — strategy ema-crossover v1 — paper-trading
 # QKT_PORT=47291
 # ... ticks flow, fills print to stdout, /status etc. served on QKT_PORT
 ```
@@ -102,7 +120,7 @@ The daemon is published as a multi-stage image at `ghcr.io/elitekaycy/qkt:<tag>`
 docker run -d --name qkt-prop \
     -v $(pwd)/strategies:/strategies \
     -p 47000-47100:47000-47100 \
-    ghcr.io/elitekaycy/qkt:0.13.0
+    ghcr.io/elitekaycy/qkt:0.28.8
 
 docker exec qkt-prop qkt list
 docker exec qkt-prop qkt logs sample -f
@@ -132,22 +150,29 @@ src/main/kotlin/com/qkt/
 │   ├── metrics/     profitFactor, winLossStats, sharpe, calmar
 │   ├── report/      BacktestReportWriter, SweepReportWriter, ReportSerializer
 │   └── sweep/       BacktestSweep, SweepRun, SweepResult
-├── broker/          Broker, PaperBroker, BybitBroker, CompositeBroker
+├── broker/          Broker, PaperBroker, BybitBroker, MT5Broker, CompositeBroker
 ├── bus/             EventBus
-├── candles/         CandleAggregator, TimeWindow
+├── candles/         CandleAggregator, CandleHub, TimeWindow
+├── cli/             the qkt CLI — command parsing, subcommands, daemon control
 ├── common/          Clock, FixedClock, SystemClock, Money, Side, IdGenerator,
 │                    TradingCalendar (crypto, fx, NYSE), TimeRange, SessionAnchor
+├── dsl/             the .qkt DSL — lexer, parser, compiler, evaluator, Kotlin DSL
 ├── engine/          Engine
 ├── events/          Event, TickEvent, CandleEvent, SignalEvent, OrderEvent,
 │                    BrokerEvent (Filled, Rejected, Reconciled, ...), RiskEvent
-├── execution/       Order, OrderRequest, Trade, OrderType
+├── execution/       Order, OrderRequest, Trade, OrderType, OrderManager
+├── indicators/      indicator catalog — SMA, EMA, WMA, MACD, Bollinger, RSI, ...
+├── instrument/      instrument metadata — contract size, tick size, symbol policy
 ├── marketdata/      Tick, Candle, MarketSource, MarketPriceTracker, TickFeed
 │                    (Historical, Sequence, Merging), data store, vendors
+├── notify/          notification system — Telegram notifier, event routing
+├── persistence/     engine state persistence — state file read/write, recovery
 ├── pnl/             PnLCalculator, StrategyPnL, PnLProvider, StrategyPnLView
 ├── positions/       PositionTracker, StrategyPositionTracker, Position
 ├── risk/            RiskEngine, RiskState, EquityTracker, DrawdownTracker,
 │                    DailyPnLTracker, RiskRule, HaltRule, RiskView, rules/
-└── strategy/        Strategy, StrategyContext, Signal, Mode, WarmupSpec, samples/
+├── strategy/        Strategy, StrategyContext, Signal, Mode, WarmupSpec, samples/
+└── tools/           operational tooling — audit-ticks and other diagnostics
 ```
 
 ## Build, run, test
