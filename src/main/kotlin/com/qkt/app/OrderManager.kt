@@ -717,9 +717,27 @@ class OrderManager(
         siblings[req.leg1.id] = listOf(req.leg2.id)
         siblings[req.leg2.id] = listOf(req.leg1.id)
 
-        dispatch(req.leg1)
-        dispatch(req.leg2)
+        // Place legs one at a time and unwind on rejection — a half-placed OCO would
+        // run one-legged (a directional bet, not a hedge).
+        val ack1 = dispatch(req.leg1)
+        if (!ack1.accepted) {
+            cancel(req.leg2.id)
+            return rejectOco(req.id, "leg ${req.leg1.id} rejected: ${ack1.rejectReason ?: "unknown"}")
+        }
+        val ack2 = dispatch(req.leg2)
+        if (!ack2.accepted) {
+            cancel(req.leg1.id)
+            return rejectOco(req.id, "leg ${req.leg2.id} rejected: ${ack2.rejectReason ?: "unknown"}")
+        }
         return SubmitAck(req.id, req.id, accepted = true)
+    }
+
+    private fun rejectOco(
+        ocoId: String,
+        reason: String,
+    ): SubmitAck {
+        update(ocoId) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
+        return SubmitAck(ocoId, ocoId, accepted = false, rejectReason = reason)
     }
 
     private fun holdPending(request: OrderRequest): SubmitAck {

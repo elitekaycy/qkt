@@ -126,4 +126,58 @@ class OrderManagerOcoTest {
 
         assertThat(broker.cancels).containsExactlyInAnyOrder("l1", "l2")
     }
+
+    @Test
+    fun `leg2 rejection cancels the live leg1`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        broker.rejectOrderIds.add("l2")
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val ack =
+            om.submit(
+                OrderRequest.StandaloneOCO(
+                    id = "oco1",
+                    symbol = "X",
+                    side = Side.BUY,
+                    quantity = Money.of("1"),
+                    leg1 = limit("l1", Side.BUY, "100"),
+                    leg2 = limit("l2", Side.SELL, "120"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(broker.cancels).contains("l1")
+        assertThat(ack.accepted).isFalse
+        assertThat(om.getOrder("oco1")?.state).isEqualTo(OrderState.REJECTED)
+    }
+
+    @Test
+    fun `leg1 rejection abandons the OCO without placing leg2`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        broker.rejectOrderIds.add("l1")
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val ack =
+            om.submit(
+                OrderRequest.StandaloneOCO(
+                    id = "oco1",
+                    symbol = "X",
+                    side = Side.BUY,
+                    quantity = Money.of("1"),
+                    leg1 = limit("l1", Side.BUY, "100"),
+                    leg2 = limit("l2", Side.SELL, "120"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(broker.submits.map { it.id }).doesNotContain("l2")
+        assertThat(ack.accepted).isFalse
+        assertThat(om.getOrder("oco1")?.state).isEqualTo(OrderState.REJECTED)
+    }
 }
