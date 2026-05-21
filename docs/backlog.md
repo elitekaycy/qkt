@@ -110,14 +110,14 @@ either supportive of that focus or queued for after.
   - Daily PnL roughly matches manually-computed expectation.
   - ([#33](https://github.com/elitekaycy/qkt/issues/33))
 
-### Tier 1 — staged, awaiting decision (minutes to ship)
+### Tier 1 — staged work
 
-Already committed to a branch, not merged. Pick up when the next release window opens.
+Both items below have shipped.
 
-- `progress` — Gate Bybit market-source routes on `BYBIT_API_KEY` env presence so
-  pure-MT5 deployments don't construct two idle `OkHttpClient` instances at boot. Branch:
-  [`lazy-bybit-routes`](https://github.com/elitekaycy/qkt/tree/lazy-bybit-routes) (commit
-  `6591d7e`). Tested. Decide whether worth a v0.28.3 cycle or batch with later work.
+- `done` — Gate Bybit market-source routes on `BYBIT_API_KEY` env presence so
+  pure-MT5 deployments don't construct two idle `OkHttpClient` instances at boot.
+  `MarketSourceFactory.composite` gained an `enableBybit` flag defaulting to the
+  `BYBIT_API_KEY` env check. Shipped in v0.28.3 (commit `6591d7e`, merge `dd7a815`).
   ([#34](https://github.com/elitekaycy/qkt/issues/34))
 
 - `done` — v0.28.6: `MT5StateRecovery` now correlates venue-side orphan positions back
