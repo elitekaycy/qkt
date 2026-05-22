@@ -74,10 +74,12 @@ existing `tests/smoke-install.sh`, **extended** with a daemon-lifecycle stage.
      run `qkt --version`, assert it equals `BuildInfo.VERSION`.
   2. **Strategy author flow** — write a `.qkt` strategy, `qkt parse`, `qkt backtest`
      against the bundled sample data, JSON-validate the report.
-  3. **Daemon lifecycle** (new) — `qkt daemon` start → `qkt deploy <strategy>` →
-     `qkt list` shows the strategy → `qkt status` responds → `qkt logs` shows
-     strategy output → `qkt stop` → `qkt daemon stop`. Confirms the control
-     plane and strategy logging.
+  3. **Daemon lifecycle** (new) — start `qkt daemon`, `qkt deploy` a strategy,
+     assert `qkt list` and `qkt status` see it, then `qkt stop` and
+     `qkt daemon stop`. These control-plane checks hard-fail. The strategy
+     sources market data from Bybit's public feed (`BYBIT_SPOT:BTCUSDT`, with a
+     dummy `BYBIT_API_KEY` to enable the route); a **soft** check looks for
+     logged live ticks — a blocked Bybit WebSocket warns rather than fails.
   4. **Docker** — `docker build`, run `qkt --version` in-container, run a
      backtest in-container.
 - The identical suite runs again on `main` after manual promotion — the final
@@ -178,6 +180,10 @@ same PR as the workflow changes (living-document protocol).
 
 - The PAT is a credential with write access; it must be fine-grained and
   scoped to this repo only. If leaked, it permits pushes to `testing`/`main`.
-- The daemon-lifecycle stage must run without a live market feed — it uses a
-  `BACKTEST:`-sourced strategy against bundled sample data and asserts on
-  control-plane behaviour and log output, not on live trades.
+- The daemon-lifecycle stage needs a live market feed for its strategy.
+  TradingView is unusable from CI runners — it blocks datacenter IPs. Bybit's
+  public feed is the source instead. The control-plane assertions are
+  network-independent and hard-fail; the live-tick assertion is **soft**,
+  because some CI egress policies block `stream.bybit.com`. Once a real
+  `testing`-branch run confirms the Bybit WebSocket is reachable from GitHub
+  runners, the live-tick assertion can be hardened.
