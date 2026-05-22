@@ -134,11 +134,11 @@ listed with the follow-up phase that closes it.
   no strategy-level error event on the bus for that case.
   (`daemon_started` is fired from `DaemonCommand` at boot when opted in; the
   daemon builds its notifier via `NotifierFactory.fromConfig`.)
-- **Daily summary has placeholder fields for `equityDeltaPct`,
-  `tradesToday`, and `haltsToday`.** They render as `0` / `0%` until a
-  daily-rolling tracker is added in Phase 31.1. The numerically-correct
-  fields (`equity`, `realizedToday`, `unrealized`, `positionsSummary`)
-  are populated from `StrategyPnL` and `StrategyPositionTracker`.
+- **Daily summary `equityDeltaPct`, `tradesToday`, `haltsToday` are real**
+  (Phase 31.1). `DailyRollingTracker` counts trades and halts and tracks
+  equity change since the previous summary; each summary fire reads and
+  resets its window. The tracker is in-memory — a daemon restart begins a
+  fresh window.
 - **Single chat per daemon.** Multi-chat routing is deferred. Config
   schema (`chat_id` as scalar) leaves the door open for a scalar→map
   evolution when a second strategy needs its own chat.
