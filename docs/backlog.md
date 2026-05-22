@@ -66,7 +66,7 @@ Status legend:
 - `done` — MT5 broker (multi-profile via mt5-gateway) + LiveSession typed-broker dispatch (see [phase 17](phases/phase-17.md), [phase 18](phases/phase-18.md))
 - `done` — Standardized logging guide: MDC keys documented, console + file patterns specified, conventions for strategy authors + engine contributors (see [docs/logging.md](logging.md))
 - `progress` — Packaging and one-shot install: full docker-compose stack (qkt + mt5-gateway) shipped (Phase 20); single-binary install pending ([#57](https://github.com/elitekaycy/qkt/issues/57))
-- `progress` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint CI green via `check.yml`; release artifact CI still pending ([#58](https://github.com/elitekaycy/qkt/issues/58))
+- `done` — CI/CD: docs build + GitHub Pages deploy shipped (Phase 21); build/test/ktlint CI green via `check.yml`; release-artifact CI shipped via `release.yml` — `distTar` attached to the GitHub release on each `v*` tag (`scripts/install.sh` consumes it). ([#58](https://github.com/elitekaycy/qkt/issues/58))
 - `tbd` — Tier 2 KDoc backfill — backtest reporting types, risk types, portfolio supervisor, indicator catalog. Phase 22 covered Tier 1; Tier 2 lands organically as features ship per the SKILL rule. ([#59](https://github.com/elitekaycy/qkt/issues/59))
 
 ---
