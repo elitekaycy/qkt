@@ -144,7 +144,17 @@ class DaemonCommand(
             println("[INFO] mt5 broker profiles loaded: ${mt5Profiles.joinToString { it.name }}")
         }
 
-        loadDirIfRequested(args.option("load-dir"), registry)
+        loadDirIfRequested(args.option("load-dir"), registry) { name, message ->
+            if (NotifyEventKind.STRATEGY_ERROR in cfg.notify.telegram.events) {
+                notifier.notify(
+                    NotificationEvent.StrategyError(
+                        strategyId = name,
+                        message = message,
+                        timestamp = Instant.now().toEpochMilli(),
+                    ),
+                )
+            }
+        }
 
         println("[INFO] daemon ready")
 
@@ -229,9 +239,10 @@ class DaemonCommand(
         }
     }
 
-    private fun loadDirIfRequested(
+    internal fun loadDirIfRequested(
         dir: String?,
         registry: StrategyRegistry,
+        onDeployError: (name: String, message: String) -> Unit = { _, _ -> },
     ) {
         if (dir == null) return
         val path =
@@ -249,7 +260,10 @@ class DaemonCommand(
                 val name = file.fileName.toString().removeSuffix(".qkt")
                 runCatching { registry.deploy(name, file) }
                     .onSuccess { println("[INFO] auto-deployed $name from $file") }
-                    .onFailure { System.err.println("[WARN] failed to auto-deploy $name: ${it.message}") }
+                    .onFailure { e ->
+                        System.err.println("[WARN] failed to auto-deploy $name: ${e.message}")
+                        onDeployError(name, e.message ?: e::class.java.simpleName)
+                    }
             }
         }
     }

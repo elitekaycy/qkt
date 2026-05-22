@@ -128,11 +128,12 @@ listed with the follow-up phase that closes it.
 - **`order_rejected` is wired** (Phase 31.1). `BrokerEvent.OrderRejected`
   omits `symbol`/`side`/`quantity`; `LiveSession` recovers them via
   `OrderManager.orderDetailsFor` and the alert names the full order.
-- **`strategy_error` is defined but not fired.** There is no strategy-level
-  error event on the bus to source it from — deferred to Phase 31.1.
-  (`daemon_started` is now fired from `com.qkt.cli.DaemonCommand` at daemon
-  boot when `daemon_started` is an opted-in event; the daemon builds its
-  notifier via `NotifierFactory.fromConfig`.)
+- **`strategy_error` fires on deploy failure** (Phase 31.1). `DaemonCommand`
+  fires it when a `--load-dir` auto-deploy fails to parse, compile, or start.
+  A runtime error in an already-running strategy is not yet covered — there is
+  no strategy-level error event on the bus for that case.
+  (`daemon_started` is fired from `DaemonCommand` at boot when opted in; the
+  daemon builds its notifier via `NotifierFactory.fromConfig`.)
 - **Daily summary has placeholder fields for `equityDeltaPct`,
   `tradesToday`, and `haltsToday`.** They render as `0` / `0%` until a
   daily-rolling tracker is added in Phase 31.1. The numerically-correct
