@@ -172,7 +172,9 @@ class DaemonCommand(
         // per-strategy rows of every live session, so a multi-strategy daemon sends one
         // summary message at the UTC tick instead of one per session.
         val dailySummaryScheduler =
-            if (cfg.notify.telegram.dailySummaryUtc.isNotBlank()) {
+            if (cfg.notify.telegram.dailySummaryUtc
+                    .isNotBlank()
+            ) {
                 DailySummaryScheduler(
                     notifier = notifier,
                     producer = {
