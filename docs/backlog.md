@@ -149,17 +149,17 @@ Items I deferred when shipping Phase 31. Documented in
 [`docs/phases/phase-31-telegram-alerts.md`](phases/phase-31-telegram-alerts.md) under
 "Known limitations".
 
-- `tbd` — Wire `BrokerEvent.OrderRejected` to the notifier via an `OrderManager`
-  correlation map so the message can include symbol/side/quantity (currently configurable
-  but silently no-ops). ([#38](https://github.com/elitekaycy/qkt/issues/38))
+- `done` — Wire `BrokerEvent.OrderRejected` to the notifier via `OrderManager`
+  (`orderDetailsFor`) so the alert names symbol/side/quantity.
+  ([#38](https://github.com/elitekaycy/qkt/issues/38))
 - `done` — Fire `NotificationEvent.DaemonStarted` from `DaemonCommand` at daemon boot.
   `NotifierFactory.fromConfig` builds the daemon notifier; the event fires when
   `daemon_started` is opted in. ([#39](https://github.com/elitekaycy/qkt/issues/39))
-- `tbd` — Source a strategy-level `StrategyError` event — needs an `error` event on the
-  bus that strategy adapters emit on init/load failure.
+- `done` — Strategy-error alerts: `DaemonCommand` fires `NotificationEvent.StrategyError`
+  when a `--load-dir` auto-deploy fails to parse/compile/start.
   ([#40](https://github.com/elitekaycy/qkt/issues/40))
-- `tbd` — Daily-rolling tracker for `equityDeltaPct`, `tradesToday`, `haltsToday` so the
-  daily summary stops rendering placeholder zeros.
+- `done` — Daily-rolling tracker for `equityDeltaPct`, `tradesToday`, `haltsToday` —
+  `DailyRollingTracker` feeds the daily summary real numbers instead of placeholder zeros.
   ([#41](https://github.com/elitekaycy/qkt/issues/41))
 - `tbd` — Consolidate to one `DailySummaryScheduler` per daemon instead of one per
   `LiveSession`, so multi-strategy operators get one summary message at the UTC tick
