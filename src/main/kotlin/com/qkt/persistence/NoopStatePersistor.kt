@@ -15,6 +15,7 @@ class NoopStatePersistor : StatePersistor {
         var bracketPairs: List<BracketPair> = emptyList(),
         var pendingOrders: Map<String, OrderRequest> = emptyMap(),
         var pendingStacks: Map<String, PersistedTierState> = emptyMap(),
+        var ocoLegs: List<PersistedOcoLeg> = emptyList(),
     )
 
     private val state: ConcurrentHashMap<String, StrategyState> = ConcurrentHashMap()
@@ -68,6 +69,16 @@ class NoopStatePersistor : StatePersistor {
 
     override fun loadPendingStacks(strategyId: String): Map<String, PersistedTierState> =
         state[strategyId]?.pendingStacks ?: emptyMap()
+
+    override fun saveOcoLegs(
+        strategyId: String,
+        legs: List<PersistedOcoLeg>,
+    ) {
+        stateFor(strategyId).ocoLegs = legs
+    }
+
+    override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> =
+        state[strategyId]?.ocoLegs ?: emptyList()
 
     override fun clearStrategy(strategyId: String) {
         state.remove(strategyId)

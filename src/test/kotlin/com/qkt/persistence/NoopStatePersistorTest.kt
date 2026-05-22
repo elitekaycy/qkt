@@ -1,6 +1,8 @@
 package com.qkt.persistence
 
 import com.qkt.common.Side
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.positions.LegBook
 import com.qkt.positions.LegRole
 import com.qkt.positions.PositionLeg
@@ -9,6 +11,20 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class NoopStatePersistorTest {
+    private fun legRequest(
+        id: String,
+        side: Side,
+    ) = OrderRequest.Stop(
+        id = id,
+        symbol = "XAUUSDm",
+        side = side,
+        quantity = BigDecimal("0.20"),
+        stopPrice = BigDecimal("4700.0"),
+        timeInForce = TimeInForce.GTC,
+        timestamp = 0L,
+        strategyId = "hedge",
+    )
+
     @Test
     fun `legbook round-trip preserves primary and stack legs`() {
         val persistor = NoopStatePersistor()
@@ -98,5 +114,25 @@ class NoopStatePersistorTest {
         persistor.saveBracketPairs("hedge", listOf(BracketPair("e", "sl", "tp", "leg-1")))
         persistor.clearStrategy("hedge")
         assertThat(persistor.loadBracketPairs("hedge")).isEmpty()
+    }
+
+    @Test
+    fun `oco legs round-trip`() {
+        val persistor = NoopStatePersistor()
+        val leg =
+            PersistedOcoLeg(
+                clientOrderId = "oco1-a",
+                brokerOrderId = "12345",
+                strategyId = "hedge",
+                request = legRequest("oco1-a", Side.BUY),
+                siblingIds = listOf("oco1-b"),
+            )
+        persistor.saveOcoLegs("hedge", listOf(leg))
+        assertThat(persistor.loadOcoLegs("hedge")).containsExactly(leg)
+    }
+
+    @Test
+    fun `loadOcoLegs returns empty when nothing persisted`() {
+        assertThat(NoopStatePersistor().loadOcoLegs("absent")).isEmpty()
     }
 }
