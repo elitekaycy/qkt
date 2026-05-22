@@ -227,13 +227,15 @@ class LiveSession(
      * the bus dispatch loop, whose semantics prevent later handlers from running if any handler
      * throws.
      *
-     * Not wired in this commit (deferred to Phase 31.1):
-     *  - [BrokerEvent.OrderRejected] — needs an OrderManager correlation hook to recover
-     *    the originating symbol/side/quantity.
-     *  - [NotificationEvent.DaemonStarted] / [NotificationEvent.StrategyError] — daemon-level
-     *    concerns, not LiveSession-internal.
+     * [BrokerEvent.OrderRejected] omits symbol/side/quantity; [orderManager] recovers them
+     * via [OrderManager.orderDetailsFor]. Not wired here: [NotificationEvent.DaemonStarted]
+     * is a daemon-level concern fired by [com.qkt.cli.DaemonCommand];
+     * [NotificationEvent.StrategyError] has no bus source yet.
      */
-    private fun wireNotifierSubscriptions(bus: EventBus) {
+    private fun wireNotifierSubscriptions(
+        bus: EventBus,
+        orderManager: OrderManager,
+    ) {
         if (NotifyEventKind.HALTED in notifyEvents) {
             bus.subscribe<RiskEvent.Halted> { ev ->
                 runCatching { notifier.notify(EventTranslator.fromRiskHalted(ev)) }
@@ -257,6 +259,25 @@ class LiveSession(
                         EventTranslator.fromPositionReconciled(event = ev, strategyId = ownerStrategyId),
                     )
                 }.onFailure { t -> log.warn("[notify] handler failed for PositionReconciled", t) }
+            }
+        }
+        if (NotifyEventKind.ORDER_REJECTED in notifyEvents) {
+            bus.subscribe<BrokerEvent.OrderRejected> { ev ->
+                runCatching {
+                    val details = orderManager.orderDetailsFor(ev.clientOrderId)
+                    if (details != null) {
+                        notifier.notify(
+                            EventTranslator.fromBrokerRejected(
+                                event = ev,
+                                symbol = details.symbol,
+                                side = details.side,
+                                quantity = details.quantity,
+                            ),
+                        )
+                    } else {
+                        log.warn("[notify] OrderRejected for unknown order {} — skipping alert", ev.clientOrderId)
+                    }
+                }.onFailure { t -> log.warn("[notify] handler failed for OrderRejected", t) }
             }
         }
     }
@@ -372,7 +393,7 @@ class LiveSession(
         // Register notifier handlers before the warmup phase so a warmup-time risk halt
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
         // so any publish that happens after this line will see the new subscribers.
-        wireNotifierSubscriptions(bus)
+        wireNotifierSubscriptions(bus, pipeline.orderManager)
         val dailyScheduler = buildDailySummaryScheduler(strategyPnL, strategyPositions)
 
         val now = Instant.ofEpochMilli(clock.now())
