@@ -1,0 +1,39 @@
+name: integration
+
+# Black-box integration suite — mimics a user installing and exercising qkt:
+# clean install, qkt --version, author + parse + backtest a strategy, daemon
+# lifecycle, Docker build + in-container run. Runs on the promotion targets
+# (testing and main). Feature-branch PRs and dev get only the fast essentials
+# (check.yml); this heavier suite gates the staging branches.
+#
+# All template expressions reference internal context only (github.ref) — no
+# untrusted event input is interpolated into shell commands.
+
+on:
+  push:
+    branches: [testing, main]
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Integration smoke
+        run: bash tests/smoke-install.sh
+      - name: Upload smoke log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-log
+          path: /tmp/qkt-smoke.*/smoke.log
+          retention-days: 7
+          if-no-files-found: ignore

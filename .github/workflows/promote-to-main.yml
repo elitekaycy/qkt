@@ -1,0 +1,41 @@
+name: promote-to-main
+
+# Manual promotion: testing -> main. A maintainer triggers this from the
+# Actions tab (or `gh workflow run promote-to-main.yml`) after pulling and
+# inspecting testing. It verifies the most recent integration run on testing
+# concluded successfully, then fast-forwards main to testing.
+#
+# The push uses PROMOTE_TOKEN so integration.yml fires again on main as the
+# final confirmation gate. Template expressions reference only secrets; no
+# untrusted event input reaches a shell command.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: testing
+          fetch-depth: 0
+          token: ${{ secrets.PROMOTE_TOKEN }}
+      - name: Verify integration passed on testing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          conclusion=$(gh run list --workflow integration.yml --branch testing \
+            --limit 1 --json conclusion --jq '.[0].conclusion')
+          echo "latest integration run on testing: '$conclusion'"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::testing's latest integration run is '$conclusion', not 'success' — refusing to promote"
+            exit 1
+          fi
+      - name: Fast-forward main to testing
+        run: git push origin HEAD:refs/heads/main
