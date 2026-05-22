@@ -243,4 +243,61 @@ class OrderManagerTest {
         om.cancel("does-not-exist")
         assertThat(om.getOrder("does-not-exist")).isNull()
     }
+
+    @Test
+    fun `orderDetailsFor returns symbol side and quantity for a submitted order`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 100L)
+        val om = OrderManager(LogBroker(bus, clock), bus, MarketPriceTracker(), clock)
+
+        om.submit(
+            OrderRequest.Market(
+                id = "c1",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = Money.of("0.5"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 100L,
+            ),
+        )
+
+        val details = om.orderDetailsFor("c1")
+        assertThat(details).isNotNull
+        assertThat(details!!.symbol).isEqualTo("EURUSD")
+        assertThat(details.side).isEqualTo(Side.SELL)
+        assertThat(details.quantity).isEqualByComparingTo(Money.of("0.5"))
+    }
+
+    @Test
+    fun `orderDetailsFor still resolves after the order is rejected`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 100L)
+        val om = OrderManager(LogBroker(bus, clock), bus, MarketPriceTracker(), clock)
+
+        om.submit(
+            OrderRequest.Market(
+                id = "c1",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("2"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 100L,
+            ),
+        )
+        bus.publish(BrokerEvent.OrderRejected(clientOrderId = "c1", brokerOrderId = null, reason = "test"))
+
+        val details = om.orderDetailsFor("c1")
+        assertThat(details).isNotNull
+        assertThat(details!!.symbol).isEqualTo("XAUUSD")
+        assertThat(details.side).isEqualTo(Side.BUY)
+    }
+
+    @Test
+    fun `orderDetailsFor returns null for an unknown order`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val om = OrderManager(LogBroker(bus, clock), bus, MarketPriceTracker(), clock)
+
+        assertThat(om.orderDetailsFor("never-submitted")).isNull()
+    }
 }
