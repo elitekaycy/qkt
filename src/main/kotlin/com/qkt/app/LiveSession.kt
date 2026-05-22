@@ -21,7 +21,6 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailyRollingTracker
-import com.qkt.notify.DailySummaryScheduler
 import com.qkt.notify.EventTranslator
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.NotificationEvent
@@ -96,8 +95,6 @@ class LiveSession(
     private val notifier: Notifier = NoopNotifier,
     /** Opt-in event list — empty disables every subscription, even if a real notifier is present. */
     private val notifyEvents: Set<NotifyEventKind> = emptySet(),
-    /** Empty disables the daily-summary scheduler; otherwise `HH:MM` UTC. */
-    private val dailySummaryUtc: String = "",
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -287,54 +284,40 @@ class LiveSession(
     }
 
     /**
-     * Build the daily-summary scheduler if [dailySummaryUtc] is non-blank, else return null.
-     * The producer captures [strategyPnL] + [strategyPositions] by reference so each fire reads
-     * live state at the moment of dispatch.
+     * The per-strategy daily-summary rows for this session — equity, P&L, positions, and
+     * the [dailyTracker] window totals. The daemon owns one [DailySummaryScheduler] across
+     * every session; its producer calls this once per fire. Reading the rows snapshots and
+     * resets the tracker, so it must be called exactly once per summary.
      */
-    private fun buildDailySummaryScheduler(
+    private fun dailySummaryRows(
         strategyPnL: StrategyPnL,
         strategyPositions: StrategyPositionTracker,
-    ): DailySummaryScheduler? {
-        if (dailySummaryUtc.isBlank()) return null
-        val producer = {
-            val rows =
-                strategies.map { (strategyId, _) ->
-                    val positions = strategyPositions.positionsFor(strategyId)
-                    val summary =
-                        if (positions.isEmpty() ||
-                            positions.values.all { it.quantity.signum() == 0 }
-                        ) {
-                            "flat"
-                        } else {
-                            positions.entries.joinToString(", ") { (sym, p) ->
-                                "${if (p.quantity.signum() > 0) "long" else "short"} ${p.quantity.abs().toPlainString()} $sym"
-                            }
-                        }
-                    val equity = strategyPnL.equityFor(strategyId)
-                    val totals = dailyTracker.snapshot(strategyId, equity)
-                    StrategySummary(
-                        strategyId = strategyId,
-                        equity = equity,
-                        equityDeltaPct = totals.equityDeltaPct,
-                        realizedToday = strategyPnL.realizedFor(strategyId),
-                        unrealized = strategyPnL.unrealizedTotalFor(strategyId),
-                        tradesToday = totals.tradesToday,
-                        haltsToday = totals.haltsToday,
-                        positionsSummary = summary,
-                    )
+    ): List<StrategySummary> =
+        strategies.map { (strategyId, _) ->
+            val positions = strategyPositions.positionsFor(strategyId)
+            val summary =
+                if (positions.isEmpty() ||
+                    positions.values.all { it.quantity.signum() == 0 }
+                ) {
+                    "flat"
+                } else {
+                    positions.entries.joinToString(", ") { (sym, p) ->
+                        "${if (p.quantity.signum() > 0) "long" else "short"} ${p.quantity.abs().toPlainString()} $sym"
+                    }
                 }
-            NotificationEvent.DailySummary(
-                asOfUtc =
-                    java.time.OffsetDateTime
-                        .now(java.time.ZoneOffset.UTC)
-                        .toLocalDate()
-                        .toString(),
-                strategies = rows,
-                timestamp = clock.now(),
+            val equity = strategyPnL.equityFor(strategyId)
+            val totals = dailyTracker.snapshot(strategyId, equity)
+            StrategySummary(
+                strategyId = strategyId,
+                equity = equity,
+                equityDeltaPct = totals.equityDeltaPct,
+                realizedToday = strategyPnL.realizedFor(strategyId),
+                unrealized = strategyPnL.unrealizedTotalFor(strategyId),
+                tradesToday = totals.tradesToday,
+                haltsToday = totals.haltsToday,
+                positionsSummary = summary,
             )
         }
-        return DailySummaryScheduler(notifier = notifier, producer = producer).also { it.startAtUtc(dailySummaryUtc) }
-    }
 
     fun start(): LiveSessionHandle {
         val ids = SequentialIdGenerator()
@@ -401,14 +384,11 @@ class LiveSession(
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
         // so any publish that happens after this line will see the new subscribers.
         wireNotifierSubscriptions(bus, pipeline.orderManager)
-        val dailyScheduler = buildDailySummaryScheduler(strategyPnL, strategyPositions)
-        if (dailyScheduler != null) {
-            // Feed the daily summary's halt count. Independent of [notifyEvents] — the
-            // summary tallies halts even when the per-halt alert is not subscribed.
-            val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
-            bus.subscribe<RiskEvent.Halted> { ev ->
-                dailyTracker.recordHalt(ev.strategyId ?: ownerStrategyId)
-            }
+        // Keep the daily-summary tracker's halt count current. The daemon owns the one
+        // DailySummaryScheduler; this session just feeds its tracker.
+        val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
+        bus.subscribe<RiskEvent.Halted> { ev ->
+            dailyTracker.recordHalt(ev.strategyId ?: ownerStrategyId)
         }
 
         val now = Instant.ofEpochMilli(clock.now())
@@ -486,13 +466,15 @@ class LiveSession(
                         }.onFailure { t -> log.warn("[notify] StrategyStopped fire failed", t) }
                     }
                 }
-                dailyScheduler?.close()
             }
 
             override fun awaitTermination(timeout: Duration): Boolean =
                 terminated.await(timeout.toMillis(), TimeUnit.MILLISECONDS)
 
             override fun recentTrades(): List<Trade> = trades.toList()
+
+            override fun dailySummaryRows(): List<StrategySummary> =
+                this@LiveSession.dailySummaryRows(strategyPnL, strategyPositions)
 
             override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
                 pipeline.orderManager.pendingStackLayerInfos()

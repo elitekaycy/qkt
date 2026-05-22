@@ -142,10 +142,10 @@ listed with the follow-up phase that closes it.
 - **Single chat per daemon.** Multi-chat routing is deferred. Config
   schema (`chat_id` as scalar) leaves the door open for a scalar→map
   evolution when a second strategy needs its own chat.
-- **One scheduler per LiveSession, not per daemon.** If the daemon hosts
-  N strategies, the operator receives N daily-summary messages at the
-  configured UTC tick. Consolidating to one daemon-level scheduler is
-  Phase 31.1 work — needs the daemon-level wiring above anyway.
+- **One daily-summary scheduler per daemon** (Phase 31.1). `DaemonCommand`
+  owns a single `DailySummaryScheduler`; its producer aggregates the
+  per-strategy rows of every live session (`LiveSessionHandle.dailySummaryRows`)
+  into one message at the UTC tick.
 - **Outbound only.** No `/status` from phone, no two-way commands.
 - **No persistent delivery.** Alerts queued during a daemon restart are
   lost. Alerts are real-time by nature; a 30s-stale alert is misleading.

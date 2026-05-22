@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.execution.Trade
+import com.qkt.notify.StrategySummary
 import java.time.Duration
 
 /**
@@ -25,6 +26,14 @@ interface LiveSessionHandle {
 
     /** Snapshot of the most recently observed trades — bounded ring, oldest first. */
     fun recentTrades(): List<Trade>
+
+    /**
+     * Per-strategy daily-summary rows for this session. The daemon's single
+     * [com.qkt.notify.DailySummaryScheduler] aggregates these across all sessions.
+     * Reading them snapshots and resets this session's daily tracker — call once per fire.
+     * Defaults to empty for handles that are not full live sessions.
+     */
+    fun dailySummaryRows(): List<StrategySummary> = emptyList()
 
     /** Layers from active STACK plans that haven't triggered yet. */
     fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo>
