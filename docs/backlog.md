@@ -129,8 +129,10 @@ Both items below have shipped.
 
 ### Tier 2 — operational / config (small, no engine code)
 
-- `tbd` — Wire Telegram alerts in qkt-prod: bot, chat id, `TELEGRAM_ENABLED=true`. Phase
-  31 infrastructure already shipped + dormant; flipping the env vars is the only step.
+- `done` — Wire Telegram alerts in qkt-prod. Needed three pieces, not just env vars:
+  the `TELEGRAM_*` passthrough in qkt-prod `compose.yml`, the env values (postgres +
+  `.env`), and engine fix #89 wiring the daemon notifier into `LiveSession`. Shipped
+  in v0.28.9; `strategy_started` alerts confirmed delivered.
   ([#35](https://github.com/elitekaycy/qkt/issues/35))
 - `tbd` — Docker daemon json-file log rotation for the qkt service in `qkt-prod`
   `compose.yml` (`logging.driver: json-file` with `max-size` + `max-file`). Separate from
