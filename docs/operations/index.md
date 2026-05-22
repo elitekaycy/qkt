@@ -20,6 +20,14 @@ Running qkt in production: deployment, monitoring, troubleshooting.
 
     [:octicons-arrow-right-24: Monitoring](monitoring.md)
 
+- :material-content-save-outline:{ .lg .middle } **State backup**
+
+    ---
+
+    Backing up and restoring the `qkt-state` directory — cadence and mechanism.
+
+    [:octicons-arrow-right-24: State backup](state-backup.md)
+
 - :material-text-box-outline:{ .lg .middle } **Logging**
 
     ---
@@ -41,7 +49,6 @@ Running qkt in production: deployment, monitoring, troubleshooting.
 ## Not yet covered
 
 - **Upgrade / rollback** — versioning, schema migrations between phases, downgrade strategy
-- **Backup & restore** — `qkt-state` volume contents, position-recovery on restart
 - **Capacity planning** — strategies-per-daemon ceiling, port allocation, JVM heap sizing
 - **Alerting playbook** — concrete runbooks per alert type
 
