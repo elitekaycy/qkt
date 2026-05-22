@@ -37,12 +37,33 @@ Every PR title and body must reference the phase it contributes to (see PR templ
 
 ## 2. Branching strategy
 
-- `main` is the integration branch. It must always build and test green.
-- Feature branches are named after their phase and feature: `phase<N>-<short-feature-name>`. Examples: `phase2-event-bus`, `phase3-risk-engine`, `phase5-dsl-parser`.
-- Bugfix branches: `fix-<short-description>` (no phase prefix; bugs aren't phase-scoped).
-- Refactor branches: `refactor-<short-description>`.
-- One concern per branch. Don't pile event bus + candle aggregator into one branch.
-- Never commit directly to `main`. Always go through a branch + PR (or a clean fast-forward merge from a worked branch with the merge commit message convention below).
+qkt uses a three-branch promotion pipeline. Changes flow one way only:
+`feature → dev → testing → main`.
+
+- **`dev`** is the integration branch and the GitHub default branch. All work
+  lands here first. It runs the fast essentials CI (compile + ktlint + unit
+  tests).
+- **`testing`** is the staging branch. It is updated *only* by automatic
+  fast-forward promotion from `dev` once `dev` passes the essentials CI. It runs
+  the full black-box integration CI.
+- **`main`** is the release-ready branch. It is updated *only* by *manual*
+  fast-forward promotion from `testing`, after `testing` passes the integration
+  CI. Tags and releases are cut from `main`.
+
+Never commit directly to `testing` or `main` — they are promotion-only. The
+promotion is a fast-forward, so it creates no merge commit.
+
+- `main`, `testing`, and `dev` must always build and test green.
+- Feature branches branch from `dev` and merge back into `dev`. They are named
+  after their phase and feature: `phase<N>-<short-feature-name>`. Examples:
+  `phase2-event-bus`, `phase5-dsl-parser`.
+- Bugfix branches: `fix-<short-description>` (no phase prefix; bugs aren't
+  phase-scoped). Refactor branches: `refactor-<short-description>`.
+- One concern per branch. Don't pile two features into one branch.
+- Never commit directly to `dev`. Always go through a feature branch + PR.
+
+The pipeline is specified in
+`docs/superpowers/specs/2026-05-22-ci-promotion-pipeline-design.md`.
 
 ---
 
