@@ -5,9 +5,10 @@ name: check
 # black-box suite is integration.yml, which gates testing and main.
 #
 # On a push to dev (i.e. a merged PR), a green build auto-promotes dev to
-# testing via a fast-forward push. The push uses PROMOTE_TOKEN (a fine-grained
-# PAT) rather than GITHUB_TOKEN, because a GITHUB_TOKEN push does not trigger
-# downstream workflows — integration.yml must fire on testing.
+# testing via a fast-forward push. The push authenticates with PROMOTE_SSH_KEY
+# (a repo-scoped deploy key) rather than GITHUB_TOKEN, because a GITHUB_TOKEN
+# push does not trigger downstream workflows — integration.yml must fire on
+# testing.
 #
 # Template expressions reference internal context only (github.event_name,
 # github.ref); no untrusted event input reaches a shell command. The promotion
@@ -53,6 +54,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PROMOTE_TOKEN }}
+          ssh-key: ${{ secrets.PROMOTE_SSH_KEY }}
       - name: Fast-forward testing to dev
         run: git push origin "$GITHUB_SHA:refs/heads/testing"
