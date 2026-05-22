@@ -144,6 +144,19 @@ class AsyncStatePersistor(
     override fun loadPendingStacks(strategyId: String): Map<String, PersistedTierState> =
         delegate.loadPendingStacks(strategyId)
 
+    override fun saveOcoLegs(
+        strategyId: String,
+        legs: List<PersistedOcoLeg>,
+    ) {
+        val snapshot = legs.toList()
+        submit("saveOcoLegs $strategyId") {
+            delegate.saveOcoLegs(strategyId, snapshot)
+        }
+    }
+
+    override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> =
+        delegate.loadOcoLegs(strategyId)
+
     override fun clearStrategy(strategyId: String) {
         submit("clearStrategy $strategyId") { delegate.clearStrategy(strategyId) }
     }
