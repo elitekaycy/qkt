@@ -153,6 +153,21 @@ class OrderManager(
 
     fun getOrder(clientOrderId: String): ManagedOrder? = orders[clientOrderId]
 
+    /** Symbol, side, and quantity submitted under [clientOrderId]. */
+    data class OrderDetails(
+        val symbol: String,
+        val side: Side,
+        val quantity: BigDecimal,
+    )
+
+    /**
+     * Recover the originating symbol/side/quantity for [clientOrderId] — the fields a
+     * [BrokerEvent.OrderRejected] event omits. Returns `null` for an order this manager
+     * never saw. The order is retained through rejection, so this resolves post-reject.
+     */
+    fun orderDetailsFor(clientOrderId: String): OrderDetails? =
+        orders[clientOrderId]?.request?.let { OrderDetails(it.symbol, it.side, it.quantity) }
+
     fun activeOrders(): List<ManagedOrder> = orders.values.filter { !it.state.isTerminal }
 
     fun pendingOrders(): List<ManagedOrder> = orders.values.filter { it.state == OrderState.PENDING }
