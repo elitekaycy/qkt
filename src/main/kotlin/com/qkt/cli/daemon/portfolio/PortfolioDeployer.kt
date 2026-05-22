@@ -36,7 +36,6 @@ class PortfolioDeployer(
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
     private val notifier: Notifier = NoopNotifier,
     private val notifyEvents: Set<NotifyEventKind> = emptySet(),
-    private val dailySummaryUtc: String = "",
 ) {
     fun deploy(
         portfolioName: String,
@@ -146,7 +145,6 @@ class PortfolioDeployer(
                 persistor = persistor,
                 notifier = notifier,
                 notifyEvents = notifyEvents,
-                dailySummaryUtc = dailySummaryUtc,
             ).start()
 
         val server =
