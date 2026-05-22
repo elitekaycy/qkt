@@ -5,9 +5,10 @@ name: promote-to-main
 # inspecting testing. It verifies the most recent integration run on testing
 # concluded successfully, then fast-forwards main to testing.
 #
-# The push uses PROMOTE_TOKEN so integration.yml fires again on main as the
-# final confirmation gate. Template expressions reference only secrets; no
-# untrusted event input reaches a shell command.
+# The push authenticates with PROMOTE_SSH_KEY (a repo-scoped deploy key) so
+# integration.yml fires again on main as the final confirmation gate. Template
+# expressions reference only secrets; no untrusted event input reaches a shell
+# command.
 
 on:
   workflow_dispatch:
@@ -24,7 +25,7 @@ jobs:
         with:
           ref: testing
           fetch-depth: 0
-          token: ${{ secrets.PROMOTE_TOKEN }}
+          ssh-key: ${{ secrets.PROMOTE_SSH_KEY }}
       - name: Verify integration passed on testing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

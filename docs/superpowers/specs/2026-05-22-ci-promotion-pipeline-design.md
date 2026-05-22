@@ -120,21 +120,24 @@ workflow runs** (GitHub's recursion guard). If `promote-to-testing` pushed to
 `testing` with `GITHUB_TOKEN`, `integration.yml` would never fire on `testing`
 and the pipeline would stall.
 
-**Resolution:** promotion pushes use a **fine-grained Personal Access Token**
-stored as the repo secret `PROMOTE_TOKEN` (scope: `contents: write` on this
-repo). A PAT-authenticated push *does* trigger downstream workflows. Both
-`promote-to-testing` and `promote-to-main.yml` use `PROMOTE_TOKEN`.
+**Resolution:** promotion pushes authenticate with a **repo-scoped deploy key**.
+An SSH keypair is generated; the public half is registered as a write-enabled
+deploy key on the repo, the private half stored as the Actions secret
+`PROMOTE_SSH_KEY`. A deploy-key-authenticated push *does* trigger downstream
+workflows. Both `promote-to-testing` and `promote-to-main.yml` check out with
+`ssh-key: ${{ secrets.PROMOTE_SSH_KEY }}` and push over SSH.
 
-The maintainer must create this PAT and add it as an Actions secret before the
-pipeline works. This is a documented one-time setup step.
+A deploy key is preferred over a personal access token: it is scoped to this
+single repository (a PAT is account-wide), and the whole setup can be done from
+the CLI (`gh repo deploy-key add`, `gh secret set`) — a fine-grained PAT can
+only be minted through the GitHub web UI.
 
 ## Branch protection
 
 GitHub rulesets:
 
-- `testing`, `main` — block all direct pushes; add a bypass for the
-  `PROMOTE_TOKEN` actor (the maintainer / fine-grained PAT owner). Only the
-  promotion workflows can move these branches.
+- `testing`, `main` — block all direct pushes; add a bypass for the deploy key
+  so only the promotion workflows can move these branches.
 - `dev` — require the Essentials check to pass before a PR can merge.
 
 ## Failure handling
@@ -172,14 +175,16 @@ same PR as the workflow changes (living-document protocol).
 
 1. Create branches `dev` and `testing` from `main`.
 2. Set the GitHub default branch to `dev`.
-3. Create a fine-grained PAT (`contents: write`), add it as the `PROMOTE_TOKEN`
-   Actions secret.
+3. Generate an SSH keypair; register the public key as a write-enabled deploy
+   key (`gh repo deploy-key add --allow-write`); store the private key as the
+   `PROMOTE_SSH_KEY` Actions secret (`gh secret set`).
 4. Add rulesets for `testing`/`main` (promotion-only) and `dev` (require check).
 
 ## Open risks
 
-- The PAT is a credential with write access; it must be fine-grained and
-  scoped to this repo only. If leaked, it permits pushes to `testing`/`main`.
+- The deploy key's private half is a credential with write access to this repo.
+  It lives only as the `PROMOTE_SSH_KEY` Actions secret; if leaked it permits
+  pushes to `testing`/`main`. It is repo-scoped — it grants nothing elsewhere.
 - The daemon-lifecycle stage needs a live market feed for its strategy.
   TradingView is unusable from CI runners — it blocks datacenter IPs. Bybit's
   public feed is the source instead. The control-plane assertions are

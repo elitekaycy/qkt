@@ -4,7 +4,7 @@
 
 **Goal:** Build a three-branch CI promotion pipeline — `dev` → `testing` → `main` — where `dev` runs fast unit CI and auto-promotes to `testing`, `testing` runs a full black-box integration CI, and a maintainer manually promotes `testing` to `main`.
 
-**Architecture:** Each CI tier is a GitHub Actions workflow. The essentials workflow (`check.yml`) ends with a job that fast-forward-pushes `dev` to `testing`. The integration workflow (`integration.yml`) runs the extended `tests/smoke-install.sh`. A manual `workflow_dispatch` workflow promotes `testing` to `main`. Promotion pushes use a fine-grained PAT (`PROMOTE_TOKEN`) so they trigger downstream workflows.
+**Architecture:** Each CI tier is a GitHub Actions workflow. The essentials workflow (`check.yml`) ends with a job that fast-forward-pushes `dev` to `testing`. The integration workflow (`integration.yml`) runs the extended `tests/smoke-install.sh`. A manual `workflow_dispatch` workflow promotes `testing` to `main`. Promotion pushes authenticate with a repo-scoped deploy key (`PROMOTE_SSH_KEY`) so they trigger downstream workflows.
 
 **Tech Stack:** GitHub Actions (YAML), Bash (`tests/smoke-install.sh`), Gradle, the `qkt` CLI.
 
@@ -481,20 +481,26 @@ git branch testing && git push origin testing
 gh repo edit elitekaycy/qkt --default-branch dev
 ```
 
-- [ ] **Step 5: [maintainer] Create the `PROMOTE_TOKEN` secret**
+- [ ] **Step 5: Create the `PROMOTE_SSH_KEY` deploy key**
 
-In GitHub: **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Scope it to the `elitekaycy/qkt` repository only, with **Repository permissions → Contents: Read and write**. Copy the token, then:
+> **Revised during execution.** The original plan used a fine-grained PAT, but
+> a PAT can only be minted in the web UI. A repo-scoped deploy key does the same
+> job (a deploy-key push triggers downstream workflows), is more tightly scoped,
+> and is fully CLI-creatable. The workflows check out with
+> `ssh-key: ${{ secrets.PROMOTE_SSH_KEY }}`.
 
 ```bash
-gh secret set PROMOTE_TOKEN --repo elitekaycy/qkt
-# paste the token when prompted
+ssh-keygen -t ed25519 -f /tmp/qkt-promote -N "" -C "qkt-promote-deploy-key" -q
+gh repo deploy-key add /tmp/qkt-promote.pub --title "qkt-promote" --allow-write
+gh secret set PROMOTE_SSH_KEY --repo elitekaycy/qkt < /tmp/qkt-promote
+shred -u /tmp/qkt-promote /tmp/qkt-promote.pub
 ```
 Without this secret the `promote-to-testing` and `promote-to-main` jobs fail at the checkout step.
 
 - [ ] **Step 6: [maintainer] Add branch protection**
 
 In GitHub **Settings → Rules → Rulesets**, create:
-- A ruleset targeting `testing` and `main`: enable **Restrict deletions** and **Block force pushes**, and **Restrict updates** so only a bypass actor can push. Add the `PROMOTE_TOKEN` owner (your account) to the bypass list — the promotion workflows push as that identity.
+- A ruleset targeting `testing` and `main`: enable **Restrict deletions** and **Block force pushes**, and **Restrict updates** so only a bypass actor can push. Add the `qkt-promote` deploy key to the bypass list — the promotion workflows push with it.
 - A ruleset targeting `dev`: **Require a pull request before merging** and **Require status checks to pass** with the `build` check selected.
 
 This step is optional hardening — the pipeline functions without it, but without it nothing prevents a direct push to `testing`/`main`.
