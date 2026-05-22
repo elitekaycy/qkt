@@ -153,6 +153,43 @@ class OrderManager(
 
     fun getOrder(clientOrderId: String): ManagedOrder? = orders[clientOrderId]
 
+    /** Sibling order ids linked to [clientOrderId] — exposed for restart-recovery tests. */
+    fun siblingsOf(clientOrderId: String): List<String> = siblings[clientOrderId].orEmpty()
+
+    /**
+     * Rebuild OCO leg tracking and sibling linkage from the persistor for [strategyIds],
+     * then hand the legs to the broker so it can reconcile them against venue truth —
+     * re-seeding still-pending legs and republishing any fill missed during downtime.
+     * Called once at session startup. Best-effort: a persistor failure leaves state empty.
+     */
+    fun restore(strategyIds: List<String>) {
+        val recovered = mutableListOf<ManagedOrder>()
+        for (sid in strategyIds) {
+            runCatching {
+                for (leg in persistor.loadOcoLegs(sid)) {
+                    if (orders.containsKey(leg.clientOrderId)) continue
+                    val now = clock.now()
+                    val managed =
+                        ManagedOrder(
+                            id = leg.clientOrderId,
+                            request = leg.request,
+                            state = OrderState.WORKING,
+                            brokerOrderId = leg.brokerOrderId,
+                            createdAt = now,
+                            lastUpdatedAt = now,
+                        )
+                    orders[leg.clientOrderId] = managed
+                    siblings[leg.clientOrderId] = leg.siblingIds
+                    recovered += managed
+                }
+            }.onFailure { e -> log.warn("[restore] failed for {}: {}", sid, e.message) }
+        }
+        if (recovered.isNotEmpty()) {
+            runCatching { broker.recoverPendingOrders(recovered) }
+                .onFailure { e -> log.warn("[restore] broker recovery failed: {}", e.message) }
+        }
+    }
+
     /** Symbol, side, and quantity submitted under [clientOrderId]. */
     data class OrderDetails(
         val symbol: String,
@@ -825,10 +862,29 @@ class OrderManager(
                     ),
                 )
             }
-            val strategies = (pendingByStrategy.keys + pairsByStrategy.keys).toSet()
+            val ocoLegsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.PersistedOcoLeg>> =
+                mutableMapOf()
+            for ((legId, siblingIds) in siblings) {
+                val managed = orders[legId] ?: continue
+                if (managed.state.isTerminal) continue
+                val ticket = managed.brokerOrderId ?: continue
+                val sid = managed.request.strategyId
+                if (sid.isBlank()) continue
+                ocoLegsByStrategy.getOrPut(sid) { mutableListOf() }.add(
+                    com.qkt.persistence.PersistedOcoLeg(
+                        clientOrderId = legId,
+                        brokerOrderId = ticket,
+                        strategyId = sid,
+                        request = managed.request,
+                        siblingIds = siblingIds,
+                    ),
+                )
+            }
+            val strategies = (pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys).toSet()
             for (sid in strategies) {
                 persistor.savePendingOrders(sid, pendingByStrategy[sid] ?: emptyMap())
                 persistor.saveBracketPairs(sid, pairsByStrategy[sid] ?: emptyList())
+                persistor.saveOcoLegs(sid, ocoLegsByStrategy[sid] ?: emptyList())
             }
         }
     }
