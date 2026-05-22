@@ -2,15 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** On daemon restart, `OrderManager` restores its live OCO legs and sibling linkage from the persistor, and cancels any sibling whose pair filled while the daemon was down.
+**Goal:** On daemon restart, qkt restores its live OCO legs + sibling linkage from the persistor, re-seeds `MT5Broker`'s pending-order tracking from venue truth, and cancels any sibling whose pair filled during downtime — by feeding the missed `OrderFilled` into the existing cancel-on-fill path.
 
-**Architecture:** Add a first-class `saveSiblings`/`loadSiblings` pair to `StatePersistor`. `OrderManager` gains a `restore(strategyIds)` method that rebuilds `orders` (from `loadPendingOrders`) and `siblings` (from `loadSiblings`), and subscribes to startup-recovery `PositionReconciled` events to cancel a sibling whose pair filled during downtime. `LiveSession` calls `restore` at startup.
+**Architecture:** Persistence carries OCO leg *identity* (`PersistedOcoLeg`: clientOrderId, broker ticket, strategyId, request, siblingIds). `OrderManager.restore` rebuilds `orders` (state `WORKING`) + `siblings`, then hands the legs to `Broker.recoverPendingOrders`. `MT5Broker` joins them to venue truth *by ticket*: still-pending legs re-seed `pendingByTicket`; filled legs get a real `OrderFilled` republished, which the existing `onFilled` handler turns into the sibling cancel.
 
-**Tech Stack:** Kotlin, kotlinx.serialization (persistence DTOs), JUnit 5 + AssertJ.
+**Tech Stack:** Kotlin, kotlinx.serialization, JUnit 5 + AssertJ.
 
 **Spec:** `docs/superpowers/specs/2026-05-22-oco-restart-recovery-design.md`
 
-**Working branch:** `fix-oco-restart-linkage` (already exists; the spec is committed there). All tasks commit to it; one PR into `dev` at the end.
+**Working branch:** `fix-oco-restart-linkage`. One PR into `dev` at the end.
+
+> **Note on prior work:** an earlier `saveSiblings`/`loadSiblings` attempt is uncommitted in the persistence files. Tasks 1–2 supersede it — overwrite those methods with `saveOcoLegs`/`loadOcoLegs`.
 
 ---
 
@@ -18,501 +20,395 @@
 
 | File | Responsibility | Action |
 |---|---|---|
-| `persistence/StatePersistor.kt` | Persistence contract. | Modify — add `saveSiblings`/`loadSiblings` (default no-op / empty). |
-| `persistence/AsyncStatePersistor.kt` | Async-delegating persistor. | Modify — delegate both. |
-| `persistence/FileStatePersistor.kt` | On-disk persistor. | Modify — real `saveSiblings`/`loadSiblings` + `SiblingsDto`. |
-| `app/OrderManager.kt` | Order lifecycle + OCO linkage. | Modify — `persistAll` saves siblings; new `restore`; reconciliation subscription. |
-| `app/LiveSession.kt` | Session startup. | Modify — call `orderManager.restore(...)`. |
+| `persistence/PersistedOcoLeg.kt` | OCO leg record value type. | Create |
+| `persistence/StatePersistor.kt` | Persistence contract. | Modify — `saveOcoLegs`/`loadOcoLegs` |
+| `persistence/NoopStatePersistor.kt` | In-memory persistor. | Modify |
+| `persistence/AsyncStatePersistor.kt` | Async-delegating persistor. | Modify |
+| `persistence/FileStatePersistor.kt` | On-disk persistor. | Modify — `oco-legs.json` |
+| `app/OrderManager.kt` | Order lifecycle + OCO linkage. | Modify — `persistAll` + `restore` |
+| `broker/Broker.kt` | Broker contract. | Modify — `recoverPendingOrders` default |
+| `broker/mt5/OcoRecovery.kt` | Pure venue-join classifier. | Create |
+| `broker/mt5/MT5Broker.kt` | MT5 connector. | Modify — `recoverPendingOrders` |
+| `app/LiveSession.kt` | Session startup. | Modify — call `restore` |
 
 ---
 
-## Task 1: `saveSiblings` / `loadSiblings` on the persistor contract
+## Task 1: `PersistedOcoLeg` + `saveOcoLegs`/`loadOcoLegs` contract
 
-**Files:**
-- Modify: `src/main/kotlin/com/qkt/persistence/StatePersistor.kt`
-- Modify: `src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt`
-- Test: `src/test/kotlin/com/qkt/persistence/NoopStatePersistorTest.kt`
+**Files:** create `persistence/PersistedOcoLeg.kt`; modify `StatePersistor.kt`, `NoopStatePersistor.kt`, `AsyncStatePersistor.kt`; test `NoopStatePersistorTest.kt`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Create the value type**
 
-Append to `NoopStatePersistorTest.kt`:
-
-```kotlin
-@Test
-fun `siblings save is a no-op and load returns empty`() {
-    val p = NoopStatePersistor()
-    p.saveSiblings("alpha", mapOf("leg1" to listOf("leg2")))
-    assertThat(p.loadSiblings("alpha")).isEmpty()
-}
-```
-
-- [ ] **Step 2: Run it, expect failure**
-
-Run: `./gradlew test --tests 'com.qkt.persistence.NoopStatePersistorTest' --console=plain`
-Expected: FAIL — `saveSiblings` / `loadSiblings` unresolved.
-
-- [ ] **Step 3: Add the methods to `StatePersistor`**
-
-In `StatePersistor.kt`, after `loadPendingStacks`, add — with default bodies so existing implementers and test fakes are unaffected:
-
-```kotlin
-    /** Persist the OCO sibling linkage for [strategyId] — order id → its sibling ids. */
-    fun saveSiblings(
-        strategyId: String,
-        siblings: Map<String, List<String>>,
-    ) {}
-
-    /** Restore the OCO sibling linkage for [strategyId]; empty when none persisted. */
-    fun loadSiblings(strategyId: String): Map<String, List<String>> = emptyMap()
-```
-
-- [ ] **Step 4: Make `AsyncStatePersistor` delegate**
-
-In `AsyncStatePersistor.kt`, alongside the other delegating overrides:
-
-```kotlin
-    override fun saveSiblings(
-        strategyId: String,
-        siblings: Map<String, List<String>>,
-    ) = delegate.saveSiblings(strategyId, siblings)
-
-    override fun loadSiblings(strategyId: String): Map<String, List<String>> =
-        delegate.loadSiblings(strategyId)
-```
-
-(If `AsyncStatePersistor` batches writes on a worker thread for the other `save*` methods, mirror that pattern for `saveSiblings` instead of a direct delegate — check how `savePendingOrders` is handled and match it.)
-
-- [ ] **Step 5: Run the test, expect pass**
-
-Run: `./gradlew test --tests 'com.qkt.persistence.NoopStatePersistorTest' --console=plain`
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/main/kotlin/com/qkt/persistence/StatePersistor.kt src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt src/test/kotlin/com/qkt/persistence/NoopStatePersistorTest.kt
-git commit -m "feat(persistence): add saveSiblings/loadSiblings to StatePersistor"
-```
-
----
-
-## Task 2: `FileStatePersistor` siblings file
-
-**Files:**
-- Modify: `src/main/kotlin/com/qkt/persistence/FileStatePersistor.kt`
-- Test: `src/test/kotlin/com/qkt/persistence/FileStatePersistorSiblingsTest.kt` (create)
-
-- [ ] **Step 1: Write the failing test**
-
-Create `FileStatePersistorSiblingsTest.kt` — mirror the structure of `FileStatePersistorPendingOrdersTest.kt` (same `@TempDir`, same `FileStatePersistor(tmp)` construction):
+`src/main/kotlin/com/qkt/persistence/PersistedOcoLeg.kt`:
 
 ```kotlin
 package com.qkt.persistence
 
-import java.nio.file.Path
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
+import com.qkt.execution.OrderRequest
 
-class FileStatePersistorSiblingsTest {
-    @Test
-    fun `siblings round-trip through the file persistor`(
-        @TempDir tmp: Path,
-    ) {
-        val p = FileStatePersistor(tmp)
-        val siblings = mapOf("leg1" to listOf("leg2"), "leg2" to listOf("leg1"))
-
-        p.saveSiblings("alpha", siblings)
-
-        assertThat(p.loadSiblings("alpha")).isEqualTo(siblings)
-    }
-
-    @Test
-    fun `loadSiblings returns empty when nothing was saved`(
-        @TempDir tmp: Path,
-    ) {
-        assertThat(FileStatePersistor(tmp).loadSiblings("never-saved")).isEmpty()
-    }
-}
-```
-
-- [ ] **Step 2: Run it, expect failure**
-
-Run: `./gradlew test --tests 'com.qkt.persistence.FileStatePersistorSiblingsTest' --console=plain`
-Expected: FAIL — `loadSiblings` returns the default empty map (the round-trip assertion fails).
-
-- [ ] **Step 3: Implement in `FileStatePersistor`**
-
-Add a file constant in the `companion object` next to `PENDING_ORDERS_FILE`:
-
-```kotlin
-        const val SIBLINGS_FILE = "siblings.json"
-```
-
-Add a serializable DTO near the other DTOs at the bottom of the file (after `PendingOrdersDto`):
-
-```kotlin
-@Serializable
-private data class SiblingsDto(
-    val version: Int,
+/**
+ * A live OCO leg as persisted for restart recovery — its qkt identity, its venue
+ * ticket ([brokerOrderId]), and the linkage needed to rebuild cancel-on-fill.
+ */
+data class PersistedOcoLeg(
+    val clientOrderId: String,
+    val brokerOrderId: String,
     val strategyId: String,
-    val entries: List<SiblingEntryDto>,
-)
-
-@Serializable
-private data class SiblingEntryDto(
-    val orderId: String,
+    val request: OrderRequest,
     val siblingIds: List<String>,
 )
 ```
 
-Override the two methods, mirroring `savePendingOrders` / `loadPendingOrders`:
+- [ ] **Step 2: Write the failing test** — append to `NoopStatePersistorTest.kt` (replacing any uncommitted `siblings` tests):
 
 ```kotlin
-    override fun saveSiblings(
-        strategyId: String,
-        siblings: Map<String, List<String>>,
-    ) {
-        val dto =
-            SiblingsDto(
-                version = SCHEMA_VERSION,
-                strategyId = strategyId,
-                entries = siblings.map { (id, sibs) -> SiblingEntryDto(id, sibs) },
+    @Test
+    fun `oco legs round-trip`() {
+        val persistor = NoopStatePersistor()
+        val leg =
+            PersistedOcoLeg(
+                clientOrderId = "oco1-a",
+                brokerOrderId = "12345",
+                strategyId = "hedge",
+                request = legRequest("oco1-a", Side.BUY),
+                siblingIds = listOf("oco1-b"),
             )
-        runCatching { json.encodeToString(SiblingsDto.serializer(), dto) }
-            .onSuccess { writer.write(strategyId, SIBLINGS_FILE, it) }
-            .onFailure { e -> log.warn("saveSiblings encode failed for $strategyId: ${e.message}") }
+        persistor.saveOcoLegs("hedge", listOf(leg))
+        assertThat(persistor.loadOcoLegs("hedge")).containsExactly(leg)
     }
 
-    override fun loadSiblings(strategyId: String): Map<String, List<String>> {
-        val raw = writer.read(strategyId, SIBLINGS_FILE) ?: return emptyMap()
-        val dto =
-            try {
-                json.decodeFromString(SiblingsDto.serializer(), raw)
-            } catch (e: SerializationException) {
-                log.warn("loadSiblings parse failed for $strategyId: ${e.message}")
-                return emptyMap()
-            }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadSiblings schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return emptyMap()
-        }
-        return dto.entries.associate { it.orderId to it.siblingIds }
+    @Test
+    fun `loadOcoLegs returns empty when nothing persisted`() {
+        assertThat(NoopStatePersistor().loadOcoLegs("absent")).isEmpty()
     }
 ```
 
-- [ ] **Step 4: Run the test, expect pass**
+Add a `legRequest` helper to the test class:
 
-Run: `./gradlew test --tests 'com.qkt.persistence.FileStatePersistorSiblingsTest' --console=plain`
-Expected: PASS, both tests.
+```kotlin
+    private fun legRequest(id: String, side: Side) =
+        OrderRequest.Stop(
+            id = id,
+            symbol = "XAUUSDm",
+            side = side,
+            quantity = BigDecimal("0.20"),
+            stopPrice = BigDecimal("4700.0"),
+            timeInForce = com.qkt.execution.TimeInForce.GTC,
+            timestamp = 0L,
+            strategyId = "hedge",
+        )
+```
 
-- [ ] **Step 5: Commit**
+Adjust to the real `OrderRequest.Stop` signature (read `execution/OrderRequest.kt`).
+
+- [ ] **Step 3: Run, expect failure** — `./gradlew test --tests 'com.qkt.persistence.NoopStatePersistorTest' --console=plain` — FAIL, unresolved `saveOcoLegs`.
+
+- [ ] **Step 4: Add abstract methods to `StatePersistor`** (after `loadPendingStacks`, before `clearStrategy`):
+
+```kotlin
+    /** Persist the live OCO legs for [strategyId] — identity + linkage for restart recovery. */
+    fun saveOcoLegs(
+        strategyId: String,
+        legs: List<PersistedOcoLeg>,
+    )
+
+    /** Restore the live OCO legs for [strategyId]; empty when none persisted. */
+    fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg>
+```
+
+- [ ] **Step 5: Implement in `NoopStatePersistor`** — add `var ocoLegs: List<PersistedOcoLeg> = emptyList()` to `StrategyState`; `saveOcoLegs` sets `stateFor(sid).ocoLegs = legs`; `loadOcoLegs` returns `state[sid]?.ocoLegs ?: emptyList()`.
+
+- [ ] **Step 6: Implement in `AsyncStatePersistor`** — mirror `savePendingOrders`: `saveOcoLegs` snapshots (`legs.toList()`) and `submit("saveOcoLegs $strategyId") { delegate.saveOcoLegs(...) }`; `loadOcoLegs` delegates directly.
+
+- [ ] **Step 7: Run, expect pass.** Commit:
 
 ```bash
-git add src/main/kotlin/com/qkt/persistence/FileStatePersistor.kt src/test/kotlin/com/qkt/persistence/FileStatePersistorSiblingsTest.kt
-git commit -m "feat(persistence): persist OCO siblings to a file"
+git add src/main/kotlin/com/qkt/persistence/PersistedOcoLeg.kt src/main/kotlin/com/qkt/persistence/StatePersistor.kt src/main/kotlin/com/qkt/persistence/NoopStatePersistor.kt src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt src/test/kotlin/com/qkt/persistence/NoopStatePersistorTest.kt
+git commit -m "feat(persistence): add saveOcoLegs/loadOcoLegs to StatePersistor"
 ```
 
 ---
 
-## Task 3: `OrderManager.persistAll()` saves siblings
+## Task 2: `FileStatePersistor` oco-legs file
 
-**Files:**
-- Modify: `src/main/kotlin/com/qkt/app/OrderManager.kt` (the `persistAll()` method, ~line 796)
+**Files:** modify `FileStatePersistor.kt`; test `FileStatePersistorOcoLegsTest.kt` (create).
 
-- [ ] **Step 1: Add the save to `persistAll()`**
+- [ ] **Step 1: Write the failing test** — `src/test/kotlin/com/qkt/persistence/FileStatePersistorOcoLegsTest.kt`, a `@TempDir` round-trip mirroring the existing pending-orders test: build a `PersistedOcoLeg` with an `OrderRequest.Stop`, `saveOcoLegs`, assert `loadOcoLegs` equals it; plus an empty-on-missing test.
 
-`persistAll()` already builds `pendingByStrategy`. After the existing `for (sid in strategies)` loop that calls `savePendingOrders` / `saveBracketPairs`, add a per-strategy siblings save. Build a per-strategy partition of the global `siblings` map keyed by the owning order's `strategyId`:
+- [ ] **Step 2: Run, expect failure** (round-trip assertion fails — default would not apply since the method is abstract; the test simply has no file yet).
+
+- [ ] **Step 3: Implement.** Add `const val OCO_LEGS_FILE = "oco-legs.json"` to the companion. Add DTOs near `PendingOrderEntryDto`, reusing the existing `OrderRequestDto` + its `fromDomain`/`toDomain` (read `FileStatePersistor.kt` for the exact converter names used by `savePendingOrders`):
 
 ```kotlin
-            val siblingsByStrategy: MutableMap<String, MutableMap<String, List<String>>> = mutableMapOf()
-            for ((orderId, siblingIds) in siblings) {
-                val sid = orders[orderId]?.request?.strategyId ?: continue
+@Serializable
+private data class OcoLegsDto(
+    val version: Int,
+    val strategyId: String,
+    val legs: List<OcoLegDto>,
+)
+
+@Serializable
+private data class OcoLegDto(
+    val clientOrderId: String,
+    val brokerOrderId: String,
+    val strategyId: String,
+    val request: OrderRequestDto,
+    val siblingIds: List<String>,
+)
+```
+
+`saveOcoLegs`/`loadOcoLegs` mirror `savePendingOrders`/`loadPendingOrders` exactly — schema-versioned, `runCatching` encode + `writer.write`, `SerializationException`-guarded decode, version-mismatch warning.
+
+- [ ] **Step 4: Run, expect pass.** Commit:
+
+```bash
+git add src/main/kotlin/com/qkt/persistence/FileStatePersistor.kt src/test/kotlin/com/qkt/persistence/FileStatePersistorOcoLegsTest.kt
+git commit -m "feat(persistence): persist OCO legs to a file"
+```
+
+---
+
+## Task 3: `OrderManager.persistAll()` saves OCO legs
+
+**Files:** modify `app/OrderManager.kt` (`persistAll()`, ~line 796).
+
+- [ ] **Step 1: Add the save.** Inside the existing `runCatching` block, after the `siblings`→`BracketPair` loop, build a per-strategy partition of OCO legs and save it:
+
+```kotlin
+            val ocoLegsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.PersistedOcoLeg>> =
+                mutableMapOf()
+            for ((legId, siblingIds) in siblings) {
+                val managed = orders[legId] ?: continue
+                if (managed.state.isTerminal) continue
+                val ticket = managed.brokerOrderId ?: continue
+                val sid = managed.request.strategyId
                 if (sid.isBlank()) continue
-                siblingsByStrategy.getOrPut(sid) { mutableMapOf() }[orderId] = siblingIds
+                ocoLegsByStrategy.getOrPut(sid) { mutableListOf() }.add(
+                    com.qkt.persistence.PersistedOcoLeg(
+                        clientOrderId = legId,
+                        brokerOrderId = ticket,
+                        strategyId = sid,
+                        request = managed.request,
+                        siblingIds = siblingIds,
+                    ),
+                )
             }
-            for (sid in (strategies + siblingsByStrategy.keys).toSet()) {
-                persistor.saveSiblings(sid, siblingsByStrategy[sid] ?: emptyMap())
+            for (sid in (strategies + ocoLegsByStrategy.keys).toSet()) {
+                persistor.saveOcoLegs(sid, ocoLegsByStrategy[sid] ?: emptyList())
             }
 ```
 
-Place this inside the existing `runCatching { ... }` block so a persistor failure stays swallowed (best-effort, consistent with the rest of `persistAll`).
+- [ ] **Step 2: Verify it compiles** — `./gradlew compileKotlin --console=plain`. Behaviour is covered by Task 4's restore test.
 
-- [ ] **Step 2: Verify it compiles**
-
-Run: `./gradlew compileKotlin --console=plain`
-Expected: `BUILD SUCCESSFUL`. (Behaviour is covered end-to-end by Task 4's restore test.)
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit:**
 
 ```bash
 git add src/main/kotlin/com/qkt/app/OrderManager.kt
-git commit -m "feat(app): persist OCO siblings on every state change"
+git commit -m "feat(app): persist OCO legs on every state change"
 ```
 
 ---
 
-## Task 4: `OrderManager.restore(strategyIds)`
+## Task 4: `Broker.recoverPendingOrders` + `OrderManager.restore`
 
-**Files:**
-- Modify: `src/main/kotlin/com/qkt/app/OrderManager.kt`
-- Test: `src/test/kotlin/com/qkt/app/OrderManagerRestoreTest.kt` (create)
+**Files:** modify `broker/Broker.kt`, `app/OrderManager.kt`; test `OrderManagerRestoreTest.kt` (create).
 
-- [ ] **Step 1: Write the failing test**
-
-Create `OrderManagerRestoreTest.kt`. It persists pending OCO legs + siblings with one `OrderManager`, then constructs a fresh one sharing the same persistor and asserts `restore` rebuilds state. Use `FileStatePersistor` on a `@TempDir` and `LogBroker` (mirror `OrderManagerTest`'s setup):
+- [ ] **Step 1: Add the `Broker` method** — after `getOpenPositions()`, default no-op:
 
 ```kotlin
-package com.qkt.app
-
-import com.qkt.broker.LogBroker
-import com.qkt.bus.EventBus
-import com.qkt.common.FixedClock
-import com.qkt.common.Money
-import com.qkt.common.MonotonicSequenceGenerator
-import com.qkt.common.Side
-import com.qkt.execution.OrderRequest
-import com.qkt.execution.TimeInForce
-import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.persistence.FileStatePersistor
-import java.nio.file.Path
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-
-class OrderManagerRestoreTest {
-    private fun newBus() = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
-
-    private fun ocoLeg(id: String, side: Side) =
-        OrderRequest.Stop(
-            id = id,
-            symbol = "XAUUSD",
-            side = side,
-            quantity = Money.of("1"),
-            stopPrice = Money.of("2000"),
-            timeInForce = TimeInForce.GTC,
-            timestamp = 0L,
-            strategyId = "alpha",
-        )
-
-    @Test
-    fun `restore rebuilds pending orders and sibling linkage from the persistor`(
-        @TempDir tmp: Path,
-    ) {
-        val persistor = FileStatePersistor(tmp)
-        // First manager: submit an OCO so pending orders + siblings get persisted.
-        val om1 = OrderManager(LogBroker(newBus(), FixedClock(0L)), newBus(), MarketPriceTracker(), FixedClock(0L), persistor)
-        om1.submit(
-            OrderRequest.StandaloneOCO(
-                id = "oco1",
-                symbol = "XAUUSD",
-                side = Side.BUY,
-                quantity = Money.of("1"),
-                leg1 = ocoLeg("oco1-a", Side.BUY),
-                leg2 = ocoLeg("oco1-b", Side.SELL),
-                timeInForce = TimeInForce.GTC,
-                timestamp = 0L,
-                strategyId = "alpha",
-            ),
-        )
-        // Fresh manager (simulates restart) sharing the same persistor.
-        val om2 = OrderManager(LogBroker(newBus(), FixedClock(0L)), newBus(), MarketPriceTracker(), FixedClock(0L), persistor)
-        assertThat(om2.getOrder("oco1-a")).isNull()
-
-        om2.restore(listOf("alpha"))
-
-        assertThat(om2.getOrder("oco1-a")).isNotNull
-        assertThat(om2.getOrder("oco1-b")).isNotNull
-        assertThat(om2.siblingsOf("oco1-a")).containsExactly("oco1-b")
-    }
-}
+    /**
+     * Re-establish venue-side tracking for OCO legs recovered from the persistor on
+     * restart. Brokers join each [ManagedOrder] to live venue state by ticket and, for
+     * a leg that filled while the daemon was down, republish its [OrderFilled].
+     * Default no-op — only stateful venue connectors override.
+     */
+    fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {}
 ```
 
-Note: the exact `OrderRequest.StandaloneOCO` / `OrderRequest.Stop` constructor parameters must match the real definitions in `src/main/kotlin/com/qkt/execution/OrderRequest.kt` — read that file and adjust field names/order before running. `siblingsOf` is a test-visibility accessor added in Step 3.
+- [ ] **Step 2: Write the failing test** — `OrderManagerRestoreTest.kt`. Persist an OCO via one `OrderManager`, then a fresh one `restore`s it. Use `FileStatePersistor` on `@TempDir`, `LogBroker`. The fresh manager must rebuild `orders` in state `WORKING` and `siblings`, and pass the legs to the broker. Capture the broker call with an `object : Broker by LogBroker(...)` wrapper or a recording stub. Assert: `getOrder("oco1-a")!!.state == WORKING`, `siblingsOf("oco1-a") == ["oco1-b"]`, broker received 2 legs.
 
-- [ ] **Step 2: Run it, expect failure**
+Read `execution/OrderRequest.kt` for the real `StandaloneOCO`/`Stop` constructors. Note: for legs to persist with a `brokerOrderId`, the first manager's broker must accept them — `LogBroker` accepts and the legs reach `WORKING`; confirm by reading `LogBroker`. If `LogBroker` does not assign a `brokerOrderId`, persist the legs directly via `FileStatePersistor.saveOcoLegs` in the test setup instead of routing through `submit`.
 
-Run: `./gradlew test --tests 'com.qkt.app.OrderManagerRestoreTest' --console=plain`
-Expected: FAIL — `restore` and `siblingsOf` unresolved.
+- [ ] **Step 3: Run, expect failure** — `restore`/`siblingsOf` unresolved.
 
-- [ ] **Step 3: Implement `restore` and a test accessor**
-
-In `OrderManager.kt`, add a public method and a small test-visibility accessor near `getOrder`:
+- [ ] **Step 4: Implement `restore` + `siblingsOf`** in `OrderManager`, near `getOrder`:
 
 ```kotlin
     /** Sibling order ids linked to [clientOrderId] — exposed for restart-recovery tests. */
     fun siblingsOf(clientOrderId: String): List<String> = siblings[clientOrderId].orEmpty()
 
     /**
-     * Rebuild pending-order tracking and OCO sibling linkage from the persistor for
-     * [strategyIds] — called once at session startup so cancel-on-fill / unwind work
-     * across a daemon restart. Best-effort: a persistor failure leaves state empty.
+     * Rebuild OCO leg tracking + sibling linkage from the persistor for [strategyIds],
+     * then hand the legs to the broker so it can reconcile them against venue truth.
+     * Called once at session startup. Best-effort: a persistor failure leaves state empty.
      */
     fun restore(strategyIds: List<String>) {
+        val recovered = mutableListOf<ManagedOrder>()
         for (sid in strategyIds) {
             runCatching {
-                val now = clock.now()
-                for ((orderId, request) in persistor.loadPendingOrders(sid)) {
-                    if (orders.containsKey(orderId)) continue
-                    orders[orderId] =
+                for (leg in persistor.loadOcoLegs(sid)) {
+                    if (orders.containsKey(leg.clientOrderId)) continue
+                    val now = clock.now()
+                    val managed =
                         ManagedOrder(
-                            id = orderId,
-                            request = request,
-                            state = OrderState.PENDING,
+                            id = leg.clientOrderId,
+                            request = leg.request,
+                            state = OrderState.WORKING,
+                            brokerOrderId = leg.brokerOrderId,
                             createdAt = now,
                             lastUpdatedAt = now,
                         )
+                    orders[leg.clientOrderId] = managed
+                    siblings[leg.clientOrderId] = leg.siblingIds
+                    recovered += managed
                 }
-                for ((orderId, siblingIds) in persistor.loadSiblings(sid)) {
-                    siblings[orderId] = siblingIds
-                }
-            }.onFailure { e -> log.warn("[restore] failed for $sid: ${e.message}") }
+            }.onFailure { e -> log.warn("[restore] failed for {}: {}", sid, e.message) }
+        }
+        if (recovered.isNotEmpty()) {
+            runCatching { broker.recoverPendingOrders(recovered) }
+                .onFailure { e -> log.warn("[restore] broker recovery failed: {}", e.message) }
         }
     }
 ```
 
-`ManagedOrder` is `com.qkt.execution.ManagedOrder` — already imported by `OrderManager`. Confirm `OrderState.PENDING` is the right resting state for a venue-live pending order; if the codebase uses `WORKING` for placed-but-unfilled, use that instead.
+`ManagedOrder`, `OrderState` are imported by `OrderManager`. Confirm the `broker`, `persistor`, `clock`, `log` field names match the file.
 
-- [ ] **Step 4: Run the test, expect pass**
-
-Run: `./gradlew test --tests 'com.qkt.app.OrderManagerRestoreTest' --console=plain`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run, expect pass.** Commit:
 
 ```bash
-git add src/main/kotlin/com/qkt/app/OrderManager.kt src/test/kotlin/com/qkt/app/OrderManagerRestoreTest.kt
-git commit -m "feat(app): restore pending orders and OCO siblings on startup"
+git add src/main/kotlin/com/qkt/broker/Broker.kt src/main/kotlin/com/qkt/app/OrderManager.kt src/test/kotlin/com/qkt/app/OrderManagerRestoreTest.kt
+git commit -m "feat(app): restore OCO legs and linkage on startup"
 ```
 
 ---
 
-## Task 5: Downtime-fill reconciliation
+## Task 5: `MT5Broker.recoverPendingOrders` — venue join
 
-**Files:**
-- Modify: `src/main/kotlin/com/qkt/app/OrderManager.kt`
-- Test: `src/test/kotlin/com/qkt/app/OrderManagerRestoreTest.kt` (extend)
+**Files:** create `broker/mt5/OcoRecovery.kt`; modify `broker/mt5/MT5Broker.kt`; test `broker/mt5/OcoRecoveryTest.kt` (create).
 
-- [ ] **Step 1: Write the failing test**
+The venue join logic is extracted as a pure function so it is testable without faking `MT5Client` (a concrete HTTP class). `MT5Broker.recoverPendingOrders` is thin glue: fetch venue snapshots, call the classifier, apply actions.
 
-Append to `OrderManagerRestoreTest.kt` — after `restore`, a `startup-recovery` `PositionReconciled` matching one leg's `(symbol, side)` should cancel the other leg:
+- [ ] **Step 1: Write the failing test** — `OcoRecoveryTest.kt`. Given three `ManagedOrder`s with `brokerOrderId` "1", "2", "3" and venue snapshots where ticket 1 is still pending, ticket 2 is now a position, ticket 3 is in neither: assert `classifyOcoRecovery` returns one `Reseed` for the order with ticket 1 and one `EmitFill` (carrying the matching position) for ticket 2, and nothing for ticket 3.
+
+- [ ] **Step 2: Run, expect failure** — `classifyOcoRecovery` unresolved.
+
+- [ ] **Step 3: Create `OcoRecovery.kt`:**
 
 ```kotlin
-    @Test
-    fun `a startup-recovery position cancels the sibling of the leg that filled`(
-        @TempDir tmp: Path,
-    ) {
-        val persistor = FileStatePersistor(tmp)
-        val om1 = OrderManager(LogBroker(newBus(), FixedClock(0L)), newBus(), MarketPriceTracker(), FixedClock(0L), persistor)
-        om1.submit(
-            OrderRequest.StandaloneOCO(
-                id = "oco1",
-                symbol = "XAUUSD",
-                side = Side.BUY,
-                quantity = Money.of("1"),
-                leg1 = ocoLeg("oco1-a", Side.BUY),
-                leg2 = ocoLeg("oco1-b", Side.SELL),
-                timeInForce = TimeInForce.GTC,
-                timestamp = 0L,
-                strategyId = "alpha",
-            ),
-        )
-        val bus = newBus()
-        val om2 = OrderManager(LogBroker(bus, FixedClock(0L)), bus, MarketPriceTracker(), FixedClock(0L), persistor)
-        om2.restore(listOf("alpha"))
+package com.qkt.broker.mt5
 
-        // A long position on XAUUSD recovered at startup => the BUY leg (oco1-a) filled.
-        bus.publish(
-            BrokerEvent.PositionReconciled(
-                symbol = "XAUUSD",
-                oldQty = null,
-                newQty = Money.of("1"),
-                oldAvgPx = null,
-                newAvgPx = Money.of("2000"),
-                source = "mt5:test",
-                reason = "startup-recovery",
-            ),
-        )
+import com.qkt.execution.ManagedOrder
 
-        // The SELL sibling (oco1-b) must be cancelled.
-        assertThat(om2.getOrder("oco1-b")!!.state).isEqualTo(OrderState.CANCELLED)
+/** What restart recovery must do for one OCO leg, given venue truth. */
+internal sealed interface OcoRecoveryAction {
+    /** Leg is still pending on the venue — re-seed broker tracking. */
+    data class Reseed(
+        val order: ManagedOrder,
+        val ticket: Long,
+    ) : OcoRecoveryAction
+
+    /** Leg's ticket is now a position — it filled while down; republish the fill. */
+    data class EmitFill(
+        val order: ManagedOrder,
+        val position: MT5Position,
+    ) : OcoRecoveryAction
+}
+
+/**
+ * Join recovered [orders] to venue truth by ticket. A leg still in [pendingTickets] is
+ * re-seeded; a leg whose ticket is an open [positions] entry filled during downtime; a
+ * leg in neither was cancelled/expired and is left for the pending poller.
+ */
+internal fun classifyOcoRecovery(
+    orders: List<ManagedOrder>,
+    pendingTickets: Set<Long>,
+    positions: List<MT5Position>,
+): List<OcoRecoveryAction> {
+    val positionByTicket = positions.associateBy { it.ticket }
+    return orders.mapNotNull { order ->
+        val ticket = order.brokerOrderId?.toLongOrNull() ?: return@mapNotNull null
+        when {
+            ticket in pendingTickets -> OcoRecoveryAction.Reseed(order, ticket)
+            positionByTicket.containsKey(ticket) ->
+                OcoRecoveryAction.EmitFill(order, positionByTicket.getValue(ticket))
+            else -> null
+        }
     }
+}
 ```
 
-- [ ] **Step 2: Run it, expect failure**
+Confirm `MT5Position` exposes `ticket: Long` (used throughout `MT5Broker`).
 
-Run: `./gradlew test --tests 'com.qkt.app.OrderManagerRestoreTest' --console=plain`
-Expected: FAIL — `oco1-b` is still `PENDING`; nothing reacts to the `PositionReconciled`.
+- [ ] **Step 4: Run, expect pass.**
 
-- [ ] **Step 3: Subscribe to startup-recovery reconciliation**
-
-In `OrderManager`'s `init` block, add a subscription:
+- [ ] **Step 5: Implement `MT5Broker.recoverPendingOrders`.** Add the override (near `getOpenPositions`):
 
 ```kotlin
-        bus.subscribe<BrokerEvent.PositionReconciled> { e -> onStartupRecovery(e) }
-```
-
-Add the handler. It only acts on startup-recovery events; it finds a restored pending leg matching the recovered `(symbol, side)` and cancels that leg's siblings:
-
-```kotlin
-    private fun onStartupRecovery(e: BrokerEvent.PositionReconciled) {
-        if (e.reason != "startup-recovery") return
-        val filledSide = if (e.newQty.signum() >= 0) Side.BUY else Side.SELL
-        val filledLeg =
-            orders.values.firstOrNull { managed ->
-                managed.state == OrderState.PENDING &&
-                    managed.request.symbol == e.symbol &&
-                    managed.request.side == filledSide &&
-                    siblings.containsKey(managed.id)
-            } ?: return
-        siblings[filledLeg.id]?.forEach { sibId ->
-            val sib = orders[sibId] ?: return@forEach
-            if (!sib.state.isTerminal) {
-                log.info("[restore] leg {} filled during downtime — cancelling sibling {}", filledLeg.id, sibId)
-                cancel(sibId)
+    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
+        if (orders.isEmpty()) return
+        val pending =
+            runCatching { client.getPendingOrders(magic = profile.magic) }
+                .getOrElse {
+                    log.warn("MT5Broker {} recovery: getPendingOrders failed: {}", profile.name, it.message)
+                    return
+                }
+        val positions =
+            runCatching { client.getPositions(magic = profile.magic) }
+                .getOrElse {
+                    log.warn("MT5Broker {} recovery: getPositions failed: {}", profile.name, it.message)
+                    return
+                }
+        val actions = classifyOcoRecovery(orders, pending.map { it.ticket }.toSet(), positions)
+        // Pass 1: re-seed all still-pending legs before any fill is emitted, so a
+        // cancel triggered by pass 2 can resolve its sibling's ticket.
+        for (a in actions) {
+            if (a is OcoRecoveryAction.Reseed) {
+                pendingTickets[a.order.id] = a.ticket
+                pendingByTicket[a.ticket] = PendingMeta(a.order.id, a.order.request.strategyId)
+                log.info("MT5Broker {} recovery: re-seeded pending leg {} ticket={}", profile.name, a.order.id, a.ticket)
+            }
+        }
+        // Pass 2: republish the fill for any leg that filled while the daemon was down.
+        for (a in actions) {
+            if (a is OcoRecoveryAction.EmitFill) {
+                pendingByTicket[a.position.ticket] = PendingMeta(a.order.id, a.order.request.strategyId)
+                log.info(
+                    "MT5Broker {} recovery: leg {} filled during downtime ticket={}",
+                    profile.name, a.order.id, a.position.ticket,
+                )
+                onPendingPositionOpened(a.position)
             }
         }
     }
 ```
 
-`Side`, `BrokerEvent`, `OrderState` are already imported by `OrderManager`. Confirm `OrderState` exposes `isTerminal` (used elsewhere in the file — e.g. `activeOrders()`).
+`onPendingPositionOpened` consumes the `pendingByTicket` entry and publishes `BrokerEvent.OrderFilled` with `meta.orderId` — the real `clientOrderId`. Confirm `getPendingOrders` returns objects with `.ticket`.
 
-- [ ] **Step 4: Run the test, expect pass**
-
-Run: `./gradlew test --tests 'com.qkt.app.OrderManagerRestoreTest' --console=plain`
-Expected: PASS, all three tests.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Verify compile + run the mt5 test package.** Commit:
 
 ```bash
-git add src/main/kotlin/com/qkt/app/OrderManager.kt src/test/kotlin/com/qkt/app/OrderManagerRestoreTest.kt
-git commit -m "feat(app): cancel the sibling of an OCO leg filled during downtime"
+git add src/main/kotlin/com/qkt/broker/mt5/OcoRecovery.kt src/main/kotlin/com/qkt/broker/mt5/MT5Broker.kt src/test/kotlin/com/qkt/broker/mt5/OcoRecoveryTest.kt
+git commit -m "feat(broker): recover MT5 pending OCO legs against venue truth"
 ```
 
 ---
 
 ## Task 6: Wire `restore` into `LiveSession` startup
 
-**Files:**
-- Modify: `src/main/kotlin/com/qkt/app/LiveSession.kt` (near the `reconcileOrPreload` call, ~line 339)
+**Files:** modify `app/LiveSession.kt` (near the `reconcileOrPreload` call, ~line 339).
 
-- [ ] **Step 1: Call `restore` at startup**
-
-`LiveSession.start()` calls `reconcileOrPreload(strategyPositions, broker)` at ~line 339. Immediately after it, restore the order manager from the persistor for this session's strategies:
+- [ ] **Step 1: Call `restore` after `reconcileOrPreload`:**
 
 ```kotlin
         reconcileOrPreload(strategyPositions, broker)
         pipeline.orderManager.restore(strategies.map { it.first })
 ```
 
-`pipeline.orderManager` is the same handle `LiveSession` already uses elsewhere (e.g. `pendingStackLayerInfos`). `strategies` is the `List<Pair<String, Strategy>>` constructor arg; `it.first` is the strategy id.
+Confirm `pipeline.orderManager` and `strategies` (the `List<Pair<String, Strategy>>`) names against the file.
 
-- [ ] **Step 2: Verify it compiles**
+- [ ] **Step 2: Verify compile** — `./gradlew compileKotlin --console=plain`.
 
-Run: `./gradlew compileKotlin --console=plain`
-Expected: `BUILD SUCCESSFUL`.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit:**
 
 ```bash
 git add src/main/kotlin/com/qkt/app/LiveSession.kt
@@ -523,24 +419,23 @@ git commit -m "feat(app): restore the order manager on session startup"
 
 ## Task 7: Phase-doc note
 
-**Files:**
-- Modify: `docs/phases/phase-26a-pending-oco-and-clock.md` (or the most relevant pending-OCO phase changelog)
+**Files:** modify the most relevant pending-OCO phase changelog under `docs/phases/`.
 
-- [ ] **Step 1: Add a follow-up note**
+- [ ] **Step 1:** Add a short "Follow-up" entry recording that OCO legs + linkage are now restored on daemon restart (issue #46), with the spec's known limitations (one-tick persist window; OCO-only).
 
-Add a short "Follow-up" entry to the relevant pending-OCO phase changelog recording that OCO sibling linkage and pending orders are now restored on daemon restart (issue #46), with the `(symbol, side)` and venue-cancelled-leg limitations from the spec's "Known limitations".
+- [ ] **Step 2: Commit** — `git commit -m "docs: note OCO restart recovery in the phase changelog"`.
 
-- [ ] **Step 2: Commit**
+---
 
-```bash
-git add docs/phases/
-git commit -m "docs: note OCO restart recovery in the pending-OCO changelog"
-```
+## Final: full build + PR
+
+- [ ] `./gradlew build --console=plain` green.
+- [ ] PR `fix-oco-restart-linkage` → `dev`, description per the qkt skill template, links spec + plan + issue #46.
 
 ---
 
 ## Self-review notes
 
-- **Spec coverage:** §1 persistence → Tasks 1-2; §1 `persistAll` save → Task 3; §2 restore path → Task 4; §3 downtime-fill reconciliation → Task 5; LiveSession wiring → Task 6; known limitations recorded → Task 7. All spec sections covered.
-- **Type consistency:** `saveSiblings`/`loadSiblings` signature (`Map<String, List<String>>`) is identical across Tasks 1, 2, 3. `restore(strategyIds: List<String>)` defined in Task 4, called in Task 6. `siblingsOf` defined in Task 4, used in Tasks 4-5.
-- **Execution caveat:** Tasks 4-5 test code uses `OrderRequest.StandaloneOCO` / `OrderRequest.Stop` constructors — the executor must read `OrderRequest.kt` and match the real parameter names/order before the RED run. The plan flags this at each use.
+- **Spec coverage:** §1 persist → Tasks 1–3; §2 restore → Task 4; §3 broker recovery + emit fills → Task 5; §4 LiveSession wiring → Task 6; limitations → Task 7.
+- **Type consistency:** `saveOcoLegs`/`loadOcoLegs(List<PersistedOcoLeg>)` identical across Tasks 1–3. `PersistedOcoLeg` fields = `OcoLegDto` fields. `recoverPendingOrders(List<ManagedOrder>)` defined Task 4, implemented Task 5, called via `restore` Task 4. `classifyOcoRecovery` defined + used Task 5.
+- **Execution caveat:** test code uses `OrderRequest.StandaloneOCO`/`Stop` and `MT5Position`/`MT5PendingOrder` — read the real definitions and match field names before each RED run.
