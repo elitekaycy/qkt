@@ -7,9 +7,11 @@ import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.notify.DailySummaryScheduler
 import com.qkt.notify.NotificationEvent
 import com.qkt.notify.NotifierFactory
 import com.qkt.notify.NotifyEventKind
+import com.qkt.notify.aggregateDailySummary
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 
@@ -102,7 +104,6 @@ class DaemonCommand(
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = cfg.notify.telegram.events,
-                    dailySummaryUtc = cfg.notify.telegram.dailySummaryUtc,
                 ),
             )
         val startedAt = Instant.now()
@@ -118,7 +119,6 @@ class DaemonCommand(
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = cfg.notify.telegram.events,
-                    dailySummaryUtc = cfg.notify.telegram.dailySummaryUtc,
                 )
         val plane =
             ControlPlane(
@@ -168,6 +168,24 @@ class DaemonCommand(
             )
         }
 
+        // One daily-summary scheduler for the whole daemon. Its producer aggregates the
+        // per-strategy rows of every live session, so a multi-strategy daemon sends one
+        // summary message at the UTC tick instead of one per session.
+        val dailySummaryScheduler =
+            if (cfg.notify.telegram.dailySummaryUtc.isNotBlank()) {
+                DailySummaryScheduler(
+                    notifier = notifier,
+                    producer = {
+                        aggregateDailySummary(
+                            rowsPerSession = registry.list().map { it.live.dailySummaryRows() },
+                            nowMs = Instant.now().toEpochMilli(),
+                        )
+                    },
+                ).also { it.startAtUtc(cfg.notify.telegram.dailySummaryUtc) }
+            } else {
+                null
+            }
+
         val shutdown =
             Thread {
                 try {
@@ -176,6 +194,7 @@ class DaemonCommand(
                     if (n > 0) println("[INFO] gracefully stopping $n strateg${if (n == 1) "y" else "ies"}")
                     registry.stopAll()
                     plane.close()
+                    dailySummaryScheduler?.close()
                     notifier.close()
                     stateDir.deleteControlPort()
                     println("[INFO] daemon stopped")
@@ -191,6 +210,7 @@ class DaemonCommand(
             runCatching { Runtime.getRuntime().removeShutdownHook(shutdown) }
             runCatching { registry.stopAll() }
             runCatching { plane.close() }
+            runCatching { dailySummaryScheduler?.close() }
             runCatching { notifier.close() }
             runCatching { stateDir.deleteControlPort() }
             ExitCodes.SUCCESS

@@ -78,7 +78,6 @@ class StrategyHandle(
          */
         private val notifier: Notifier = NoopNotifier,
         private val notifyEvents: Set<NotifyEventKind> = emptySet(),
-        private val dailySummaryUtc: String = "",
     ) : Factory {
         override fun create(
             name: String,
@@ -145,7 +144,6 @@ class StrategyHandle(
                     ignoreMismatches = ignoreMismatches,
                     notifier = notifier,
                     notifyEvents = notifyEvents,
-                    dailySummaryUtc = dailySummaryUtc,
                 ).start()
 
             val server =
