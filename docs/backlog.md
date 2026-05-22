@@ -138,9 +138,9 @@ Both items below have shipped.
   `compose.yml` (`logging.driver: json-file` with `max-size` + `max-file`). Separate from
   logback's bind-mount rotation (already done in v0.28.1).
   ([#36](https://github.com/elitekaycy/qkt/issues/36))
-- `tbd` — Backup story for `qkt-prod/state/`. State persists across container restarts
-  via bind mount; not backed up off-host. If the VPS disk dies mid-trade, reconciliation
-  works only if the broker still has the positions. Document a backup cadence.
+- `done` — Backup story for `qkt-prod/state/`. Documented in
+  [`docs/operations/state-backup.md`](operations/state-backup.md): back up the whole
+  state directory hourly, off-host, retaining ~2 days of snapshots.
   ([#37](https://github.com/elitekaycy/qkt/issues/37))
 
 ### Tier 3 — Phase 31.1 (telegram alerts completion, hours)
