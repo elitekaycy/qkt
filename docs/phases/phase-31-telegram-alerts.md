@@ -125,12 +125,9 @@ still flows to other subscribers (state recovery, risk engine, etc.).
 These are concrete scope cuts in this initial Phase 31 shipment. Each is
 listed with the follow-up phase that closes it.
 
-- **`order_rejected` event is defined but not wired to the bus yet.**
-  `BrokerEvent.OrderRejected` carries `strategyId` and `reason` but not
-  `symbol`/`side`/`quantity`. A correlation map maintained by
-  `com.qkt.app.OrderManager` is the right source for those fields; wiring
-  is a Phase 31.1 task. Until then, configure `order_rejected` in
-  `events:` and it will silently no-op.
+- **`order_rejected` is wired** (Phase 31.1). `BrokerEvent.OrderRejected`
+  omits `symbol`/`side`/`quantity`; `LiveSession` recovers them via
+  `OrderManager.orderDetailsFor` and the alert names the full order.
 - **`strategy_error` is defined but not fired.** There is no strategy-level
   error event on the bus to source it from — deferred to Phase 31.1.
   (`daemon_started` is now fired from `com.qkt.cli.DaemonCommand` at daemon
