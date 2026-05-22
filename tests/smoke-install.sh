@@ -173,37 +173,105 @@ fi
 ok "backtest produced valid JSON report"
 
 # ──────────────────────────────────────────────────────────────────────── #
-# Step 6 — qkt run (foreground paper) — needs network; skip in CI
+# Step 6 — Daemon lifecycle
+# ──────────────────────────────────────────────────────────────────────── #
+# Control-plane assertions (start / deploy / list / status / stop) are hard —
+# they are network-independent. The live-tick assertion is soft: it needs
+# Bybit's public WebSocket (stream.bybit.com), which some CI egress policies
+# block. A missing tick stream warns but does not fail the build.
+say "Step 6: daemon lifecycle (start, deploy, list, status, logs, stop)"
+DAEMON_STATE="$SMOKE_DIR/daemon-state"
+mkdir -p "$DAEMON_STATE"
+
+# The daemon strategy sources market data from Bybit's public feed. A dummy
+# BYBIT_API_KEY flips on the Bybit route in MarketSourceFactory; public Bybit
+# market data ignores the key's value.
+cat > "$SMOKE_DIR/strategies/daemon.qkt" <<'STRAT'
+# Daemon-smoke strategy: log each closing price off the Bybit public feed.
+STRATEGY daemonsmoke VERSION 1
+
+SYMBOLS
+    btc = BYBIT_SPOT:BTCUSDT EVERY 5s
+
+RULES
+    WHEN btc.close > 0
+    THEN LOG "tick close={c}" c=btc.close
+STRAT
+
+BYBIT_API_KEY=ci-public-dummy "$INSTALL_QKT" daemon --state-dir "$DAEMON_STATE" \
+    >>"$LOG_FILE" 2>&1 &
+DAEMON_PID=$!
+
+# Wait up to 30s for the daemon to write its control-port file (= ready).
+for _ in $(seq 1 30); do
+    [ -f "$DAEMON_STATE/control.port" ] && break
+    sleep 1
+done
+[ -f "$DAEMON_STATE/control.port" ] || die "daemon did not become ready (no control.port)"
+ok "daemon started (pid $DAEMON_PID)"
+
+"$INSTALL_QKT" deploy "$SMOKE_DIR/strategies/daemon.qkt" --as daemonsmoke --state-dir "$DAEMON_STATE" \
+    >>"$LOG_FILE" 2>&1 || die "qkt deploy failed"
+ok "strategy deployed"
+
+"$INSTALL_QKT" list --state-dir "$DAEMON_STATE" 2>>"$LOG_FILE" | grep -q daemonsmoke \
+    || die "qkt list does not show the deployed strategy"
+ok "qkt list shows the strategy"
+
+"$INSTALL_QKT" status daemonsmoke --state-dir "$DAEMON_STATE" >>"$LOG_FILE" 2>&1 \
+    || die "qkt status failed"
+ok "qkt status responds"
+
+# Soft check: give the Bybit feed a few seconds, then look for tick logs. A
+# blocked WebSocket leaves the strategy log without ticks — warn, don't fail.
+sleep 15
+"$INSTALL_QKT" logs daemonsmoke --state-dir "$DAEMON_STATE" > "$SMOKE_DIR/strategy.log" 2>>"$LOG_FILE" || true
+if grep -q 'tick close=' "$SMOKE_DIR/strategy.log" 2>/dev/null; then
+    ok "strategy logged live ticks from the Bybit feed"
+else
+    warn "no live ticks logged — Bybit WS feed unavailable here (soft check, not a failure)"
+fi
+
+"$INSTALL_QKT" stop daemonsmoke --state-dir "$DAEMON_STATE" >>"$LOG_FILE" 2>&1 \
+    || die "qkt stop failed"
+ok "strategy stopped"
+
+"$INSTALL_QKT" daemon stop --state-dir "$DAEMON_STATE" >>"$LOG_FILE" 2>&1 \
+    || die "qkt daemon stop failed"
+ok "daemon stopped"
+
+# ──────────────────────────────────────────────────────────────────────── #
+# Step 7 — qkt run (foreground paper) — needs network; skip in CI
 # ──────────────────────────────────────────────────────────────────────── #
 # The `run` subcommand connects to a live tick feed (TradingView). That makes
 # it unreliable in CI (network access varies, the vendor's anti-bot blocks
 # datacenter IPs). Skip by default; bring it back when there's an offline
 # tick source for live mode.
 if [ -n "${QKT_SMOKE_RUN:-}" ]; then
-    say "Step 6: qkt run (skipped — set QKT_SMOKE_RUN=1 to opt in)"
+    say "Step 7: qkt run (skipped — set QKT_SMOKE_RUN=1 to opt in)"
     # When enabled: run with a 20s timeout
     timeout 20 "$INSTALL_QKT" run "$SMOKE_DIR/strategies/smoke.qkt" \
         >>"$LOG_FILE" 2>&1 || true
     ok "qkt run completed (or hit timeout, which is fine)"
 else
-    warn "Step 6: skipped (set QKT_SMOKE_RUN=1 to enable; needs live network)"
+    warn "Step 7: skipped (set QKT_SMOKE_RUN=1 to enable; needs live network)"
 fi
 
 # ──────────────────────────────────────────────────────────────────────── #
-# Step 7 — Docker smoke
+# Step 8 — Docker smoke
 # ──────────────────────────────────────────────────────────────────────── #
 if [ "$DO_DOCKER" -eq 1 ]; then
     if ! command -v docker >/dev/null 2>&1; then
-        warn "Step 7: docker not on PATH — skipping Docker smoke"
+        warn "Step 8: docker not on PATH — skipping Docker smoke"
     else
-        say "Step 7: build qkt Docker image"
+        say "Step 8: build qkt Docker image"
         cd "$REPO_ROOT"
         docker build -t qkt:smoke -f Dockerfile . >>"$LOG_FILE" 2>&1 \
             || die "docker build failed (log: $LOG_FILE)"
         ok "qkt:smoke image built"
 
         # Run a one-shot backtest inside the image
-        say "Step 8: run a backtest inside the Docker container"
+        say "Step 9: run a backtest inside the Docker container"
         mkdir -p "$SMOKE_DIR/docker/strategies"
         cp "$SMOKE_DIR/strategies/momentum.qkt" "$SMOKE_DIR/docker/strategies/"
 
@@ -222,7 +290,7 @@ if [ "$DO_DOCKER" -eq 1 ]; then
         ok "docker backtest succeeded"
     fi
 else
-    warn "Step 7-8: Docker stage skipped (--no-docker)"
+    warn "Step 8-9: Docker stage skipped (--no-docker)"
 fi
 
 # ──────────────────────────────────────────────────────────────────────── #
