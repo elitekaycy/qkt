@@ -167,6 +167,7 @@ nav:
       - operations/index.md
       - Deploy with Docker: operations/deploy-docker.md
       - Monitoring: operations/monitoring.md
+      - State backup: operations/state-backup.md
       - Logging: operations/logging.md
       - Troubleshooting: operations/troubleshooting.md
   - Contributing:
