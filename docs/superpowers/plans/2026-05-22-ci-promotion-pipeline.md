@@ -29,6 +29,14 @@
 
 ## Task 1: Add the daemon-lifecycle stage to the smoke test
 
+> **Revised during execution.** The daemon strategy sources market data from
+> Bybit's public feed (`BYBIT_SPOT:BTCUSDT` + a dummy `BYBIT_API_KEY`), not a
+> `BACKTEST:` symbol — a `BACKTEST:` source cannot serve the live ticks a
+> deployed daemon strategy needs. Control-plane assertions (start/deploy/list/
+> status/stop) hard-fail; the live-tick check is soft (warns if `stream.bybit.com`
+> is blocked). The committed `tests/smoke-install.sh` Step 6 is the source of
+> truth; the steps below show the original shape.
+
 **Files:**
 - Modify: `tests/smoke-install.sh` (insert a new stage after Step 5, renumber the later steps)
 
