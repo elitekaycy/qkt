@@ -20,6 +20,7 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.notify.DailyRollingTracker
 import com.qkt.notify.DailySummaryScheduler
 import com.qkt.notify.EventTranslator
 import com.qkt.notify.NoopNotifier
@@ -99,6 +100,9 @@ class LiveSession(
     private val dailySummaryUtc: String = "",
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
+
+    /** Accumulates trades/halts/equity-delta for the daily summary. */
+    private val dailyTracker = DailyRollingTracker()
 
     /**
      * Three-way reconcile: persisted leg state + broker positions → attached LegBook
@@ -306,14 +310,16 @@ class LiveSession(
                                 "${if (p.quantity.signum() > 0) "long" else "short"} ${p.quantity.abs().toPlainString()} $sym"
                             }
                         }
+                    val equity = strategyPnL.equityFor(strategyId)
+                    val totals = dailyTracker.snapshot(strategyId, equity)
                     StrategySummary(
                         strategyId = strategyId,
-                        equity = strategyPnL.equityFor(strategyId),
-                        equityDeltaPct = java.math.BigDecimal.ZERO,
+                        equity = equity,
+                        equityDeltaPct = totals.equityDeltaPct,
                         realizedToday = strategyPnL.realizedFor(strategyId),
                         unrealized = strategyPnL.unrealizedTotalFor(strategyId),
-                        tradesToday = 0,
-                        haltsToday = 0,
+                        tradesToday = totals.tradesToday,
+                        haltsToday = totals.haltsToday,
                         positionsSummary = summary,
                     )
                 }
@@ -380,6 +386,7 @@ class LiveSession(
                         .CandleHub(),
                 onFilled = { trade, realized, strategyId ->
                     trades.add(trade)
+                    dailyTracker.recordTrade(strategyId)
                     onTrade(trade, realized, strategyId)
                 },
                 gate = gate,
@@ -395,6 +402,14 @@ class LiveSession(
         // so any publish that happens after this line will see the new subscribers.
         wireNotifierSubscriptions(bus, pipeline.orderManager)
         val dailyScheduler = buildDailySummaryScheduler(strategyPnL, strategyPositions)
+        if (dailyScheduler != null) {
+            // Feed the daily summary's halt count. Independent of [notifyEvents] — the
+            // summary tallies halts even when the per-halt alert is not subscribed.
+            val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
+            bus.subscribe<RiskEvent.Halted> { ev ->
+                dailyTracker.recordHalt(ev.strategyId ?: ownerStrategyId)
+            }
+        }
 
         val now = Instant.ofEpochMilli(clock.now())
         val effectiveWarmup =
