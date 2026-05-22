@@ -12,6 +12,9 @@ import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.notify.NoopNotifier
+import com.qkt.notify.Notifier
+import com.qkt.notify.NotifyEventKind
 import java.nio.file.Path
 import java.time.Instant
 import kotlinx.serialization.json.put
@@ -68,6 +71,14 @@ class StrategyHandle(
          */
         private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
         private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+        /**
+         * Telegram alert sink shared across every strategy this daemon hosts. Default
+         * [NoopNotifier] discards events — production daemons pass the single
+         * [com.qkt.notify.TelegramNotifier] built from [com.qkt.cli.Config.notify].
+         */
+        private val notifier: Notifier = NoopNotifier,
+        private val notifyEvents: Set<NotifyEventKind> = emptySet(),
+        private val dailySummaryUtc: String = "",
     ) : Factory {
         override fun create(
             name: String,
@@ -132,6 +143,9 @@ class StrategyHandle(
                     brokerFactories = brokerFactories,
                     persistor = persistor,
                     ignoreMismatches = ignoreMismatches,
+                    notifier = notifier,
+                    notifyEvents = notifyEvents,
+                    dailySummaryUtc = dailySummaryUtc,
                 ).start()
 
             val server =
