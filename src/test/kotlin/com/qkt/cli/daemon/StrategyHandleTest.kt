@@ -4,6 +4,9 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.notify.NotificationEvent
+import com.qkt.notify.Notifier
+import com.qkt.notify.NotifyEventKind
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -82,6 +85,38 @@ class StrategyHandleTest {
             assertThat(resp.code).isEqualTo(200)
             val body = resp.body!!.string()
             assertThat(body).contains("\"strategy\":\"example\"")
+        } finally {
+            handle.close()
+        }
+    }
+
+    private class CapturingNotifier : Notifier {
+        val events = java.util.concurrent.CopyOnWriteArrayList<NotificationEvent>()
+
+        override fun notify(event: NotificationEvent) {
+            events.add(event)
+        }
+
+        override fun close() {}
+    }
+
+    @Test
+    fun `RealFactory wires the notifier into the session so strategy-started fires`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val notifier = CapturingNotifier()
+        val factory =
+            StrategyHandle.RealFactory(
+                stateDir = stateDir,
+                marketSourceProvider = { FakeSource(emptyList()) },
+                notifier = notifier,
+                notifyEvents = setOf(NotifyEventKind.STRATEGY_STARTED),
+            )
+        val file = Path.of("src/test/resources/cli/valid_strategy.qkt")
+        val handle = factory.create("alpha", file, false)
+        try {
+            assertThat(notifier.events).anyMatch { it is NotificationEvent.StrategyStarted }
         } finally {
             handle.close()
         }

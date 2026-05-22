@@ -14,6 +14,9 @@ import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.dsl.portfolio.CompiledChild
 import com.qkt.dsl.portfolio.PortfolioCompiled
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.notify.NoopNotifier
+import com.qkt.notify.Notifier
+import com.qkt.notify.NotifyEventKind
 import java.nio.file.Files
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -30,6 +33,10 @@ class PortfolioDeployer(
      */
     private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    /** Telegram alert sink shared across every portfolio child. Default discards events. */
+    private val notifier: Notifier = NoopNotifier,
+    private val notifyEvents: Set<NotifyEventKind> = emptySet(),
+    private val dailySummaryUtc: String = "",
 ) {
     fun deploy(
         portfolioName: String,
@@ -137,6 +144,9 @@ class PortfolioDeployer(
                 gate = effectiveActive,
                 brokerFactories = brokerFactories,
                 persistor = persistor,
+                notifier = notifier,
+                notifyEvents = notifyEvents,
+                dailySummaryUtc = dailySummaryUtc,
             ).start()
 
         val server =

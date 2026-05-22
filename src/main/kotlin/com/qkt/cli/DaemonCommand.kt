@@ -100,6 +100,9 @@ class DaemonCommand(
                     brokerFactories = brokerFactories,
                     maxDailyLoss = cfg.maxDailyLoss,
                     persistor = statePersistor,
+                    notifier = notifier,
+                    notifyEvents = cfg.notify.telegram.events,
+                    dailySummaryUtc = cfg.notify.telegram.dailySummaryUtc,
                 ),
             )
         val startedAt = Instant.now()
@@ -113,6 +116,9 @@ class DaemonCommand(
                     brokerFactories = brokerFactories,
                     maxDailyLoss = cfg.maxDailyLoss,
                     persistor = statePersistor,
+                    notifier = notifier,
+                    notifyEvents = cfg.notify.telegram.events,
+                    dailySummaryUtc = cfg.notify.telegram.dailySummaryUtc,
                 )
         val plane =
             ControlPlane(
