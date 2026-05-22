@@ -46,6 +46,7 @@ class FileStatePersistor(
         const val BRACKET_PAIRS_FILE = "bracket-pairs.json"
         const val PENDING_ORDERS_FILE = "pending-orders.json"
         const val PENDING_STACKS_FILE = "pending-stacks.json"
+        const val OCO_LEGS_FILE = "oco-legs.json"
         const val SCHEMA_VERSION = 1
     }
 
@@ -207,6 +208,59 @@ class FileStatePersistor(
         }
     }
 
+    override fun saveOcoLegs(
+        strategyId: String,
+        legs: List<PersistedOcoLeg>,
+    ) {
+        val entries =
+            legs.mapNotNull { leg ->
+                val req = OrderRequestDto.fromDomain(leg.request)
+                if (req == null) {
+                    log.warn(
+                        "saveOcoLegs: skipping non-persistable variant ${leg.request::class.simpleName} " +
+                            "for $strategyId/${leg.clientOrderId}",
+                    )
+                    null
+                } else {
+                    OcoLegDto(
+                        clientOrderId = leg.clientOrderId,
+                        brokerOrderId = leg.brokerOrderId,
+                        strategyId = leg.strategyId,
+                        request = req,
+                        siblingIds = leg.siblingIds,
+                    )
+                }
+            }
+        val dto = OcoLegsDto(version = SCHEMA_VERSION, strategyId = strategyId, legs = entries)
+        runCatching { json.encodeToString(OcoLegsDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, OCO_LEGS_FILE, it) }
+            .onFailure { e -> log.warn("saveOcoLegs encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> {
+        val raw = writer.read(strategyId, OCO_LEGS_FILE) ?: return emptyList()
+        val dto =
+            try {
+                json.decodeFromString(OcoLegsDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadOcoLegs parse failed for $strategyId: ${e.message}")
+                return emptyList()
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadOcoLegs schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return emptyList()
+        }
+        return dto.legs.map {
+            PersistedOcoLeg(
+                clientOrderId = it.clientOrderId,
+                brokerOrderId = it.brokerOrderId,
+                strategyId = it.strategyId,
+                request = it.request.toDomain(),
+                siblingIds = it.siblingIds,
+            )
+        }
+    }
+
     override fun clearStrategy(strategyId: String) {
         writer.deleteStrategy(strategyId)
     }
@@ -236,6 +290,22 @@ private data class PendingOrdersDto(
 private data class PendingOrderEntryDto(
     val clientOrderId: String,
     val request: OrderRequestDto,
+)
+
+@Serializable
+private data class OcoLegsDto(
+    val version: Int,
+    val strategyId: String,
+    val legs: List<OcoLegDto>,
+)
+
+@Serializable
+private data class OcoLegDto(
+    val clientOrderId: String,
+    val brokerOrderId: String,
+    val strategyId: String,
+    val request: OrderRequestDto,
+    val siblingIds: List<String>,
 )
 
 @Serializable
