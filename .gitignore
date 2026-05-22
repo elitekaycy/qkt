@@ -7,6 +7,7 @@ local.properties
 .DS_Store
 out/
 tt.txt
+telegram.txt
 help.txt
 pwd.txt
 hs_err_pid*.log
