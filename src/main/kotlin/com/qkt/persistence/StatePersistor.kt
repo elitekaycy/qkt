@@ -51,6 +51,15 @@ interface StatePersistor {
 
     fun loadPendingStacks(strategyId: String): Map<String, PersistedTierState>
 
+    /** Persist the live OCO legs for [strategyId] — identity + linkage for restart recovery. */
+    fun saveOcoLegs(
+        strategyId: String,
+        legs: List<PersistedOcoLeg>,
+    )
+
+    /** Restore the live OCO legs for [strategyId]; empty when none persisted. */
+    fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg>
+
     fun clearStrategy(strategyId: String)
 }
 
