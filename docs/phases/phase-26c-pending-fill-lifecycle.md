@@ -191,6 +191,16 @@ Phase 26b rejected `OrderRequest.TrailingStop` with `trailMode = PERCENT`. Phase
 
 `Broker.modify(orderId, OrderModification)` exists with a default `UnsupportedOperationException`. `MT5Broker.modify` is not implemented. Phase 26d covers this together with `/orders` and PERCENT trailing.
 
+## Follow-up: OCO restart recovery (#46)
+
+A daemon restart while an OCO pair was live used to drop the sibling linkage: if one leg filled during downtime, the surviving leg stayed pending on the venue forever — an unintended second entry once it triggered. Fixed by persisting each live OCO leg (`clientOrderId`, broker ticket, strategyId, full request, sibling ids) and reconciling against venue truth on `LiveSession` startup: still-pending legs are re-seeded into `MT5Broker.pendingByTicket`; legs whose ticket is now an open position get a republished `OrderFilled` carrying the original `clientOrderId`, which feeds the existing `OrderManager.onFilled` cancel-on-fill path unchanged.
+
+**Known limitations:**
+- One-tick persist window — a fill that lands between `OrderManager` state mutation and the next persistor write is the existing risk surface; recovery is best-effort on what was last persisted.
+- OCO-only. Bracket pairs are out of scope of this recovery path.
+
+See: `src/main/kotlin/com/qkt/persistence/PersistedOcoLeg.kt`, `OrderManager.restore`, `MT5Broker.recoverPendingOrders`, `broker/mt5/OcoRecovery.kt`.
+
 ## References
 
 - Spec: `docs/superpowers/specs/2026-05-12-phase26c-pending-fill-lifecycle-design.md`

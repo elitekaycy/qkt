@@ -479,6 +479,46 @@ class MT5Broker(
         return out
     }
 
+    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
+        if (orders.isEmpty()) return
+        val pending =
+            runCatching { client.getPendingOrders(magic = profile.magic) }
+                .getOrElse {
+                    log.warn("MT5Broker ${profile.name} recovery: getPendingOrders failed: ${it.message}")
+                    return
+                }
+        val positions =
+            runCatching { client.getPositions(magic = profile.magic) }
+                .getOrElse {
+                    log.warn("MT5Broker ${profile.name} recovery: getPositions failed: ${it.message}")
+                    return
+                }
+        val actions = classifyOcoRecovery(orders, pending.map { it.ticket }.toSet(), positions)
+        // Pass 1: re-seed every still-pending leg before any fill is emitted, so a
+        // cancel triggered by pass 2 can resolve its sibling's ticket.
+        for (a in actions) {
+            if (a is OcoRecoveryAction.Reseed) {
+                pendingTickets[a.order.id] = a.ticket
+                pendingByTicket[a.ticket] = PendingMeta(a.order.id, a.order.request.strategyId)
+                log.info(
+                    "MT5Broker ${profile.name} recovery: re-seeded pending leg ${a.order.id} ticket=${a.ticket}",
+                )
+            }
+        }
+        // Pass 2: republish the fill for any leg that filled while the daemon was down;
+        // OrderManager's cancel-on-fill then unwinds the still-pending sibling.
+        for (a in actions) {
+            if (a is OcoRecoveryAction.EmitFill) {
+                pendingByTicket[a.position.ticket] = PendingMeta(a.order.id, a.order.request.strategyId)
+                log.info(
+                    "MT5Broker ${profile.name} recovery: leg ${a.order.id} filled during downtime " +
+                        "ticket=${a.position.ticket}",
+                )
+                onPendingPositionOpened(a.position)
+            }
+        }
+    }
+
     override fun cancel(orderId: String) {
         val ticket = pendingTickets.remove(orderId) ?: return
         pendingByTicket.remove(ticket)
