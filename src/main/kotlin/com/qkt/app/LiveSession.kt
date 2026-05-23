@@ -384,6 +384,9 @@ class LiveSession(
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
         // so any publish that happens after this line will see the new subscribers.
         wireNotifierSubscriptions(bus, pipeline.orderManager)
+        // Restore OCO legs from the persistor and reconcile them against venue truth so
+        // any sibling whose pair filled during downtime is cancelled before ticks flow.
+        pipeline.orderManager.restore(strategies.map { it.first })
         // Keep the daily-summary tracker's halt count current. The daemon owns the one
         // DailySummaryScheduler; this session just feeds its tracker.
         val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
