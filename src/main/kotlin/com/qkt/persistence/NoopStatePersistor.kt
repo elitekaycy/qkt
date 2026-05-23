@@ -77,8 +77,7 @@ class NoopStatePersistor : StatePersistor {
         stateFor(strategyId).ocoLegs = legs
     }
 
-    override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> =
-        state[strategyId]?.ocoLegs ?: emptyList()
+    override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> = state[strategyId]?.ocoLegs ?: emptyList()
 
     override fun clearStrategy(strategyId: String) {
         state.remove(strategyId)
