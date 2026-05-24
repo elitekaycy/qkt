@@ -83,7 +83,7 @@ object BybitOrderTranslator {
 
     private fun mapTif(tif: TimeInForce): String =
         when (tif) {
-            TimeInForce.GTC, TimeInForce.DAY -> "GTC"
+            TimeInForce.GTC, TimeInForce.DAY, TimeInForce.GTD -> "GTC"
             TimeInForce.IOC -> "IOC"
             TimeInForce.FOK -> "FOK"
         }
