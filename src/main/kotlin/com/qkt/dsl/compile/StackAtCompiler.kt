@@ -1,10 +1,12 @@
 package com.qkt.dsl.compile
 
+import com.qkt.common.Money
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPriceAst
+import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
@@ -22,10 +24,15 @@ import java.math.BigDecimal
  * forms (`Ref`, `StreamFieldRef`, indicators, `NOW.<field>`, ...) are rejected with a
  * clear error so strategies fail to compile rather than at the per-tick path.
  *
+ * Phase 37: the sizing restriction is relaxed to accept the new [EntryQty] leaf alongside
+ * literals + arithmetic. The compiled sizing is a `(parentQty) -> BigDecimal` lambda; the
+ * [StackOrchestrator] resolves it once at parent-fill time and passes the resulting
+ * `BigDecimal` to [StackEngine] as a [ResolvedStackTier]. MFE threshold + bracket
+ * distances still go through the strict [evalConstant] path.
+ *
  * Supported clause shape:
  *   - `mfeThreshold`: any constant numeric expression
- *   - `sizing`: `SizeQty(<constant>)` only — the spec restricts STACK_AT sizing to
- *     absolute lots; percent-of-parent / risk-based sizing land in a later phase
+ *   - `sizing`: `SizeQty(<literals + ENTRY_QTY + arithmetic>)`
  *   - `bracket`: both `stopLoss` and `takeProfit` must be `ChildBy(<constant>)`. Other
  *     forms (`ChildAt` / `ChildPct` / `ChildRr`) are not yet supported for stacks
  */
@@ -35,25 +42,55 @@ object StackAtCompiler {
     fun compile(clause: StackAtClause): CompiledStackTier {
         val threshold = evalConstant(clause.mfeThreshold, context = "STACK_AT MFE threshold")
         val withinMs = clause.withinDuration.millis
-        val stackQty = compileSizing(clause.sizing)
+        val resolve = compileSizing(clause.sizing)
         val (sl, tp) = compileBracket(clause.bracket)
         return CompiledStackTier(
             mfeThreshold = threshold,
             withinMs = withinMs,
-            stackQuantity = stackQty,
+            resolveStackQuantity = resolve,
             slDistance = sl,
             tpDistance = tp,
         )
     }
 
-    private fun compileSizing(sizing: SizingAst): BigDecimal =
+    private fun compileSizing(sizing: SizingAst): (BigDecimal) -> BigDecimal =
         when (sizing) {
-            is SizeQty -> evalConstant(sizing.expr, context = "STACK_AT SIZING")
+            is SizeQty -> compileSizingExpr(sizing.expr)
+            else ->
+                error("STACK_AT only supports SIZING <qty-expr> (lots); got ${sizing::class.simpleName}")
+        }
+
+    private fun compileSizingExpr(expr: ExprAst): (BigDecimal) -> BigDecimal =
+        when (expr) {
+            is NumLit -> { _ -> expr.value }
+            EntryQty -> { parentQty -> parentQty }
+            is UnaryOp ->
+                when (expr.op) {
+                    UnOp.NEG ->
+                        compileSizingExpr(expr.arg).let { inner -> { p -> inner(p).negate() } }
+                    UnOp.NOT ->
+                        error("STACK_AT SIZING: boolean NOT is not a numeric expression")
+                }
+            is BinaryOp -> compileSizingBinary(expr)
             else ->
                 error(
-                    "STACK_AT only supports literal SIZING (lots); got ${sizing::class.simpleName}",
+                    "STACK_AT SIZING must use literals, ENTRY_QTY, and arithmetic only; " +
+                        "got ${expr::class.simpleName}",
                 )
         }
+
+    private fun compileSizingBinary(expr: BinaryOp): (BigDecimal) -> BigDecimal {
+        val l = compileSizingExpr(expr.lhs)
+        val r = compileSizingExpr(expr.rhs)
+        return when (expr.op) {
+            BinOp.ADD -> { p -> l(p).add(r(p)) }
+            BinOp.SUB -> { p -> l(p).subtract(r(p)) }
+            BinOp.MUL -> { p -> l(p).multiply(r(p)) }
+            BinOp.DIV -> { p -> l(p).divide(r(p), Money.SCALE, Money.ROUNDING) }
+            BinOp.AND, BinOp.OR ->
+                error("STACK_AT SIZING: boolean operator ${expr.op} is not a numeric expression")
+        }
+    }
 
     private fun compileBracket(bracket: BracketAst): Pair<BigDecimal, BigDecimal> {
         val sl = bracket.stopLoss ?: error("STACK_AT BRACKET requires STOP LOSS")
@@ -102,7 +139,7 @@ object StackAtCompiler {
             BinOp.ADD -> l.add(r)
             BinOp.SUB -> l.subtract(r)
             BinOp.MUL -> l.multiply(r)
-            BinOp.DIV -> l.divide(r, com.qkt.common.Money.SCALE, com.qkt.common.Money.ROUNDING)
+            BinOp.DIV -> l.divide(r, Money.SCALE, Money.ROUNDING)
             BinOp.AND, BinOp.OR ->
                 error("$context: boolean operator ${expr.op} is not a numeric expression")
         }

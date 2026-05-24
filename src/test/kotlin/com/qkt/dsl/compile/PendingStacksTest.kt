@@ -13,7 +13,7 @@ class PendingStacksTest {
     ) = CompiledStackTier(
         mfeThreshold = BigDecimal(threshold),
         withinMs = 30 * 60 * 1000L,
-        stackQuantity = BigDecimal(qty),
+        resolveStackQuantity = { _ -> BigDecimal(qty) },
         slDistance = BigDecimal("0.005"),
         tpDistance = BigDecimal("0.020"),
     )

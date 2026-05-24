@@ -15,7 +15,7 @@ class StackEnginePersistenceTest {
         qty: String = "0.06",
         sl: String = "200",
         tp: String = "2000",
-    ) = CompiledStackTier(
+    ) = ResolvedStackTier(
         mfeThreshold = BigDecimal(threshold),
         withinMs = withinMs,
         stackQuantity = BigDecimal(qty),

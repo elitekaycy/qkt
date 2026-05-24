@@ -58,6 +58,8 @@ class ExprCompiler(
             is Ref -> compileRef(expr, ruleAlias)
             is Aggregate -> compileAggregate(expr, ruleAlias)
             is NowAccessor -> compileNow(expr)
+            is com.qkt.dsl.ast.EntryQty ->
+                error("ENTRY_QTY is only valid inside STACK_AT SIZING; got it in a non-STACK_AT expression")
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
 

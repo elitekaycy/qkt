@@ -412,6 +412,10 @@ class Parser(
                 advance()
                 BoolLit(false)
             }
+            TokenKind.ENTRY_QTY -> {
+                advance()
+                com.qkt.dsl.ast.EntryQty
+            }
             TokenKind.MAX, TokenKind.MIN, TokenKind.MEAN, TokenKind.SUM -> parseAggregate()
             TokenKind.CASE -> parseCaseWhen()
             TokenKind.ACCOUNT -> {

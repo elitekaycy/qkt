@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
+import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
@@ -100,6 +101,7 @@ data class SnapshotPlan(
                 is FuncCall -> expr.args.forEach { walk(it, onBuy, onSell, onOpen, rolling) }
                 is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
                 is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
+                EntryQty,
                 -> {}
             }
         }
