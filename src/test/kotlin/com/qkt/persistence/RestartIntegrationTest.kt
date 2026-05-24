@@ -29,7 +29,7 @@ class RestartIntegrationTest {
         CompiledStackTier(
             mfeThreshold = BigDecimal("10"),
             withinMs = 1_800_000L,
-            stackQuantity = BigDecimal("0.06"),
+            resolveStackQuantity = { _ -> BigDecimal("0.06") },
             slDistance = BigDecimal("200"),
             tpDistance = BigDecimal("2000"),
         )
@@ -76,6 +76,7 @@ class RestartIntegrationTest {
             parentSymbol = "XAUUSDm",
             parentSide = Side.BUY,
             parentEntryPrice = BigDecimal("4700"),
+            parentQty = BigDecimal("0.10"),
             tiers = listOf(tier),
         )
         // Price moves up enough that MFE crosses tier 0's threshold (10).
@@ -111,6 +112,7 @@ class RestartIntegrationTest {
             parentSymbol = "XAUUSDm",
             parentSide = Side.BUY,
             parentEntryPrice = BigDecimal("4700"),
+            parentQty = BigDecimal("0.10"),
             tiers = listOf(tier),
         )
         // Drive another tick that crosses the tier-0 threshold. Pre-restart this fired;

@@ -287,6 +287,7 @@ class TradingPipeline(
                     parentSymbol = pending.symbol,
                     parentSide = pending.side,
                     parentEntryPrice = e.price,
+                    parentQty = e.quantity,
                     tiers = pending.tiers,
                     closeWatchIds = pending.closeWatchIds,
                 )
