@@ -372,8 +372,8 @@ class MT5Broker(
         request: OrderRequest,
         composite: MT5Translation.Composite,
     ): SubmitAck {
-        // Prepare both legs up-front so the OCO is atomic — if either rejects we reject
-        // the whole composite rather than placing a one-legged OCO.
+        // Prepare every leg first. Prepare is pre-placement validation only; rejecting
+        // here doesn't need rollback because no client.placeOrder has run yet.
         val prepared =
             composite.requests.map { wire ->
                 when (val result = prepareForPlacement(wire)) {
@@ -382,31 +382,40 @@ class MT5Broker(
                         return reject(request, "OCO leg ${wire.comment}: ${result.reason}")
                 }
             }
-        // Submit each leg. Each leg's ticket must be registered in [pendingByTicket]
-        // so [MT5PositionPoller] can correlate the eventual fill back to a strategy.
-        // Without this, the poller sees a new position appear but `onPendingPositionOpened`
-        // silently returns — strategy never receives the OrderFilled event for an OCO leg.
-        val firstBrokerId =
-            prepared
-                .mapIndexed { _, wire ->
-                    val resp = client.placeOrder(wire)
-                    if (!isOrderSuccessful(resp.result.retcode)) {
-                        log.warn(
-                            "MT5Broker ${profile.name} OCO leg ${wire.comment} rejected: " +
-                                "${resp.errorMessage ?: "retcode=${resp.result.retcode}"}",
-                        )
-                        null
-                    } else {
-                        val ticket = resp.result.order
-                        if (ticket != 0L) {
-                            val legOrderId = decodeOcoLegOrderId(wire.comment) ?: request.id
-                            pendingTickets[legOrderId] = ticket
-                            pendingByTicket[ticket] = PendingMeta(legOrderId, request.strategyId)
+        // Place legs sequentially. Each leg's ticket is registered in [pendingByTicket]
+        // so [MT5PositionPoller] can correlate the eventual fill back to a strategy. If
+        // any leg rejects, every previously-placed leg is cancelled on the venue and
+        // the entire composite is rejected — never leave a one-legged OCO running as a
+        // directional bet the caller never intended.
+        val placed = mutableListOf<PlacedLeg>()
+        for (wire in prepared) {
+            val resp = client.placeOrder(wire)
+            if (!isOrderSuccessful(resp.result.retcode)) {
+                val reason =
+                    "OCO leg ${wire.comment}: ${resp.errorMessage ?: "retcode=${resp.result.retcode}"}"
+                log.warn("MT5Broker ${profile.name} $reason; rolling back ${placed.size} placed leg(s)")
+                for (leg in placed) {
+                    runCatching { client.cancelOrder(leg.ticket) }
+                        .onFailure { e ->
+                            log.warn(
+                                "MT5Broker ${profile.name} OCO rollback cancel(${leg.ticket}) failed: ${e.message}",
+                            )
                         }
-                        ticket
-                    }
-                }.firstOrNull { it != null && it != 0L }
-                ?.toString() ?: composite.groupId
+                    pendingTickets.remove(leg.legOrderId)
+                    pendingByTicket.remove(leg.ticket)
+                }
+                return reject(request, reason)
+            }
+            val ticket = resp.result.order
+            if (ticket != 0L) {
+                val legOrderId = decodeOcoLegOrderId(wire.comment) ?: request.id
+                pendingTickets[legOrderId] = ticket
+                pendingByTicket[ticket] = PendingMeta(legOrderId, request.strategyId)
+                placed.add(PlacedLeg(ticket, legOrderId))
+            }
+        }
+
+        val firstBrokerId = placed.firstOrNull { it.ticket != 0L }?.ticket?.toString() ?: composite.groupId
 
         bus.publish(
             BrokerEvent.OrderAccepted(
@@ -422,6 +431,8 @@ class MT5Broker(
             accepted = true,
         )
     }
+
+    private data class PlacedLeg(val ticket: Long, val legOrderId: String)
 
     /**
      * Recover the per-leg client order id from an OCO wire comment.
