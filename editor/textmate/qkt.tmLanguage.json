@@ -9,7 +9,9 @@
     { "include": "#constants" },
     { "include": "#section-keywords" },
     { "include": "#flow-keywords" },
-    { "include": "#other-keywords" }
+    { "include": "#other-keywords" },
+    { "include": "#operators" },
+    { "include": "#stream-prefix" }
   ],
   "repository": {
     "comments": {
@@ -90,6 +92,26 @@
         {
           "name": "keyword.other.qkt",
           "match": "\\b(BUY|SELL|CLOSE_ALL|CLOSE|CANCEL_ALL|CANCEL|LOG|WARN|ERROR|DEBUG|STACK_AT|STACK|SPACING|WITHIN|MFE|MARKET|LIMIT|STOP_LOSS|STOP|TRAILING|BRACKET|OCO_ENTRY|OCO|ORDER_TYPE|TAKE_PROFIT|TAKE|PROFIT|LOSS|RR|AT|BY|PCT|SIZING|RISK|USD|OF|EQUITY|BALANCE|POSITION_AVG_PRICE|POSITION|OPEN_ORDERS|ENTRY_QTY|TIF|GTC|IOC|FOK|DAY|GTD|EVERY|CROSSES|ABOVE|BELOW|BETWEEN|OPEN|MAX|MIN|MEAN|SUM|ACCOUNT|SYMBOL|NOW)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.qkt",
+          "match": "==|!=|<=|>=|<|>|\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.qkt",
+          "match": "\\b(AND|OR|NOT)\\b"
+        }
+      ]
+    },
+    "stream-prefix": {
+      "patterns": [
+        {
+          "name": "entity.name.namespace.qkt",
+          "match": "\\b([A-Z][A-Z0-9_]*):"
         }
       ]
     }
