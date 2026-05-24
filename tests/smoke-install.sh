@@ -176,12 +176,12 @@ ok "backtest produced valid JSON report"
 # Step 6 — Daemon lifecycle
 # ──────────────────────────────────────────────────────────────────────── #
 # Control-plane assertions (start / deploy / list / status / stop) are hard —
-# they are network-independent. The live-tick assertion is now also hard: we
-# poll for up to 60s waiting for the strategy to log a closed-candle tick from
-# Bybit's public WebSocket. If the feed is unreachable from this runner the
-# build fails — that is the signal the CI promises ("a deployed strategy
-# really did process live market data"), and a quiet WS is no longer treated
-# as an acceptable outcome.
+# they are network-independent. The live-tick assertion stays soft: PR #107
+# hardened it and the first run on `testing` proved `stream.bybit.com` is
+# silent from GitHub-hosted runners — no closed candle inside a 60s budget.
+# A hard check therefore blocks every promotion to main on infrastructure we
+# don't control. Tracked in #87 (re-harden) and #108 (offline-replay source —
+# the deterministic path forward).
 say "Step 6: daemon lifecycle (start, deploy, list, status, logs, stop)"
 DAEMON_STATE="$SMOKE_DIR/daemon-state"
 mkdir -p "$DAEMON_STATE"
@@ -225,11 +225,10 @@ ok "qkt list shows the strategy"
     || die "qkt status failed"
 ok "qkt status responds"
 
-# Hard check: poll for up to 60s for the strategy to log a closed-candle tick
-# from the Bybit public WS. A WebSocket handshake + subscribe + first 5s
-# candle close runs ~10s in the happy path; 60s gives plenty of headroom for
-# a slow runner without making the build feel sluggish when ticks arrive
-# normally.
+# Soft check: poll for up to 60s for a closed-candle tick. If none arrive,
+# warn but do not fail — GitHub-hosted runners do not observe Bybit's public
+# WS reliably (see #87 + #108). The replay-source follow-up (#108) will make
+# this a deterministic hard check.
 TICK_DEADLINE=$(( $(date +%s) + 60 ))
 while [ "$(date +%s)" -lt "$TICK_DEADLINE" ]; do
     "$INSTALL_QKT" logs daemonsmoke --state-dir "$DAEMON_STATE" > "$SMOKE_DIR/strategy.log" 2>>"$LOG_FILE" || true
@@ -239,8 +238,9 @@ while [ "$(date +%s)" -lt "$TICK_DEADLINE" ]; do
     fi
     sleep 2
 done
-grep -q 'tick close=' "$SMOKE_DIR/strategy.log" 2>/dev/null \
-    || die "no live ticks logged within 60s — Bybit WS feed did not deliver a closed candle (see $SMOKE_DIR/strategy.log)"
+if ! grep -q 'tick close=' "$SMOKE_DIR/strategy.log" 2>/dev/null; then
+    warn "no live ticks logged within 60s — Bybit WS feed unavailable here (soft check, tracked in #87 / #108)"
+fi
 
 "$INSTALL_QKT" stop daemonsmoke --state-dir "$DAEMON_STATE" >>"$LOG_FILE" 2>&1 \
     || die "qkt stop failed"
