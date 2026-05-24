@@ -1,0 +1,48 @@
+{
+  "name": "qkt",
+  "scopeName": "source.qkt",
+  "fileTypes": ["qkt"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-dash.qkt",
+          "match": "--.*$"
+        },
+        {
+          "name": "comment.line.number-sign.qkt",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.block.qkt",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.qkt",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.qkt", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.quoted.single.qkt",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.qkt", "match": "\\\\." }
+          ]
+        }
+      ]
+    }
+  }
+}
