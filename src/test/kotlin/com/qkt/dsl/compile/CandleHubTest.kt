@@ -20,7 +20,7 @@ class CandleHubTest {
     @Test
     fun `register then feed accumulates closed candles in history`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 5)
+        hub.register(key1m, retention = 5, strategyId = "test")
         for (t in 0L..180_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         assertThat(hub.latest(key1m)).isNotNull
         assertThat(hub.history(key1m, 0)).isEqualTo(hub.latest(key1m))
@@ -29,35 +29,35 @@ class CandleHubTest {
     @Test
     fun `register max wins when called twice`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 5)
-        hub.register(key1m, retention = 20)
+        hub.register(key1m, retention = 5, strategyId = "test")
+        hub.register(key1m, retention = 20, strategyId = "test")
         assertThat(hub.retention(key1m)).isEqualTo(20)
     }
 
     @Test
     fun `register max retention preserved when smaller value comes second`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 50)
-        hub.register(key1m, retention = 10)
+        hub.register(key1m, retention = 50, strategyId = "test")
+        hub.register(key1m, retention = 10, strategyId = "test")
         assertThat(hub.retention(key1m)).isEqualTo(50)
     }
 
     @Test
     fun `register after feed adds a new key`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 5)
+        hub.register(key1m, retention = 5, strategyId = "test")
         hub.feed(tick("BYBIT:BTCUSDT", 0L))
         // Daemon scope: late-registering a new key (e.g. when a second strategy deploys after
         // ticks have started flowing) is allowed. The new key simply has no prior history.
-        hub.register(keyEth1m, retention = 5)
+        hub.register(keyEth1m, retention = 5, strategyId = "test")
         assertThat(hub.keys()).contains(key1m, keyEth1m)
     }
 
     @Test
     fun `same symbol two timeframes maintain independent histories`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 100)
-        hub.register(key1h, retention = 100)
+        hub.register(key1m, retention = 100, strategyId = "test")
+        hub.register(key1h, retention = 100, strategyId = "test")
         // 90 minutes of ticks at 30s cadence
         for (t in 0L..(90L * 60_000L) step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         // 1m closes ~89 candles in this span; 1h closes ~1 candle (the 0..3_600_000 boundary at the 60min tick).
@@ -68,7 +68,7 @@ class CandleHubTest {
     @Test
     fun `feed for unrelated symbol does not affect any key`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 10)
+        hub.register(key1m, retention = 10, strategyId = "test")
         for (t in 0L..180_000L step 30_000L) hub.feed(tick("BYBIT:ETHUSDT", t))
         assertThat(hub.historySize(key1m)).isEqualTo(0)
         assertThat(hub.latest(key1m)).isNull()
@@ -77,7 +77,7 @@ class CandleHubTest {
     @Test
     fun `retention bounds the ring buffer`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 3)
+        hub.register(key1m, retention = 3, strategyId = "test")
         for (t in 0L..(10L * 60_000L) step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         assertThat(hub.historySize(key1m)).isLessThanOrEqualTo(3)
         // Latest is the most recent close
@@ -87,7 +87,7 @@ class CandleHubTest {
     @Test
     fun `history out of range returns null`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 5)
+        hub.register(key1m, retention = 5, strategyId = "test")
         for (t in 0L..180_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         assertThat(hub.history(key1m, -1)).isNull()
         assertThat(hub.history(key1m, 9999)).isNull()
@@ -96,9 +96,9 @@ class CandleHubTest {
     @Test
     fun `onClosed listener fires for each closed candle in registration order`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 10)
+        hub.register(key1m, retention = 10, strategyId = "test")
         val received = mutableListOf<Long>()
-        hub.onClosed(key1m) { c -> received.add(c.endTime) }
+        hub.onClosed(key1m, "test") { c -> received.add(c.endTime) }
         for (t in 0L..240_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", t))
         // Crossing 60_000 / 120_000 / 180_000 / 240_000 boundaries
         assertThat(received).isNotEmpty
@@ -109,16 +109,16 @@ class CandleHubTest {
     @Test
     fun `onClosed for unknown key throws`() {
         val hub = CandleHub()
-        assertThatThrownBy { hub.onClosed(key1m) { } }
+        assertThatThrownBy { hub.onClosed(key1m, "test") { } }
             .isInstanceOf(IllegalStateException::class.java)
     }
 
     @Test
     fun `keys returns the set of registered keys`() {
         val hub = CandleHub()
-        hub.register(key1m, retention = 5)
-        hub.register(key1h, retention = 5)
-        hub.register(keyEth1m, retention = 5)
+        hub.register(key1m, retention = 5, strategyId = "test")
+        hub.register(key1h, retention = 5, strategyId = "test")
+        hub.register(keyEth1m, retention = 5, strategyId = "test")
         assertThat(hub.keys()).containsExactlyInAnyOrder(key1m, key1h, keyEth1m)
     }
 }

@@ -69,7 +69,7 @@ class BybitSpotBrokerReconcilerIntegrationTest {
                 pollExecutor = scheduler.asExecutor(),
             )
 
-        broker.close()
+        broker.shutdown()
 
         assertThat(scheduler.cancelled).isTrue
     }

@@ -301,7 +301,7 @@ class BybitSpotBroker(
         }
     }
 
-    fun close() {
+    override fun shutdown() {
         reconciler.stop()
     }
 }
