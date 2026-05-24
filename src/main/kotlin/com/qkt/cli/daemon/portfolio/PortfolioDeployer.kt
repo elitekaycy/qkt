@@ -121,23 +121,17 @@ class PortfolioDeployer(
                 candleWindow = candleWindow,
                 mdcStrategy = childName,
                 onTrade = { trade, realized, _ ->
-                    org.slf4j.MDC.put("strategy", childName)
-                    org.slf4j.MDC.put("parent", portfolioName)
-                    try {
-                        ring.append("trade", tradeToJson(trade, realized))
-                    } finally {
-                        org.slf4j.MDC.remove("strategy")
-                        org.slf4j.MDC.remove("parent")
+                    com.qkt.cli.daemon.logging.withMdc("strategy", childName) {
+                        com.qkt.cli.daemon.logging.withMdc("parent", portfolioName) {
+                            ring.append("trade", tradeToJson(trade, realized))
+                        }
                     }
                 },
                 onSignal = { sig ->
-                    org.slf4j.MDC.put("strategy", childName)
-                    org.slf4j.MDC.put("parent", portfolioName)
-                    try {
-                        ring.append("signal", signalToJson(sig))
-                    } finally {
-                        org.slf4j.MDC.remove("strategy")
-                        org.slf4j.MDC.remove("parent")
+                    com.qkt.cli.daemon.logging.withMdc("strategy", childName) {
+                        com.qkt.cli.daemon.logging.withMdc("parent", portfolioName) {
+                            ring.append("signal", signalToJson(sig))
+                        }
                     }
                 },
                 gate = effectiveActive,

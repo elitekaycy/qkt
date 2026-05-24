@@ -17,7 +17,6 @@ import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import java.nio.file.Path
 import java.time.Instant
-import kotlinx.serialization.json.put
 
 class StrategyHandle(
     val name: String,
@@ -124,19 +123,13 @@ class StrategyHandle(
                     mdcStrategy = name,
                     candleHub = candleHub,
                     onTrade = { trade, realized, _ ->
-                        org.slf4j.MDC.put("strategy", name)
-                        try {
+                        com.qkt.cli.daemon.logging.withMdc("strategy", name) {
                             ring.append("trade", tradeToJson(trade, realized))
-                        } finally {
-                            org.slf4j.MDC.remove("strategy")
                         }
                     },
                     onSignal = { sig ->
-                        org.slf4j.MDC.put("strategy", name)
-                        try {
+                        com.qkt.cli.daemon.logging.withMdc("strategy", name) {
                             ring.append("signal", signalToJson(sig))
-                        } finally {
-                            org.slf4j.MDC.remove("strategy")
                         }
                     },
                     brokerFactories = brokerFactories,
