@@ -12,4 +12,24 @@ class StreamRefTest {
         assertThat(s.ask).isEqualTo(StreamFieldRef("gold", "ask"))
         assertThat(s.spread).isEqualTo(StreamFieldRef("gold", "spread"))
     }
+
+    @Test
+    fun `tick_size produces a StreamFieldRef for the alias`() {
+        assertThat(StreamRef("gold").tick_size).isEqualTo(StreamFieldRef("gold", "tick_size"))
+    }
+
+    @Test
+    fun `contract_size produces a StreamFieldRef for the alias`() {
+        assertThat(StreamRef("gold").contract_size).isEqualTo(StreamFieldRef("gold", "contract_size"))
+    }
+
+    @Test
+    fun `volume_step produces a StreamFieldRef for the alias`() {
+        assertThat(StreamRef("gold").volume_step).isEqualTo(StreamFieldRef("gold", "volume_step"))
+    }
+
+    @Test
+    fun `volume_min produces a StreamFieldRef for the alias`() {
+        assertThat(StreamRef("gold").volume_min).isEqualTo(StreamFieldRef("gold", "volume_min"))
+    }
 }
