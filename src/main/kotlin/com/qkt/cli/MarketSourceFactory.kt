@@ -8,7 +8,9 @@ import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
+import com.qkt.marketdata.source.ReplayMarketSource
 import com.qkt.marketdata.source.SymbolPattern
+import java.nio.file.Path
 
 /**
  * Shared composite-source construction for `qkt daemon` and `qkt run`.
@@ -20,6 +22,9 @@ import com.qkt.marketdata.source.SymbolPattern
  *
  * The default [fallbackProvider] picks based on [source]:
  *  - `"tv"` → [TradingViewMarketSource.connect] (opens a WebSocket on construction)
+ *  - `"replay"` → [ReplayMarketSource] over the CSV at `QKT_REPLAY_TICKS`. CI uses this
+ *    to verify a deployed strategy processes live ticks without depending on a third-party
+ *    WebSocket. Falls through to [NullMarketSource] if the env var is unset.
  *  - anything else → [NullMarketSource] (does nothing; symbols not matched by a route
  *    report `supports() == false`).
  *
@@ -52,7 +57,16 @@ object MarketSourceFactory {
     }
 
     private fun defaultFallback(source: String): MarketSource =
-        if (source == "tv") TradingViewMarketSource.connect() else NullMarketSource
+        when (source) {
+            "tv" -> TradingViewMarketSource.connect()
+            "replay" -> buildReplaySource() ?: NullMarketSource
+            else -> NullMarketSource
+        }
+
+    private fun buildReplaySource(): MarketSource? {
+        val csv = System.getenv("QKT_REPLAY_TICKS") ?: return null
+        return ReplayMarketSource(Path.of(csv))
+    }
 
     /**
      * Default opt-in for Bybit routes: only construct them if the operator has set
