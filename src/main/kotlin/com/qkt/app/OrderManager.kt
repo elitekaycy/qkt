@@ -1010,6 +1010,19 @@ class OrderManager(
             updateTrailingHwm(managed, tick.price)
         }
 
+        // Phase 38: sweep pending GTD orders past their deadline when the broker doesn't
+        // self-cancel. MT5 returns supportsNativeGtd=true and the venue handles expiry;
+        // PaperBroker, Bybit, and LogBroker fall through here.
+        if (!broker.supportsNativeGtd) {
+            val nowMs = clock.now()
+            for (managed in orders.values.toList()) {
+                if (managed.state.isTerminal) continue
+                if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
+                val deadline = managed.request.expiresAt ?: continue
+                if (nowMs > deadline) cancel(managed.id)
+            }
+        }
+
         val now = clock.now()
         val expired =
             timeExits.values

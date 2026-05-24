@@ -317,6 +317,7 @@ private data class OrderRequestDto(
     val stopPrice: String? = null,
     val triggerPrice: String? = null,
     val onTrigger: String? = null,
+    val expiresAt: Long? = null,
 ) {
     fun toDomain(): com.qkt.execution.OrderRequest {
         val sideEnum =
@@ -347,6 +348,7 @@ private data class OrderRequestDto(
                     timeInForce = tif,
                     timestamp = timestamp,
                     strategyId = strategyId,
+                    expiresAt = expiresAt,
                 )
             "Stop" ->
                 com.qkt.execution.OrderRequest.Stop(
@@ -358,6 +360,7 @@ private data class OrderRequestDto(
                     timeInForce = tif,
                     timestamp = timestamp,
                     strategyId = strategyId,
+                    expiresAt = expiresAt,
                 )
             "IfTouched" ->
                 com.qkt.execution.OrderRequest.IfTouched(
@@ -377,6 +380,7 @@ private data class OrderRequestDto(
                     timeInForce = tif,
                     timestamp = timestamp,
                     strategyId = strategyId,
+                    expiresAt = expiresAt,
                 )
             else -> error("Unknown OrderRequest type in persisted state: $type")
         }
@@ -407,6 +411,7 @@ private data class OrderRequestDto(
                         timestamp = req.timestamp,
                         strategyId = req.strategyId,
                         limitPrice = req.limitPrice.toPlainString(),
+                        expiresAt = req.expiresAt,
                     )
                 is com.qkt.execution.OrderRequest.Stop ->
                     OrderRequestDto(
@@ -419,6 +424,7 @@ private data class OrderRequestDto(
                         timestamp = req.timestamp,
                         strategyId = req.strategyId,
                         stopPrice = req.stopPrice.toPlainString(),
+                        expiresAt = req.expiresAt,
                     )
                 is com.qkt.execution.OrderRequest.IfTouched ->
                     OrderRequestDto(
@@ -433,6 +439,7 @@ private data class OrderRequestDto(
                         triggerPrice = req.triggerPrice.toPlainString(),
                         onTrigger = req.onTrigger.name,
                         limitPrice = req.limitPrice?.toPlainString(),
+                        expiresAt = req.expiresAt,
                     )
                 else -> null // non-persistable variant (Bracket, ScaleOut, TimeExit, Stack, etc.)
             }

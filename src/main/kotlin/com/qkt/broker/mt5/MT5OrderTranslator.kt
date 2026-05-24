@@ -98,6 +98,7 @@ class MT5OrderTranslator(
             deviation = profile.deviationPoints,
             magic = profile.magic,
             comment = req.id,
+            expiration = req.expiresAt?.let { it / 1000 },
         )
     }
 
@@ -112,6 +113,7 @@ class MT5OrderTranslator(
             deviation = profile.deviationPoints,
             magic = profile.magic,
             comment = req.id,
+            expiration = req.expiresAt?.let { it / 1000 },
         )
 
     private fun translateLimit(req: OrderRequest.Limit): MT5OrderRequest =
@@ -125,6 +127,7 @@ class MT5OrderTranslator(
             deviation = profile.deviationPoints,
             magic = profile.magic,
             comment = req.id,
+            expiration = req.expiresAt?.let { it / 1000 },
         )
 
     private fun translateStopLimit(req: OrderRequest.StopLimit): MT5OrderRequest =
@@ -139,6 +142,7 @@ class MT5OrderTranslator(
             deviation = profile.deviationPoints,
             magic = profile.magic,
             comment = req.id,
+            expiration = req.expiresAt?.let { it / 1000 },
         )
 
     /**
