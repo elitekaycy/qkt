@@ -1,0 +1,6 @@
+PORTFOLIO two_children VERSION 1
+IMPORT 'two_children_a.qkt' AS a
+IMPORT 'two_children_b.qkt' AS b
+RULES
+    RUN a
+    RUN b
