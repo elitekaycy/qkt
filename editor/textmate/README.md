@@ -61,10 +61,6 @@ Copy `qkt.tmLanguage.json` to `~/.config/sublime-text/Packages/User/qkt.sublime-
 
 Settings → Editor → TextMate Bundles → `+` → point to the `editor/textmate/` directory.
 
-## Verification
-
-The committed `screenshot.png` shows the expected coloring of `examples/hedge-straddle/hedge-straddle.qkt` in VSCode's default dark theme.
-
 ## Source of truth
 
 The keyword regexes derive from `src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt`. When a new keyword token lands there, update the corresponding bucket in `qkt.tmLanguage.json` and eyeball-verify.
