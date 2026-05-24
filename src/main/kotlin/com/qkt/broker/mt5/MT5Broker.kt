@@ -432,7 +432,10 @@ class MT5Broker(
         )
     }
 
-    private data class PlacedLeg(val ticket: Long, val legOrderId: String)
+    private data class PlacedLeg(
+        val ticket: Long,
+        val legOrderId: String,
+    )
 
     /**
      * Recover the per-leg client order id from an OCO wire comment.
