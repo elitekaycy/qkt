@@ -108,6 +108,8 @@ class AstCompiler {
                 .flatMap { collectStackAtSymbols(it.action, streams) }
                 .toSet()
 
+        val metaRefs = collectMetaRefs(ast, streams)
+
         return CompiledStrategy(
             streams = streams,
             retentionByKey = retentionByKey,
@@ -120,6 +122,7 @@ class AstCompiler {
             rules = rules,
             pendingStacks = pendingStacks,
             multiPositionPerSymbolSymbols = stackAtSymbols,
+            metaRefs = metaRefs,
         )
     }
 
@@ -164,6 +167,7 @@ private class CompiledStrategy(
     private val rules: List<CompiledRule>,
     override val pendingStacks: PendingStacks,
     override val multiPositionPerSymbolSymbols: Set<String>,
+    private val metaRefs: List<MetaRef>,
 ) : DslCompiledStrategy {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
     private var hubBound: Boolean = false
@@ -177,12 +181,26 @@ private class CompiledStrategy(
         emit: (Signal) -> Unit,
     ) {
         check(!hubBound) { "CompiledStrategy already bound to a hub" }
+        validateMetaRefs(ctx)
         hubBound = true
         boundHub = hub
         for ((alias, key) in streams) {
             hub.onClosed(key, ctx.strategyId) { closed ->
                 evaluate(alias, closed, hub, ctx, emit)
             }
+        }
+    }
+
+    private fun validateMetaRefs(ctx: StrategyContext) {
+        val registry = ctx.instruments
+        val missing = metaRefs.firstOrNull { registry.lookup(it.qktSymbol) == null }
+        if (missing != null) {
+            error(
+                "Strategy '${ctx.strategyId}' references '${missing.stream}.${missing.field}' " +
+                    "but no InstrumentMeta is registered for ${missing.qktSymbol}. " +
+                    "Populate it via the MT5 broker connection (live) or a YAML manifest " +
+                    "in qkt.config.yaml (backtest).",
+            )
         }
     }
 
