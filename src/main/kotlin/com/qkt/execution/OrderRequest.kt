@@ -40,6 +40,14 @@ sealed interface OrderRequest {
     /** Wall-clock at which the request was created. */
     val timestamp: Long
 
+    /**
+     * Phase 38: epoch-millis deadline for GTD orders. `null` for non-GTD or shapes that have
+     * no GTD semantic ([Market], [TimeExit], [Stack]). When set on a pending variant, the
+     * broker either submits a venue-side expiration (MT5 native GTD) or the engine cancels
+     * the order on the next tick past this timestamp.
+     */
+    val expiresAt: Long? get() = null
+
     /** Fill at the next available market price. */
     data class Market(
         override val id: String,
@@ -65,6 +73,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -82,6 +91,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -100,6 +110,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -126,6 +137,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -148,6 +160,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -172,6 +185,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -191,6 +205,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -208,6 +223,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -232,6 +248,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -258,6 +275,7 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        override val expiresAt: Long? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -378,3 +396,40 @@ fun OrderRequest.isCompositeShape(): Boolean =
         this is OrderRequest.ScaleOut ||
         this is OrderRequest.TimeExit ||
         this is OrderRequest.Stack
+
+/**
+ * Returns a copy of this request with [expiresAt] populated; preserves the concrete subtype.
+ *
+ * Composite variants ([OrderRequest.Bracket], [OrderRequest.StandaloneOCO], [OrderRequest.OTO],
+ * [OrderRequest.ScaleOut]) also stamp [expiresAt] onto their nested sub-requests so the
+ * deadline rides every leg the broker sees. [OrderRequest.Market], [OrderRequest.TimeExit],
+ * and [OrderRequest.Stack] have no GTD semantic and return themselves unchanged.
+ */
+fun OrderRequest.withExpiresAt(expiresAt: Long?): OrderRequest =
+    when (this) {
+        is OrderRequest.Market -> this
+        is OrderRequest.TimeExit -> this
+        is OrderRequest.Stack -> this
+        is OrderRequest.Limit -> copy(expiresAt = expiresAt)
+        is OrderRequest.Stop -> copy(expiresAt = expiresAt)
+        is OrderRequest.StopLimit -> copy(expiresAt = expiresAt)
+        is OrderRequest.IfTouched -> copy(expiresAt = expiresAt)
+        is OrderRequest.TrailingStop -> copy(expiresAt = expiresAt)
+        is OrderRequest.TrailingStopLimit -> copy(expiresAt = expiresAt)
+        is OrderRequest.Bracket ->
+            copy(expiresAt = expiresAt, entry = entry.withExpiresAt(expiresAt))
+        is OrderRequest.StandaloneOCO ->
+            copy(
+                expiresAt = expiresAt,
+                leg1 = leg1.withExpiresAt(expiresAt),
+                leg2 = leg2.withExpiresAt(expiresAt),
+            )
+        is OrderRequest.OTO ->
+            copy(
+                expiresAt = expiresAt,
+                parent = parent.withExpiresAt(expiresAt),
+                children = children.map { it.withExpiresAt(expiresAt) },
+            )
+        is OrderRequest.ScaleOut ->
+            copy(expiresAt = expiresAt, basis = basis.withExpiresAt(expiresAt))
+    }
