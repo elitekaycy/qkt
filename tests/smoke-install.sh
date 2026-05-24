@@ -175,33 +175,62 @@ ok "backtest produced valid JSON report"
 # ──────────────────────────────────────────────────────────────────────── #
 # Step 6 — Daemon lifecycle
 # ──────────────────────────────────────────────────────────────────────── #
-# Control-plane assertions (start / deploy / list / status / stop) are hard —
-# they are network-independent. The live-tick assertion stays soft: PR #107
-# hardened it and the first run on `testing` proved `stream.bybit.com` is
-# silent from GitHub-hosted runners — no closed candle inside a 60s budget.
-# A hard check therefore blocks every promotion to main on infrastructure we
-# don't control. Tracked in #87 (re-harden) and #108 (offline-replay source —
-# the deterministic path forward).
+# Control-plane assertions (start / deploy / list / status / stop) are hard.
+# The live-tick assertion is now hard too, driven by the offline-replay
+# `MarketSource` (#108) — a CSV of synthetic ticks shipped into the daemon
+# via `QKT_REPLAY_TICKS` + `source: replay` in qkt.config.yaml. This removes
+# the dependency on third-party WS reachability that made #87 unworkable on
+# GitHub-hosted runners.
 say "Step 6: daemon lifecycle (start, deploy, list, status, logs, stop)"
 DAEMON_STATE="$SMOKE_DIR/daemon-state"
 mkdir -p "$DAEMON_STATE"
 
-# The daemon strategy sources market data from Bybit's public feed. A dummy
-# BYBIT_API_KEY flips on the Bybit route in MarketSourceFactory; public Bybit
-# market data ignores the key's value.
+# Generate a tiny replay-ticks CSV: 30 rows of BACKTEST:BTCUSDT spanning 150s
+# in 5s steps. CsvTickFeed expects this 8-column header; empty trailing
+# fields are valid (price only, no bid/ask/volume). The strategy below uses
+# `EVERY 5s`, so each tick closes exactly one candle and the LOG action fires
+# 29 times instantly.
+REPLAY_CSV="$SMOKE_DIR/replay-ticks.csv"
+{
+    echo "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume"
+    base_ts=1700000000000
+    for i in $(seq 0 29); do
+        ts=$(( base_ts + i * 5000 ))
+        # Prices in [100.00, 129.00] — keeps `btc.close > 0` true for every tick.
+        price=$(( 100 + i ))
+        echo "$ts,BACKTEST:BTCUSDT,$price.00,,,,,"
+    done
+} > "$REPLAY_CSV"
+
+# Minimal config: replay-source fallback, no brokers configured (the strategy
+# uses BACKTEST:* symbols which don't need any). starting_balance is required
+# by the schema but unused in this smoke run.
+cat > "$SMOKE_DIR/qkt.config.yaml" <<YAML
+source: replay
+data_root: $SMOKE_DIR/data
+starting_balance: 10000
+log_level: info
+brokers: {}
+notify:
+  telegram:
+    enabled: false
+YAML
+
 cat > "$SMOKE_DIR/strategies/daemon.qkt" <<'STRAT'
-# Daemon-smoke strategy: log each closing price off the Bybit public feed.
+# Daemon-smoke strategy: log each closing price off the offline-replay feed.
 STRATEGY daemonsmoke VERSION 1
 
 SYMBOLS
-    btc = BYBIT_SPOT:BTCUSDT EVERY 5s
+    btc = BACKTEST:BTCUSDT EVERY 5s
 
 RULES
     WHEN btc.close > 0
     THEN LOG "tick close={c}" c=btc.close
 STRAT
 
-BYBIT_API_KEY=ci-public-dummy "$INSTALL_QKT" daemon --state-dir "$DAEMON_STATE" \
+QKT_REPLAY_TICKS="$REPLAY_CSV" "$INSTALL_QKT" daemon \
+    --config "$SMOKE_DIR/qkt.config.yaml" \
+    --state-dir "$DAEMON_STATE" \
     >>"$LOG_FILE" 2>&1 &
 DAEMON_PID=$!
 
@@ -225,22 +254,21 @@ ok "qkt list shows the strategy"
     || die "qkt status failed"
 ok "qkt status responds"
 
-# Soft check: poll for up to 60s for a closed-candle tick. If none arrive,
-# warn but do not fail — GitHub-hosted runners do not observe Bybit's public
-# WS reliably (see #87 + #108). The replay-source follow-up (#108) will make
-# this a deterministic hard check.
-TICK_DEADLINE=$(( $(date +%s) + 60 ))
+# Hard check: poll for up to 30s for a closed-candle tick. Replay emits all
+# 29 candles instantly, so a healthy run shows the first `tick close=` line
+# within ~1s of deploy. The 30s budget is purely for slow CI runners catching
+# up; a green run should never need it.
+TICK_DEADLINE=$(( $(date +%s) + 30 ))
 while [ "$(date +%s)" -lt "$TICK_DEADLINE" ]; do
     "$INSTALL_QKT" logs daemonsmoke --state-dir "$DAEMON_STATE" > "$SMOKE_DIR/strategy.log" 2>>"$LOG_FILE" || true
     if grep -q 'tick close=' "$SMOKE_DIR/strategy.log" 2>/dev/null; then
-        ok "strategy logged live ticks from the Bybit feed"
+        ok "strategy logged closed-candle ticks from the offline-replay feed"
         break
     fi
     sleep 2
 done
-if ! grep -q 'tick close=' "$SMOKE_DIR/strategy.log" 2>/dev/null; then
-    warn "no live ticks logged within 60s — Bybit WS feed unavailable here (soft check, tracked in #87 / #108)"
-fi
+grep -q 'tick close=' "$SMOKE_DIR/strategy.log" 2>/dev/null \
+    || die "no closed-candle ticks logged within 30s — replay feed did not deliver (see $SMOKE_DIR/strategy.log and $REPLAY_CSV)"
 
 "$INSTALL_QKT" stop daemonsmoke --state-dir "$DAEMON_STATE" >>"$LOG_FILE" 2>&1 \
     || die "qkt stop failed"
