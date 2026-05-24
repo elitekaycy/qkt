@@ -9,16 +9,29 @@ import com.qkt.strategy.Signal
 import java.math.BigDecimal
 
 /**
- * One compiled `STACK_AT` tier. [com.qkt.dsl.ast.StackAtClause] expressions are
- * constant-evaluated at compile time so the per-tick path doesn't pay for expression
- * evaluation.
+ * Phase 27 + Phase 37: one compiled `STACK_AT` tier. [mfeThreshold], [slDistance],
+ * [tpDistance] are evaluated at compile time. Sizing is deferred to parent-fill time —
+ * [resolveStackQuantity] takes the parent leg's filled quantity and returns the absolute
+ * lot size for this tier. For literal-only sizing (no `ENTRY_QTY`) the lambda ignores
+ * its argument and returns the constant.
  *
- * [stackQuantity] is the absolute size of the stack leg in the action's sizing units
- * (lots for `SizeQty`), matching the spec on [com.qkt.dsl.ast.StackAtClause].
  * [slDistance] / [tpDistance] are in price units — the same units as the `BY` clause in
  * [com.qkt.dsl.ast.BracketAst].
  */
 data class CompiledStackTier(
+    val mfeThreshold: BigDecimal,
+    val withinMs: Long,
+    val resolveStackQuantity: (BigDecimal) -> BigDecimal,
+    val slDistance: BigDecimal,
+    val tpDistance: BigDecimal,
+)
+
+/**
+ * Phase 37: a [CompiledStackTier] with [CompiledStackTier.resolveStackQuantity] already
+ * applied. Held by [StackEngine] from parent-fill time onward — the per-tick path reads
+ * a plain [BigDecimal] and never re-evaluates the sizing expression.
+ */
+data class ResolvedStackTier(
     val mfeThreshold: BigDecimal,
     val withinMs: Long,
     val stackQuantity: BigDecimal,
@@ -48,7 +61,7 @@ class StackEngine(
     val closeWatchIds: Set<String> = emptySet(),
     private val parentSide: Side,
     private val parentEntryPrice: BigDecimal,
-    private val tiers: List<CompiledStackTier>,
+    private val tiers: List<ResolvedStackTier>,
     private val clock: Clock,
     private val emit: (Signal) -> Unit,
     private val idGenerator: () -> String = { defaultId(parentLegId) },
@@ -124,12 +137,12 @@ class StackEngine(
 
     /**
      * Build the stack signal: a [OrderRequest.Bracket] on the same symbol and side as
-     * the parent, sized to [CompiledStackTier.stackQuantity], with SL and TP computed
+     * the parent, sized to [ResolvedStackTier.stackQuantity], with SL and TP computed
      * from the current price ± tier distance.
      */
     private fun buildStackSignal(
         tierIdx: Int,
-        tier: CompiledStackTier,
+        tier: ResolvedStackTier,
         currentPrice: BigDecimal,
     ): Pair<Signal, String> {
         val (sl, tp) =
