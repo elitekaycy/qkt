@@ -86,4 +86,9 @@ class CompositeBroker(
 
     private fun brokerFor(symbol: String): Broker? =
         routes.firstOrNull { (pattern, _) -> pattern.matches(symbol) }?.second ?: fallback
+
+    override fun shutdown() {
+        for ((_, target) in routes) runCatching { target.shutdown() }
+        fallback?.let { runCatching { it.shutdown() } }
+    }
 }

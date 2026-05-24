@@ -126,7 +126,7 @@ class TradingPipeline(
             }
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
                 requireMultiPositionCapability(strategyId, strategy)
-                for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention)
+                for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention, strategyId)
                 strategy.bindToHub(candleHub, ctx, emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
                 wireStackOrchestrator(strategy, strategyId, emit)

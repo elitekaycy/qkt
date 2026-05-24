@@ -326,7 +326,7 @@ class BybitLinearBroker(
         }
     }
 
-    fun close() {
+    override fun shutdown() {
         reconciler.stop()
     }
 }
