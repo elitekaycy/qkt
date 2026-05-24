@@ -27,6 +27,7 @@ import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.execution.At
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.withExpiresAt
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 import org.slf4j.Logger
@@ -243,6 +244,16 @@ class ActionCompiler(
         val orderType = opts.orderType ?: Market
         val compiledOrderType = orderTypeCompiler.compile(orderType)
 
+        // Phase 38: compile the GTD deadline (if any) and reject GTD on Market actions.
+        val gtdDeadlineExpr: CompiledExpr? =
+            (opts.tif as? com.qkt.dsl.ast.Gtd)?.let { exprCompiler.compile(it.until) }
+        if (gtdDeadlineExpr != null && orderType === Market) {
+            error(
+                "TIF GTD is only valid on pending order types (LIMIT/STOP/IFTOUCHED/...); " +
+                    "MARKET orders fill instantly and have no expiry semantic.",
+            )
+        }
+
         // Resolve a static stop distance for risk-based sizing, if possible
         val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
         val compiledSize = sizingCompiler.compile(sizing, staticStopDistance, stream)
@@ -320,19 +331,37 @@ class ActionCompiler(
                     else -> entryReq
                 }
 
+            // Phase 38: evaluate the GTD deadline (if any) and stamp expiresAt on the request,
+            // propagating into nested sub-requests for composite shapes (Bracket.entry,
+            // StandaloneOCO.leg1/leg2, OTO.parent/children, ScaleOut.basis).
+            val finalRequest: OrderRequest =
+                if (gtdDeadlineExpr != null) {
+                    val deadline =
+                        when (val r = gtdDeadlineExpr.evaluate(ctx)) {
+                            is Value.Num -> r.v.toLong()
+                            else ->
+                                error(
+                                    "TIF GTD expression evaluated to $r; expected a numeric epoch-millis timestamp",
+                                )
+                        }
+                    request.withExpiresAt(deadline)
+                } else {
+                    request
+                }
+
             if (stackAtTiers.isNotEmpty() && pendingStacks != null) {
                 pendingStacks.register(
                     PendingStack(
-                        parentClientOrderId = parentClientOrderIdFor(request),
+                        parentClientOrderId = parentClientOrderIdFor(finalRequest),
                         symbol = symbol,
                         side = side,
                         tiers = stackAtTiers,
-                        closeWatchIds = closeWatchIdsFor(request),
+                        closeWatchIds = closeWatchIdsFor(finalRequest),
                     ),
                 )
             }
 
-            listOf(Signal.Submit(request))
+            listOf(Signal.Submit(finalRequest))
         }
     }
 
