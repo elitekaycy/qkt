@@ -1,0 +1,6 @@
+# Alias .qkt files to SQL for github.com syntax highlighting.
+# Linguist won't accept qkt as a first-class language until the popularity
+# bar is met (200+ public repos). SQL is the closest shape — covers comments,
+# strings, numbers, and a portion of keywords (CASE/WHEN/AND/OR/NOT/IN/BETWEEN/AS).
+# Local editors use the real grammar at editor/textmate/qkt.tmLanguage.json.
+*.qkt linguist-language=SQL
