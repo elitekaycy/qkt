@@ -4,7 +4,9 @@
   "fileTypes": ["qkt"],
   "patterns": [
     { "include": "#comments" },
-    { "include": "#strings" }
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" }
   ],
   "repository": {
     "comments": {
@@ -41,6 +43,26 @@
           "patterns": [
             { "name": "constant.character.escape.qkt", "match": "\\\\." }
           ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.duration.qkt",
+          "match": "\\b\\d+[smhd]\\b"
+        },
+        {
+          "name": "constant.numeric.qkt",
+          "match": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.qkt",
+          "match": "\\b(TRUE|FALSE)\\b"
         }
       ]
     }
