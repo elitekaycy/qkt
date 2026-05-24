@@ -93,6 +93,14 @@ interface Broker {
      * Implementations must be idempotent: calling `shutdown` twice is harmless.
      */
     fun shutdown() {}
+
+    /**
+     * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and
+     * the venue self-cancels at the deadline; the engine's deadline-sweep in
+     * [com.qkt.app.OrderManager] skips orders routed through this broker. When false
+     * (default), the engine cancels the order at the deadline on the next tick.
+     */
+    val supportsNativeGtd: Boolean get() = false
 }
 
 /**

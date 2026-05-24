@@ -56,6 +56,7 @@ class MT5Broker(
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
+    override val supportsNativeGtd: Boolean = true
 
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
