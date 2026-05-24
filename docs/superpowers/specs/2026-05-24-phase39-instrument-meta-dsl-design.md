@@ -100,8 +100,8 @@ private fun compileStreamField(ref: StreamFieldRef): CompiledExpr {
 private fun compileMetaField(ref: StreamFieldRef): CompiledExpr =
     CompiledExpr { ctx ->
         val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
-        val meta = ctx.strategyContext.instruments.metaFor(key.qktSymbol)
-            ?: error("InstrumentMeta missing for ${key.qktSymbol} (covered by AstCompiler startup validation)")
+        val meta = ctx.strategyContext.instruments.lookup(key.qktSymbol)
+            ?: error("InstrumentMeta missing for ${key.qktSymbol} (covered by startup validation)")
         val value = when (ref.field) {
             "tick_size" -> meta.pointSize
             "contract_size" -> meta.contractSize
@@ -125,7 +125,7 @@ Roughly 15 lines added at the end of `compile(ast)`:
   META_FIELDS`.
 - Group the collected refs by `ref.stream` alias.
 - For each alias, look up its `HubKey.qktSymbol` from the compiled strategy's
-  stream map and call `instruments.metaFor(qktSymbol)`.
+  stream map and call `instruments.lookup(qktSymbol)`.
 - If any returns `null`, throw with a single pointed message naming the
   strategy, the offending reference, and the symbol that needs metadata.
 
@@ -140,7 +140,7 @@ or a YAML manifest in qkt.config.yaml (backtest).
 The validation runs after standard `AstCompiler.compile` returns, so a strategy
 that doesn't touch any meta field is never affected (regression guard).
 
-**`com.qkt.dsl.kdsl.StreamRef` — Kotlin DSL surface.**
+**`com.qkt.dsl.kotlin.StreamRef` — Kotlin DSL surface.**
 Roughly 10 lines added — mirror Phase 32's `.bid` / `.ask` / `.spread` for the
 four new fields. Each returns `StreamFieldRef(alias, "<name>")`.
 
@@ -150,12 +150,12 @@ four new fields. Each returns `StreamFieldRef(alias, "<name>")`.
 Parse:        gold.tick_size                 -> StreamFieldRef("gold", "tick_size")
 AstCompiler:  collect meta refs              -> [("gold", "tick_size")]
               for each alias -> qktSymbol    -> ("gold", "EXNESS:XAUUSD")
-              instruments.metaFor(qktSymbol) -> InstrumentMeta(...) | throw
+              instruments.lookup(qktSymbol)  -> InstrumentMeta(...) | throw
 ExprCompiler: compileMetaField                -> CompiledExpr { ctx -> ... }
 
 Eval (per closed candle):
   ctx.streams["gold"]              -> HubKey("EXNESS", "XAUUSD", "1m")
-  ctx.strategyContext.instruments.metaFor("EXNESS:XAUUSD")
+  ctx.strategyContext.instruments.lookup("EXNESS:XAUUSD")
                                     -> InstrumentMeta (registered at startup)
   .pointSize                        -> BigDecimal("0.01")
   -> Value.Num(0.01)
