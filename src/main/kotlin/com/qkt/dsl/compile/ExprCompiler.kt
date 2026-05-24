@@ -307,13 +307,14 @@ class ExprCompiler(
     }
 
     private fun compileStreamField(ref: StreamFieldRef): CompiledExpr {
-        require(
-            ref.field in
-                setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread"),
-        ) {
+        require(ref.field in CANDLE_FIELDS || ref.field in META_FIELDS) {
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
-        return CompiledExpr { ctx ->
+        return if (ref.field in META_FIELDS) compileMetaField(ref) else compileCandleField(ref)
+    }
+
+    private fun compileCandleField(ref: StreamFieldRef): CompiledExpr =
+        CompiledExpr { ctx ->
             val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
             val candle =
                 if (ctx.currentAlias == ref.stream ||
@@ -341,6 +342,29 @@ class ExprCompiler(
                 if (fieldValue == null) Value.Undefined else Value.Num(fieldValue)
             }
         }
+
+    private fun compileMetaField(ref: StreamFieldRef): CompiledExpr =
+        CompiledExpr { ctx ->
+            val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val meta =
+                ctx.strategyContext.instruments.lookup(key.qktSymbol)
+                    ?: error("InstrumentMeta missing for ${key.qktSymbol} (covered by startup validation)")
+            val value =
+                when (ref.field) {
+                    "tick_size" -> meta.pointSize
+                    "contract_size" -> meta.contractSize
+                    "volume_step" -> meta.volumeStep
+                    "volume_min" -> meta.volumeMin
+                    else -> error("unreachable: ${ref.field}")
+                }
+            Value.Num(value)
+        }
+
+    companion object {
+        val CANDLE_FIELDS: Set<String> =
+            setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread")
+        val META_FIELDS: Set<String> =
+            setOf("tick_size", "contract_size", "volume_step", "volume_min")
     }
 
     private fun compileBinary(
