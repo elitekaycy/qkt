@@ -228,10 +228,17 @@ RULES
     THEN LOG "tick close={c}" c=btc.close
 STRAT
 
-QKT_REPLAY_TICKS="$REPLAY_CSV" "$INSTALL_QKT" daemon \
-    --config "$SMOKE_DIR/qkt.config.yaml" \
-    --state-dir "$DAEMON_STATE" \
-    >>"$LOG_FILE" 2>&1 &
+# QKT_STATE_DIR has to match --state-dir: the daemon CLI honours --state-dir
+# for persistence/state, but logback's per-strategy SiftingAppender resolves
+# its file path from QKT_STATE_DIR (default falls through to ~/.local/state/qkt).
+# Without exporting it the per-strategy log file ends up in the operator's
+# home directory, and `qkt logs <name>` reads an empty file under SMOKE_DIR.
+QKT_REPLAY_TICKS="$REPLAY_CSV" \
+QKT_STATE_DIR="$DAEMON_STATE" \
+    "$INSTALL_QKT" daemon \
+        --config "$SMOKE_DIR/qkt.config.yaml" \
+        --state-dir "$DAEMON_STATE" \
+        >>"$LOG_FILE" 2>&1 &
 DAEMON_PID=$!
 
 # Wait up to 30s for the daemon to write its control-port file (= ready).
