@@ -9,7 +9,6 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.execution.TimeInForce
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class TifTranslatorTest {
@@ -27,9 +26,7 @@ class TifTranslatorTest {
     }
 
     @Test
-    fun `GTD is deferred`() {
-        assertThatThrownBy { TifTranslator.translate(Gtd(NumLit(BigDecimal.ZERO))) }
-            .isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("deferred")
+    fun `GTD maps to TimeInForce GTD`() {
+        assertThat(TifTranslator.translate(Gtd(NumLit(BigDecimal("1700000000000"))))).isEqualTo(TimeInForce.GTD)
     }
 }
