@@ -15,7 +15,7 @@ class StackEngineTest {
         stackQuantity: String = "0.05",
         sl: String = "0.005",
         tp: String = "0.020",
-    ) = CompiledStackTier(
+    ) = ResolvedStackTier(
         mfeThreshold = BigDecimal(mfeThreshold),
         withinMs = withinMs,
         stackQuantity = BigDecimal(stackQuantity),
@@ -24,7 +24,7 @@ class StackEngineTest {
     )
 
     private fun newEngine(
-        tiers: List<CompiledStackTier>,
+        tiers: List<ResolvedStackTier>,
         clock: FixedClock = FixedClock(time = 1_000L),
         captured: MutableList<Signal> = mutableListOf(),
         parentSide: Side = Side.BUY,

@@ -33,6 +33,7 @@ class StackOrchestrator(
         parentSymbol: String,
         parentSide: Side,
         parentEntryPrice: BigDecimal,
+        parentQty: BigDecimal,
         tiers: List<CompiledStackTier>,
         closeWatchIds: Set<String> = emptySet(),
     ) {
@@ -59,6 +60,16 @@ class StackOrchestrator(
                 ?.mapNotNull { t -> t.firedLegId?.let { t.index to it } }
                 ?.toMap()
                 ?: emptyMap()
+        val resolved =
+            tiers.map { c ->
+                ResolvedStackTier(
+                    mfeThreshold = c.mfeThreshold,
+                    withinMs = c.withinMs,
+                    stackQuantity = c.resolveStackQuantity(parentQty),
+                    slDistance = c.slDistance,
+                    tpDistance = c.tpDistance,
+                )
+            }
         engines[parentLegId] =
             StackEngine(
                 parentLegId = parentLegId,
@@ -66,7 +77,7 @@ class StackOrchestrator(
                 closeWatchIds = closeWatchIds,
                 parentSide = parentSide,
                 parentEntryPrice = parentEntryPrice,
-                tiers = tiers,
+                tiers = resolved,
                 clock = clock,
                 emit = engineEmit,
                 strategyId = strategyId,

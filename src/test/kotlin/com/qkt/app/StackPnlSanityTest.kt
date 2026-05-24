@@ -191,7 +191,7 @@ class StackPnlSanityTest {
                         CompiledStackTier(
                             mfeThreshold = mfeThreshold,
                             withinMs = 30 * 60 * 1000L,
-                            stackQuantity = stackQty,
+                            resolveStackQuantity = { _ -> stackQty },
                             slDistance = stackSl,
                             tpDistance = stackTp,
                         ),

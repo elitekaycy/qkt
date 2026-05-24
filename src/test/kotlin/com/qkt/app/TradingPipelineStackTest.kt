@@ -64,7 +64,7 @@ class TradingPipelineStackTest {
     ) = CompiledStackTier(
         mfeThreshold = BigDecimal(threshold),
         withinMs = 30 * 60 * 1000L,
-        stackQuantity = BigDecimal(qty),
+        resolveStackQuantity = { _ -> BigDecimal(qty) },
         slDistance = BigDecimal(sl),
         tpDistance = BigDecimal(tp),
     )

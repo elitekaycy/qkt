@@ -40,7 +40,7 @@ class StackAtCompilerTest {
         val tier = StackAtCompiler.compile(clause())
         assertThat(tier.mfeThreshold).isEqualByComparingTo("0.005")
         assertThat(tier.withinMs).isEqualTo(30 * 60 * 1000L)
-        assertThat(tier.stackQuantity).isEqualByComparingTo("0.05")
+        assertThat(tier.resolveStackQuantity(BigDecimal.ONE)).isEqualByComparingTo("0.05")
         assertThat(tier.slDistance).isEqualByComparingTo("0.005")
         assertThat(tier.tpDistance).isEqualByComparingTo("0.020")
     }
@@ -92,7 +92,7 @@ class StackAtCompilerTest {
         assertThatThrownBy {
             StackAtCompiler.compile(clause(sizing = SizeNotional(NumLit(BigDecimal("100")))))
         }.isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("STACK_AT only supports literal SIZING")
+            .hasMessageContaining("STACK_AT only supports SIZING")
     }
 
     @Test
