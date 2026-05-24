@@ -360,3 +360,21 @@ fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
             )
         is OrderRequest.Stack -> copy(strategyId = strategyId)
     }
+
+/**
+ * True for engine-internal containers ([OrderRequest.StandaloneOCO], [OrderRequest.OTO],
+ * [OrderRequest.Bracket], [OrderRequest.ScaleOut], [OrderRequest.TimeExit],
+ * [OrderRequest.Stack]).
+ *
+ * Composite shapes are decomposed by [com.qkt.app.OrderManager] into single-leg orders
+ * before they reach the broker; their recovery flows through dedicated persistor channels
+ * (OCO legs, bracket pairs, stack tier state). They are never persisted as a generic
+ * pending order, so callers building a pending-order snapshot should skip them.
+ */
+fun OrderRequest.isCompositeShape(): Boolean =
+    this is OrderRequest.StandaloneOCO ||
+        this is OrderRequest.OTO ||
+        this is OrderRequest.Bracket ||
+        this is OrderRequest.ScaleOut ||
+        this is OrderRequest.TimeExit ||
+        this is OrderRequest.Stack
