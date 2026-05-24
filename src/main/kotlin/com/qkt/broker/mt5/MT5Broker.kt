@@ -739,7 +739,7 @@ class MT5Broker(
         )
     }
 
-    fun shutdown() {
+    override fun shutdown() {
         poller.stop()
         pendingPoller.stop()
     }

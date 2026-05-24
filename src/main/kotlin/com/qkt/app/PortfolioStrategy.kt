@@ -72,7 +72,7 @@ class PortfolioStrategy(
     ) {
         // Bind portfolio-level streams so gate expressions have current candles.
         for ((alias, key) in declaredStreams) {
-            hub.onClosed(key) { candle ->
+            hub.onClosed(key, ctx.strategyId) { candle ->
                 lastCandlesByStream = lastCandlesByStream + (alias to candle)
             }
         }
@@ -81,7 +81,7 @@ class PortfolioStrategy(
             val childStrategy = child.compiled
             if (childStrategy is DslCompiledStrategy) {
                 for ((key, retention) in childStrategy.retentionByKey) {
-                    hub.register(key, retention)
+                    hub.register(key, retention, ctx.strategyId)
                 }
                 childStrategy.bindToHub(hub, ctx, makeChildEmit(child, ctx, emit))
             }

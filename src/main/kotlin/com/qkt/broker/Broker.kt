@@ -82,6 +82,17 @@ interface Broker {
      * connectors override.
      */
     fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {}
+
+    /**
+     * Release venue-side resources held by this broker (poller threads, reconcilers,
+     * HTTP connections, WebSocket transports). Called by the engine when the owning
+     * [com.qkt.app.LiveSession] stops, so a long-running daemon that cycles strategies
+     * doesn't accumulate idle pollers or executors. Default no-op — only brokers that
+     * hold lifecycle resources override.
+     *
+     * Implementations must be idempotent: calling `shutdown` twice is harmless.
+     */
+    fun shutdown() {}
 }
 
 /**
