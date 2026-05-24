@@ -180,7 +180,7 @@ private class CompiledStrategy(
         hubBound = true
         boundHub = hub
         for ((alias, key) in streams) {
-            hub.onClosed(key) { closed ->
+            hub.onClosed(key, ctx.strategyId) { closed ->
                 evaluate(alias, closed, hub, ctx, emit)
             }
         }

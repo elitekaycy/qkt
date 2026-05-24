@@ -52,8 +52,8 @@ class CrossStreamConditionTest {
     @Test
     fun `cross-stream read returns Undefined when other alias has no closed candle`() {
         val hub = CandleHub()
-        hub.register(btcKey, retention = 5)
-        hub.register(goldKey, retention = 5)
+        hub.register(btcKey, retention = 5, strategyId = "test")
+        hub.register(goldKey, retention = 5, strategyId = "test")
         // current candle is gold; btc has no closes yet
         val expr = StreamFieldRef("btc", "close")
         val v = ExprCompiler().compile(expr).evaluate(ec(candle("INTERACTIVE:XAUUSD", "2000"), hub))
@@ -63,8 +63,8 @@ class CrossStreamConditionTest {
     @Test
     fun `cross-stream read returns hub latest close when current candle is other symbol`() {
         val hub = CandleHub()
-        hub.register(btcKey, retention = 5)
-        hub.register(goldKey, retention = 5)
+        hub.register(btcKey, retention = 5, strategyId = "test")
+        hub.register(goldKey, retention = 5, strategyId = "test")
         // Drive btc closes
         for (t in 0L..120_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", "100", t))
         // Now feed a gold candle — the current candle's symbol is gold, but rule reads btc.close
@@ -79,7 +79,7 @@ class CrossStreamConditionTest {
     @Test
     fun `same-symbol read uses live candle even when hub has older close`() {
         val hub = CandleHub()
-        hub.register(btcKey, retention = 5)
+        hub.register(btcKey, retention = 5, strategyId = "test")
         // Drive a btc close at price 100
         for (t in 0L..120_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", "100", t))
         // Live candle for btc with newer price 105
@@ -94,8 +94,8 @@ class CrossStreamConditionTest {
     @Test
     fun `cross-stream comparison evaluates true when both sides resolved`() {
         val hub = CandleHub()
-        hub.register(btcKey, retention = 5)
-        hub.register(goldKey, retention = 5)
+        hub.register(btcKey, retention = 5, strategyId = "test")
+        hub.register(goldKey, retention = 5, strategyId = "test")
         for (t in 0L..120_000L step 30_000L) hub.feed(tick("BYBIT:BTCUSDT", "120", t))
         val expr = CmpOp(Cmp.GT, StreamFieldRef("btc", "close"), NumLit(BigDecimal("100")))
         val v =
@@ -108,8 +108,8 @@ class CrossStreamConditionTest {
     @Test
     fun `cross-stream comparison is Undefined while other side has no closed candle`() {
         val hub = CandleHub()
-        hub.register(btcKey, retention = 5)
-        hub.register(goldKey, retention = 5)
+        hub.register(btcKey, retention = 5, strategyId = "test")
+        hub.register(goldKey, retention = 5, strategyId = "test")
         val expr = CmpOp(Cmp.GT, StreamFieldRef("btc", "close"), NumLit(BigDecimal("100")))
         val v = ExprCompiler().compile(expr).evaluate(ec(candle("INTERACTIVE:XAUUSD", "2000"), hub))
         assertThat(v).isEqualTo(Value.Undefined)

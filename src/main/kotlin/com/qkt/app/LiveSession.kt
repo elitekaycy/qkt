@@ -344,6 +344,10 @@ class LiveSession(
 
         val trades: MutableList<Trade> = CopyOnWriteArrayList()
 
+        val pipelineCandleHub =
+            candleHub ?: com.qkt.dsl.compile
+                .CandleHub()
+
         val pipeline =
             TradingPipeline(
                 clock = clock,
@@ -364,9 +368,7 @@ class LiveSession(
                 calendar = calendar,
                 source = source,
                 candleWindow = candleWindow,
-                candleHub =
-                    candleHub ?: com.qkt.dsl.compile
-                        .CandleHub(),
+                candleHub = pipelineCandleHub,
                 onFilled = { trade, realized, strategyId ->
                     trades.add(trade)
                     dailyTracker.recordTrade(strategyId)
@@ -456,6 +458,14 @@ class LiveSession(
             override fun stop() {
                 running.set(false)
                 thread.interrupt()
+                // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
+                // so a long-running daemon cycling strategies doesn't accumulate threads.
+                for (b in builtBrokers) runCatching { b.shutdown() }
+                // Drop hub registrations attributed to this session's strategies so
+                // their aggregators and listener closures fall out of scope.
+                for ((strategyId, _) in strategies) {
+                    runCatching { pipelineCandleHub.unregister(strategyId) }
+                }
                 if (NotifyEventKind.STRATEGY_STOPPED in notifyEvents) {
                     for ((strategyId, _) in strategies) {
                         runCatching {

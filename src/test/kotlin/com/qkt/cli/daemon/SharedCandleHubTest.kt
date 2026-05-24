@@ -97,11 +97,11 @@ RULES
     ) {
         val sharedHub = CandleHub()
         val key = HubKey("BACKTEST", "BTCUSDT", "1m")
-        sharedHub.register(key, retention = 5)
+        sharedHub.register(key, retention = 5, strategyId = "shared")
 
         val received = mutableListOf<Pair<String, Long>>()
-        sharedHub.onClosed(key) { c -> synchronized(received) { received.add("alpha" to c.endTime) } }
-        sharedHub.onClosed(key) { c -> synchronized(received) { received.add("beta" to c.endTime) } }
+        sharedHub.onClosed(key, "alpha") { c -> synchronized(received) { received.add("alpha" to c.endTime) } }
+        sharedHub.onClosed(key, "beta") { c -> synchronized(received) { received.add("beta" to c.endTime) } }
 
         // Feed three ticks that span two minute boundaries, closing one or two candles.
         val base = 1_705_276_800_000L // top of a minute
