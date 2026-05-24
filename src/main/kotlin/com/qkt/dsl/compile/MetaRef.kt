@@ -1,9 +1,12 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.ActionAst
+import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
@@ -63,9 +66,6 @@ import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.WhenThen
-import com.qkt.dsl.ast.Block
-import com.qkt.dsl.ast.ActionAst
-import com.qkt.dsl.ast.ActionOpts
 
 /**
  * Phase 39: one meta-field reference collected from a strategy AST.
@@ -104,14 +104,33 @@ internal fun collectMetaRefs(
                 }
             }
             is IndicatorCall -> e.args.forEach { walkExpr(it) }
-            is BinaryOp -> { walkExpr(e.lhs); walkExpr(e.rhs) }
+            is BinaryOp -> {
+                walkExpr(e.lhs)
+                walkExpr(e.rhs)
+            }
             is UnaryOp -> walkExpr(e.arg)
-            is CmpOp -> { walkExpr(e.lhs); walkExpr(e.rhs) }
-            is Between -> { walkExpr(e.v); walkExpr(e.lo); walkExpr(e.hi) }
-            is InList -> { walkExpr(e.v); e.members.forEach { walkExpr(it) } }
-            is Crosses -> { walkExpr(e.lhs); walkExpr(e.rhs) }
+            is CmpOp -> {
+                walkExpr(e.lhs)
+                walkExpr(e.rhs)
+            }
+            is Between -> {
+                walkExpr(e.v)
+                walkExpr(e.lo)
+                walkExpr(e.hi)
+            }
+            is InList -> {
+                walkExpr(e.v)
+                e.members.forEach { walkExpr(it) }
+            }
+            is Crosses -> {
+                walkExpr(e.lhs)
+                walkExpr(e.rhs)
+            }
             is CaseWhen -> {
-                e.branches.forEach { (cond, value) -> walkExpr(cond); walkExpr(value) }
+                e.branches.forEach { (cond, value) ->
+                    walkExpr(cond)
+                    walkExpr(value)
+                }
                 walkExpr(e.elseExpr)
             }
             is Aggregate -> walkExpr(e.series)
@@ -138,7 +157,10 @@ internal fun collectMetaRefs(
             Market -> Unit
             is Limit -> walkExpr(o.price)
             is Stop -> walkExpr(o.price)
-            is StopLimit -> { walkExpr(o.stopPrice); walkExpr(o.limitPrice) }
+            is StopLimit -> {
+                walkExpr(o.stopPrice)
+                walkExpr(o.limitPrice)
+            }
             is TrailingBy -> walkExpr(o.distance)
             is TrailingPct -> walkExpr(o.frac)
         }
@@ -210,13 +232,19 @@ internal fun collectMetaRefs(
             is Sell -> walkOpts(a.opts)
             is Log -> a.fields.values.forEach { walkExpr(it) }
             is Block -> a.actions.forEach { walkAction(it) }
-            is OcoEntry -> { walkAction(a.leg1); walkAction(a.leg2) }
+            is OcoEntry -> {
+                walkAction(a.leg1)
+                walkAction(a.leg2)
+            }
         }
     }
 
     fun walkRule(r: RuleAst) {
         when (r) {
-            is WhenThen -> { walkExpr(r.cond); walkAction(r.action) }
+            is WhenThen -> {
+                walkExpr(r.cond)
+                walkAction(r.action)
+            }
         }
     }
 
