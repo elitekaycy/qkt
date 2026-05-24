@@ -18,4 +18,7 @@ enum class TimeInForce {
 
     /** Fill-or-kill — must fill entirely on submission or cancel. */
     FOK,
+
+    /** Good-til-date — stays open until [OrderRequest.expiresAt] passes (epoch millis). */
+    GTD,
 }

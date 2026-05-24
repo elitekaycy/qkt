@@ -15,10 +15,6 @@ object TifTranslator {
             Ioc -> TimeInForce.IOC
             Fok -> TimeInForce.FOK
             Day -> TimeInForce.DAY
-            is Gtd ->
-                error(
-                    "TIF GTD is deferred — engine TimeInForce enum has no GTD variant; " +
-                        "revisit alongside engine deadline-bearing order surface",
-                )
+            is Gtd -> TimeInForce.GTD
         }
 }
