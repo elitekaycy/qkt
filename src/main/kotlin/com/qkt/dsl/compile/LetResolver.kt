@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
+import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
@@ -64,6 +65,7 @@ class LetResolver(
             is FuncCall -> FuncCall(expr.name, expr.args.map { resolve(it) })
             is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
             is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
+            EntryQty,
             -> expr
         }
 }

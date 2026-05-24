@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
+import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.FuncCall
@@ -96,7 +97,7 @@ internal fun collectMetaRefs(
     fun walkExpr(e: ExprAst) {
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
-            is Ref, is NowAccessor, is AccountRef, is PositionRef, is StateAccessor, StackEntryRef -> Unit
+            is Ref, is NowAccessor, is AccountRef, is PositionRef, is StateAccessor, StackEntryRef, EntryQty -> Unit
             is StreamFieldRef -> {
                 if (e.field in ExprCompiler.META_FIELDS) {
                     val sym = streams[e.stream]?.qktSymbol

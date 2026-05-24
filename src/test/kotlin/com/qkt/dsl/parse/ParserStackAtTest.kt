@@ -1,9 +1,13 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.BinOp
+import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.WhenThen
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -106,5 +110,21 @@ class ParserStackAtTest {
     fun `BUY without any STACK_AT keeps stackAts empty`() {
         val buy = parsedAction("BUY btc SIZING 0.1 BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 100 }")
         assertThat(buy.opts.stackAts).isEmpty()
+    }
+
+    @Test
+    fun `STACK_AT SIZING accepts ENTRY_QTY arithmetic`() {
+        val buy =
+            parsedAction(
+                """BUY btc SIZING 0.1
+                STACK_AT MFE >= 5 WITHIN 30m
+                    SIZING ENTRY_QTY * 0.3
+                    BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 4 }""",
+            )
+        val clause = buy.opts.stackAts.single()
+        val expr = (clause.sizing as SizeQty).expr
+        assertThat(expr).isEqualTo(
+            BinaryOp(BinOp.MUL, EntryQty, NumLit(BigDecimal("0.3"))),
+        )
     }
 }

@@ -107,3 +107,9 @@ data class FuncCall(
 ) : ExprAst
 
 data object StackEntryRef : ExprAst
+
+/**
+ * Phase 37: references the parent leg's filled quantity inside a `STACK_AT SIZING`
+ * expression. Rejected by [com.qkt.dsl.compile.ExprCompiler] outside that context.
+ */
+data object EntryQty : ExprAst

@@ -98,6 +98,7 @@ enum class TokenKind {
     OCO_ENTRY,
     STACK_AT,
     MFE,
+    ENTRY_QTY,
 
     TRUE,
     FALSE,
