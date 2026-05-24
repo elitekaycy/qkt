@@ -1,6 +1,5 @@
 package com.qkt.dsl.compile
 
-import com.qkt.common.Side
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
