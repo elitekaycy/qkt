@@ -6,7 +6,9 @@
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#numbers" },
-    { "include": "#constants" }
+    { "include": "#constants" },
+    { "include": "#section-keywords" },
+    { "include": "#flow-keywords" }
   ],
   "repository": {
     "comments": {
@@ -63,6 +65,22 @@
         {
           "name": "constant.language.qkt",
           "match": "\\b(TRUE|FALSE)\\b"
+        }
+      ]
+    },
+    "section-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.section.qkt",
+          "match": "\\b(STRATEGY|VERSION|DEFAULTS|SYMBOLS|LET|RULES|PORTFOLIO|IMPORT)\\b"
+        }
+      ]
+    },
+    "flow-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.flow.qkt",
+          "match": "\\b(WHEN|THEN|FOR|EACH|IN|DO|AS|RUN|HOLD|CASE|ELSE|END|SINCE)\\b"
         }
       ]
     }
