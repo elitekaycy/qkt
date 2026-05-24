@@ -313,7 +313,15 @@ sealed interface OrderRequest {
     }
 }
 
-/** Returns a copy of this request with [strategyId] populated; preserves the concrete subtype. */
+/**
+ * Returns a copy of this request with [strategyId] populated; preserves the concrete subtype.
+ *
+ * Composite variants ([OrderRequest.StandaloneOCO], [OrderRequest.OTO], [OrderRequest.Bracket],
+ * [OrderRequest.ScaleOut], [OrderRequest.TimeExit]) also stamp [strategyId] onto their nested
+ * sub-requests, so downstream code that reads `strategyId` off a leg or child still sees the
+ * owning strategy. Brokers publish [com.qkt.events.BrokerEvent.OrderAccepted] etc. with the
+ * sub-request's `strategyId`, so without recursion every leg of an OCO appears strategy-less.
+ */
 fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
     when (this) {
         is OrderRequest.Market -> copy(strategyId = strategyId)
@@ -323,10 +331,32 @@ fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
         is OrderRequest.IfTouched -> copy(strategyId = strategyId)
         is OrderRequest.TrailingStop -> copy(strategyId = strategyId)
         is OrderRequest.TrailingStopLimit -> copy(strategyId = strategyId)
-        is OrderRequest.StandaloneOCO -> copy(strategyId = strategyId)
-        is OrderRequest.OTO -> copy(strategyId = strategyId)
-        is OrderRequest.Bracket -> copy(strategyId = strategyId)
-        is OrderRequest.ScaleOut -> copy(strategyId = strategyId)
-        is OrderRequest.TimeExit -> copy(strategyId = strategyId)
+        is OrderRequest.StandaloneOCO ->
+            copy(
+                strategyId = strategyId,
+                leg1 = leg1.withStrategyId(strategyId),
+                leg2 = leg2.withStrategyId(strategyId),
+            )
+        is OrderRequest.OTO ->
+            copy(
+                strategyId = strategyId,
+                parent = parent.withStrategyId(strategyId),
+                children = children.map { it.withStrategyId(strategyId) },
+            )
+        is OrderRequest.Bracket ->
+            copy(
+                strategyId = strategyId,
+                entry = entry.withStrategyId(strategyId),
+            )
+        is OrderRequest.ScaleOut ->
+            copy(
+                strategyId = strategyId,
+                basis = basis.withStrategyId(strategyId),
+            )
+        is OrderRequest.TimeExit ->
+            copy(
+                strategyId = strategyId,
+                target = target.withStrategyId(strategyId),
+            )
         is OrderRequest.Stack -> copy(strategyId = strategyId)
     }
