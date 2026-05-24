@@ -24,6 +24,7 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
+import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.execution.withStrategyId
 import com.qkt.marketdata.MarketPriceProvider
@@ -840,6 +841,12 @@ class OrderManager(
                 if (managed.state == OrderState.PENDING || managed.state == OrderState.CREATED) {
                     val sid = managed.request.strategyId
                     if (sid.isBlank()) continue
+                    // Composite shapes (OCO, OTO, Bracket, ScaleOut, TimeExit, Stack) are
+                    // engine-internal containers — the broker only ever sees their decomposed
+                    // leaf orders. Recovery flows through dedicated channels (oco-legs.json,
+                    // bracket pairs, stack tier state), so the composite parent itself is
+                    // never persisted via savePendingOrders.
+                    if (managed.request.isCompositeShape()) continue
                     pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = managed.request
                 }
             }

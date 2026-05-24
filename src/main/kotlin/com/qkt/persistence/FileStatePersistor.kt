@@ -125,18 +125,12 @@ class FileStatePersistor(
         strategyId: String,
         orders: Map<String, OrderRequest>,
     ) {
-        val entries =
-            orders.mapNotNull { (cid, req) ->
-                val dto = OrderRequestDto.fromDomain(req)
-                if (dto == null) {
-                    log.warn(
-                        "savePendingOrders: skipping non-persistable variant ${req::class.simpleName} for $strategyId/$cid",
-                    )
-                    null
-                } else {
-                    cid to dto
-                }
-            }
+        // Composite shapes (OCO, Bracket, etc.) are filtered upstream by [com.qkt.app.OrderManager]
+        // because their recovery flows through dedicated channels (oco-legs.json, bracket pairs).
+        // If one still arrives here, [OrderRequestDto.fromDomain] returns null and the entry is
+        // silently dropped — this path stays quiet so the operational log doesn't fill with
+        // false positives during a healthy run.
+        val entries = orders.mapNotNull { (cid, req) -> OrderRequestDto.fromDomain(req)?.let { cid to it } }
         val dto =
             PendingOrdersDto(
                 version = SCHEMA_VERSION,
