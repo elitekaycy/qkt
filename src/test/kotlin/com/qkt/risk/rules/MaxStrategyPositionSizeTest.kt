@@ -15,7 +15,8 @@ import org.junit.jupiter.api.Test
 class MaxStrategyPositionSizeTest {
     private val global = PositionTracker()
     private val strategyPositions = StrategyPositionTracker()
-    private val rule = MaxStrategyPositionSize("ema_cross", maxQty = Money.of("3"), strategyPositions = strategyPositions)
+    private val rule =
+        MaxStrategyPositionSize("ema_cross", maxQty = Money.of("3"), strategyPositions = strategyPositions)
 
     private fun order(
         strategyId: String = "ema_cross",

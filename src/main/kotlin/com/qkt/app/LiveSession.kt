@@ -408,16 +408,21 @@ class LiveSession(
         val perStrategyRiskRules = mutableListOf<com.qkt.risk.RiskRule>()
         if (riskOwnerStrategyId != null) {
             perStrategyMaxDailyLoss?.let {
-                perStrategyHaltRules.add(com.qkt.risk.rules.MaxStrategyDailyLoss(riskOwnerStrategyId, it))
+                perStrategyHaltRules.add(
+                    com.qkt.risk.rules
+                        .MaxStrategyDailyLoss(riskOwnerStrategyId, it),
+                )
             }
             perStrategyMaxPositionSize?.let {
                 perStrategyRiskRules.add(
-                    com.qkt.risk.rules.MaxStrategyPositionSize(riskOwnerStrategyId, it, strategyPositions),
+                    com.qkt.risk.rules
+                        .MaxStrategyPositionSize(riskOwnerStrategyId, it, strategyPositions),
                 )
             }
             perStrategyMaxOpenPositions?.let {
                 perStrategyRiskRules.add(
-                    com.qkt.risk.rules.MaxStrategyOpenPositions(riskOwnerStrategyId, it, strategyPositions),
+                    com.qkt.risk.rules
+                        .MaxStrategyOpenPositions(riskOwnerStrategyId, it, strategyPositions),
                 )
             }
         }
