@@ -27,12 +27,12 @@ Tracked in `docs/backlog.md`. Heavier scope; multiple sub-tasks.
 
 | Feature | What you'll get | Workaround today |
 | --- | --- | --- |
-| `qkt fetch <SYMBOL> --from --to` CLI | Populate the local data store from a fetcher (Dukascopy, etc.) without leaving the shell | Use `./scripts/fetch-dukascopy.sh` directly; or write data via the `DataStore` Kotlin API |
+| ~~`qkt fetch <SYMBOL> --from --to` CLI~~ | shipped — `qkt fetch BROKER:SYMBOL --tf <tf> --from … --to …` ([#124](https://github.com/elitekaycy/qkt/issues/124)) | — |
 | `qkt sweep` CLI | Parameter grid-search wrapper around the existing `BacktestSweep` Kotlin harness | The harness exists today — use it programmatically (see `src/main/kotlin/com/qkt/backtest/sweep/`) |
 | `qkt walkforward` CLI | Walk-forward validation wrapper | `BacktestSweep` + rolling time-windows manually |
-| `TRAILING_STOP BY <amount>` wiring | The token exists in the parser; finishing the AST → action-compiler → broker dispatch path | Add a rule that closes when the trade drops below a moving high — manual trail |
-| VWAP DSL registration | `VWAP(stream, period)` callable from `.qkt` files | The `VWAP` Kotlin class exists; needs `IndicatorInput.TICK_SERIES` plumbing first. Use SMA on `stream.close` as a proxy until then |
-| `per_strategy:` risk-config block | Per-strategy risk rules (e.g. cooloff-after-loss for one strategy without affecting others) | Use daemon-wide rules in `risk: rules:` for now |
+| ~~`TRAILING_STOP BY <amount>` wiring~~ | shipped — `BUY <stream> ORDER_TYPE = TRAILING BY <distance>` ([#126](https://github.com/elitekaycy/qkt/issues/126)) | — |
+| ~~VWAP DSL registration~~ | shipped — `vwap(<stream>.tick, <period>)` ([#128](https://github.com/elitekaycy/qkt/issues/128)) | — |
+| ~~`per_strategy:` risk-config block~~ | shipped — `risk.per_strategy.<name>.{max_daily_loss, max_position_size, max_open_positions}` ([#127](https://github.com/elitekaycy/qkt/issues/127)) | — |
 | `IF_TOUCHED`, `STOP_LIMIT` order types | Additional order shapes beyond MARKET/LIMIT/STOP | Compose manually with multiple rules + `WHEN` triggers |
 
 ## Phase 26a — pending-entry OCO DSL surface + clock accessors

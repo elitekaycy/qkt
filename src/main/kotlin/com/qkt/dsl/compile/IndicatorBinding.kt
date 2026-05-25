@@ -9,6 +9,7 @@ import com.qkt.dsl.stdlib.IndicatorSpec
 import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 
 class IndicatorBinding private constructor(
@@ -50,8 +51,27 @@ class IndicatorBinding private constructor(
             IndicatorInput.CANDLE_SERIES -> {
                 (indicator as Indicator<Candle>).update(ctx.candle)
             }
+            IndicatorInput.TICK_SERIES -> {
+                // Tick-fed indicators update on each raw tick via [updateFromTick],
+                // not on candle close. Ignore the candle-driven update path.
+            }
         }
     }
+
+    /**
+     * Update path for [IndicatorInput.TICK_SERIES] indicators. Called from
+     * `CompiledStrategy.onTick` for every tick whose symbol matches this binding's
+     * stream. No-op for non-tick-fed bindings.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun updateFromTick(tick: Tick) {
+        if (inputKind != IndicatorInput.TICK_SERIES) return
+        if (source != null) return
+        (indicator as Indicator<Tick>).update(tick)
+    }
+
+    /** True iff this binding consumes raw ticks (queried by CompiledStrategy.onTick). */
+    internal fun isTickFed(): Boolean = inputKind == IndicatorInput.TICK_SERIES && source == null
 
     companion object {
         internal fun streamFed(
@@ -126,6 +146,12 @@ class IndicatorBinding private constructor(
                     }
                     streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
                 }
+                IndicatorInput.TICK_SERIES -> {
+                    require(seriesArg.field == "tick") {
+                        "Indicator ${call.name} requires a tick series; use ${call.name.lowercase()}(${seriesArg.stream}.tick, …)"
+                    }
+                    streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
+                }
             }
 
         private fun bindIndicator(
@@ -153,5 +179,9 @@ class IndicatorBinding private constructor(
                 if (b.rootAlias == alias) b.update(ctx)
             }
         }
+
+        /** Bindings that consume raw ticks. Used by [CompiledStrategy.onTick] dispatch. */
+        fun tickFedForAlias(alias: String): List<IndicatorBinding> =
+            bindings.filter { it.isTickFed() && it.rootAlias == alias }
     }
 }
