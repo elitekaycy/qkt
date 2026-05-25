@@ -15,6 +15,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt deploy <file> [--as <name>]` | Deploy a strategy or portfolio. |
 | `qkt list` | List deployed strategies + portfolios. |
 | `qkt status [<name>]` | Snapshot of one strategy, or all if no name given. |
+| `qkt status --deep` | Aggregated health check: daemon + control plane + every deployed strategy. Single-screen human output. Exit 0 if all green, exit 1 with reasons if anything is unhealthy. First-thing-to-run when something feels off. |
 | `qkt logs <name> [--lines N] [--follow] [--since <iso8601>]` | Per-strategy log stream. |
 | `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. |
 | `qkt start <portfolio>/<child>` | Resume an operator-stopped child of a portfolio. |
