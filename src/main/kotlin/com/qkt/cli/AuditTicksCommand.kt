@@ -135,14 +135,15 @@ class AuditTicksCommand(
         val p95 = sortedDiffs[(sortedDiffs.size * 95 / 100).coerceAtMost(sortedDiffs.size - 1)]
         val max = sortedDiffs.last()
 
+        val json =
+            """{"symbol":"$symbol","samples":${samples.size},""" +
+                """"mean_abs_diff":"${mean.toPlainString()}",""" +
+                """"median_abs_diff":"${median.toPlainString()}",""" +
+                """"p95_abs_diff":"${p95.toPlainString()}",""" +
+                """"max_abs_diff":"${max.toPlainString()}"}"""
+
         if (args.flag("json")) {
-            println(
-                """{"symbol":"$symbol","samples":${samples.size},""" +
-                    """"mean_abs_diff":"${mean.toPlainString()}",""" +
-                    """"median_abs_diff":"${median.toPlainString()}",""" +
-                    """"p95_abs_diff":"${p95.toPlainString()}",""" +
-                    """"max_abs_diff":"${max.toPlainString()}"}""",
-            )
+            println(json)
         } else {
             println("samples:        ${samples.size}")
             println("mean abs diff:  ${mean.toPlainString()}")
@@ -150,6 +151,24 @@ class AuditTicksCommand(
             println("p95 abs diff:   ${p95.toPlainString()}")
             println("max abs diff:   ${max.toPlainString()}")
         }
+
+        // --out <path> persists the JSON to disk regardless of the stdout format flag.
+        // Operators recording audits append each run's JSON to the results table in
+        // docs/operations/tick-feed-audit.md; persisting to a stable path makes that
+        // a one-command workflow instead of "remember to redirect stdout."
+        args.option("out")?.let { outPath ->
+            val path =
+                java.nio.file.Path
+                    .of(outPath)
+            path.parent?.let {
+                java.nio.file.Files
+                    .createDirectories(it)
+            }
+            java.nio.file.Files
+                .writeString(path, json + "\n")
+            System.err.println("qkt audit-ticks: wrote $outPath")
+        }
+
         return ExitCodes.SUCCESS
     }
 
