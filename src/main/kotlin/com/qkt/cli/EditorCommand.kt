@@ -71,7 +71,27 @@ class EditorCommand(
     }
 
     private fun uninstall(): Int {
-        System.err.println("qkt editor uninstall: not implemented yet")
-        return ExitCodes.USER_ERROR
+        val arg =
+            args.positional(1) ?: run {
+                System.err.println("qkt: missing target. Try: qkt editor uninstall <vscode|nvim|vim|sublime|all>")
+                return ExitCodes.ARG_ERROR
+            }
+        val installer = com.qkt.cli.editor.EditorInstaller()
+        val targets: List<EditorTarget> =
+            if (arg.equals("all", ignoreCase = true)) {
+                EditorTarget.entries
+            } else {
+                val parsed =
+                    EditorTarget.parse(arg) ?: run {
+                        System.err.println("qkt: unknown target '$arg' (expected: vscode, nvim, vim, sublime, all)")
+                        return ExitCodes.ARG_ERROR
+                    }
+                listOf(parsed)
+            }
+        var failures = 0
+        for (t in targets) {
+            if (!installer.uninstall(t)) failures++
+        }
+        return if (failures == 0) ExitCodes.SUCCESS else ExitCodes.USER_ERROR
     }
 }

@@ -46,7 +46,7 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root)
+        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         val result = installer.install(EditorTarget.NVIM)
 
@@ -67,7 +67,7 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root)
+        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         installer.install(EditorTarget.NVIM)
         // Mutate the source file (simulating an upgrade) and re-install.
@@ -86,7 +86,7 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root)
+        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         val result = installer.install(EditorTarget.VIM)
 
@@ -103,7 +103,7 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root)
+        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         val result = installer.install(EditorTarget.SUBLIME)
 
@@ -125,6 +125,7 @@ class EditorInstallerTest {
             EditorInstaller(
                 detector = detector(home, codeBin = null),
                 editorRoot = root,
+                manifestPath = tmp.resolve("manifest.json"),
                 out = StringBuilder(),
                 err = errBuf,
             )
@@ -153,6 +154,7 @@ class EditorInstallerTest {
             EditorInstaller(
                 detector = detector(home, codeBin = codeBin),
                 editorRoot = root,
+                manifestPath = tmp.resolve("manifest.json"),
                 processRunner = { cmd, _ ->
                     recordedCommands.add(cmd)
                     0
@@ -187,6 +189,7 @@ class EditorInstallerTest {
             EditorInstaller(
                 detector = detector(home, codeBin = codeBin),
                 editorRoot = root,
+                manifestPath = tmp.resolve("manifest.json"),
                 processRunner = { cmd, _ ->
                     recordedCommands.add(cmd)
                     if (cmd.first().endsWith("npx")) {
@@ -208,6 +211,100 @@ class EditorInstallerTest {
     }
 
     @Test
+    fun `successful install writes manifest entry`(
+        @TempDir tmp: Path,
+    ) {
+        val root = fakeEditorRoot(tmp.resolve("share/editor"))
+        val home = tmp.resolve("home")
+        Files.createDirectories(home)
+        val manifestPath = tmp.resolve("manifest.json")
+        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = manifestPath)
+
+        installer.install(EditorTarget.NVIM)
+
+        val manifest = EditorManifest.load(manifestPath)
+        val entry = manifest.recordFor(EditorTarget.NVIM)
+        assertThat(entry).isNotNull
+        assertThat(entry!!.files).hasSize(3)
+        assertThat(entry.files).allSatisfy { p ->
+            assertThat(p).contains(".config/nvim")
+        }
+    }
+
+    @Test
+    fun `uninstall removes placed files and the manifest entry`(
+        @TempDir tmp: Path,
+    ) {
+        val root = fakeEditorRoot(tmp.resolve("share/editor"))
+        val home = tmp.resolve("home")
+        Files.createDirectories(home)
+        val manifestPath = tmp.resolve("manifest.json")
+        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = manifestPath)
+        installer.install(EditorTarget.NVIM)
+
+        val ok = installer.uninstall(EditorTarget.NVIM)
+
+        assertThat(ok).isTrue
+        assertThat(home.resolve(".config/nvim/syntax/qkt.vim")).doesNotExist()
+        assertThat(home.resolve(".config/nvim/ftdetect/qkt.vim")).doesNotExist()
+        assertThat(EditorManifest.load(manifestPath).recordFor(EditorTarget.NVIM)).isNull()
+    }
+
+    @Test
+    fun `uninstall refuses when no manifest record exists`(
+        @TempDir tmp: Path,
+    ) {
+        val root = fakeEditorRoot(tmp.resolve("share/editor"))
+        val home = tmp.resolve("home")
+        Files.createDirectories(home)
+        val errBuf = StringBuilder()
+        val installer =
+            EditorInstaller(
+                detector = detector(home),
+                editorRoot = root,
+                manifestPath = tmp.resolve("manifest.json"),
+                err = errBuf,
+            )
+
+        val ok = installer.uninstall(EditorTarget.NVIM)
+
+        assertThat(ok).isFalse
+        assertThat(errBuf.toString()).contains("no install record")
+    }
+
+    @Test
+    fun `uninstall vscode shells out to code --uninstall-extension`(
+        @TempDir tmp: Path,
+    ) {
+        val root = fakeEditorRoot(tmp.resolve("share/editor"))
+        val home = tmp.resolve("home")
+        Files.createDirectories(home)
+        val codeBin = tmp.resolve("bin/code")
+        Files.createDirectories(codeBin.parent)
+        Files.writeString(codeBin, "#!/bin/sh\nexit 0")
+        codeBin.toFile().setExecutable(true)
+
+        val recordedCommands = mutableListOf<List<String>>()
+        val installer =
+            EditorInstaller(
+                detector = detector(home, codeBin = codeBin),
+                editorRoot = root,
+                manifestPath = tmp.resolve("manifest.json"),
+                processRunner = { cmd, _ ->
+                    recordedCommands.add(cmd)
+                    0
+                },
+            )
+
+        val ok = installer.uninstall(EditorTarget.VSCODE)
+
+        assertThat(ok).isTrue
+        assertThat(recordedCommands).hasSize(1)
+        assertThat(recordedCommands.single())
+            .containsExactly(codeBin.toString(), "--uninstall-extension", "elitekaycy.qkt")
+    }
+
+    @Test
     fun `vscode install fails when no vsix and no npx`(
         @TempDir tmp: Path,
     ) {
@@ -224,6 +321,7 @@ class EditorInstallerTest {
             EditorInstaller(
                 detector = detector(home, codeBin = codeBin),
                 editorRoot = root,
+                manifestPath = tmp.resolve("manifest.json"),
                 err = errBuf,
                 processRunner = { _, _ -> 1 },
                 pathLookup = { null },

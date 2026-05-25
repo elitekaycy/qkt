@@ -18,6 +18,7 @@ import java.nio.file.StandardCopyOption
 class EditorInstaller(
     private val detector: EditorDetector = EditorDetector(),
     private val editorRoot: Path? = EditorPaths.bundledEditorRoot(),
+    private val manifestPath: Path = EditorManifest.defaultPath(),
     private val out: Appendable = System.out,
     private val err: Appendable = System.err,
     private val processRunner: (List<String>, Path?) -> Int = ::runProcess,
@@ -29,19 +30,62 @@ class EditorInstaller(
         val placedFiles: List<Path>,
     )
 
-    /** Installs [target] or returns null if the prerequisites aren't met. */
+    /** Installs [target] or returns null if the prerequisites aren't met. Updates the manifest on success. */
     fun install(target: EditorTarget): InstallResult? {
         val root =
             editorRoot ?: run {
                 err.appendLine("qkt: cannot locate bundled editor files (set QKT_HOME or run from a packaged install)")
                 return null
             }
-        return when (target) {
-            EditorTarget.VSCODE -> installVscode(root)
-            EditorTarget.NVIM -> installVimFamily(root, detector.nvimConfigDir(), EditorTarget.NVIM)
-            EditorTarget.VIM -> installVimFamily(root, detector.vimConfigDir(), EditorTarget.VIM)
-            EditorTarget.SUBLIME -> installSublime(root, detector.sublimePackagesDir())
+        val result =
+            when (target) {
+                EditorTarget.VSCODE -> installVscode(root)
+                EditorTarget.NVIM -> installVimFamily(root, detector.nvimConfigDir(), EditorTarget.NVIM)
+                EditorTarget.VIM -> installVimFamily(root, detector.vimConfigDir(), EditorTarget.VIM)
+                EditorTarget.SUBLIME -> installSublime(root, detector.sublimePackagesDir())
+            } ?: return null
+        val updated = EditorManifest.load(manifestPath).withInstall(target, result.placedFiles)
+        EditorManifest.save(manifestPath, updated)
+        return result
+    }
+
+    /** Removes whatever the manifest says we placed for [target]. Returns true on success. */
+    fun uninstall(target: EditorTarget): Boolean {
+        if (target == EditorTarget.VSCODE) return uninstallVscode()
+        val manifest = EditorManifest.load(manifestPath)
+        val entry =
+            manifest.recordFor(target) ?: run {
+                err.appendLine(
+                    "qkt: no install record for ${target.displayName} — refusing to remove files " +
+                        "qkt did not place. Run `qkt editor install ${target.cliName}` first.",
+                )
+                return false
+            }
+        var removed = 0
+        for (f in entry.files) {
+            val p = Path.of(f)
+            if (Files.deleteIfExists(p)) removed++
         }
+        EditorManifest.save(manifestPath, manifest.withoutInstall(target))
+        out.appendLine("qkt editor: removed ${target.displayName} plugin ($removed files)")
+        return true
+    }
+
+    private fun uninstallVscode(): Boolean {
+        val cli =
+            detector.vscodeCli() ?: run {
+                err.appendLine("qkt: vscode 'code' command not on PATH — cannot uninstall the extension.")
+                return false
+            }
+        val rc = processRunner(listOf(cli.toString(), "--uninstall-extension", VSCODE_EXTENSION_ID), null)
+        if (rc != 0) {
+            err.appendLine("qkt: vscode uninstall failed (exit $rc)")
+            return false
+        }
+        val manifest = EditorManifest.load(manifestPath).withoutInstall(EditorTarget.VSCODE)
+        EditorManifest.save(manifestPath, manifest)
+        out.appendLine("qkt editor: removed VSCode extension $VSCODE_EXTENSION_ID")
+        return true
     }
 
     private fun installVscode(root: Path): InstallResult? {
@@ -143,6 +187,8 @@ class EditorInstaller(
         return InstallResult(EditorTarget.SUBLIME, listOf(dst))
     }
 }
+
+private const val VSCODE_EXTENSION_ID = "elitekaycy.qkt"
 
 private fun runProcess(
     cmd: List<String>,
