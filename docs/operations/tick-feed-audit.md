@@ -27,7 +27,8 @@ Flags:
 - `--mt5-profile` — broker profile from `qkt.config.yaml`. `exness` matches
   the broker hedge-straddle trades against.
 - `--poll-ms` — MT5 poll cadence (default 250 ms). Leave default.
-- `--json` — emit a single-line JSON result instead of the human table.
+- `--json` — emit a single-line JSON result to stdout instead of the human table.
+- `--out <path>` — also persist the JSON to a file (regardless of `--json`). Parent dirs are created. Lets you skip the stdout-piping dance below.
 
 ### When to run
 
@@ -56,17 +57,27 @@ should not be authored against.
 
 ## Recording results
 
-Capture the run as JSON so the table row drops in cleanly:
+Use `--out` to persist the run as JSON in one step:
 
 ```sh
-ssh root@<prod-host> \
-    "docker exec qkt qkt audit-ticks --symbol XAUUSD --duration 600 --mt5-profile exness --json" \
-    | tee "/tmp/audit-XAUUSD-$(date -u +%Y%m%d-%H%M).json"
+ssh root@<prod-host> 'docker exec qkt qkt audit-ticks \
+    --symbol XAUUSD --duration 600 --mt5-profile exness \
+    --out "/var/lib/qkt/audits/XAUUSD-$(date -u +%Y%m%d-%H%M).json"'
 ```
 
-Then append a row to the table below — date in UTC, fields straight off the
-JSON, `notes` for anything contextual (news event nearby, partial outage,
-unusual spread).
+Then `cat` the file and append a row to the table below — date in UTC, fields
+straight off the JSON, `notes` for anything contextual (news event nearby,
+partial outage, unusual spread).
+
+Each persisted file is a one-line JSON object like:
+
+```json
+{"symbol":"XAUUSD","samples":2350,"mean_abs_diff":"0.0312","median_abs_diff":"0.0290","p95_abs_diff":"0.0680","max_abs_diff":"0.1240"}
+```
+
+Keep the audit files under a persistent volume (`/var/lib/qkt/audits/` on the
+prod host) so they survive container restarts and can be diffed across
+multiple runs over time.
 
 ## Latest result
 
