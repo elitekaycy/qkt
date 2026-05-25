@@ -157,9 +157,15 @@ class AuditTicksCommand(
         // docs/operations/tick-feed-audit.md; persisting to a stable path makes that
         // a one-command workflow instead of "remember to redirect stdout."
         args.option("out")?.let { outPath ->
-            val path = java.nio.file.Path.of(outPath)
-            path.parent?.let { java.nio.file.Files.createDirectories(it) }
-            java.nio.file.Files.writeString(path, json + "\n")
+            val path =
+                java.nio.file.Path
+                    .of(outPath)
+            path.parent?.let {
+                java.nio.file.Files
+                    .createDirectories(it)
+            }
+            java.nio.file.Files
+                .writeString(path, json + "\n")
             System.err.println("qkt audit-ticks: wrote $outPath")
         }
 
