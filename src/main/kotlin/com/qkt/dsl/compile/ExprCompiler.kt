@@ -330,7 +330,10 @@ class ExprCompiler(
                 "dd_pct" -> {
                     // RiskView.drawdown is a fraction (0.05 = 5%); expose as percent for ergonomic
                     // condition writing: `WHEN ACCOUNT.dd_pct > 5 ...`.
-                    Value.Num(ctx.strategyContext.risk.drawdown.multiply(BigDecimal("100")))
+                    Value.Num(
+                        ctx.strategyContext.risk.drawdown
+                            .multiply(BigDecimal("100")),
+                    )
                 }
                 else -> error("unreachable")
             }
