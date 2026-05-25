@@ -1,0 +1,6 @@
+PORTFOLIO stress_portfolio VERSION 1
+IMPORT 'portfolio-child-a.qkt' AS child_a
+IMPORT 'portfolio-child-b.qkt' AS child_b
+RULES
+    RUN child_a
+    RUN child_b
