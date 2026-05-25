@@ -115,6 +115,7 @@ class BacktestCommand(
                     candleWindow = candleWindow,
                     startingBalance = startingBalance,
                     instruments = instruments,
+                    barStore = com.qkt.marketdata.store.LocalBarStore(),
                 )
             val result = backtest.run()
             ReportPrinter.print(result, format, System.out)
