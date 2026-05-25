@@ -39,8 +39,35 @@ class EditorCommand(
     }
 
     private fun install(): Int {
-        System.err.println("qkt editor install: not implemented yet")
-        return ExitCodes.USER_ERROR
+        val arg =
+            args.positional(1) ?: run {
+                System.err.println("qkt: missing target. Try: qkt editor install <vscode|nvim|vim|sublime|all>")
+                return ExitCodes.ARG_ERROR
+            }
+        val detector = EditorDetector()
+        val installer = com.qkt.cli.editor.EditorInstaller(detector = detector)
+        val targets: List<EditorTarget> =
+            if (arg.equals("all", ignoreCase = true)) {
+                val detected = detector.all().filterValues { it }.keys.toList()
+                if (detected.isEmpty()) {
+                    System.err.println("qkt: no supported editor detected on this machine")
+                    return ExitCodes.USER_ERROR
+                }
+                println("qkt editor: installing for detected editors: ${detected.joinToString(", ") { it.cliName }}")
+                detected
+            } else {
+                val parsed =
+                    EditorTarget.parse(arg) ?: run {
+                        System.err.println("qkt: unknown target '$arg' (expected: vscode, nvim, vim, sublime, all)")
+                        return ExitCodes.ARG_ERROR
+                    }
+                listOf(parsed)
+            }
+        var failures = 0
+        for (t in targets) {
+            if (installer.install(t) == null) failures++
+        }
+        return if (failures == 0) ExitCodes.SUCCESS else ExitCodes.USER_ERROR
     }
 
     private fun uninstall(): Int {
