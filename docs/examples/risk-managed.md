@@ -131,10 +131,9 @@ The Kelly-optimal sizing is typically 0.5–1% for most retail strategies. Anyth
 
 This kicks you out of the market faster on bad days. The trade-off: more halts means more missed recovery rallies. Tune to your stomach.
 
-### Per-strategy halts (Phase 25)
+### Per-strategy halts (Phase 25D)
 
-!!! info "Coming in Phase 25"
-    `per_strategy:` risk rules (e.g. `max-trades-per-day`, `cooloff-after-loss` scoped to one strategy) are **planned but not yet implemented**. See [Planned features](../planned.md). Today, risk rules apply daemon-wide.
+Per-strategy risk caps ship in `qkt.config.yaml` under `risk.per_strategy.<name>`. See the [config schema](../reference/config-schema.md#risk) for `max_daily_loss`, `max_position_size`, `max_open_positions`. The global rules above still apply daemon-wide; per-strategy caps layer on top.
 
 ### Manual resume after a drawdown halt
 
@@ -144,7 +143,7 @@ When the `max-drawdown` rule fires with `reset: manual`, the daemon refuses to t
 
 - **The manual sizing computation needs the stop and equity to be valid.** If `stopDist` evaluates to null (ATR not warm), `riskQty` is null and the rule doesn't fire — by design. Wait through warmup.
 - **ATR depends on warmup.** First 14 bars produce no ATR; the rule won't fire. The compiler infers warmup automatically.
-- **Daemon-wide halts.** Any halt triggered by any strategy stops every strategy in the daemon. Per-strategy scoping lands in Phase 25.
+- **Daemon-wide vs per-strategy halts.** A global halt rule stops every strategy. Use `risk.per_strategy.<name>` to scope a halt to just one strategy ([phase 25D](../reference/config-schema.md#risk)).
 - **Max-position-pct can be too tight.** If `riskQty` × current price exceeds `max-position-pct × equity`, the engine rejects the trade. Either widen the stop (smaller `riskQty`) or relax the cap.
 
 ## What this example demonstrates
