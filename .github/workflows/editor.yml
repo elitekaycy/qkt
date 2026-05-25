@@ -59,3 +59,25 @@ jobs:
       - name: vsce package smoke
         working-directory: editor/vscode
         run: npx --yes @vscode/vsce@latest package --no-dependencies
+
+      - name: Install vim for nvim plugin smoke
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends vim-nox
+
+      - name: vim syntax smoke against example fixture
+        run: |
+          # Load the three plugin files against the fixture in a clean vim
+          # environment. Any vimscript syntax error in the syntax file aborts
+          # with a non-zero exit; vim is otherwise silent in -es mode.
+          set -e
+          vim -u NONE -N -e -s \
+            -c 'set rtp+=editor/nvim' \
+            -c 'filetype on' \
+            -c 'syntax enable' \
+            -c 'edit editor/nvim/test/example.qkt' \
+            -c 'filetype detect' \
+            -c 'syntax sync fromstart' \
+            -c 'redir => g:ft | silent set filetype? | redir END' \
+            -c 'if g:ft !~# "filetype=qkt" | echoerr "expected filetype=qkt, got" g:ft | cquit | endif' \
+            -c 'qall!'
