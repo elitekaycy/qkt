@@ -35,8 +35,23 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build VSCode extension (.vsix) into editor/vscode/
+        working-directory: editor/vscode
+        run: npx --yes @vscode/vsce@latest package --no-dependencies
+
       - name: Build distribution tarball
         run: ./gradlew --no-daemon distTar
+
+      - name: Verify tarball contains the bundled .vsix
+        run: |
+          set -e
+          path=$(ls build/distributions/qkt-*.tar | head -1)
+          tar -tf "$path" | grep -qE 'share/editor/vscode/qkt-[0-9].*\.vsix$' \
+            || { echo "::error::tarball missing share/editor/vscode/*.vsix"; exit 1; }
 
       - name: Identify tarball path
         id: tar

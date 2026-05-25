@@ -11,6 +11,14 @@ Syntax highlighting and snippets for [qkt](https://github.com/elitekaycy/qkt) st
 
 ## Install
 
+### Via the `qkt` CLI (easiest)
+
+```bash
+qkt editor install vscode
+```
+
+Picks up the bundled `.vsix` from your qkt distribution and runs `code --install-extension`. See [docs/how-to/editor-integrations.md](../../docs/how-to/editor-integrations.md).
+
 ### From a local `.vsix`
 
 ```bash

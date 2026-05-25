@@ -11,6 +11,14 @@ Filetype detection, syntax highlighting, and comment-string config for [qkt](htt
 
 ## Install
 
+### Via the `qkt` CLI (easiest, no plugin manager)
+
+```bash
+qkt editor install nvim   # or vim
+```
+
+Copies the three files into `$XDG_CONFIG_HOME/nvim/{ftdetect,ftplugin,syntax}/`. If you already use a plugin manager (lazy/packer/vim-plug), the command detects it and warns; pass `--yes` to override or use the snippets below instead. See [docs/how-to/editor-integrations.md](../../docs/how-to/editor-integrations.md).
+
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)
 
 ```lua

@@ -16,6 +16,7 @@ internal fun runMain(argv: Array<String>): Int {
             "stop" -> StopCommand(args).run()
             "start" -> StartCommand(args).run()
             "brokers" -> BrokersCommand(args).run()
+            "editor" -> EditorCommand(args).run()
             "audit-ticks" -> AuditTicksCommand(args).run()
             "daemon" -> DaemonCommand(args).run()
             "logs" -> LogsCommand(args).run()
@@ -68,6 +69,11 @@ private fun printHelp() {
         VENUE / FEED
             brokers list            list configured broker profiles
             audit-ticks ...         capture and audit live MT5 ticks
+
+        EDITOR INTEGRATIONS
+            editor list             show supported editors + what's detected on this machine
+            editor install <t>      install for vscode, nvim, vim, sublime, or all
+            editor uninstall <t>    remove a previously-installed integration
 
         FLAGS
             --version, -v           print qkt version
