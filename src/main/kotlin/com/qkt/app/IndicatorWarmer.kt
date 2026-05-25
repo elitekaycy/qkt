@@ -27,9 +27,22 @@ class IndicatorWarmer(
         symbols: List<String>,
         spec: WarmupSpec,
         now: Instant,
+    ) = warmup(symbols.associateWith { spec }, now)
+
+    /**
+     * Per-stream form: each qkt symbol carries its own [WarmupSpec]. Used by DSL
+     * strategies that span multiple timeframes — e.g. 5m gold + 1h spx — where one
+     * spec across all symbols would over- or under-fetch on at least one stream.
+     *
+     * Symbols mapped to [WarmupSpec.None] are skipped silently. Failures from
+     * `source.bars(...)` propagate (callers wrap them in `WarmupFailedException`).
+     */
+    fun warmup(
+        perStream: Map<String, WarmupSpec>,
+        now: Instant,
     ) {
-        val resolved = resolveBarSpec(spec) ?: return
-        for (symbol in symbols) {
+        for ((symbol, spec) in perStream) {
+            val resolved = resolveBarSpec(spec) ?: continue
             warmupSymbol(symbol, resolved, now)
         }
     }
