@@ -705,6 +705,7 @@ class Parser(
             k == TokenKind.SELL ||
             k == TokenKind.CLOSE ||
             k == TokenKind.CLOSE_ALL ||
+            k == TokenKind.FLATTEN ||
             k == TokenKind.CANCEL ||
             k == TokenKind.CANCEL_ALL ||
             k == TokenKind.LOG ||
@@ -747,6 +748,10 @@ class Parser(
                 Close(stream)
             }
             TokenKind.CLOSE_ALL -> {
+                advance()
+                CloseAll
+            }
+            TokenKind.FLATTEN -> {
                 advance()
                 CloseAll
             }
