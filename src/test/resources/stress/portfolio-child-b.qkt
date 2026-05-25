@@ -1,0 +1,13 @@
+STRATEGY portfolio_child_b VERSION 1
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m WARMUP 14 BARS
+
+RULES
+    WHEN rsi(btc.close, 14) < 35
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 1
+
+    WHEN POSITION.btc > 0
+     AND rsi(btc.close, 14) > 65
+    THEN CLOSE btc
