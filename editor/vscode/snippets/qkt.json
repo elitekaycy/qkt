@@ -1,0 +1,120 @@
+{
+  "STRATEGY skeleton": {
+    "prefix": "strategy",
+    "body": [
+      "STRATEGY ${1:name} VERSION ${2:1}",
+      "",
+      "DEFAULTS {",
+      "  SIZING = ${3:0.1}",
+      "  TIF = ${4|GTC,IOC,FOK,DAY|}",
+      "}",
+      "",
+      "SYMBOLS",
+      "  ${5:alias} = ${6|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${7:SYMBOL} EVERY ${8|1m,5m,15m,1h,1d|}",
+      "",
+      "RULES",
+      "  WHEN ${9:condition}",
+      "  THEN ${10:action}",
+      "$0"
+    ],
+    "description": "Full STRATEGY skeleton with DEFAULTS, SYMBOLS, and one RULES entry."
+  },
+
+  "SYMBOLS line": {
+    "prefix": "sym",
+    "body": [
+      "${1:alias} = ${2|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${3:SYMBOL} EVERY ${4|1m,5m,15m,1h,1d|}${5: WARMUP ${6:50} BARS}"
+    ],
+    "description": "Stream declaration with optional WARMUP."
+  },
+
+  "WHEN/THEN rule": {
+    "prefix": "rule",
+    "body": [
+      "WHEN ${1:condition}",
+      "THEN ${2:action}"
+    ],
+    "description": "Basic WHEN/THEN rule."
+  },
+
+  "BUY action": {
+    "prefix": "buy",
+    "body": [
+      "BUY ${1:alias} SIZING ${2:0.1}"
+    ],
+    "description": "BUY action with explicit sizing."
+  },
+
+  "BUY with bracket": {
+    "prefix": "buybr",
+    "body": [
+      "BUY ${1:alias} SIZING ${2:0.1}",
+      "    BRACKET {",
+      "      STOP LOSS BY ${3:atr(${1:alias}, 14) * 2},",
+      "      TAKE PROFIT BY ${4:atr(${1:alias}, 14) * 4}",
+      "    }"
+    ],
+    "description": "BUY with ATR-sized stop and take-profit."
+  },
+
+  "SIZING N PCT RISK": {
+    "prefix": "pctrisk",
+    "body": [
+      "SIZING ${1:0.5} PCT RISK"
+    ],
+    "description": "Risk-percent sizing (phase 24)."
+  },
+
+  "EMA crossover": {
+    "prefix": "cross",
+    "body": [
+      "ema(${1:alias}.close, ${2:9}) CROSSES ABOVE ema(${1:alias}.close, ${3:21})"
+    ],
+    "description": "EMA fast/slow crossover condition."
+  },
+
+  "LET binding": {
+    "prefix": "let",
+    "body": [
+      "LET ${1:name} = ${2:expression}"
+    ],
+    "description": "LET expression binding."
+  },
+
+  "DEFAULTS block": {
+    "prefix": "def",
+    "body": [
+      "DEFAULTS {",
+      "  SIZING = ${1:0.1}",
+      "  TIF = ${2|GTC,IOC,FOK,DAY|}",
+      "}"
+    ],
+    "description": "DEFAULTS block."
+  },
+
+  "FOR EACH over streams": {
+    "prefix": "foreach",
+    "body": [
+      "FOR EACH ${1:s} IN ${2:btc, eth, sol} DO",
+      "  WHEN ${3:condition involving ${1:s}}",
+      "  THEN ${4:action involving ${1:s}}"
+    ],
+    "description": "Iterate a rule over multiple streams."
+  },
+
+  "Session-end FLATTEN": {
+    "prefix": "flatten",
+    "body": [
+      "WHEN NOW.hour_utc = ${1:21} THEN FLATTEN"
+    ],
+    "description": "Close every open position at a fixed UTC hour (phase 24)."
+  },
+
+  "IS NOT NULL guard": {
+    "prefix": "notnull",
+    "body": [
+      "${1:expression} IS NOT NULL"
+    ],
+    "description": "Guard expression against Value.Undefined (phase 24)."
+  }
+}
