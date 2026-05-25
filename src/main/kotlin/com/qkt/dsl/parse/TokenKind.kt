@@ -19,6 +19,7 @@ enum class TokenKind {
     SELL,
     CLOSE,
     CLOSE_ALL,
+    FLATTEN,
     CANCEL,
     CANCEL_ALL,
     LOG,
@@ -78,6 +79,8 @@ enum class TokenKind {
     ABOVE,
     BELOW,
     BETWEEN,
+    IS,
+    NULL,
     AND,
     OR,
     NOT,
@@ -99,6 +102,9 @@ enum class TokenKind {
     STACK_AT,
     MFE,
     ENTRY_QTY,
+
+    WARMUP,
+    BARS,
 
     TRUE,
     FALSE,
