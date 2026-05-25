@@ -88,6 +88,7 @@ import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.WhenThen
 import com.qkt.dsl.ast.Window
+import com.qkt.common.Money
 import java.math.BigDecimal
 
 class Parser(
@@ -1130,6 +1131,18 @@ class Parser(
                     TokenKind.USD -> {
                         advance()
                         SizeNotional(e)
+                    }
+                    TokenKind.PCT -> {
+                        advance()
+                        expect(TokenKind.RISK, "expected RISK after PCT in SIZING")
+                        require(e is NumLit) {
+                            "SIZING N PCT RISK requires a numeric literal for N, got non-literal expression"
+                        }
+                        val pct = e.value
+                        require(pct.signum() > 0) {
+                            "SIZING N PCT RISK requires N > 0, got $pct"
+                        }
+                        SizeRiskFrac(NumLit(pct.divide(BigDecimal(100), Money.CONTEXT)))
                     }
                     TokenKind.PERCENT -> {
                         advance()
