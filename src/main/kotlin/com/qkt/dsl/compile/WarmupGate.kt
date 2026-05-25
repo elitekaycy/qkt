@@ -19,6 +19,19 @@ class WarmupGate(
         counts.merge(alias, 1, Int::plus)
     }
 
+    /**
+     * Pre-credit [count] closed bars for [alias] in one call. Used by Phase 25B's
+     * deploy path: after the CandleHub is seeded with historical bars, the gate
+     * matches the pre-loaded history so the first live candle can fire rules.
+     */
+    fun recordBars(
+        alias: String,
+        count: Int,
+    ) {
+        if (count <= 0) return
+        counts.merge(alias, count, Int::plus)
+    }
+
     fun isWarm(alias: String): Boolean {
         val required = perStream[alias] ?: return true
         val seen = counts[alias] ?: 0

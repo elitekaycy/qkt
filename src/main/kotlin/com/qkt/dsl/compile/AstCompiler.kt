@@ -202,6 +202,11 @@ private class CompiledStrategy(
         hubBound = true
         boundHub = hub
         for ((alias, key) in streams) {
+            // Phase 25B: credit the gate with whatever historical bars the seed phase
+            // (run by LiveSession before bindToHub) placed in the hub. Without this,
+            // the gate stays cold even when lookback + indicators are already warm.
+            val seeded = hub.historySize(key)
+            if (seeded > 0) warmupGate.recordBars(alias, seeded)
             hub.onClosed(key, ctx.strategyId) { closed ->
                 evaluate(alias, closed, hub, ctx, emit)
             }
