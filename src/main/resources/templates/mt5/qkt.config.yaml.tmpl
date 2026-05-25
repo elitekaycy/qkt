@@ -1,0 +1,23 @@
+# qkt daemon config. Defaults assume the docker-compose.yml that ships with this
+# template. Edit broker.exness.* to point at your live MT5 account; or rename the
+# profile and point a different DSL strategy at it.
+
+state:
+  dir: /var/lib/qkt
+
+brokers:
+  exness:
+    kind: mt5
+    url: ${QKT_EXNESS_URL}
+    magic: ${QKT_EXNESS_MAGIC}
+
+notify:
+  telegram:
+    enabled: ${TELEGRAM_ENABLED}
+    botToken: ${TELEGRAM_BOT_TOKEN}
+    chatId: ${TELEGRAM_CHAT_ID}
+    events:
+      - DAEMON_STARTED
+      - DAEMON_STOPPED
+      - STRATEGY_ERROR
+      - DAILY_SUMMARY

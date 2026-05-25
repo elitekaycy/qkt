@@ -1,0 +1,21 @@
+# strategies/
+
+Drop `.qkt` files in this directory. They're mounted into the running daemon at
+`/strategies` (read-only).
+
+To deploy one:
+
+```bash
+make deploy STRAT=ema_cross
+```
+
+That runs `qkt deploy /strategies/ema_cross.qkt --as ema_cross` inside the
+container. The daemon registers it and starts evaluating rules on the next tick.
+
+To stop one:
+
+```bash
+make stop STRAT=ema_cross
+```
+
+Scaffolded by qkt v{{QKT_VERSION}}.

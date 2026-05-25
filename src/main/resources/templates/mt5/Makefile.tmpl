@@ -1,0 +1,44 @@
+.PHONY: up down restart logs status list deploy stop audit-ticks shell
+
+# Bring up qkt + mt5-gateway. First boot takes ~5 min while MT5 loads in the VNC desktop.
+up:
+	docker compose up -d
+
+# Tear down without removing state.
+down:
+	docker compose down
+
+restart:
+	docker compose restart qkt
+
+# Tail the qkt daemon logs.
+logs:
+	docker compose logs -f --tail 200 qkt
+
+# Snapshot of all deployed strategies.
+status:
+	docker compose exec qkt qkt list
+
+# Per-strategy detail.
+list:
+	docker compose exec qkt qkt list
+
+# Hot-deploy a strategy. Usage: make deploy STRAT=ema_cross
+deploy:
+	@test -n "$(STRAT)" || (echo "usage: make deploy STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt deploy /strategies/$(STRAT).qkt --as $(STRAT)
+
+# Stop a deployed strategy. Usage: make stop STRAT=ema_cross
+stop:
+	@test -n "$(STRAT)" || (echo "usage: make stop STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt stop $(STRAT)
+
+# Capture live ticks for a symbol and write a JSON audit report.
+# Usage: make audit-ticks SYMBOL=XAUUSD [DUR=5m]
+audit-ticks:
+	@test -n "$(SYMBOL)" || (echo "usage: make audit-ticks SYMBOL=XAUUSD"; exit 1)
+	docker compose exec qkt qkt audit-ticks EXNESS:$(SYMBOL) --duration $${DUR:-5m} --out /var/lib/qkt/audit-$(SYMBOL).json
+
+# Shell into the qkt container.
+shell:
+	docker compose exec qkt sh
