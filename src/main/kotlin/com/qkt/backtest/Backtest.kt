@@ -51,6 +51,7 @@ class Backtest(
     cadence: SampleCadence? = null,
     private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     private val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+    private val brokerKind: BrokerKind = BrokerKind.PAPER,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -70,6 +71,8 @@ class Backtest(
         initialTimestamp: Long = 0L,
         cadence: SampleCadence? = null,
         startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
+        instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+        brokerKind: BrokerKind = BrokerKind.PAPER,
     ) : this(
         strategies = strategies,
         rules = rules,
@@ -78,6 +81,8 @@ class Backtest(
         initialTimestamp = initialTimestamp,
         cadence = cadence,
         startingBalance = startingBalance,
+        instruments = instruments,
+        brokerKind = brokerKind,
     )
 
     fun run(): BacktestResult {
@@ -108,14 +113,20 @@ class Backtest(
                     .add(key.qktSymbol)
             }
         }
+        val brokerFactory: () -> com.qkt.broker.Broker =
+            when (brokerKind) {
+                BrokerKind.PAPER -> { -> PaperBroker(bus, clock, priceTracker) }
+                BrokerKind.MT5_SIM -> { -> com.qkt.broker.MT5BrokerSimulator(bus, clock, priceTracker, instruments)
+                }
+            }
         val broker: com.qkt.broker.Broker =
             if (brokerSymbols.isEmpty()) {
-                PaperBroker(bus, clock, priceTracker)
+                brokerFactory()
             } else {
                 val routes =
                     brokerSymbols.map { (_, syms) ->
                         com.qkt.marketdata.source.SymbolPattern
-                            .exactSet(syms.toSet()) to PaperBroker(bus, clock, priceTracker)
+                            .exactSet(syms.toSet()) to brokerFactory()
                     }
                 com.qkt.broker.CompositeBroker(routes = routes, bus = bus)
             }
@@ -243,6 +254,7 @@ class Backtest(
              * from ticks for any day fully covered. Falls back to ticks for missing days.
              */
             barStore: com.qkt.marketdata.store.LocalBarStore? = null,
+            brokerKind: BrokerKind = BrokerKind.PAPER,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -255,6 +267,7 @@ class Backtest(
                 cadence = cadence,
                 startingBalance = startingBalance,
                 instruments = instruments,
+                brokerKind = brokerKind,
             )
         }
 
@@ -268,6 +281,7 @@ class Backtest(
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+            brokerKind: BrokerKind = BrokerKind.PAPER,
         ): Backtest {
             require(MarketSourceCapability.TICKS in source.capabilities) {
                 "Backtest requires a MarketSource that supports TICKS; ${source.name} has ${source.capabilities}"
@@ -291,6 +305,7 @@ class Backtest(
                 cadence = cadence,
                 startingBalance = startingBalance,
                 instruments = instruments,
+                brokerKind = brokerKind,
             )
         }
     }
