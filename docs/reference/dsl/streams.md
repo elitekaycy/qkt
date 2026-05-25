@@ -117,10 +117,17 @@ Declares that any rule referencing this stream must wait for N closed candles be
 
 Use it when an indicator or rolling window needs lookback before its output is meaningful — e.g. `EMA(gold.close, 50)` is unreliable until the 50th closed candle.
 
+Behavior:
+
+- **Phase 25B (live):** on deploy, the engine fetches the requested history from the broker's historical API and seeds the candle hub + indicators. Rules fire on the first live closed candle. Indicator periods (e.g. `EMA(close, 50)`) also trigger prefetch implicitly — `WARMUP N BARS` is the explicit ceiling.
+- **Backtest:** the entire backtest is sequential candle replay, so `WARMUP` just gates rule firing for the first N bars — no fetch needed.
+- If the broker can't satisfy the fetch (rate limit, auth, missing data), deploy aborts with `WarmupFailedException` before any rule fires.
+
 Limitations:
 
-- Counts live closed candles only. Historical prefetch (so `WARMUP` can be satisfied at startup) lands in Phase 25 with `qkt fetch`.
-- Engine restart resets the counter.
+- Engine restart resets the live `WarmupGate` counter — but the next deploy re-runs auto-warmup, so this is transparent to operators.
+- Nested indicators (`EMA(EMA(close, 9), 21)`) report only the outer period; set explicit `WARMUP` to override.
+- Lookback `btc.close[N]` not yet derived; set explicit `WARMUP N+1 BARS`.
 - `N` must be a positive integer.
 
 ## Stream field access

@@ -112,9 +112,20 @@ class AstCompiler {
 
         val metaRefs = collectMetaRefs(ast, streams)
 
-        val perStreamWarmup: Map<String, Int> =
-            ast.streams.mapNotNull { s -> s.warmupBars?.let { s.alias to it } }.toMap()
+        val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
         val warmupGate = WarmupGate(perStreamWarmup)
+
+        val perStreamWarmupSpec: Map<String, com.qkt.strategy.WarmupSpec> =
+            perStreamWarmup
+                .mapNotNull { (alias, bars) ->
+                    val key = streams[alias] ?: return@mapNotNull null
+                    val window =
+                        com.qkt.candles.TimeWindow
+                            .parse(key.timeframe)
+                    key.qktSymbol to
+                        com.qkt.strategy.WarmupSpec
+                            .Bars(window, bars)
+                }.toMap()
 
         return CompiledStrategy(
             streams = streams,
@@ -130,6 +141,7 @@ class AstCompiler {
             multiPositionPerSymbolSymbols = stackAtSymbols,
             metaRefs = metaRefs,
             warmupGate = warmupGate,
+            perStreamWarmup = perStreamWarmupSpec,
         )
     }
 
@@ -176,7 +188,9 @@ private class CompiledStrategy(
     override val multiPositionPerSymbolSymbols: Set<String>,
     private val metaRefs: List<MetaRef>,
     private val warmupGate: WarmupGate,
-) : DslCompiledStrategy {
+    override val perStreamWarmup: Map<String, com.qkt.strategy.WarmupSpec>,
+) : DslCompiledStrategy,
+    com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
     private var hubBound: Boolean = false
     private var boundHub: CandleHub? = null
@@ -193,6 +207,11 @@ private class CompiledStrategy(
         hubBound = true
         boundHub = hub
         for ((alias, key) in streams) {
+            // Phase 25B: credit the gate with whatever historical bars the seed phase
+            // (run by LiveSession before bindToHub) placed in the hub. Without this,
+            // the gate stays cold even when lookback + indicators are already warm.
+            val seeded = hub.historySize(key)
+            if (seeded > 0) warmupGate.recordBars(alias, seeded)
             hub.onClosed(key, ctx.strategyId) { closed ->
                 evaluate(alias, closed, hub, ctx, emit)
             }

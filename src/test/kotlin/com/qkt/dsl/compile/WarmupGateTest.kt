@@ -42,6 +42,32 @@ class WarmupGateTest {
     }
 
     @Test
+    fun `recordBars pre-credits the alias counter`() {
+        val gate = WarmupGate(mapOf("a" to 5))
+        gate.recordBars("a", 5)
+        assertThat(gate.isWarm("a")).isTrue
+    }
+
+    @Test
+    fun `recordBars is additive with onClosedCandle`() {
+        val gate = WarmupGate(mapOf("a" to 10))
+        gate.recordBars("a", 7)
+        assertThat(gate.isWarm("a")).isFalse
+        gate.onClosedCandle("a")
+        gate.onClosedCandle("a")
+        gate.onClosedCandle("a")
+        assertThat(gate.isWarm("a")).isTrue
+    }
+
+    @Test
+    fun `recordBars with non-positive count is a no-op`() {
+        val gate = WarmupGate(mapOf("a" to 5))
+        gate.recordBars("a", 0)
+        gate.recordBars("a", -3)
+        assertThat(gate.isWarm("a")).isFalse
+    }
+
+    @Test
     fun `empty set is always warm`() {
         val gate = WarmupGate(mapOf("a" to 100))
         assertThat(gate.isWarm(emptySet())).isTrue
