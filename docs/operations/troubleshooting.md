@@ -2,6 +2,36 @@
 
 Symptom → cause → fix. Use this page when something's wrong and you need to figure out which doc to read next.
 
+## First, run the health check
+
+```bash
+qkt status --deep
+```
+
+Single-screen summary of daemon, control plane, every deployed strategy. Exits
+`0` when everything is healthy; `1` with a list of issues when anything is
+wrong. The output below is the fastest way to know which section of this page
+to read.
+
+```text
+qkt: HEALTHY
+
+qkt 0.28.9 (424d5d9) built 2026-05-25T21:08:37Z
+
+DAEMON       running (uptime 12h5m)
+CONTROL      reachable
+STRATEGIES
+  alpha                running, 14 trades, up 12h5m
+  beta                 running, 3 trades, up 12h5m
+```
+
+When unhealthy, the issues land on stderr — pipe to `tee` or your alert
+channel:
+
+```bash
+qkt status --deep || echo "qkt is unhealthy — check logs"
+```
+
 ## The flowchart
 
 ```
