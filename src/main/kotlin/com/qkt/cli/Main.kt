@@ -21,7 +21,7 @@ internal fun runMain(argv: Array<String>): Int {
             "logs" -> LogsCommand(args).run()
             "status" -> StatusCommand(args).run()
             "--version", "-v" -> {
-                println("qkt ${BuildInfo.VERSION}")
+                println(BuildInfo.versionLine())
                 ExitCodes.SUCCESS
             }
             "--help", "help" -> {
