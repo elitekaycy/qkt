@@ -35,7 +35,10 @@ import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RiskState
+import com.qkt.common.TimeRange
+import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.strategy.Mode
+import com.qkt.strategy.PerStreamWarmable
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
@@ -100,6 +103,53 @@ class LiveSession(
 
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
+
+    /**
+     * Phase 25B: fetch historical bars per stream and seed the candle hub so
+     * lookback (`btc.close[N]`) and Phase 24's WarmupGate are satisfied the
+     * moment live ticks start. Throws [WarmupFailedException] on broker error
+     * so deploy aborts before any rule fires.
+     */
+    private fun seedHubFromHistory(
+        strategies: List<Pair<String, Strategy>>,
+        hub: com.qkt.dsl.compile.CandleHub,
+        perStreamSpecs: Map<String, WarmupSpec>,
+        now: Instant,
+    ) {
+        // Map qkt symbol → owning DSL strategy's HubKey (multiple strategies may
+        // declare the same symbol on different timeframes; seed each).
+        for ((sessionStrategyName, strategy) in strategies) {
+            if (strategy !is DslCompiledStrategy) continue
+            for ((alias, key) in strategy.declaredStreams) {
+                val symbol = key.qktSymbol
+                val spec = perStreamSpecs[symbol] ?: continue
+                val barSpec =
+                    when (spec) {
+                        is WarmupSpec.Bars -> spec
+                        is WarmupSpec.None -> continue
+                        else -> continue // Duration / Ticks handled by IndicatorWarmer; skip seed
+                    }
+                val upperMs = barSpec.window.windowStartFor(now.toEpochMilli())
+                val totalMs = barSpec.window.durationMs * barSpec.count
+                val lowerMs = upperMs - totalMs
+                val range = TimeRange(Instant.ofEpochMilli(lowerMs), Instant.ofEpochMilli(upperMs))
+                val candles =
+                    try {
+                        source.bars(symbol, barSpec.window, range).toList()
+                    } catch (e: Exception) {
+                        throw WarmupFailedException(alias, symbol, e)
+                    }
+                hub.seed(key, candles)
+                log.info(
+                    "warmup: seeded hub for strategy={} alias={} symbol={} bars={}",
+                    sessionStrategyName,
+                    alias,
+                    symbol,
+                    candles.size,
+                )
+            }
+        }
+    }
 
     /**
      * Three-way reconcile: persisted leg state + broker positions → attached LegBook
@@ -397,15 +447,31 @@ class LiveSession(
         }
 
         val now = Instant.ofEpochMilli(clock.now())
-        val effectiveWarmup =
-            warmupOverride
-                ?: strategies
-                    .map { it.second }
-                    .filterIsInstance<Warmable>()
-                    .maxByOrNull { it.warmup.windowMs(now) }
-                    ?.warmup
-                ?: WarmupSpec.None
-        IndicatorWarmer(source, pipeline).warmup(symbols, effectiveWarmup, now)
+
+        // Phase 25B: per-stream pre-fetch + hub seeding for DSL strategies.
+        // Seeds candle history (so lookback works on the first live bar) and triggers
+        // indicator warmup via the existing IndicatorWarmer pipeline. Fail-fast: any
+        // broker error here aborts deploy with a typed exception.
+        val perStreamSpecs: Map<String, WarmupSpec> =
+            strategies
+                .map { it.second }
+                .filterIsInstance<PerStreamWarmable>()
+                .flatMap { it.perStreamWarmup.entries }
+                .associate { it.key to it.value }
+        if (perStreamSpecs.isNotEmpty()) {
+            seedHubFromHistory(strategies, pipelineCandleHub, perStreamSpecs, now)
+            IndicatorWarmer(source, pipeline).warmup(perStreamSpecs, now)
+        } else {
+            val effectiveWarmup =
+                warmupOverride
+                    ?: strategies
+                        .map { it.second }
+                        .filterIsInstance<Warmable>()
+                        .maxByOrNull { it.warmup.windowMs(now) }
+                        ?.warmup
+                    ?: WarmupSpec.None
+            IndicatorWarmer(source, pipeline).warmup(symbols, effectiveWarmup, now)
+        }
         riskState.warmupComplete = true
 
         val feed = source.liveTicks(symbols)
