@@ -31,7 +31,7 @@ SYMBOLS
 
 A rule fires only when every stream alias it references has observed N closed candles. A rule that references two streams waits for both to be warm; a stream with no `WARMUP` declared is warm from tick zero.
 
-Counts live closed candles only — historical prefetch lands in Phase 25 with the `qkt fetch` CLI. Engine restart resets the counter.
+**Updated by Phase 25B:** live deploys now auto-prefetch the requested history from the broker so `WARMUP` rarely produces operator-visible wait time. See [phase 25B](phase-25b-live-auto-warmup.md).
 
 ### `IS NULL` / `IS NOT NULL`
 

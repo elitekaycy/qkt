@@ -68,6 +68,29 @@ class CandleHub {
         }
     }
 
+    /**
+     * Bulk-load historical [candles] into the ring at registered [key]. Prepend-only:
+     * any candle whose `startTime >= oldest-existing` is dropped, so this never
+     * disturbs the live tail. After insertion the ring is truncated to the slot's
+     * retention, keeping the newest bars. `onClosed` callbacks are not invoked —
+     * `seed` is intended to run before strategies bind their listeners.
+     *
+     * Used by [com.qkt.app.IndicatorWarmer] / `LiveSession.start()` to satisfy
+     * lookback (`btc.close[N]`) the moment the live engine starts.
+     */
+    fun seed(
+        key: HubKey,
+        candles: List<Candle>,
+    ) {
+        val slot = slots[key] ?: error("CandleHub.seed: unknown key $key")
+        if (candles.isEmpty()) return
+        val sorted = candles.sortedBy { it.startTime }
+        val oldestExisting = slot.ring.firstOrNull()?.startTime ?: Long.MAX_VALUE
+        val toPrepend = sorted.filter { it.startTime < oldestExisting }
+        for (c in toPrepend.reversed()) slot.ring.addFirst(c)
+        while (slot.ring.size > slot.retention) slot.ring.removeFirst()
+    }
+
     fun latest(key: HubKey): Candle? = slots[key]?.ring?.lastOrNull()
 
     fun history(
