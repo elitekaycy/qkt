@@ -35,6 +35,7 @@ import com.qkt.dsl.ast.Gtc
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
@@ -359,6 +360,12 @@ class Parser(
                         }
                     val rhs = parseAddExpr()
                     lhs = Crosses(dir, lhs, rhs)
+                }
+                TokenKind.IS -> {
+                    advance()
+                    val negated = match(TokenKind.NOT)
+                    expect(TokenKind.NULL, "expected NULL after IS${if (negated) " NOT" else ""}")
+                    lhs = IsNull(lhs, negated)
                 }
                 else -> return lhs
             }
