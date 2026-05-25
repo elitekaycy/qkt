@@ -296,21 +296,47 @@ class ExprCompiler(
         }
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {
-        require(ref.field in setOf("realized_pnl", "unrealized_pnl", "total_pnl", "equity", "balance")) {
+        val pnlFields = setOf("realized_pnl", "unrealized_pnl", "total_pnl", "equity", "balance")
+        val historyFields = setOf("last_trade_at", "last_trade_pnl", "win_streak", "loss_streak")
+        val riskFields = setOf("dd_pct")
+        require(ref.field in pnlFields || ref.field in historyFields || ref.field in riskFields) {
             "Unsupported ACCOUNT field: ${ref.field}"
         }
         return CompiledExpr { ctx ->
-            val pnl = ctx.strategyContext.pnl
-            Value.Num(
-                when (ref.field) {
-                    "realized_pnl" -> pnl.realized()
-                    "unrealized_pnl" -> pnl.unrealizedTotal()
-                    "total_pnl" -> pnl.total()
-                    "equity" -> pnl.equity()
-                    "balance" -> pnl.balance()
-                    else -> error("unreachable")
-                },
-            )
+            when (ref.field) {
+                in pnlFields -> {
+                    val pnl = ctx.strategyContext.pnl
+                    Value.Num(
+                        when (ref.field) {
+                            "realized_pnl" -> pnl.realized()
+                            "unrealized_pnl" -> pnl.unrealizedTotal()
+                            "total_pnl" -> pnl.total()
+                            "equity" -> pnl.equity()
+                            "balance" -> pnl.balance()
+                            else -> error("unreachable")
+                        },
+                    )
+                }
+                in historyFields -> {
+                    val h = ctx.strategyContext.tradeHistory
+                    when (ref.field) {
+                        "last_trade_at" -> h.lastTradeAt()?.let { Value.Num(BigDecimal.valueOf(it)) } ?: Value.Undefined
+                        "last_trade_pnl" -> h.lastTradePnl()?.let { Value.Num(it) } ?: Value.Undefined
+                        "win_streak" -> Value.Num(BigDecimal.valueOf(h.winStreak().toLong()))
+                        "loss_streak" -> Value.Num(BigDecimal.valueOf(h.lossStreak().toLong()))
+                        else -> error("unreachable")
+                    }
+                }
+                "dd_pct" -> {
+                    // RiskView.drawdown is a fraction (0.05 = 5%); expose as percent for ergonomic
+                    // condition writing: `WHEN ACCOUNT.dd_pct > 5 ...`.
+                    Value.Num(
+                        ctx.strategyContext.risk.drawdown
+                            .multiply(BigDecimal("100")),
+                    )
+                }
+                else -> error("unreachable")
+            }
         }
     }
 

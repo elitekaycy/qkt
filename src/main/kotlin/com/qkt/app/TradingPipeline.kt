@@ -77,6 +77,13 @@ class TradingPipeline(
      * (wired by [com.qkt.app.LiveSession] for live, by `Backtest.fromStore` for backtest).
      */
     val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+    /**
+     * Phase 25-followup ([#132](https://github.com/elitekaycy/qkt/issues/132)):
+     * per-strategy trade history (last fill, last P&L, win/loss streaks). Default
+     * is a fresh tracker per pipeline so backtests get isolated state; the daemon's
+     * per-strategy `LiveSession` similarly gets its own.
+     */
+    val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(),
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
@@ -106,6 +113,7 @@ class TradingPipeline(
                     pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                     instruments = instruments,
+                    tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(tradeHistory, strategyId),
                 )
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 bus.publish(SignalEvent(sig))
@@ -159,6 +167,7 @@ class TradingPipeline(
             val rawStratRealized = strategyPositions.applyFill(e)
             val stratRealized = rawStratRealized.multiply(cs)
             strategyPnL.recordRealized(e.strategyId, stratRealized)
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized)
             riskState.onFill(e.strategyId, stratRealized)
             riskEngine.evaluateHaltRules()
 

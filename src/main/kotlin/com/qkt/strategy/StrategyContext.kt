@@ -5,7 +5,9 @@ import com.qkt.common.TradingCalendar
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.pnl.NoOpTradeHistoryView
 import com.qkt.pnl.StrategyPnLView
+import com.qkt.pnl.TradeHistoryView
 import com.qkt.positions.StrategyPositionView
 import com.qkt.risk.RiskView
 
@@ -35,4 +37,13 @@ data class StrategyContext(
      * (`MT5InstrumentRegistry` live; `YamlInstrumentRegistry` backtest).
      */
     val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    /**
+     * Phase 25-followup ([#132](https://github.com/elitekaycy/qkt/issues/132)):
+     * per-strategy trade history (last fill timestamp, last realized P&L, win/loss
+     * streaks). Exposed to DSL via `ACCOUNT.last_trade_at`, `ACCOUNT.win_streak`, etc.
+     *
+     * Default [NoOpTradeHistoryView] keeps test code that doesn't exercise these
+     * accessors working unchanged.
+     */
+    val tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
 )
