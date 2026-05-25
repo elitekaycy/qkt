@@ -40,9 +40,10 @@ distributions {
         contents {
             // Bundle the editor integrations under share/editor/ in the tarball.
             // `qkt editor install <target>` reads them from $QKT_HOME/share/editor/.
+            // .vsix is included when present (built by release.yml before distTar).
             from(rootProject.file("editor")) {
                 into("share/editor")
-                exclude("**/node_modules/**", "**/*.vsix")
+                exclude("**/node_modules/**")
             }
         }
     }
