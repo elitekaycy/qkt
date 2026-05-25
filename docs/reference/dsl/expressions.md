@@ -119,6 +119,36 @@ LET riskUsd = ACCOUNT.equity * 0.01            -- 1% of equity at risk
 LET riskQty = riskUsd / (atr(btc, 14) * 2)     -- size that loses riskUsd on a 2-ATR stop
 ```
 
+### Trade-history accessors (Phase 25-followup #132)
+
+```qkt
+ACCOUNT.last_trade_at    -- epoch ms of the most recent fill on this strategy; null before any trade
+ACCOUNT.last_trade_pnl   -- realized P&L of the most recent closed trade; null before any close
+ACCOUNT.win_streak       -- consecutive closed wins (0 if last close was a loss / no trades yet)
+ACCOUNT.loss_streak      -- consecutive closed losses
+ACCOUNT.dd_pct           -- current drawdown from this strategy's equity peak, as a percent (5.0 = 5%)
+```
+
+`last_trade_at` and `last_trade_pnl` return `Value.Undefined` until the strategy has closed at least one trade — compose with `IS NULL` for safe gating:
+
+```qkt
+-- Cooldown between entries: don't re-enter for an hour after a trade.
+WHEN signal AND POSITION.btc = 0
+ AND (ACCOUNT.last_trade_at IS NULL OR NOW.epoch_ms - ACCOUNT.last_trade_at > 3600000)
+THEN BUY btc SIZING 0.5 PCT RISK
+
+-- Self-halt on drawdown: stop trading at 5% DD until equity recovers.
+WHEN signal AND ACCOUNT.dd_pct < 5 THEN BUY btc SIZING 0.5 PCT RISK
+
+-- Loss-streak-aware sizing: scale down after consecutive losses.
+WHEN signal AND ACCOUNT.loss_streak < 2 THEN BUY btc SIZING 1.0 PCT RISK
+WHEN signal AND ACCOUNT.loss_streak >= 2 THEN BUY btc SIZING 0.5 PCT RISK
+```
+
+Win and loss streaks are exclusive — a `loss_streak >= 1` implies `win_streak = 0` and vice versa. Both return `0` until the strategy has closed at least one trade. Counts are session-scoped: engine restart resets them (the trade-history buffer is in-memory).
+
+A "win" is `realized_pnl > 0` for the closing fill; "loss" is `< 0`. Position-opening fills (zero realized) are skipped entirely — they don't count toward either streak.
+
 ## Position references
 
 ```qkt
