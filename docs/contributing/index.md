@@ -44,6 +44,14 @@ qkt treats every commit as if it'll be read by a stranger years from now — bec
 
     [:octicons-arrow-right-24: Adding a broker](adding-a-broker.md)
 
+- :material-weight-lifter:{ .lg .middle } **Stress tests**
+
+    ---
+
+    Multi-strategy coexistence and other opt-in stress checks. What they guard and how to run them.
+
+    [:octicons-arrow-right-24: Stress tests](stress-tests.md)
+
 </div>
 
 The single source of truth for project conventions is the [qkt skill](https://github.com/elitekaycy/qkt/blob/main/.claude/skills/qkt/SKILL.md). Pages here surface the parts contributors hit most often.
