@@ -22,12 +22,14 @@ data class StreamDecl(
     val broker: String,
     val symbol: String,
     val timeframe: String,
+    val warmupBars: Int? = null,
 ) {
     init {
         require(alias.isNotBlank()) { "StreamDecl.alias must not be blank" }
         require(broker.isNotBlank()) { "StreamDecl.broker must not be blank" }
         require(symbol.isNotBlank()) { "StreamDecl.symbol must not be blank" }
         require(timeframe.isNotBlank()) { "StreamDecl.timeframe must not be blank" }
+        if (warmupBars != null) require(warmupBars > 0) { "StreamDecl.warmupBars must be > 0 if set: $warmupBars" }
     }
 
     val qktSymbol: String get() = "$broker:$symbol"

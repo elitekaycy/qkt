@@ -22,6 +22,7 @@ import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.OcoEntry
@@ -132,6 +133,7 @@ private fun substituteSymbol(
                 elseExpr = substituteSymbol(expr.elseExpr, alias),
             )
         is Aggregate -> expr.copy(series = substituteSymbol(expr.series, alias))
+        is IsNull -> expr.copy(expr = substituteSymbol(expr.expr, alias))
         else -> expr
     }
 

@@ -204,4 +204,31 @@ class LexerTest {
         val kinds = Lexer(src).tokenize().map { it.kind }
         assertThat(kinds).containsSequence(TokenKind.STRATEGY, TokenKind.IDENT, TokenKind.VERSION)
     }
+
+    @Test
+    fun `tokenizes phase 24 keywords`() {
+        val tokens = Lexer("WARMUP BARS FLATTEN IS NULL").tokenize()
+        val kinds = tokens.map { it.kind }
+        assertThat(kinds).containsExactly(
+            TokenKind.WARMUP,
+            TokenKind.BARS,
+            TokenKind.FLATTEN,
+            TokenKind.IS,
+            TokenKind.NULL,
+            TokenKind.EOF,
+        )
+    }
+
+    @Test
+    fun `phase 24 keywords are case-insensitive`() {
+        val tokens = Lexer("warmup bars flatten is null").tokenize()
+        assertThat(tokens.map { it.kind }).containsExactly(
+            TokenKind.WARMUP,
+            TokenKind.BARS,
+            TokenKind.FLATTEN,
+            TokenKind.IS,
+            TokenKind.NULL,
+            TokenKind.EOF,
+        )
+    }
 }

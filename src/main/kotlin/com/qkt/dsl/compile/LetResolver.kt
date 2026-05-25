@@ -13,6 +13,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NumLit
@@ -63,6 +64,7 @@ class LetResolver(
                 )
             is Aggregate -> Aggregate(expr.fn, resolve(expr.series), expr.window)
             is FuncCall -> FuncCall(expr.name, expr.args.map { resolve(it) })
+            is IsNull -> IsNull(resolve(expr.expr), expr.negated)
             is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
             is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
             EntryQty,

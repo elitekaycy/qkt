@@ -14,6 +14,7 @@ qkt is built in numbered phases. Each phase has a post-merge changelog with usag
 - [Phase 26c — Pending-order fill-event lifecycle on MT5](phase-26c-pending-fill-lifecycle.md)
 - [Phase 26b — MT5 native pending family + OCO + trailing](phase-26b-mt5-pending-family.md)
 - [Phase 26a — Pending-entry OCO DSL surface and clock accessors](phase-26a-pending-oco-and-clock.md)
+- [Phase 24 — Risk-sizing primitives](phase-24-risk-sizing-primitives.md)
 - [Phase 23 follow-up — DSL corrections and packaging](phase-23-followup.md)
 - [Phase 23 — DSL catalog expansion](phase-23.md)
 - [Phase 22 — KDoc the public API](phase-22.md)

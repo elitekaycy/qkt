@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OcoEntry
@@ -91,6 +92,7 @@ private fun subst(
                 elseExpr = subst(expr.elseExpr, v, alias),
             )
         is Aggregate -> expr.copy(series = subst(expr.series, v, alias))
+        is IsNull -> expr.copy(expr = subst(expr.expr, v, alias))
         else -> expr
     }
 

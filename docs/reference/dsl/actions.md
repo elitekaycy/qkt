@@ -10,13 +10,18 @@ The verbs that go after `THEN`. Each action is a complete imperative — "do thi
 | `SELL <stream> ...` | Open or add to a short position |
 | `CLOSE <stream>` | Flatten the position on this stream |
 | `CLOSE_ALL` | Flatten every open position |
+| `FLATTEN` | Alias for `CLOSE_ALL` — reads better in session-end / risk-off rules |
 | `CANCEL <stream>` | Cancel any pending orders on this stream |
 | `CANCEL_ALL` | Cancel every pending order |
 | `OCO_ENTRY { leg1, leg2 }` | Two pending entries linked one-cancels-other; whichever fills, the other auto-cancels |
 | `LOG [WARN|ERROR|DEBUG] "<msg>" [field=expr ...]` | Emit a structured log line (default level is INFO) |
 
-!!! info "Phase 24 — more actions coming"
-    `FLATTEN` (as a DSL synonym for `CLOSE_ALL`) lands in Phase 24. See [Planned features](../../planned.md). For now use `CLOSE_ALL`.
+`FLATTEN` and `CLOSE_ALL` compile to the same engine path; pick whichever reads more naturally:
+
+```qkt
+WHEN NOW.hour_utc = 21 THEN FLATTEN          -- session close
+WHEN ACCOUNT.realized_pnl < -1000 THEN FLATTEN   -- daily loss kill switch
+```
 
 ## `BUY <stream>` and `SELL <stream>`
 

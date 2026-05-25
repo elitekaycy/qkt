@@ -53,12 +53,13 @@ RULES
 ## Stream declaration
 
 ```qkt
-<alias> = <BROKER>:<symbol> EVERY <timeframe>
+<alias> = <BROKER>:<symbol> EVERY <timeframe> [ WARMUP <N> BARS ]
 ```
 
 - `<BROKER>` resolves against the broker registry: built-ins (`BACKTEST`, `BYBIT`, `INTERACTIVE`, `ALPACA`) plus any profile in `qkt.config.yaml` (e.g. `EXNESS`, `ICMARKETS`).
 - `<symbol>` is the canonical symbol qkt sees (`EURUSD`, `BTCUSDT`). Per-broker translation (suffix, alias) happens at the broker boundary — see [broker integration](../concepts/broker-integration.md).
 - `<timeframe>` is `1m`, `5m`, `15m`, `1h`, `1d`, etc. Drives the candle aggregator.
+- `WARMUP <N> BARS` (optional) gates every rule that touches this stream until N closed candles arrive — see [streams](dsl/streams.md#per-stream-warmup-warmup-n-bars).
 
 ## Actions
 
@@ -67,7 +68,7 @@ RULES
 | `BUY <stream> [SIZING ...] [BRACKET ...] [STACK ...]` | Long entry |
 | `SELL <stream> [SIZING ...] [BRACKET ...] [STACK ...]` | Short entry |
 | `CLOSE <stream>` | Flatten position on the stream's symbol |
-| `CLOSE_ALL` | Flatten every open position |
+| `CLOSE_ALL` / `FLATTEN` | Flatten every open position (aliases) |
 | `CANCEL <stream>` | Cancel pending orders on the stream's symbol |
 | `CANCEL_ALL` | Cancel all pending orders |
 | `LOG [LEVEL] "<msg>" [field=expr ...]` | Emit a log line — see [logging](../operations/logging.md) and [Phase 15](../phases/index.md) |
@@ -77,6 +78,7 @@ RULES
 ```qkt
 SIZING <quantity>
 SIZING <pct> PCT OF (EQUITY | BALANCE)
+SIZING <N> PCT RISK                    -- sugar over SIZING RISK N/100; requires a BRACKET STOP_LOSS
 SIZING <usd> USD
 SIZING POSITION(<stream>)              -- full current position
 ```
@@ -122,6 +124,7 @@ Pyramiding — one signal becomes N price-triggered entries.
 - Arithmetic: `+ - * / %`
 - Comparison: `< <= > >= = !=`
 - Boolean: `AND OR NOT`
+- Null test: `<expr> IS NULL`, `<expr> IS NOT NULL` — binds at comparison precedence; always yields a boolean
 - Crosses: `<a> CROSSES ABOVE <b>`, `CROSSES BELOW`
 - Ranges: `<x> BETWEEN <lo> AND <hi>`, `<x> IN [<a>, <b>, <c>]`
 - Conditional: `CASE WHEN <cond> THEN <expr> [ELSE <expr>] END`

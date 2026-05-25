@@ -106,6 +106,23 @@ Supported windows:
 
 The parser is liberal — `EVERY 7m` and `EVERY 3h` work fine, even though they're non-standard. But your data fetcher may not have data at non-standard resolutions; check.
 
+## Per-stream warmup (`WARMUP N BARS`)
+
+```qkt
+SYMBOLS
+    gold = EXNESS:XAUUSD EVERY 5m WARMUP 50 BARS
+```
+
+Declares that any rule referencing this stream must wait for N closed candles before firing. In multi-stream strategies each stream gets its own counter; a rule that touches multiple streams fires only after **all** of its referenced streams are warm.
+
+Use it when an indicator or rolling window needs lookback before its output is meaningful — e.g. `EMA(gold.close, 50)` is unreliable until the 50th closed candle.
+
+Limitations:
+
+- Counts live closed candles only. Historical prefetch (so `WARMUP` can be satisfied at startup) lands in Phase 25 with `qkt fetch`.
+- Engine restart resets the counter.
+- `N` must be a positive integer.
+
 ## Stream field access
 
 Every stream exposes these fields:

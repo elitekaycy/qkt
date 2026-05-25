@@ -10,10 +10,8 @@ Every way to specify the size of a `BUY` or `SELL` order. Sizing is the single m
 | `SIZING <pct> PCT OF EQUITY` | Percentage of total equity (cash + open P&L) |
 | `SIZING <pct> PCT OF BALANCE` | Percentage of cash balance only |
 | `SIZING <usd> USD` | Fixed USD notional value |
+| `SIZING <N> PCT RISK` | Sized so a stop-out loses N% of equity (sugar over `SIZING RISK N/100`) |
 | `SIZING POSITION.<stream>` | The full current position quantity (for closes/scaling) |
-
-!!! info "Coming in Phase 24"
-    `SIZING N PCT RISK` — size the position so a stop-out costs exactly N% of equity — is **planned but not yet shipped**. See [Planned features](../../planned.md#phase-24-risk-sizing-primitives) for the workaround.
 
 ## Fixed quantity
 
@@ -70,9 +68,22 @@ SELL btc SIZING POSITION.btc * 0.5     -- partial close: 50% of position
 
 You can multiply, divide, or do any arithmetic on `POSITION.<stream>`.
 
-## Computing risk-based size manually (Phase 24 workaround)
+## Risk-percent sizing
 
-Until `SIZING N PCT RISK` ships, the same effect is achievable with `USD` sizing and a `LET` expression:
+```qkt
+BUY btc SIZING 0.5 PCT RISK
+    BRACKET { STOP_LOSS AT btc.close - atr(btc, 14) * 2, TAKE_PROFIT RR 3 }
+```
+
+Sizes the position so that, if the stop hits, the loss is exactly N% of equity. `SIZING 0.5 PCT RISK` is sugar for `SIZING RISK 0.005` — both compile to the same engine path. Use the PCT form to avoid decimal-shift bugs when expressing small risk fractions: `0.5 PCT RISK` is unambiguous; `RISK 0.005` invites typos.
+
+Requires a `BRACKET` with a `STOP_LOSS` — without one the engine has no stop distance to size against and the order rejects at submission.
+
+**When to use:** the default for portable strategies. Risk-percent sizing scales correctly with account size, stop distance, and instrument volatility.
+
+## Computing risk-based size manually
+
+The same effect is also achievable with `USD` sizing and a `LET` expression — useful when you want the size to factor in something `PCT RISK` doesn't model (e.g. correlation across positions):
 
 ```qkt
 LET stopDist = atr(btc, 14) * 2
@@ -85,7 +96,7 @@ RULES
          BRACKET { STOP_LOSS AT btc.close - stopDist, TAKE_PROFIT AT btc.close + stopDist * 3 }
 ```
 
-This produces the same behaviour as `SIZING 1.0 PCT RISK` will once Phase 24 lands — you compute the size from `equity_at_risk / stop_distance` yourself. Not as elegant, but works today.
+This is equivalent to `SIZING 1.0 PCT RISK` with the same bracket — you compute the size from `equity_at_risk / stop_distance` yourself. Reach for the manual form only when you need a sizing expression `PCT RISK` doesn't express.
 
 ## Defaults via DEFAULTS
 

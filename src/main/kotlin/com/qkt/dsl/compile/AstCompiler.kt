@@ -85,6 +85,7 @@ class AstCompiler {
                 val action = actionCompiler.compile(mergedAction)
                 val isBuy = primary is Buy
                 val isSell = primary is Sell
+                val referencedAliases = collectStreamAliases(rule)
                 CompiledRule(
                     condition = compiledCond,
                     action = action,
@@ -95,6 +96,7 @@ class AstCompiler {
                     onBuyCaptures = plan.captureOnBuy.map { it to letCompiledRhs.getValue(it) },
                     onSellCaptures = plan.captureOnSell.map { it to letCompiledRhs.getValue(it) },
                     onOpenCaptures = plan.captureOnOpen.map { it to letCompiledRhs.getValue(it) },
+                    referencedAliases = referencedAliases,
                 )
             }
 
@@ -110,6 +112,10 @@ class AstCompiler {
 
         val metaRefs = collectMetaRefs(ast, streams)
 
+        val perStreamWarmup: Map<String, Int> =
+            ast.streams.mapNotNull { s -> s.warmupBars?.let { s.alias to it } }.toMap()
+        val warmupGate = WarmupGate(perStreamWarmup)
+
         return CompiledStrategy(
             streams = streams,
             retentionByKey = retentionByKey,
@@ -123,6 +129,7 @@ class AstCompiler {
             pendingStacks = pendingStacks,
             multiPositionPerSymbolSymbols = stackAtSymbols,
             metaRefs = metaRefs,
+            warmupGate = warmupGate,
         )
     }
 
@@ -168,6 +175,7 @@ private class CompiledStrategy(
     override val pendingStacks: PendingStacks,
     override val multiPositionPerSymbolSymbols: Set<String>,
     private val metaRefs: List<MetaRef>,
+    private val warmupGate: WarmupGate,
 ) : DslCompiledStrategy {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
     private var hubBound: Boolean = false
@@ -211,6 +219,8 @@ private class CompiledStrategy(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        warmupGate.onClosedCandle(alias)
+
         val ec =
             EvalContext(
                 candle = candle,
@@ -257,9 +267,10 @@ private class CompiledStrategy(
             }
         }
 
-        // 5. Rules whose ruleAlias matches
+        // 5. Rules whose ruleAlias matches and whose referenced streams are all warm
         for (rule in rules) {
             if (rule.ruleAlias != alias) continue
+            if (!warmupGate.isWarm(rule.referencedAliases)) continue
             for (sig in rule.fire(ec, ctx)) emit(sig)
         }
     }
@@ -278,6 +289,10 @@ private class CompiledStrategy(
     ) {
         if (hubBound) return
         if (candle.symbol !in subscribedSymbols) return
+
+        for ((alias, key) in streams) {
+            if (key.qktSymbol == candle.symbol) warmupGate.onClosedCandle(alias)
+        }
 
         val ec =
             EvalContext(
@@ -334,6 +349,7 @@ private class CompiledStrategy(
 
         // 5. Rules
         for (rule in rules) {
+            if (!warmupGate.isWarm(rule.referencedAliases)) continue
             for (sig in rule.fire(ec, ctx)) emit(sig)
         }
     }

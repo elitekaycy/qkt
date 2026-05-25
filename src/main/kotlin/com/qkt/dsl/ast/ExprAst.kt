@@ -113,3 +113,15 @@ data object StackEntryRef : ExprAst
  * expression. Rejected by [com.qkt.dsl.compile.ExprCompiler] outside that context.
  */
 data object EntryQty : ExprAst
+
+/**
+ * Phase 24: explicit null test against [com.qkt.dsl.compile.Value.Undefined].
+ *
+ * `<expr> IS NULL` evaluates to `Value.Bool(true)` iff the inner expression yields
+ * `Value.Undefined`. `IS NOT NULL` is the inverse. The result is always a defined
+ * `Value.Bool` — `IsNull` never propagates undefined itself.
+ */
+data class IsNull(
+    val expr: ExprAst,
+    val negated: Boolean,
+) : ExprAst

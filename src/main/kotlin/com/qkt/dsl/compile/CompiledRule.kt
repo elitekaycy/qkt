@@ -17,6 +17,7 @@ class CompiledRule(
     private val onBuyCaptures: List<Pair<String, CompiledExpr>>,
     private val onSellCaptures: List<Pair<String, CompiledExpr>>,
     private val onOpenCaptures: List<Pair<String, CompiledExpr>>,
+    val referencedAliases: Set<String>,
 ) {
     fun fire(
         ec: EvalContext,
