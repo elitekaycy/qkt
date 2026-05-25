@@ -10,10 +10,19 @@ import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
+import com.qkt.indicators.catalog.VWAP
 import com.qkt.indicators.catalog.WMA
 import java.math.BigDecimal
 
-enum class IndicatorInput { NUMERIC_SERIES, CANDLE_SERIES }
+/**
+ * Source-of-data shape an indicator expects.
+ *
+ * - [NUMERIC_SERIES] — single `BigDecimal` per closed candle (close, open, …).
+ * - [CANDLE_SERIES] — the whole closed candle (e.g. ATR needs all of OHLC).
+ * - [TICK_SERIES] — every raw tick, not just candle-close values (e.g. VWAP).
+ *   The DSL exposes this via the synthetic `<alias>.tick` series argument.
+ */
+enum class IndicatorInput { NUMERIC_SERIES, CANDLE_SERIES, TICK_SERIES }
 
 data class IndicatorSpec(
     val name: String,
@@ -127,6 +136,11 @@ object IndicatorRegistry {
                         override val isReady: Boolean get() = b.isReady
                         override val warmupBars: Int = b.warmupBars
                     }
+                },
+            // ---- Volume-weighted average price (tick-fed) ----
+            "VWAP" to
+                IndicatorSpec("VWAP", IndicatorInput.TICK_SERIES, arity = 2) { args ->
+                    VWAP(period = args[0].toInt())
                 },
             // ---- Donchian rolling extremes ----
             "HIGHEST" to

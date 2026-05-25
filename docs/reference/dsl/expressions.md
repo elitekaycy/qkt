@@ -89,13 +89,20 @@ Out-of-range returns `null` (which makes any containing comparison `false`).
 See [Indicators](indicators.md) for the full catalog.
 
 ```qkt
-ema(btc.close, 9)
+ema(btc.close, 9)            -- numeric series (closed-candle field)
 rsi(btc.close, 14)
-atr(btc, 14)
+atr(btc.candle, 14)          -- candle series (needs OHLC)
 highest(btc.close, 20)
+vwap(btc.tick, 100)          -- tick series (per-tick price + volume, not candle close)
 ```
 
 Treat them as numbers — they slot into any arithmetic context.
+
+### Series argument shape per indicator kind
+
+- **Numeric** (`ema`, `sma`, `rsi`, …): take a stream field like `btc.close`. Strategy-author picks which OHLCV field to feed.
+- **Candle** (`atr`): take `<stream>.candle` (the whole OHLCV record). The indicator reads multiple fields internally.
+- **Tick** (`vwap`): take `<stream>.tick` (raw ticks, not candle-aggregated). Updates on every tick, not only on candle close. Requires `Tick.volume` to be present — live MT5/Bybit feeds carry it; backtest feeds need to provide it explicitly.
 
 ## Account references
 
