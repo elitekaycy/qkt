@@ -1,0 +1,9 @@
+# Files copied by `qkt create template --kind mt5`.
+# One relative path per line. Entries ending in .tmpl have {{TOKENS}} substituted
+# and the .tmpl suffix stripped on write.
+.env.example.tmpl
+Makefile.tmpl
+docker-compose.yml.tmpl
+qkt.config.yaml.tmpl
+strategies/README.md.tmpl
+strategies/ema_cross.qkt
