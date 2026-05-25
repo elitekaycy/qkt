@@ -43,7 +43,6 @@ import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
-import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -60,7 +59,6 @@ import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
-import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
@@ -70,48 +68,29 @@ import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.WhenThen
 
 /**
- * Phase 39: one meta-field reference collected from a strategy AST.
+ * Collect every stream alias the rule's condition or action references.
  *
- * Captured at compile time and replayed at [CompiledStrategy.bindToHub] against the
- * [com.qkt.instrument.InstrumentRegistry] — so a strategy that says `gold.tick_size`
- * but runs without a registry entry for `EXNESS:XAUUSD` fails to bind with a single
- * pointed error instead of silently misbehaving at first eval.
+ * Used by Phase 24's [WarmupGate] to decide whether a rule is allowed to fire.
+ * A rule is gated by the union of aliases its condition expression, action target,
+ * and any nested expressions (BRACKET, OCO, SIZING, STACK_AT) touch.
+ *
+ * Exhaustive over the sealed hierarchies - a new AST variant breaks the build here.
  */
-internal data class MetaRef(
-    val stream: String,
-    val field: String,
-    val qktSymbol: String,
-)
-
-/**
- * Walk every [ExprAst] reachable from [ast] and return the meta-field [StreamFieldRef]s
- * paired with the `HubKey.qktSymbol` they resolve against. Exhaustive over the sealed
- * `ExprAst` / `ActionAst` / `SizingAst` / `OrderTypeAst` / `ChildPriceAst` / `TifAst` /
- * `StackAst` hierarchies — `when` blocks omit `else` so any new variant breaks the build.
- */
-internal fun collectMetaRefs(
-    ast: StrategyAst,
-    streams: Map<String, HubKey>,
-): List<MetaRef> {
-    val out = mutableListOf<MetaRef>()
+fun collectStreamAliases(rule: WhenThen): Set<String> {
+    val out = mutableSetOf<String>()
 
     fun walkExpr(e: ExprAst) {
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
-            is Ref, is NowAccessor, is AccountRef, is PositionRef, is StateAccessor, StackEntryRef, EntryQty -> Unit
-            is StreamFieldRef -> {
-                if (e.field in ExprCompiler.META_FIELDS) {
-                    val sym = streams[e.stream]?.qktSymbol
-                    if (sym != null) out.add(MetaRef(e.stream, e.field, sym))
-                }
-            }
+            is Ref, is NowAccessor, is AccountRef, is StateAccessor, StackEntryRef, EntryQty -> Unit
+            is PositionRef -> out.add(e.stream)
+            is StreamFieldRef -> out.add(e.stream)
             is IndicatorCall -> e.args.forEach { walkExpr(it) }
             is BinaryOp -> {
                 walkExpr(e.lhs)
                 walkExpr(e.rhs)
             }
             is UnaryOp -> walkExpr(e.arg)
-            is IsNull -> walkExpr(e.expr)
             is CmpOp -> {
                 walkExpr(e.lhs)
                 walkExpr(e.rhs)
@@ -130,14 +109,15 @@ internal fun collectMetaRefs(
                 walkExpr(e.rhs)
             }
             is CaseWhen -> {
-                e.branches.forEach { (cond, value) ->
-                    walkExpr(cond)
-                    walkExpr(value)
+                e.branches.forEach { (c, v) ->
+                    walkExpr(c)
+                    walkExpr(v)
                 }
                 walkExpr(e.elseExpr)
             }
             is Aggregate -> walkExpr(e.series)
             is FuncCall -> e.args.forEach { walkExpr(it) }
+            is IsNull -> walkExpr(e.expr)
         }
     }
 
@@ -150,14 +130,13 @@ internal fun collectMetaRefs(
             is SizePctBalance -> walkExpr(s.frac)
             is SizeRiskFrac -> walkExpr(s.frac)
             is SizeRiskAbs -> walkExpr(s.usd)
-            is SizePositionFull -> Unit
+            is SizePositionFull -> out.add(s.stream)
         }
     }
 
     fun walkOrderType(o: OrderTypeAst?) {
         when (o) {
-            null -> Unit
-            Market -> Unit
+            null, Market -> Unit
             is Limit -> walkExpr(o.price)
             is Stop -> walkExpr(o.price)
             is StopLimit -> {
@@ -193,8 +172,7 @@ internal fun collectMetaRefs(
 
     fun walkTif(t: TifAst?) {
         when (t) {
-            null -> Unit
-            Gtc, Ioc, Fok, Day -> Unit
+            null, Gtc, Ioc, Fok, Day -> Unit
             is Gtd -> walkExpr(t.until)
         }
     }
@@ -229,10 +207,16 @@ internal fun collectMetaRefs(
     fun walkAction(a: ActionAst) {
         when (a) {
             CloseAll, CancelAll -> Unit
-            is Close -> Unit
-            is Cancel -> Unit
-            is Buy -> walkOpts(a.opts)
-            is Sell -> walkOpts(a.opts)
+            is Close -> out.add(a.stream)
+            is Cancel -> out.add(a.stream)
+            is Buy -> {
+                out.add(a.stream)
+                walkOpts(a.opts)
+            }
+            is Sell -> {
+                out.add(a.stream)
+                walkOpts(a.opts)
+            }
             is Log -> a.fields.values.forEach { walkExpr(it) }
             is Block -> a.actions.forEach { walkAction(it) }
             is OcoEntry -> {
@@ -242,17 +226,7 @@ internal fun collectMetaRefs(
         }
     }
 
-    fun walkRule(r: RuleAst) {
-        when (r) {
-            is WhenThen -> {
-                walkExpr(r.cond)
-                walkAction(r.action)
-            }
-        }
-    }
-
-    ast.lets.forEach { walkExpr(it.expr) }
-    ast.rules.forEach { walkRule(it) }
-
-    return out.distinct()
+    walkExpr(rule.cond)
+    walkAction(rule.action)
+    return out.toSet()
 }

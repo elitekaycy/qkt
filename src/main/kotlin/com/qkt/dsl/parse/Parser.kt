@@ -1,5 +1,6 @@
 package com.qkt.dsl.parse
 
+import com.qkt.common.Money
 import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
@@ -36,6 +37,7 @@ import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
@@ -358,6 +360,12 @@ class Parser(
                         }
                     val rhs = parseAddExpr()
                     lhs = Crosses(dir, lhs, rhs)
+                }
+                TokenKind.IS -> {
+                    advance()
+                    val negated = match(TokenKind.NOT)
+                    expect(TokenKind.NULL, "expected NULL after IS${if (negated) " NOT" else ""}")
+                    lhs = IsNull(lhs, negated)
                 }
                 else -> return lhs
             }
@@ -705,6 +713,7 @@ class Parser(
             k == TokenKind.SELL ||
             k == TokenKind.CLOSE ||
             k == TokenKind.CLOSE_ALL ||
+            k == TokenKind.FLATTEN ||
             k == TokenKind.CANCEL ||
             k == TokenKind.CANCEL_ALL ||
             k == TokenKind.LOG ||
@@ -747,6 +756,10 @@ class Parser(
                 Close(stream)
             }
             TokenKind.CLOSE_ALL -> {
+                advance()
+                CloseAll
+            }
+            TokenKind.FLATTEN -> {
                 advance()
                 CloseAll
             }
@@ -1126,6 +1139,18 @@ class Parser(
                         advance()
                         SizeNotional(e)
                     }
+                    TokenKind.PCT -> {
+                        advance()
+                        expect(TokenKind.RISK, "expected RISK after PCT in SIZING")
+                        require(e is NumLit) {
+                            "SIZING N PCT RISK requires a numeric literal for N, got non-literal expression"
+                        }
+                        val pct = e.value
+                        require(pct.signum() > 0) {
+                            "SIZING N PCT RISK requires N > 0, got $pct"
+                        }
+                        SizeRiskFrac(NumLit(pct.divide(BigDecimal(100), Money.CONTEXT)))
+                    }
                     TokenKind.PERCENT -> {
                         advance()
                         expect(TokenKind.OF, "expected OF after %")
@@ -1186,12 +1211,26 @@ class Parser(
                     val tfUnit = expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
                     "$tfNum$tfUnit"
                 }
+            val warmupBars: Int? =
+                if (peek().kind == TokenKind.WARMUP) {
+                    advance()
+                    val numToken = expect(TokenKind.NUMBER, "expected integer bar count after WARMUP")
+                    val n =
+                        numToken.lexeme.toIntOrNull()
+                            ?: error("WARMUP count must be a positive integer, got '${numToken.lexeme}'")
+                    if (n <= 0) error("WARMUP count must be > 0, got $n")
+                    expect(TokenKind.BARS, "expected BARS after WARMUP count")
+                    n
+                } else {
+                    null
+                }
             out.add(
                 StreamDecl(
                     alias = alias,
                     broker = broker,
                     symbol = symbol,
                     timeframe = timeframe,
+                    warmupBars = warmupBars,
                 ),
             )
         } while (match(TokenKind.COMMA))

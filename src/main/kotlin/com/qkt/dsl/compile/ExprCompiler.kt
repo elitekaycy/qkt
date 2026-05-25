@@ -15,6 +15,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
@@ -52,6 +53,7 @@ class ExprCompiler(
             is StateAccessor -> compileStateAccessor(expr)
             is Between -> compileBetween(expr, ruleAlias)
             is InList -> compileInList(expr, ruleAlias)
+            is IsNull -> compileIsNull(expr, ruleAlias)
             is CaseWhen -> compileCaseWhen(expr, ruleAlias)
             is Crosses -> compileCrosses(expr, ruleAlias)
             is FuncCall -> compileFuncCall(expr, ruleAlias)
@@ -198,6 +200,18 @@ class ExprCompiler(
                 }
                 Value.Bool(hit)
             }
+        }
+    }
+
+    private fun compileIsNull(
+        expr: IsNull,
+        ruleAlias: String?,
+    ): CompiledExpr {
+        val inner = compile(expr.expr, ruleAlias)
+        return CompiledExpr { ctx ->
+            val v = inner.evaluate(ctx)
+            val isUndef = v is Value.Undefined
+            Value.Bool(if (expr.negated) !isUndef else isUndef)
         }
     }
 
