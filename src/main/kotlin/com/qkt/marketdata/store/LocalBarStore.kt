@@ -199,7 +199,12 @@ class LocalBarStore(
         broker: String,
         symbol: String,
         timeframe: String,
-    ): Path = root.resolve("bars").resolve(broker).resolve(symbol).resolve(timeframe)
+    ): Path =
+        root
+            .resolve("bars")
+            .resolve(broker)
+            .resolve(symbol)
+            .resolve(timeframe)
 
     private fun manifestPath(
         broker: String,

@@ -9,8 +9,6 @@ import com.qkt.marketdata.live.bybit.BybitKlineClient
 import com.qkt.marketdata.live.mt5.Mt5BarFetcher
 import com.qkt.marketdata.store.LocalBarStore
 import java.nio.file.Path
-import java.time.Duration
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -78,7 +76,10 @@ class FetchCommand(
         val fetcher = buildFetcher(broker) ?: return ExitCodes.USER_ERROR
         val store = LocalBarStore()
 
-        val totalDays = java.time.temporal.ChronoUnit.DAYS.between(fromDate, toDate.plusDays(1)).toInt()
+        val totalDays =
+            java.time.temporal.ChronoUnit.DAYS
+                .between(fromDate, toDate.plusDays(1))
+                .toInt()
         println("qkt fetch: $broker:$symbol @ $tfArg from $fromDate to $toDate ($totalDays days)")
 
         var fetched = 0
@@ -159,13 +160,13 @@ class FetchCommand(
                 val configPath =
                     args.option("config")?.let { Path.of(it) }
                         ?: Config.locate() ?: run {
-                            System.err.println(
-                                "qkt: no qkt.config.yaml found (need it to resolve MT5 broker '$broker'); " +
-                                    "pass --config <path> or place the file under " +
-                                    Config.defaultSearchPaths().joinToString(", "),
-                            )
-                            return null
-                        }
+                        System.err.println(
+                            "qkt: no qkt.config.yaml found (need it to resolve MT5 broker '$broker'); " +
+                                "pass --config <path> or place the file under " +
+                                Config.defaultSearchPaths().joinToString(", "),
+                        )
+                        return null
+                    }
                 val cfg = Config.load(configPath)
                 val profiles =
                     try {

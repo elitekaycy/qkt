@@ -46,8 +46,7 @@ class LocalMarketSourceBarStoreTest {
                     override fun close() {}
                 }
 
-            override fun resolveRange(request: MarketRequest): Pair<Instant, Instant> =
-                request.from!! to request.to!!
+            override fun resolveRange(request: MarketRequest): Pair<Instant, Instant> = request.from!! to request.to!!
 
             override fun prefetch(request: MarketRequest) {}
 
