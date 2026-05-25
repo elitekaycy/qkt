@@ -26,7 +26,10 @@ class TrailingStopEndToEndTest {
     private fun compile(src: String) =
         when (val r = Dsl.parse(src)) {
             is ParseResult.Success -> AstCompiler().compile(r.value)
-            is ParseResult.Failure -> error("parse failed: ${r.errors.joinToString("\n") { "${it.line}:${it.col} ${it.message}" }}")
+            is ParseResult.Failure ->
+                error(
+                    "parse failed: ${r.errors.joinToString("\n") { "${it.line}:${it.col} ${it.message}" }}",
+                )
         }
 
     @Test
