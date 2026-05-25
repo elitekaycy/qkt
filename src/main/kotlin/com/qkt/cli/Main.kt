@@ -18,6 +18,7 @@ internal fun runMain(argv: Array<String>): Int {
             "brokers" -> BrokersCommand(args).run()
             "editor" -> EditorCommand(args).run()
             "audit-ticks" -> AuditTicksCommand(args).run()
+            "fetch" -> FetchCommand(args).run()
             "daemon" -> DaemonCommand(args).run()
             "logs" -> LogsCommand(args).run()
             "status" -> StatusCommand(args).run()
@@ -69,6 +70,10 @@ private fun printHelp() {
         VENUE / FEED
             brokers list            list configured broker profiles
             audit-ticks ...         capture and audit live MT5 ticks
+            fetch BROKER:SYMBOL --tf <tf> --from <date> --to <date>
+                                    backfill historical bars into the local store
+            fetch BROKER:SYMBOL --tf <tf> --last 30d
+                                    same, but for the last N days
 
         EDITOR INTEGRATIONS
             editor list             show supported editors + what's detected on this machine
