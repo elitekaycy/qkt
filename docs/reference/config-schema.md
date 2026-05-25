@@ -89,6 +89,28 @@ If a profile name doesn't match a built-in and doesn't `extends:` one, you must 
 
 Everything else has a default.
 
+## Risk
+
+Daemon-wide and per-strategy risk caps.
+
+```yaml
+risk:
+  max_daily_loss: "1000"          # daemon-global daily realized-P&L floor (0 to disable)
+
+  # Phase 25D: per-strategy overrides keyed by strategy name. Each field is optional.
+  per_strategy:
+    ema_cross:
+      max_daily_loss: "500"        # halts only ema_cross when its realized loss exceeds $500
+      max_position_size: "1.0"     # rejects ema_cross orders that push |position| above 1.0
+      max_open_positions: 3        # rejects ema_cross new-symbol entries past 3 concurrent positions
+    rsi_mean_reversion:
+      max_daily_loss: "300"
+```
+
+Per-strategy caps **layer on top of** the global rules — both apply. A strategy without an entry under `per_strategy` only sees the global rules. A strategy with an entry gets its own per-strategy halt (`MaxStrategyDailyLoss`) and per-strategy order rules (`MaxStrategyPositionSize`, `MaxStrategyOpenPositions`) added in addition. The global `max_daily_loss` always halts *every* strategy on breach.
+
+`max_open_positions` counts symbols with a non-zero position; opening on a new symbol when at the cap is rejected. Adding to an existing-symbol position is always permitted by this rule (the position-size rule still applies).
+
 ## Inspect resolved profiles
 
 ```bash
