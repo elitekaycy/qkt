@@ -12,6 +12,14 @@ Three paths from clone to running strategy. Pick the one that matches what you w
 
     [:octicons-arrow-right-24: Quickstart](quickstart.md)
 
+- :material-package-variant:{ .lg .middle } **Scaffold a project**
+
+    ---
+
+    `qkt create template ./my-strategies` writes a working compose tree + Makefile + sample strategy in one command.
+
+    [:octicons-arrow-right-24: Scaffold a project](scaffold.md)
+
 - :material-test-tube:{ .lg .middle } **Deploy paper**
 
     ---
