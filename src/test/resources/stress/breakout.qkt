@@ -1,0 +1,13 @@
+STRATEGY breakout VERSION 1
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m WARMUP 20 BARS
+
+RULES
+    WHEN btc.close > highest(btc.high, 20)
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 1
+
+    WHEN POSITION.btc > 0
+     AND btc.close < lowest(btc.low, 10)
+    THEN CLOSE btc
