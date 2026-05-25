@@ -101,6 +101,7 @@ class DaemonCommand(
                     candleHub = sharedHub,
                     brokerFactories = brokerFactories,
                     maxDailyLoss = cfg.maxDailyLoss,
+                    perStrategyRisk = cfg.perStrategyRisk,
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = cfg.notify.telegram.events,
