@@ -31,6 +31,7 @@ import com.qkt.dsl.ast.Gtc
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
@@ -110,6 +111,7 @@ internal fun collectMetaRefs(
                 walkExpr(e.rhs)
             }
             is UnaryOp -> walkExpr(e.arg)
+            is IsNull -> walkExpr(e.expr)
             is CmpOp -> {
                 walkExpr(e.lhs)
                 walkExpr(e.rhs)
