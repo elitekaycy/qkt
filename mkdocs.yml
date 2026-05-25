@@ -178,6 +178,7 @@ nav:
       - KDoc style: contributing/kdoc-style.md
       - Phase workflow: contributing/phase-workflow.md
       - Adding a broker: contributing/adding-a-broker.md
+      - Stress tests: contributing/stress-tests.md
       - Release changelogs:
           - phases/index.md
           - Phase 23 — DSL catalog expansion: phases/phase-23.md
