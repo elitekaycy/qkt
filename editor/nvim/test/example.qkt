@@ -1,0 +1,34 @@
+-- editor/nvim smoke fixture: exercises every highlight group at least once.
+-- If you change syntax/qkt.vim and this file still highlights every token the
+-- way you intend in vim, the change probably did what you wanted.
+
+STRATEGY example VERSION 1
+
+DEFAULTS {
+  SIZING = 0.5 PCT RISK
+  TIF = GTC
+}
+
+SYMBOLS
+  gold = EXNESS:XAUUSD EVERY 5m WARMUP 50 BARS,
+  spx  = BACKTEST:SPX500 EVERY 1h
+
+LET fast = ema(gold.close, 9)
+LET slow = ema(gold.close, 21)
+
+RULES
+  WHEN fast IS NOT NULL
+   AND slow IS NOT NULL
+   AND CROSSES(fast, slow) ABOVE
+   AND POSITION.gold = 0
+  THEN BUY gold
+       BRACKET { STOP LOSS BY atr(gold, 14) * 2, TAKE PROFIT BY atr(gold, 14) * 4 }
+
+  WHEN NOW.hour_utc = 21 THEN FLATTEN
+
+  /* end-of-day kill switch */
+  WHEN ACCOUNT.realized_pnl < -1000 THEN FLATTEN
+
+  # numeric-literal smoke: 100, 1.5, 1e-3, TRUE, FALSE
+  WHEN gold.close BETWEEN 1800 AND 2200
+  THEN LOG "in range" price=gold.close
