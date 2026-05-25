@@ -44,6 +44,14 @@ Task-oriented walkthroughs. Each page is one problem and one copy-paste-able sol
 
     [:octicons-arrow-right-24: Deploy live](deploy-exness.md)
 
+- :material-code-tags:{ .lg .middle } **Install editor integrations**
+
+    ---
+
+    `qkt editor install vscode|nvim|vim|sublime` — one command, no manual copies.
+
+    [:octicons-arrow-right-24: Install for your editor](editor-integrations.md)
+
 </div>
 
 ## Need something else?
