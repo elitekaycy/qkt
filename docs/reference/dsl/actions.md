@@ -36,7 +36,7 @@ BUY <stream>
     [ TIF <gtc|ioc|fok|day> ]
 ```
 
-`TRAILING_STOP BY <amount>` is planned for Phase 25 — see [Planned features](../../planned.md).
+Trailing-stop order types ship as `ORDER_TYPE = TRAILING BY <distance>` and `ORDER_TYPE = TRAILING PCT <fraction>` (see [Trailing stop](../../how-to/add-stop-loss.md#trailing-stop) in the stop-loss recipe).
 
 ### Minimal BUY (uses DEFAULTS)
 
@@ -248,7 +248,7 @@ BUY btc SIZING 0.1 STACK 3 SPACING 200 ABOVE WITHIN 4h
 - **`CLOSE` doesn't take a size.** It closes the whole position. To exit partially, use a `BRACKET` with scale-out targets or a `SELL` that fires when long.
 - **Edge-trigger gotcha for entries.** Without `AND POSITION.<stream> = 0`, a `BUY` rule fires once on signal — then if the signal stays true, it doesn't re-fire (edge-trigger). If you want re-entry capability, ensure the position guard is in place.
 - **`LOG` is not an exit.** Logging doesn't change strategy state. Use `CLOSE` or `CANCEL` for actions; `LOG` for the audit trail.
-- **`TRAILING_STOP` not yet wired** — Phase 25. See [Planned features](../../planned.md).
+- **`TRAILING` order type requires the explicit `ORDER_TYPE =` keyword.** Use `BUY btc ORDER_TYPE = TRAILING BY 50` — bare `BUY btc TRAILING BY 50` parses the BUY without an order type and chokes on `TRAILING` as the next statement.
 
 ## What this composes with
 

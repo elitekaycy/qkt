@@ -61,23 +61,23 @@ The stop adapts: wide when the market's choppy, tight when calm. The 3× ATR tar
 
 ## Trailing stop
 
-!!! info "Coming in Phase 25"
-    `TRAILING_STOP BY <amount>` (and `TRAILING_STOP BY <pct> PCT`) are **planned but not yet wired**. The `TRAILING` token is recognised by the parser; the action-compiler → broker dispatch path is the missing piece. See [Planned features](../planned.md).
+`TRAILING BY <distance>` and `TRAILING PCT <fraction>` are first-class order types. Use them as the order type on `BUY` / `SELL`:
 
-    **Workaround today** — track the position's running high in a rule and close manually when price retreats by the trail distance:
+```qkt
+-- Absolute trail: stop follows the favorable price by a fixed distance.
+BUY btc SIZING 0.1 ORDER_TYPE = TRAILING BY atr(btc, 14) * 2
 
-    ```qkt
-    LET runHigh   = highest(btc.close, 50)
-    LET trailDist = atr(btc, 14) * 2
+-- Percent trail: stop follows by a fraction (0.05 = 5%).
+SELL btc SIZING 0.1 ORDER_TYPE = TRAILING PCT 0.05
+```
 
-    RULES
-        WHEN POSITION.btc > 0
-         AND btc.close < runHigh - trailDist
-        THEN CLOSE btc
-             LOG "trailing-stop exit at {price}" price=btc.close
-    ```
+**Semantics:** The trail level ratchets in the favorable direction (high-water mark for a SELL exit, low-water mark for a BUY entry/stop) and fires when price reverses by the trail distance.
 
-    This produces the same behaviour as `TRAILING_STOP BY atr(btc, 14) * 2` will once Phase 25 lands. The `highest(btc.close, 50)` is the lookback window — long enough to track the position's peak, short enough that old highs roll off.
+**Engine-managed vs broker-managed:**
+- **MT5 brokers** route trailing stops natively via the gateway (`slDistance` in MT5 points).
+- **Other brokers** (Paper, Bybit) fall back to engine-managed: `OrderManager` tracks the HWM/LWM and fires a market order when the trail level is breached. Same DSL, same observable behavior.
+
+PERCENT mode requires a live mid-price for the symbol; MT5's native path needs a `MarketPriceProvider`. Engine-managed fallback is always available.
 
 ## Engine-managed vs venue-managed
 

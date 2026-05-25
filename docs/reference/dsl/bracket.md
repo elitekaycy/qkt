@@ -100,21 +100,14 @@ The engine attaches the stop atomically with the entry. No take-profit means the
 
 ## Trailing stop
 
-!!! info "Coming in Phase 25"
-    `TRAILING_STOP BY <amount>` is **planned but not yet shipped**. The `TRAILING` token is recognised by the parser but the action-compiler → broker dispatch path isn't wired. See [Planned features](../../planned.md#phase-25-operator-tooling-dsl-extensions).
+Trailing stops aren't a `BRACKET` leg — they're an order type on the entry itself:
 
-    **Workaround today:** track the position high in a rule and close manually when price retreats by the trail distance:
+```qkt
+BUY btc SIZING 0.1 ORDER_TYPE = TRAILING BY atr(btc, 14) * 2
+SELL btc SIZING 0.1 ORDER_TYPE = TRAILING PCT 0.05
+```
 
-    ```qkt
-    LET runHigh = highest(btc.close, 50)
-    LET trailDist = atr(btc, 14) * 2
-
-    RULES
-        WHEN POSITION.btc > 0
-         AND btc.close < runHigh - trailDist
-        THEN CLOSE btc
-             LOG "trailing-stop exit at {price}" price=btc.close
-    ```
+See [the stop-loss recipe](../../how-to/add-stop-loss.md#trailing-stop) for semantics and engine-vs-broker routing.
 
 ## How the bracket reaches the broker
 
