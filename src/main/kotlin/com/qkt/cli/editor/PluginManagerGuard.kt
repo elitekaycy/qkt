@@ -24,7 +24,6 @@ class PluginManagerGuard(
         LAZY("lazy.nvim", "lazy.nvim"),
         PACKER("packer", "packer.nvim"),
         VIM_PLUG("vim-plug", "vim-plug"),
-        ;
     }
 
     fun detect(target: EditorTarget): Set<Manager> =

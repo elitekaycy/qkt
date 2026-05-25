@@ -65,7 +65,12 @@ class EditorCommand(
         detector: EditorDetector,
     ): List<EditorTarget>? {
         if (arg.equals("all", ignoreCase = true)) {
-            val detected = detector.all().filterValues { it }.keys.toList()
+            val detected =
+                detector
+                    .all()
+                    .filterValues { it }
+                    .keys
+                    .toList()
             if (detected.isEmpty()) {
                 System.err.println("qkt: no supported editor detected on this machine")
                 return emptyList()
@@ -90,7 +95,11 @@ class EditorCommand(
         val managers = guard.detect(target)
         if (managers.isEmpty()) return true
         println()
-        println("qkt: detected plugin manager(s) in your ${target.displayName} config: ${managers.joinToString(", ") { it.displayName }}")
+        println(
+            "qkt: detected plugin manager(s) in your ${target.displayName} config: ${managers.joinToString(
+                ", ",
+            ) { it.displayName }}",
+        )
         println("     A sideloaded install bypasses your plugin manager — recommended snippets:")
         for (m in managers) printSnippet(m)
         if (assumeYes) {

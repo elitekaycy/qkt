@@ -46,7 +46,8 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
+        val installer =
+            EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         val result = installer.install(EditorTarget.NVIM)
 
@@ -67,7 +68,8 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
+        val installer =
+            EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         installer.install(EditorTarget.NVIM)
         // Mutate the source file (simulating an upgrade) and re-install.
@@ -86,7 +88,8 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
+        val installer =
+            EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         val result = installer.install(EditorTarget.VIM)
 
@@ -103,7 +106,8 @@ class EditorInstallerTest {
         val root = fakeEditorRoot(tmp.resolve("share/editor"))
         val home = tmp.resolve("home")
         Files.createDirectories(home)
-        val installer = EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
+        val installer =
+            EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
 
         val result = installer.install(EditorTarget.SUBLIME)
 
@@ -166,7 +170,11 @@ class EditorInstallerTest {
         assertThat(result).isNotNull
         assertThat(recordedCommands).hasSize(1)
         assertThat(recordedCommands.single())
-            .containsExactly(codeBin.toString(), "--install-extension", root.resolve("vscode/qkt-0.1.0.vsix").toString())
+            .containsExactly(
+                codeBin.toString(),
+                "--install-extension",
+                root.resolve("vscode/qkt-0.1.0.vsix").toString(),
+            )
     }
 
     @Test

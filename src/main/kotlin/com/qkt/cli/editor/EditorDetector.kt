@@ -27,8 +27,7 @@ class EditorDetector(
     fun all(): Map<EditorTarget, Boolean> = EditorTarget.entries.associateWith { detect(it) }
 
     /** Path to a vscode-family CLI on `$PATH`, or null. Tries code, code-insiders, codium. */
-    fun vscodeCli(): Path? =
-        sequenceOf("code", "code-insiders", "codium").firstNotNullOfOrNull { pathLookup(it) }
+    fun vscodeCli(): Path? = sequenceOf("code", "code-insiders", "codium").firstNotNullOfOrNull { pathLookup(it) }
 
     fun nvimConfigDir(): Path {
         val xdg = env["XDG_CONFIG_HOME"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }

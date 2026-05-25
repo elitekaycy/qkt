@@ -42,7 +42,11 @@ data class EditorManifest(
         EditorManifest(installs.filterNot { it.target == target })
 
     companion object {
-        private val JSON = Json { prettyPrint = true; ignoreUnknownKeys = true }
+        private val JSON =
+            Json {
+                prettyPrint = true
+                ignoreUnknownKeys = true
+            }
 
         fun defaultPath(
             env: Map<String, String> = System.getenv(),
