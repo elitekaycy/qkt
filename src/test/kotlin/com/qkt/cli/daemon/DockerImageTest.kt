@@ -18,6 +18,7 @@ class DockerImageTest {
         val output = process.inputStream.bufferedReader().readText()
         process.waitFor(60, TimeUnit.SECONDS)
         assertThat(process.exitValue()).withFailMessage("output=$output").isEqualTo(0)
-        assertThat(output.trim()).isEqualTo("qkt ${BuildInfo.VERSION}")
+        assertThat(output.trim()).startsWith("qkt ${BuildInfo.VERSION} (")
+        assertThat(output.trim()).matches("qkt \\S+ \\(\\S+\\) built \\S+")
     }
 }

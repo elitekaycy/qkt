@@ -33,10 +33,11 @@ class EndToEndCliTest {
     }
 
     @Test
-    fun `--version prints qkt version`() {
+    fun `--version prints qkt version sha and build timestamp`() {
         val (code, stdout, _) = invoke("--version")
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(stdout.trim()).isEqualTo("qkt ${BuildInfo.VERSION}")
+        assertThat(stdout.trim()).startsWith("qkt ${BuildInfo.VERSION} (")
+        assertThat(stdout.trim()).matches("qkt \\S+ \\(\\S+\\) built \\S+")
     }
 
     @Test

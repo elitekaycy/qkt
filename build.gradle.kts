@@ -1,3 +1,6 @@
+import java.io.ByteArrayOutputStream
+import java.time.Instant
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
@@ -7,7 +10,7 @@ plugins {
 }
 
 group = "com.qkt"
-version = "0.1.0-SNAPSHOT"
+version = rootProject.file("VERSION").readText().trim()
 
 java {
     toolchain { languageVersion.set(JavaLanguageVersion.of(21)) }
@@ -75,6 +78,68 @@ tasks.register<JavaExec>("runStateDemo") {
     description = "Write a sample engine-state snapshot to /tmp/qkt-demo-state and list the files"
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.qkt.tools.persistence.StateDemoKt")
+}
+
+val generatedResourcesDir = layout.buildDirectory.dir("generated/resources/build-info")
+
+val generateBuildInfo by tasks.registering {
+    val outDir = generatedResourcesDir
+    val versionProvider = providers.provider { project.version.toString() }
+    val gitShaProvider =
+        providers.of(GitShaSource::class) {
+            parameters.repoRoot.set(rootProject.projectDir)
+        }
+    outputs.dir(outDir)
+    inputs.property("version", versionProvider)
+    inputs.property("gitSha", gitShaProvider)
+    doLast {
+        val dir = outDir.get().asFile
+        dir.mkdirs()
+        val props = dir.resolve("build-info.properties")
+        val timestamp = Instant.now().toString()
+        props.writeText(
+            """
+            |version=${versionProvider.get()}
+            |gitSha=${gitShaProvider.get()}
+            |buildTimestamp=$timestamp
+            |
+            """.trimMargin(),
+        )
+    }
+}
+
+sourceSets.named("main") {
+    resources.srcDir(generatedResourcesDir)
+}
+
+tasks.named("processResources") {
+    dependsOn(generateBuildInfo)
+}
+
+abstract class GitShaSource : ValueSource<String, GitShaSource.Params> {
+    interface Params : ValueSourceParameters {
+        val repoRoot: DirectoryProperty
+    }
+
+    @get:javax.inject.Inject
+    abstract val execOps: ExecOperations
+
+    override fun obtain(): String {
+        val out = ByteArrayOutputStream()
+        return try {
+            val result =
+                execOps.exec {
+                    workingDir = parameters.repoRoot.get().asFile
+                    commandLine("git", "rev-parse", "--short", "HEAD")
+                    standardOutput = out
+                    errorOutput = ByteArrayOutputStream()
+                    isIgnoreExitValue = true
+                }
+            if (result.exitValue == 0) out.toString().trim() else "unknown"
+        } catch (_: Exception) {
+            "unknown"
+        }
+    }
 }
 
 tasks.test {

@@ -12,6 +12,14 @@ Running qkt in production: deployment, monitoring, troubleshooting.
 
     [:octicons-arrow-right-24: Deploy with Docker](deploy-docker.md)
 
+- :material-rocket-launch:{ .lg .middle } **Production deploy (qkt-prod)**
+
+    ---
+
+    Runbook for the managed Dokploy/Swarm host: release cadence, rollback, "what's deployed".
+
+    [:octicons-arrow-right-24: Production deploy](deploy.md)
+
 - :material-monitor-dashboard:{ .lg .middle } **Monitoring**
 
     ---
@@ -48,7 +56,6 @@ Running qkt in production: deployment, monitoring, troubleshooting.
 
 ## Not yet covered
 
-- **Upgrade / rollback** — versioning, schema migrations between phases, downgrade strategy
 - **Capacity planning** — strategies-per-daemon ceiling, port allocation, JVM heap sizing
 - **Alerting playbook** — concrete runbooks per alert type
 

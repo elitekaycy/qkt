@@ -36,6 +36,7 @@ class DistTest {
                 .readText()
                 .trim()
         assertThat(proc.exitValue()).isEqualTo(0)
-        assertThat(output).contains("qkt ${BuildInfo.VERSION}")
+        assertThat(output).startsWith("qkt ${BuildInfo.VERSION} (")
+        assertThat(output).matches("qkt \\S+ \\(\\S+\\) built \\S+")
     }
 }
