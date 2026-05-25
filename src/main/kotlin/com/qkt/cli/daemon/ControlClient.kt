@@ -7,7 +7,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 
-class ControlClient(
+open class ControlClient(
     private val stateDir: StateDir,
     private val http: OkHttpClient = OkHttpClient(),
 ) {
@@ -29,7 +29,7 @@ class ControlClient(
         return "http://127.0.0.1:$port"
     }
 
-    fun health(): String {
+    open fun health(): String {
         val resp =
             http.newCall(Request.Builder().url("${baseUrl()}/health").build()).execute()
         return readOrThrow(resp)
@@ -41,7 +41,7 @@ class ControlClient(
         return readOrThrow(resp)
     }
 
-    fun status(name: String? = null): String {
+    open fun status(name: String? = null): String {
         val url = if (name == null) "${baseUrl()}/status" else "${baseUrl()}/status/$name"
         val resp = http.newCall(Request.Builder().url(url).build()).execute()
         return readOrThrow(resp)
