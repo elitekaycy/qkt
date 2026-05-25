@@ -30,7 +30,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | Command | What it does |
 |---|---|
 | `qkt parse <file>` | Parse-and-validate a `.qkt` file; pretty-print errors. |
-| `qkt backtest <file> [--from] [--to] [--data-root] [--report]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. |
+| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--report]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper` matches historical behavior. |
 | `qkt run <file>` | Foreground paper-trade run. |
 
 ## Operations
