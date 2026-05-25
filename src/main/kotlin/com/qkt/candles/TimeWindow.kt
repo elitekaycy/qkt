@@ -38,4 +38,18 @@ value class TimeWindow(
     fun windowStartFor(timestamp: Long): Long = (timestamp / durationMs) * durationMs
 
     fun windowEndFor(timestamp: Long): Long = windowStartFor(timestamp) + durationMs
+
+    /**
+     * Reverse of [parse]: returns a canonical string like `"1m"`, `"5m"`, `"1h"`, `"1d"`.
+     * Used by stores that key by timeframe (e.g. the bar store at `bars/{tf}/...`)
+     * so the on-disk path matches what the operator typed at the CLI.
+     */
+    fun canonicalSpec(): String =
+        when {
+            durationMs % 86_400_000L == 0L -> "${durationMs / 86_400_000L}d"
+            durationMs % 3_600_000L == 0L -> "${durationMs / 3_600_000L}h"
+            durationMs % 60_000L == 0L -> "${durationMs / 60_000L}m"
+            durationMs % 1_000L == 0L -> "${durationMs / 1_000L}s"
+            else -> "${durationMs}ms"
+        }
 }

@@ -52,6 +52,14 @@ Task-oriented walkthroughs. Each page is one problem and one copy-paste-able sol
 
     [:octicons-arrow-right-24: Install for your editor](editor-integrations.md)
 
+- :material-database-arrow-down:{ .lg .middle } **Backfill historical bars**
+
+    ---
+
+    `qkt fetch BROKER:SYMBOL --tf 5m --from … --to …` pulls bars into the local store.
+
+    [:octicons-arrow-right-24: Run qkt fetch](fetch-data.md)
+
 </div>
 
 ## Need something else?

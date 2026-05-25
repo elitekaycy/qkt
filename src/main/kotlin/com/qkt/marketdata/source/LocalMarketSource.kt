@@ -9,6 +9,7 @@ import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.store.DataStore
+import com.qkt.marketdata.store.LocalBarStore
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -17,6 +18,13 @@ import java.time.ZoneOffset
 class LocalMarketSource(
     private val store: DataStore,
     private val clock: Clock,
+    /**
+     * Phase 25A: optional pre-fetched bar store keyed by `(broker, symbol, tf)`. When
+     * present and fully populated for the requested range, `bars()` reads bars
+     * directly from disk instead of aggregating ticks. Partial coverage falls back
+     * to tick aggregation, so the two stores can coexist safely.
+     */
+    private val barStore: LocalBarStore? = null,
 ) : MarketSource {
     override val name: String = "Local"
     override val capabilities: Set<MarketSourceCapability> =
@@ -52,6 +60,37 @@ class LocalMarketSource(
     }
 
     override fun bars(
+        symbol: String,
+        window: TimeWindow,
+        range: TimeRange,
+    ): Sequence<Candle> {
+        val bs = barStore
+        if (bs != null) {
+            val parts = symbol.split(":", limit = 2)
+            if (parts.size == 2) {
+                val broker = parts[0]
+                val sym = parts[1]
+                val tf = window.canonicalSpec()
+                val days = daysCovering(range)
+                if (days.isNotEmpty() && days.all { bs.hasDay(broker, sym, tf, it) }) {
+                    val rangeFromMs = range.from.toEpochMilli()
+                    val rangeToMs = range.to.toEpochMilli()
+                    return sequence {
+                        for (day in days) {
+                            for (candle in bs.readDay(broker, sym, tf, day)) {
+                                if (candle.startTime < rangeFromMs) continue
+                                if (candle.endTime > rangeToMs) continue
+                                yield(candle)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return aggregateFromTicks(symbol, window, range)
+    }
+
+    private fun aggregateFromTicks(
         symbol: String,
         window: TimeWindow,
         range: TimeRange,

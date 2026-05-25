@@ -237,13 +237,19 @@ class Backtest(
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+            /**
+             * Phase 25A: optional pre-fetched bar store (populated by `qkt fetch`). When
+             * present, `LocalMarketSource.bars()` reads from it instead of aggregating
+             * from ticks for any day fully covered. Falls back to ticks for missing days.
+             */
+            barStore: com.qkt.marketdata.store.LocalBarStore? = null,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
             return fromSource(
                 strategies = strategies,
                 rules = rules,
-                source = LocalMarketSource(store, FixedClock(time = to.toEpochMilli())),
+                source = LocalMarketSource(store, FixedClock(time = to.toEpochMilli()), barStore = barStore),
                 request = resolved,
                 candleWindow = candleWindow,
                 cadence = cadence,
