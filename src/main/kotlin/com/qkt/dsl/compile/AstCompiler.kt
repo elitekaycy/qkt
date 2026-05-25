@@ -116,11 +116,16 @@ class AstCompiler {
         val warmupGate = WarmupGate(perStreamWarmup)
 
         val perStreamWarmupSpec: Map<String, com.qkt.strategy.WarmupSpec> =
-            perStreamWarmup.mapNotNull { (alias, bars) ->
-                val key = streams[alias] ?: return@mapNotNull null
-                val window = com.qkt.candles.TimeWindow.parse(key.timeframe)
-                key.qktSymbol to com.qkt.strategy.WarmupSpec.Bars(window, bars)
-            }.toMap()
+            perStreamWarmup
+                .mapNotNull { (alias, bars) ->
+                    val key = streams[alias] ?: return@mapNotNull null
+                    val window =
+                        com.qkt.candles.TimeWindow
+                            .parse(key.timeframe)
+                    key.qktSymbol to
+                        com.qkt.strategy.WarmupSpec
+                            .Bars(window, bars)
+                }.toMap()
 
         return CompiledStrategy(
             streams = streams,

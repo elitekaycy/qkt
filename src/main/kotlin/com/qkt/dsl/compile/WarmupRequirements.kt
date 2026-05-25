@@ -59,29 +59,40 @@ object WarmupRequirements {
         when (expr) {
             is IndicatorCall -> {
                 val alias = aliasFor(expr)
-                val period = expr.args.drop(1).filterIsInstance<NumLit>().maxOfOrNull { it.value.toInt() }
+                val period =
+                    expr.args
+                        .drop(1)
+                        .filterIsInstance<NumLit>()
+                        .maxOfOrNull { it.value.toInt() }
                 if (alias != null && period != null) merge(out, alias, period)
                 expr.args.forEach { walkExpr(it, out) }
             }
             is BinaryOp -> {
-                walkExpr(expr.lhs, out); walkExpr(expr.rhs, out)
+                walkExpr(expr.lhs, out)
+                walkExpr(expr.rhs, out)
             }
             is UnaryOp -> walkExpr(expr.arg, out)
             is CmpOp -> {
-                walkExpr(expr.lhs, out); walkExpr(expr.rhs, out)
+                walkExpr(expr.lhs, out)
+                walkExpr(expr.rhs, out)
             }
             is Between -> {
-                walkExpr(expr.v, out); walkExpr(expr.lo, out); walkExpr(expr.hi, out)
+                walkExpr(expr.v, out)
+                walkExpr(expr.lo, out)
+                walkExpr(expr.hi, out)
             }
             is InList -> {
-                walkExpr(expr.v, out); expr.members.forEach { walkExpr(it, out) }
+                walkExpr(expr.v, out)
+                expr.members.forEach { walkExpr(it, out) }
             }
             is Crosses -> {
-                walkExpr(expr.lhs, out); walkExpr(expr.rhs, out)
+                walkExpr(expr.lhs, out)
+                walkExpr(expr.rhs, out)
             }
             is CaseWhen -> {
                 expr.branches.forEach { (c, v) ->
-                    walkExpr(c, out); walkExpr(v, out)
+                    walkExpr(c, out)
+                    walkExpr(v, out)
                 }
                 walkExpr(expr.elseExpr, out)
             }
