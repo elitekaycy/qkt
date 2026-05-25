@@ -299,6 +299,15 @@ private class CompiledStrategy(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        // Phase 25E: feed tick-fed indicators (e.g. VWAP) on every raw tick.
+        // Candle-fed indicators keep updating only at candle close in [evaluate]; the
+        // two paths are disjoint by indicator input kind, so there's no double-feeding.
+        for ((alias, key) in streams) {
+            if (key.qktSymbol != tick.symbol) continue
+            val tickBindings = bindings.tickFedForAlias(alias)
+            if (tickBindings.isEmpty()) continue
+            for (b in tickBindings) b.updateFromTick(tick)
+        }
     }
 
     override fun onCandle(
