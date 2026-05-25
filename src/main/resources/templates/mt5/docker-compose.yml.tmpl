@@ -1,0 +1,82 @@
+services:
+  init-perms:
+    image: alpine:3
+    command: sh -c "chown -R 911:911 /config && chown -R 999:999 /qkt-state /qkt-logs"
+    volumes:
+      - mt5_config:/config
+      - ./state:/qkt-state
+      - ./logs:/qkt-logs
+    restart: "no"
+
+  mt5-gateway:
+    image: elitekaycy/mt5-gateway-api:latest
+    container_name: qkt-mt5
+    restart: unless-stopped
+    depends_on:
+      init-perms:
+        condition: service_completed_successfully
+    environment:
+      CUSTOM_USER: ${MT5_VNC_USER:-admin}
+      PASSWORD: ${MT5_VNC_PASSWORD:-changeme}
+      MT5_API_PORT: 5001
+      SWAGGER_SCHEME: http
+      MT5_RECONNECT_ATTEMPTS: 5
+      MT5_RECONNECT_BASE_DELAY: "2.0"
+      LOG_LEVEL: ${MT5_LOG_LEVEL:-INFO}
+    ports:
+      # MT5 REST API. Bind to loopback only — the gateway has no auth.
+      - "127.0.0.1:5020:5001"
+      # VNC web UI for one-time MT5 broker login.
+      # SSH-tunnel `-L 3020:127.0.0.1:3020 <host>` and open http://127.0.0.1:3020.
+      - "127.0.0.1:3020:3000"
+    volumes:
+      - mt5_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 30
+      start_period: 300s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  qkt:
+    image: ghcr.io/elitekaycy/qkt:${QKT_IMAGE_TAG:?QKT_IMAGE_TAG must be set in .env}
+    container_name: qkt
+    restart: unless-stopped
+    depends_on:
+      init-perms:
+        condition: service_completed_successfully
+      mt5-gateway:
+        condition: service_healthy
+    command: ["--config", "/etc/qkt/qkt.config.yaml", "--control-port", "47000"]
+    environment:
+      QKT_STATE_DIR: /var/lib/qkt
+      QKT_EXNESS_URL: http://mt5-gateway:5001
+      QKT_EXNESS_MAGIC: ${QKT_EXNESS_MAGIC:-10001}
+      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./strategies:/strategies:ro
+      - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
+      - ./state:/var/lib/qkt
+      - ./logs:/var/lib/qkt/logs
+    healthcheck:
+      test: ["CMD", "qkt", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  mt5_config:
+    name: qkt-mt5-config

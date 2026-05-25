@@ -1,0 +1,27 @@
+.PHONY: up down restart logs status deploy stop shell
+
+up:
+	docker compose up -d
+
+down:
+	docker compose down
+
+restart:
+	docker compose restart qkt
+
+logs:
+	docker compose logs -f --tail 200 qkt
+
+status:
+	docker compose exec qkt qkt list
+
+deploy:
+	@test -n "$(STRAT)" || (echo "usage: make deploy STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt deploy /strategies/$(STRAT).qkt --as $(STRAT)
+
+stop:
+	@test -n "$(STRAT)" || (echo "usage: make stop STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt stop $(STRAT)
+
+shell:
+	docker compose exec qkt sh

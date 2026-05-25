@@ -111,6 +111,7 @@ nav:
   - Get started:
       - get-started/index.md
       - Quickstart: get-started/quickstart.md
+      - Scaffold a project: get-started/scaffold.md
       - Deploy paper: get-started/deploy-paper.md
       - Deploy MT5: get-started/deploy-mt5.md
   - Tutorials:

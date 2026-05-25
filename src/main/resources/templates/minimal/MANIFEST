@@ -1,0 +1,7 @@
+# Files copied by `qkt create template --kind minimal`.
+.env.example.tmpl
+Makefile.tmpl
+docker-compose.yml.tmpl
+qkt.config.yaml.tmpl
+strategies/README.md.tmpl
+strategies/ema_cross.qkt

@@ -17,6 +17,7 @@ internal fun runMain(argv: Array<String>): Int {
             "start" -> StartCommand(args).run()
             "brokers" -> BrokersCommand(args).run()
             "editor" -> EditorCommand(args).run()
+            "create" -> CreateCommand(args).run()
             "audit-ticks" -> AuditTicksCommand(args).run()
             "fetch" -> FetchCommand(args).run()
             "daemon" -> DaemonCommand(args).run()
@@ -48,6 +49,9 @@ private fun printHelp() {
 
         USAGE
             qkt <subcommand> [arguments]
+
+        PROJECT SCAFFOLDING
+            create template <path>  scaffold a new qkt project (--kind mt5|minimal)
 
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
