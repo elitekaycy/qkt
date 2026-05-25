@@ -1,0 +1,61 @@
+{
+  "name": "qkt",
+  "displayName": "qkt",
+  "description": "Syntax highlighting and snippets for qkt strategy files (.qkt)",
+  "version": "0.1.0",
+  "publisher": "elitekaycy",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "qkt",
+    "trading",
+    "dsl",
+    "strategy"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elitekaycy/qkt.git",
+    "directory": "editor/vscode"
+  },
+  "homepage": "https://github.com/elitekaycy/qkt/tree/main/editor/vscode",
+  "bugs": {
+    "url": "https://github.com/elitekaycy/qkt/issues"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "qkt",
+        "aliases": ["qkt", "QKT"],
+        "extensions": [".qkt"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "qkt",
+        "scopeName": "source.qkt",
+        "path": "./syntaxes/qkt.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "qkt",
+        "path": "./snippets/qkt.json"
+      }
+    ]
+  },
+  "scripts": {
+    "sync-grammar": "node -e \"require('fs').copyFileSync('../textmate/qkt.tmLanguage.json', './syntaxes/qkt.tmLanguage.json')\"",
+    "vscode:prepublish": "npm run sync-grammar",
+    "package": "npm run sync-grammar && npx --yes @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.0"
+  }
+}

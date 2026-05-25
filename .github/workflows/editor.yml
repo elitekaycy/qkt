@@ -1,0 +1,61 @@
+name: editor
+
+# Lints and smoke-packages the editor integrations (textmate grammar, vscode
+# extension, future neovim plugin). Path-filtered so it only runs when
+# editor/** or this workflow itself changes. The fast essentials (check.yml)
+# still run on every PR to dev independently of this file.
+#
+# Template expressions reference internal context only (github.ref); no
+# untrusted event input reaches a shell command.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'editor/**'
+      - '.github/workflows/editor.yml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'editor/**'
+      - '.github/workflows/editor.yml'
+
+concurrency:
+  group: editor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate JSON
+        run: |
+          set -e
+          for f in \
+            editor/textmate/qkt.tmLanguage.json \
+            editor/vscode/package.json \
+            editor/vscode/language-configuration.json \
+            editor/vscode/snippets/qkt.json \
+            editor/vscode/syntaxes/qkt.tmLanguage.json; do
+            echo "::group::$f"
+            jq . "$f" >/dev/null
+            echo "::endgroup::"
+          done
+
+      - name: Guard against textmate -> vscode grammar drift
+        run: |
+          if ! diff -q editor/textmate/qkt.tmLanguage.json editor/vscode/syntaxes/qkt.tmLanguage.json; then
+            echo "::error::editor/vscode/syntaxes/qkt.tmLanguage.json drifted from editor/textmate/qkt.tmLanguage.json"
+            echo "Run 'npm run sync-grammar' from editor/vscode/ to fix."
+            diff editor/textmate/qkt.tmLanguage.json editor/vscode/syntaxes/qkt.tmLanguage.json || true
+            exit 1
+          fi
+
+      - name: vsce package smoke
+        working-directory: editor/vscode
+        run: npx --yes @vscode/vsce@latest package --no-dependencies
