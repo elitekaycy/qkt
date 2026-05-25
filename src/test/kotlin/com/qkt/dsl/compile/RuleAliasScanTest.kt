@@ -14,72 +14,77 @@ class RuleAliasScanTest {
 
     @Test
     fun `condition referencing one stream returns that alias`() {
-        val r = rule(
-            """
-            STRATEGY t VERSION 1
-            SYMBOLS
-              g = X:Y EVERY 1m
-            RULES
-              WHEN g.close > 100 THEN FLATTEN
-            """.trimIndent(),
-        )
+        val r =
+            rule(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                RULES
+                  WHEN g.close > 100 THEN FLATTEN
+                """.trimIndent(),
+            )
         assertThat(collectStreamAliases(r)).containsExactly("g")
     }
 
     @Test
     fun `condition referencing position returns that alias`() {
-        val r = rule(
-            """
-            STRATEGY t VERSION 1
-            SYMBOLS
-              g = X:Y EVERY 1m
-            RULES
-              WHEN POSITION.g = 0 THEN FLATTEN
-            """.trimIndent(),
-        )
+        val r =
+            rule(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                RULES
+                  WHEN POSITION.g = 0 THEN FLATTEN
+                """.trimIndent(),
+            )
         assertThat(collectStreamAliases(r)).containsExactly("g")
     }
 
     @Test
     fun `multi-stream condition returns all referenced aliases`() {
-        val r = rule(
-            """
-            STRATEGY t VERSION 1
-            SYMBOLS
-              a = X:Y EVERY 1m,
-              b = X:Z EVERY 1m
-            RULES
-              WHEN a.close > b.close THEN FLATTEN
-            """.trimIndent(),
-        )
+        val r =
+            rule(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  a = X:Y EVERY 1m,
+                  b = X:Z EVERY 1m
+                RULES
+                  WHEN a.close > b.close THEN FLATTEN
+                """.trimIndent(),
+            )
         assertThat(collectStreamAliases(r)).containsExactlyInAnyOrder("a", "b")
     }
 
     @Test
     fun `action's BUY target alias is included`() {
-        val r = rule(
-            """
-            STRATEGY t VERSION 1
-            SYMBOLS
-              g = X:Y EVERY 1m
-            RULES
-              WHEN NOW.hour_utc = 10 THEN BUY g
-            """.trimIndent(),
-        )
+        val r =
+            rule(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                RULES
+                  WHEN NOW.hour_utc = 10 THEN BUY g
+                """.trimIndent(),
+            )
         assertThat(collectStreamAliases(r)).containsExactly("g")
     }
 
     @Test
     fun `NOW-only condition with no action target returns empty`() {
-        val r = rule(
-            """
-            STRATEGY t VERSION 1
-            SYMBOLS
-              g = X:Y EVERY 1m
-            RULES
-              WHEN NOW.hour_utc = 10 THEN FLATTEN
-            """.trimIndent(),
-        )
+        val r =
+            rule(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                RULES
+                  WHEN NOW.hour_utc = 10 THEN FLATTEN
+                """.trimIndent(),
+            )
         assertThat(collectStreamAliases(r)).isEmpty()
     }
 }

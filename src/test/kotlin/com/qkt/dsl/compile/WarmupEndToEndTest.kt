@@ -20,8 +20,7 @@ class WarmupEndToEndTest {
             )
         }
 
-    private fun compile(src: String) =
-        AstCompiler().compile((Dsl.parse(src) as ParseResult.Success).value)
+    private fun compile(src: String) = AstCompiler().compile((Dsl.parse(src) as ParseResult.Success).value)
 
     @Test
     fun `WARMUP suppresses rule firings until the configured bar count`() {

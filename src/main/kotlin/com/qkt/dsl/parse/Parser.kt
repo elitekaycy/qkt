@@ -1,5 +1,6 @@
 package com.qkt.dsl.parse
 
+import com.qkt.common.Money
 import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
@@ -35,8 +36,8 @@ import com.qkt.dsl.ast.Gtc
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
-import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Ioc
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
@@ -89,7 +90,6 @@ import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.WhenThen
 import com.qkt.dsl.ast.Window
-import com.qkt.common.Money
 import java.math.BigDecimal
 
 class Parser(
@@ -1215,8 +1215,9 @@ class Parser(
                 if (peek().kind == TokenKind.WARMUP) {
                     advance()
                     val numToken = expect(TokenKind.NUMBER, "expected integer bar count after WARMUP")
-                    val n = numToken.lexeme.toIntOrNull()
-                        ?: error("WARMUP count must be a positive integer, got '${numToken.lexeme}'")
+                    val n =
+                        numToken.lexeme.toIntOrNull()
+                            ?: error("WARMUP count must be a positive integer, got '${numToken.lexeme}'")
                     if (n <= 0) error("WARMUP count must be > 0, got $n")
                     expect(TokenKind.BARS, "expected BARS after WARMUP count")
                     n

@@ -1,12 +1,12 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.NumLit
-import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.SizePctEquity
+import com.qkt.dsl.ast.SizeRiskFrac
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 
 class ParserSizingPctRiskTest {
     private fun parseSizing(input: String): com.qkt.dsl.ast.SizingAst {

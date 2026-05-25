@@ -31,8 +31,8 @@ import com.qkt.dsl.ast.Gtc
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
-import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Ioc
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market

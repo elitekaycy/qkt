@@ -8,13 +8,14 @@ import org.junit.jupiter.api.Test
 class ParserFlattenTest {
     @Test
     fun `FLATTEN parses to CloseAll`() {
-        val src = """
+        val src =
+            """
             STRATEGY t VERSION 1
             SYMBOLS
               g = X:Y EVERY 1m
             RULES
               WHEN NOW.hour_utc = 21 THEN FLATTEN
-        """.trimIndent()
+            """.trimIndent()
         val ast = (Dsl.parse(src) as ParseResult.Success).value
         val rule = ast.rules.single() as WhenThen
         assertThat(rule.action).isEqualTo(CloseAll)
@@ -22,13 +23,14 @@ class ParserFlattenTest {
 
     @Test
     fun `CLOSE_ALL still parses to CloseAll`() {
-        val src = """
+        val src =
+            """
             STRATEGY t VERSION 1
             SYMBOLS
               g = X:Y EVERY 1m
             RULES
               WHEN NOW.hour_utc = 21 THEN CLOSE_ALL
-        """.trimIndent()
+            """.trimIndent()
         val ast = (Dsl.parse(src) as ParseResult.Success).value
         val rule = ast.rules.single() as WhenThen
         assertThat(rule.action).isEqualTo(CloseAll)
