@@ -35,6 +35,20 @@ application {
     applicationName = "qkt"
 }
 
+distributions {
+    named("main") {
+        contents {
+            // Bundle the editor integrations under share/editor/ in the tarball.
+            // `qkt editor install <target>` reads them from $QKT_HOME/share/editor/.
+            // .vsix is included when present (built by release.yml before distTar).
+            from(rootProject.file("editor")) {
+                into("share/editor")
+                exclude("**/node_modules/**")
+            }
+        }
+    }
+}
+
 tasks.register<JavaExec>("runDemo") {
     group = "application"
     description = "Run the legacy mock-tick demo (predates the qkt CLI)"
