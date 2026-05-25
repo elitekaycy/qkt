@@ -166,6 +166,7 @@ nav:
   - Operations:
       - operations/index.md
       - Deploy with Docker: operations/deploy-docker.md
+      - Production deploy (qkt-prod): operations/deploy.md
       - Monitoring: operations/monitoring.md
       - State backup: operations/state-backup.md
       - Logging: operations/logging.md
