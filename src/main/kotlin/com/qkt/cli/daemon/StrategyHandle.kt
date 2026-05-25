@@ -69,6 +69,12 @@ class StrategyHandle(
          * when no config is loaded).
          */
         private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
+        /**
+         * Phase 25D: per-strategy risk caps keyed by strategy name. When the deployed
+         * strategy's name matches an entry, those caps layer on top of the daemon-global
+         * rules. Default empty map means every strategy uses only the global rules.
+         */
+        private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
         private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
         /**
          * Telegram alert sink shared across every strategy this daemon hosts. Default
@@ -113,6 +119,7 @@ class StrategyHandle(
                 } else {
                     emptyList()
                 }
+            val perStrategyOverride = perStrategyRisk[ast.name]
             val session =
                 LiveSession(
                     strategies = listOf(ast.name to strategy),
@@ -137,6 +144,9 @@ class StrategyHandle(
                     ignoreMismatches = ignoreMismatches,
                     notifier = notifier,
                     notifyEvents = notifyEvents,
+                    perStrategyMaxDailyLoss = perStrategyOverride?.maxDailyLoss,
+                    perStrategyMaxPositionSize = perStrategyOverride?.maxPositionSize,
+                    perStrategyMaxOpenPositions = perStrategyOverride?.maxOpenPositions,
                 ).start()
 
             val server =

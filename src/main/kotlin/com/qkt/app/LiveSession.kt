@@ -98,6 +98,15 @@ class LiveSession(
     private val notifier: Notifier = NoopNotifier,
     /** Opt-in event list — empty disables every subscription, even if a real notifier is present. */
     private val notifyEvents: Set<NotifyEventKind> = emptySet(),
+    /**
+     * Phase 25D: per-strategy risk overrides for the strategy this session hosts.
+     * Null means "use only the session-level [rules] and [haltRules]." When set,
+     * the corresponding rule is constructed at start-time with this session's
+     * [com.qkt.positions.StrategyPositionTracker] and added to the risk engine.
+     */
+    private val perStrategyMaxDailyLoss: java.math.BigDecimal? = null,
+    private val perStrategyMaxPositionSize: java.math.BigDecimal? = null,
+    private val perStrategyMaxOpenPositions: Int? = null,
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -390,7 +399,40 @@ class LiveSession(
 
         val engine = Engine(bus, priceTracker)
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
-        val riskEngine = RiskEngine(rules, haltRules, positions, riskState)
+
+        // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
+        // The daemon creates one LiveSession per deployed strategy, so the first entry is
+        // the only one. If the caller didn't set per-strategy caps, these stay empty.
+        val riskOwnerStrategyId = strategies.firstOrNull()?.first
+        val perStrategyHaltRules = mutableListOf<com.qkt.risk.HaltRule>()
+        val perStrategyRiskRules = mutableListOf<com.qkt.risk.RiskRule>()
+        if (riskOwnerStrategyId != null) {
+            perStrategyMaxDailyLoss?.let {
+                perStrategyHaltRules.add(
+                    com.qkt.risk.rules
+                        .MaxStrategyDailyLoss(riskOwnerStrategyId, it),
+                )
+            }
+            perStrategyMaxPositionSize?.let {
+                perStrategyRiskRules.add(
+                    com.qkt.risk.rules
+                        .MaxStrategyPositionSize(riskOwnerStrategyId, it, strategyPositions),
+                )
+            }
+            perStrategyMaxOpenPositions?.let {
+                perStrategyRiskRules.add(
+                    com.qkt.risk.rules
+                        .MaxStrategyOpenPositions(riskOwnerStrategyId, it, strategyPositions),
+                )
+            }
+        }
+        val riskEngine =
+            RiskEngine(
+                rules + perStrategyRiskRules,
+                haltRules + perStrategyHaltRules,
+                positions,
+                riskState,
+            )
 
         val trades: MutableList<Trade> = CopyOnWriteArrayList()
 

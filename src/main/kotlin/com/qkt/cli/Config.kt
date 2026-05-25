@@ -25,11 +25,14 @@ data class Config(
      * Daemon-level risk knobs. Currently honored:
      *   - `max_daily_loss` — global daily-loss cap in account currency (BigDecimal).
      *     Defaults to [DEFAULT_MAX_DAILY_LOSS] when unset. Set to "0" to disable.
-     *
-     * Per-strategy risk DSL is a separate, larger surface (Phase 28+); for now every
-     * strategy the daemon hosts shares these limits.
      */
     val risk: Map<String, String> = emptyMap(),
+    /**
+     * Phase 25D: per-strategy risk overrides keyed by strategy name. Each entry sets
+     * additional caps that apply only to that strategy — see [PerStrategyRisk]. The
+     * global [risk] block still applies daemon-wide; per-strategy caps layer on top.
+     */
+    val perStrategyRisk: Map<String, PerStrategyRisk> = emptyMap(),
     /**
      * Engine state persistence settings (Phase 29). Knobs:
      *   - `enabled` — `true` (default) wires [com.qkt.persistence.FileStatePersistor]; `false`
@@ -142,6 +145,7 @@ data class Config(
                 fetchers = parseNested(map["fetchers"]),
                 brokers = parseNested(map["brokers"]),
                 risk = parseFlat(map["risk"]),
+                perStrategyRisk = parsePerStrategyRisk(map["risk"]),
                 state = parseFlat(map["state"]),
                 notify = NotifyConfig.parse(map["notify"]),
             )
@@ -166,6 +170,20 @@ data class Config(
             return outer.mapValues { (_, v) ->
                 (v as? Map<String, Any?> ?: emptyMap())
                     .mapValues { (_, vv) -> vv?.toString() ?: "" }
+            }
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun parsePerStrategyRisk(raw: Any?): Map<String, PerStrategyRisk> {
+            val risk = raw as? Map<String, Any?> ?: return emptyMap()
+            val perStrat = risk["per_strategy"] as? Map<String, Any?> ?: return emptyMap()
+            return perStrat.mapValues { (_, v) ->
+                val m = v as? Map<String, Any?> ?: return@mapValues PerStrategyRisk()
+                PerStrategyRisk(
+                    maxDailyLoss = m["max_daily_loss"]?.toString()?.let(::BigDecimal),
+                    maxPositionSize = m["max_position_size"]?.toString()?.let(::BigDecimal),
+                    maxOpenPositions = m["max_open_positions"]?.toString()?.toIntOrNull(),
+                )
             }
         }
 
