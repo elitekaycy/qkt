@@ -1,0 +1,16 @@
+-- Sample strategy: buy on EMA(9) crossing above EMA(21), close on cross back below.
+-- Edit symbol / sizing / brackets to taste; see https://elitekaycy.github.io/qkt/
+
+STRATEGY ema_cross VERSION 1
+
+SYMBOLS
+    gold = EXNESS:XAUUSD EVERY 5m WARMUP 50 BARS
+
+RULES
+    WHEN ema(gold.close, 9) CROSSES ABOVE ema(gold.close, 21)
+     AND POSITION.gold = 0
+    THEN BUY gold SIZING 0.5 PCT RISK
+
+    WHEN POSITION.gold > 0
+     AND ema(gold.close, 9) CROSSES BELOW ema(gold.close, 21)
+    THEN CLOSE gold

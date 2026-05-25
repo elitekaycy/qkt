@@ -1,0 +1,10 @@
+# strategies/
+
+Drop `.qkt` files in this directory. They're mounted into the running daemon at
+`/strategies` (read-only). Deploy with `make deploy STRAT=<name>`.
+
+This is the **minimal** template — no broker configured. Strategies run
+paper-only. Add a broker to `qkt.config.yaml` + `docker-compose.yml` when ready
+to go live.
+
+Scaffolded by qkt v{{QKT_VERSION}}.

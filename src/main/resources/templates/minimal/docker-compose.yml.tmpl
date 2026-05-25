@@ -1,0 +1,35 @@
+services:
+  init-perms:
+    image: alpine:3
+    command: sh -c "chown -R 999:999 /qkt-state /qkt-logs"
+    volumes:
+      - ./state:/qkt-state
+      - ./logs:/qkt-logs
+    restart: "no"
+
+  qkt:
+    image: ghcr.io/elitekaycy/qkt:${QKT_IMAGE_TAG:?QKT_IMAGE_TAG must be set in .env}
+    container_name: qkt
+    restart: unless-stopped
+    depends_on:
+      init-perms:
+        condition: service_completed_successfully
+    command: ["--config", "/etc/qkt/qkt.config.yaml", "--control-port", "47000"]
+    environment:
+      QKT_STATE_DIR: /var/lib/qkt
+    volumes:
+      - ./strategies:/strategies:ro
+      - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
+      - ./state:/var/lib/qkt
+      - ./logs:/var/lib/qkt/logs
+    healthcheck:
+      test: ["CMD", "qkt", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
