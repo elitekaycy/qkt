@@ -19,6 +19,12 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. |
 | `qkt start <portfolio>/<child>` | Resume an operator-stopped child of a portfolio. |
 
+## Project scaffolding
+
+| Command | What it does |
+|---|---|
+| `qkt create template <path> [--kind mt5\|minimal]` | Scaffold a new qkt project tree (compose + Makefile + sample strategy). Default kind is `mt5`. See [Scaffold a project](../get-started/scaffold.md). |
+
 ## Strategy authoring
 
 | Command | What it does |
