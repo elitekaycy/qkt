@@ -1,0 +1,13 @@
+STRATEGY portfolio_child_a VERSION 1
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m WARMUP 25 BARS
+
+RULES
+    WHEN ema(btc.close, 5) CROSSES ABOVE ema(btc.close, 25)
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 1
+
+    WHEN POSITION.btc > 0
+     AND ema(btc.close, 5) CROSSES BELOW ema(btc.close, 25)
+    THEN CLOSE btc
