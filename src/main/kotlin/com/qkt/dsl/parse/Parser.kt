@@ -1204,12 +1204,25 @@ class Parser(
                     val tfUnit = expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
                     "$tfNum$tfUnit"
                 }
+            val warmupBars: Int? =
+                if (peek().kind == TokenKind.WARMUP) {
+                    advance()
+                    val numToken = expect(TokenKind.NUMBER, "expected integer bar count after WARMUP")
+                    val n = numToken.lexeme.toIntOrNull()
+                        ?: error("WARMUP count must be a positive integer, got '${numToken.lexeme}'")
+                    if (n <= 0) error("WARMUP count must be > 0, got $n")
+                    expect(TokenKind.BARS, "expected BARS after WARMUP count")
+                    n
+                } else {
+                    null
+                }
             out.add(
                 StreamDecl(
                     alias = alias,
                     broker = broker,
                     symbol = symbol,
                     timeframe = timeframe,
+                    warmupBars = warmupBars,
                 ),
             )
         } while (match(TokenKind.COMMA))
