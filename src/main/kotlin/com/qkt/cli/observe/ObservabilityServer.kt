@@ -18,6 +18,10 @@ class ObservabilityServer(
     private val onStop: (flatten: Boolean) -> Unit,
     bind: String,
     port: Int,
+    private val latencyProvider: () -> com.qkt.observability.LatencyRegistry.Report = {
+        com.qkt.observability.LatencyRegistry
+            .Report(enabled = false, strategies = emptyMap())
+    },
 ) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(bind, port), 0)
 
@@ -32,6 +36,7 @@ class ObservabilityServer(
     init {
         server.createContext("/health", Routes.health(running))
         server.createContext("/status", Routes.status(statusProvider))
+        server.createContext("/latency", Routes.latency(latencyProvider))
         server.createContext("/logs", Routes.logs(ring))
         server.createContext("/events", Routes.events(ring))
         server.createContext("/stop", Routes.stop(onStop))
