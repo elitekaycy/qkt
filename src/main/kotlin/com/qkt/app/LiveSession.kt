@@ -277,17 +277,22 @@ class LiveSession(
     }
 
     /**
-     * Build the [InstrumentRegistry] the trading pipeline uses for SIZING RISK and PaperBroker
-     * fill PnL. If an [com.qkt.broker.mt5.MT5Broker] is in the route list, wrap it in
-     * [com.qkt.instrument.MT5InstrumentRegistry]; otherwise return [com.qkt.instrument.NoopInstrumentRegistry]
-     * so strategies that don't need contract-size-aware math keep working.
+     * Build the [com.qkt.instrument.InstrumentRegistry] the trading pipeline uses for SIZING
+     * RISK and PaperBroker fill PnL. Wraps every [com.qkt.broker.mt5.MT5Broker] in the
+     * route list via [com.qkt.instrument.MultiMT5InstrumentRegistry] so multi-MT5 deployments
+     * (#139) get the correct contract specs for each broker's symbols. Falls back to
+     * [com.qkt.instrument.NoopInstrumentRegistry] when no MT5 broker is configured so
+     * paper-only strategies that don't need contract-size-aware math keep working.
      */
     private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
-        val mt5 = builtBrokers.firstOrNull { it is com.qkt.broker.mt5.MT5Broker } as? com.qkt.broker.mt5.MT5Broker
-        return if (mt5 != null) {
-            com.qkt.instrument.MT5InstrumentRegistry(mt5)
-        } else {
+        val mt5Registries =
+            builtBrokers
+                .filterIsInstance<com.qkt.broker.mt5.MT5Broker>()
+                .map { com.qkt.instrument.MT5InstrumentRegistry(it) }
+        return if (mt5Registries.isEmpty()) {
             com.qkt.instrument.NoopInstrumentRegistry
+        } else {
+            com.qkt.instrument.MultiMT5InstrumentRegistry(mt5Registries)
         }
     }
 
