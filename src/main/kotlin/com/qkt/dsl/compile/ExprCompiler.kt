@@ -297,7 +297,16 @@ class ExprCompiler(
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {
         val pnlFields = setOf("realized_pnl", "unrealized_pnl", "total_pnl", "equity", "balance")
-        val historyFields = setOf("last_trade_at", "last_trade_pnl", "win_streak", "loss_streak")
+        val historyFields =
+            setOf(
+                "last_trade_at",
+                "last_trade_pnl",
+                "win_streak",
+                "loss_streak",
+                "trades_today",
+                "wins_today",
+                "losses_today",
+            )
         val riskFields = setOf("dd_pct")
         require(ref.field in pnlFields || ref.field in historyFields || ref.field in riskFields) {
             "Unsupported ACCOUNT field: ${ref.field}"
@@ -319,11 +328,15 @@ class ExprCompiler(
                 }
                 in historyFields -> {
                     val h = ctx.strategyContext.tradeHistory
+                    val now = ctx.strategyContext.clock.now()
                     when (ref.field) {
                         "last_trade_at" -> h.lastTradeAt()?.let { Value.Num(BigDecimal.valueOf(it)) } ?: Value.Undefined
                         "last_trade_pnl" -> h.lastTradePnl()?.let { Value.Num(it) } ?: Value.Undefined
                         "win_streak" -> Value.Num(BigDecimal.valueOf(h.winStreak().toLong()))
                         "loss_streak" -> Value.Num(BigDecimal.valueOf(h.lossStreak().toLong()))
+                        "trades_today" -> Value.Num(BigDecimal.valueOf(h.tradesToday(now).toLong()))
+                        "wins_today" -> Value.Num(BigDecimal.valueOf(h.winsToday(now).toLong()))
+                        "losses_today" -> Value.Num(BigDecimal.valueOf(h.lossesToday(now).toLong()))
                         else -> error("unreachable")
                     }
                 }

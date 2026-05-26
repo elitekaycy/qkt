@@ -59,6 +59,33 @@ class TradeHistory(
 
     fun lossStreak(strategyId: String): Int = streak(strategyId) { !it.isWin }
 
+    /**
+     * Trades recorded at or after [sinceMs]. Caller picks the cutoff — DSL `TRADES_TODAY`
+     * passes UTC midnight derived from the current clock; tests pass arbitrary epochs.
+     */
+    fun tradesSince(
+        strategyId: String,
+        sinceMs: Long,
+    ): Int = countWhere(strategyId) { it.timestamp >= sinceMs }
+
+    fun winsSince(
+        strategyId: String,
+        sinceMs: Long,
+    ): Int = countWhere(strategyId) { it.timestamp >= sinceMs && it.isWin }
+
+    fun lossesSince(
+        strategyId: String,
+        sinceMs: Long,
+    ): Int = countWhere(strategyId) { it.timestamp >= sinceMs && !it.isWin }
+
+    private fun countWhere(
+        strategyId: String,
+        predicate: (TradeOutcome) -> Boolean,
+    ): Int {
+        val q = byStrategy[strategyId] ?: return 0
+        return synchronized(q) { q.count(predicate) }
+    }
+
     private fun streak(
         strategyId: String,
         predicate: (TradeOutcome) -> Boolean,
@@ -83,6 +110,15 @@ interface TradeHistoryView {
     fun winStreak(): Int
 
     fun lossStreak(): Int
+
+    /** Trades recorded since the most recent UTC midnight prior to [nowEpochMs]. */
+    fun tradesToday(nowEpochMs: Long): Int
+
+    /** Wins (positive realized P&L) since the most recent UTC midnight prior to [nowEpochMs]. */
+    fun winsToday(nowEpochMs: Long): Int
+
+    /** Losses (negative realized P&L) since the most recent UTC midnight prior to [nowEpochMs]. */
+    fun lossesToday(nowEpochMs: Long): Int
 }
 
 class TradeHistoryViewImpl(
@@ -96,6 +132,19 @@ class TradeHistoryViewImpl(
     override fun winStreak(): Int = history.winStreak(strategyId)
 
     override fun lossStreak(): Int = history.lossStreak(strategyId)
+
+    override fun tradesToday(nowEpochMs: Long): Int = history.tradesSince(strategyId, utcMidnight(nowEpochMs))
+
+    override fun winsToday(nowEpochMs: Long): Int = history.winsSince(strategyId, utcMidnight(nowEpochMs))
+
+    override fun lossesToday(nowEpochMs: Long): Int = history.lossesSince(strategyId, utcMidnight(nowEpochMs))
+
+    /** UTC midnight epoch ms for whichever calendar day [nowEpochMs] falls on. */
+    private fun utcMidnight(nowEpochMs: Long): Long = (nowEpochMs / DAY_MS) * DAY_MS
+
+    private companion object {
+        private const val DAY_MS = 86_400_000L
+    }
 }
 
 /** No-op view for tests / strategies that don't care about trade history. */
@@ -107,6 +156,12 @@ class NoOpTradeHistoryView : TradeHistoryView {
     override fun winStreak(): Int = 0
 
     override fun lossStreak(): Int = 0
+
+    override fun tradesToday(nowEpochMs: Long): Int = 0
+
+    override fun winsToday(nowEpochMs: Long): Int = 0
+
+    override fun lossesToday(nowEpochMs: Long): Int = 0
 
     companion object {
         @Suppress("UnusedPrivateProperty")
