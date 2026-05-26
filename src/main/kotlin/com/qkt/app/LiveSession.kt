@@ -249,13 +249,26 @@ class LiveSession(
             }
         }
         if (brokerSymbols.isEmpty()) return paperBroker
+        // Fail fast if a strategy declares a broker prefix that has no configured factory.
+        // Without this check, the old code path silently fell through to `paperBroker` for
+        // unmapped prefixes — strategy fills happened on paper instead of the intended venue
+        // and operators only noticed when they couldn't find real fills (#139).
+        val missing = brokerSymbols.keys.filter { it !in brokerFactories }
+        require(missing.isEmpty()) {
+            val configuredList = brokerFactories.keys.sorted().joinToString(", ")
+            val missingList = missing.sorted().joinToString(", ")
+            "Strategy declares broker prefix(es) with no configured factory: [$missingList]. " +
+                "Configured brokers: [$configuredList]. " +
+                "Either fix the strategy's SYMBOLS prefix or add a `type: mt5` entry " +
+                "in qkt.config.yaml's brokers block for each missing prefix."
+        }
         // Single-strategy sessions (daemon path) propagate the strategy name so MT5 brokers
         // can correlate orphan recovery; multi-strategy sessions (LiveDemo, Main) pass null.
         val owningStrategy = strategies.singleOrNull()?.first
         val routes =
             brokerSymbols.map { (label, syms) ->
-                val factory = brokerFactories[label]
-                val instance = factory?.invoke(bus, clock, priceTracker, owningStrategy) ?: paperBroker
+                val factory = brokerFactories.getValue(label)
+                val instance = factory.invoke(bus, clock, priceTracker, owningStrategy)
                 builtBrokers.add(instance)
                 com.qkt.marketdata.source.SymbolPattern
                     .exactSet(syms.toSet()) to instance
