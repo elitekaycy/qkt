@@ -10,6 +10,7 @@ import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
+import com.qkt.indicators.catalog.Stddev
 import com.qkt.indicators.catalog.VWAP
 import com.qkt.indicators.catalog.WMA
 import java.math.BigDecimal
@@ -70,6 +71,10 @@ object IndicatorRegistry {
             "ATR" to
                 IndicatorSpec("ATR", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
                     ATR(period = args[0].toInt())
+                },
+            "STDDEV" to
+                IndicatorSpec("STDDEV", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    Stddev(period = args[0].toInt())
                 },
             // ---- MACD (three outputs) ----
             "MACD" to
