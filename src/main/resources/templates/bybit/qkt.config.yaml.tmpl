@@ -1,0 +1,20 @@
+# qkt daemon config. Bybit symbol routes (BYBIT_SPOT:..., BYBIT_PERP:...) auto-register
+# whenever the `BYBIT_API_KEY` environment variable is non-empty — there's no per-profile
+# `brokers:` entry needed. Add other broker profiles (e.g. mt5) here if you also want
+# to trade through them from the same daemon.
+
+state:
+  dir: /var/lib/qkt
+
+brokers: {}
+
+notify:
+  telegram:
+    enabled: ${TELEGRAM_ENABLED}
+    botToken: ${TELEGRAM_BOT_TOKEN}
+    chatId: ${TELEGRAM_CHAT_ID}
+    events:
+      - DAEMON_STARTED
+      - DAEMON_STOPPED
+      - STRATEGY_ERROR
+      - DAILY_SUMMARY
