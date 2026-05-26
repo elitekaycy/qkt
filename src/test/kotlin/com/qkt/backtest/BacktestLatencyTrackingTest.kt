@@ -3,6 +3,7 @@ package com.qkt.backtest
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.marketdata.Tick
+import com.qkt.observability.LatencyStage
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
@@ -31,37 +32,45 @@ class BacktestLatencyTrackingTest {
         }
 
     @Test
-    fun `latencyEnabled false produces an empty disabled report`() {
-        val bt =
+    fun `latencyEnabled false produces a null report on the result`() {
+        val result =
             Backtest(
                 strategies = listOf("s1" to buyOnEachTick()),
                 ticks = ticks(5),
                 candleWindow = TimeWindow.ONE_MINUTE,
                 latencyEnabled = false,
-            )
-        val result = bt.run()
-        // The smoke test: the run completed without throwing.
+            ).run()
         assertThat(result.trades).isNotEmpty()
+        assertThat(result.latencyReport).isNull()
     }
 
     @Test
-    fun `latencyEnabled true records signal-to-submission and submission-to-fill samples`() {
-        // We grab a reference to the pipeline via a Backtest extension by routing through
-        // a one-off helper: the simplest way is to expose the registry via a backtest result
-        // field, but Backtest's result doesn't carry that today. Instead we drive a tiny
-        // backtest, then assert that the run succeeded — the assertion that the
-        // registry actually saw samples lives in LatencyRegistryTest (unit) and is covered
-        // here as a smoke check that the pipeline doesn't throw when wired with enabled=true.
-        val bt =
+    fun `latencyEnabled true populates the report with non-zero stage samples`() {
+        val result =
             Backtest(
                 strategies = listOf("s1" to buyOnEachTick()),
                 ticks = ticks(5),
                 candleWindow = TimeWindow.ONE_MINUTE,
                 latencyEnabled = true,
-            )
-        val result = bt.run()
-        assertThat(result.trades).isNotEmpty()
-        // Each tick emits a Buy → 5 fills expected.
+            ).run()
+
         assertThat(result.trades.size).isEqualTo(5)
+
+        val report = result.latencyReport
+        assertThat(report).isNotNull()
+        assertThat(report!!.enabled).isTrue()
+        val byStage = report.strategies["s1"]
+        assertThat(byStage).isNotNull()
+
+        // SIGNAL_TO_SUBMISSION fires once per emit; expect 5 samples for 5 ticks.
+        val s2s = byStage!![LatencyStage.SIGNAL_TO_SUBMISSION]!!
+        assertThat(s2s.count).isGreaterThanOrEqualTo(5)
+        assertThat(s2s.maxNanos).isGreaterThan(0L)
+
+        // SUBMISSION_TO_FILL bridges OrderEvent → OrderFilled; PaperBroker fills
+        // synchronously so we expect one sample per fill.
+        val s2f = byStage[LatencyStage.SUBMISSION_TO_FILL]!!
+        assertThat(s2f.count).isGreaterThanOrEqualTo(5)
+        assertThat(s2f.maxNanos).isGreaterThan(0L)
     }
 }

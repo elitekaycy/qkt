@@ -227,6 +227,7 @@ class Backtest(
             global = globalReport,
             perStrategy = perStrategy,
             cadence = cadence,
+            latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
         )
     }
 
