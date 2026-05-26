@@ -26,6 +26,7 @@ class StatusCommand(
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },
 ) {
     fun run(): Int {
+        if (args.flag("latency")) return runLatency()
         if (args.flag("deep")) return runDeep()
         return runShallow()
     }
@@ -180,4 +181,75 @@ class StatusCommand(
             else -> "${s}s"
         }
     }
+
+    /**
+     * `qkt status --latency` — per-strategy per-stage latency percentiles. Hits the
+     * daemon's `/latency` aggregator and renders a table. See #150.
+     */
+    private fun runLatency(): Int {
+        val stateDir = StateDir.resolve(args.option("state-dir"))
+        val client = clientFactory(stateDir)
+        val body =
+            try {
+                client.latency()
+            } catch (e: ControlClient.NoDaemonRunningException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            } catch (e: ControlClient.DaemonError) {
+                System.err.println("qkt: error: latency fetch failed (${e.code}): ${e.body}")
+                return ExitCodes.USER_ERROR
+            }
+        val root: JsonObject =
+            try {
+                Json.parseToJsonElement(body).jsonObject
+            } catch (e: SerializationException) {
+                System.err.println("qkt: error: malformed /latency response: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
+        if (root.isEmpty()) {
+            println("(no strategies deployed)")
+            return ExitCodes.SUCCESS
+        }
+        println("STRATEGY              STAGE                  COUNT     p50      p95      p99      MAX")
+        for ((stratName, perStrat) in root) {
+            val perStratObj = perStrat.jsonObject
+            val enabled = perStratObj["enabled"]?.jsonPrimitive?.contentOrNull
+            if (enabled != "true") {
+                println("%-20s  (disabled — set QKT_LATENCY_TRACKING=1)".format(stratName))
+                continue
+            }
+            val strategies = perStratObj["strategies"]?.jsonObject ?: continue
+            for ((innerId, byStage) in strategies) {
+                val displayName = if (strategies.size == 1) stratName else "$stratName/$innerId"
+                for ((stage, snap) in byStage.jsonObject) {
+                    val s = snap.jsonObject
+                    val count = s["count"]?.jsonPrimitive?.intOrNull ?: 0
+                    val p50 = s["p50Nanos"]?.jsonPrimitive?.longOrNull ?: 0L
+                    val p95 = s["p95Nanos"]?.jsonPrimitive?.longOrNull ?: 0L
+                    val p99 = s["p99Nanos"]?.jsonPrimitive?.longOrNull ?: 0L
+                    val max = s["maxNanos"]?.jsonPrimitive?.longOrNull ?: 0L
+                    println(
+                        "%-20s  %-22s %7d  %7s  %7s  %7s  %7s".format(
+                            displayName,
+                            stage,
+                            count,
+                            formatNanos(p50),
+                            formatNanos(p95),
+                            formatNanos(p99),
+                            formatNanos(max),
+                        ),
+                    )
+                }
+            }
+        }
+        return ExitCodes.SUCCESS
+    }
+
+    private fun formatNanos(n: Long): String =
+        when {
+            n >= 1_000_000_000 -> "%.2fs".format(n / 1_000_000_000.0)
+            n >= 1_000_000 -> "%.2fms".format(n / 1_000_000.0)
+            n >= 1_000 -> "%.1fµs".format(n / 1_000.0)
+            else -> "${n}ns"
+        }
 }

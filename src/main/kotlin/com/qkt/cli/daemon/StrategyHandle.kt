@@ -176,6 +176,7 @@ class StrategyHandle(
                     onStop = { _ -> session.stop() },
                     bind = bind,
                     port = 0,
+                    latencyProvider = { session.latencySnapshot() },
                 ).also { it.start() }
 
             // Ensure log file exists (logback's SiftingAppender lazily creates it on first write,

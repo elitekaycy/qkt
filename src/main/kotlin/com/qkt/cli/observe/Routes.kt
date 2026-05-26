@@ -39,6 +39,41 @@ object Routes {
             }
         }
 
+    /**
+     * `/latency` — returns the strategy's per-stage latency percentiles as JSON.
+     *
+     * When tracking is disabled (default), the payload is
+     * `{"enabled":false,"strategies":{}}`. When enabled, each strategyId maps to a map
+     * of stage → {count, p50Nanos, p95Nanos, p99Nanos, maxNanos}. See [#150].
+     */
+    fun latency(provider: () -> com.qkt.observability.LatencyRegistry.Report): HttpHandler =
+        HttpHandler { ex ->
+            if (ex.requestMethod != "GET") {
+                respond(ex, 405, """{"error":"method not allowed"}""")
+                return@HttpHandler
+            }
+            try {
+                respond(ex, 200, renderLatency(provider()))
+            } catch (e: Exception) {
+                val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                respond(ex, 500, """{"error":"$msg"}""")
+            }
+        }
+
+    private fun renderLatency(report: com.qkt.observability.LatencyRegistry.Report): String {
+        val strategiesJson =
+            report.strategies.entries.joinToString(",", "{", "}") { (id, byStage) ->
+                val stagesJson =
+                    byStage.entries.joinToString(",", "{", "}") { (stage, s) ->
+                        """"${stage.name}":{"count":${s.count},"p50Nanos":${s.p50Nanos},""" +
+                            """"p95Nanos":${s.p95Nanos},"p99Nanos":${s.p99Nanos},""" +
+                            """"maxNanos":${s.maxNanos}}"""
+                    }
+                """"$id":$stagesJson"""
+            }
+        return """{"enabled":${report.enabled},"strategies":$strategiesJson}"""
+    }
+
     fun logs(ring: EventRing): HttpHandler =
         HttpHandler { ex ->
             if (ex.requestMethod != "GET") {

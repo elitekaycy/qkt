@@ -47,6 +47,12 @@ open class ControlClient(
         return readOrThrow(resp)
     }
 
+    open fun latency(): String {
+        val resp =
+            http.newCall(Request.Builder().url("${baseUrl()}/latency").build()).execute()
+        return readOrThrow(resp)
+    }
+
     fun logs(
         name: String,
         lines: Int? = null,

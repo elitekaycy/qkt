@@ -84,10 +84,23 @@ class TradingPipeline(
      * per-strategy `LiveSession` similarly gets its own.
      */
     val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(),
+    /**
+     * Hot-path latency observation. Default reads `QKT_LATENCY_TRACKING` once at construction;
+     * unset → disabled → every observe call short-circuits on the first line, no allocation
+     * and no `nanoTime` call. See [com.qkt.observability.LatencyRegistry] and #150.
+     */
+    val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
     val orderManager: OrderManager = OrderManager(broker, bus, priceTracker, clock, persistor)
+
+    /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
+    val latency: com.qkt.observability.LatencyRegistry =
+        com.qkt.observability.LatencyRegistry(
+            enabled = latencyEnabled,
+            strategyIds = strategies.map { it.first },
+        )
 
     init {
         require(strategies.map { it.first }.toSet().size == strategies.size) {
@@ -116,6 +129,7 @@ class TradingPipeline(
                     tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(tradeHistory, strategyId),
                 )
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
+                val t0 = if (latencyEnabled) System.nanoTime() else 0L
                 bus.publish(SignalEvent(sig))
                 if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
                     orderManager.cancelPendingForSymbol(sig.symbol)
@@ -127,6 +141,13 @@ class TradingPipeline(
                             is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
                         }
                     }
+                }
+                if (latencyEnabled) {
+                    latency.observe(
+                        strategyId,
+                        com.qkt.observability.LatencyStage.SIGNAL_TO_SUBMISSION,
+                        System.nanoTime() - t0,
+                    )
                 }
             }
             val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
@@ -150,11 +171,13 @@ class TradingPipeline(
         }
         bus.subscribe<OrderEvent> { e ->
             orderManager.submit(e.request)
+            if (latencyEnabled) latency.recordSubmit(e.request.id)
         }
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
             positions.reset(e.symbol, e.newQty, e.newAvgPx)
         }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
             // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
             // the instrument's contractSize here so dollar amounts match what the venue
             // reports. Default 1 preserves pre-Phase-30 behavior for symbols not in the
