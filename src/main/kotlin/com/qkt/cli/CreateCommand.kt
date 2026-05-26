@@ -3,13 +3,13 @@ package com.qkt.cli
 import java.nio.file.Path
 
 /**
- * `qkt create template <path> [--kind mt5|minimal]` — scaffold a new qkt project.
+ * `qkt create template <path> [--kind mt5|minimal|bybit]` — scaffold a new qkt project.
  *
  * Writes a working tree (compose stack, sample strategy, Makefile, `.env.example`)
  * so a new operator can go from "I have qkt installed" to "I have a daemon running
  * on docker-compose" in two commands. Default kind is `mt5` — the canonical full
  * stack with `mt5-gateway`; `minimal` skips the gateway for paper-only / backtest
- * exploration.
+ * exploration; `bybit` swaps MT5 out for direct Bybit REST API (testnet by default).
  */
 class CreateCommand(
     private val args: Args,
@@ -19,7 +19,7 @@ class CreateCommand(
         val sub = args.firstNonOption()
         if (sub != "template") {
             System.err.println(
-                "qkt: error: usage: qkt create template <path> [--kind mt5|minimal]",
+                "qkt: error: usage: qkt create template <path> [--kind mt5|minimal|bybit]",
             )
             return ExitCodes.USER_ERROR
         }
@@ -58,6 +58,6 @@ class CreateCommand(
     }
 
     private companion object {
-        private val VALID_KINDS = setOf("mt5", "minimal")
+        private val VALID_KINDS = setOf("mt5", "minimal", "bybit")
     }
 }
