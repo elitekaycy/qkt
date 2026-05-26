@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory
  */
 class TelegramNotifier(
     private val worker: NotificationWorker,
-    val metrics: AtomicNotifierMetrics,
+    override val metrics: AtomicNotifierMetrics,
 ) : Notifier {
     private val log = LoggerFactory.getLogger(TelegramNotifier::class.java)
 

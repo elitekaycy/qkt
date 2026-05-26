@@ -9,4 +9,11 @@ package com.qkt.notify
  */
 interface Notifier : AutoCloseable {
     fun notify(event: NotificationEvent)
+
+    /**
+     * Read-only metrics surface for the Prometheus `/metrics` endpoint (#79). Implementations
+     * that don't collect metrics (e.g. [NoopNotifier]) return null and the endpoint omits
+     * notifier samples.
+     */
+    val metrics: NotifierMetrics? get() = null
 }

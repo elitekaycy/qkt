@@ -130,6 +130,7 @@ class DaemonCommand(
                 shutdownHook = { stopLatch.countDown() },
                 stateDir = stateDir,
                 portfolioDeployer = portfolioDeployer,
+                notifierMetrics = notifier.metrics,
             )
         plane.start()
         stateDir.writeControlPort(plane.boundPort)
