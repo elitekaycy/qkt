@@ -52,6 +52,8 @@ class Backtest(
     private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     private val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
     private val brokerKind: BrokerKind = BrokerKind.PAPER,
+    /** See [com.qkt.app.TradingPipeline.latencyEnabled]; defaults to the env-var read. */
+    private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -73,6 +75,7 @@ class Backtest(
         startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
         instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
         brokerKind: BrokerKind = BrokerKind.PAPER,
+        latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     ) : this(
         strategies = strategies,
         rules = rules,
@@ -83,6 +86,7 @@ class Backtest(
         startingBalance = startingBalance,
         instruments = instruments,
         brokerKind = brokerKind,
+        latencyEnabled = latencyEnabled,
     )
 
     fun run(): BacktestResult {
@@ -174,6 +178,7 @@ class Backtest(
                 onRejected = { e -> rejections.add(e) },
                 onCandle = {},
                 instruments = instruments,
+                latencyEnabled = latencyEnabled,
             )
         pipelineHolder[0] = pipeline
 

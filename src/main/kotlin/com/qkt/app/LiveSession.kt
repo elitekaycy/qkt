@@ -600,6 +600,8 @@ class LiveSession(
             override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
                 pipeline.orderManager.pendingStackLayerInfos()
 
+            override fun latencySnapshot(): com.qkt.observability.LatencyRegistry.Report = pipeline.latency.snapshot()
+
             override fun flatten() {
                 val strategyId = strategies.firstOrNull()?.first ?: return
                 val current = positions.allPositions()
