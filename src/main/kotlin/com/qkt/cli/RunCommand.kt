@@ -173,6 +173,7 @@ class RunCommand(
                     },
                     bind = bind,
                     port = port,
+                    latencyProvider = { session.latencySnapshot() },
                 ).also { it.start() }
             } else {
                 null

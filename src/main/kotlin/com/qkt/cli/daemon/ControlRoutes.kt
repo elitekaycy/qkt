@@ -36,6 +36,7 @@ object ControlRoutes {
                         handleLogs(ex, registry, stateDir, path)
                     method == "GET" && path == "/status" -> handleStatusAll(ex, registry)
                     method == "GET" && path.startsWith("/status/") -> handleStatusOne(ex, registry, path)
+                    method == "GET" && path == "/latency" -> handleLatencyAll(ex, registry)
                     else -> respond(ex, 404, """{"error":"not found"}""")
                 }
             } catch (e: Exception) {
@@ -210,20 +211,43 @@ object ControlRoutes {
         respond(ex, 200, all.joinToString(separator = ",", prefix = "[", postfix = "]"))
     }
 
-    private fun fetchStrategyStatus(port: Int): String? =
+    private fun fetchStrategyStatus(port: Int): String? = fetchStrategyEndpoint(port, "/status")
+
+    private fun fetchStrategyEndpoint(
+        port: Int,
+        endpoint: String,
+    ): String? =
         runCatching {
             val resp =
                 internalHttp
                     .newCall(
                         okhttp3.Request
                             .Builder()
-                            .url("http://127.0.0.1:$port/status")
+                            .url("http://127.0.0.1:$port$endpoint")
                             .build(),
                     ).execute()
             resp.use { r ->
                 if (r.isSuccessful) r.body?.string() else null
             }
         }.getOrNull()
+
+    /**
+     * `GET /latency` — aggregates per-strategy `/latency` responses into a top-level
+     * `{ "<strategyName>": <perStrategyLatencyJson>, ... }`. Each entry's body is whatever
+     * the strategy's [com.qkt.cli.observe.Routes.latency] handler returned (already JSON).
+     * Strategies that can't be reached are omitted from the aggregate.
+     */
+    private fun handleLatencyAll(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+    ) {
+        val parts =
+            registry.list().mapNotNull { h ->
+                val body = fetchStrategyEndpoint(h.port, "/latency") ?: return@mapNotNull null
+                """"${h.name}":$body"""
+            }
+        respond(ex, 200, parts.joinToString(separator = ",", prefix = "{", postfix = "}"))
+    }
 
     private fun handleLogs(
         ex: HttpExchange,

@@ -40,4 +40,12 @@ interface LiveSessionHandle {
 
     /** Cancels all working orders and flattens any open position at market. */
     fun flatten()
+
+    /**
+     * Snapshot of pipeline latency observations (#150). Defaults to a disabled-report so
+     * non-live handles don't need to override. Live sessions return `pipeline.latency.snapshot()`.
+     */
+    fun latencySnapshot(): com.qkt.observability.LatencyRegistry.Report =
+        com.qkt.observability.LatencyRegistry
+            .Report(enabled = false, strategies = emptyMap())
 }

@@ -168,6 +168,7 @@ class PortfolioDeployer(
                 onStop = { _ -> session.stop() },
                 bind = bind,
                 port = 0,
+                latencyProvider = { session.latencySnapshot() },
             ).also { it.start() }
 
         val logFile = stateDir.logFile(childName)
