@@ -170,8 +170,12 @@ class TradingPipeline(
             riskEngine.evaluateHaltRules()
         }
         bus.subscribe<OrderEvent> { e ->
-            orderManager.submit(e.request)
+            // Record submit timestamp BEFORE the broker call, not after — backtest
+            // brokers (PaperBroker, MT5BrokerSimulator) fill synchronously inside
+            // `submit()`, so `OrderFilled` subscribers fire before control returns
+            // here. If we recorded after, `observeFill` would find an empty map.
             if (latencyEnabled) latency.recordSubmit(e.request.id)
+            orderManager.submit(e.request)
         }
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
             positions.reset(e.symbol, e.newQty, e.newAvgPx)
