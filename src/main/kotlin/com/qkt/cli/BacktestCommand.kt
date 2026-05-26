@@ -126,9 +126,6 @@ class BacktestCommand(
                     candleWindow = candleWindow,
                     startingBalance = startingBalance,
                     instruments = instruments,
-                    barStore =
-                        com.qkt.marketdata.store
-                            .LocalBarStore(),
                     brokerKind = brokerKind,
                 )
             val result = backtest.run()
