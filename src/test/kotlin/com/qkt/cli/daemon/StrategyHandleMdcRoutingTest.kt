@@ -100,15 +100,18 @@ class StrategyHandleMdcRoutingTest {
         val file = Path.of("src/test/resources/cli/valid_strategy.qkt")
         val handle = factory.create("alpha", file, false)
         try {
+            // ListAppender.list is a plain ArrayList that the qkt-live-engine thread
+            // mutates concurrently while we iterate. Snapshot via toList() before each
+            // scan so we don't ConcurrentModificationException mid-iteration. See #157.
             val deadline = System.currentTimeMillis() + 5_000L
             while (System.currentTimeMillis() < deadline &&
-                appender.list.none { it.formattedMessage.contains("order accepted") }
+                appender.list.toList().none { it.formattedMessage.contains("order accepted") }
             ) {
                 Thread.sleep(50)
             }
 
             val accepts =
-                appender.list.filter {
+                appender.list.toList().filter {
                     it.formattedMessage.contains("order accepted") && it.threadName == "qkt-live-engine"
                 }
             assertThat(accepts)
