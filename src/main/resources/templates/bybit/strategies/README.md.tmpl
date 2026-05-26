@@ -1,0 +1,33 @@
+# strategies/
+
+Drop `.qkt` files in this directory. They're mounted into the running daemon at
+`/strategies` (read-only).
+
+Bybit symbols use the prefix `BYBIT_SPOT:` (spot trading) or `BYBIT_PERP:` (linear
+perpetual futures). Examples:
+
+```
+SYMBOLS
+    btc = BYBIT_PERP:BTCUSDT EVERY 5m WARMUP 50 BARS
+    eth = BYBIT_SPOT:ETHUSDT EVERY 1m WARMUP 21 BARS
+```
+
+To deploy one:
+
+```bash
+make deploy STRAT=ema_cross
+```
+
+That runs `qkt deploy /strategies/ema_cross.qkt --as ema_cross` inside the
+container. The daemon registers it and starts evaluating rules on the next tick.
+
+To stop one:
+
+```bash
+make stop STRAT=ema_cross
+```
+
+By default the compose file points qkt at Bybit testnet — flip `BYBIT_TESTNET=false`
+in `.env` and restart with `make up` when you're ready for mainnet.
+
+Scaffolded by qkt v{{QKT_VERSION}}.

@@ -1,0 +1,48 @@
+services:
+  init-perms:
+    image: alpine:3
+    # Pre-create the logs subdir on the host source so the daemon's
+    # `Files.createDirectories(/var/lib/qkt/logs)` at startup succeeds inside
+    # the single bind mount. See qkt-prod#1.
+    command: sh -c "mkdir -p /qkt-state/logs && chown -R 999:999 /qkt-state"
+    volumes:
+      - ./state:/qkt-state
+    restart: "no"
+
+  qkt:
+    image: ghcr.io/elitekaycy/qkt:${QKT_IMAGE_TAG:?QKT_IMAGE_TAG must be set in .env}
+    container_name: qkt
+    restart: unless-stopped
+    depends_on:
+      init-perms:
+        condition: service_completed_successfully
+    command: ["--config", "/etc/qkt/qkt.config.yaml", "--control-port", "47000"]
+    environment:
+      QKT_STATE_DIR: /var/lib/qkt
+      # Bybit credentials. Routes auto-activate when BYBIT_API_KEY is non-empty;
+      # leave blank to disable Bybit entirely (e.g. paper-only against BACKTEST symbols).
+      BYBIT_API_KEY: ${BYBIT_API_KEY:-}
+      BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
+      # Testnet vs mainnet selector. Default `true` keeps you on api-testnet.bybit.com
+      # until you explicitly flip to mainnet by setting `BYBIT_TESTNET=false`.
+      BYBIT_TESTNET: ${BYBIT_TESTNET:-true}
+      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./strategies:/strategies:ro
+      - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
+      # Single bind for the daemon's state dir; daemon writes `logs/` inside this
+      # bind. See qkt-prod#1 for why we avoid nesting a separate logs mount here.
+      - ./state:/var/lib/qkt
+    healthcheck:
+      test: ["CMD", "qkt", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
