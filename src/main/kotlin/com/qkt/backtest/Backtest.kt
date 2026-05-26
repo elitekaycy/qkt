@@ -116,8 +116,8 @@ class Backtest(
         val brokerFactory: () -> com.qkt.broker.Broker =
             when (brokerKind) {
                 BrokerKind.PAPER -> { -> PaperBroker(bus, clock, priceTracker) }
-                BrokerKind.MT5_SIM -> { -> com.qkt.broker.MT5BrokerSimulator(bus, clock, priceTracker, instruments)
-                }
+                BrokerKind.MT5_SIM ->
+                    { -> com.qkt.broker.MT5BrokerSimulator(bus, clock, priceTracker, instruments) }
             }
         val broker: com.qkt.broker.Broker =
             if (brokerSymbols.isEmpty()) {
