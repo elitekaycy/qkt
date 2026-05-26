@@ -170,6 +170,7 @@ class StrategyHandle(
                             startedAt.toString(),
                             session.recentTrades(),
                             layers,
+                            streamBrokers = session.streamBrokers(),
                         )
                     },
                     running = { session.running },
