@@ -48,4 +48,11 @@ interface LiveSessionHandle {
     fun latencySnapshot(): com.qkt.observability.LatencyRegistry.Report =
         com.qkt.observability.LatencyRegistry
             .Report(enabled = false, strategies = emptyMap())
+
+    /**
+     * Per-strategy alias → broker label map for DSL-compiled strategies (#139). Lets
+     * `qkt status --deep` show which broker each declared stream routes to. Default is
+     * empty for non-live handles or plain strategies.
+     */
+    fun streamBrokers(): Map<String, String> = emptyMap()
 }
