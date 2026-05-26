@@ -28,6 +28,15 @@ Running qkt in production: deployment, monitoring, troubleshooting.
 
     [:octicons-arrow-right-24: Monitoring](monitoring.md)
 
+- :material-chart-line:{ .lg .middle } **Metrics**
+
+    ---
+
+    The JSON endpoints qkt exposes, plus how to write a sidecar that reformats
+    them for Prometheus, Datadog, or any other monitoring stack.
+
+    [:octicons-arrow-right-24: Metrics](metrics.md)
+
 - :material-content-save-outline:{ .lg .middle } **State backup**
 
     ---
