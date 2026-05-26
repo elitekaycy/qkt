@@ -14,6 +14,7 @@ class ControlPlane(
     private val shutdownHook: () -> Unit = {},
     private val stateDir: StateDir? = null,
     private val portfolioDeployer: PortfolioDeployer? = null,
+    private val notifierMetrics: com.qkt.notify.NotifierMetrics? = null,
 ) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(bind, port), 0)
 
@@ -23,7 +24,14 @@ class ControlPlane(
     init {
         server.createContext(
             "/",
-            ControlRoutes.dispatch(registry, startedAt, stateDir, portfolioDeployer) { shutdownHook() },
+            ControlRoutes.dispatch(
+                registry = registry,
+                startedAt = startedAt,
+                stateDir = stateDir,
+                portfolioDeployer = portfolioDeployer,
+                shutdown = { shutdownHook() },
+                notifierMetrics = notifierMetrics,
+            ),
         )
         server.executor = Executors.newFixedThreadPool(8)
     }
