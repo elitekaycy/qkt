@@ -28,12 +28,12 @@ Each row lists the symptom, the source file the live behavior lives in, and whet
 
 | # | Concern | Backtest (`PaperBroker`) | Live (`MT5Broker`) | Status |
 |---|---|---|---|---|
-| 1 | **Volume quantization** | fills exactly the requested `quantity` (`PaperBroker.publishFill`) | rounds DOWN to `volume_step` from `/symbol_info` (`MT5Broker.quantizeForPlacement`, v0.26.3) | divergent |
-| 2 | **Price rounding** | uses the raw 8-decimal `BigDecimal` from the engine | rounds `price`/`sl`/`tp`/`stopLimit` to `digits` (HALF_EVEN) before sending (`MT5Broker.quantizeForPlacement`, v0.26.4) | divergent |
-| 3 | **Below-`volume_min` orders** | fills regardless of how small | rejected pre-flight with `OrderRejected("quantized volume below venue volumeMin …")` | divergent |
-| 4 | **Bracket entry fills** | fills at `tickPrice` the moment the trigger is crossed (`PaperBroker.fillFromTrigger`) | venue fills at actual ask (for BUY_STOP) or bid (for SELL_STOP) when the trigger prints | divergent |
-| 5 | **Spread / slippage** | uses `tick.price` (the mid set by `Mt5TickFeedSource` when `last=0`) | live pays the venue spread; volatile bars also slip | divergent |
-| 6 | **Market-order fill price** | `priceProvider.lastPrice(symbol)` — the last tracked tick (`PaperBroker.fillMarket`) | MT5 fills at venue ask/bid at submit time, with `deviation` slack | divergent |
+| 1 | **Volume quantization** | fills exactly the requested `quantity` (`PaperBroker.publishFill`) | rounds DOWN to `volume_step` from `/symbol_info` (`MT5Broker.quantizeForPlacement`, v0.26.3) | **closed in MT5_SIM** |
+| 2 | **Price rounding** | uses the raw 8-decimal `BigDecimal` from the engine | rounds `price`/`sl`/`tp`/`stopLimit` to `digits` (HALF_EVEN) before sending (`MT5Broker.quantizeForPlacement`, v0.26.4) | **closed in MT5_SIM** |
+| 3 | **Below-`volume_min` orders** | fills regardless of how small | rejected pre-flight with `OrderRejected("quantized volume below venue volumeMin …")` | **closed in MT5_SIM** |
+| 4 | **Bracket entry fills** | fills at `tickPrice` the moment the trigger is crossed (`PaperBroker.fillFromTrigger`) | venue fills at actual ask (for BUY_STOP) or bid (for SELL_STOP) when the trigger prints | **closed in MT5_SIM** |
+| 5 | **Spread / slippage** | uses `tick.price` (the mid set by `Mt5TickFeedSource` when `last=0`) | live pays the venue spread; volatile bars also slip | **closed in MT5_SIM** |
+| 6 | **Market-order fill price** | `priceProvider.lastPrice(symbol)` — the last tracked tick (`PaperBroker.fillMarket`) | MT5 fills at venue ask/bid at submit time, with `deviation` slack | **closed in MT5_SIM** |
 | 7 | **Contract size** | reads `contractSize` from `InstrumentRegistry`; both backtest and live multiply through it | MT5 sizes positions as `lot × contract_size` (XAUUSD = 100 oz/lot) | **closed in Phase 30** |
 | 8 | **`tradeStopsLevel`** | not enforced (closing that is the simulator's job) | rejected pre-placement in `MT5Broker` since Phase 30 | live closed in Phase 30, backtest open |
 | 9 | **OCO atomicity** | both legs always coupled in memory | emulated via comment-tag prefix + position poller; cancel-on-fill has a few-ms window between the fill event and the sibling-cancel request | divergent edge case |
@@ -41,6 +41,39 @@ Each row lists the symptom, the source file the live behavior lives in, and whet
 | 11 | **Latency** | instantaneous tick → fill | gateway HTTP round-trip + venue execution latency | divergent |
 | 12 | **Retcode handling** | no concept | MT5-specific retcodes (`10009`, `10015`, `10015` price, etc.) translated to `OrderRejected` reasons | divergent |
 | 13 | **Trading calendar / sessions** | runs through every tick the feed produces | respects venue session hours (gaps in `/tick` during weekends, holidays) | aligned in qkt by the `TradingCalendar` injection; divergent if backtest data covers a window live wouldn't trade |
+
+## Rows 1, 2, 3, 4-6 — closed in MT5_SIM
+
+`MT5BrokerSimulator` (added 2026-05-25, issue #43) is an opt-in backtest broker
+that mirrors the live MT5 venue's quantization, rounding, volume-min validation,
+and ask/bid fill rules. Closes the five "high-impact, deterministic" divergences
+that previously made backtest fill prices and sizes diverge from what live MT5
+would have produced.
+
+**Opt in:**
+
+```bash
+qkt backtest <file> --broker mt5-sim ...
+```
+
+Or programmatically:
+
+```kotlin
+Backtest(strategies = ..., ticks = ..., brokerKind = BrokerKind.MT5_SIM, instruments = registry)
+```
+
+**What it requires:** `InstrumentMeta` for every symbol the strategy trades
+(volumeStep, volumeMin, digits, pointSize). Provided via `YamlInstrumentRegistry`
+loaded from `data/instruments.yaml`, or any other `InstrumentRegistry`
+implementation. A missing entry fails the order with `OrderRejected`, consistent
+with the Phase 30 hard-error stance.
+
+**What it doesn't model yet:** row 8 (`tradeStopsLevel`), row 9 (OCO atomicity),
+row 11 (latency — separate issue #140), row 12 (retcodes). These remain
+divergent under `--broker mt5-sim` too; tracked as follow-ups.
+
+`PaperBroker` remains the default. Existing backtests are unaffected unless they
+opt in explicitly.
 
 ## Contract size (#7) — closed in Phase 30
 
