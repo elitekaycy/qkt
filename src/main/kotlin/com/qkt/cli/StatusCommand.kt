@@ -2,8 +2,10 @@ package com.qkt.cli
 
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -68,6 +70,10 @@ class StatusCommand(
         val statusBody =
             try {
                 client.status(null)
+            } catch (e: ControlClient.NoDaemonRunningException) {
+                println("qkt: UNHEALTHY")
+                System.err.println("DAEMON       not running (${e.message})")
+                return ExitCodes.USER_ERROR
             } catch (e: ControlClient.DaemonError) {
                 println("qkt: UNHEALTHY")
                 System.err.println("CONTROL      /status failed (${e.code}): ${e.body}")
@@ -80,8 +86,20 @@ class StatusCommand(
         healthBody: String,
         statusBody: String,
     ): Int {
-        val health = Json.parseToJsonElement(healthBody).jsonObject
-        val strategies = Json.parseToJsonElement(statusBody).jsonArray
+        val health: JsonObject
+        val strategies: JsonArray
+        try {
+            health = Json.parseToJsonElement(healthBody).jsonObject
+            strategies = Json.parseToJsonElement(statusBody).jsonArray
+        } catch (e: SerializationException) {
+            println("qkt: UNHEALTHY")
+            System.err.println("CONTROL      malformed daemon response: ${e.message}")
+            return ExitCodes.USER_ERROR
+        } catch (e: IllegalArgumentException) {
+            println("qkt: UNHEALTHY")
+            System.err.println("CONTROL      unexpected daemon response shape: ${e.message}")
+            return ExitCodes.USER_ERROR
+        }
 
         val daemonStatus = health["status"]?.jsonPrimitive?.contentOrNull ?: "unknown"
         val uptimeMs = health["uptimeMs"]?.jsonPrimitive?.longOrNull ?: 0L
