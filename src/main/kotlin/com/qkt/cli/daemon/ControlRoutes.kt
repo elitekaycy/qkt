@@ -21,6 +21,7 @@ object ControlRoutes {
         portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer? = null,
         shutdown: () -> Unit,
         notifierMetrics: com.qkt.notify.NotifierMetrics? = null,
+        prometheusMetricsEnabled: Boolean = true,
     ): HttpHandler =
         HttpHandler { ex ->
             val path = ex.requestURI.path
@@ -38,7 +39,8 @@ object ControlRoutes {
                     method == "GET" && path == "/status" -> handleStatusAll(ex, registry)
                     method == "GET" && path.startsWith("/status/") -> handleStatusOne(ex, registry, path)
                     method == "GET" && path == "/latency" -> handleLatencyAll(ex, registry)
-                    method == "GET" && path == "/metrics" -> handleMetrics(ex, registry, startedAt, notifierMetrics)
+                    method == "GET" && path == "/metrics" && prometheusMetricsEnabled ->
+                        handleMetrics(ex, registry, startedAt, notifierMetrics)
                     else -> respond(ex, 404, """{"error":"not found"}""")
                 }
             } catch (e: Exception) {
