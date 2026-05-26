@@ -6,10 +6,24 @@ import org.junit.jupiter.api.Test
 
 class IndicatorRegistryTest {
     @Test
-    fun `EMA RSI ATR are registered`() {
+    fun `EMA RSI ATR STDDEV are registered`() {
         assertThat(IndicatorRegistry.has("EMA")).isTrue()
         assertThat(IndicatorRegistry.has("RSI")).isTrue()
         assertThat(IndicatorRegistry.has("ATR")).isTrue()
+        assertThat(IndicatorRegistry.has("STDDEV")).isTrue()
+    }
+
+    @Test
+    fun `STDDEV spec wants a numeric series and one period arg`() {
+        val spec = IndicatorRegistry.spec("STDDEV")!!
+        assertThat(spec.inputKind).isEqualTo(IndicatorInput.NUMERIC_SERIES)
+        assertThat(spec.arity).isEqualTo(2)
+    }
+
+    @Test
+    fun `creating STDDEV returns a Stddev indicator`() {
+        val ind = IndicatorRegistry.create("STDDEV", listOf(java.math.BigDecimal("20")))
+        assertThat(ind).isInstanceOf(com.qkt.indicators.catalog.Stddev::class.java)
     }
 
     @Test
