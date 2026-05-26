@@ -121,6 +121,39 @@ class StatusCommandDeepTest {
     }
 
     @Test
+    fun `deep returns 1 when status call throws after health succeeded`(
+        @TempDir tmp: java.nio.file.Path,
+    ) {
+        val client =
+            object : ControlClient(StateDir.resolve(tmp.toString())) {
+                override fun health(): String = """{"status":"ok","uptimeMs":1000}"""
+
+                override fun status(name: String?): String =
+                    throw ControlClient.NoDaemonRunningException("daemon died mid-check")
+            }
+        val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(stdout).contains("UNHEALTHY")
+        assertThat(stderr).contains("daemon died mid-check")
+    }
+
+    @Test
+    fun `deep returns 1 when daemon returns malformed JSON`(
+        @TempDir tmp: java.nio.file.Path,
+    ) {
+        val client =
+            fakeClient(
+                tmp,
+                healthBody = "not-json-at-all",
+                statusBody = "[]",
+            )
+        val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(stdout).contains("UNHEALTHY")
+        assertThat(stderr).contains("malformed daemon response")
+    }
+
+    @Test
     fun `shallow status without --deep still works unchanged`(
         @TempDir tmp: java.nio.file.Path,
     ) {
