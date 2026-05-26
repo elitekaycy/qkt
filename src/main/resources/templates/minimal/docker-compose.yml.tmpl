@@ -1,10 +1,12 @@
 services:
   init-perms:
     image: alpine:3
-    command: sh -c "chown -R 999:999 /qkt-state /qkt-logs"
+    # Pre-create the logs subdir on the host source so the daemon's
+    # `Files.createDirectories(/var/lib/qkt/logs)` at startup succeeds inside
+    # the single bind mount. See qkt-prod#1 for the failure mode this avoids.
+    command: sh -c "mkdir -p /qkt-state/logs && chown -R 999:999 /qkt-state"
     volumes:
       - ./state:/qkt-state
-      - ./logs:/qkt-logs
     restart: "no"
 
   qkt:
@@ -20,8 +22,11 @@ services:
     volumes:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
+      # Single bind for the daemon's state dir. The daemon writes its `logs/`
+      # subdir inside this bind, persisted to `./state/logs/` on host. Avoid
+      # nesting a separate `./logs:/var/lib/qkt/logs` mount — Docker handles
+      # nested bind mounts unreliably and the inner mount can fail silently.
       - ./state:/var/lib/qkt
-      - ./logs:/var/lib/qkt/logs
     healthcheck:
       test: ["CMD", "qkt", "list"]
       interval: 30s
