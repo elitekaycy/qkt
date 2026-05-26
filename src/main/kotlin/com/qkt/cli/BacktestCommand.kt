@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.backtest.Backtest
+import com.qkt.backtest.BrokerKind
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
@@ -106,6 +107,16 @@ class BacktestCommand(
                 com.qkt.instrument.NoopInstrumentRegistry
             }
 
+        val brokerKind =
+            when (val raw = args.option("broker")) {
+                null, "paper" -> BrokerKind.PAPER
+                "mt5-sim" -> BrokerKind.MT5_SIM
+                else -> {
+                    System.err.println("qkt: error: unknown --broker '$raw' (valid: paper, mt5-sim)")
+                    return ExitCodes.USER_ERROR
+                }
+            }
+
         return try {
             val backtest =
                 Backtest.fromStore(
@@ -118,6 +129,7 @@ class BacktestCommand(
                     barStore =
                         com.qkt.marketdata.store
                             .LocalBarStore(),
+                    brokerKind = brokerKind,
                 )
             val result = backtest.run()
             ReportPrinter.print(result, format, System.out)
