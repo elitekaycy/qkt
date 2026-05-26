@@ -1,0 +1,17 @@
+-- Sample strategy: buy on EMA(9) crossing above EMA(21), close on cross back below.
+-- Trades BTCUSDT perpetuals on Bybit. Swap BYBIT_PERP for BYBIT_SPOT if you'd rather
+-- hold spot. See https://elitekaycy.github.io/qkt/ for the DSL reference.
+
+STRATEGY ema_cross VERSION 1
+
+SYMBOLS
+    btc = BYBIT_PERP:BTCUSDT EVERY 5m WARMUP 50 BARS
+
+RULES
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 0.5 PCT RISK
+
+    WHEN POSITION.btc > 0
+     AND ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
+    THEN CLOSE btc

@@ -90,6 +90,36 @@ class CreateCommandTest {
     }
 
     @Test
+    fun `--kind bybit scaffolds the no-gateway tree wired for Bybit REST`(
+        @TempDir tmp: Path,
+    ) {
+        val target = tmp.resolve("project")
+        val (code, _, _) = invoke("create", "template", target.toString(), "--kind", "bybit")
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+
+        for (entry in BYBIT_EXPECTED_FILES) {
+            assertThat(target.resolve(entry))
+                .withFailMessage("expected $entry at $target")
+                .exists()
+        }
+        val compose = Files.readString(target.resolve("docker-compose.yml"))
+        assertThat(compose)
+            .withFailMessage("bybit compose should not declare mt5-gateway")
+            .doesNotContain("mt5-gateway")
+        assertThat(compose)
+            .withFailMessage("bybit compose should expose BYBIT_API_KEY env var")
+            .contains("BYBIT_API_KEY")
+        assertThat(compose)
+            .withFailMessage("bybit compose should default BYBIT_TESTNET to true")
+            .contains("BYBIT_TESTNET:-true")
+        val env = Files.readString(target.resolve(".env.example"))
+        assertThat(env).contains("BYBIT_API_KEY=")
+        assertThat(env).contains("BYBIT_TESTNET=true")
+        val strat = Files.readString(target.resolve("strategies/ema_cross.qkt"))
+        assertThat(strat).contains("BYBIT_PERP:BTCUSDT")
+    }
+
+    @Test
     fun `unknown --kind errors out and lists valid kinds`(
         @TempDir tmp: Path,
     ) {
@@ -99,6 +129,7 @@ class CreateCommandTest {
         assertThat(stderr).contains("unknown --kind 'notathing'")
         assertThat(stderr).contains("mt5")
         assertThat(stderr).contains("minimal")
+        assertThat(stderr).contains("bybit")
     }
 
     @Test
@@ -126,5 +157,6 @@ class CreateCommandTest {
                 "strategies/ema_cross.qkt",
             )
         private val MINIMAL_EXPECTED_FILES = MT5_EXPECTED_FILES
+        private val BYBIT_EXPECTED_FILES = MT5_EXPECTED_FILES
     }
 }
