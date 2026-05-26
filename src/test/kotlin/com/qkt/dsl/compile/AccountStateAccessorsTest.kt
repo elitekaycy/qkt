@@ -78,6 +78,24 @@ class AccountStateAccessorsTest {
     }
 
     @Test
+    fun `ACCOUNT trades_today, wins_today, losses_today parse and compile`() {
+        val src =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+              g = X:Y EVERY 1m
+            RULES
+              WHEN ACCOUNT.trades_today < 5
+               AND ACCOUNT.wins_today >= 2
+               AND ACCOUNT.losses_today < 3
+              THEN FLATTEN
+            """.trimIndent()
+        assertThatCode {
+            AstCompiler().compile(parse(src).value)
+        }.doesNotThrowAnyException()
+    }
+
+    @Test
     fun `ACCOUNT unsupported field is rejected at compile time`() {
         val src =
             """
