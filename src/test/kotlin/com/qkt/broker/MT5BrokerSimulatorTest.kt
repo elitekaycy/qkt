@@ -9,6 +9,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
+import com.qkt.execution.TriggerType
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
@@ -268,5 +269,136 @@ class MT5BrokerSimulatorTest {
         // BUY shifted UP by 3 * pointSize (0.001) = +0.003.
         assertThat(fills.single().price.setScale(3, java.math.RoundingMode.HALF_EVEN))
             .isEqualByComparingTo(Money.of("2000.003"))
+    }
+
+    @Test
+    fun `cancel removes a working order and publishes OrderCancelled`() {
+        val bus = newBus()
+        val cancels = mutableListOf<BrokerEvent.OrderCancelled>()
+        bus.subscribe<BrokerEvent.OrderCancelled> { cancels.add(it) }
+        val sim = MT5BrokerSimulator(bus, FixedClock(0L), MarketPriceTracker(), registry(xauusd()))
+
+        sim.submit(
+            OrderRequest.Limit(
+                id = "c1",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                limitPrice = Money.of("2000.000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        sim.cancel("c1")
+
+        assertThat(cancels).hasSize(1)
+        assertThat(cancels.single().clientOrderId).isEqualTo("c1")
+    }
+
+    @Test
+    fun `Stop BUY triggers and fills at ask when tick crosses stop price`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val sim = MT5BrokerSimulator(bus, FixedClock(0L), MarketPriceTracker(), registry(xauusd()))
+
+        sim.submit(
+            OrderRequest.Stop(
+                id = "c1",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                stopPrice = Money.of("2010.000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        assertThat(fills).isEmpty()
+
+        val tick =
+            Tick(
+                symbol = "EXNESS:XAUUSD",
+                price = Money.of("2010.100"),
+                timestamp = 1L,
+                bid = Money.of("2010.050"),
+                ask = Money.of("2010.150"),
+            )
+        bus.publish(TickEvent(tick))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("2010.150"))
+    }
+
+    @Test
+    fun `StopLimit BUY triggers on stop cross and fills at limitPrice`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val sim = MT5BrokerSimulator(bus, FixedClock(0L), MarketPriceTracker(), registry(xauusd()))
+
+        sim.submit(
+            OrderRequest.StopLimit(
+                id = "c1",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                stopPrice = Money.of("2010.000"),
+                limitPrice = Money.of("2010.200"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        bus.publish(
+            TickEvent(
+                Tick(
+                    symbol = "EXNESS:XAUUSD",
+                    price = Money.of("2010.500"),
+                    timestamp = 1L,
+                    bid = Money.of("2010.450"),
+                    ask = Money.of("2010.550"),
+                ),
+            ),
+        )
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("2010.200"))
+    }
+
+    @Test
+    fun `IfTouched MARKET BUY triggers below and fills at ask`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val sim = MT5BrokerSimulator(bus, FixedClock(0L), MarketPriceTracker(), registry(xauusd()))
+
+        sim.submit(
+            OrderRequest.IfTouched(
+                id = "c1",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                triggerPrice = Money.of("1990.000"),
+                onTrigger = TriggerType.MARKET,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        bus.publish(
+            TickEvent(
+                Tick(
+                    symbol = "EXNESS:XAUUSD",
+                    price = Money.of("1989.500"),
+                    timestamp = 1L,
+                    bid = Money.of("1989.450"),
+                    ask = Money.of("1989.550"),
+                ),
+            ),
+        )
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1989.550"))
     }
 }

@@ -39,6 +39,11 @@ import org.slf4j.LoggerFactory
  * - OCO atomicity edge cases (row 9).
  * - Network latency (row 11; issue #140).
  * - Retcode semantics (row 12).
+ *
+ * **Threading:** single-threaded by design. `working`, `lastTickBySymbol`, and
+ * [UniformRandomSlippage] state are intentionally not synchronised — the simulator
+ * is only wired through [Backtest], whose tick loop and order submission run on one
+ * thread. Concurrent `submit()` / `onTick()` is unsupported and may corrupt state.
  */
 class MT5BrokerSimulator(
     private val bus: EventBus,
@@ -213,7 +218,10 @@ class MT5BrokerSimulator(
         }
         val mid = tick?.price ?: fallback ?: return null
         if (syntheticSpreadPoints == 0) return mid
-        val halfSpread = meta.pointSize.multiply(BigDecimal(syntheticSpreadPoints)).divide(BigDecimal(2))
+        val halfSpread =
+            meta.pointSize
+                .multiply(BigDecimal(syntheticSpreadPoints))
+                .divide(BigDecimal(2), meta.digits + 2, RoundingMode.HALF_EVEN)
         return if (side == Side.BUY) mid.add(halfSpread) else mid.subtract(halfSpread)
     }
 
@@ -276,7 +284,7 @@ class MT5BrokerSimulator(
             is OrderRequest.IfTouched ->
                 if (req.side == Side.BUY) tickPrice <= req.triggerPrice else tickPrice >= req.triggerPrice
             is OrderRequest.Market -> false
-            else -> false
+            else -> error("MT5BrokerSimulator.checkTrigger: unhandled order type ${req::class.simpleName}")
         }
 
     /**
@@ -290,6 +298,6 @@ class MT5BrokerSimulator(
             is OrderRequest.Stop -> copy(quantity = newQuantity)
             is OrderRequest.StopLimit -> copy(quantity = newQuantity)
             is OrderRequest.IfTouched -> copy(quantity = newQuantity)
-            else -> this
+            else -> error("MT5BrokerSimulator.withQuantity: unhandled order type ${this::class.simpleName}")
         }
 }
