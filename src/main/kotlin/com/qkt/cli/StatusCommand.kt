@@ -158,6 +158,16 @@ class StatusCommand(
             sb.append(
                 "  %-20s %s, %d trades, up %s %s".format(name, state, trades, formatUptime(uptimeMs), tag).trimEnd(),
             )
+            // Per-stream broker routing (#139). Only present when the strategy is DSL-compiled
+            // and the daemon's StatusSnapshot includes the map; empty otherwise.
+            val streamBrokers = obj["streamBrokers"]?.jsonObject
+            if (streamBrokers != null && streamBrokers.isNotEmpty()) {
+                val pairs =
+                    streamBrokers.entries.joinToString(", ") { (alias, broker) ->
+                        "$alias→${broker.jsonPrimitive.contentOrNull ?: "?"}"
+                    }
+                sb.append("\n    streams: ").append(pairs)
+            }
             if (state != "running") {
                 unhealthy.add("strategy '$name' state=$state")
             }

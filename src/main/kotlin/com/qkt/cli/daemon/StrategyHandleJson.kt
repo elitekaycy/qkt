@@ -55,6 +55,7 @@ internal fun buildSnapshot(
     startedAt: String,
     trades: List<Trade>,
     pendingStackLayers: List<PendingStackLayer> = emptyList(),
+    streamBrokers: Map<String, String> = emptyMap(),
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
     val last = trades.lastOrNull()
@@ -80,5 +81,6 @@ internal fun buildSnapshot(
                 )
             },
         pendingStackLayers = pendingStackLayers,
+        streamBrokers = streamBrokers,
     )
 }

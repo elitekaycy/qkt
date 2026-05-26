@@ -620,6 +620,18 @@ class LiveSession(
 
             override fun latencySnapshot(): com.qkt.observability.LatencyRegistry.Report = pipeline.latency.snapshot()
 
+            override fun streamBrokers(): Map<String, String> {
+                val out = LinkedHashMap<String, String>()
+                for ((_, strategy) in strategies) {
+                    if (strategy !is DslCompiledStrategy) continue
+                    for ((alias, key) in strategy.declaredStreams) {
+                        // Preserve declared casing for operator readability ("EXNESS" not "exness").
+                        out[alias] = key.broker
+                    }
+                }
+                return out
+            }
+
             override fun flatten() {
                 val strategyId = strategies.firstOrNull()?.first ?: return
                 val current = positions.allPositions()
