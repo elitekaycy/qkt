@@ -15,6 +15,16 @@ class ControlPlane(
     private val stateDir: StateDir? = null,
     private val portfolioDeployer: PortfolioDeployer? = null,
     private val notifierMetrics: com.qkt.notify.NotifierMetrics? = null,
+    /**
+     * Kill switch for the built-in Prometheus `/metrics` endpoint. Default reads
+     * `QKT_METRICS_PROMETHEUS`; "false" / "0" / "off" / "no" disables registration,
+     * any other value (or unset) keeps it on. The canonical metrics surface is the
+     * JSON endpoints (`/health`, `/status`, `/latency`, `/list`) — see
+     * `docs/operations/metrics.md`. Operators using their own exporter sidecar will
+     * typically turn this off to avoid carrying an unused endpoint.
+     */
+    private val prometheusMetricsEnabled: Boolean =
+        System.getenv("QKT_METRICS_PROMETHEUS")?.lowercase() !in setOf("false", "0", "off", "no"),
 ) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(bind, port), 0)
 
@@ -31,6 +41,7 @@ class ControlPlane(
                 portfolioDeployer = portfolioDeployer,
                 shutdown = { shutdownHook() },
                 notifierMetrics = notifierMetrics,
+                prometheusMetricsEnabled = prometheusMetricsEnabled,
             ),
         )
         server.executor = Executors.newFixedThreadPool(8)
