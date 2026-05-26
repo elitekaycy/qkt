@@ -67,6 +67,7 @@ private fun printHelp() {
             deploy <file> --as <n>  register and start a strategy in the daemon
             list                    list deployed strategies
             status [<name>]         show status of one strategy or all
+            status --deep           aggregated health check (exit 1 if unhealthy)
             logs <name> [-f]        tail per-strategy log file
             stop <name> [--flatten] gracefully stop a deployed strategy
             start <portfolio>/<c>   clear operator-stop on a portfolio child
