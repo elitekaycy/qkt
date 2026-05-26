@@ -144,13 +144,29 @@ class StatusCommandDeepTest {
         val client =
             fakeClient(
                 tmp,
-                healthBody = "not-json-at-all",
+                healthBody = "{",
                 statusBody = "[]",
             )
         val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(stdout).contains("UNHEALTHY")
         assertThat(stderr).contains("malformed daemon response")
+    }
+
+    @Test
+    fun `deep returns 1 when daemon returns wrong JSON shape`(
+        @TempDir tmp: java.nio.file.Path,
+    ) {
+        val client =
+            fakeClient(
+                tmp,
+                healthBody = "\"a-quoted-string-instead-of-object\"",
+                statusBody = "[]",
+            )
+        val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(stdout).contains("UNHEALTHY")
+        assertThat(stderr).contains("unexpected daemon response shape")
     }
 
     @Test
