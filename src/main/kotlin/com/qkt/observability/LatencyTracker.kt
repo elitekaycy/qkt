@@ -40,7 +40,10 @@ class LatencyTracker(
     fun observe(nanos: Long) {
         require(nanos >= 0) { "LatencyTracker.observe nanos must be >= 0: $nanos" }
         val idx = cursor.getAndIncrement()
-        ring.set(idx % capacity, nanos)
+        // floorMod, not `%`: after ~2.1B observes the cursor wraps to a negative Int,
+        // and Java's `%` returns a negative remainder for negative dividends — which
+        // would index outside the ring and throw ArrayIndexOutOfBoundsException.
+        ring.set(Math.floorMod(idx, capacity), nanos)
         if (written.get() < capacity) {
             written.incrementAndGet()
         }
