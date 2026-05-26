@@ -3,6 +3,7 @@ package com.qkt.observability
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -78,6 +79,26 @@ class LatencyTrackerTest {
         assertThat(tracker.count()).isEqualTo(1)
         // 2ms ≈ 2_000_000ns, but JVM scheduling skews this; sanity-check it landed > 0.
         assertThat(tracker.snapshot().maxNanos).isGreaterThan(0)
+    }
+
+    @Test
+    fun `observe survives cursor wraparound past Int MAX_VALUE`() {
+        val tracker = LatencyTracker(capacity = 4)
+        // Pre-seed the cursor to Int.MIN_VALUE + 1 to simulate the post-overflow
+        // state after ~2.1B observe calls. With the old `idx % capacity`, this
+        // returns -3 → ArrayIndexOutOfBoundsException. With floorMod, it lands at 1.
+        val cursorField =
+            LatencyTracker::class.java.getDeclaredField("cursor").apply { isAccessible = true }
+        (cursorField.get(tracker) as AtomicInteger).set(Int.MIN_VALUE + 1)
+
+        tracker.observe(100)
+        tracker.observe(200)
+        tracker.observe(300)
+        tracker.observe(400)
+
+        val s = tracker.snapshot()
+        assertThat(s.count).isEqualTo(4)
+        assertThat(s.maxNanos).isEqualTo(400L)
     }
 
     @Test
