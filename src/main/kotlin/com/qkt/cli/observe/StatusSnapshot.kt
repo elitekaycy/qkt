@@ -76,4 +76,10 @@ data class StatusSnapshot(
     val positions: List<PositionDto>,
     val lastTrade: TradeDto?,
     val pendingStackLayers: List<PendingStackLayer> = emptyList(),
+    /**
+     * Per-strategy stream → broker label map. Populated for DSL-compiled strategies so
+     * `qkt status --deep` can show which broker each declared stream routes to (#139).
+     * Empty for plain (non-DSL) strategies or when not yet exposed by the handle.
+     */
+    val streamBrokers: Map<String, String> = emptyMap(),
 )
