@@ -31,11 +31,14 @@ class StatusCommandDeepTest {
     private fun fakeClient(
         @TempDir tmp: java.nio.file.Path,
         healthBody: String,
-        statusBody: String,
+        listBody: String = "[]",
+        statusBody: String = "[]",
         healthThrows: Exception? = null,
     ): ControlClient =
         object : ControlClient(StateDir.resolve(tmp.toString())) {
             override fun health(): String = healthThrows?.let { throw it } ?: healthBody
+
+            override fun list(): String = listBody
 
             override fun status(name: String?): String = statusBody
         }
@@ -48,7 +51,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = """{"status":"ok","strategies":2,"uptimeMs":300000}""",
-                statusBody =
+                listBody =
                     """[
                         {"name":"alpha","kind":"strategy","port":47001,"trades":5,"uptimeMs":290000,"state":"running"},
                         {"name":"beta","kind":"strategy","port":47002,"trades":1,"uptimeMs":120000,"state":"running"}
@@ -72,7 +75,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = """{"status":"ok","strategies":2,"uptimeMs":300000}""",
-                statusBody =
+                listBody =
                     """[
                         {"name":"alpha","kind":"strategy","port":47001,"trades":5,"uptimeMs":290000,"state":"running"},
                         {"name":"beta","kind":"strategy","port":47002,"trades":0,"uptimeMs":1000,"state":"error"}
@@ -92,7 +95,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = "ignored",
-                statusBody = "ignored",
+                listBody = "ignored",
                 healthThrows = ControlClient.NoDaemonRunningException("no control.port file"),
             )
         val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
@@ -109,7 +112,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = """{"status":"ok","strategies":1,"uptimeMs":300000}""",
-                statusBody =
+                listBody =
                     """[
                         {"name":"port_a/child1","kind":"child","parent":"port_a","port":47010,
                          "trades":3,"uptimeMs":250000,"state":"running","gateState":"operator_stopped"}
@@ -128,7 +131,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = """{"status":"ok","strategies":1,"uptimeMs":300000}""",
-                statusBody =
+                listBody =
                     """[
                         {"name":"multi","kind":"strategy","port":47001,"trades":2,
                          "uptimeMs":300000,"state":"running",
@@ -150,7 +153,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = """{"status":"ok","strategies":1,"uptimeMs":300000}""",
-                statusBody =
+                listBody =
                     """[
                         {"name":"alpha","kind":"strategy","port":47001,"trades":1,
                          "uptimeMs":300000,"state":"running"}
@@ -162,15 +165,14 @@ class StatusCommandDeepTest {
     }
 
     @Test
-    fun `deep returns 1 when status call throws after health succeeded`(
+    fun `deep returns 1 when list call throws after health succeeded`(
         @TempDir tmp: java.nio.file.Path,
     ) {
         val client =
             object : ControlClient(StateDir.resolve(tmp.toString())) {
                 override fun health(): String = """{"status":"ok","uptimeMs":1000}"""
 
-                override fun status(name: String?): String =
-                    throw ControlClient.NoDaemonRunningException("daemon died mid-check")
+                override fun list(): String = throw ControlClient.NoDaemonRunningException("daemon died mid-check")
             }
         val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
@@ -186,7 +188,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = "{",
-                statusBody = "[]",
+                listBody = "[]",
             )
         val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
@@ -202,7 +204,7 @@ class StatusCommandDeepTest {
             fakeClient(
                 tmp,
                 healthBody = "\"a-quoted-string-instead-of-object\"",
-                statusBody = "[]",
+                listBody = "[]",
             )
         val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)

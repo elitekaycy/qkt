@@ -168,6 +168,7 @@ object ControlRoutes {
         for (h in registry.list()) {
             val uptime = now - h.startedAt.toEpochMilli()
             val state = if (h.isRunning()) "running" else "stopped"
+            val streamBrokersJson = renderStreamBrokers(h.live.streamBrokers())
             val meta = h.childMeta
             if (meta != null) {
                 val gateState =
@@ -179,16 +180,23 @@ object ControlRoutes {
                 rows.add(
                     """{"name":"${h.name}","kind":"child","parent":"${meta.parent}",""" +
                         """"port":${h.port},"trades":${h.tradeCount},""" +
-                        """"uptimeMs":$uptime,"state":"$state","gateState":"$gateState"}""",
+                        """"uptimeMs":$uptime,"state":"$state","gateState":"$gateState",""" +
+                        """"streamBrokers":$streamBrokersJson}""",
                 )
             } else {
                 rows.add(
                     """{"name":"${h.name}","kind":"strategy","port":${h.port},""" +
-                        """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state"}""",
+                        """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state",""" +
+                        """"streamBrokers":$streamBrokersJson}""",
                 )
             }
         }
         respond(ex, 200, rows.joinToString(",", "[", "]"))
+    }
+
+    private fun renderStreamBrokers(map: Map<String, String>): String {
+        if (map.isEmpty()) return "{}"
+        return map.entries.joinToString(",", "{", "}") { (k, v) -> "\"$k\":\"$v\"" }
     }
 
     private val internalHttp = okhttp3.OkHttpClient()
