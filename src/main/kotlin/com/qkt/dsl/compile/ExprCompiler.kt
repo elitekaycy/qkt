@@ -136,7 +136,8 @@ class ExprCompiler(
             if (values.any { it !is Value.Num }) {
                 Value.Undefined
             } else {
-                Value.Num(FuncRegistry.invoke(call.name, values.map { (it as Value.Num).v }))
+                val result = FuncRegistry.invoke(call.name, values.map { (it as Value.Num).v })
+                if (result == null) Value.Undefined else Value.Num(result)
             }
         }
     }
