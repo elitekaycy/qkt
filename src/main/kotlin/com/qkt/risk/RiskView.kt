@@ -10,6 +10,8 @@ interface RiskView {
 
     val currentEquity: BigDecimal
 
+    val equityPeak: BigDecimal
+
     val drawdown: BigDecimal
 
     val realizedToday: BigDecimal
@@ -32,6 +34,9 @@ class RiskViewImpl(
     override val currentEquity: BigDecimal
         get() = riskState.equityTracker.currentEquityFor(strategyId)
 
+    override val equityPeak: BigDecimal
+        get() = riskState.equityTracker.peakEquityFor(strategyId)
+
     override val drawdown: BigDecimal
         get() = riskState.drawdownTracker.strategyDrawdown(strategyId)
 
@@ -49,6 +54,7 @@ class NoOpRiskView : RiskView {
     override val halted: Boolean = false
     override val haltReason: String? = null
     override val currentEquity: BigDecimal = Money.ZERO
+    override val equityPeak: BigDecimal = Money.ZERO
     override val drawdown: BigDecimal = Money.ZERO
     override val realizedToday: BigDecimal = Money.ZERO
     override val globalHalted: Boolean = false
