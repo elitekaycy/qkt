@@ -413,32 +413,39 @@ class ExprCompiler(
             when (e) {
                 is StreamFieldRef -> out.add(e.stream)
                 is BinaryOp -> {
-                    walk(e.lhs); walk(e.rhs)
+                    walk(e.lhs)
+                    walk(e.rhs)
                 }
                 is UnaryOp -> walk(e.arg)
                 is CmpOp -> {
-                    walk(e.lhs); walk(e.rhs)
+                    walk(e.lhs)
+                    walk(e.rhs)
                 }
                 is Crosses -> {
-                    walk(e.lhs); walk(e.rhs)
+                    walk(e.lhs)
+                    walk(e.rhs)
                 }
                 is FuncCall -> for (a in e.args) walk(a)
                 is IndicatorCall -> for (a in e.args) walk(a)
                 is Aggregate -> walk(e.series)
                 is Between -> {
-                    walk(e.v); walk(e.lo); walk(e.hi)
+                    walk(e.v)
+                    walk(e.lo)
+                    walk(e.hi)
                 }
                 is InList -> {
-                    walk(e.v); for (m in e.members) walk(m)
+                    walk(e.v)
+                    for (m in e.members) walk(m)
                 }
                 is CaseWhen -> {
                     for ((c, b) in e.branches) {
-                        walk(c); walk(b)
+                        walk(c)
+                        walk(b)
                     }
                     walk(e.elseExpr)
                 }
                 is IsNull -> walk(e.expr)
-                else -> Unit // leaves and non-stream nodes
+                else -> Unit
             }
         }
         walk(expr)
