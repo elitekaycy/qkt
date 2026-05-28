@@ -151,8 +151,7 @@ class ListRouteTest {
 
                         override fun flatten() = Unit
 
-                        override fun streamBrokers(): Map<String, String> =
-                            mapOf("gold" to "EXNESS", "btc" to "BYBIT")
+                        override fun streamBrokers(): Map<String, String> = mapOf("gold" to "EXNESS", "btc" to "BYBIT")
                     }
                 val server =
                     ObservabilityServer(
