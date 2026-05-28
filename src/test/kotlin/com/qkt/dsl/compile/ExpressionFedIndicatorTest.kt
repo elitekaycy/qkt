@@ -2,7 +2,6 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
-import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
