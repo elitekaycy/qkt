@@ -264,6 +264,67 @@ class ExprCompilerStateTest {
     }
 
     @Test
+    fun `POSITION_TRADES_TODAY counts only fills today on the stream's symbol`() {
+        val history = com.qkt.pnl.TradeHistory()
+        val midnight = 1_705_276_800_000L
+        history.recordTrade("test", midnight + 1_000, BigDecimal("10"), "BACKTEST:BTCUSDT")
+        history.recordTrade("test", midnight + 7_200_000, BigDecimal("-5"), "BACKTEST:BTCUSDT")
+        history.recordTrade("test", midnight + 7_200_000, BigDecimal("10"), "BACKTEST:ETHUSDT")
+        val view = com.qkt.pnl.TradeHistoryViewImpl(history, "test")
+        val noon = midnight + 12 * 3600 * 1000
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext =
+                    testStrategyContext(
+                        clock = com.qkt.common.FixedClock(time = noon),
+                        tradeHistory = view,
+                    ),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_TRADES_TODAY, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("2")
+    }
+
+    @Test
+    fun `POSITION_LAST_TRADE_AT returns Undefined when no fills on that symbol`() {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        val v = ExprCompiler().compile(StateAccessor(StateSource.POSITION_LAST_TRADE_AT, "btc")).evaluate(ec)
+        assertThat(v).isEqualTo(Value.Undefined)
+    }
+
+    @Test
+    fun `POSITION_LAST_TRADE_AT returns most recent fill timestamp on the stream's symbol`() {
+        val history = com.qkt.pnl.TradeHistory()
+        history.recordTrade("test", 100L, BigDecimal("10"), "BACKTEST:BTCUSDT")
+        history.recordTrade("test", 200L, BigDecimal("-5"), "BACKTEST:ETHUSDT")
+        history.recordTrade("test", 300L, BigDecimal("15"), "BACKTEST:BTCUSDT")
+        val view = com.qkt.pnl.TradeHistoryViewImpl(history, "test")
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(tradeHistory = view),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_LAST_TRADE_AT, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("300")
+    }
+
+    @Test
     fun `OPEN_ORDERS state is rejected in 11c1`() {
         assertThatThrownBy {
             ExprCompiler()

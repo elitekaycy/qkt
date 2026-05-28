@@ -17,7 +17,7 @@ class TradeHistoryTest {
     @Test
     fun `zero-pnl fills are skipped (they're position-opens, not closes)`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal.ZERO)
+        h.recordTrade("s", 100L, BigDecimal.ZERO, "X")
         assertThat(h.lastTradeAt("s")).isNull()
         assertThat(h.winStreak("s")).isZero
     }
@@ -25,27 +25,27 @@ class TradeHistoryTest {
     @Test
     fun `lastTradeAt returns most recent timestamp`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10"))
-        h.recordTrade("s", 200L, BigDecimal("-5"))
-        h.recordTrade("s", 300L, BigDecimal("20"))
+        h.recordTrade("s", 100L, BigDecimal("10"), "X")
+        h.recordTrade("s", 200L, BigDecimal("-5"), "X")
+        h.recordTrade("s", 300L, BigDecimal("20"), "X")
         assertThat(h.lastTradeAt("s")).isEqualTo(300L)
     }
 
     @Test
     fun `lastTradePnl returns most recent pnl`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10"))
-        h.recordTrade("s", 200L, BigDecimal("-7"))
+        h.recordTrade("s", 100L, BigDecimal("10"), "X")
+        h.recordTrade("s", 200L, BigDecimal("-7"), "X")
         assertThat(h.lastTradePnl("s")).isEqualByComparingTo("-7")
     }
 
     @Test
     fun `winStreak counts consecutive wins from newest`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("-5"))
-        h.recordTrade("s", 200L, BigDecimal("10"))
-        h.recordTrade("s", 300L, BigDecimal("15"))
-        h.recordTrade("s", 400L, BigDecimal("20"))
+        h.recordTrade("s", 100L, BigDecimal("-5"), "X")
+        h.recordTrade("s", 200L, BigDecimal("10"), "X")
+        h.recordTrade("s", 300L, BigDecimal("15"), "X")
+        h.recordTrade("s", 400L, BigDecimal("20"), "X")
         assertThat(h.winStreak("s")).isEqualTo(3)
         assertThat(h.lossStreak("s")).isZero
     }
@@ -53,9 +53,9 @@ class TradeHistoryTest {
     @Test
     fun `lossStreak counts consecutive losses from newest`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10"))
-        h.recordTrade("s", 200L, BigDecimal("-5"))
-        h.recordTrade("s", 300L, BigDecimal("-7"))
+        h.recordTrade("s", 100L, BigDecimal("10"), "X")
+        h.recordTrade("s", 200L, BigDecimal("-5"), "X")
+        h.recordTrade("s", 300L, BigDecimal("-7"), "X")
         assertThat(h.lossStreak("s")).isEqualTo(2)
         assertThat(h.winStreak("s")).isZero
     }
@@ -63,18 +63,18 @@ class TradeHistoryTest {
     @Test
     fun `streak breaks at the first non-matching outcome`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10")) // W
-        h.recordTrade("s", 200L, BigDecimal("10")) // W
-        h.recordTrade("s", 300L, BigDecimal("-5")) // L
-        h.recordTrade("s", 400L, BigDecimal("10")) // W → streak = 1
+        h.recordTrade("s", 100L, BigDecimal("10"), "X") // W
+        h.recordTrade("s", 200L, BigDecimal("10"), "X") // W
+        h.recordTrade("s", 300L, BigDecimal("-5"), "X") // L
+        h.recordTrade("s", 400L, BigDecimal("10"), "X") // W → streak = 1
         assertThat(h.winStreak("s")).isEqualTo(1)
     }
 
     @Test
     fun `streaks are per-strategy`() {
         val h = TradeHistory()
-        h.recordTrade("a", 100L, BigDecimal("10"))
-        h.recordTrade("b", 100L, BigDecimal("-5"))
+        h.recordTrade("a", 100L, BigDecimal("10"), "X")
+        h.recordTrade("b", 100L, BigDecimal("-5"), "X")
         assertThat(h.winStreak("a")).isEqualTo(1)
         assertThat(h.lossStreak("a")).isZero
         assertThat(h.winStreak("b")).isZero
@@ -84,10 +84,10 @@ class TradeHistoryTest {
     @Test
     fun `buffer caps at maxHistory and evicts oldest`() {
         val h = TradeHistory(maxHistory = 3)
-        h.recordTrade("s", 100L, BigDecimal("-1"))
-        h.recordTrade("s", 200L, BigDecimal("-1"))
-        h.recordTrade("s", 300L, BigDecimal("-1"))
-        h.recordTrade("s", 400L, BigDecimal("-1")) // evicts the 100L entry
+        h.recordTrade("s", 100L, BigDecimal("-1"), "X")
+        h.recordTrade("s", 200L, BigDecimal("-1"), "X")
+        h.recordTrade("s", 300L, BigDecimal("-1"), "X")
+        h.recordTrade("s", 400L, BigDecimal("-1"), "X") // evicts the 100L entry
         assertThat(h.lossStreak("s")).isEqualTo(3) // buffer holds 3, all losses
         assertThat(h.lastTradeAt("s")).isEqualTo(400L)
     }
@@ -95,7 +95,7 @@ class TradeHistoryTest {
     @Test
     fun `view delegates per-strategy`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10"))
+        h.recordTrade("s", 100L, BigDecimal("10"), "X")
         val view: TradeHistoryView = TradeHistoryViewImpl(h, "s")
         assertThat(view.lastTradeAt()).isEqualTo(100L)
         assertThat(view.lastTradePnl()).isEqualByComparingTo("10")
@@ -112,14 +112,16 @@ class TradeHistoryTest {
         assertThat(view.tradesToday(1_000_000_000_000L)).isZero
         assertThat(view.winsToday(1_000_000_000_000L)).isZero
         assertThat(view.lossesToday(1_000_000_000_000L)).isZero
+        assertThat(view.tradesTodayFor("X", 1_000_000_000_000L)).isZero
+        assertThat(view.lastTradeAtFor("X")).isNull()
     }
 
     @Test
     fun `tradesSince counts only entries at or after the cutoff`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10"))
-        h.recordTrade("s", 200L, BigDecimal("-5"))
-        h.recordTrade("s", 300L, BigDecimal("20"))
+        h.recordTrade("s", 100L, BigDecimal("10"), "X")
+        h.recordTrade("s", 200L, BigDecimal("-5"), "X")
+        h.recordTrade("s", 300L, BigDecimal("20"), "X")
         assertThat(h.tradesSince("s", 0L)).isEqualTo(3)
         assertThat(h.tradesSince("s", 200L)).isEqualTo(2)
         assertThat(h.tradesSince("s", 250L)).isEqualTo(1)
@@ -129,10 +131,10 @@ class TradeHistoryTest {
     @Test
     fun `winsSince and lossesSince filter by outcome`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10")) // W
-        h.recordTrade("s", 200L, BigDecimal("-5")) // L
-        h.recordTrade("s", 300L, BigDecimal("20")) // W
-        h.recordTrade("s", 400L, BigDecimal("-3")) // L
+        h.recordTrade("s", 100L, BigDecimal("10"), "X") // W
+        h.recordTrade("s", 200L, BigDecimal("-5"), "X") // L
+        h.recordTrade("s", 300L, BigDecimal("20"), "X") // W
+        h.recordTrade("s", 400L, BigDecimal("-3"), "X") // L
         assertThat(h.winsSince("s", 0L)).isEqualTo(2)
         assertThat(h.lossesSince("s", 0L)).isEqualTo(2)
         assertThat(h.winsSince("s", 250L)).isEqualTo(1)
@@ -144,9 +146,9 @@ class TradeHistoryTest {
         val h = TradeHistory()
         // 2024-01-15 00:00:00 UTC = 1705276800000 ms
         val midnight = 1_705_276_800_000L
-        h.recordTrade("s", midnight - 1, BigDecimal("10")) // yesterday — not counted
-        h.recordTrade("s", midnight + 1_000, BigDecimal("10")) // today
-        h.recordTrade("s", midnight + 7_200_000, BigDecimal("-5")) // today
+        h.recordTrade("s", midnight - 1, BigDecimal("10"), "X") // yesterday — not counted
+        h.recordTrade("s", midnight + 1_000, BigDecimal("10"), "X") // today
+        h.recordTrade("s", midnight + 7_200_000, BigDecimal("-5"), "X") // today
         val view: TradeHistoryView = TradeHistoryViewImpl(h, "s")
 
         // "now" anywhere in 2024-01-15 → cutoff is 00:00:00 UTC that day
@@ -159,11 +161,51 @@ class TradeHistoryTest {
     @Test
     fun `view tradesToday is empty when nothing was recorded today`() {
         val h = TradeHistory()
-        h.recordTrade("s", 100L, BigDecimal("10")) // epoch — way before any "today"
+        h.recordTrade("s", 100L, BigDecimal("10"), "X") // epoch — way before any "today"
         val view: TradeHistoryView = TradeHistoryViewImpl(h, "s")
         val now2024 = 1_705_276_800_000L // 2024-01-15 UTC
         assertThat(view.tradesToday(now2024)).isZero
         assertThat(view.winsToday(now2024)).isZero
         assertThat(view.lossesToday(now2024)).isZero
+    }
+
+    @Test
+    fun `tradesSinceFor filters by symbol`() {
+        val h = TradeHistory()
+        h.recordTrade("s", 100L, BigDecimal("10"), "GOLD")
+        h.recordTrade("s", 200L, BigDecimal("-5"), "SILVER")
+        h.recordTrade("s", 300L, BigDecimal("20"), "GOLD")
+        assertThat(h.tradesSinceFor("s", "GOLD", 0L)).isEqualTo(2)
+        assertThat(h.tradesSinceFor("s", "SILVER", 0L)).isEqualTo(1)
+        assertThat(h.tradesSinceFor("s", "PLATINUM", 0L)).isZero
+        assertThat(h.tradesSinceFor("s", "GOLD", 150L)).isEqualTo(1)
+    }
+
+    @Test
+    fun `lastTradeAtFor returns most recent fill for that symbol`() {
+        val h = TradeHistory()
+        h.recordTrade("s", 100L, BigDecimal("10"), "GOLD")
+        h.recordTrade("s", 200L, BigDecimal("-5"), "SILVER")
+        h.recordTrade("s", 300L, BigDecimal("20"), "GOLD")
+        h.recordTrade("s", 400L, BigDecimal("-3"), "SILVER")
+        assertThat(h.lastTradeAtFor("s", "GOLD")).isEqualTo(300L)
+        assertThat(h.lastTradeAtFor("s", "SILVER")).isEqualTo(400L)
+        assertThat(h.lastTradeAtFor("s", "PLATINUM")).isNull()
+    }
+
+    @Test
+    fun `view tradesTodayFor and lastTradeAtFor delegate per symbol`() {
+        val h = TradeHistory()
+        val midnight = 1_705_276_800_000L
+        h.recordTrade("s", midnight - 1, BigDecimal("10"), "GOLD") // yesterday, excluded
+        h.recordTrade("s", midnight + 1_000, BigDecimal("10"), "GOLD") // today
+        h.recordTrade("s", midnight + 7_200_000, BigDecimal("-5"), "SILVER") // today, other symbol
+        val view: TradeHistoryView = TradeHistoryViewImpl(h, "s")
+        val now = midnight + 12 * 3600 * 1000
+        assertThat(view.tradesTodayFor("GOLD", now)).isEqualTo(1)
+        assertThat(view.tradesTodayFor("SILVER", now)).isEqualTo(1)
+        assertThat(view.lastTradeAtFor("GOLD")).isEqualTo(midnight + 1_000)
+        assertThat(view.lastTradeAtFor("SILVER")).isEqualTo(midnight + 7_200_000)
+        assertThat(view.lastTradeAtFor("PLATINUM")).isNull()
     }
 }
