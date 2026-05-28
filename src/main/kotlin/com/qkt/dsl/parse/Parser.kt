@@ -496,7 +496,11 @@ class Parser(
                     NowAccessor(NowField.EPOCH_MS)
                 }
             }
-            TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE -> {
+            // TokenKind.LOG is included here because `log` is also a reserved action
+            // keyword (`LOG "message"` in THEN). In expression position, `log(` must
+            // bind to the math function — the action parser is only reached from action
+            // position, so this overlap is unambiguous.
+            TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE, TokenKind.LOG -> {
                 if (inStackLayerAt && t.kind == TokenKind.IDENT && t.lexeme == "entry") {
                     advance()
                     return StackEntryRef
