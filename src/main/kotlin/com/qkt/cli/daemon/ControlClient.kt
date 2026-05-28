@@ -35,7 +35,7 @@ open class ControlClient(
         return readOrThrow(resp)
     }
 
-    fun list(): String {
+    open fun list(): String {
         val resp =
             http.newCall(Request.Builder().url("${baseUrl()}/list").build()).execute()
         return readOrThrow(resp)
