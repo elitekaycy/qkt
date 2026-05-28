@@ -19,6 +19,7 @@ class IndicatorBinding private constructor(
     private val field: String?,
     private val inputKind: IndicatorInput,
     private val source: IndicatorBinding?,
+    private val seriesExpr: CompiledExpr?,
 ) {
     val rootAlias: String? get() = streamAlias ?: source?.rootAlias
 
@@ -32,6 +33,18 @@ class IndicatorBinding private constructor(
         }
         val symbol = ctx.streams[streamAlias!!]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
         if (ctx.candle.symbol != symbol) return
+        // Expression-fed bindings (#174): evaluate the compiled series expression in
+        // the current context and feed the numeric result to the indicator. Updates
+        // are gated to the *primary alias* (the first stream the expression references)
+        // — for cross-stream expressions at the same timeframe, this yields one update
+        // per bar with the latest known value from each stream.
+        if (seriesExpr != null) {
+            val v = seriesExpr.evaluate(ctx)
+            if (v is Value.Num) {
+                (indicator as Indicator<BigDecimal>).update(v.v)
+            }
+            return
+        }
         when (inputKind) {
             IndicatorInput.NUMERIC_SERIES -> {
                 val v: BigDecimal =
@@ -80,7 +93,8 @@ class IndicatorBinding private constructor(
             streamAlias: String,
             field: String?,
             inputKind: IndicatorInput,
-        ): IndicatorBinding = IndicatorBinding(call, indicator, streamAlias, field, inputKind, source = null)
+        ): IndicatorBinding =
+            IndicatorBinding(call, indicator, streamAlias, field, inputKind, source = null, seriesExpr = null)
 
         internal fun indicatorFed(
             call: IndicatorCall,
@@ -94,6 +108,23 @@ class IndicatorBinding private constructor(
                 field = null,
                 inputKind = IndicatorInput.NUMERIC_SERIES,
                 source = source,
+                seriesExpr = null,
+            )
+
+        internal fun expressionFed(
+            call: IndicatorCall,
+            indicator: IndicatorOutput,
+            primaryAlias: String,
+            seriesExpr: CompiledExpr,
+        ): IndicatorBinding =
+            IndicatorBinding(
+                call,
+                indicator,
+                streamAlias = primaryAlias,
+                field = null,
+                inputKind = IndicatorInput.NUMERIC_SERIES,
+                source = null,
+                seriesExpr = seriesExpr,
             )
     }
 
@@ -120,9 +151,48 @@ class IndicatorBinding private constructor(
                     is IndicatorCall -> bindIndicator(spec, call, seriesArg, ind)
                     else ->
                         error(
-                            "Indicator ${call.name} series arg must be a stream field or another indicator call",
+                            "Indicator ${call.name} series arg must be a stream field, another indicator call, " +
+                                "or routed via Bag.bindExpression for arbitrary expressions",
                         )
                 }
+            bindings.add(binding)
+            return binding
+        }
+
+        /**
+         * Bind an indicator whose series arg is an arbitrary numeric expression (#174).
+         *
+         * Used by [ExprCompiler] when the series arg is neither a [StreamFieldRef] nor
+         * an [IndicatorCall] — e.g. \`stddev(gold.close - 75 * silver.close, 60)\`.
+         *
+         * [primaryAlias] gates updates: the binding fires once per bar when the closing
+         * bar belongs to that stream. Cross-stream expressions evaluate against the
+         * latest known candle for each referenced stream. Only [IndicatorInput.NUMERIC_SERIES]
+         * specs are supported; CANDLE_SERIES / TICK_SERIES indicators (e.g. ATR, VWAP)
+         * still require their native stream-field path.
+         */
+        fun bindExpression(
+            call: IndicatorCall,
+            seriesExpr: CompiledExpr,
+            primaryAlias: String,
+        ): IndicatorBinding {
+            val spec = IndicatorRegistry.spec(call.name) ?: error("Unknown indicator: ${call.name}")
+            require(call.args.size == spec.arity) {
+                "Indicator ${call.name} expects ${spec.arity} args, got ${call.args.size}"
+            }
+            require(spec.inputKind == IndicatorInput.NUMERIC_SERIES) {
+                "Indicator ${call.name} requires ${spec.inputKind}; expression-fed binding only " +
+                    "supports NUMERIC_SERIES indicators"
+            }
+            val constArgs =
+                call.args.drop(1).map {
+                    require(it is NumLit) {
+                        "Indicator ${call.name} non-series arg must be a numeric literal"
+                    }
+                    it.value
+                }
+            val ind = IndicatorRegistry.create(call.name, constArgs)
+            val binding = expressionFed(call, ind, primaryAlias, seriesExpr)
             bindings.add(binding)
             return binding
         }
