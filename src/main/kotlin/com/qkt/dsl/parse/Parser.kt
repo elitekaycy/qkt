@@ -447,6 +447,8 @@ class Parser(
                         "unrealized_pnl" -> StateAccessor(StateSource.POSITION_UNREALIZED_PNL, streamAlias)
                         "holding_duration" -> StateAccessor(StateSource.POSITION_HOLDING_DURATION, streamAlias)
                         "mfe" -> StateAccessor(StateSource.POSITION_MFE, streamAlias)
+                        "trades_today" -> StateAccessor(StateSource.POSITION_TRADES_TODAY, streamAlias)
+                        "last_trade_at" -> StateAccessor(StateSource.POSITION_LAST_TRADE_AT, streamAlias)
                         else -> {
                             errors += ParseError(t.line, t.col, "unknown POSITION accessor: $accessor")
                             PositionRef(streamAlias)

@@ -194,7 +194,7 @@ class TradingPipeline(
             val rawStratRealized = strategyPositions.applyFill(e)
             val stratRealized = rawStratRealized.multiply(cs)
             strategyPnL.recordRealized(e.strategyId, stratRealized)
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized)
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized, e.symbol)
             riskState.onFill(e.strategyId, stratRealized)
             riskEngine.evaluateHaltRules()
 
