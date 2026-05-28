@@ -172,8 +172,7 @@ class StatusCommandDeepTest {
             object : ControlClient(StateDir.resolve(tmp.toString())) {
                 override fun health(): String = """{"status":"ok","uptimeMs":1000}"""
 
-                override fun list(): String =
-                    throw ControlClient.NoDaemonRunningException("daemon died mid-check")
+                override fun list(): String = throw ControlClient.NoDaemonRunningException("daemon died mid-check")
             }
         val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
