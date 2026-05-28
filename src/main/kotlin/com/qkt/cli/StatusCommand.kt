@@ -68,30 +68,30 @@ class StatusCommand(
                 System.err.println("DAEMON       /health failed (${e.code}): ${e.body}")
                 return ExitCodes.USER_ERROR
             }
-        val statusBody =
+        val listBody =
             try {
-                client.status(null)
+                client.list()
             } catch (e: ControlClient.NoDaemonRunningException) {
                 println("qkt: UNHEALTHY")
                 System.err.println("DAEMON       not running (${e.message})")
                 return ExitCodes.USER_ERROR
             } catch (e: ControlClient.DaemonError) {
                 println("qkt: UNHEALTHY")
-                System.err.println("CONTROL      /status failed (${e.code}): ${e.body}")
+                System.err.println("CONTROL      /list failed (${e.code}): ${e.body}")
                 return ExitCodes.USER_ERROR
             }
-        return renderDeep(healthBody, statusBody)
+        return renderDeep(healthBody, listBody)
     }
 
     private fun renderDeep(
         healthBody: String,
-        statusBody: String,
+        listBody: String,
     ): Int {
         val health: JsonObject
         val strategies: JsonArray
         try {
             health = Json.parseToJsonElement(healthBody).jsonObject
-            strategies = Json.parseToJsonElement(statusBody).jsonArray
+            strategies = Json.parseToJsonElement(listBody).jsonArray
         } catch (e: SerializationException) {
             println("qkt: UNHEALTHY")
             System.err.println("CONTROL      malformed daemon response: ${e.message}")
