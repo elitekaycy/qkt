@@ -409,6 +409,7 @@ class ExprCompiler(
      */
     private fun streamAliasesIn(expr: ExprAst): List<String> {
         val out = LinkedHashSet<String>()
+
         fun walk(e: ExprAst) {
             when (e) {
                 is StreamFieldRef -> out.add(e.stream)
