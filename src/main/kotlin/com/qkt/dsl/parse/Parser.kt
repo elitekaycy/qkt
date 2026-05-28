@@ -32,6 +32,7 @@ import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.DurationAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
+import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.Gtc
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
@@ -509,7 +510,16 @@ class Parser(
                             while (match(TokenKind.COMMA)) args.add(parseExpr())
                         }
                         expect(TokenKind.RPAREN, "expected ')' after arguments")
-                        IndicatorCall(name, args)
+                        // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
+                        // FuncCall — pure functions on numeric values, no warmup or per-bar state.
+                        // Everything else stays IndicatorCall for the indicator-binding path.
+                        if (com.qkt.dsl.stdlib.FuncRegistry
+                                .has(name.uppercase())
+                        ) {
+                            FuncCall(name.uppercase(), args)
+                        } else {
+                            IndicatorCall(name, args)
+                        }
                     }
                     match(TokenKind.DOT) -> {
                         val field = expectFieldName().lexeme

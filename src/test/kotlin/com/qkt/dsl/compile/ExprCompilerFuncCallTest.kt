@@ -43,6 +43,63 @@ class ExprCompilerFuncCallTest {
     }
 
     @Test
+    fun `SQRT evaluates`() {
+        val v =
+            ExprCompiler()
+                .compile(FuncCall("SQRT", listOf(NumLit(BigDecimal("16")))))
+                .evaluate(ctx) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("4")
+    }
+
+    @Test
+    fun `LOG evaluates and is Undefined on non-positive`() {
+        val v1 =
+            ExprCompiler()
+                .compile(FuncCall("LOG", listOf(NumLit(BigDecimal("1")))))
+                .evaluate(ctx) as Value.Num
+        assertThat(v1.v).isEqualByComparingTo("0")
+
+        val v2 =
+            ExprCompiler()
+                .compile(FuncCall("LOG", listOf(NumLit(BigDecimal("0")))))
+                .evaluate(ctx)
+        assertThat(v2).isEqualTo(Value.Undefined)
+    }
+
+    @Test
+    fun `EXP evaluates and is Undefined on overflow`() {
+        val v1 =
+            ExprCompiler()
+                .compile(FuncCall("EXP", listOf(NumLit(BigDecimal.ZERO))))
+                .evaluate(ctx) as Value.Num
+        assertThat(v1.v).isEqualByComparingTo("1")
+
+        val v2 =
+            ExprCompiler()
+                .compile(FuncCall("EXP", listOf(NumLit(BigDecimal("10000")))))
+                .evaluate(ctx)
+        assertThat(v2).isEqualTo(Value.Undefined)
+    }
+
+    @Test
+    fun `POW evaluates`() {
+        val v =
+            ExprCompiler()
+                .compile(FuncCall("POW", listOf(NumLit(BigDecimal("2")), NumLit(BigDecimal("10")))))
+                .evaluate(ctx) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("1024")
+    }
+
+    @Test
+    fun `SQRT of negative is Undefined`() {
+        val v =
+            ExprCompiler()
+                .compile(FuncCall("SQRT", listOf(NumLit(BigDecimal("-4")))))
+                .evaluate(ctx)
+        assertThat(v).isEqualTo(Value.Undefined)
+    }
+
+    @Test
     fun `Undefined arg makes the result Undefined`() {
         // StreamFieldRef("btc", "close") has no stream symbol mapping → throws.
         // Use a mismatched candle symbol instead which yields Undefined cleanly.
