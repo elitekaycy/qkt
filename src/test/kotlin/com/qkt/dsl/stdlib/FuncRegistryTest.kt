@@ -29,7 +29,8 @@ class FuncRegistryTest {
         assertThat(FuncRegistry.invoke("EXP", listOf(BigDecimal.ZERO)))
             .isEqualByComparingTo("1")
         val e = FuncRegistry.invoke("EXP", listOf(BigDecimal.ONE))!!.toDouble()
-        assertThat(e).isCloseTo(2.71828, org.assertj.core.api.Assertions.within(1e-4))
+        val tolerance = org.assertj.core.api.Assertions.within(1e-4)
+        assertThat(e).isCloseTo(2.71828, tolerance)
     }
 
     @Test
