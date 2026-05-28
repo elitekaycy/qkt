@@ -378,11 +378,71 @@ class ExprCompiler(
     }
 
     private fun compileIndicator(call: IndicatorCall): CompiledExpr {
-        val binding = bindings.bind(call)
+        val seriesArg = call.args.firstOrNull()
+        val binding =
+            when (seriesArg) {
+                is StreamFieldRef, is IndicatorCall, null -> bindings.bind(call)
+                else -> {
+                    // #174 expression-fed: compile the series expression and bind via
+                    // primary alias. Gate on the first StreamFieldRef the expression
+                    // references; reject if it references no stream (caller mistake).
+                    val primaryAlias =
+                        streamAliasesIn(seriesArg).firstOrNull()
+                            ?: error(
+                                "Indicator ${call.name} expression-fed series must reference at least one " +
+                                    "stream (e.g. stddev(gold.close - silver.close, 60))",
+                            )
+                    val compiledSeries = compile(seriesArg, null)
+                    bindings.bindExpression(call, compiledSeries, primaryAlias)
+                }
+            }
         return CompiledExpr {
             val v = binding.indicator.value()
             if (v == null || !binding.indicator.isReady) Value.Undefined else Value.Num(v)
         }
+    }
+
+    /**
+     * Walks [expr] and returns the stream aliases it references via [StreamFieldRef],
+     * in left-to-right traversal order with duplicates removed. Used by [compileIndicator]
+     * to pick the primary alias for an expression-fed indicator binding (#174).
+     */
+    private fun streamAliasesIn(expr: ExprAst): List<String> {
+        val out = LinkedHashSet<String>()
+        fun walk(e: ExprAst) {
+            when (e) {
+                is StreamFieldRef -> out.add(e.stream)
+                is BinaryOp -> {
+                    walk(e.lhs); walk(e.rhs)
+                }
+                is UnaryOp -> walk(e.arg)
+                is CmpOp -> {
+                    walk(e.lhs); walk(e.rhs)
+                }
+                is Crosses -> {
+                    walk(e.lhs); walk(e.rhs)
+                }
+                is FuncCall -> for (a in e.args) walk(a)
+                is IndicatorCall -> for (a in e.args) walk(a)
+                is Aggregate -> walk(e.series)
+                is Between -> {
+                    walk(e.v); walk(e.lo); walk(e.hi)
+                }
+                is InList -> {
+                    walk(e.v); for (m in e.members) walk(m)
+                }
+                is CaseWhen -> {
+                    for ((c, b) in e.branches) {
+                        walk(c); walk(b)
+                    }
+                    walk(e.elseExpr)
+                }
+                is IsNull -> walk(e.expr)
+                else -> Unit // leaves and non-stream nodes
+            }
+        }
+        walk(expr)
+        return out.toList()
     }
 
     private fun compileStreamField(ref: StreamFieldRef): CompiledExpr {
