@@ -349,8 +349,14 @@ class ExprCompiler(
                     )
                 }
                 "equity_peak" -> Value.Num(ctx.strategyContext.risk.equityPeak)
-                "open_positions_count" ->
-                    Value.Num(BigDecimal.valueOf(ctx.strategyContext.positions.allPositions().size.toLong()))
+                "open_positions_count" -> {
+                    val count =
+                        ctx.strategyContext.positions
+                            .allPositions()
+                            .size
+                            .toLong()
+                    Value.Num(BigDecimal.valueOf(count))
+                }
                 else -> error("unreachable")
             }
         }
