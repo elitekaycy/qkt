@@ -7,7 +7,9 @@ import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.pnl.NoOpTradeHistoryView
 import com.qkt.pnl.StrategyPnLView
+import com.qkt.pnl.TradeHistoryView
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
 import com.qkt.risk.NoOpRiskView
@@ -73,6 +75,7 @@ fun testStrategyContext(
     pnl: StrategyPnLView = emptyPnL,
     risk: RiskView = NoOpRiskView(),
     instruments: InstrumentRegistry = UnitContractRegistry,
+    tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
 ): StrategyContext =
     StrategyContext(
         strategyId = strategyId,
@@ -84,4 +87,5 @@ fun testStrategyContext(
         pnl = pnl,
         risk = risk,
         instruments = instruments,
+        tradeHistory = tradeHistory,
     )

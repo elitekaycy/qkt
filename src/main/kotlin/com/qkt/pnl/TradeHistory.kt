@@ -26,6 +26,7 @@ class TradeHistory(
     data class TradeOutcome(
         val timestamp: Long,
         val pnl: BigDecimal,
+        val symbol: String,
     ) {
         val isWin: Boolean get() = pnl.signum() > 0
     }
@@ -35,16 +36,19 @@ class TradeHistory(
     /**
      * Record a fill outcome. [pnl] is the realized delta from THIS fill (positive = win,
      * negative = loss). Zero is skipped — that's a position-opening fill, not a closed trade.
+     * [symbol] is the venue symbol of the fill; backs per-stream accessors like
+     * `POSITION.<alias>.trades_today`.
      */
     fun recordTrade(
         strategyId: String,
         timestamp: Long,
         pnl: BigDecimal,
+        symbol: String,
     ) {
         if (pnl.signum() == 0) return
         val q = byStrategy.getOrPut(strategyId) { ArrayDeque(maxHistory) }
         synchronized(q) {
-            q.addLast(TradeOutcome(timestamp, pnl))
+            q.addLast(TradeOutcome(timestamp, pnl, symbol))
             while (q.size > maxHistory) q.removeFirst()
         }
     }
@@ -77,6 +81,27 @@ class TradeHistory(
         strategyId: String,
         sinceMs: Long,
     ): Int = countWhere(strategyId) { it.timestamp >= sinceMs && !it.isWin }
+
+    /** Trades on [symbol] recorded at or after [sinceMs]. */
+    fun tradesSinceFor(
+        strategyId: String,
+        symbol: String,
+        sinceMs: Long,
+    ): Int = countWhere(strategyId) { it.timestamp >= sinceMs && it.symbol == symbol }
+
+    /** Timestamp of the most recent fill on [symbol], or null. */
+    fun lastTradeAtFor(
+        strategyId: String,
+        symbol: String,
+    ): Long? {
+        val q = byStrategy[strategyId] ?: return null
+        synchronized(q) {
+            for (i in q.indices.reversed()) {
+                if (q[i].symbol == symbol) return q[i].timestamp
+            }
+            return null
+        }
+    }
 
     private fun countWhere(
         strategyId: String,
@@ -119,6 +144,15 @@ interface TradeHistoryView {
 
     /** Losses (negative realized P&L) since the most recent UTC midnight prior to [nowEpochMs]. */
     fun lossesToday(nowEpochMs: Long): Int
+
+    /** Trades on [symbol] since UTC midnight prior to [nowEpochMs]. */
+    fun tradesTodayFor(
+        symbol: String,
+        nowEpochMs: Long,
+    ): Int = 0
+
+    /** Timestamp of the most recent fill on [symbol], or null. */
+    fun lastTradeAtFor(symbol: String): Long? = null
 }
 
 class TradeHistoryViewImpl(
@@ -138,6 +172,13 @@ class TradeHistoryViewImpl(
     override fun winsToday(nowEpochMs: Long): Int = history.winsSince(strategyId, utcMidnight(nowEpochMs))
 
     override fun lossesToday(nowEpochMs: Long): Int = history.lossesSince(strategyId, utcMidnight(nowEpochMs))
+
+    override fun tradesTodayFor(
+        symbol: String,
+        nowEpochMs: Long,
+    ): Int = history.tradesSinceFor(strategyId, symbol, utcMidnight(nowEpochMs))
+
+    override fun lastTradeAtFor(symbol: String): Long? = history.lastTradeAtFor(strategyId, symbol)
 
     /** UTC midnight epoch ms for whichever calendar day [nowEpochMs] falls on. */
     private fun utcMidnight(nowEpochMs: Long): Long = (nowEpochMs / DAY_MS) * DAY_MS

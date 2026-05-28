@@ -292,6 +292,20 @@ class ExprCompiler(
                     val mfe = ctx.strategyContext.positions.mfeFor(symbol) ?: BigDecimal.ZERO
                     Value.Num(mfe)
                 }
+            StateSource.POSITION_TRADES_TODAY ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    val now = ctx.strategyContext.clock.now()
+                    val n = ctx.strategyContext.tradeHistory.tradesTodayFor(symbol, now)
+                    Value.Num(BigDecimal.valueOf(n.toLong()))
+                }
+            StateSource.POSITION_LAST_TRADE_AT ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    ctx.strategyContext.tradeHistory
+                        .lastTradeAtFor(symbol)
+                        ?.let { Value.Num(BigDecimal.valueOf(it)) } ?: Value.Undefined
+                }
             else -> throw IllegalArgumentException("StateAccessor source ${ref.source} is not supported")
         }
 
