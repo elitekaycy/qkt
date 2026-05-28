@@ -3,6 +3,7 @@ package com.qkt.dsl.stdlib
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
 
 class FuncRegistryTest {
@@ -29,8 +30,7 @@ class FuncRegistryTest {
         assertThat(FuncRegistry.invoke("EXP", listOf(BigDecimal.ZERO)))
             .isEqualByComparingTo("1")
         val e = FuncRegistry.invoke("EXP", listOf(BigDecimal.ONE))!!.toDouble()
-        val tolerance = org.assertj.core.api.Assertions.within(1e-4)
-        assertThat(e).isCloseTo(2.71828, tolerance)
+        assertThat(e).isCloseTo(2.71828, within(1e-4))
     }
 
     @Test
