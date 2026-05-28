@@ -78,6 +78,36 @@ class AccountStateAccessorsTest {
     }
 
     @Test
+    fun `ACCOUNT equity_peak parses and compiles`() {
+        val src =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+              g = X:Y EVERY 1m
+            RULES
+              WHEN ACCOUNT.equity > ACCOUNT.equity_peak * 0.95 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode {
+            AstCompiler().compile(parse(src).value)
+        }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `ACCOUNT open_positions_count parses and compiles`() {
+        val src =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+              g = X:Y EVERY 1m
+            RULES
+              WHEN ACCOUNT.open_positions_count < 3 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode {
+            AstCompiler().compile(parse(src).value)
+        }.doesNotThrowAnyException()
+    }
+
+    @Test
     fun `ACCOUNT trades_today, wins_today, losses_today parse and compile`() {
         val src =
             """

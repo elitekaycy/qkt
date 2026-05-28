@@ -307,7 +307,7 @@ class ExprCompiler(
                 "wins_today",
                 "losses_today",
             )
-        val riskFields = setOf("dd_pct")
+        val riskFields = setOf("dd_pct", "equity_peak", "open_positions_count")
         require(ref.field in pnlFields || ref.field in historyFields || ref.field in riskFields) {
             "Unsupported ACCOUNT field: ${ref.field}"
         }
@@ -348,6 +348,9 @@ class ExprCompiler(
                             .multiply(BigDecimal("100")),
                     )
                 }
+                "equity_peak" -> Value.Num(ctx.strategyContext.risk.equityPeak)
+                "open_positions_count" ->
+                    Value.Num(BigDecimal.valueOf(ctx.strategyContext.positions.allPositions().size.toLong()))
                 else -> error("unreachable")
             }
         }
