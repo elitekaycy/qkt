@@ -1,6 +1,8 @@
 package com.qkt.broker.mt5
 
 import com.qkt.bus.EventBus
+import com.qkt.common.FixedClock
+import com.qkt.common.MonotonicSequenceGenerator
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
@@ -56,7 +58,7 @@ class MT5StateRecoverySiblingTest {
                 client = client,
                 profile = profile,
                 symbol = MT5Symbol(profile.symbolPolicy),
-                bus = EventBus(),
+                bus = EventBus(FixedClock(time = 0L), MonotonicSequenceGenerator()),
                 strategyName = "hedge-straddle",
                 seedOrphan = { ticket, orderId, strategyId -> seeded.add(Triple(ticket, orderId, strategyId)) },
                 siblingsLookup = { listOf("pairs-xau-xag") }, // disjoint prefix
@@ -81,7 +83,7 @@ class MT5StateRecoverySiblingTest {
                 client = client,
                 profile = profile,
                 symbol = MT5Symbol(profile.symbolPolicy),
-                bus = EventBus(),
+                bus = EventBus(FixedClock(time = 0L), MonotonicSequenceGenerator()),
                 strategyName = "hedge_straddle_a",
                 seedOrphan = { ticket, orderId, strategyId -> seeded.add(Triple(ticket, orderId, strategyId)) },
                 siblingsLookup = { listOf("hedge_straddle_b") },
@@ -108,7 +110,7 @@ class MT5StateRecoverySiblingTest {
                 client = client,
                 profile = profile,
                 symbol = MT5Symbol(profile.symbolPolicy),
-                bus = EventBus(),
+                bus = EventBus(FixedClock(time = 0L), MonotonicSequenceGenerator()),
                 strategyName = "hedge_straddle_a",
                 seedOrphan = { ticket, _, _ -> seeded.add(ticket) },
                 siblingsLookup = { siblings.toList() },
