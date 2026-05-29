@@ -86,7 +86,7 @@ Validate at parseBracket: TAKE PROFIT branch rejects ChildArmedTrail.
 
 The existing `OrderRequest.Bracket` carries `stopLoss: BigDecimal` — a single price. That doesn't work for an armed trail (price is dynamic).
 
-Three options for plumbing:
+Four options for plumbing:
 
 **Option A — Extend `Bracket.stopLoss` with a sum type.**
 Add `sealed interface StopLossSpec { Fixed(price), ArmedTrail(distance, mfeThreshold) }`. Bracket carries `stopLoss: StopLossSpec`. OrderManager dispatches on type when spawning the child stop.
@@ -97,7 +97,12 @@ On bracket entry fill, OrderManager spawns: (1) regular TP limit, (2) regular Ar
 **Option C — Compile-time emit two requests.**
 Compiler emits a regular bracket with a synthetic stop at entry, then schedules an ArmedTrailingStop pending order. OCO grouping happens at compile, not at fill.
 
+**Option D — Optional sidecar field on Bracket. (Rejected, but documented because it's the tempting wrong answer.)**
+Keep `Bracket.stopLoss: BigDecimal` and add `val armedTrail: ArmedTrailParams? = null` as a nullable sidecar. Looks like the smallest reasonable change — zero existing call sites need updating; the default value carries every existing test through unchanged. **Don't pick this.** Every future stop variant (volatility-based, time-based, indicator-triggered) adds another nullable field, and mutual exclusivity is no longer type-enforced. Two non-null at once becomes a silent logic error caught only at runtime. The right scaling shape is a sealed sum type where adding a variant forces the compiler to surface every site that must handle it.
+
 Picking **A** — extending the Bracket type. Cleanest invariant: one Bracket request, one place where stop semantics live. Brokers that natively support brackets see only the entry + TP; the armed stop is engine-managed inside OrderManager and OCO-linked to the bracket's group.
+
+**Why A over D specifically:** the upfront cost of A is mechanical — every existing Bracket call site wraps its `BigDecimal` price in `StopLossSpec.Fixed(price)`. ~15 test fixture files, all the same find-and-replace, no logic changes. ~30 min of fixture work. In return, every future stop variant (Volatility, Timed, IndicatorCross, …) becomes one new sealed-class member, and `when` over `StopLossSpec` becomes exhaustive — the compiler tells you every site to update. That's the scaling property we want.
 
 ### 4. OrderManager engine
 
