@@ -14,6 +14,7 @@ import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.aggregateDailySummary
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * `qkt daemon` — long-lived process hosting many strategies via the control plane.
@@ -77,7 +78,7 @@ class DaemonCommand(
         // Forward reference so the factory closure can query the registry that's
         // constructed below. Recovery runs strictly after the broker is built, so by
         // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
-        val registryRef = java.util.concurrent.atomic.AtomicReference<StrategyRegistry?>(null)
+        val registryRef = AtomicReference<StrategyRegistry?>(null)
         val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
