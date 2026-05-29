@@ -83,4 +83,60 @@ class MT5StateRecoveryMatchTest {
         assertThat(matchOrphan("oco:dsl-X/dsl-othr-1", "ema-cross"))
             .isEqualTo(OrphanMatch.NotOurs)
     }
+
+    // ───────────── #154 — sibling-aware disambiguation ─────────────
+
+    @Test
+    fun `truncated comment with sibling sharing the same prefix is a conflict`() {
+        // Both `hedge_straddle_a` and `hedge_straddle_b` truncate to `dsl-hedge_straddl`
+        // (16 chars). Recovery for either must refuse to seed.
+        val result = matchOrphan("dsl-hedge_straddl", "hedge_straddle_a", siblings = listOf("hedge_straddle_b"))
+        assertThat(result).isInstanceOf(OrphanMatch.ConflictWithSibling::class.java)
+        assertThat((result as OrphanMatch.ConflictWithSibling).siblings).containsExactly("hedge_straddle_b")
+    }
+
+    @Test
+    fun `truncated comment with sibling that has different prefix is not a conflict`() {
+        // `hedge_straddle` and `pairs_xau_xag` don't share a truncation — siblings
+        // present, but no conflict.
+        val result = matchOrphan("dsl-hedge-stradd", "hedge-straddle", siblings = listOf("pairs_xau_xag"))
+        assertThat(result).isEqualTo(OrphanMatch.AmbiguousTruncation)
+    }
+
+    @Test
+    fun `unambiguous match is never downgraded by a sibling`() {
+        // `dsl-ema-cross-7` is unambiguous for `ema-cross` even if a sibling
+        // `ema-cross-v2` exists. Match wins.
+        assertThat(matchOrphan("dsl-ema-cross-7", "ema-cross", siblings = listOf("ema-cross-v2")))
+            .isEqualTo(OrphanMatch.Match)
+    }
+
+    @Test
+    fun `overlap with sibling that fully owns the comment downgrades to not-ours`() {
+        // `dsl-ema-cross-v2` would be AmbiguousOverlap for `ema-cross` alone, but with
+        // sibling `ema-cross-v2` as an unambiguous Match, the position belongs to the sibling.
+        assertThat(matchOrphan("dsl-ema-cross-v2", "ema-cross", siblings = listOf("ema-cross-v2")))
+            .isEqualTo(OrphanMatch.NotOurs)
+    }
+
+    @Test
+    fun `overlap with sibling that does not own the comment stays as overlap`() {
+        // Sibling exists but doesn't claim this comment — keep the existing WARN behaviour.
+        val result = matchOrphan("dsl-ema-cross-v2", "ema-cross", siblings = listOf("other-strategy"))
+        assertThat(result).isInstanceOf(OrphanMatch.AmbiguousOverlap::class.java)
+    }
+
+    @Test
+    fun `self in siblings list is ignored`() {
+        // Defensive: the caller may pass the full deployed-list including self.
+        val result = matchOrphan("dsl-hedge-stradd", "hedge-straddle", siblings = listOf("hedge-straddle"))
+        assertThat(result).isEqualTo(OrphanMatch.AmbiguousTruncation)
+    }
+
+    @Test
+    fun `empty siblings preserves pre-existing behaviour`() {
+        // Regression guard: the old behaviour is the default when no siblings are supplied.
+        assertThat(matchOrphan("dsl-hedge-stradd", "hedge-straddle"))
+            .isEqualTo(OrphanMatch.AmbiguousTruncation)
+    }
 }
