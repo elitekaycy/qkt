@@ -25,7 +25,15 @@ class Mt5BarFetcher(
         val startIso = range.from.toString().removeSuffix("Z")
         val endIso = range.to.toString().removeSuffix("Z")
         val client = Mt5DataClient(baseUrl, http)
-        return client.fetchBarsByRange(symbol, tf, startIso, endIso).asSequence()
+        // The gateway includes the currently-open bar when `end` lands inside it;
+        // match Bybit / TradingView / Local boundary semantics so consumers never
+        // see an unclosed bar.
+        val fromMs = range.from.toEpochMilli()
+        val toMs = range.to.toEpochMilli()
+        return client
+            .fetchBarsByRange(symbol, tf, startIso, endIso)
+            .asSequence()
+            .filter { it.startTime in fromMs until toMs }
     }
 
     private fun windowToTimeframe(window: TimeWindow): String =
