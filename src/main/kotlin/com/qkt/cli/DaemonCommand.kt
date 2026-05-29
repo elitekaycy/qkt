@@ -81,7 +81,8 @@ class DaemonCommand(
         val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
-                profileLabel.lowercase() to
+                val key = profileLabel.lowercase()
+                key to
                     { bus, clock, priceTracker, strategyName ->
                         val siblingsLookup: () -> List<String> = {
                             val registry = registryRef.get()
