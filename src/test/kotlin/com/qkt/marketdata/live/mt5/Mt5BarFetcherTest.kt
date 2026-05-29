@@ -41,4 +41,78 @@ class Mt5BarFetcherTest {
             server.shutdown()
         }
     }
+
+    @Test
+    fun `fetchRange drops bars whose startTime is at or beyond range to (#181)`() {
+        // The gateway returns three 1h bars when asked for [16:00, 18:00) — the
+        // 16:00 and 17:00 bars (closed) plus the 18:00 bar (currently open).
+        // Only the two closed ones should reach the caller; the open bar would
+        // trip the IndicatorWarmer look-ahead check.
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """[
+                      {"close":1,"high":1,"low":1,"open":1,"tick_volume":1,"time":"2026-05-29T16:00:00Z"},
+                      {"close":2,"high":2,"low":2,"open":2,"tick_volume":1,"time":"2026-05-29T17:00:00Z"},
+                      {"close":3,"high":3,"low":3,"open":3,"tick_volume":1,"time":"2026-05-29T18:00:00Z"}
+                    ]""",
+                ),
+            )
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSDm",
+                        window = TimeWindow.parse("1h"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-05-29T16:00:00Z"),
+                                to = Instant.parse("2026-05-29T18:00:00Z"),
+                            ),
+                    ).toList()
+            assertThat(candles).hasSize(2)
+            assertThat(candles.map { it.startTime })
+                .containsExactly(
+                    Instant.parse("2026-05-29T16:00:00Z").toEpochMilli(),
+                    Instant.parse("2026-05-29T17:00:00Z").toEpochMilli(),
+                )
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `fetchRange drops bars whose startTime is before range from (#181)`() {
+        // Defensive symmetry: a gateway that over-fetches on the lower bound
+        // shouldn't leak pre-range bars into warmup either.
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """[
+                      {"close":1,"high":1,"low":1,"open":1,"tick_volume":1,"time":"2026-05-29T15:00:00Z"},
+                      {"close":2,"high":2,"low":2,"open":2,"tick_volume":1,"time":"2026-05-29T16:00:00Z"}
+                    ]""",
+                ),
+            )
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSDm",
+                        window = TimeWindow.parse("1h"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-05-29T16:00:00Z"),
+                                to = Instant.parse("2026-05-29T18:00:00Z"),
+                            ),
+                    ).toList()
+            assertThat(candles).hasSize(1)
+            assertThat(candles.first().startTime)
+                .isEqualTo(Instant.parse("2026-05-29T16:00:00Z").toEpochMilli())
+        } finally {
+            server.shutdown()
+        }
+    }
 }
