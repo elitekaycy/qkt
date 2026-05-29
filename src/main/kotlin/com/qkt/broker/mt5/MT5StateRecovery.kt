@@ -26,12 +26,20 @@ class MT5StateRecovery(
     private val bus: EventBus,
     private val strategyName: String? = null,
     private val seedOrphan: (ticket: Long, orderId: String, strategyId: String) -> Unit = { _, _, _ -> },
+    /**
+     * Returns the names of other strategies sharing this MT5 magic — looked up at recovery
+     * time, not construction time, so it sees strategies deployed after this broker was
+     * built. Used by [matchOrphan] to detect prefix-overlap conflicts under shared magic
+     * and refuse to seed positions that two strategies could both claim. See #154.
+     */
+    private val siblingsLookup: () -> List<String> = { emptyList() },
 ) {
     private val log = LoggerFactory.getLogger(MT5StateRecovery::class.java)
 
     fun recover() {
         val positions = client.getPositions(magic = profile.magic)
         log.info("MT5 ${profile.name} state recovery: ${positions.size} open positions")
+        val siblings = if (strategyName != null) siblingsLookup() else emptyList()
         for (p in positions) {
             val qktSymbol = symbol.toQkt(p.symbol)
             val signedQty = if (p.type == 0) p.volume else p.volume.negate()
@@ -46,13 +54,16 @@ class MT5StateRecovery(
                     reason = "startup-recovery",
                 ),
             )
-            if (strategyName != null) seedIfOurs(p)
+            if (strategyName != null) seedIfOurs(p, siblings)
         }
     }
 
-    private fun seedIfOurs(p: MT5Position) {
+    private fun seedIfOurs(
+        p: MT5Position,
+        siblings: List<String>,
+    ) {
         val name = strategyName ?: return
-        when (val m = matchOrphan(p.comment, name)) {
+        when (val m = matchOrphan(p.comment, name, siblings)) {
             is OrphanMatch.Match -> {
                 seedOrphan(p.ticket, syntheticOrderId(p.ticket), name)
                 log.info(
@@ -72,6 +83,15 @@ class MT5StateRecovery(
                     "MT5 ${profile.name} skipping orphan ticket=${p.ticket} comment='${p.comment}': matches " +
                         "this strategy's prefix '$name' but tail '${m.tail}' suggests a longer strategy name. " +
                         "Close will fire with blank strategyId.",
+                )
+            }
+            is OrphanMatch.ConflictWithSibling -> {
+                log.warn(
+                    "MT5 ${profile.name} skipping orphan ticket=${p.ticket} comment='${p.comment}': " +
+                        "truncated prefix matches both this strategy '$name' and sibling(s) " +
+                        "${m.siblings.joinToString(",")} on the same magic. Close will fire with blank " +
+                        "strategyId. Rename one of the strategies so their `dsl-<name>` prefixes diverge " +
+                        "within MT5's 16-char comment window.",
                 )
             }
             OrphanMatch.NotOurs -> Unit
@@ -97,6 +117,16 @@ internal sealed interface OrphanMatch {
         val tail: String,
     ) : OrphanMatch
 
+    /**
+     * Comment is a truncated prefix that this strategy could claim, but one or more
+     * [siblings] on the same magic could also claim it (their `dsl-<name>` prefixes
+     * are also consistent with the truncated comment). Skip + WARN — neither strategy
+     * may seed without risking double-attribution on close. See #154.
+     */
+    data class ConflictWithSibling(
+        val siblings: List<String>,
+    ) : OrphanMatch
+
     /** Comment is null, non-`dsl-`, or matches a different strategy entirely. Skip silently. */
     data object NotOurs : OrphanMatch
 }
@@ -107,28 +137,63 @@ internal sealed interface OrphanMatch {
  * MT5 truncates comments to 16 chars. Original comments take the shape `dsl-<strategy>-<n>`
  * (or `oco:<parent>/dsl-<strategy>-<n>` for OCO legs). We strip the optional `oco:<X>/`
  * prefix, then classify the result by how it relates to `dsl-<strategyName>`.
+ *
+ * [siblings] is the list of other strategy names sharing this magic. When non-empty and
+ * the primary match is [OrphanMatch.AmbiguousTruncation], we cross-check: if any sibling's
+ * `dsl-<sibling>` prefix is also consistent with the comment, we return
+ * [OrphanMatch.ConflictWithSibling] so the caller can refuse to seed. When the primary
+ * match is [OrphanMatch.AmbiguousOverlap], a sibling that produces an unambiguous
+ * [OrphanMatch.Match] for the same comment quietly downgrades us to [OrphanMatch.NotOurs] —
+ * the sibling is the real owner.
  */
 internal fun matchOrphan(
     comment: String?,
     strategyName: String,
+    siblings: List<String> = emptyList(),
 ): OrphanMatch {
     if (comment.isNullOrEmpty()) return OrphanMatch.NotOurs
     val inner = stripOcoPrefix(comment)
     if (!inner.startsWith("dsl-")) return OrphanMatch.NotOurs
 
-    val expected = "dsl-$strategyName"
+    val primary = classifyAgainst(inner, strategyName)
 
-    if (inner.startsWith(expected)) {
-        val tail = inner.substring(expected.length)
+    return when (primary) {
+        is OrphanMatch.AmbiguousTruncation -> {
+            val conflicts =
+                siblings.filter { s ->
+                    if (s == strategyName) {
+                        false
+                    } else {
+                        val m = classifyAgainst(inner, s)
+                        m is OrphanMatch.Match || m is OrphanMatch.AmbiguousTruncation
+                    }
+                }
+            if (conflicts.isNotEmpty()) OrphanMatch.ConflictWithSibling(conflicts) else primary
+        }
+        is OrphanMatch.AmbiguousOverlap -> {
+            val unambiguousOwner =
+                siblings.any { s -> s != strategyName && classifyAgainst(inner, s) is OrphanMatch.Match }
+            if (unambiguousOwner) OrphanMatch.NotOurs else primary
+        }
+        else -> primary
+    }
+}
+
+/** Single-strategy classification step, with [strippedComment] already past `oco:` prefix. */
+private fun classifyAgainst(
+    strippedComment: String,
+    strategyName: String,
+): OrphanMatch {
+    val expected = "dsl-$strategyName"
+    if (strippedComment.startsWith(expected)) {
+        val tail = strippedComment.substring(expected.length)
         return when {
             tail.isEmpty() -> OrphanMatch.Match
             tail.startsWith("-") && (tail.length == 1 || tail[1].isDigit()) -> OrphanMatch.Match
             else -> OrphanMatch.AmbiguousOverlap(tail)
         }
     }
-
-    if (expected.startsWith(inner)) return OrphanMatch.AmbiguousTruncation
-
+    if (expected.startsWith(strippedComment)) return OrphanMatch.AmbiguousTruncation
     return OrphanMatch.NotOurs
 }
 

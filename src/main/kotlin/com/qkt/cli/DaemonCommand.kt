@@ -14,6 +14,7 @@ import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.aggregateDailySummary
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * `qkt daemon` — long-lived process hosting many strategies via the control plane.
@@ -74,10 +75,34 @@ class DaemonCommand(
                 println("[WARN] mt5 profile load failed: ${e.message}")
                 emptyList()
             }
+        // Forward reference so the factory closure can query the registry that's
+        // constructed below. Recovery runs strictly after the broker is built, so by
+        // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
+        val registryRef = AtomicReference<StrategyRegistry?>(null)
         val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
-                profile.name.lowercase() to
+                val profileLabel = profile.name
+                val key = profileLabel.lowercase()
+                key to
                     { bus, clock, priceTracker, strategyName ->
+                        val siblingsLookup: () -> List<String> = {
+                            val registry = registryRef.get()
+                            if (registry == null || strategyName == null) {
+                                emptyList()
+                            } else {
+                                registry
+                                    .list()
+                                    .asSequence()
+                                    .filter { it.name != strategyName }
+                                    .filter { handle ->
+                                        handle.live
+                                            .streamBrokers()
+                                            .values
+                                            .any { it.equals(profileLabel, ignoreCase = true) }
+                                    }.map { it.name }
+                                    .toList()
+                            }
+                        }
                         com.qkt.broker.mt5
                             .MT5Broker(
                                 profile = profile,
@@ -85,6 +110,7 @@ class DaemonCommand(
                                 clock = clock,
                                 priceTracker = priceTracker,
                                 strategyName = strategyName,
+                                siblingsLookup = siblingsLookup,
                             )
                     }
             }
@@ -107,6 +133,7 @@ class DaemonCommand(
                     notifyEvents = cfg.notify.telegram.events,
                 ),
             )
+        registryRef.set(registry)
         val startedAt = Instant.now()
         val stopLatch = CountDownLatch(1)
 
