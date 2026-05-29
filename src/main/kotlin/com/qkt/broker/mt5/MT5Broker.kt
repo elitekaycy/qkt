@@ -53,6 +53,12 @@ class MT5Broker(
      * [com.qkt.events.BrokerEvent.PositionReconciled] but does not seed orphan attribution.
      */
     private val strategyName: String? = null,
+    /**
+     * Names of other strategies sharing this MT5 magic — evaluated lazily at recovery time
+     * so it picks up siblings deployed after this broker was built. Default empty (single-
+     * strategy mode preserves the pre-#154 behaviour). See [MT5StateRecovery]'s docstring.
+     */
+    private val siblingsLookup: () -> List<String> = { emptyList() },
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
@@ -95,6 +101,7 @@ class MT5Broker(
             seedOrphan = { ticket, orderId, strategyId ->
                 positionMetaByTicket[ticket] = PendingMeta(orderId, strategyId)
             },
+            siblingsLookup = siblingsLookup,
         )
 
     /**
