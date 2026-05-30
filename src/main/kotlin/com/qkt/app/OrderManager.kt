@@ -1355,6 +1355,15 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                     )
+                is OrderRequest.ArmedTrailingStop ->
+                    OrderRequest.Market(
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side,
+                        quantity = req.quantity,
+                        timeInForce = req.timeInForce,
+                        timestamp = clock.now(),
+                    )
                 is OrderRequest.TrailingStopLimit -> {
                     val level = trailLevel(managed) ?: error("TrailingStopLimit level missing for ${managed.id}")
                     val limitPrice =
