@@ -170,7 +170,7 @@ class StackEngine(
                     quantity = tier.stackQuantity,
                     entry = market,
                     takeProfit = tp,
-                    stopLoss = sl,
+                    stopLoss = com.qkt.execution.StopLossSpec.Fixed(sl),
                     timeInForce = TimeInForce.GTC,
                     timestamp = ts,
                 ),

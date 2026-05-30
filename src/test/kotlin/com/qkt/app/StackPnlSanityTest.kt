@@ -148,7 +148,7 @@ class StackPnlSanityTest {
             quantity = primaryQty,
             entry = entry,
             takeProfit = primaryEntry.add(primaryTp), // 1.1200
-            stopLoss = primaryEntry.subtract(primarySl), // 1.0950
+            stopLoss = com.qkt.execution.StopLossSpec.Fixed(primaryEntry.subtract(primarySl)), // 1.0950
             timeInForce = TimeInForce.GTC,
             timestamp = 0L,
             strategyId = strategyId,

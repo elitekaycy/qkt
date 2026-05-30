@@ -64,7 +64,7 @@ class OrderSurfaceEndToEndTest {
         val bracketSig = submits.first { it.request is OrderRequest.Bracket }
         val br = bracketSig.request as OrderRequest.Bracket
         // entry = limit at 99 (fixed), stop loss BY 5 → 94, take profit RR 3 → 99 + 3*5 = 114
-        assertThat(br.stopLoss).isEqualByComparingTo("94")
+        assertThat((br.stopLoss as com.qkt.execution.StopLossSpec.Fixed).price).isEqualByComparingTo("94")
         assertThat(br.takeProfit).isEqualByComparingTo("114")
         assertThat(br.entry).isInstanceOf(OrderRequest.Limit::class.java)
         assertThat(br.side).isEqualTo(Side.BUY)

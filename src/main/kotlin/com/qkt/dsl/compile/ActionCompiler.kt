@@ -286,7 +286,7 @@ class ActionCompiler(
                             quantity = qty,
                             entry = entryReq,
                             takeProfit = tpPrice,
-                            stopLoss = slPrice,
+                            stopLoss = com.qkt.execution.StopLossSpec.Fixed(slPrice),
                             timeInForce = tif,
                             timestamp = ts,
                         )

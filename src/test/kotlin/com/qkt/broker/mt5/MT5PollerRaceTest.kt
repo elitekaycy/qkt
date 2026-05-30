@@ -89,7 +89,10 @@ class MT5PollerRaceTest {
             quantity = BigDecimal("0.10"),
             entry = entry,
             takeProfit = if (side == Side.BUY) BigDecimal("1.1300") else BigDecimal("1.1100"),
-            stopLoss = if (side == Side.BUY) BigDecimal("1.1150") else BigDecimal("1.1250"),
+            stopLoss =
+                com.qkt.execution.StopLossSpec.Fixed(
+                    if (side == Side.BUY) BigDecimal("1.1150") else BigDecimal("1.1250"),
+                ),
             timeInForce = TimeInForce.GTC,
             timestamp = 1L,
             strategyId = "s1",

@@ -244,7 +244,7 @@ sealed interface OrderRequest {
         override val quantity: BigDecimal,
         val entry: OrderRequest,
         val takeProfit: BigDecimal,
-        val stopLoss: BigDecimal,
+        val stopLoss: StopLossSpec,
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
@@ -253,9 +253,10 @@ sealed interface OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
             require(takeProfit.signum() > 0) { "takeProfit must be > 0: $takeProfit" }
-            require(stopLoss.signum() > 0) { "stopLoss must be > 0: $stopLoss" }
-            require(takeProfit.compareTo(stopLoss) != 0) {
-                "takeProfit and stopLoss must differ: tp=$takeProfit sl=$stopLoss"
+            if (stopLoss is StopLossSpec.Fixed) {
+                require(takeProfit.compareTo(stopLoss.price) != 0) {
+                    "takeProfit and stopLoss must differ: tp=$takeProfit sl=${stopLoss.price}"
+                }
             }
         }
     }

@@ -20,6 +20,7 @@ import com.qkt.execution.ExpiryAction
 import com.qkt.execution.Immediate
 import com.qkt.execution.LayerSpec
 import com.qkt.execution.ManagedOrder
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.TrailMode
@@ -248,7 +249,7 @@ class OrderManager(
                         clientOrderIds = listOf(request.id, request.entry.id),
                         quantity = request.quantity,
                         entry = entryEstimate,
-                        stop = request.stopLoss,
+                        stop = request.stopLoss.fixedPriceOrTodo(),
                     )
                 }
                 if (OrderTypeCapability.BRACKET in broker.capabilitiesFor(request.symbol)) {
@@ -677,7 +678,7 @@ class OrderManager(
                 symbol = req.symbol,
                 side = exitSide,
                 quantity = req.quantity,
-                stopPrice = req.stopLoss,
+                stopPrice = req.stopLoss.fixedPriceOrTodo(),
                 timeInForce = req.timeInForce,
                 timestamp = clock.now(),
                 strategyId = req.strategyId,
@@ -1286,3 +1287,21 @@ class OrderManager(
         val quantity: BigDecimal,
     )
 }
+
+/**
+ * Temporary unwrap helper for #48 Task 4. Returns the [StopLossSpec.Fixed] price or
+ * throws on [StopLossSpec.ArmedTrail] — armed-trail flows through the per-tick arming
+ * gate added in Task 6 and never reaches the BigDecimal call sites this helper guards.
+ *
+ * **TODO(#48-task6):** delete this and replace call sites with proper [StopLossSpec]
+ * dispatch once OrderManager grows the arming-state map.
+ */
+private fun StopLossSpec.fixedPriceOrTodo(): BigDecimal =
+    when (this) {
+        is StopLossSpec.Fixed -> price
+        is StopLossSpec.ArmedTrail ->
+            error(
+                "StopLossSpec.ArmedTrail reached a BigDecimal-only call site before #48 Task 6 " +
+                    "wired the armed-stop dispatch. This is a programming error.",
+            )
+    }
