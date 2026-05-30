@@ -20,9 +20,9 @@ import com.qkt.execution.ExpiryAction
 import com.qkt.execution.Immediate
 import com.qkt.execution.LayerSpec
 import com.qkt.execution.ManagedOrder
-import com.qkt.execution.StopLossSpec
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
 import com.qkt.execution.isCompositeShape
@@ -244,7 +244,10 @@ class OrderManager(
                     holdPending(request)
                 }
 
-            is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit, is OrderRequest.ArmedTrailingStop -> holdPending(request)
+            is OrderRequest.TrailingStop,
+            is OrderRequest.TrailingStopLimit,
+            is OrderRequest.ArmedTrailingStop,
+            -> holdPending(request)
 
             is OrderRequest.StandaloneOCO -> submitOco(request)
 
@@ -1426,4 +1429,3 @@ class OrderManager(
         val quantity: BigDecimal,
     )
 }
-
