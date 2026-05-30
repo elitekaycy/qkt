@@ -5,17 +5,24 @@
 
 ## Goal
 
-DSL syntax `STOP LOSS TRAIL <distance> AFTER MFE >= <threshold>` for a bracket-leg stop-loss that holds at breakeven until the trade reaches a profit threshold (max favorable excursion), then converts to a trailing stop at the given distance from the running favorable extreme.
+DSL syntax `STOP LOSS TRAILING <distance> AFTER MFE >= <threshold>` for a bracket-leg stop-loss that sits at a fixed `<distance>` from entry until the trade's MFE crosses `<threshold>`, then begins trailing the running favorable extreme at the same `<distance>`.
 
 ```qkt
 BUY btc SIZING 0.1
     BRACKET {
-      STOP LOSS TRAIL 5 AFTER MFE >= 10,
+      STOP LOSS TRAILING 5 AFTER MFE >= 10,
       TAKE PROFIT BY 50
     }
 ```
 
-Semantics: stop sits at entry (breakeven) on fill. When the running favorable price moves at least 10 from entry, the stop "arms" and becomes a trailing stop at distance 5 from the favorable extreme. Once armed, it never disarms — the trail tracks one-way, locking in profit.
+Semantics:
+- **Pre-arm:** stop sits at `entry − distance` (BUY) or `entry + distance` (SELL). Same shape as a regular fixed-distance bracket stop.
+- **Arming:** when MFE crosses `<threshold>`, stop "arms" and starts tracking the favorable extreme.
+- **Post-arm:** stop sits at `hwm − distance` (BUY) or `hwm + distance` (SELL), where `hwm` is the running favorable extreme since fill.
+- Arming is one-way — once armed, the stop stays armed.
+- `<distance>` is the same value pre and post; only the reference point shifts (entry → hwm).
+
+**Why this semantic (not breakeven pre-arm):** the original draft of this spec said pre-arm = `entry` (breakeven). That was a misread of the reference pa-quant strategy, which uses a wide fixed stop until MFE develops, then trails the same distance behind the favorable extreme. The breakeven-pre-arm interpretation would close GAP 1 in `hedge-straddle.qkt` only in name; the actual stop behavior would diverge from pa-quant's. The fixed-distance-pre-arm interpretation closes the gap honestly and has the secondary benefit that risk-based sizing (`SIZING RISK $ N`) sees a well-defined stop distance — `<distance>` — at all times, with no special case for the armed state.
 
 ## Motivation
 
@@ -112,11 +119,11 @@ Add `armed: Boolean` per managed stop in the existing `trailingHwm` infrastructu
 2. Compute MFE: `|hwm - entry|`.
 3. If not armed and MFE >= threshold, set `armed = true`. Log it.
 4. Stop level:
-   - Not armed: `stop = entry`.
-   - Armed: `stop = hwm ± distance` (sign by side; same calc as regular trailing).
+   - **Not armed:** `stop = entry ± distance` (sign by side — same as a regular fixed-distance bracket stop).
+   - **Armed:** `stop = hwm ± distance` (sign by side; same calc as regular trailing).
 5. Trigger when price crosses stop level (same as regular trailing).
 
-The arming check happens before the stop-level computation. Once armed, the stop never disarms — even if price retreats back below the threshold, the trail stays active.
+The arming check happens before the stop-level computation. Once armed, the stop never disarms — even if price retreats back below the threshold, the trail stays active. Pre-arm and post-arm use the same `<distance>` value; only the reference point changes from `entry` to `hwm`.
 
 ### 5. Compilation
 
@@ -128,9 +135,9 @@ The arming check happens before the stop-level computation. Once armed, the stop
 
 ### 6. Fail-safe behaviors
 
-- **MFE never crosses threshold + position runs against trader.** Stop sits at entry; position exits at breakeven (or slightly worse if there's slippage / spread). Operator-visible: no catastrophic-loss bypass; the entry IS the worst-case stop.
-- **Arming threshold = 0.** Effectively a regular trailing stop from inception. Allow it (operators might want this for "trailing from inception with explicit syntax intent"). Document.
-- **Threshold = arbitrarily large.** Stop never arms; behaves as fixed-at-entry stop. Operator visible: position exits at breakeven if it ever retraces to entry. Sensible degenerate behavior; allow.
+- **MFE never crosses threshold + position runs against trader.** Stop sits at `entry ± distance`; position exits at the fixed wide stop. Worst-case loss is bounded by `distance` regardless of whether the trail ever arms.
+- **Arming threshold = 0.** Effectively a regular trailing stop from inception. Allow it — operators might want this for "trailing from inception with explicit syntax intent."
+- **Threshold = arbitrarily large.** Stop never arms; behaves as a permanent fixed-distance bracket stop. Sensible degenerate behavior; allow.
 
 ### 7. Multi-leg / STACK_AT interaction
 
@@ -138,14 +145,14 @@ A `STACK_AT` leg can declare its own bracket. Each leg gets its own armed-trail 
 
 ## Validation rules
 
-- `STOP LOSS TRAIL <distance> AFTER MFE >= <threshold>` parses to `ChildArmedTrail`.
-- `TAKE PROFIT TRAIL …` is rejected at parse time with a pointed error.
-- `<distance>` and `<threshold>` resolve to positive `BigDecimal` at compile time (negative or zero rejected).
-- BUY: stop trails the rolling high, fires when price drops to (high - distance) post-arm.
-- SELL: stop trails the rolling low, fires when price rises to (low + distance) post-arm.
-- Pre-arm: stop is at entry (breakeven semantics).
+- `STOP LOSS TRAILING <distance> AFTER MFE >= <threshold>` parses to `ChildArmedTrail`.
+- `TAKE PROFIT TRAILING …` is rejected at parse time with a pointed error.
+- `<distance>` resolves to a positive `BigDecimal` at compile time. `<threshold>` resolves to a non-negative `BigDecimal` (zero is allowed and means "trail from inception").
+- BUY pre-arm: stop sits at `entry - distance`. Post-arm: stop sits at `hwm - distance`, fires when price drops to it.
+- SELL pre-arm: stop sits at `entry + distance`. Post-arm: stop sits at `hwm + distance`, fires when price rises to it.
 - Stop arms exactly once; never disarms.
 - Bracket OCO holds: TP fill cancels the armed stop and vice versa.
+- Risk-based sizing (`SIZING RISK $ N`): the stop distance fed into sizing is `<distance>` itself — well-defined regardless of arming state. No special case needed.
 
 ## Testing strategy
 

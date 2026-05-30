@@ -1146,3 +1146,68 @@ Expected: build PASS.
 - `ManagedOrder.bracketStopSpec: StopLossSpec?` (Task 6) — referenced in `trailLevel`, `updateTrailingHwm`. Consistent.
 
 No gaps found.
+
+---
+
+## Execution preflight — corrections to apply before Task 1
+
+Surfaced during pre-execution review of the actual codebase (after this plan was written). Apply these BEFORE running each cited task.
+
+### Correction 1 — Lexer is reflective (Task 1 step 3 simplifies)
+
+`Lexer.kt`'s `KEYWORDS` map is derived from `TokenKind.values()` minus a hardcoded denylist (see `Lexer.kt:251-287`). Adding `AFTER` to `TokenKind.kt` auto-registers it as a keyword. **Skip the Lexer edit in Task 1 step 3; only `TokenKind.kt` needs touching.**
+
+### Correction 2 — `>=` is `TokenKind.GE`, not `GTE` (Task 3 step 3)
+
+The `>=` operator lexes as `TokenKind.GE` per `TokenKind.kt:126`. The plan's Task 3 step 3 says `expect(TokenKind.GTE, ...)` — change every `GTE` reference in the plan and in the implementation to `GE`.
+
+### Correction 3 — Persistor migration unnecessary (Task 4 step 5 — DROP ENTIRELY)
+
+`BracketPair` (`StatePersistor.kt:109`) and `BracketPairDto` (`FileStatePersistor.kt:512`) only persist client-order-ID references (`entryClientOrderId`, `stopLossClientOrderId`, …) — they do NOT persist the stop price or any other Bracket payload. Plus the recent prod logs show `saveOcoLegs: skipping non-persistable variant Bracket` — Bracket isn't persisted today. Adding a `stopLossKind` discriminator is solving a non-existent problem. **Delete Task 4 step 5.** Move "armed state resets on daemon restart" into the phase-36 changelog's known-limitations section in Task 8 step 3.
+
+### Correction 4 — Semantic update: pre-arm = `entry ± distance`, not breakeven (affects Task 6 and Task 7)
+
+The spec was updated (`2026-05-25-phase36-armed-trailing-stop-design.md`) — pre-arm stop is now `entry ± distance`, NOT entry/breakeven. This closes GAP 1 in `hedge-straddle.qkt` honestly (matches the pa-quant reference) and resolves the risk-sizing question with no special case.
+
+**Task 6 step 7** — `trailLevel` returns:
+- pre-arm: `entry - distance` (BUY) or `entry + distance` (SELL) — NOT `managed.entryPrice` alone
+- post-arm: `hwm - distance` (BUY) or `hwm + distance` (SELL)
+
+```kotlin
+private fun trailLevel(managed: ManagedOrder): BigDecimal? {
+    val spec = managed.bracketStopSpec
+    if (spec is StopLossSpec.ArmedTrail) {
+        val distance = spec.trailDistance
+        val isArmed = armed[managed.id] == true
+        val reference = if (isArmed) trailingHwm[managed.id] ?: return null else managed.entryPrice
+        return when (managed.side) {
+            Side.SELL -> reference.add(distance)
+            Side.BUY -> reference.subtract(distance)
+        }
+    }
+    // existing fixed-trail logic falls through here
+    val hwm = trailingHwm[managed.id] ?: return null
+    val distance = managed.trailDistance ?: return null
+    return when (managed.side) {
+        Side.SELL -> hwm.add(distance)
+        Side.BUY -> hwm.subtract(distance)
+    }
+}
+```
+
+**Task 7 step 1** — update the e2e tick sequences. Strategy at fill=101 with `TRAILING 5 AFTER MFE >= 10`:
+- Pre-arm stop is at `101 - 5 = 96` for BUY (not 101).
+- "never arms" test: ticks `99, 101, 105, 95` → 95 is below 96 → trigger. (Previous test design hit 99 expecting entry-stop; revise to 95 hitting `entry - distance`.)
+- "armed then triggered" test: ticks `99, 101, 110 (MFE=9, not armed), 112 (MFE=11 → armed, hwm=112, trail=107), 106` → 106 below 107 → trigger. (Same as before.)
+
+**Task 6 step 1 / 2** — update the three `OrderManagerArmedTrailTest` cases to assert the pre-arm `entry ± distance` semantic, not breakeven.
+
+### Correction 5 — Risk-sizing now well-defined (no special case needed)
+
+`ActionCompiler.kt:258`'s `resolveStaticStopDistance(opts.bracket?.stopLoss)` needs to handle `ChildArmedTrail` by returning `trailDistance`. Single line addition in `resolveStaticStopDistance` (grep for it):
+
+```kotlin
+is ChildArmedTrail -> child.trailDistance.takeIf { /* is NumLit */ }
+```
+
+Use the same NumLit-extraction pattern the other branches use. Risk-based sizing now sees a meaningful stop distance whether the trail has armed or not.
