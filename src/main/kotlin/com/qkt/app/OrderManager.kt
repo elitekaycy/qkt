@@ -492,6 +492,14 @@ class OrderManager(
                 val distance = sl.multiply(multiplier, Money.CONTEXT)
                 (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
             }
+            is com.qkt.dsl.ast.ChildArmedTrail -> {
+                require(isStopLoss) { "ChildArmedTrail is only valid for STOP LOSS, not TAKE PROFIT" }
+                // Pre-arm stop level: `fillPrice ± trailDistance`. The armed/trailing
+                // behaviour is gated separately via [StopLossSpec.ArmedTrail] in OrderManager's
+                // tick loop; this path computes the static pre-arm level only.
+                val distance = evaluateAt(childPrice.trailDistance, fillPrice)
+                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
+            }
         }
     }
 
