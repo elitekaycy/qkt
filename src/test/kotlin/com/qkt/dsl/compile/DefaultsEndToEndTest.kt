@@ -70,7 +70,7 @@ class DefaultsEndToEndTest {
         assertThat(submits).isNotEmpty
         val br = submits.first().request as OrderRequest.Bracket
         assertThat(br.quantity).isEqualByComparingTo("20")
-        assertThat(br.stopLoss).isEqualByComparingTo("105")
+        assertThat((br.stopLoss as com.qkt.execution.StopLossSpec.Fixed).price).isEqualByComparingTo("105")
         assertThat(br.takeProfit).isEqualByComparingTo("125")
         assertThat(br.side).isEqualTo(Side.BUY)
     }

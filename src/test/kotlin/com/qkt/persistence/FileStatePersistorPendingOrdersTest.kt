@@ -112,7 +112,7 @@ class FileStatePersistorPendingOrdersTest {
                 quantity = BigDecimal("0.20"),
                 entry = market,
                 takeProfit = BigDecimal("4720"),
-                stopLoss = BigDecimal("4690"),
+                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("4690")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1000L,
                 strategyId = "hedge",

@@ -34,7 +34,7 @@ class OrderManagerBracketTest {
             quantity = Money.of("1"),
             entry = entry,
             takeProfit = Money.of("110"),
-            stopLoss = Money.of("95"),
+            stopLoss = com.qkt.execution.StopLossSpec.Fixed(Money.of("95")),
             timeInForce = TimeInForce.GTC,
             timestamp = 0L,
         )

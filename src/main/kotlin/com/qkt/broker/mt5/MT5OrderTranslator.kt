@@ -2,6 +2,7 @@ package com.qkt.broker.mt5
 
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TrailMode
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
@@ -88,12 +89,25 @@ class MT5OrderTranslator(
                     (if (req.side == Side.BUY) "BUY_LIMIT" else "SELL_LIMIT") to entry.limitPrice
                 else -> error("MT5 bracket entry must be Market/Stop/Limit, got ${entry::class.simpleName}")
             }
+        // TODO(#48-task6): handle StopLossSpec.ArmedTrail — currently MT5-native bracket
+        // submissions cannot carry the engine-managed armed semantics; armed trails will
+        // need to fall through the bracket-fallback path so OrderManager owns the stop.
+        val slPrice =
+            when (val sl = req.stopLoss) {
+                is StopLossSpec.Fixed -> sl.price
+                is StopLossSpec.ArmedTrail ->
+                    error(
+                        "MT5 bracket cannot carry an armed-trail stop natively; the engine " +
+                            "should have routed this through the bracket-fallback path. " +
+                            "Surface from a programming error before #48 Task 6 wired routing.",
+                    )
+            }
         return MT5OrderRequest(
             symbol = symbol.toBroker(bare(req.symbol)),
             volume = req.quantity,
             type = type,
             price = price,
-            sl = req.stopLoss,
+            sl = slPrice,
             tp = req.takeProfit,
             deviation = profile.deviationPoints,
             magic = profile.magic,
