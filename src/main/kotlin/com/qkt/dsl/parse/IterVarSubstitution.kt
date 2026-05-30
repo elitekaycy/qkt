@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CaseWhen
+import com.qkt.dsl.ast.ChildArmedTrail
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
@@ -177,6 +178,11 @@ private fun subst(
         is ChildBy -> cp.copy(distance = subst(cp.distance, v, alias))
         is ChildPct -> cp.copy(frac = subst(cp.frac, v, alias))
         is ChildRr -> cp.copy(multiplier = subst(cp.multiplier, v, alias))
+        is ChildArmedTrail ->
+            cp.copy(
+                trailDistance = subst(cp.trailDistance, v, alias),
+                mfeThreshold = subst(cp.mfeThreshold, v, alias),
+            )
     }
 
 private fun subst(

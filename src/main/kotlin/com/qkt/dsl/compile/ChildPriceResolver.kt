@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.common.Money
 import com.qkt.common.Side
+import com.qkt.dsl.ast.ChildArmedTrail
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
@@ -65,6 +66,22 @@ class ChildPriceResolver(
                     val v = multExpr.evaluate(ec)
                     require(v is Value.Num) { "child RR expression must be numeric" }
                     applyDistance(side, entry, v.v.multiply(sd, Money.CONTEXT), ChildKind.TAKE_PROFIT)
+                }
+            }
+            is ChildArmedTrail -> {
+                // The armed-trail variant emits an engine-managed dynamic stop, not a
+                // static price evaluated here. Task 5 wires the proper StopLossSpec.ArmedTrail
+                // path through ActionCompiler so this branch is never invoked for armed
+                // trails. The pre-arm stop level (entry ± distance) is computed at
+                // bracket-fill time by OrderManager. See #48 plan, Task 5.
+                require(kind == ChildKind.STOP_LOSS) {
+                    "ChildArmedTrail is only valid for STOP LOSS (got $kind)"
+                }
+                val distExpr = exprCompiler.compile(child.trailDistance)
+                CompiledChildPrice { ec, side, entry, _ ->
+                    val v = distExpr.evaluate(ec)
+                    require(v is Value.Num) { "TRAILING <distance> must be numeric" }
+                    applyDistance(side, entry, v.v, ChildKind.STOP_LOSS)
                 }
             }
         }
