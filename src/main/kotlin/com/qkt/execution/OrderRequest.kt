@@ -173,6 +173,41 @@ sealed interface OrderRequest {
         }
     }
 
+    /**
+     * Stop with one-way arming: sits at `entryPrice ± trailDistance` (sign by [side])
+     * until the trade's max favorable excursion reaches [mfeThreshold], then converts
+     * to a trailing stop at the same `trailDistance` from the running favorable extreme.
+     *
+     * Emitted by [OrderManager]'s bracket-fallback path when a [Bracket] carries a
+     * [StopLossSpec.ArmedTrail] stop — never produced by strategy code directly. The
+     * engine owns the lifecycle; brokers see a plain Stop trigger on each price move.
+     *
+     * See [com.qkt.execution.StopLossSpec.ArmedTrail] and Phase 36 spec for semantics.
+     */
+    data class ArmedTrailingStop(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        /** The entry-leg fill price the trail measures MFE from. */
+        val entryPrice: BigDecimal,
+        /** Distance from `entryPrice` (pre-arm) and from `hwm` (post-arm). */
+        val trailDistance: BigDecimal,
+        /** Arming threshold: when MFE crosses this, the stop arms and starts trailing. */
+        val mfeThreshold: BigDecimal,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+        override val strategyId: String = "",
+        override val expiresAt: Long? = null,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(entryPrice.signum() > 0) { "entryPrice must be > 0: $entryPrice" }
+            require(trailDistance.signum() > 0) { "trailDistance must be > 0: $trailDistance" }
+            require(mfeThreshold.signum() >= 0) { "mfeThreshold must be >= 0: $mfeThreshold" }
+        }
+    }
+
     /** [TrailingStop] variant that triggers a limit order offset by [limitOffset] from the trail. */
     data class TrailingStopLimit(
         override val id: String,
@@ -350,6 +385,7 @@ fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
         is OrderRequest.IfTouched -> copy(strategyId = strategyId)
         is OrderRequest.TrailingStop -> copy(strategyId = strategyId)
         is OrderRequest.TrailingStopLimit -> copy(strategyId = strategyId)
+        is OrderRequest.ArmedTrailingStop -> copy(strategyId = strategyId)
         is OrderRequest.StandaloneOCO ->
             copy(
                 strategyId = strategyId,
@@ -417,6 +453,7 @@ fun OrderRequest.withExpiresAt(expiresAt: Long?): OrderRequest =
         is OrderRequest.IfTouched -> copy(expiresAt = expiresAt)
         is OrderRequest.TrailingStop -> copy(expiresAt = expiresAt)
         is OrderRequest.TrailingStopLimit -> copy(expiresAt = expiresAt)
+        is OrderRequest.ArmedTrailingStop -> copy(expiresAt = expiresAt)
         is OrderRequest.Bracket ->
             copy(expiresAt = expiresAt, entry = entry.withExpiresAt(expiresAt))
         is OrderRequest.StandaloneOCO ->
