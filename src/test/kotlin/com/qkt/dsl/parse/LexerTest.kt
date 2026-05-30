@@ -13,6 +13,13 @@ class LexerTest {
     }
 
     @Test
+    fun `AFTER is tokenized as TokenKind AFTER`() {
+        val tokens = Lexer("AFTER after After").tokenize()
+        assertThat(tokens.map { it.kind })
+            .containsExactly(TokenKind.AFTER, TokenKind.AFTER, TokenKind.AFTER, TokenKind.EOF)
+    }
+
+    @Test
     fun `case-sensitive identifiers preserve original casing`() {
         val tokens = Lexer("btc BTC mySymbol").tokenize()
         assertThat(tokens.dropLast(1).map { it.lexeme }).containsExactly("btc", "BTC", "mySymbol")
