@@ -109,6 +109,33 @@ SELL btc SIZING 0.1 ORDER_TYPE = TRAILING PCT 0.05
 
 See [the stop-loss recipe](../../how-to/add-stop-loss.md#trailing-stop) for semantics and engine-vs-broker routing.
 
+## Armed trailing stop
+
+`STOP LOSS TRAILING <distance> AFTER MFE >= <threshold>` adds a one-way armed trailing stop as a bracket leg. The stop sits at a fixed distance from the entry until the trade's maximum favorable excursion (MFE) crosses `<threshold>`, then converts to a trailing stop at the same distance from the running favorable extreme.
+
+```qkt
+BUY btc SIZING 0.1 BRACKET {
+  STOP LOSS TRAILING 5 AFTER MFE >= 10,
+  TAKE PROFIT BY 50
+}
+```
+
+Semantics:
+
+- **Pre-arm:** stop sits at `entry − distance` (BUY) or `entry + distance` (SELL).
+- **Arming:** when MFE crosses `<threshold>`, the stop arms and starts tracking the favorable extreme.
+- **Post-arm:** stop sits at `hwm − distance` (BUY) or `hwm + distance` (SELL), where `hwm` is the running favorable extreme since fill.
+- Arming is one-way: once armed, the stop never disarms.
+- The same `<distance>` value applies pre and post — only the reference point shifts (entry → hwm).
+
+Both `<distance>` and `<threshold>` must be **positive numeric literals** (no expressions). `<threshold>` can be zero, which means "trail from inception." `TAKE PROFIT TRAILING` is rejected at parse time — armed trailing is stop-only.
+
+Risk-based sizing (`SIZING RISK $ N`) sees `<distance>` as the worst-case stop distance regardless of arming state.
+
+The arming logic is always engine-managed: brokers that support native brackets see only the entry and TP; the engine owns the stop and re-evaluates its level on every tick.
+
+See [Phase 36 — Armed trailing stop](../../phases/phase-36-armed-trailing-stop.md) for the worked examples and known limitations.
+
 ## How the bracket reaches the broker
 
 The DSL submits one `BRACKET` request to the order manager. From there:
