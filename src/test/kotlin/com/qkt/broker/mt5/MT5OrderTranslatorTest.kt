@@ -2,6 +2,7 @@ package com.qkt.broker.mt5
 
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TrailMode
 import java.math.BigDecimal
@@ -59,7 +60,7 @@ class MT5OrderTranslatorTest {
                 quantity = BigDecimal("0.1"),
                 entry = entry,
                 takeProfit = BigDecimal("1.1500"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("1.0500")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.0500")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
@@ -93,7 +94,7 @@ class MT5OrderTranslatorTest {
                 quantity = BigDecimal("0.1"),
                 entry = stopEntry,
                 takeProfit = BigDecimal("1.1200"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("1.0900")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.0900")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
@@ -126,7 +127,7 @@ class MT5OrderTranslatorTest {
                 quantity = BigDecimal("0.1"),
                 entry = stopEntry,
                 takeProfit = BigDecimal("1.0800"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("1.1100")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.1100")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
@@ -157,7 +158,7 @@ class MT5OrderTranslatorTest {
                 quantity = BigDecimal("0.1"),
                 entry = limitEntry,
                 takeProfit = BigDecimal("1.1100"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("1.0800")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.0800")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",

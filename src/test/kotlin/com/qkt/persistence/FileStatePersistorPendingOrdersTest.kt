@@ -2,6 +2,7 @@ package com.qkt.persistence
 
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
 import java.math.BigDecimal
@@ -112,7 +113,7 @@ class FileStatePersistorPendingOrdersTest {
                 quantity = BigDecimal("0.20"),
                 entry = market,
                 takeProfit = BigDecimal("4720"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("4690")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("4690")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1000L,
                 strategyId = "hedge",

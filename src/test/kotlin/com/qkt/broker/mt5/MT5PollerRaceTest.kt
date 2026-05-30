@@ -9,6 +9,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import java.math.BigDecimal
 import okhttp3.mockwebserver.MockResponse
@@ -90,7 +91,7 @@ class MT5PollerRaceTest {
             entry = entry,
             takeProfit = if (side == Side.BUY) BigDecimal("1.1300") else BigDecimal("1.1100"),
             stopLoss =
-                com.qkt.execution.StopLossSpec.Fixed(
+                StopLossSpec.Fixed(
                     if (side == Side.BUY) BigDecimal("1.1150") else BigDecimal("1.1250"),
                 ),
             timeInForce = TimeInForce.GTC,

@@ -1,7 +1,9 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ChildArmedTrail
+import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.execution.StopLossSpec
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -36,7 +38,7 @@ class ChildPriceResolverArmedTrailTest {
     fun `non-literal trail distance is rejected at compile time`() {
         val ast =
             ChildArmedTrail(
-                trailDistance = com.qkt.dsl.ast.StreamFieldRef("g", "close"),
+                trailDistance = StreamFieldRef("g", "close"),
                 mfeThreshold = NumLit(BigDecimal("10")),
             )
         assertThatThrownBy { resolver.compileStopLoss(ast) }
@@ -48,7 +50,7 @@ class ChildPriceResolverArmedTrailTest {
         val ast =
             ChildArmedTrail(
                 trailDistance = NumLit(BigDecimal("5")),
-                mfeThreshold = com.qkt.dsl.ast.StreamFieldRef("g", "close"),
+                mfeThreshold = StreamFieldRef("g", "close"),
             )
         assertThatThrownBy { resolver.compileStopLoss(ast) }
             .hasMessageContaining("literal")
@@ -56,7 +58,7 @@ class ChildPriceResolverArmedTrailTest {
 
     @Test
     fun `non-armed ChildAt compiles to CompiledStopLoss Dynamic`() {
-        val ast = com.qkt.dsl.ast.ChildAt(NumLit(BigDecimal("100")))
+        val ast = ChildAt(NumLit(BigDecimal("100")))
         val compiled = resolver.compileStopLoss(ast)
         assertThat(compiled).isInstanceOf(CompiledStopLoss.Dynamic::class.java)
     }

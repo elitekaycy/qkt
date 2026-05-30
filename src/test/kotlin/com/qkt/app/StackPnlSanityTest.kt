@@ -17,6 +17,7 @@ import com.qkt.dsl.compile.PendingStacks
 import com.qkt.engine.Engine
 import com.qkt.events.OrderEvent
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
@@ -148,7 +149,7 @@ class StackPnlSanityTest {
             quantity = primaryQty,
             entry = entry,
             takeProfit = primaryEntry.add(primaryTp), // 1.1200
-            stopLoss = com.qkt.execution.StopLossSpec.Fixed(primaryEntry.subtract(primarySl)), // 1.0950
+            stopLoss = StopLossSpec.Fixed(primaryEntry.subtract(primarySl)), // 1.0950
             timeInForce = TimeInForce.GTC,
             timestamp = 0L,
             strategyId = strategyId,
