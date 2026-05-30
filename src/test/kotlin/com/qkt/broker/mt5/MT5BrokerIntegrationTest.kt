@@ -6,6 +6,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import java.math.BigDecimal
 import okhttp3.mockwebserver.MockResponse
@@ -115,7 +116,7 @@ class MT5BrokerIntegrationTest {
                 quantity = BigDecimal("0.1"),
                 entry = entry,
                 takeProfit = BigDecimal("1.1500"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("1.0500")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.0500")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
@@ -524,7 +525,7 @@ class MT5BrokerIntegrationTest {
                         strategyId = "s1",
                     ),
                 takeProfit = BigDecimal("4574.16412345"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("4544.16412345")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("4544.16412345")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
@@ -633,7 +634,7 @@ class MT5BrokerIntegrationTest {
                 quantity = BigDecimal("0.10"),
                 entry = entry,
                 takeProfit = BigDecimal("4561.500"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("4560.950")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("4560.950")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
@@ -739,7 +740,7 @@ class MT5BrokerIntegrationTest {
                         strategyId = "s1",
                     ),
                 takeProfit = BigDecimal("1.1080"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("1.1020")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.1020")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",
@@ -827,7 +828,7 @@ class MT5BrokerIntegrationTest {
                         strategyId = "s1",
                     ),
                 takeProfit = BigDecimal("1.1080"),
-                stopLoss = com.qkt.execution.StopLossSpec.Fixed(BigDecimal("1.1020")),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.1020")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1L,
                 strategyId = "s1",

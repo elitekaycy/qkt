@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.common.FixedClock
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -63,7 +64,7 @@ class StackEngineTest {
         assertThat(bracket.side).isEqualTo(Side.BUY)
         assertThat(bracket.quantity).isEqualByComparingTo("0.05") // absolute, from tier
         // SL = currentPrice - slDistance = 1.1055 - 0.005 = 1.1005
-        assertThat((bracket.stopLoss as com.qkt.execution.StopLossSpec.Fixed).price).isEqualByComparingTo("1.1005")
+        assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("1.1005")
         // TP = currentPrice + tpDistance = 1.1055 + 0.020 = 1.1255
         assertThat(bracket.takeProfit).isEqualByComparingTo("1.1255")
     }
@@ -139,7 +140,7 @@ class StackEngineTest {
         val bracket = sig.request as OrderRequest.Bracket
         assertThat(bracket.side).isEqualTo(Side.SELL)
         // SL for SELL = currentPrice + slDistance = 1.0930 + 0.005 = 1.0980
-        assertThat((bracket.stopLoss as com.qkt.execution.StopLossSpec.Fixed).price).isEqualByComparingTo("1.0980")
+        assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("1.0980")
         // TP for SELL = currentPrice - tpDistance = 1.0930 - 0.020 = 1.0730
         assertThat(bracket.takeProfit).isEqualByComparingTo("1.0730")
     }
