@@ -8,6 +8,8 @@ import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
 import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
+import com.qkt.dsl.ast.NumLit
+import com.qkt.execution.StopLossSpec
 import java.math.BigDecimal
 
 enum class ChildKind { STOP_LOSS, TAKE_PROFIT }
@@ -21,9 +23,60 @@ fun interface CompiledChildPrice {
     ): BigDecimal
 }
 
+/**
+ * Output of [ChildPriceResolver.compileStopLoss] — bracket stop loss as either an
+ * engine-managed [StopLossSpec.ArmedTrail] (resolved entirely at compile time, no
+ * per-tick evaluation needed) or a [Dynamic] that produces a [StopLossSpec.Fixed]
+ * at submission time given the entry price.
+ */
+sealed interface CompiledStopLoss {
+    fun interface Dynamic : CompiledStopLoss {
+        fun evaluate(
+            ec: EvalContext,
+            side: Side,
+            entry: BigDecimal,
+        ): StopLossSpec.Fixed
+    }
+
+    data class Static(
+        val spec: StopLossSpec,
+    ) : CompiledStopLoss
+}
+
 class ChildPriceResolver(
     private val exprCompiler: ExprCompiler,
 ) {
+    /**
+     * Compile a bracket stop-loss leg. Returns [CompiledStopLoss.Static] when the
+     * leg is an engine-managed armed trail (no per-tick price resolution required),
+     * or [CompiledStopLoss.Dynamic] for the price-resolving variants (`AT`, `BY`, `PCT`).
+     * `RR` is rejected because it's a take-profit-only form.
+     */
+    fun compileStopLoss(child: ChildPriceAst): CompiledStopLoss =
+        when (child) {
+            is ChildArmedTrail -> {
+                require(child.trailDistance is NumLit) {
+                    "TRAILING <distance> must be a numeric literal; got ${child.trailDistance::class.simpleName}"
+                }
+                require(child.mfeThreshold is NumLit) {
+                    "AFTER MFE >= <threshold> must be a numeric literal; got ${child.mfeThreshold::class.simpleName}"
+                }
+                CompiledStopLoss.Static(
+                    StopLossSpec.ArmedTrail(
+                        trailDistance = (child.trailDistance as NumLit).value,
+                        mfeThreshold = (child.mfeThreshold as NumLit).value,
+                    ),
+                )
+            }
+            is ChildRr -> error("ChildRr is only valid for TAKE PROFIT, not STOP LOSS")
+            else -> {
+                val priced = compile(child, ChildKind.STOP_LOSS)
+                CompiledStopLoss.Dynamic { ec, side, entry ->
+                    StopLossSpec.Fixed(priced.evaluate(ec, side, entry, stopDistance = null))
+                }
+            }
+        }
+
     fun compile(
         child: ChildPriceAst,
         kind: ChildKind,
