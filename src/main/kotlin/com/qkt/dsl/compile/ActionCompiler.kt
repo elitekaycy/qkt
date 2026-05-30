@@ -258,7 +258,7 @@ class ActionCompiler(
         val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
         val compiledSize = sizingCompiler.compile(sizing, staticStopDistance, stream)
 
-        val compiledSL = opts.bracket?.stopLoss?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
+        val compiledSL = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
         val compiledTP = opts.bracket?.takeProfit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
         val compiledOcoLeg1 = opts.oco?.stop?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
         val compiledOcoLeg2 = opts.oco?.limit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
@@ -276,8 +276,18 @@ class ActionCompiler(
                     opts.bracket != null -> {
                         val sl = requireNotNull(compiledSL) { "BRACKET requires STOP LOSS" }
                         val tp = requireNotNull(compiledTP) { "BRACKET requires TAKE PROFIT" }
-                        val slPrice = sl.evaluate(ctx, side, entry, stopDistance = null)
-                        val sd = (entry - slPrice).abs()
+                        val slSpec: com.qkt.execution.StopLossSpec =
+                            when (sl) {
+                                is CompiledStopLoss.Static -> sl.spec
+                                is CompiledStopLoss.Dynamic -> sl.evaluate(ctx, side, entry)
+                            }
+                        // For RR take-profit, derive the stop distance from the Fixed-shaped
+                        // stop. Armed trails carry their distance explicitly.
+                        val sd: java.math.BigDecimal =
+                            when (slSpec) {
+                                is com.qkt.execution.StopLossSpec.Fixed -> (entry - slSpec.price).abs()
+                                is com.qkt.execution.StopLossSpec.ArmedTrail -> slSpec.trailDistance
+                            }
                         val tpPrice = tp.evaluate(ctx, side, entry, stopDistance = sd)
                         OrderRequest.Bracket(
                             id = ids.next(),
@@ -286,7 +296,7 @@ class ActionCompiler(
                             quantity = qty,
                             entry = entryReq,
                             takeProfit = tpPrice,
-                            stopLoss = com.qkt.execution.StopLossSpec.Fixed(slPrice),
+                            stopLoss = slSpec,
                             timeInForce = tif,
                             timestamp = ts,
                         )
@@ -471,6 +481,14 @@ class ActionCompiler(
         when (stop) {
             is ChildBy -> {
                 val expr = stop.distance
+                if (expr is NumLit) expr.value else null
+            }
+            is com.qkt.dsl.ast.ChildArmedTrail -> {
+                // Armed trail's trail distance IS the worst-case stop distance for risk
+                // sizing — pre-arm the stop sits at entry ± distance, post-arm the stop
+                // trails by the same distance. Either way `SIZING RISK $ N` sees a
+                // well-defined stop distance. See spec §6 and plan correction 5.
+                val expr = stop.trailDistance
                 if (expr is NumLit) expr.value else null
             }
             else -> null
