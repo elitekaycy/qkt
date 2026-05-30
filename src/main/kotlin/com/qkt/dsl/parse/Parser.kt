@@ -16,6 +16,7 @@ import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
+import com.qkt.dsl.ast.ChildArmedTrail
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
@@ -674,7 +675,16 @@ class Parser(
                 advance()
                 ChildRr(parseExpr())
             }
-            else -> error("expected child price (AT/BY/PCT/RR), got '${peek().lexeme}'")
+            TokenKind.TRAILING -> {
+                advance()
+                val distance = parseExpr()
+                expect(TokenKind.AFTER, "expected AFTER after TRAILING <distance>")
+                expect(TokenKind.MFE, "expected MFE after AFTER")
+                expect(TokenKind.GE, "expected '>=' after MFE")
+                val threshold = parseExpr()
+                ChildArmedTrail(distance, threshold)
+            }
+            else -> error("expected child price (AT/BY/PCT/RR/TRAILING), got '${peek().lexeme}'")
         }
 
     internal fun parseRules(): List<RuleAst> {
@@ -1080,6 +1090,12 @@ class Parser(
                 TokenKind.TAKE -> {
                     advance()
                     expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
+                    if (peek().kind == TokenKind.TRAILING) {
+                        error(
+                            "TAKE PROFIT TRAILING is not supported — TRAILING is stop-only " +
+                                "(armed trail). Use TAKE PROFIT AT/BY/PCT/RR.",
+                        )
+                    }
                     takeProfit = parseChildPrice()
                 }
                 else -> error("expected STOP LOSS or TAKE PROFIT in BRACKET, got '${peek().lexeme}'")
