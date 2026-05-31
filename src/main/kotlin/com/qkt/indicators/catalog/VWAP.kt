@@ -6,6 +6,20 @@ import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import java.math.MathContext
 
+/**
+ * Volume-Weighted Average Price — like a moving average, except trades on big
+ * volume count more than trades on small volume. Answers: "what's the typical
+ * price people actually traded at recently?"
+ *
+ * Common use as a fair-value reference:
+ *  - **price above VWAP** — buyers paid a premium today on average
+ *  - **price below VWAP** — sellers accepted a discount today on average
+ *
+ * Big-money desks use VWAP to score execution quality ("did we beat VWAP?").
+ *
+ * Updates on every raw tick, not just on candle close — so the value reflects
+ * intra-bar trades the moment they happen.
+ */
 class VWAP(
     private val period: Int,
 ) : Indicator<Tick> {

@@ -5,6 +5,21 @@ import com.qkt.indicators.Indicator
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 
+/**
+ * Average "true range" of a candle over the last [period] candles — a rolling
+ * read on how much the price typically moves per bar. Higher ATR = wider swings.
+ *
+ * "True range" per candle = the largest of:
+ *  - candle high − candle low (today's span)
+ *  - |candle high − previous close| (today's high vs yesterday)
+ *  - |candle low − previous close| (today's low vs yesterday)
+ *
+ * Smoothed with Wilder's averaging — the standard ATR convention.
+ *
+ * Common use: size stops to volatility. "Place SL at 2 × ATR" gives wider stops
+ * when the market is rough and tighter stops when it's quiet, instead of a
+ * fixed pip distance that doesn't adapt.
+ */
 class ATR(
     private val period: Int,
 ) : Indicator<Candle> {

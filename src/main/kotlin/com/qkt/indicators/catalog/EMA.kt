@@ -4,6 +4,17 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/**
+ * A moving average that gives more weight to recent values than older ones — so
+ * it reacts to new prices faster than [SMA] of the same [period].
+ *
+ * e.g. EMA(9) on closes `100, 105, 110` weights the 110 more than the 100. The
+ * exact formula: `new = old + α(value − old)` with `α = 2 / (period + 1)`.
+ *
+ * Common use: trend filters (`ema(close, 9) > ema(close, 21)` = short-term trend
+ * is up). The first reading is just the first input — no warmup pre-fill — which
+ * matches what charting platforms like TradingView show.
+ */
 class EMA(
     private val period: Int,
 ) : Indicator<BigDecimal> {

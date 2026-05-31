@@ -4,6 +4,20 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/**
+ * Relative Strength Index — a momentum gauge from 0 to 100. Compares the size of
+ * recent up-moves to recent down-moves: 50 is neutral, above 50 means up-moves
+ * are dominating, below 50 means down-moves are.
+ *
+ * Common reads:
+ *  - **above 70** — "overbought," many traders look to fade longs here
+ *  - **below 30** — "oversold," many look to fade shorts
+ *  - **crossing 50** — momentum shift
+ *
+ * Uses Wilder's smoothing (the original 1978 definition every charting platform
+ * uses): the first reading averages the first [period] up/down moves; later
+ * readings smooth with weight `1/period` on the newest move.
+ */
 class RSI(
     private val period: Int,
 ) : Indicator<BigDecimal> {

@@ -4,6 +4,15 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/**
+ * A moving average where the newest value counts most and the oldest counts
+ * least, on a straight line.
+ *
+ * e.g. WMA(3) on `100, 102, 105` = `(1×100 + 2×102 + 3×105) / (1+2+3) = 103.5`.
+ *
+ * Sits between [SMA] (every value equal) and [EMA] (exponential decay) in how
+ * fast it reacts. Choice between the three is mostly trader preference.
+ */
 class WMA(
     private val period: Int,
 ) : Indicator<BigDecimal> {
