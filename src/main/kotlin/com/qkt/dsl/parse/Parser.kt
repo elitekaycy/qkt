@@ -85,6 +85,7 @@ import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
+import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
@@ -140,7 +141,9 @@ class Parser(
 
         val streams =
             if (peek().kind == TokenKind.SYMBOLS) {
-                tryParse { parseSymbols() } ?: emptyList()
+                // Portfolios don't support SYNCHRONIZE in this phase (#45) —
+                // discard any parsed syncGroups.
+                tryParse { parseSymbols().streams } ?: emptyList()
             } else {
                 emptyList()
             }
@@ -232,12 +235,14 @@ class Parser(
                 null
             }
 
-        val streams =
+        val symbolsBlock =
             if (peek().kind == TokenKind.SYMBOLS) {
-                tryParse { parseSymbols() } ?: emptyList()
+                tryParse { parseSymbols() } ?: SymbolsBlock(emptyList(), emptyList())
             } else {
-                emptyList()
+                SymbolsBlock(emptyList(), emptyList())
             }
+        val streams = symbolsBlock.streams
+        val syncGroups = symbolsBlock.syncGroups
 
         val lets =
             if (peek().kind == TokenKind.LET) {
@@ -263,6 +268,7 @@ class Parser(
                 lets = lets,
                 defaults = defaults,
                 rules = rules,
+                syncGroups = syncGroups,
             ),
         )
     }
@@ -1225,7 +1231,12 @@ class Parser(
         return CaseWhen(branches, elseExpr)
     }
 
-    private fun parseSymbols(): List<StreamDecl> {
+    internal data class SymbolsBlock(
+        val streams: List<StreamDecl>,
+        val syncGroups: List<SyncGroupDecl>,
+    )
+
+    private fun parseSymbols(): SymbolsBlock {
         val out = mutableListOf<StreamDecl>()
         expect(TokenKind.SYMBOLS, "expected SYMBOLS")
         do {
@@ -1265,8 +1276,52 @@ class Parser(
                     warmupBars = warmupBars,
                 ),
             )
-        } while (match(TokenKind.COMMA))
-        return out
+        } while (
+            match(TokenKind.COMMA) ||
+            // Comma between stream decls is optional: continue if the next two tokens
+            // look like a new stream decl (`<alias> = ...`). Without this, only the
+            // first stream parses when strategies use newline separation (#45).
+            (peek().kind == TokenKind.IDENT && tokens[pos + 1].kind == TokenKind.EQ)
+        )
+
+        // #45 — SYNCHRONIZE clauses at the end of the SYMBOLS block. Each clause:
+        // `SYNCHRONIZE <ident> <ident> [<ident> …] [WITHIN <duration>]`.
+        val groups = mutableListOf<SyncGroupDecl>()
+        val declaredAliases = out.map { it.alias }.toSet()
+        val claimed = mutableMapOf<String, Int>()
+        while (peek().kind == TokenKind.SYNCHRONIZE) {
+            advance()
+            val aliases = mutableListOf<String>()
+            while (peek().kind == TokenKind.IDENT) {
+                aliases.add(advance().lexeme)
+            }
+            if (aliases.size < 2) {
+                error("SYNCHRONIZE requires at least 2 aliases, got ${aliases.size}")
+            }
+            val timeoutMs: Long? =
+                if (peek().kind == TokenKind.WITHIN) {
+                    advance()
+                    parseDuration().millis
+                } else {
+                    null
+                }
+            for (a in aliases) {
+                if (a !in declaredAliases) {
+                    error("SYNCHRONIZE alias '$a' is not declared in SYMBOLS")
+                }
+                val prevGroupIdx = claimed[a]
+                if (prevGroupIdx != null) {
+                    error(
+                        "SYNCHRONIZE alias '$a' appears in more than one group " +
+                            "(also in group ${prevGroupIdx + 1})",
+                    )
+                }
+                claimed[a] = groups.size
+            }
+            groups.add(SyncGroupDecl(aliases = aliases.toList(), timeoutMs = timeoutMs))
+        }
+
+        return SymbolsBlock(streams = out, syncGroups = groups)
     }
 
     private inline fun <T> tryParse(block: () -> T): T? =
