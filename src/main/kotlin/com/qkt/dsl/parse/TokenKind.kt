@@ -6,6 +6,7 @@ enum class TokenKind {
     DEFAULTS,
     SYMBOLS,
     SYNCHRONIZE,
+    SCHEDULE,
     LET,
     RULES,
 
@@ -71,6 +72,10 @@ enum class TokenKind {
     FOK,
     DAY,
     GTD,
+
+    HOUR,
+    WEEKDAY,
+    UTC,
 
     ORDER_TYPE,
     STOP_LOSS,
