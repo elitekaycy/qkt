@@ -101,7 +101,9 @@ class CandleHub {
     ) {
         for ((_, syncSlot) in syncSlots) {
             val alias =
-                syncSlot.key.members.entries.firstOrNull { it.value == streamKey }?.key
+                syncSlot.key.members.entries
+                    .firstOrNull { it.value == streamKey }
+                    ?.key
                     ?: continue
             val window = syncSlot.pending.getOrPut(closed.endTime) { mutableMapOf() }
             window[alias] = closed
