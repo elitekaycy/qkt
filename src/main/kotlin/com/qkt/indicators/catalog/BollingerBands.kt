@@ -5,7 +5,7 @@ import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 import java.math.MathContext
 
-/** Three-band Bollinger reading — middle is the SMA, upper/lower are [stddevK] σ above/below. */
+/** Three-band Bollinger reading — `middle` is the running average, `upper`/`lower` are the rails above and below. */
 data class BollingerBandValues(
     val upper: BigDecimal,
     val middle: BigDecimal,
@@ -13,12 +13,20 @@ data class BollingerBandValues(
 )
 
 /**
- * Bollinger Bands: a moving average plus a volatility envelope [stddevK] standard
- * deviations wide on each side. [Indicator.value] returns the middle (SMA); use
- * [bands] for the full three-band reading.
+ * Bollinger Bands: a moving average with two "rails" above and below that widen
+ * when prices get jumpy and narrow when prices get quiet.
  *
- * Defaults to the classic 20-period, 2σ shape; other widths are common (e.g. 1σ for
- * tighter mean-reversion entries).
+ * The middle rail is an [SMA] of the last [period] closes. The upper and lower
+ * rails sit [stddevK] times the recent standard deviation above/below — so the
+ * rails breathe with volatility instead of staying a fixed distance away.
+ *
+ * Common reads:
+ *  - **price touches upper rail** — stretched up; mean-reversion traders fade
+ *  - **price touches lower rail** — stretched down; mean-reversion traders buy
+ *  - **rails narrow** — quiet market; often precedes a breakout
+ *
+ * Defaults: 20-period SMA with 2σ rails (the original 1980s recipe). Use 1σ for
+ * tighter, more frequent signals; 3σ for rarer, more extreme ones.
  */
 class BollingerBands(
     private val period: Int,
