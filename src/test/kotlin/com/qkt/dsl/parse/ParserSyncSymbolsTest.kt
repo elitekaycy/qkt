@@ -116,4 +116,22 @@ class ParserSyncSymbolsTest {
             .containsIgnoringCase("silver")
             .containsIgnoringCase("more than one")
     }
+
+    @Test
+    fun `SYMBOLS without commas still parses every stream`() {
+        val src =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+              gold   = EXNESS:XAUUSD EVERY 1h
+              silver = EXNESS:XAGUSD EVERY 1h
+              SYNCHRONIZE gold silver
+            RULES
+              WHEN gold.close > silver.close THEN BUY gold SIZING 0.1
+            """.trimIndent()
+        val ast = parseStrategy(src).value
+        assertThat(ast.streams.map { it.alias }).containsExactly("gold", "silver")
+        assertThat(ast.syncGroups).hasSize(1)
+        assertThat(ast.syncGroups[0].aliases).containsExactly("gold", "silver")
+    }
 }
