@@ -21,6 +21,16 @@ import java.nio.file.Files
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Builds a [PortfolioRecord] from a compiled portfolio AST: spawns each child
+ * [StrategyHandle], wires them through [ChildHandle] gates, hands the bundle to a
+ * [PortfolioSupervisor], and starts the supervisor running.
+ *
+ * Atomic: if any child fails to deploy, every already-deployed child is closed
+ * before the exception propagates — the daemon never ends up with a half-deployed
+ * portfolio. The daemon's strategy registry receives the children only when the
+ * full deploy succeeds.
+ */
 class PortfolioDeployer(
     private val stateDir: StateDir,
     private val marketSourceProvider: (List<String>) -> MarketSource,
@@ -37,6 +47,10 @@ class PortfolioDeployer(
     private val notifier: Notifier = NoopNotifier,
     private val notifyEvents: Set<NotifyEventKind> = emptySet(),
 ) {
+    /**
+     * Deploy a compiled portfolio and start its supervisor. Throws if any child
+     * fails to come up — partial deploys are torn down before the exception propagates.
+     */
     fun deploy(
         portfolioName: String,
         compiled: PortfolioCompiled,

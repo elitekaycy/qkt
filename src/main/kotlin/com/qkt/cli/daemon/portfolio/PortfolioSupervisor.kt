@@ -28,6 +28,19 @@ import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
+/**
+ * Runs a portfolio's WHEN-clauses against live market data and toggles each
+ * [ChildHandle.gateActive] flag so children trade only when their gate condition is
+ * true. ALWAYS_RUN clauses set their child active once at [start]; conditional rules
+ * re-evaluate on each market tick.
+ *
+ * One supervisor thread per portfolio (named `qkt-portfolio-supervisor-<name>`),
+ * daemonized so the JVM can exit when the main daemon stops. Idempotent
+ * [start] / [stop] — extra calls are no-ops.
+ *
+ * When [marketSource] is null (portfolios that declare no streams), only the
+ * always-run rules fire; no tick loop spins up.
+ */
 class PortfolioSupervisor(
     val ast: PortfolioAst,
     val children: List<ChildHandle>,
@@ -37,8 +50,10 @@ class PortfolioSupervisor(
     private val runFlag = AtomicBoolean(false)
     private var thread: Thread? = null
 
+    /** True between [start] and [stop]. */
     val running: Boolean get() = runFlag.get()
 
+    /** Spin up the supervisor thread and apply ALWAYS_RUN children. Idempotent. */
     fun start() {
         if (!runFlag.compareAndSet(false, true)) return
         applyAlwaysRunRules()
@@ -57,6 +72,7 @@ class PortfolioSupervisor(
             }
     }
 
+    /** Stop the supervisor thread and join it (5s timeout). Idempotent. */
     fun stop() {
         if (!runFlag.compareAndSet(true, false)) return
         thread?.interrupt()
