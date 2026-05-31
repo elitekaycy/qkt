@@ -1360,9 +1360,9 @@ class Parser(
                     advance()
                     times.add(parseTimeOfDay())
                 }
-                expect(TokenKind.UTC, "SCHEDULE AT requires explicit UTC")
+                val tz = parseTimezone("SCHEDULE AT")
                 for (t in times) {
-                    triggers.add(ScheduleTrigger.At(time = t, tz = Timezone.UTC))
+                    triggers.add(ScheduleTrigger.At(time = t, tz = tz))
                 }
             } else {
                 triggers.add(parseScheduleTrigger())
@@ -1390,19 +1390,40 @@ class Parser(
                 advance()
                 expect(TokenKind.AT, "expected AT after EVERY DAY")
                 val time = parseTimeOfDay()
-                expect(TokenKind.UTC, "EVERY DAY trigger requires explicit UTC")
-                ScheduleTrigger.EveryDay(time = time, tz = Timezone.UTC)
+                val tz = parseTimezone("EVERY DAY")
+                ScheduleTrigger.EveryDay(time = time, tz = tz)
             }
             TokenKind.WEEKDAY -> {
                 advance()
                 expect(TokenKind.AT, "expected AT after EVERY WEEKDAY")
                 val time = parseTimeOfDay()
-                expect(TokenKind.UTC, "EVERY WEEKDAY trigger requires explicit UTC")
-                ScheduleTrigger.EveryWeekday(time = time, tz = Timezone.UTC)
+                val tz = parseTimezone("EVERY WEEKDAY")
+                ScheduleTrigger.EveryWeekday(time = time, tz = tz)
             }
             else -> error("expected HOUR, DAY, or WEEKDAY after EVERY, got '${peek().lexeme}'")
         }
     }
+
+    /**
+     * Parse the timezone tag that follows a time literal in a `SCHEDULE` trigger.
+     * One of `UTC` / `NY` / `LONDON` / `TOKYO` / `SYDNEY` / `CHICAGO` / `BROKER`.
+     * [where] is the trigger label used in the error message.
+     */
+    private fun parseTimezone(where: String): Timezone =
+        when (peek().kind) {
+            TokenKind.UTC -> { advance(); Timezone.UTC }
+            TokenKind.NY -> { advance(); Timezone.NY }
+            TokenKind.LONDON -> { advance(); Timezone.LONDON }
+            TokenKind.TOKYO -> { advance(); Timezone.TOKYO }
+            TokenKind.SYDNEY -> { advance(); Timezone.SYDNEY }
+            TokenKind.CHICAGO -> { advance(); Timezone.CHICAGO }
+            TokenKind.BROKER -> { advance(); Timezone.BROKER }
+            else ->
+                error(
+                    "$where requires an explicit timezone " +
+                        "(UTC/NY/LONDON/TOKYO/SYDNEY/CHICAGO/BROKER), got '${peek().lexeme}'",
+                )
+        }
 
     /**
      * Parse `HH:MM` or `HH:MM:SS` into a [TimeOfDay]. Out-of-range values are

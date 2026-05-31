@@ -76,6 +76,12 @@ enum class TokenKind {
     HOUR,
     WEEKDAY,
     UTC,
+    NY,
+    LONDON,
+    TOKYO,
+    SYDNEY,
+    CHICAGO,
+    BROKER,
 
     ORDER_TYPE,
     STOP_LOSS,

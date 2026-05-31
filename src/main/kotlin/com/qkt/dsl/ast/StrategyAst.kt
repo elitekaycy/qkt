@@ -86,14 +86,55 @@ data class TimeOfDay(
 }
 
 /**
- * Timezone tag on a `SCHEDULE` trigger. `UTC` is the only variant in Phase 40
- * (#77); a follow-up phase can add `LOCAL` and IANA names like `NY` / `LONDON`.
+ * Timezone tag on a `SCHEDULE` trigger. Resolves to a `java.time.ZoneId` so the
+ * runner does DST-correct fire-time math.
  *
- * Why explicit UTC required: silent timezone defaults caused enough live-trading
- * bugs in pa-quant to justify forcing strategy authors to write the suffix.
+ * Why explicit per-trigger required: silent timezone defaults caused enough
+ * live-trading bugs in pa-quant to justify forcing strategy authors to write
+ * the suffix. `UTC` is the safe default for crypto/instrument-agnostic
+ * scheduling; named zones are for session-anchored strategies.
+ *
+ *  - `UTC` — system standard, no DST
+ *  - `NY` — America/New_York, DST-shifts twice a year, anchors NY equity / FX session
+ *  - `LONDON` — Europe/London, DST, anchors LDN FX session (typical volume peak)
+ *  - `TOKYO` — Asia/Tokyo, no DST, anchors Asia session and JPY pairs
+ *  - `SYDNEY` — Australia/Sydney, DST (southern hemisphere — opposite phase), AUD pairs
+ *  - `CHICAGO` — America/Chicago, DST, anchors CME futures sessions (energy, ag)
+ *  - `BROKER` — reserved; resolves to the broker profile's `serverTzOffset` from
+ *    `qkt.config.yaml`. Not yet wired through — strategies that use `BROKER` fail at
+ *    `bindToHub` time until the broker-profile plumbing lands. See spec
+ *    `docs/superpowers/specs/2026-05-31-phase40-schedule-design.md` for the deferred work.
  */
 sealed interface Timezone {
-    data object UTC : Timezone
+    /** `java.time.ZoneId` for date/time math. `BROKER` throws — see [resolveZoneId]. */
+    val zoneId: java.time.ZoneId
+
+    data object UTC : Timezone {
+        override val zoneId: java.time.ZoneId = java.time.ZoneOffset.UTC
+    }
+    data object NY : Timezone {
+        override val zoneId: java.time.ZoneId = java.time.ZoneId.of("America/New_York")
+    }
+    data object LONDON : Timezone {
+        override val zoneId: java.time.ZoneId = java.time.ZoneId.of("Europe/London")
+    }
+    data object TOKYO : Timezone {
+        override val zoneId: java.time.ZoneId = java.time.ZoneId.of("Asia/Tokyo")
+    }
+    data object SYDNEY : Timezone {
+        override val zoneId: java.time.ZoneId = java.time.ZoneId.of("Australia/Sydney")
+    }
+    data object CHICAGO : Timezone {
+        override val zoneId: java.time.ZoneId = java.time.ZoneId.of("America/Chicago")
+    }
+    data object BROKER : Timezone {
+        override val zoneId: java.time.ZoneId
+            get() = error(
+                "SCHEDULE timezone BROKER is reserved but not yet wired to a broker profile. " +
+                    "Use UTC or a named IANA zone (NY/LONDON/TOKYO/SYDNEY/CHICAGO) until " +
+                    "broker profile serverTzOffset config ships.",
+            )
+    }
 }
 
 /**
