@@ -148,6 +148,57 @@ class ScheduleRunnerTest {
     }
 
     @Test
+    fun `At with NY zone fires at the correct UTC instant across DST`() {
+        // 2026-01-15 09:30 NY (EST) = 14:30 UTC.
+        // 2026-07-15 09:30 NY (EDT) = 13:30 UTC.
+        // Same DSL clause, two different UTC instants — DST handled by ZoneId.
+
+        val janMidnightNy =
+            LocalDate.of(2026, 1, 15)
+                .atStartOfDay(java.time.ZoneId.of("America/New_York"))
+                .toInstant().toEpochMilli()
+        val runnerWinter = ScheduleRunner()
+        var winterFires = 0
+        runnerWinter.register(
+            "s1",
+            decl(ScheduleTrigger.At(TimeOfDay(9, 30), Timezone.NY)),
+            emit = { winterFires++ },
+            nowMs = janMidnightNy,
+        )
+        runnerWinter.tick(janMidnightNy + 14 * hour + 30 * 60_000L) // 14:30 UTC
+        assertThat(winterFires).isEqualTo(1)
+
+        val julMidnightNy =
+            LocalDate.of(2026, 7, 15)
+                .atStartOfDay(java.time.ZoneId.of("America/New_York"))
+                .toInstant().toEpochMilli()
+        val runnerSummer = ScheduleRunner()
+        var summerFires = 0
+        runnerSummer.register(
+            "s1",
+            decl(ScheduleTrigger.At(TimeOfDay(9, 30), Timezone.NY)),
+            emit = { summerFires++ },
+            nowMs = julMidnightNy,
+        )
+        runnerSummer.tick(julMidnightNy + 13 * hour + 30 * 60_000L) // 13:30 UTC
+        assertThat(summerFires).isEqualTo(1)
+    }
+
+    @Test
+    fun `register fails fast when trigger uses BROKER zone before profile is wired`() {
+        val runner = ScheduleRunner()
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                runner.register(
+                    "s1",
+                    decl(ScheduleTrigger.At(TimeOfDay(9, 0), Timezone.BROKER)),
+                    emit = {},
+                    nowMs = mondayMidnightUtc,
+                )
+            }.hasMessageContaining("BROKER")
+    }
+
+    @Test
     fun `multiple strategies fire independently`() {
         val runner = ScheduleRunner()
         var sAFires = 0

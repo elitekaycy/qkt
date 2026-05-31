@@ -3,8 +3,10 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.TimeOfDay
+import com.qkt.dsl.ast.Timezone
 import java.time.Instant
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import org.slf4j.LoggerFactory
 
@@ -106,23 +108,32 @@ internal class ScheduleRunner {
     ): Long {
         val fromInstant = Instant.ofEpochMilli(fromMs)
         return when (trigger) {
-            is ScheduleTrigger.At -> nextAt(trigger.time, fromInstant, fromMs)
-            is ScheduleTrigger.EveryDay -> nextAt(trigger.time, fromInstant, fromMs)
+            is ScheduleTrigger.At -> nextAt(trigger.time, trigger.tz.zoneId, fromInstant, fromMs)
+            is ScheduleTrigger.EveryDay -> nextAt(trigger.time, trigger.tz.zoneId, fromInstant, fromMs)
             is ScheduleTrigger.EveryHour -> nextEveryHour(trigger.minuteOffset, fromInstant, fromMs)
-            is ScheduleTrigger.EveryWeekday -> nextWeekday(trigger.time, fromInstant, fromMs)
+            is ScheduleTrigger.EveryWeekday -> nextWeekday(trigger.time, trigger.tz.zoneId, fromInstant, fromMs)
         }
     }
 
+    /**
+     * Resolve next-fire for a time-of-day in a named zone. `today` is the local
+     * calendar date in [zone]; the candidate is that date at the local clock
+     * time the trigger declared, converted to UTC epoch ms. Handles DST
+     * correctly because the zone resolution does — e.g. NY 09:00 is a different
+     * UTC instant in March vs. November.
+     */
     private fun nextAt(
         t: TimeOfDay,
+        zone: ZoneId,
         from: Instant,
         fromMs: Long,
     ): Long {
-        val today = from.atZone(ZoneOffset.UTC).toLocalDate()
+        val todayLocal = from.atZone(zone).toLocalDate()
         val candidate =
-            today
+            todayLocal
                 .atTime(LocalTime.of(t.hour, t.minute, t.second))
-                .toInstant(ZoneOffset.UTC)
+                .atZone(zone)
+                .toInstant()
                 .toEpochMilli()
         return if (candidate >= fromMs) candidate else candidate + DAY_MS
     }
@@ -143,21 +154,30 @@ internal class ScheduleRunner {
         return if (thisHour >= fromMs) thisHour else thisHour + HOUR_MS
     }
 
+    /**
+     * Mon-Fri only, evaluated in the trigger's local [zone]. A weekend day in
+     * London might still be a Friday in Tokyo at the same UTC instant — so the
+     * weekday check uses the local calendar date, not UTC.
+     */
     private fun nextWeekday(
         t: TimeOfDay,
+        zone: ZoneId,
         from: Instant,
         fromMs: Long,
     ): Long {
-        var candidate = nextAt(t, from, fromMs)
-        while (!isWeekday(candidate)) candidate += DAY_MS
+        var candidate = nextAt(t, zone, from, fromMs)
+        while (!isWeekday(candidate, zone)) candidate += DAY_MS
         return candidate
     }
 
-    private fun isWeekday(epochMs: Long): Boolean {
+    private fun isWeekday(
+        epochMs: Long,
+        zone: ZoneId,
+    ): Boolean {
         val dow =
             Instant
                 .ofEpochMilli(epochMs)
-                .atZone(ZoneOffset.UTC)
+                .atZone(zone)
                 .dayOfWeek
                 .value
         return dow in 1..5 // Mon-Fri
