@@ -63,6 +63,8 @@ import com.qkt.dsl.ast.SizePctEquity
 import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
+import com.qkt.dsl.ast.ScheduleDecl
+import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.SnapshotBuy
@@ -87,6 +89,8 @@ import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TimeOfDay
+import com.qkt.dsl.ast.Timezone
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnOp
@@ -251,6 +255,13 @@ class Parser(
                 emptyList()
             }
 
+        val schedules =
+            if (peek().kind == TokenKind.SCHEDULE) {
+                tryParse { parseSchedules() } ?: emptyList()
+            } else {
+                emptyList()
+            }
+
         val rules =
             if (peek().kind == TokenKind.RULES) {
                 tryParse { parseRules() } ?: emptyList()
@@ -269,6 +280,7 @@ class Parser(
                 defaults = defaults,
                 rules = rules,
                 syncGroups = syncGroups,
+                schedules = schedules,
             ),
         )
     }
@@ -1322,6 +1334,97 @@ class Parser(
         }
 
         return SymbolsBlock(streams = out, syncGroups = groups)
+    }
+
+    /**
+     * Parse one `SCHEDULE` block (#77). Each clause is one of:
+     *   - `AT <time> UTC THEN <action>` — single one-off, fires daily
+     *   - `AT <t1>, <t2>, … UTC THEN <action>` — same action at multiple times
+     *   - `EVERY HOUR AT :<min> THEN <action>`
+     *   - `EVERY DAY AT <time> UTC THEN <action>`
+     *   - `EVERY WEEKDAY AT <time> UTC THEN <action>`
+     *
+     * UTC is required on every `AT <time>` form. Block continues until a non-trigger
+     * token (typically `RULES`).
+     */
+    private fun parseSchedules(): List<ScheduleDecl> {
+        expect(TokenKind.SCHEDULE, "expected SCHEDULE")
+        val out = mutableListOf<ScheduleDecl>()
+        while (peek().kind == TokenKind.AT || peek().kind == TokenKind.EVERY) {
+            val triggers = mutableListOf<ScheduleTrigger>()
+            if (peek().kind == TokenKind.AT) {
+                advance() // AT
+                val times = mutableListOf<TimeOfDay>()
+                times.add(parseTimeOfDay())
+                while (peek().kind == TokenKind.COMMA) {
+                    advance()
+                    times.add(parseTimeOfDay())
+                }
+                expect(TokenKind.UTC, "SCHEDULE AT requires explicit UTC")
+                for (t in times) {
+                    triggers.add(ScheduleTrigger.At(time = t, tz = Timezone.UTC))
+                }
+            } else {
+                triggers.add(parseScheduleTrigger())
+            }
+            expect(TokenKind.THEN, "expected THEN after SCHEDULE trigger(s)")
+            val action = parseAction()
+            out.add(ScheduleDecl(triggers = triggers, action = action))
+        }
+        return out
+    }
+
+    /** Parse one non-list trigger: `EVERY HOUR AT :NN`, `EVERY DAY AT ...`, `EVERY WEEKDAY AT ...`. */
+    private fun parseScheduleTrigger(): ScheduleTrigger {
+        expect(TokenKind.EVERY, "expected EVERY")
+        return when (peek().kind) {
+            TokenKind.HOUR -> {
+                advance()
+                expect(TokenKind.AT, "expected AT after EVERY HOUR")
+                expect(TokenKind.COLON, "expected ':' before minute offset")
+                val mTok = expect(TokenKind.NUMBER, "expected minute 0-59")
+                val m = mTok.lexeme.toIntOrNull() ?: error("expected integer minute, got '${mTok.lexeme}'")
+                ScheduleTrigger.EveryHour(minuteOffset = m)
+            }
+            TokenKind.DAY -> {
+                advance()
+                expect(TokenKind.AT, "expected AT after EVERY DAY")
+                val time = parseTimeOfDay()
+                expect(TokenKind.UTC, "EVERY DAY trigger requires explicit UTC")
+                ScheduleTrigger.EveryDay(time = time, tz = Timezone.UTC)
+            }
+            TokenKind.WEEKDAY -> {
+                advance()
+                expect(TokenKind.AT, "expected AT after EVERY WEEKDAY")
+                val time = parseTimeOfDay()
+                expect(TokenKind.UTC, "EVERY WEEKDAY trigger requires explicit UTC")
+                ScheduleTrigger.EveryWeekday(time = time, tz = Timezone.UTC)
+            }
+            else -> error("expected HOUR, DAY, or WEEKDAY after EVERY, got '${peek().lexeme}'")
+        }
+    }
+
+    /**
+     * Parse `HH:MM` or `HH:MM:SS` into a [TimeOfDay]. Out-of-range values are
+     * rejected by [TimeOfDay.init].
+     */
+    private fun parseTimeOfDay(): TimeOfDay {
+        val hourTok = expect(TokenKind.NUMBER, "expected hour")
+        expect(TokenKind.COLON, "expected ':' after hour")
+        val minTok = expect(TokenKind.NUMBER, "expected minute")
+        val second: Int =
+            if (peek().kind == TokenKind.COLON) {
+                advance()
+                val secTok = expect(TokenKind.NUMBER, "expected second")
+                secTok.lexeme.toIntOrNull() ?: error("expected integer second, got '${secTok.lexeme}'")
+            } else {
+                0
+            }
+        return TimeOfDay(
+            hour = hourTok.lexeme.toIntOrNull() ?: error("expected integer hour, got '${hourTok.lexeme}'"),
+            minute = minTok.lexeme.toIntOrNull() ?: error("expected integer minute, got '${minTok.lexeme}'"),
+            second = second,
+        )
     }
 
     private inline fun <T> tryParse(block: () -> T): T? =
