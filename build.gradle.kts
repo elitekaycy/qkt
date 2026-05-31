@@ -151,7 +151,7 @@ tasks.test {
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
         if (included.isEmpty()) {
-            excludeTags("e2e", "e2e-live", "dockerSmoke", "stress")
+            excludeTags("e2e", "e2e-live", "dockerSmoke", "stress", "soak")
         } else {
             includeTags(*included.toTypedArray())
         }
