@@ -28,5 +28,10 @@ data class SyncGroupKey(
         require(timeoutMs == null || timeoutMs > 0) {
             "SyncGroupKey.timeoutMs must be positive when present: $timeoutMs"
         }
+        val timeframes = members.values.map { it.timeframe }.toSet()
+        require(timeframes.size == 1) {
+            "SyncGroupKey members must share the same timeframe — sync windows " +
+                "have no meaning across different timeframes. Saw: $timeframes"
+        }
     }
 }
