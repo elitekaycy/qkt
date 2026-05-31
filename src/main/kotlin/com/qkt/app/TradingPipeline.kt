@@ -109,7 +109,8 @@ class TradingPipeline(
      * plus [scheduleHeartbeat] from a 1Hz `LiveSession` timer for quiet markets.
      */
     val scheduleRunner: com.qkt.dsl.compile.ScheduleRunner =
-        com.qkt.dsl.compile.ScheduleRunner(brokerZoneIdFor = brokerZoneIdFor)
+        com.qkt.dsl.compile
+            .ScheduleRunner(brokerZoneIdFor = brokerZoneIdFor)
 
     /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
     val latency: com.qkt.observability.LatencyRegistry =

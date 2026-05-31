@@ -463,16 +463,17 @@ class LiveSession(
         // LiveSession is per-strategy in the daemon model, so all calls return
         // the same zone — strategy id is ignored. Null when no MT5 broker is
         // in play (paper-only / Bybit-only sessions).
-        val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? = run {
-            val mt5 = builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>().firstOrNull()
-            if (mt5 != null) {
-                val zone: java.time.ZoneId =
-                    java.time.ZoneOffset.ofHours(mt5.profile.serverTzOffsetHours)
-                ({ _: String -> zone })
-            } else {
-                null
+        val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? =
+            run {
+                val mt5 = builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>().firstOrNull()
+                if (mt5 != null) {
+                    val zone: java.time.ZoneId =
+                        java.time.ZoneOffset.ofHours(mt5.profile.serverTzOffsetHours)
+                    ({ _: String -> zone })
+                } else {
+                    null
+                }
             }
-        }
 
         val pipeline =
             TradingPipeline(
