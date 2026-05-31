@@ -10,6 +10,7 @@ data class StrategyAst(
     val lets: List<LetDecl>,
     val defaults: DefaultsBlock?,
     val rules: List<RuleAst>,
+    val syncGroups: List<SyncGroupDecl> = emptyList(),
 ) {
     init {
         require(name.isNotBlank()) { "StrategyAst.name must not be blank" }
@@ -50,5 +51,31 @@ data class LetDecl(
 ) {
     init {
         require(name.isNotBlank()) { "LetDecl.name must not be blank" }
+    }
+}
+
+/**
+ * One declared sync group inside a `SYMBOLS` block. The engine evaluates the
+ * strategy once per group-bar-window, with every member's bar in scope atomically.
+ *
+ * e.g. `SYNCHRONIZE gold silver WITHIN 200ms` parses to
+ * `SyncGroupDecl(aliases = listOf("gold", "silver"), timeoutMs = 200)`.
+ *
+ * See `docs/superpowers/specs/2026-05-30-phase35-bar-sync-design.md` (#45).
+ */
+data class SyncGroupDecl(
+    val aliases: List<String>,
+    val timeoutMs: Long? = null,
+) {
+    init {
+        require(aliases.size >= 2) {
+            "SyncGroupDecl needs at least 2 aliases, got ${aliases.size}"
+        }
+        require(timeoutMs == null || timeoutMs > 0) {
+            "SyncGroupDecl.timeoutMs must be positive when present: $timeoutMs"
+        }
+        require(aliases.toSet().size == aliases.size) {
+            "SyncGroupDecl aliases must be unique: $aliases"
+        }
     }
 }
