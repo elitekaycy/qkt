@@ -8,11 +8,25 @@ import com.qkt.events.RiskRejectedEvent
 import java.nio.file.Files
 import java.nio.file.Path
 
+/**
+ * Writes a single [com.qkt.backtest.BacktestResult] to a directory as a bundle of
+ * machine-readable artifacts (`result.json`, per-strategy equity curves, trades and
+ * rejections CSVs) plus a rendered `report.html` summary.
+ *
+ * One writer per output directory; call [write] once per result. Strategy ids must
+ * match `[A-Za-z0-9_-]+` so they're safe to embed in filenames — anything else fails
+ * fast before the writer touches the filesystem.
+ */
 class BacktestReportWriter(
     private val dir: Path,
 ) {
     private val safeId = Regex("[A-Za-z0-9_-]+")
 
+    /**
+     * Emit every artifact for [result] into the writer's directory. Overwrites any
+     * existing files; the directory itself must exist, be writable, and be free of
+     * unsafe strategy ids before the call.
+     */
     fun write(result: BacktestResult) {
         require(Files.isDirectory(dir)) { "Not a directory: $dir" }
         require(Files.isWritable(dir)) { "Directory not writable: $dir" }
