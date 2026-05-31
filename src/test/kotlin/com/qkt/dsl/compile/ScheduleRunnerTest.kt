@@ -192,8 +192,8 @@ class ScheduleRunnerTest {
     }
 
     @Test
-    fun `register fails fast when trigger uses BROKER zone before profile is wired`() {
-        val runner = ScheduleRunner()
+    fun `register fails fast when BROKER zone used without a resolver configured`() {
+        val runner = ScheduleRunner() // no brokerZoneIdFor
         org.assertj.core.api.Assertions
             .assertThatThrownBy {
                 runner.register(
@@ -203,6 +203,40 @@ class ScheduleRunnerTest {
                     nowMs = mondayMidnightUtc,
                 )
             }.hasMessageContaining("BROKER")
+    }
+
+    @Test
+    fun `BROKER zone resolves to ZoneId returned by the configured resolver`() {
+        // Broker reports server time as GMT+2 (typical Exness EET).
+        val brokerZone = java.time.ZoneOffset.ofHours(2)
+        val runner = ScheduleRunner(brokerZoneIdFor = { _ -> brokerZone })
+        var fires = 0
+        runner.register(
+            "s1",
+            decl(ScheduleTrigger.At(TimeOfDay(9, 0), Timezone.BROKER)),
+            emit = { fires++ },
+            nowMs = mondayMidnightUtc, // 2026-06-01 00:00 UTC (Monday)
+        )
+
+        // 09:00 broker-local = 07:00 UTC (broker is UTC+2).
+        runner.tick(mondayMidnightUtc + 6 * hour)
+        assertThat(fires).isEqualTo(0)
+        runner.tick(mondayMidnightUtc + 7 * hour)
+        assertThat(fires).isEqualTo(1)
+    }
+
+    @Test
+    fun `register fails when BROKER resolver returns null for the strategy`() {
+        val runner = ScheduleRunner(brokerZoneIdFor = { _ -> null })
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                runner.register(
+                    "s1",
+                    decl(ScheduleTrigger.At(TimeOfDay(9, 0), Timezone.BROKER)),
+                    emit = {},
+                    nowMs = mondayMidnightUtc,
+                )
+            }.hasMessageContaining("serverTzOffsetHours")
     }
 
     @Test
