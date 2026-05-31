@@ -87,13 +87,14 @@ class ScheduleRunner(
     ): ZoneId =
         when (tz) {
             is com.qkt.dsl.ast.Timezone.BROKER -> {
-                val resolver = brokerZoneIdFor
-                    ?: error(
-                        "SCHEDULE timezone BROKER used by strategy '$strategyId' " +
-                            "but no broker-zone resolver is configured on this pipeline. " +
-                            "BROKER is only available in live mode where a broker profile " +
-                            "supplies serverTzOffsetHours.",
-                    )
+                val resolver =
+                    brokerZoneIdFor
+                        ?: error(
+                            "SCHEDULE timezone BROKER used by strategy '$strategyId' " +
+                                "but no broker-zone resolver is configured on this pipeline. " +
+                                "BROKER is only available in live mode where a broker profile " +
+                                "supplies serverTzOffsetHours.",
+                        )
                 resolver(strategyId)
                     ?: error(
                         "SCHEDULE timezone BROKER used by strategy '$strategyId' " +
@@ -151,9 +152,21 @@ class ScheduleRunner(
         val fromInstant = Instant.ofEpochMilli(fromMs)
         return when (trigger) {
             is ScheduleTrigger.At -> nextAt(trigger.time, resolveZoneId(trigger.tz, strategyId), fromInstant, fromMs)
-            is ScheduleTrigger.EveryDay -> nextAt(trigger.time, resolveZoneId(trigger.tz, strategyId), fromInstant, fromMs)
+            is ScheduleTrigger.EveryDay ->
+                nextAt(
+                    trigger.time,
+                    resolveZoneId(trigger.tz, strategyId),
+                    fromInstant,
+                    fromMs,
+                )
             is ScheduleTrigger.EveryHour -> nextEveryHour(trigger.minuteOffset, fromInstant, fromMs)
-            is ScheduleTrigger.EveryWeekday -> nextWeekday(trigger.time, resolveZoneId(trigger.tz, strategyId), fromInstant, fromMs)
+            is ScheduleTrigger.EveryWeekday ->
+                nextWeekday(
+                    trigger.time,
+                    resolveZoneId(trigger.tz, strategyId),
+                    fromInstant,
+                    fromMs,
+                )
         }
     }
 
