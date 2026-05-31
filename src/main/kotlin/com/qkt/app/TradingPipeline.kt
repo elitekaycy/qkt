@@ -90,6 +90,14 @@ class TradingPipeline(
      * and no `nanoTime` call. See [com.qkt.observability.LatencyRegistry] and #150.
      */
     val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
+    /**
+     * Resolver for `Timezone.BROKER` in DSL `SCHEDULE` triggers (#77). Returns the
+     * broker's effective `ZoneId` for the given strategy, or `null` to indicate
+     * the broker profile didn't supply `serverTzOffsetHours`. Defaults to null —
+     * `BROKER` is only meaningful in live mode where a real broker profile exists.
+     * Wired by [com.qkt.app.LiveSession] from the MT5 broker profile.
+     */
+    val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
@@ -102,7 +110,7 @@ class TradingPipeline(
      */
     val scheduleRunner: com.qkt.dsl.compile.ScheduleRunner =
         com.qkt.dsl.compile
-            .ScheduleRunner()
+            .ScheduleRunner(brokerZoneIdFor = brokerZoneIdFor)
 
     /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
     val latency: com.qkt.observability.LatencyRegistry =

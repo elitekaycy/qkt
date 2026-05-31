@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory
  * correlation) is Phase 26c.
  */
 class MT5Broker(
-    private val profile: MT5BrokerProfile,
+    val profile: MT5BrokerProfile,
     private val bus: EventBus,
     private val clock: Clock,
     private val priceTracker: MarketPriceProvider? = null,
