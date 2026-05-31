@@ -54,4 +54,41 @@ class TradingViewFrameTest {
             .isInstanceOf(TradingViewProtocolException::class.java)
             .hasMessageContaining("not valid")
     }
+
+    // ───────── #189 — heartbeat shape variations and session metadata ─────────
+
+    @Test
+    fun `parses bare heartbeat without trailing marker`() {
+        // Live TV emits `~h~N` (no trailing marker). The previous regex required
+        // the trailing marker and these heartbeats were thrown as exceptions on every
+        // server ping.
+        val frame = TradingViewFrame.parse("~h~7")
+        assertThat(frame).isInstanceOf(TradingViewFrame.Heartbeat::class.java)
+        assertThat((frame as TradingViewFrame.Heartbeat).seq).isEqualTo(7)
+    }
+
+    @Test
+    fun `parses session metadata frame as SessionMeta variant`() {
+        // The first frame after the WS upgrade is a JSON object describing the
+        // session (no `m` method field). Before #189, this triggered
+        // TradingViewProtocolException("Frame missing 'm' field").
+        val payload =
+            """{"session_id":"0.95746652.0_fra2","timestamp":1780095536,"timestampMs":1780095536219,""" +
+                """"release":"release_209-10","studies_metadata_hash":"68cca7","auth_scheme_vsn":2,""" +
+                """"protocol":"json","via":"84.16.251.42:443","javastudies":["3.66"]}"""
+        val frame = TradingViewFrame.parse(payload)
+        assertThat(frame).isInstanceOf(TradingViewFrame.SessionMeta::class.java)
+        val meta = frame as TradingViewFrame.SessionMeta
+        assertThat(meta.obj["session_id"]?.toString()).contains("0.95746652")
+        assertThat(meta.obj["release"]?.toString()).contains("release_209-10")
+    }
+
+    @Test
+    fun `JSON object with no m and no session-meta keys still throws`() {
+        // Defensive: a non-message JSON object that doesn't look like session meta
+        // should still surface as a protocol error so we notice unknown frame shapes.
+        assertThatThrownBy { TradingViewFrame.parse("""{"x":1,"y":"foo"}""") }
+            .isInstanceOf(TradingViewProtocolException::class.java)
+            .hasMessageContaining("Frame missing 'm' field")
+    }
 }
