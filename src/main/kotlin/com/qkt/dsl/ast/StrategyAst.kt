@@ -11,6 +11,7 @@ data class StrategyAst(
     val defaults: DefaultsBlock?,
     val rules: List<RuleAst>,
     val syncGroups: List<SyncGroupDecl> = emptyList(),
+    val schedules: List<ScheduleDecl> = emptyList(),
 ) {
     init {
         require(name.isNotBlank()) { "StrategyAst.name must not be blank" }
@@ -63,6 +64,86 @@ data class LetDecl(
  *
  * See `docs/superpowers/specs/2026-05-30-phase35-bar-sync-design.md` (#45).
  */
+/**
+ * Time of day for a `SCHEDULE` trigger. `09:00` parses to `TimeOfDay(9, 0)`;
+ * `19:55:30` parses to `TimeOfDay(19, 55, 30)`.
+ *
+ * e.g. inside `SCHEDULE AT 09:00 UTC THEN BUY gold ...`, the `09:00` half
+ * lands as `TimeOfDay(hour = 9, minute = 0, second = 0)`.
+ *
+ * Range checks at construction prevent garbage like `25:00` from reaching the engine.
+ */
+data class TimeOfDay(
+    val hour: Int,
+    val minute: Int,
+    val second: Int = 0,
+) {
+    init {
+        require(hour in 0..23) { "TimeOfDay.hour must be 0-23: $hour" }
+        require(minute in 0..59) { "TimeOfDay.minute must be 0-59: $minute" }
+        require(second in 0..59) { "TimeOfDay.second must be 0-59: $second" }
+    }
+}
+
+/**
+ * Timezone tag on a `SCHEDULE` trigger. `UTC` is the only variant in Phase 40
+ * (#77); a follow-up phase can add `LOCAL` and IANA names like `NY` / `LONDON`.
+ *
+ * Why explicit UTC required: silent timezone defaults caused enough live-trading
+ * bugs in pa-quant to justify forcing strategy authors to write the suffix.
+ */
+sealed interface Timezone {
+    data object UTC : Timezone
+}
+
+/**
+ * One trigger inside a `SCHEDULE` clause. A clause can carry several triggers
+ * (the `AT 09:00, 12:00, 14:00 UTC` list form parses to three `At` instances),
+ * and a strategy can declare many clauses.
+ *
+ * See `docs/superpowers/specs/2026-05-31-phase40-schedule-design.md` (#77).
+ */
+sealed interface ScheduleTrigger {
+    /** One-off at the given time of day, fires daily — e.g. every day at 09:00 UTC. */
+    data class At(val time: TimeOfDay, val tz: Timezone) : ScheduleTrigger
+
+    /**
+     * Every hour at the given minute past the hour (0-59).
+     * e.g. `EveryHour(30)` fires at 00:30, 01:30, 02:30 … in any timezone (the
+     * offset is per-hour wall clock so no tz tag is needed).
+     */
+    data class EveryHour(val minuteOffset: Int) : ScheduleTrigger {
+        init {
+            require(minuteOffset in 0..59) {
+                "EveryHour.minuteOffset must be 0-59: $minuteOffset"
+            }
+        }
+    }
+
+    /** Once per day at the given time. */
+    data class EveryDay(val time: TimeOfDay, val tz: Timezone) : ScheduleTrigger
+
+    /** Monday-Friday only per the strategy's `TradingCalendar`, at the given time. */
+    data class EveryWeekday(val time: TimeOfDay, val tz: Timezone) : ScheduleTrigger
+}
+
+/**
+ * One `SCHEDULE` clause: a list of triggers and the action body to run on each fire.
+ *
+ * e.g. `SCHEDULE AT 09:00, 12:00, 14:00 UTC THEN LOG "checkpoint"` parses to
+ * one `ScheduleDecl` with three `At` triggers and the `Log` action.
+ */
+data class ScheduleDecl(
+    val triggers: List<ScheduleTrigger>,
+    val action: ActionAst,
+) {
+    init {
+        require(triggers.isNotEmpty()) {
+            "ScheduleDecl needs at least one trigger"
+        }
+    }
+}
+
 data class SyncGroupDecl(
     val aliases: List<String>,
     val timeoutMs: Long? = null,
