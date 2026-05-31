@@ -136,6 +136,7 @@ class TradingPipeline(
                 } else {
                     val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
                     if (request != null) {
+                        logSubmitContext(request)
                         when (val decision = riskEngine.approve(request)) {
                             is Decision.Approve -> bus.publish(OrderEvent(request))
                             is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
@@ -246,6 +247,62 @@ class TradingPipeline(
 
     fun ingestForWarmup(tick: Tick) {
         bus.publish(WarmupTickEvent(tick))
+    }
+
+    /**
+     * INFO-log the order's price-bearing fields and the last price we saw for the
+     * symbol at submit time. Gives operators a self-contained context line they can
+     * pair with the subsequent `Order rejected` WARN (which carries only the
+     * `clientOrderId`). Without this, a `BUY_STOP price must be above current ask`
+     * rejection from the gateway is opaque — we don't see what we asked for or
+     * what the last quote was when we asked.
+     *
+     * e.g. `submit Stop dsl-hedge_straddle--1 EXNESS:XAUUSDm BUY stopPrice=2350.50 lastPrice=2350.20`
+     * paired with a later WARN tells the operator the BUY_STOP was ~30c above the
+     * last-seen price but the gateway saw an ask that drifted past it in the
+     * intervening latency window (see #185).
+     */
+    private fun logSubmitContext(request: com.qkt.execution.OrderRequest) {
+        if (!log.isInfoEnabled) return
+        val lastPrice = priceTracker.lastPrice(request.symbol)
+        val kind = request::class.simpleName
+        val priceFields =
+            when (request) {
+                is com.qkt.execution.OrderRequest.Stop -> "stopPrice=${request.stopPrice}"
+                is com.qkt.execution.OrderRequest.StopLimit ->
+                    "stopPrice=${request.stopPrice} limitPrice=${request.limitPrice}"
+                is com.qkt.execution.OrderRequest.Limit -> "limitPrice=${request.limitPrice}"
+                is com.qkt.execution.OrderRequest.IfTouched ->
+                    "triggerPrice=${request.triggerPrice}" +
+                        if (request.limitPrice != null) " limitPrice=${request.limitPrice}" else ""
+                is com.qkt.execution.OrderRequest.TrailingStop ->
+                    "trailAmount=${request.trailAmount} mode=${request.trailMode}"
+                is com.qkt.execution.OrderRequest.TrailingStopLimit ->
+                    "trailAmount=${request.trailAmount} mode=${request.trailMode} limitOffset=${request.limitOffset}"
+                is com.qkt.execution.OrderRequest.ArmedTrailingStop ->
+                    "entry=${request.entryPrice} trail=${request.trailDistance} mfe=${request.mfeThreshold}"
+                is com.qkt.execution.OrderRequest.Bracket -> {
+                    val sl =
+                        when (val s = request.stopLoss) {
+                            is com.qkt.execution.StopLossSpec.Fixed -> "stopLoss=${s.price}"
+                            is com.qkt.execution.StopLossSpec.ArmedTrail ->
+                                "stopLoss=armed(trail=${s.trailDistance}, mfe=${s.mfeThreshold})"
+                        }
+                    "takeProfit=${request.takeProfit} $sl entry=${request.entry::class.simpleName}"
+                }
+                else -> ""
+            }
+        log.info(
+            "submit {} {} {} {} {} qty={} {} lastPrice={}",
+            kind,
+            request.id,
+            request.symbol,
+            request.side,
+            request.timeInForce,
+            request.quantity,
+            priceFields,
+            lastPrice ?: "unknown",
+        )
     }
 
     /**
