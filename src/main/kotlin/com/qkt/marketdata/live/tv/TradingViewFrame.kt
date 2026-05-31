@@ -42,13 +42,36 @@ sealed class TradingViewFrame {
         fun toWireString(): String = "~h~$seq~h~"
     }
 
+    /**
+     * Session metadata frame the venue pushes once on connect — a JSON object with
+     * `session_id` / `release` / `protocol` and no `m` method field. Carries no
+     * actionable payload for the engine; consumers ignore it silently.
+     *
+     * See #189. Before this variant existed, the frame matched neither the
+     * heartbeat regex nor the `m`-field message shape and was thrown as a
+     * [TradingViewProtocolException].
+     */
+    data class SessionMeta(
+        val obj: JsonObject,
+    ) : TradingViewFrame()
+
     companion object {
         private val JSON =
             Json {
                 ignoreUnknownKeys = true
                 encodeDefaults = false
             }
-        private val HEARTBEAT_REGEX = Regex("^~h~(\\d+)~h~$")
+
+        // Match both heartbeat shapes the venue emits:
+        //   * the documented `~h~N~h~` form (echoed by clients on reply)
+        //   * the bare `~h~N` form the live ws actually sends (no trailing marker)
+        // See #189 — the trailing marker was previously required and live heartbeats
+        // therefore never matched, surfacing as protocol exceptions on every ping.
+        private val HEARTBEAT_REGEX = Regex("^~h~(\\d+)(?:~h~)?$")
+
+        // Keys whose presence in an m-less JSON object identifies a session meta frame.
+        // Any one of these is sufficient — TV doesn't always emit all three.
+        private val SESSION_META_KEYS = setOf("session_id", "release", "protocol")
 
         fun parse(payload: String): TradingViewFrame {
             HEARTBEAT_REGEX.matchEntire(payload)?.let { m ->
@@ -63,9 +86,11 @@ sealed class TradingViewFrame {
             val obj =
                 tree as? JsonObject
                     ?: throw TradingViewProtocolException("Frame is not a JSON object: $payload")
-            val method =
-                obj["m"]?.jsonPrimitive?.content
-                    ?: throw TradingViewProtocolException("Frame missing 'm' field: $payload")
+            val method = obj["m"]?.jsonPrimitive?.content
+            if (method == null) {
+                if (obj.keys.any { it in SESSION_META_KEYS }) return SessionMeta(obj)
+                throw TradingViewProtocolException("Frame missing 'm' field: $payload")
+            }
             val params = obj["p"]?.jsonArray ?: JsonArray(emptyList())
             return Message(method, params)
         }
