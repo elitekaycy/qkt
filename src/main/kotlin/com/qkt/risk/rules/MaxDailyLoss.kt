@@ -5,6 +5,11 @@ import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskState
 import java.math.BigDecimal
 
+/**
+ * Global halt rule: trips when account-wide realized loss for the current UTC day
+ * exceeds [maxLoss]. [maxLoss] is the magnitude (positive number); the rule compares
+ * `-realized` against it. Halt persists until an operator clears it.
+ */
 class MaxDailyLoss(
     private val maxLoss: BigDecimal,
 ) : HaltRule {

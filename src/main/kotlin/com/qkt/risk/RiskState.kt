@@ -14,6 +14,16 @@ import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Aggregate mutable state the risk subsystem reads on every order and updates on
+ * every fill / equity refresh. Owns the [EquityTracker], [DrawdownTracker], and
+ * [DailyPnLTracker] for both the global account and each strategy. Exposes
+ * read-only views via [RiskViewImpl].
+ *
+ * Halts are first-class: a strategy halt suppresses that strategy's submissions
+ * without affecting others; the global halt suppresses everything. Halts persist
+ * until [clear]/[clearStrategy] is called by an operator.
+ */
 class RiskState(
     pnl: PnLProvider,
     strategyPnL: StrategyPnL,

@@ -5,6 +5,11 @@ import com.qkt.positions.PositionProvider
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskRule
 
+/**
+ * Per-request cap on the total number of open positions across all symbols. Only
+ * orders that would OPEN a new position (no existing position on the symbol) count
+ * against the cap; adds/closes pass through. Useful for "max N concurrent bets".
+ */
 class MaxOpenPositions(
     private val maxCount: Int,
 ) : RiskRule {
