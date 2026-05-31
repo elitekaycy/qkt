@@ -232,14 +232,15 @@ private class CompiledStrategy(
         emit: (Signal) -> Unit,
     ) {
         val hub = boundHub ?: return
-        val syntheticCandle = latestKnownCandle(hub) ?: run {
-            scheduleLog.warn(
-                "schedule fire skipped for strategy={} — no stream has a closed bar yet " +
-                    "(warmup not complete). Trigger will retry on the next fire time.",
-                ctx.strategyId,
-            )
-            return
-        }
+        val syntheticCandle =
+            latestKnownCandle(hub) ?: run {
+                scheduleLog.warn(
+                    "schedule fire skipped for strategy={} — no stream has a closed bar yet " +
+                        "(warmup not complete). Trigger will retry on the next fire time.",
+                    ctx.strategyId,
+                )
+                return
+            }
         val ec =
             EvalContext(
                 candle = syntheticCandle,

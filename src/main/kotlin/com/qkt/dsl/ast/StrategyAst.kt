@@ -56,15 +56,6 @@ data class LetDecl(
 }
 
 /**
- * One declared sync group inside a `SYMBOLS` block. The engine evaluates the
- * strategy once per group-bar-window, with every member's bar in scope atomically.
- *
- * e.g. `SYNCHRONIZE gold silver WITHIN 200ms` parses to
- * `SyncGroupDecl(aliases = listOf("gold", "silver"), timeoutMs = 200)`.
- *
- * See `docs/superpowers/specs/2026-05-30-phase35-bar-sync-design.md` (#45).
- */
-/**
  * Time of day for a `SCHEDULE` trigger. `09:00` parses to `TimeOfDay(9, 0)`;
  * `19:55:30` parses to `TimeOfDay(19, 55, 30)`.
  *
@@ -112,28 +103,35 @@ sealed interface Timezone {
     data object UTC : Timezone {
         override val zoneId: java.time.ZoneId = java.time.ZoneOffset.UTC
     }
+
     data object NY : Timezone {
         override val zoneId: java.time.ZoneId = java.time.ZoneId.of("America/New_York")
     }
+
     data object LONDON : Timezone {
         override val zoneId: java.time.ZoneId = java.time.ZoneId.of("Europe/London")
     }
+
     data object TOKYO : Timezone {
         override val zoneId: java.time.ZoneId = java.time.ZoneId.of("Asia/Tokyo")
     }
+
     data object SYDNEY : Timezone {
         override val zoneId: java.time.ZoneId = java.time.ZoneId.of("Australia/Sydney")
     }
+
     data object CHICAGO : Timezone {
         override val zoneId: java.time.ZoneId = java.time.ZoneId.of("America/Chicago")
     }
+
     data object BROKER : Timezone {
         override val zoneId: java.time.ZoneId
-            get() = error(
-                "SCHEDULE timezone BROKER is reserved but not yet wired to a broker profile. " +
-                    "Use UTC or a named IANA zone (NY/LONDON/TOKYO/SYDNEY/CHICAGO) until " +
-                    "broker profile serverTzOffset config ships.",
-            )
+            get() =
+                error(
+                    "SCHEDULE timezone BROKER is reserved but not yet wired to a broker profile. " +
+                        "Use UTC or a named IANA zone (NY/LONDON/TOKYO/SYDNEY/CHICAGO) until " +
+                        "broker profile serverTzOffset config ships.",
+                )
     }
 }
 
@@ -146,14 +144,19 @@ sealed interface Timezone {
  */
 sealed interface ScheduleTrigger {
     /** One-off at the given time of day, fires daily — e.g. every day at 09:00 UTC. */
-    data class At(val time: TimeOfDay, val tz: Timezone) : ScheduleTrigger
+    data class At(
+        val time: TimeOfDay,
+        val tz: Timezone,
+    ) : ScheduleTrigger
 
     /**
      * Every hour at the given minute past the hour (0-59).
      * e.g. `EveryHour(30)` fires at 00:30, 01:30, 02:30 … in any timezone (the
      * offset is per-hour wall clock so no tz tag is needed).
      */
-    data class EveryHour(val minuteOffset: Int) : ScheduleTrigger {
+    data class EveryHour(
+        val minuteOffset: Int,
+    ) : ScheduleTrigger {
         init {
             require(minuteOffset in 0..59) {
                 "EveryHour.minuteOffset must be 0-59: $minuteOffset"
@@ -162,10 +165,16 @@ sealed interface ScheduleTrigger {
     }
 
     /** Once per day at the given time. */
-    data class EveryDay(val time: TimeOfDay, val tz: Timezone) : ScheduleTrigger
+    data class EveryDay(
+        val time: TimeOfDay,
+        val tz: Timezone,
+    ) : ScheduleTrigger
 
     /** Monday-Friday only per the strategy's `TradingCalendar`, at the given time. */
-    data class EveryWeekday(val time: TimeOfDay, val tz: Timezone) : ScheduleTrigger
+    data class EveryWeekday(
+        val time: TimeOfDay,
+        val tz: Timezone,
+    ) : ScheduleTrigger
 }
 
 /**
@@ -185,6 +194,15 @@ data class ScheduleDecl(
     }
 }
 
+/**
+ * One declared sync group inside a `SYMBOLS` block. The engine evaluates the
+ * strategy once per group-bar-window, with every member's bar in scope atomically.
+ *
+ * e.g. `SYNCHRONIZE gold silver WITHIN 200ms` parses to
+ * `SyncGroupDecl(aliases = listOf("gold", "silver"), timeoutMs = 200)`.
+ *
+ * See `docs/superpowers/specs/2026-05-30-phase35-bar-sync-design.md` (#45).
+ */
 data class SyncGroupDecl(
     val aliases: List<String>,
     val timeoutMs: Long? = null,

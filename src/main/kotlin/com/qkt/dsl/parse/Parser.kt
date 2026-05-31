@@ -54,6 +54,8 @@ import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
+import com.qkt.dsl.ast.ScheduleDecl
+import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
@@ -63,8 +65,6 @@ import com.qkt.dsl.ast.SizePctEquity
 import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.ScheduleDecl
-import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.SnapshotBuy
@@ -1411,13 +1411,34 @@ class Parser(
      */
     private fun parseTimezone(where: String): Timezone =
         when (peek().kind) {
-            TokenKind.UTC -> { advance(); Timezone.UTC }
-            TokenKind.NY -> { advance(); Timezone.NY }
-            TokenKind.LONDON -> { advance(); Timezone.LONDON }
-            TokenKind.TOKYO -> { advance(); Timezone.TOKYO }
-            TokenKind.SYDNEY -> { advance(); Timezone.SYDNEY }
-            TokenKind.CHICAGO -> { advance(); Timezone.CHICAGO }
-            TokenKind.BROKER -> { advance(); Timezone.BROKER }
+            TokenKind.UTC -> {
+                advance()
+                Timezone.UTC
+            }
+            TokenKind.NY -> {
+                advance()
+                Timezone.NY
+            }
+            TokenKind.LONDON -> {
+                advance()
+                Timezone.LONDON
+            }
+            TokenKind.TOKYO -> {
+                advance()
+                Timezone.TOKYO
+            }
+            TokenKind.SYDNEY -> {
+                advance()
+                Timezone.SYDNEY
+            }
+            TokenKind.CHICAGO -> {
+                advance()
+                Timezone.CHICAGO
+            }
+            TokenKind.BROKER -> {
+                advance()
+                Timezone.BROKER
+            }
             else ->
                 error(
                     "$where requires an explicit timezone " +

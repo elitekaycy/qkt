@@ -1,7 +1,7 @@
 package com.qkt.dsl.compile
 
-import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.TimeOfDay
@@ -21,14 +21,17 @@ import org.junit.jupiter.api.Test
  */
 class ScheduleRunnerTest {
     private val mondayMidnightUtc: Long =
-        LocalDate.of(2026, 6, 1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        LocalDate
+            .of(2026, 6, 1)
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
     private val hour = 3_600_000L
     private val day = 86_400_000L
 
     private val noop = Log(level = LogLevel.INFO, messageFormat = "hi", fields = emptyMap())
 
-    private fun decl(trigger: ScheduleTrigger): ScheduleDecl =
-        ScheduleDecl(triggers = listOf(trigger), action = noop)
+    private fun decl(trigger: ScheduleTrigger): ScheduleDecl = ScheduleDecl(triggers = listOf(trigger), action = noop)
 
     @Test
     fun `register tracks one entry per trigger`() {
@@ -154,9 +157,11 @@ class ScheduleRunnerTest {
         // Same DSL clause, two different UTC instants — DST handled by ZoneId.
 
         val janMidnightNy =
-            LocalDate.of(2026, 1, 15)
+            LocalDate
+                .of(2026, 1, 15)
                 .atStartOfDay(java.time.ZoneId.of("America/New_York"))
-                .toInstant().toEpochMilli()
+                .toInstant()
+                .toEpochMilli()
         val runnerWinter = ScheduleRunner()
         var winterFires = 0
         runnerWinter.register(
@@ -169,9 +174,11 @@ class ScheduleRunnerTest {
         assertThat(winterFires).isEqualTo(1)
 
         val julMidnightNy =
-            LocalDate.of(2026, 7, 15)
+            LocalDate
+                .of(2026, 7, 15)
                 .atStartOfDay(java.time.ZoneId.of("America/New_York"))
-                .toInstant().toEpochMilli()
+                .toInstant()
+                .toEpochMilli()
         val runnerSummer = ScheduleRunner()
         var summerFires = 0
         runnerSummer.register(
