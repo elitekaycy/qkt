@@ -45,6 +45,8 @@ class CandleHub {
         val key: SyncGroupKey,
         val listeners: MutableList<OwnedSyncListener>,
         val owners: MutableSet<String>,
+        // window-end (ms) -> alias -> closed bar. Cleared per-window on atomic fire or timeout.
+        val pending: MutableMap<Long, MutableMap<String, Candle>> = mutableMapOf(),
     )
 
     private val syncSlots: MutableMap<SyncGroupKey, SyncSlot> =
@@ -72,6 +74,7 @@ class CandleHub {
                 ring.addLast(closed)
                 while (ring.size > slot.retention) ring.removeFirst()
                 for (l in slot.listeners.toList()) l.callback(closed)
+                routeToSyncSlots(key, closed)
             }
         slots[key] = Slot(agg, ring, retention, listeners, mutableSetOf(strategyId))
     }
@@ -79,6 +82,51 @@ class CandleHub {
     fun feed(tick: Tick) {
         for ((key, slot) in slots) {
             if (key.qktSymbol == tick.symbol) slot.aggregator.onTick(tick)
+        }
+        sweepSyncTimeouts(tick.timestamp)
+    }
+
+    /**
+     * Route a closed bar into every sync group that contains [streamKey]. Stash the
+     * bar under the group's pending map keyed by `closed.endTime`. If every member of
+     * the group now has a bar for that window-end, fire the listeners once with one
+     * `(alias -> bar)` entry per member and clear the window.
+     *
+     * Called from each per-stream close callback. Safe to call when no sync group
+     * references [streamKey] — the walk just skips.
+     */
+    private fun routeToSyncSlots(
+        streamKey: HubKey,
+        closed: Candle,
+    ) {
+        for ((_, syncSlot) in syncSlots) {
+            val alias =
+                syncSlot.key.members.entries
+                    .firstOrNull { it.value == streamKey }
+                    ?.key
+                    ?: continue
+            val window = syncSlot.pending.getOrPut(closed.endTime) { mutableMapOf() }
+            window[alias] = closed
+            if (window.size == syncSlot.key.members.size) {
+                val snapshot = window.toMap()
+                syncSlot.pending.remove(closed.endTime)
+                for (l in syncSlot.listeners.toList()) l.callback(snapshot)
+            }
+        }
+    }
+
+    /**
+     * Drop any pending sync window whose end time is more than the group's
+     * `timeoutMs` behind [nowTs]. No callback fires — the partial window is GC'd.
+     *
+     * Called once per tick from [feed]. Groups with `timeoutMs == null` keep
+     * partial windows forever, which is fine if both streams reliably print.
+     */
+    private fun sweepSyncTimeouts(nowTs: Long) {
+        for ((_, syncSlot) in syncSlots) {
+            val tm = syncSlot.key.timeoutMs ?: continue
+            val expired = syncSlot.pending.keys.filter { endTime -> nowTs > endTime + tm }
+            for (et in expired) syncSlot.pending.remove(et)
         }
     }
 

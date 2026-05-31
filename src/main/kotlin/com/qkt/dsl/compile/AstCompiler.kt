@@ -14,6 +14,7 @@ import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SnapshotOpen
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.WhenThen
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
@@ -142,6 +143,7 @@ class AstCompiler {
             metaRefs = metaRefs,
             warmupGate = warmupGate,
             perStreamWarmup = perStreamWarmupSpec,
+            syncGroups = ast.syncGroups,
         )
     }
 
@@ -189,6 +191,7 @@ private class CompiledStrategy(
     private val metaRefs: List<MetaRef>,
     private val warmupGate: WarmupGate,
     override val perStreamWarmup: Map<String, com.qkt.strategy.WarmupSpec>,
+    private val syncGroups: List<SyncGroupDecl>,
 ) : DslCompiledStrategy,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
@@ -206,14 +209,41 @@ private class CompiledStrategy(
         validateMetaRefs(ctx)
         hubBound = true
         boundHub = hub
+
+        // Aliases that belong to ANY sync group are evaluated via the sync callback
+        // instead of the per-stream close. Without this split, both gold and silver
+        // would individually fire their rules with cross-stream data from the wrong
+        // window. (#45 Phase 35.)
+        val syncedAliases: Set<String> = syncGroups.flatMap { it.aliases }.toSet()
+
         for ((alias, key) in streams) {
             // Phase 25B: credit the gate with whatever historical bars the seed phase
             // (run by LiveSession before bindToHub) placed in the hub. Without this,
             // the gate stays cold even when lookback + indicators are already warm.
             val seeded = hub.historySize(key)
             if (seeded > 0) warmupGate.recordBars(alias, seeded)
+            if (alias in syncedAliases) continue
             hub.onClosed(key, ctx.strategyId) { closed ->
                 evaluate(alias, closed, hub, ctx, emit)
+            }
+        }
+
+        for (group in syncGroups) {
+            val members = group.aliases.associateWith { streams.getValue(it) }
+            val groupKey = SyncGroupKey(members = members, timeoutMs = group.timeoutMs)
+            hub.registerSyncGroup(groupKey, ctx.strategyId)
+            hub.onSyncClosed(groupKey, ctx.strategyId) { bars ->
+                // Two-pass: every alias's indicators/snapshots/aggregates update FIRST,
+                // then rules fire. This ensures a gold-anchored rule that reads
+                // `sma(silver.close, N)` sees silver's same-window value, not the
+                // previous window's. Without this split, the alias evaluated first
+                // would fire rules against the other alias's stale indicator state.
+                for (alias in group.aliases) {
+                    updatePerAlias(alias, bars.getValue(alias), hub, ctx)
+                }
+                for (alias in group.aliases) {
+                    fireRulesForAlias(alias, bars.getValue(alias), hub, ctx, emit)
+                }
             }
         }
     }
@@ -238,6 +268,22 @@ private class CompiledStrategy(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        updatePerAlias(alias, candle, hub, ctx)
+        fireRulesForAlias(alias, candle, hub, ctx, emit)
+    }
+
+    /**
+     * Per-alias close updates: warmup gate, position transitions, indicator updates,
+     * rolling snapshot capture, aggregate updates. No rule firing — see
+     * [fireRulesForAlias]. Split out so a sync group can run this for every member
+     * before any rule fires on any member (#45).
+     */
+    private fun updatePerAlias(
+        alias: String,
+        candle: Candle,
+        hub: CandleHub,
+        ctx: StrategyContext,
+    ) {
         warmupGate.onClosedCandle(alias)
 
         val ec =
@@ -253,7 +299,6 @@ private class CompiledStrategy(
 
         val symbol = streams[alias]!!.qktSymbol
 
-        // 1. Position transitions for the alias's symbol
         val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
         val transition = transitions.observe(symbol, qty)
         when (transition) {
@@ -266,17 +311,14 @@ private class CompiledStrategy(
             PositionTransition.Stay -> {}
         }
 
-        // 2. Indicators bound to this alias
         bindings.updateForAlias(alias, ec)
 
-        // 3. Per-candle rolling snapshot capture for this alias
         for ((name, _) in plan.rollingMaxN) {
             val rhs = letCompiledRhs[name] ?: continue
             val v = rhs.evaluate(ec)
             snapshotStore.pushRolling(alias, name, if (v is Value.Num) v.v else null)
         }
 
-        // 4. Aggregate updates for bindings on this alias
         for (b in aggregates.bindingsForAlias(alias)) {
             if (b.window is SinceOpen) {
                 val curQty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
@@ -285,8 +327,29 @@ private class CompiledStrategy(
                 b.update(ec)
             }
         }
+    }
 
-        // 5. Rules whose ruleAlias matches and whose referenced streams are all warm
+    /**
+     * Fire every rule whose `ruleAlias` matches [alias] and whose referenced streams
+     * are warm. Must run after [updatePerAlias] so the rule body sees current state.
+     */
+    private fun fireRulesForAlias(
+        alias: String,
+        candle: Candle,
+        hub: CandleHub,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = streams,
+                lets = emptyMap(),
+                strategyContext = ctx,
+                snapshotStore = snapshotStore,
+                hub = hub,
+                currentAlias = alias,
+            )
         for (rule in rules) {
             if (rule.ruleAlias != alias) continue
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
