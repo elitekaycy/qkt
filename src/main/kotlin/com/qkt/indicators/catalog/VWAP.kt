@@ -6,6 +6,13 @@ import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import java.math.MathContext
 
+/**
+ * Volume-Weighted Average Price over the last [period] ticks.
+ *
+ * Updates on raw [Tick]s, not on candle close — the binding layer routes ticks
+ * directly so VWAP sees intra-bar resolution. Use it as a fair-value benchmark
+ * ("am I buying above or below the recent volume-weighted price?").
+ */
 class VWAP(
     private val period: Int,
 ) : Indicator<Tick> {

@@ -10,6 +10,15 @@ import com.qkt.marketdata.source.MarketSource
 import java.time.Instant
 import java.time.ZoneOffset
 
+/**
+ * Base class for indicators whose value derives from a configurable [TimeRange] of
+ * candles (yesterday's high, this-session's low, etc). Subclasses provide the range
+ * via [rangeSpec] and the aggregation via [reduce]; this class fetches from
+ * [source], caches the result, and re-evaluates whenever [refreshOn] fires.
+ *
+ * Generic in [T] so subclasses can reduce to any value type (e.g. [BigDecimal] for
+ * single-number aggregates, custom tuples for paired highs / lows).
+ */
 open class RangeAggregateIndicator<T : Any>(
     private val symbol: String,
     private val window: TimeWindow,

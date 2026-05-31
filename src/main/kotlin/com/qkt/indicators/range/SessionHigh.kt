@@ -7,6 +7,11 @@ import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.source.MarketSource
 import java.math.BigDecimal
 
+/**
+ * High of the current session (per [anchor] + [calendar]). Refreshes intra-session
+ * as new candles land and rolls over at each anchor boundary. Common reference for
+ * "have we broken out of this session's range?" rules.
+ */
 class SessionHigh(
     symbol: String,
     anchor: SessionAnchor,

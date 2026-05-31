@@ -2,13 +2,25 @@ package com.qkt.indicators
 
 import java.math.BigDecimal
 
+/**
+ * Composable boolean condition over [IndicatorOutput] values. Used by the Kotlin
+ * DSL builders to assemble strategy conditions (`ema(9) gt ema(21) and rsi(14) gt 30`).
+ *
+ * Every operand is sampled fresh on [evaluate]; the rule is stateless and safe to
+ * keep at the strategy level. Indicators that haven't warmed up yet return null and
+ * the rule evaluates to `false` — the strategy stays silent until they fill in.
+ */
 sealed class Rule {
+    /** Evaluate this rule against the current indicator values. */
     abstract fun evaluate(): Boolean
 
+    /** Logical AND. */
     infix fun and(other: Rule): Rule = And(this, other)
 
+    /** Logical OR. */
     infix fun or(other: Rule): Rule = Or(this, other)
 
+    /** Logical NOT. */
     operator fun not(): Rule = Not(this)
 
     data class Over(

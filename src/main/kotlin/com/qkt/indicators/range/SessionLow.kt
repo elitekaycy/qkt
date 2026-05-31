@@ -7,6 +7,7 @@ import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.source.MarketSource
 import java.math.BigDecimal
 
+/** Low of the current session — mirror of [SessionHigh]. */
 class SessionLow(
     symbol: String,
     anchor: SessionAnchor,

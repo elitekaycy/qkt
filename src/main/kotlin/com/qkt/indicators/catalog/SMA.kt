@@ -4,6 +4,13 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/**
+ * Simple Moving Average over the last [period] input values. Equal weight to every
+ * sample in the window; older samples drop out as new ones arrive.
+ *
+ * Slower to react than [EMA] of the same period but smoother. The cheapest indicator
+ * to compute — O(1) per update once the window is full.
+ */
 class SMA(
     private val period: Int,
 ) : Indicator<BigDecimal> {

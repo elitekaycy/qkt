@@ -7,6 +7,11 @@ import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.source.MarketSource
 import java.math.BigDecimal
 
+/**
+ * High of the previous trading day (per [calendar]). Refreshes once at each daily
+ * session boundary; the value is stable for the entire current trading day. Used
+ * as a breakout reference ("close above PDH → momentum entry").
+ */
 class PreviousDayHigh(
     symbol: String,
     calendar: TradingCalendar,
