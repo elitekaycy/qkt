@@ -13,6 +13,7 @@ import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
+import com.qkt.dsl.ast.ChildArmedTrail
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
@@ -176,6 +177,10 @@ internal fun collectMetaRefs(
             is ChildBy -> walkExpr(c.distance)
             is ChildPct -> walkExpr(c.frac)
             is ChildRr -> walkExpr(c.multiplier)
+            is ChildArmedTrail -> {
+                walkExpr(c.trailDistance)
+                walkExpr(c.mfeThreshold)
+            }
         }
     }
 
