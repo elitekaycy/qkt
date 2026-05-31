@@ -6,11 +6,24 @@ import com.qkt.backtest.sweep.SweepRun
 import java.nio.file.Files
 import java.nio.file.Path
 
+/**
+ * Writes a parameter-sweep result ([com.qkt.backtest.sweep.SweepResult]) to a
+ * directory as a CSV of one row per run plus a JSON summary. One writer per
+ * output directory; call [write] once.
+ *
+ * Sweep run labels and stringified configs are validated up-front — anything
+ * containing CSV-hostile characters (comma, quote, newline) fails fast so the
+ * emitted CSV is always well-formed without quoting.
+ */
 class SweepReportWriter(
     private val dir: Path,
 ) {
     private val safeLabel = Regex("[A-Za-z0-9_-]+")
 
+    /**
+     * Emit `sweep.csv` and `sweep.json` for [result] into the writer's directory.
+     * Overwrites any existing files; the directory must exist and be writable.
+     */
     fun <C> write(result: SweepResult<C>) {
         require(Files.isDirectory(dir)) { "Not a directory: $dir" }
         require(Files.isWritable(dir)) { "Directory not writable: $dir" }
