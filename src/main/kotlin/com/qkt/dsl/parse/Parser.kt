@@ -1276,7 +1276,13 @@ class Parser(
                     warmupBars = warmupBars,
                 ),
             )
-        } while (match(TokenKind.COMMA))
+        } while (
+            match(TokenKind.COMMA) ||
+            // Comma between stream decls is optional: continue if the next two tokens
+            // look like a new stream decl (`<alias> = ...`). Without this, only the
+            // first stream parses when strategies use newline separation (#45).
+            (peek().kind == TokenKind.IDENT && tokens[pos + 1].kind == TokenKind.EQ)
+        )
 
         // #45 — SYNCHRONIZE clauses at the end of the SYMBOLS block. Each clause:
         // `SYNCHRONIZE <ident> <ident> [<ident> …] [WITHIN <duration>]`.

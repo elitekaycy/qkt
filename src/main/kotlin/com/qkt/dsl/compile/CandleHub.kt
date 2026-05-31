@@ -36,6 +36,20 @@ class CandleHub {
 
     private val slots: MutableMap<HubKey, Slot> = java.util.concurrent.ConcurrentHashMap()
 
+    private data class OwnedSyncListener(
+        val strategyId: String,
+        val callback: (Map<String, Candle>) -> Unit,
+    )
+
+    private class SyncSlot(
+        val key: SyncGroupKey,
+        val listeners: MutableList<OwnedSyncListener>,
+        val owners: MutableSet<String>,
+    )
+
+    private val syncSlots: MutableMap<SyncGroupKey, SyncSlot> =
+        java.util.concurrent.ConcurrentHashMap()
+
     fun register(
         key: HubKey,
         retention: Int,
@@ -115,7 +129,8 @@ class CandleHub {
     /**
      * Drop every listener and slot-ownership entry attributed to [strategyId]. A slot
      * whose owner set becomes empty is removed entirely — its aggregator and ring fall
-     * out of scope and are GC'd. Idempotent and safe to call from a stop path.
+     * out of scope and are GC'd. Sync groups owned by the same strategy are dropped on
+     * the same rule. Idempotent and safe to call from a stop path.
      */
     fun unregister(strategyId: String) {
         val toDrop = mutableListOf<HubKey>()
@@ -125,7 +140,62 @@ class CandleHub {
             if (slot.owners.isEmpty()) toDrop.add(key)
         }
         for (k in toDrop) slots.remove(k)
+
+        val syncToDrop = mutableListOf<SyncGroupKey>()
+        for ((key, slot) in syncSlots) {
+            slot.listeners.removeAll { it.strategyId == strategyId }
+            slot.owners.remove(strategyId)
+            if (slot.owners.isEmpty()) syncToDrop.add(key)
+        }
+        for (k in syncToDrop) syncSlots.remove(k)
     }
+
+    /**
+     * Register a sync group for [strategyId]. Members must already be registered as
+     * regular streams via [register]. Multiple strategies may share the same group;
+     * the slot is dropped only when its last owner is unregistered.
+     *
+     * No bars fire from this call — the per-tick atomic-fire path lands in Task 5.
+     */
+    fun registerSyncGroup(
+        group: SyncGroupKey,
+        strategyId: String,
+    ) {
+        require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
+        for ((alias, key) in group.members) {
+            require(slots.containsKey(key)) {
+                "registerSyncGroup: alias '$alias' refers to unregistered stream $key"
+            }
+        }
+        val existing = syncSlots[group]
+        if (existing != null) {
+            existing.owners.add(strategyId)
+            return
+        }
+        syncSlots[group] =
+            SyncSlot(
+                key = group,
+                listeners = mutableListOf(),
+                owners = mutableSetOf(strategyId),
+            )
+    }
+
+    /**
+     * Subscribe [callback] to fire once per atomic close of [group]. The callback
+     * receives the closed bar per alias (`mapOf("gold" to bar, "silver" to bar)`).
+     * Throws if [group] was never registered via [registerSyncGroup].
+     */
+    fun onSyncClosed(
+        group: SyncGroupKey,
+        strategyId: String,
+        callback: (Map<String, Candle>) -> Unit,
+    ) {
+        require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
+        val slot = syncSlots[group] ?: error("CandleHub.onSyncClosed: unknown sync group $group")
+        slot.listeners.add(OwnedSyncListener(strategyId, callback))
+    }
+
+    fun syncGroupKeys(): Set<SyncGroupKey> = syncSlots.keys.toSet()
 
     fun retention(key: HubKey): Int = slots[key]?.retention ?: 0
 
