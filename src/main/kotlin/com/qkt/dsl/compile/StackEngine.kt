@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.positions.MfeTracker
 import com.qkt.strategy.Signal
@@ -170,7 +171,7 @@ class StackEngine(
                     quantity = tier.stackQuantity,
                     entry = market,
                     takeProfit = tp,
-                    stopLoss = sl,
+                    stopLoss = StopLossSpec.Fixed(sl),
                     timeInForce = TimeInForce.GTC,
                     timestamp = ts,
                 ),

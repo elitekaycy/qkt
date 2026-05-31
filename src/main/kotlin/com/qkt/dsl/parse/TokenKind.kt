@@ -30,6 +30,7 @@ enum class TokenKind {
     STACK,
     SPACING,
     WITHIN,
+    AFTER,
     DURATION,
 
     PORTFOLIO,

@@ -67,7 +67,7 @@ class OrderRequestWithStrategyIdTest {
                 quantity = Money.of("1"),
                 entry = entry,
                 takeProfit = Money.of("4600"),
-                stopLoss = Money.of("4400"),
+                stopLoss = StopLossSpec.Fixed(Money.of("4400")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 0L,
             )

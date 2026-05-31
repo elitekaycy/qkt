@@ -22,6 +22,7 @@ import com.qkt.execution.LayerSpec
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
 import com.qkt.execution.isCompositeShape
@@ -54,6 +55,14 @@ class OrderManager(
     private val orders: MutableMap<String, ManagedOrder> = mutableMapOf()
 
     private val trailingHwm: MutableMap<String, BigDecimal> = mutableMapOf()
+
+    /**
+     * One-way arming state for [OrderRequest.ArmedTrailingStop] orders. `false` while
+     * the stop sits at `entry ± distance`; flips to `true` once MFE crosses the
+     * threshold and the stop starts trailing [OrderRequest.ArmedTrailingStop.hwm].
+     * Never reverts. See #48.
+     */
+    private val armedTrailArmed: MutableMap<String, Boolean> = mutableMapOf()
 
     private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
 
@@ -235,7 +244,10 @@ class OrderManager(
                     holdPending(request)
                 }
 
-            is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> holdPending(request)
+            is OrderRequest.TrailingStop,
+            is OrderRequest.TrailingStopLimit,
+            is OrderRequest.ArmedTrailingStop,
+            -> holdPending(request)
 
             is OrderRequest.StandaloneOCO -> submitOco(request)
 
@@ -244,14 +256,29 @@ class OrderManager(
             is OrderRequest.Bracket -> {
                 val entryEstimate = priceProvider.lastPrice(request.symbol) ?: BigDecimal.ZERO
                 if (entryEstimate.signum() != 0) {
+                    val riskStop =
+                        when (val sl = request.stopLoss) {
+                            is StopLossSpec.Fixed -> sl.price
+                            is StopLossSpec.ArmedTrail ->
+                                // Pre-arm stop level is `entry ± trailDistance`; risk recording
+                                // sees the worst-case loss the bracket can take.
+                                if (request.side == Side.BUY) {
+                                    entryEstimate - sl.trailDistance
+                                } else {
+                                    entryEstimate + sl.trailDistance
+                                }
+                        }
                     recordRisk(
                         clientOrderIds = listOf(request.id, request.entry.id),
                         quantity = request.quantity,
                         entry = entryEstimate,
-                        stop = request.stopLoss,
+                        stop = riskStop,
                     )
                 }
-                if (OrderTypeCapability.BRACKET in broker.capabilitiesFor(request.symbol)) {
+                // Armed-trail stops are engine-managed — never delegate to a broker that
+                // would only see the pre-arm fixed price and miss the arming behaviour.
+                val mustFallback = request.stopLoss is StopLossSpec.ArmedTrail
+                if (!mustFallback && OrderTypeCapability.BRACKET in broker.capabilitiesFor(request.symbol)) {
                     submitToBroker(request)
                 } else {
                     submitBracketFallback(request)
@@ -492,6 +519,14 @@ class OrderManager(
                 val distance = sl.multiply(multiplier, Money.CONTEXT)
                 (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
             }
+            is com.qkt.dsl.ast.ChildArmedTrail -> {
+                require(isStopLoss) { "ChildArmedTrail is only valid for STOP LOSS, not TAKE PROFIT" }
+                // Pre-arm stop level: `fillPrice ± trailDistance`. The armed/trailing
+                // behaviour is gated separately via [StopLossSpec.ArmedTrail] in OrderManager's
+                // tick loop; this path computes the static pre-arm level only.
+                val distance = evaluateAt(childPrice.trailDistance, fillPrice)
+                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
+            }
         }
     }
 
@@ -650,6 +685,23 @@ class OrderManager(
                 )
         }
 
+    /**
+     * Best-effort entry-price estimate for an [OrderRequest.Bracket]'s SL/TP children.
+     * Stop/Limit/IfTouched entries carry their intended trigger as a field; Market
+     * entries fall back to the last observed market price.
+     */
+    private fun bracketEntryEstimate(req: OrderRequest.Bracket): BigDecimal =
+        when (val entry = req.entry) {
+            is OrderRequest.Stop -> entry.stopPrice
+            is OrderRequest.Limit -> entry.limitPrice
+            is OrderRequest.IfTouched -> entry.triggerPrice
+            is OrderRequest.StopLimit -> entry.stopPrice
+            else ->
+                lastObservedPrice[req.symbol]
+                    ?: priceProvider.lastPrice(req.symbol)
+                    ?: error("Cannot estimate entry price for bracket ${req.id}: no last price for ${req.symbol}")
+        }
+
     private fun submitBracketFallback(req: OrderRequest.Bracket): SubmitAck {
         val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
         val tp =
@@ -663,17 +715,39 @@ class OrderManager(
                 timestamp = clock.now(),
                 strategyId = req.strategyId,
             )
-        val sl =
-            OrderRequest.Stop(
-                id = "${req.id}-sl",
-                symbol = req.symbol,
-                side = exitSide,
-                quantity = req.quantity,
-                stopPrice = req.stopLoss,
-                timeInForce = req.timeInForce,
-                timestamp = clock.now(),
-                strategyId = req.strategyId,
-            )
+        // Pick the SL child shape per the bracket's stop spec. Fixed → a plain Stop at
+        // the resolved price. ArmedTrail → an engine-managed ArmedTrailingStop whose
+        // entry price is the bracket entry's intended fill, and whose pre-arm/post-arm
+        // levels are computed by trailLevel on each tick. See #48.
+        val sl: OrderRequest =
+            when (val spec = req.stopLoss) {
+                is StopLossSpec.Fixed ->
+                    OrderRequest.Stop(
+                        id = "${req.id}-sl",
+                        symbol = req.symbol,
+                        side = exitSide,
+                        quantity = req.quantity,
+                        stopPrice = spec.price,
+                        timeInForce = req.timeInForce,
+                        timestamp = clock.now(),
+                        strategyId = req.strategyId,
+                    )
+                is StopLossSpec.ArmedTrail -> {
+                    val entryPrice = bracketEntryEstimate(req)
+                    OrderRequest.ArmedTrailingStop(
+                        id = "${req.id}-sl",
+                        symbol = req.symbol,
+                        side = exitSide,
+                        quantity = req.quantity,
+                        entryPrice = entryPrice,
+                        trailDistance = spec.trailDistance,
+                        mfeThreshold = spec.mfeThreshold,
+                        timeInForce = req.timeInForce,
+                        timestamp = clock.now(),
+                        strategyId = req.strategyId,
+                    )
+                }
+            }
         val oco =
             OrderRequest.StandaloneOCO(
                 id = "${req.id}-oco",
@@ -798,6 +872,13 @@ class OrderManager(
         if (request is OrderRequest.TrailingStop || request is OrderRequest.TrailingStopLimit) {
             val seed = lastObservedPrice[request.symbol] ?: priceProvider.lastPrice(request.symbol)
             if (seed != null) trailingHwm[request.id] = seed
+        }
+        if (request is OrderRequest.ArmedTrailingStop) {
+            // Seed hwm at the entry price — MFE = |hwm - entry| starts at 0. Each tick
+            // [updateTrailingHwm] will move hwm toward the favorable side. Pre-arm the
+            // stop sits at entry ± distance regardless of hwm; once armed, hwm leads.
+            trailingHwm[request.id] = request.entryPrice
+            armedTrailArmed[request.id] = false
         }
         bus.publish(
             BrokerEvent.OrderAccepted(
@@ -1084,11 +1165,47 @@ class OrderManager(
         managed: ManagedOrder,
         tickPrice: BigDecimal,
     ) {
-        val params = trailParams(managed.request) ?: return
-        val current = trailingHwm[managed.id]
-        when (params.side) {
-            Side.SELL -> if (current == null || tickPrice > current) trailingHwm[managed.id] = tickPrice
-            Side.BUY -> if (current == null || tickPrice < current) trailingHwm[managed.id] = tickPrice
+        when (val request = managed.request) {
+            is OrderRequest.ArmedTrailingStop -> {
+                // The "favorable side" for an ArmedTrailingStop (an EXIT order) is the
+                // direction the underlying entry is profiting in. Exit side BUY (i.e.
+                // entry was SELL) → favorable means price falling, hwm tracks the low.
+                // Exit side SELL (entry was BUY) → favorable means price rising, hwm
+                // tracks the high.
+                val current = trailingHwm[managed.id] ?: request.entryPrice
+                val newHwm =
+                    when (request.side) {
+                        Side.SELL -> if (tickPrice > current) tickPrice else current
+                        Side.BUY -> if (tickPrice < current) tickPrice else current
+                    }
+                trailingHwm[managed.id] = newHwm
+
+                // Arming gate: MFE = |hwm - entry|. Once MFE crosses the threshold, arm
+                // for life. Subsequent thresholds being un-crossed do NOT disarm.
+                if (armedTrailArmed[managed.id] == false) {
+                    val mfe = newHwm.subtract(request.entryPrice).abs()
+                    if (mfe.compareTo(request.mfeThreshold) >= 0) {
+                        armedTrailArmed[managed.id] = true
+                        log.info(
+                            "armed-trail armed: order_id={} symbol={} entry={} hwm={} mfe={} threshold={}",
+                            managed.id,
+                            managed.request.symbol,
+                            request.entryPrice,
+                            newHwm,
+                            mfe,
+                            request.mfeThreshold,
+                        )
+                    }
+                }
+            }
+            else -> {
+                val params = trailParams(request) ?: return
+                val current = trailingHwm[managed.id]
+                when (params.side) {
+                    Side.SELL -> if (current == null || tickPrice > current) trailingHwm[managed.id] = tickPrice
+                    Side.BUY -> if (current == null || tickPrice < current) trailingHwm[managed.id] = tickPrice
+                }
+            }
         }
     }
 
@@ -1102,21 +1219,40 @@ class OrderManager(
         }
 
     private fun trailLevel(managed: ManagedOrder): BigDecimal? {
-        val params = trailParams(managed.request) ?: return null
-        val hwm = trailingHwm[managed.id] ?: return null
-        return when (params.trailMode) {
-            TrailMode.ABSOLUTE ->
-                if (params.side == Side.SELL) hwm - params.trailAmount else hwm + params.trailAmount
-            TrailMode.PERCENT -> {
-                val factor = params.trailAmount.divide(BigDecimal("100"), Money.CONTEXT)
-                if (params.side == Side.SELL) {
-                    hwm
-                        .multiply(BigDecimal.ONE - factor, Money.CONTEXT)
-                        .setScale(Money.SCALE, Money.ROUNDING)
-                } else {
-                    hwm
-                        .multiply(BigDecimal.ONE + factor, Money.CONTEXT)
-                        .setScale(Money.SCALE, Money.ROUNDING)
+        when (val request = managed.request) {
+            is OrderRequest.ArmedTrailingStop -> {
+                val isArmed = armedTrailArmed[managed.id] == true
+                val reference =
+                    if (isArmed) {
+                        trailingHwm[managed.id] ?: return null
+                    } else {
+                        request.entryPrice
+                    }
+                // Exit-side SELL closes a long → stop sits BELOW reference (`hwm` or
+                // `entry`), fires on a drop. Exit-side BUY closes a short → stop ABOVE.
+                return when (request.side) {
+                    Side.SELL -> reference - request.trailDistance
+                    Side.BUY -> reference + request.trailDistance
+                }
+            }
+            else -> {
+                val params = trailParams(request) ?: return null
+                val hwm = trailingHwm[managed.id] ?: return null
+                return when (params.trailMode) {
+                    TrailMode.ABSOLUTE ->
+                        if (params.side == Side.SELL) hwm - params.trailAmount else hwm + params.trailAmount
+                    TrailMode.PERCENT -> {
+                        val factor = params.trailAmount.divide(BigDecimal("100"), Money.CONTEXT)
+                        if (params.side == Side.SELL) {
+                            hwm
+                                .multiply(BigDecimal.ONE - factor, Money.CONTEXT)
+                                .setScale(Money.SCALE, Money.ROUNDING)
+                        } else {
+                            hwm
+                                .multiply(BigDecimal.ONE + factor, Money.CONTEXT)
+                                .setScale(Money.SCALE, Money.ROUNDING)
+                        }
+                    }
                 }
             }
         }
@@ -1137,6 +1273,12 @@ class OrderManager(
                 val params = trailParams(request) ?: return false
                 val level = trailLevel(managed) ?: return false
                 if (params.side == Side.SELL) tickPrice <= level else tickPrice >= level
+            }
+            is OrderRequest.ArmedTrailingStop -> {
+                val level = trailLevel(managed) ?: return false
+                // Exit SELL fires when price falls to the stop. Exit BUY fires when
+                // price rises to the stop. Matches [OrderRequest.TrailingStop] semantics.
+                if (request.side == Side.SELL) tickPrice <= level else tickPrice >= level
             }
             else -> false
         }
@@ -1208,6 +1350,15 @@ class OrderManager(
                         )
                     }
                 is OrderRequest.TrailingStop ->
+                    OrderRequest.Market(
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side,
+                        quantity = req.quantity,
+                        timeInForce = req.timeInForce,
+                        timestamp = clock.now(),
+                    )
+                is OrderRequest.ArmedTrailingStop ->
                     OrderRequest.Market(
                         id = req.id,
                         symbol = req.symbol,

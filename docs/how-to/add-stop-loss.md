@@ -10,6 +10,7 @@ Every shape of stop qkt supports, with a one-line decision rule for when to use 
 | "Lose at most 2% of position value" | Percent stop |
 | "Stop adapts to volatility" | ATR-based stop |
 | "Lock in profit as price runs" | Trailing stop |
+| "Wide stop until I'm in profit, then lock in" | [Armed trailing stop](../reference/dsl/bracket.md#armed-trailing-stop) |
 | "Exit if it doesn't work in 1 hour" | TimeExit (Phase 13a) |
 
 ## Fixed-points stop

@@ -8,6 +8,7 @@ import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
 import org.assertj.core.api.Assertions.assertThat
@@ -34,7 +35,7 @@ class OrderManagerBracketTest {
             quantity = Money.of("1"),
             entry = entry,
             takeProfit = Money.of("110"),
-            stopLoss = Money.of("95"),
+            stopLoss = StopLossSpec.Fixed(Money.of("95")),
             timeInForce = TimeInForce.GTC,
             timestamp = 0L,
         )

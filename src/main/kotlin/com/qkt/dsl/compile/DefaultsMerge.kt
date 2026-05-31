@@ -9,6 +9,7 @@ import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.CaseWhen
+import com.qkt.dsl.ast.ChildArmedTrail
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
@@ -186,4 +187,9 @@ private fun substituteSymbol(
         is ChildBy -> cp.copy(distance = substituteSymbol(cp.distance, alias))
         is ChildPct -> cp.copy(frac = substituteSymbol(cp.frac, alias))
         is ChildRr -> cp.copy(multiplier = substituteSymbol(cp.multiplier, alias))
+        is ChildArmedTrail ->
+            cp.copy(
+                trailDistance = substituteSymbol(cp.trailDistance, alias),
+                mfeThreshold = substituteSymbol(cp.mfeThreshold, alias),
+            )
     }

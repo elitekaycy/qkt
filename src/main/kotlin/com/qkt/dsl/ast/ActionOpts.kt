@@ -108,6 +108,11 @@ data class ChildRr(
     val multiplier: ExprAst,
 ) : ChildPriceAst
 
+data class ChildArmedTrail(
+    val trailDistance: ExprAst,
+    val mfeThreshold: ExprAst,
+) : ChildPriceAst
+
 data class BracketAst(
     val stopLoss: ChildPriceAst? = null,
     val takeProfit: ChildPriceAst? = null,

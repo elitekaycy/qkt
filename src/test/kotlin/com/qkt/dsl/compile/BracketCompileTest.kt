@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
 import com.qkt.strategy.testStrategyContext
@@ -56,7 +57,7 @@ class BracketCompileTest {
         assertThat(sigs).hasSize(1)
         val sig = sigs[0] as Signal.Submit
         val br = sig.request as OrderRequest.Bracket
-        assertThat(br.stopLoss).isEqualByComparingTo("95")
+        assertThat((br.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("95")
         assertThat(br.takeProfit).isEqualByComparingTo("115")
         assertThat(br.entry).isInstanceOf(OrderRequest.Market::class.java)
     }

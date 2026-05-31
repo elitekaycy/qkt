@@ -254,7 +254,7 @@ class OrderRequestTest {
                 quantity = Money.of("1"),
                 entry = entry,
                 takeProfit = Money.of("4500"),
-                stopLoss = Money.of("4500"),
+                stopLoss = StopLossSpec.Fixed(Money.of("4500")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 100L,
             )
