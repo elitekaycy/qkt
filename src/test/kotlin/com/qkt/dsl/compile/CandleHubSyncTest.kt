@@ -71,6 +71,19 @@ class CandleHubSyncTest {
     }
 
     @Test
+    fun `SyncGroupKey rejects members with mixed timeframes`() {
+        val gold1h = HubKey("EXNESS", "XAUUSD", "1h")
+        val silver1m = HubKey("EXNESS", "XAGUSD", "1m")
+
+        assertThatThrownBy {
+            SyncGroupKey(
+                members = mapOf("gold" to gold1h, "silver" to silver1m),
+                timeoutMs = null,
+            )
+        }.hasMessageContaining("same timeframe")
+    }
+
+    @Test
     fun `unregister keeps the sync group when other owners remain`() {
         val hub = CandleHub()
         hub.register(gold, retention = 5, strategyId = "alpha")
