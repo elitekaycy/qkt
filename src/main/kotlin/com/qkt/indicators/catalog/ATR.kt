@@ -5,6 +5,14 @@ import com.qkt.indicators.Indicator
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 
+/**
+ * Average True Range over the last [period] candles.
+ *
+ * True range per candle = `max(high - low, |high - prev_close|, |low - prev_close|)`.
+ * Smoothed with Wilder's method (the original ATR convention) — equivalent to an
+ * EMA with alpha = 1/period. Used for volatility-adaptive stops and position
+ * sizing where the stop distance should scale with recent realized range.
+ */
 class ATR(
     private val period: Int,
 ) : Indicator<Candle> {

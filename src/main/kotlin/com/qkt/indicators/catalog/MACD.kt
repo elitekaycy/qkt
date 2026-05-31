@@ -4,12 +4,20 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/** Three-component MACD reading — `macd`, `signal`, and `histogram = macd − signal`. */
 data class MACDLines(
     val macd: BigDecimal,
     val signal: BigDecimal,
     val histogram: BigDecimal,
 )
 
+/**
+ * Moving Average Convergence Divergence: `EMA(fast) − EMA(slow)` smoothed by an
+ * additional EMA([signal]). Defaults to the canonical 12/26/9 parameters.
+ *
+ * [Indicator.value] returns the MACD line itself; use [lines] for the full
+ * three-component reading (macd, signal, histogram).
+ */
 class MACD(
     private val fast: Int = 12,
     private val slow: Int = 26,

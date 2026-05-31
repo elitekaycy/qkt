@@ -4,6 +4,13 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/**
+ * Relative Strength Index over the last [period] inputs, expressed as a 0-100 value.
+ *
+ * Uses Wilder's classic smoothing: the first reading is a simple average of the
+ * first [period] price changes; subsequent readings use exponential smoothing with
+ * alpha = 1/period. Standard overbought / oversold thresholds are 70 / 30.
+ */
 class RSI(
     private val period: Int,
 ) : Indicator<BigDecimal> {

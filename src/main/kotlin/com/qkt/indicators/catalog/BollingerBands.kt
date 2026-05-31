@@ -5,12 +5,21 @@ import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 import java.math.MathContext
 
+/** Three-band Bollinger reading — middle is the SMA, upper/lower are [stddevK] σ above/below. */
 data class BollingerBandValues(
     val upper: BigDecimal,
     val middle: BigDecimal,
     val lower: BigDecimal,
 )
 
+/**
+ * Bollinger Bands: a moving average plus a volatility envelope [stddevK] standard
+ * deviations wide on each side. [Indicator.value] returns the middle (SMA); use
+ * [bands] for the full three-band reading.
+ *
+ * Defaults to the classic 20-period, 2σ shape; other widths are common (e.g. 1σ for
+ * tighter mean-reversion entries).
+ */
 class BollingerBands(
     private val period: Int,
     private val stddevK: Double = 2.0,

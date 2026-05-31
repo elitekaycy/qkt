@@ -9,6 +9,11 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.source.MarketSource
 import java.time.Instant
 
+/**
+ * [RangeAggregateIndicator] specialised for session-anchored ranges — refresh on each
+ * session boundary defined by the [SessionAnchor] + [TradingCalendar]. Subclasses
+ * supply [reduce] and the concrete anchor (London open, New York close, daily UTC, …).
+ */
 abstract class SessionAnchoredIndicator<T : Any>(
     anchor: SessionAnchor,
     calendar: TradingCalendar,

@@ -4,6 +4,11 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/**
+ * Weighted Moving Average — linear weights `1, 2, 3, …, period` from oldest to
+ * newest sample, divided by `period(period+1)/2`. More responsive than [SMA] but
+ * less so than [EMA]; the choice between the three is mostly trader-preference.
+ */
 class WMA(
     private val period: Int,
 ) : Indicator<BigDecimal> {

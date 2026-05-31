@@ -4,6 +4,13 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
+/**
+ * Exponential Moving Average with smoothing factor `2 / (period + 1)`.
+ *
+ * Initialised with the first observed value (no priming SMA) — the classic
+ * convention used by most charting platforms. Faster to react than [SMA] of
+ * the same period, at the cost of more noise.
+ */
 class EMA(
     private val period: Int,
 ) : Indicator<BigDecimal> {
