@@ -21,8 +21,7 @@ import org.junit.jupiter.api.Test
  * `CandleHubSyncFireTest` and `AstCompilerSyncBindTest`.
  */
 class SyncPairsEndToEndTest {
-    private fun compile(src: String) =
-        AstCompiler().compile((Dsl.parse(src) as ParseResult.Success).value)
+    private fun compile(src: String) = AstCompiler().compile((Dsl.parse(src) as ParseResult.Success).value)
 
     private fun ticks(stream: List<Triple<String, Long, String>>): List<Tick> =
         stream.map { (symbol, t, price) ->
