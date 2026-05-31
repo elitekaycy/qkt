@@ -6,6 +6,11 @@ import com.qkt.risk.RiskState
 import java.math.BigDecimal
 import java.math.RoundingMode
 
+/**
+ * Global halt rule: trips when account-aggregate drawdown (as a fraction of peak
+ * equity) exceeds [maxFraction]. Threshold must be in `(0, 1]` — `0.20` means halt
+ * at a 20% drawdown.
+ */
 class MaxDrawdown(
     private val maxFraction: BigDecimal,
 ) : HaltRule {

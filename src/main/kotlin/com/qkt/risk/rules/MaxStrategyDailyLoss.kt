@@ -5,6 +5,11 @@ import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskState
 import java.math.BigDecimal
 
+/**
+ * Per-strategy variant of [MaxDailyLoss]: halts only [strategyId] when its own
+ * realized loss for the current UTC day exceeds [maxLoss]. Other strategies on
+ * the account continue trading.
+ */
 class MaxStrategyDailyLoss(
     private val strategyId: String,
     private val maxLoss: BigDecimal,

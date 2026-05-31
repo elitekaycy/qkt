@@ -6,6 +6,10 @@ import com.qkt.risk.RiskState
 import java.math.BigDecimal
 import java.math.RoundingMode
 
+/**
+ * Per-strategy variant of [MaxDrawdown]: halts only [strategyId] when its own
+ * drawdown fraction exceeds [maxFraction]. Other strategies on the account continue.
+ */
 class MaxStrategyDrawdown(
     private val strategyId: String,
     private val maxFraction: BigDecimal,
