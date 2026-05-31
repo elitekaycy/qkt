@@ -496,7 +496,14 @@ class Parser(
                 advance()
                 if (peek().kind == TokenKind.DOT) {
                     advance()
-                    val fieldTok = expect(TokenKind.IDENT, "expected NOW field name")
+                    // NOW.<field>. `WEEKDAY` is also a SCHEDULE token (#77), so we
+                    // accept either an IDENT or that specific keyword here and read
+                    // the lexeme — keeps `NOW.weekday` working as a field access.
+                    val fieldTok =
+                        when (peek().kind) {
+                            TokenKind.IDENT, TokenKind.WEEKDAY -> advance()
+                            else -> expect(TokenKind.IDENT, "expected NOW field name")
+                        }
                     val field =
                         when (fieldTok.lexeme.uppercase()) {
                             "HOUR_UTC" -> NowField.HOUR_UTC
