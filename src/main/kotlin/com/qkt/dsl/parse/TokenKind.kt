@@ -6,6 +6,7 @@ enum class TokenKind {
     DEFAULTS,
     SYMBOLS,
     SYNCHRONIZE,
+    SCHEDULE,
     LET,
     RULES,
 
@@ -71,6 +72,16 @@ enum class TokenKind {
     FOK,
     DAY,
     GTD,
+
+    HOUR,
+    WEEKDAY,
+    UTC,
+    NY,
+    LONDON,
+    TOKYO,
+    SYDNEY,
+    CHICAGO,
+    BROKER,
 
     ORDER_TYPE,
     STOP_LOSS,
