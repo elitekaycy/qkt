@@ -6,6 +6,13 @@ import com.qkt.pnl.StrategyPnL
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Tracks total and per-strategy equity (current + peak-since-session-start). Fed by
+ * P&L deltas from [PnLProvider] / [StrategyPnL]; exposes both current and peak readings
+ * for [DrawdownTracker] to compute drawdown off.
+ *
+ * Thread-safe — `@Volatile` totals plus a [ConcurrentHashMap] for per-strategy peaks.
+ */
 class EquityTracker(
     private val pnl: PnLProvider,
     private val strategyPnL: StrategyPnL,
