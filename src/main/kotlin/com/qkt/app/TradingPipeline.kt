@@ -95,6 +95,13 @@ class TradingPipeline(
 
     val orderManager: OrderManager = OrderManager(broker, bus, priceTracker, clock, persistor)
 
+    /**
+     * Clock-driven scheduler for DSL `SCHEDULE` blocks (#77). Single instance shared
+     * across every strategy. Heartbeat ticks from [ingest] for tick-driven advance,
+     * plus [scheduleHeartbeat] from a 1Hz `LiveSession` timer for quiet markets.
+     */
+    val scheduleRunner: com.qkt.dsl.compile.ScheduleRunner = com.qkt.dsl.compile.ScheduleRunner()
+
     /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
     val latency: com.qkt.observability.LatencyRegistry =
         com.qkt.observability.LatencyRegistry(
@@ -158,6 +165,7 @@ class TradingPipeline(
                 requireMultiPositionCapability(strategyId, strategy)
                 for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention, strategyId)
                 strategy.bindToHub(candleHub, ctx, emit)
+                strategy.bindSchedules(scheduleRunner, ctx, clock.now(), emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
                 wireStackOrchestrator(strategy, strategyId, emit)
             } else {
@@ -243,6 +251,17 @@ class TradingPipeline(
     fun ingest(tick: Tick) {
         engine.onTick(tick)
         candleHub.feed(tick)
+        scheduleRunner.tick(tick.timestamp)
+    }
+
+    /**
+     * Live-only quiet-market heartbeat. `LiveSession` calls this from a 1Hz timer
+     * so a strategy's `SCHEDULE AT 09:00 UTC THEN …` still fires even if no ticks
+     * arrived during that second. Backtest doesn't need it — tick replay drives
+     * the heartbeat via [ingest] (#77).
+     */
+    fun scheduleHeartbeat(nowMs: Long) {
+        scheduleRunner.tick(nowMs)
     }
 
     fun ingestForWarmup(tick: Tick) {
