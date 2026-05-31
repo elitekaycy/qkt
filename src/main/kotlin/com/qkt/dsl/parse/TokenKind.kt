@@ -5,6 +5,7 @@ enum class TokenKind {
     VERSION,
     DEFAULTS,
     SYMBOLS,
+    SYNCHRONIZE,
     LET,
     RULES,
 

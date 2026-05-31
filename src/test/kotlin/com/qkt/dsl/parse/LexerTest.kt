@@ -20,6 +20,18 @@ class LexerTest {
     }
 
     @Test
+    fun `SYNCHRONIZE is tokenized as TokenKind SYNCHRONIZE`() {
+        val tokens = Lexer("SYNCHRONIZE synchronize Synchronize").tokenize()
+        assertThat(tokens.map { it.kind })
+            .containsExactly(
+                TokenKind.SYNCHRONIZE,
+                TokenKind.SYNCHRONIZE,
+                TokenKind.SYNCHRONIZE,
+                TokenKind.EOF,
+            )
+    }
+
+    @Test
     fun `case-sensitive identifiers preserve original casing`() {
         val tokens = Lexer("btc BTC mySymbol").tokenize()
         assertThat(tokens.dropLast(1).map { it.lexeme }).containsExactly("btc", "BTC", "mySymbol")
