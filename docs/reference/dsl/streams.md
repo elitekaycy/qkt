@@ -205,6 +205,66 @@ FOR EACH s IN btc, eth, sol DO
 
 `s` is a textual substitution at compile time, not a runtime variable. See [FOR EACH](foreach.md).
 
+## Synchronizing streams
+
+Strategies that act on **multiple streams together** — pairs trading, basket strategies, lead-lag rules — usually want the engine to evaluate the rule body once per *matched* bar window, with every member's candle current. Without synchronization, each stream's close triggers an independent evaluation that reads the other side's last-known value — which is the **previous** window's bar if the other stream hasn't closed yet. For a slow signal that's noise; for a tight spread that's the wrong trade.
+
+Declare a sync group inside the `SYMBOLS` block with the `SYNCHRONIZE` keyword:
+
+```qkt
+SYMBOLS
+    gold   = EXNESS:XAUUSD EVERY 1h,
+    silver = EXNESS:XAGUSD EVERY 1h,
+    btc    = BYBIT_SPOT:BTCUSDT EVERY 1h,
+    eth    = BYBIT_SPOT:ETHUSDT EVERY 1h,
+    vix    = TV:VIX EVERY 1d
+
+    SYNCHRONIZE gold silver
+    SYNCHRONIZE btc eth WITHIN 30s
+    -- vix is not listed in any clause, so it fires independently on its own
+    -- bar closes (same as if SYNCHRONIZE were absent entirely).
+```
+
+Each `SYNCHRONIZE` clause defines one independent group. The clause **must follow** the stream declarations within the `SYMBOLS` block. Streams not listed in any clause keep firing per-bar exactly as before.
+
+Three or more members per group are fine:
+
+```qkt
+SYMBOLS
+    gold     = EXNESS:XAUUSD EVERY 1h,
+    silver   = EXNESS:XAGUSD EVERY 1h,
+    platinum = EXNESS:XPTUSD EVERY 1h
+    SYNCHRONIZE gold silver platinum
+```
+
+The rule body sees all three bars on the same window, so a basket condition like `gold.close + silver.close + platinum.close > THRESHOLD` reads same-window prices, not a mix.
+
+### Timeouts
+
+The optional `WITHIN <duration>` declares a per-group timeout. If the first member of a window closes but the others don't arrive within the timeout, the engine drops the partial window — no callback fires and the pending bars are released. Useful for cross-broker pairs where one venue can lag or temporarily disconnect. Same-broker pairs almost never need a timeout: leave it off and the engine waits forever (in practice, microseconds).
+
+```qkt
+SYNCHRONIZE btc eth WITHIN 30s    -- give up if eth doesn't print within 30 seconds of btc
+SYNCHRONIZE gold silver           -- wait forever (same venue, will always print)
+```
+
+Drop-on-timeout is intentionally conservative: it's better to skip a window than to fire a rule on stale half-data and trade on it. If you want a partial-fire variant, file an issue with the use case.
+
+### Rules and validation
+
+- Every `SYNCHRONIZE` clause must list at least two aliases.
+- Every listed alias must be declared above in the `SYMBOLS` block.
+- An alias appears in at most **one** group — overlapping groups are rejected at parse.
+- Every member of a group must share the same `EVERY` timeframe. Different timeframes have no shared window boundaries, so sync would silently never fire.
+
+### What stays the same
+
+- Per-stream tick-fed indicators (e.g. `vwap`) still update on every raw tick.
+- `WARMUP N BARS` works the same — the sync callback only fires once the warmup gate is satisfied for every member.
+- Non-grouped aliases in the same strategy keep their pre-#45 per-close evaluation. Mixing a sync pair with a standalone stream is fine.
+
+See [Phase 35 — Bar-Level Synchronized Publish](../../phases/phase-35-bar-sync.md) for the worked examples, known limitations, and migration notes.
+
 ## Common gotchas
 
 - **Forgetting `EVERY`.** `btc = BACKTEST:BTCUSDT` (no timeframe) is a parse error.
@@ -212,6 +272,8 @@ FOR EACH s IN btc, eth, sol DO
 - **Mixing case in the symbol.** `BTCusdt` or `btcusdt` will fail at the broker boundary because the venue's symbol is case-sensitive (typically all-uppercase).
 - **Forgetting the `m` suffix on Exness.** The `exness` broker profile auto-adds it via `symbolPolicy.suffix: "m"`. You write `EURUSD` in the DSL; the broker sees `EURUSDm`. If your broker profile doesn't have this set, the order fails at submission.
 - **Stream alias collisions in `FOR EACH`.** Picking `s` as the iterator and also having a stream named `s` causes shadowing — change the iterator name.
+- **Forgetting commas between stream decls.** Up through #196 the parser silently dropped everything after the first stream when commas were missing. Both styles work now, but be consistent within a file.
+- **Mixed-timeframe `SYNCHRONIZE`.** `SYNCHRONIZE gold silver` where `gold` is `1h` and `silver` is `1m` is rejected at construction — the windows have no shared boundaries so it would never fire.
 
 ## What this composes with
 
