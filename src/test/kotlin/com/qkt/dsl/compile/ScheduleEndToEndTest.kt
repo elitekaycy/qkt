@@ -20,11 +20,14 @@ import org.junit.jupiter.api.Test
  */
 class ScheduleEndToEndTest {
     private val mondayMidnightUtc: Long =
-        LocalDate.of(2026, 6, 1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        LocalDate
+            .of(2026, 6, 1)
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
     private val hour = 3_600_000L
 
-    private fun compile(src: String) =
-        AstCompiler().compile((Dsl.parse(src) as ParseResult.Success).value)
+    private fun compile(src: String) = AstCompiler().compile((Dsl.parse(src) as ParseResult.Success).value)
 
     private fun tick(
         ts: Long,

@@ -3,7 +3,6 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.TimeOfDay
-import com.qkt.dsl.ast.Timezone
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId

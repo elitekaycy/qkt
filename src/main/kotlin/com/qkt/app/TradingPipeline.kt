@@ -100,7 +100,9 @@ class TradingPipeline(
      * across every strategy. Heartbeat ticks from [ingest] for tick-driven advance,
      * plus [scheduleHeartbeat] from a 1Hz `LiveSession` timer for quiet markets.
      */
-    val scheduleRunner: com.qkt.dsl.compile.ScheduleRunner = com.qkt.dsl.compile.ScheduleRunner()
+    val scheduleRunner: com.qkt.dsl.compile.ScheduleRunner =
+        com.qkt.dsl.compile
+            .ScheduleRunner()
 
     /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
     val latency: com.qkt.observability.LatencyRegistry =
