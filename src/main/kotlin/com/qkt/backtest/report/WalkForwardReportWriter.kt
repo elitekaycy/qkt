@@ -6,11 +6,24 @@ import com.qkt.backtest.walkforward.WalkForwardResult
 import java.nio.file.Files
 import java.nio.file.Path
 
+/**
+ * Writes a walk-forward analysis result ([com.qkt.backtest.walkforward.WalkForwardResult])
+ * to a directory: one row per fold in `folds.csv`, an aggregated stitched-equity CSV,
+ * and a JSON summary. One writer per output directory; call [write] once.
+ *
+ * Winner labels and stringified configs are validated up-front — any CSV-hostile
+ * character (comma, quote, newline) in either fails fast so the emitted CSV is
+ * always well-formed without needing quoting.
+ */
 class WalkForwardReportWriter(
     private val dir: Path,
 ) {
     private val safeLabel = Regex("[A-Za-z0-9_-]+")
 
+    /**
+     * Emit all artifacts for [result] into the writer's directory. Overwrites any
+     * existing files; the directory must exist and be writable.
+     */
     fun <C> write(result: WalkForwardResult<C>) {
         require(Files.isDirectory(dir)) { "Not a directory: $dir" }
         require(Files.isWritable(dir)) { "Directory not writable: $dir" }

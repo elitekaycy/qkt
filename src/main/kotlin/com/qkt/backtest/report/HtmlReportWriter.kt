@@ -7,9 +7,19 @@ import com.qkt.backtest.TradeRecord
 import java.nio.file.Files
 import java.nio.file.Path
 
+/**
+ * Renders a [com.qkt.backtest.BacktestResult] as a self-contained HTML report —
+ * headline cards, equity / drawdown / Monte-Carlo charts, per-strategy breakdowns,
+ * and head / tail tables of individual trades.
+ *
+ * No external assets: all CSS, SVG, and data are inlined in the produced string,
+ * so the report renders identically when opened offline or attached to an email.
+ * Visual + statistical knobs live on [HtmlReportConfig].
+ */
 class HtmlReportWriter(
     private val config: HtmlReportConfig = HtmlReportConfig(),
 ) {
+    /** Render the report and write it to [path]. Overwrites any existing file. */
     fun write(
         result: BacktestResult,
         path: Path,
@@ -17,6 +27,7 @@ class HtmlReportWriter(
         Files.writeString(path, render(result))
     }
 
+    /** Build the full HTML report as a single string. */
     fun render(result: BacktestResult): String {
         val sb = StringBuilder()
         sb.append("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">")
