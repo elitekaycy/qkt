@@ -468,6 +468,23 @@ class LiveSession(
             candleHub ?: com.qkt.dsl.compile
                 .CandleHub()
 
+        // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
+        // session's route list and use its profile's `serverTzOffsetHours`.
+        // LiveSession is per-strategy in the daemon model, so all calls return
+        // the same zone — strategy id is ignored. Null when no MT5 broker is
+        // in play (paper-only / Bybit-only sessions).
+        val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? =
+            run {
+                val mt5 = builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>().firstOrNull()
+                if (mt5 != null) {
+                    val zone: java.time.ZoneId =
+                        java.time.ZoneOffset.ofHours(mt5.profile.serverTzOffsetHours)
+                    ({ _: String -> zone })
+                } else {
+                    null
+                }
+            }
+
         val pipeline =
             TradingPipeline(
                 clock = clock,
@@ -497,6 +514,7 @@ class LiveSession(
                 gate = gate,
                 persistor = persistor,
                 instruments = instruments,
+                brokerZoneIdFor = brokerZoneIdFor,
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
