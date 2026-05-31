@@ -42,4 +42,22 @@ interface DslCompiledStrategy : Strategy {
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     )
+
+    /**
+     * Register every `SCHEDULE` clause this strategy declared with [runner]. Called
+     * after [bindToHub]. Strategies with no `SCHEDULE` block have nothing to register
+     * and the default implementation is a no-op (#77).
+     *
+     * [nowMs] is the engine clock at registration time — used by the runner as the
+     * watermark for "first eligible fire." Pass the same clock the rest of the
+     * pipeline reads from so backtest and live behave identically.
+     */
+    fun bindSchedules(
+        runner: ScheduleRunner,
+        ctx: StrategyContext,
+        nowMs: Long,
+        emit: (Signal) -> Unit,
+    ) {
+        // default no-op
+    }
 }

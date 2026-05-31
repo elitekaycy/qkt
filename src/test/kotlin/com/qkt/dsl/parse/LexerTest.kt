@@ -250,4 +250,15 @@ class LexerTest {
             TokenKind.EOF,
         )
     }
+
+    @Test
+    fun `SCHEDULE HOUR WEEKDAY UTC are tokenized as their TokenKind variants`() {
+        val tokens = Lexer("SCHEDULE HOUR WEEKDAY UTC").tokenize()
+        assertThat(tokens.map { it.kind }).startsWith(
+            TokenKind.SCHEDULE,
+            TokenKind.HOUR,
+            TokenKind.WEEKDAY,
+            TokenKind.UTC,
+        )
+    }
 }
