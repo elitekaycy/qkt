@@ -128,6 +128,14 @@ class AstCompiler {
                             .Bars(window, bars)
                 }.toMap()
 
+        val compiledSchedules: List<CompiledSchedule> =
+            ast.schedules.map { decl ->
+                CompiledSchedule(
+                    decl = decl,
+                    action = actionCompiler.compile(mergeDefaults(decl.action, ast.defaults)),
+                )
+            }
+
         return CompiledStrategy(
             streams = streams,
             retentionByKey = retentionByKey,
@@ -144,6 +152,7 @@ class AstCompiler {
             warmupGate = warmupGate,
             perStreamWarmup = perStreamWarmupSpec,
             syncGroups = ast.syncGroups,
+            schedules = compiledSchedules,
         )
     }
 
@@ -192,6 +201,7 @@ private class CompiledStrategy(
     private val warmupGate: WarmupGate,
     override val perStreamWarmup: Map<String, com.qkt.strategy.WarmupSpec>,
     private val syncGroups: List<SyncGroupDecl>,
+    private val schedules: List<CompiledSchedule>,
 ) : DslCompiledStrategy,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
@@ -199,6 +209,62 @@ private class CompiledStrategy(
     private var boundHub: CandleHub? = null
 
     override val declaredStreams: Map<String, HubKey> get() = streams
+
+    override fun bindSchedules(
+        runner: ScheduleRunner,
+        ctx: StrategyContext,
+        nowMs: Long,
+        emit: (Signal) -> Unit,
+    ) {
+        for (sched in schedules) {
+            runner.register(
+                strategyId = ctx.strategyId,
+                schedule = sched.decl,
+                emit = { fireSchedule(sched, ctx, emit) },
+                nowMs = nowMs,
+            )
+        }
+    }
+
+    private fun fireSchedule(
+        sched: CompiledSchedule,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        val hub = boundHub ?: return
+        val syntheticCandle = latestKnownCandle(hub) ?: run {
+            scheduleLog.warn(
+                "schedule fire skipped for strategy={} — no stream has a closed bar yet " +
+                    "(warmup not complete). Trigger will retry on the next fire time.",
+                ctx.strategyId,
+            )
+            return
+        }
+        val ec =
+            EvalContext(
+                candle = syntheticCandle,
+                streams = streams,
+                lets = emptyMap(),
+                strategyContext = ctx,
+                snapshotStore = snapshotStore,
+                hub = hub,
+                currentAlias = null,
+            )
+        for (sig in sched.action(ec)) emit(sig)
+    }
+
+    private fun latestKnownCandle(hub: CandleHub): Candle? {
+        for ((_, key) in streams) {
+            val c = hub.latest(key)
+            if (c != null) return c
+        }
+        return null
+    }
+
+    private companion object {
+        private val scheduleLog =
+            org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.compile.ScheduleFire")
+    }
 
     override fun bindToHub(
         hub: CandleHub,

@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory
  * skipped fire, and emits the action exactly once. Strategies that need
  * catch-up should detect via `NOW` and decide themselves.
  */
-internal class ScheduleRunner {
+class ScheduleRunner {
     private data class Registration(
         val strategyId: String,
         val schedule: ScheduleDecl,
