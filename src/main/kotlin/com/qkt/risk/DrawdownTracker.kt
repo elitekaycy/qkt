@@ -3,6 +3,14 @@ package com.qkt.risk
 import com.qkt.common.Money
 import java.math.BigDecimal
 
+/**
+ * Computes drawdown — `peak − current`, expressed as a positive [BigDecimal] —
+ * from the [EquityTracker]'s peak and current readings. Stateless; every call
+ * derives drawdown from the live tracker state.
+ *
+ * Returns [Money.ZERO] when peak is non-positive (no equity history yet) so
+ * downstream halt rules don't trip on a startup transient.
+ */
 class DrawdownTracker(
     private val equityTracker: EquityTracker,
 ) {

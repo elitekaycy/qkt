@@ -7,6 +7,13 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Per-strategy realized P&L bucketed by UTC day. Backs [RiskView.realizedToday]
+ * and the daily-loss halt rules.
+ *
+ * The "day" boundary is computed off the injected [Clock], so backtests with a
+ * [com.qkt.common.FixedClock] get deterministic day-rollover behaviour.
+ */
 class DailyPnLTracker(
     private val clock: Clock,
 ) {
