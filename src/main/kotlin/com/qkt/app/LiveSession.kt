@@ -107,6 +107,16 @@ class LiveSession(
     private val perStrategyMaxDailyLoss: java.math.BigDecimal? = null,
     private val perStrategyMaxPositionSize: java.math.BigDecimal? = null,
     private val perStrategyMaxOpenPositions: Int? = null,
+    /**
+     * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
+     * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
+     * at this cadence so a strategy's `SCHEDULE AT 09:00 UTC THEN …` still fires
+     * even when no ticks arrive during the matching second. Default 1000ms is
+     * sub-millisecond cost on modern hardware; tune up if profiling shows otherwise.
+     * Backtest doesn't use this — tick replay drives the heartbeat via
+     * [com.qkt.app.TradingPipeline.ingest].
+     */
+    private val scheduleHeartbeatIntervalMs: Long = 1000L,
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -560,6 +570,23 @@ class LiveSession(
         thread.isDaemon = true
         thread.start()
 
+        // Quiet-market heartbeat (#77 Phase 40 follow-up). Without this, SCHEDULE
+        // fires only happen when ticks arrive — a 19:55 UTC placement would slip
+        // by seconds on a quiet Asia session. 1Hz is configurable via
+        // [scheduleHeartbeatIntervalMs]; default 1s is sub-millisecond cost on
+        // modern hardware.
+        val scheduleHeartbeat: java.util.concurrent.ScheduledExecutorService =
+            java.util.concurrent.Executors
+                .newSingleThreadScheduledExecutor { r ->
+                    Thread(r, "qkt-schedule-heartbeat").apply { isDaemon = true }
+                }
+        scheduleHeartbeat.scheduleAtFixedRate(
+            { runCatching { pipeline.scheduleHeartbeat(clock.now()) } },
+            scheduleHeartbeatIntervalMs,
+            scheduleHeartbeatIntervalMs,
+            java.util.concurrent.TimeUnit.MILLISECONDS,
+        )
+
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
         if (NotifyEventKind.STRATEGY_STARTED in notifyEvents) {
@@ -584,6 +611,11 @@ class LiveSession(
             override fun stop() {
                 running.set(false)
                 thread.interrupt()
+                // Stop the schedule heartbeat thread so it doesn't outlive the session.
+                runCatching {
+                    scheduleHeartbeat.shutdownNow()
+                    scheduleHeartbeat.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)
+                }
                 // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
                 // so a long-running daemon cycling strategies doesn't accumulate threads.
                 for (b in builtBrokers) runCatching { b.shutdown() }
