@@ -84,8 +84,8 @@ import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
-import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.StringLit
+import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
