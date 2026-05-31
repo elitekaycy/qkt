@@ -5,12 +5,25 @@ import com.qkt.backtest.EquityFanPoint
 import com.qkt.backtest.EquitySample
 import java.math.BigDecimal
 
+/**
+ * Inline-SVG chart primitives used by [HtmlReportWriter]. Every function returns a
+ * complete `<svg>` element as a string with no external dependencies (no CSS file,
+ * no JS, no font links) so charts render identically offline and in plain email.
+ *
+ * Layouts are fixed-size with hard-coded padding — backtest reports don't need
+ * responsive sizing. If a chart shape needs to vary at runtime, render at the
+ * largest expected size and let CSS scale the SVG element.
+ */
 object SvgChart {
     private const val PADDING_LEFT = 60
     private const val PADDING_BOTTOM = 30
     private const val PADDING_TOP = 20
     private const val PADDING_RIGHT = 20
 
+    /**
+     * Render a simple equity-style line chart. [points] are (timestampMs, value)
+     * pairs in chronological order; empty input renders an empty-state placeholder.
+     */
     fun lineChart(
         points: List<Pair<Long, BigDecimal>>,
         width: Int,
@@ -37,6 +50,10 @@ object SvgChart {
         }
     }
 
+    /**
+     * Equity curve with drawdown periods overlaid as red translucent rectangles.
+     * Open drawdowns (no recovery timestamp) extend to the right edge.
+     */
     fun lineChartWithUnderwater(
         curve: List<EquitySample>,
         drawdowns: List<DrawdownPeriod>,
@@ -71,6 +88,11 @@ object SvgChart {
         }
     }
 
+    /**
+     * Render a Monte-Carlo bootstrap "fan" — the median line plus a shaded p5/p95
+     * envelope. [fan] is one [EquityFanPoint] per terminal-equity bucket, sorted by
+     * the bucket index (timestamp is implicit from position).
+     */
     fun fanChart(
         fan: List<EquityFanPoint>,
         width: Int,
