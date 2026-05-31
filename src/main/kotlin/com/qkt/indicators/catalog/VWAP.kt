@@ -7,11 +7,18 @@ import java.math.BigDecimal
 import java.math.MathContext
 
 /**
- * Volume-Weighted Average Price over the last [period] ticks.
+ * Volume-Weighted Average Price — like a moving average, except trades on big
+ * volume count more than trades on small volume. Answers: "what's the typical
+ * price people actually traded at recently?"
  *
- * Updates on raw [Tick]s, not on candle close — the binding layer routes ticks
- * directly so VWAP sees intra-bar resolution. Use it as a fair-value benchmark
- * ("am I buying above or below the recent volume-weighted price?").
+ * Common use as a fair-value reference:
+ *  - **price above VWAP** — buyers paid a premium today on average
+ *  - **price below VWAP** — sellers accepted a discount today on average
+ *
+ * Big-money desks use VWAP to score execution quality ("did we beat VWAP?").
+ *
+ * Updates on every raw tick, not just on candle close — so the value reflects
+ * intra-bar trades the moment they happen.
  */
 class VWAP(
     private val period: Int,

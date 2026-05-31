@@ -5,11 +5,14 @@ import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
 /**
- * Simple Moving Average over the last [period] input values. Equal weight to every
- * sample in the window; older samples drop out as new ones arrive.
+ * A running average of the last [period] values you feed it. Every value counts
+ * equally; the oldest one drops out each time a new one arrives.
  *
- * Slower to react than [EMA] of the same period but smoother. The cheapest indicator
- * to compute — O(1) per update once the window is full.
+ * e.g. SMA(3) after seeing `100, 102, 105, 108` returns `(102+105+108) / 3 = 105`.
+ *
+ * Common use: "is the price above or below its recent average?" A 20-day SMA on
+ * closes is a classic trend reference. Slower to move than [EMA] of the same
+ * period — same data, but EMA reacts to fresh values faster.
  */
 class SMA(
     private val period: Int,

@@ -4,7 +4,7 @@ import com.qkt.common.Money
 import com.qkt.indicators.Indicator
 import java.math.BigDecimal
 
-/** Three-component MACD reading — `macd`, `signal`, and `histogram = macd − signal`. */
+/** Three values from a MACD reading: the line, its smoothed signal line, and the histogram (line − signal). */
 data class MACDLines(
     val macd: BigDecimal,
     val signal: BigDecimal,
@@ -12,11 +12,19 @@ data class MACDLines(
 )
 
 /**
- * Moving Average Convergence Divergence: `EMA(fast) − EMA(slow)` smoothed by an
- * additional EMA([signal]). Defaults to the canonical 12/26/9 parameters.
+ * MACD — a momentum gauge built from two [EMA]s, one fast and one slow. When the
+ * fast one is above the slow one, recent momentum is up; when below, down.
  *
- * [Indicator.value] returns the MACD line itself; use [lines] for the full
- * three-component reading (macd, signal, histogram).
+ * Three things come out:
+ *  - **macd line** — `EMA(fast) − EMA(slow)`. Positive = bullish momentum.
+ *  - **signal line** — an EMA of the macd line, smoother.
+ *  - **histogram** — `macd − signal`. Sign change is the classic entry trigger.
+ *
+ * e.g. histogram crosses from negative to positive → fast EMA pulling away from
+ * slow EMA → "MACD bullish crossover."
+ *
+ * Defaults: fast=12, slow=26, signal=9 — the original 1979 recipe. Shorter
+ * params react faster but generate more false signals.
  */
 class MACD(
     private val fast: Int = 12,
