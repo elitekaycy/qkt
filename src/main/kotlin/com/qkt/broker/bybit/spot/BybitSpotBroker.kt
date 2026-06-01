@@ -205,6 +205,7 @@ class BybitSpotBroker(
         val retCode = tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: -1
         val retMsg = tree["retMsg"]?.jsonPrimitive?.content ?: ""
         if (retCode != 0) {
+            log.warn("Bybit order rejected: clientOrderId={} retCode={} retMsg={}", clientOrderId, retCode, retMsg)
             bus.publish(
                 BrokerEvent.OrderRejected(
                     clientOrderId = clientOrderId,

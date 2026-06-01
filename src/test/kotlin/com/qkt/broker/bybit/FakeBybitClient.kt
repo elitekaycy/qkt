@@ -47,6 +47,20 @@ class FakeBybitClient : BybitTransport {
             ?: """{"retCode":0,"retMsg":"OK","result":{}}"""
     }
 
+    override fun getSigned(
+        path: String,
+        query: Map<String, String>,
+    ): String {
+        val q = query.entries.joinToString("&") { "${it.key}=${it.value}" }
+        posts.add(Posted(path, q))
+        val dynMatched = dynamicResponses.firstOrNull { it.first(path, q) }
+        if (dynMatched != null) return dynMatched.second()
+        val matched = responsesByPredicate.firstOrNull { it.first(path, q) }
+        if (matched != null) return matched.second
+        return responses[path]
+            ?: """{"retCode":0,"retMsg":"OK","result":{}}"""
+    }
+
     override fun subscribe(
         topic: String,
         listener: (JsonObject) -> Unit,

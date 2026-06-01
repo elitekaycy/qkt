@@ -48,9 +48,9 @@ class BybitSpotStateRecovery(
 
     private fun reconcileBalances() {
         val response =
-            transport.postSigned(
+            transport.getSigned(
                 "/v5/account/wallet-balance",
-                """{"accountType":"${transport.accountType}"}""",
+                mapOf("accountType" to transport.accountType),
             )
         val parsed = BybitBalanceTranslator.parseWalletBalance(response)
         transport.updateBalances(parsed)
@@ -64,7 +64,11 @@ class BybitSpotStateRecovery(
     }
 
     private fun reconcileOpenOrders() {
-        val response = transport.postSigned("/v5/order/realtime", """{"category":"spot","openOnly":0,"limit":50}""")
+        val response =
+            transport.getSigned(
+                "/v5/order/realtime",
+                mapOf("category" to "spot", "openOnly" to "0", "limit" to "50"),
+            )
         val tree = json.parseToJsonElement(response).jsonObject
         if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
         val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
@@ -91,13 +95,14 @@ class BybitSpotStateRecovery(
         var totalProcessed = 0
         val cap = MAX_EXECUTIONS_PER_RECONCILE
         while (totalProcessed < cap) {
-            val body =
-                if (cursor.isEmpty()) {
-                    """{"category":"spot","startTime":$startTime,"limit":50}"""
-                } else {
-                    """{"category":"spot","startTime":$startTime,"limit":50,"cursor":"$cursor"}"""
+            val params =
+                buildMap {
+                    put("category", "spot")
+                    put("startTime", startTime.toString())
+                    put("limit", "50")
+                    if (cursor.isNotEmpty()) put("cursor", cursor)
                 }
-            val response = transport.postSigned("/v5/execution/list", body)
+            val response = transport.getSigned("/v5/execution/list", params)
             val tree = json.parseToJsonElement(response).jsonObject
             if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
             val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
