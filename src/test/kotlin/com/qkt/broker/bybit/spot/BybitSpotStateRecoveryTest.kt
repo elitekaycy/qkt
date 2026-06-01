@@ -161,11 +161,11 @@ class BybitSpotStateRecoveryTest {
         client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
         client.responses["/v5/account/wallet-balance"] = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
         client.responsesByPredicate.add(
-            { path: String, body: String -> path == "/v5/execution/list" && !body.contains("\"cursor\"") } to
+            { path: String, body: String -> path == "/v5/execution/list" && !body.contains("cursor=") } to
                 """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c1","orderId":"a","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"e1","category":"spot"}],"nextPageCursor":"page2"}}""",
         )
         client.responsesByPredicate.add(
-            { path: String, body: String -> path == "/v5/execution/list" && body.contains("\"cursor\":\"page2\"") } to
+            { path: String, body: String -> path == "/v5/execution/list" && body.contains("cursor=page2") } to
                 """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c2","orderId":"b","symbol":"BTCUSDT","side":"Sell","execPrice":"81000","execQty":"0.01","execId":"e2","category":"spot"}],"nextPageCursor":""}}""",
         )
 
@@ -243,8 +243,8 @@ class BybitSpotStateRecoveryTest {
             )
         recovery.reconcile()
 
-        val executionPost = client.posts.first { it.path == "/v5/execution/list" }
-        assertThat(executionPost.body).contains("\"startTime\":940000")
+        val executionCall = client.posts.first { it.path == "/v5/execution/list" }
+        assertThat(executionCall.body).contains("startTime=940000")
     }
 
     @Test
