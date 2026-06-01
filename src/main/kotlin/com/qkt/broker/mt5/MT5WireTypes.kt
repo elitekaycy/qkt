@@ -129,6 +129,16 @@ data class MT5OrderResponse(
     val errorMessage: String? = null,
 )
 
+/**
+ * Max length MT5 accepts for an order comment. `mt5.order_send` rejects a longer
+ * comment outright with `Invalid "comment" argument` (error -2) — it fails the
+ * placement, it does not silently truncate. The terminal then stores only the first
+ * ~16 chars of what it does accept, so capping the sent comment here is transparent to
+ * round-trip correlation (state recovery already keys off that truncated prefix).
+ * e.g. the 33-char "dsl-hedge_straddle--7-stack-tier0" goes on the wire as its first 31.
+ */
+const val MT5_COMMENT_MAX_LENGTH: Int = 31
+
 /** MQL5 trade return code for a successful order (`TRADE_RETCODE_DONE`). */
 const val MT5_TRADE_RETCODE_DONE: Int = 10009
 

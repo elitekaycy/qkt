@@ -56,6 +56,55 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `placeOrder caps an over-long comment to the MT5 wire limit`() {
+        // mt5.order_send rejects comments longer than MT5_COMMENT_MAX_LENGTH with
+        // `Invalid "comment" argument`. The hedge-straddle stack-tier clientOrderId
+        // (e.g. "dsl-hedge_straddle--7-stack-tier0", 33 chars) tripped this live (#210),
+        // failing every stack placement. The wire comment must be truncated to fit.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
+            ),
+        )
+        val longId = "dsl-hedge_straddle--7-stack-tier0"
+        assertThat(longId.length).isGreaterThan(MT5_COMMENT_MAX_LENGTH)
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "XAUUSDm",
+                volume = BigDecimal("0.1"),
+                type = "SELL",
+                magic = 10001,
+                comment = longId,
+            ),
+        )
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"comment\":\"${longId.take(MT5_COMMENT_MAX_LENGTH)}\"")
+        assertThat(body).doesNotContain(longId)
+    }
+
+    @Test
+    fun `placeOrder leaves a comment within the limit untouched`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
+            ),
+        )
+        val shortId = "dsl-hedge_straddle--7"
+        assertThat(shortId.length).isLessThanOrEqualTo(MT5_COMMENT_MAX_LENGTH)
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "XAUUSDm",
+                volume = BigDecimal("0.1"),
+                type = "SELL",
+                magic = 10001,
+                comment = shortId,
+            ),
+        )
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"comment\":\"$shortId\"")
+    }
+
+    @Test
     fun `getPositions parses list and applies tz offset`() {
         val serverEpochMs = 1_700_000_000_000L
         val expectedUtcMs = serverEpochMs - 2L * 3600L * 1000L
