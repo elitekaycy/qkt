@@ -50,7 +50,7 @@ object MarketSourceFactory {
         }
         if (enableBybit) {
             routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())
-            routes.add(SymbolPattern.prefix("BYBIT_PERP:") to BybitLinearMarketSource())
+            routes.add(SymbolPattern.prefix("BYBIT_LINEAR:") to BybitLinearMarketSource())
         }
         val composite = CompositeMarketSource(routes = routes, fallback = fallbackProvider())
         return { _ -> composite }
