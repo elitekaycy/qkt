@@ -79,12 +79,12 @@ class DaemonCommand(
         // constructed below. Recovery runs strictly after the broker is built, so by
         // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
         val registryRef = AtomicReference<StrategyRegistry?>(null)
-        val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
+        val mt5Factories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
                 val key = profileLabel.lowercase()
                 key to
-                    { bus, clock, priceTracker, strategyName ->
+                    { bus, clock, priceTracker, _, strategyName ->
                         val siblingsLookup: () -> List<String> = {
                             val registry = registryRef.get()
                             if (registry == null || strategyName == null) {
@@ -114,6 +114,35 @@ class DaemonCommand(
                             )
                     }
             }
+
+        // Bybit: one shared client per daemon (REST + private WS), created only when
+        // BYBIT_API_KEY is set so pure-MT5 deployments don't open an idle connection. Both
+        // spot and linear factories share it; a broker's close() stops only its reconciler,
+        // not the client, so the daemon owns the client lifecycle (closed on shutdown below).
+        val bybitClient: com.qkt.broker.bybit.BybitClient? =
+            if (!System.getenv("BYBIT_API_KEY").isNullOrEmpty()) {
+                com.qkt.broker.bybit
+                    .BybitClient()
+                    .also { c ->
+                        runCatching { c.connect() }
+                            .onFailure { println("[WARN] Bybit connect failed at startup: ${it.message}") }
+                    }
+            } else {
+                null
+            }
+        val bybitFactories: Map<String, com.qkt.app.BrokerFactory> =
+            bybitClient?.let { client ->
+                val spot: com.qkt.app.BrokerFactory = { bus, clock, _, _, _ ->
+                    com.qkt.broker.bybit.spot
+                        .BybitSpotBroker(client, bus, clock)
+                }
+                val linear: com.qkt.app.BrokerFactory = { bus, clock, _, positions, _ ->
+                    com.qkt.broker.bybit.linear
+                        .BybitLinearBroker(client, bus, clock, positions)
+                }
+                mapOf("bybit_spot" to spot, "bybit_linear" to linear)
+            } ?: emptyMap()
+        val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = mt5Factories + bybitFactories
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source)
@@ -224,6 +253,7 @@ class DaemonCommand(
                     val n = registry.list().size
                     if (n > 0) println("[INFO] gracefully stopping $n strateg${if (n == 1) "y" else "ies"}")
                     registry.stopAll()
+                    runCatching { bybitClient?.close() }
                     plane.close()
                     dailySummaryScheduler?.close()
                     notifier.close()
@@ -240,6 +270,7 @@ class DaemonCommand(
             // If the latch was tripped programmatically (POST /shutdown), do the cleanup ourselves.
             runCatching { Runtime.getRuntime().removeShutdownHook(shutdown) }
             runCatching { registry.stopAll() }
+            runCatching { bybitClient?.close() }
             runCatching { plane.close() }
             runCatching { dailySummaryScheduler?.close() }
             runCatching { notifier.close() }
