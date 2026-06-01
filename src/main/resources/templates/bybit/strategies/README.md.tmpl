@@ -3,12 +3,12 @@
 Drop `.qkt` files in this directory. They're mounted into the running daemon at
 `/strategies` (read-only).
 
-Bybit symbols use the prefix `BYBIT_SPOT:` (spot trading) or `BYBIT_PERP:` (linear
+Bybit symbols use the prefix `BYBIT_SPOT:` (spot trading) or `BYBIT_LINEAR:` (linear
 perpetual futures). Examples:
 
 ```
 SYMBOLS
-    btc = BYBIT_PERP:BTCUSDT EVERY 5m WARMUP 50 BARS
+    btc = BYBIT_LINEAR:BTCUSDT EVERY 5m WARMUP 50 BARS
     eth = BYBIT_SPOT:ETHUSDT EVERY 1m WARMUP 21 BARS
 ```
 

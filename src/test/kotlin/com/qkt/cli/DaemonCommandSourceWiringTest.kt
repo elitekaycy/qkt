@@ -52,7 +52,7 @@ class DaemonCommandSourceWiringTest {
         val factory = MarketSourceFactory.composite(emptyList()) { StubFallback() }
         val composite = factory(emptyList())
         assertThat(composite.supports("BYBIT_SPOT:BTCUSDT")).isTrue
-        assertThat(composite.supports("BYBIT_PERP:BTCUSDT")).isTrue
+        assertThat(composite.supports("BYBIT_LINEAR:BTCUSDT")).isTrue
     }
 
     @Test

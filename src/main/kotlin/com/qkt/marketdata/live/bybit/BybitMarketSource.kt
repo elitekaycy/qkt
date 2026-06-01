@@ -79,7 +79,7 @@ class BybitLinearMarketSource(
     wsFactory: (String) -> BybitPublicWsLike = { url -> BybitPublicWs.connect(url) },
 ) : BybitMarketSource(
         category = "linear",
-        prefix = "BYBIT_PERP:",
+        prefix = "BYBIT_LINEAR:",
         wsUrl = wsUrl,
         restBase = restBase,
         http = http,
