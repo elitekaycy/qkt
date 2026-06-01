@@ -33,7 +33,7 @@ class MarketSourceFactoryTest {
     }
 
     @Test
-    fun `composite with enableBybit=false does not route BYBIT_SPOT or BYBIT_PERP symbols`() {
+    fun `composite with enableBybit=false does not route BYBIT_SPOT or BYBIT_LINEAR symbols`() {
         val factory =
             MarketSourceFactory.composite(
                 mt5Profiles = emptyList(),
@@ -43,11 +43,11 @@ class MarketSourceFactoryTest {
         val composite = factory(emptyList())
         // With Bybit routes off, a BYBIT_SPOT: symbol falls to Null fallback and reports unsupported.
         assertThat(composite.supports("BYBIT_SPOT:BTCUSDT")).isFalse()
-        assertThat(composite.supports("BYBIT_PERP:BTCUSDT")).isFalse()
+        assertThat(composite.supports("BYBIT_LINEAR:BTCUSDT")).isFalse()
     }
 
     @Test
-    fun `composite with enableBybit=true routes BYBIT_SPOT and BYBIT_PERP symbols`() {
+    fun `composite with enableBybit=true routes BYBIT_SPOT and BYBIT_LINEAR symbols`() {
         val factory =
             MarketSourceFactory.composite(
                 mt5Profiles = emptyList(),
@@ -56,6 +56,6 @@ class MarketSourceFactoryTest {
             )
         val composite = factory(emptyList())
         assertThat(composite.supports("BYBIT_SPOT:BTCUSDT")).isTrue()
-        assertThat(composite.supports("BYBIT_PERP:BTCUSDT")).isTrue()
+        assertThat(composite.supports("BYBIT_LINEAR:BTCUSDT")).isTrue()
     }
 }
