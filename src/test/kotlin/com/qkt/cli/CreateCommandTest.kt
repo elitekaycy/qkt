@@ -116,7 +116,7 @@ class CreateCommandTest {
         assertThat(env).contains("BYBIT_API_KEY=")
         assertThat(env).contains("BYBIT_TESTNET=true")
         val strat = Files.readString(target.resolve("strategies/ema_cross.qkt"))
-        assertThat(strat).contains("BYBIT_PERP:BTCUSDT")
+        assertThat(strat).contains("BYBIT_LINEAR:BTCUSDT")
     }
 
     @Test

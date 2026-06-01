@@ -45,7 +45,7 @@ After Phase 28, MT5 broker profiles drive **both** execution and data. Bybit pub
 | `EXNESS:` | `Mt5MarketSource(profile=exness)` | strip prefix + apply `symbolSuffix` (e.g. `XAUUSDm`) |
 | `LATCH:` | `Mt5MarketSource(profile=latch)` | strip prefix + apply `symbolSuffix` (typically empty) |
 | `BYBIT_SPOT:` | `BybitSpotMarketSource` | strip prefix (`BTCUSDT` → `BTCUSDT`) |
-| `BYBIT_PERP:` | `BybitLinearMarketSource` | strip prefix |
+| `BYBIT_LINEAR:` | `BybitLinearMarketSource` | strip prefix |
 | anything else | `TradingViewMarketSource` (fallback) | passed through |
 
 `<NAME>:` is `profile.name.uppercase()+:`. Adding a new MT5 profile named `darwinex` to `qkt.config.yaml` automatically registers `DARWINEX:` routing.
@@ -133,7 +133,7 @@ The `BYBIT_SPOT:` prefix is registered unconditionally at boot (public WS, no au
 ```
 STRATEGY eth_scalper {
   STREAMS {
-    eth = BYBIT_PERP:ETHUSDT EVERY 5m
+    eth = BYBIT_LINEAR:ETHUSDT EVERY 5m
   }
   ...
 }
