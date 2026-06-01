@@ -235,7 +235,7 @@ class MT5Client(
         if (req.slDistance != null) field("sl_distance", req.slDistance.toString())
         field("deviation", req.deviation.toString())
         field("magic", req.magic.toString())
-        field("comment", "\"${req.comment}\"", last = true)
+        field("comment", "\"${req.comment.take(MT5_COMMENT_MAX_LENGTH)}\"", last = true)
         sb.append("}")
         return sb.toString()
     }
