@@ -87,6 +87,7 @@ class BybitLinearStateRecovery(
             val tree = json.parseToJsonElement(response).jsonObject
             if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
             val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
+            var newThisPage = 0
             for (entry in list) {
                 val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
                 if (!seenExecIds.add(exec.execId)) continue
@@ -104,6 +105,7 @@ class BybitLinearStateRecovery(
                         timestamp = clock.now(),
                     ),
                 )
+                newThisPage++
                 totalProcessed++
                 if (totalProcessed >= cap) return
             }
@@ -112,7 +114,9 @@ class BybitLinearStateRecovery(
                 ?.get("nextPageCursor")
                 ?.jsonPrimitive
                 ?.content ?: ""
-            if (cursor.isEmpty() || list.isEmpty()) break
+            // Stop if a non-empty page yielded no new executions: a perpetual cursor over
+            // already-seen execs would otherwise spin.
+            if (cursor.isEmpty() || list.isEmpty() || newThisPage == 0) break
         }
     }
 
