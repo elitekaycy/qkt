@@ -64,6 +64,11 @@ interface BybitTransport {
         jsonBody: String,
     ): String
 
+    fun getSigned(
+        path: String,
+        query: Map<String, String>,
+    ): String
+
     fun subscribe(
         topic: String,
         listener: (JsonObject) -> Unit,
@@ -174,6 +179,21 @@ class BybitClient(
     override fun postSigned(
         path: String,
         jsonBody: String,
+    ): String = executeWithRetries(path) { doPostSignedOnce(path, jsonBody) }
+
+    override fun getSigned(
+        path: String,
+        query: Map<String, String>,
+    ): String = executeWithRetries(path) { doGetSignedOnce(path, query) }
+
+    /**
+     * Shared connection-retry + rate-limit-backoff loop for signed REST calls. [once]
+     * issues a single signed request; a rate-limit response triggers one bounded retry,
+     * transport errors retry up to 3x, and a [BybitApiException] propagates immediately.
+     */
+    private fun executeWithRetries(
+        path: String,
+        once: () -> String,
     ): String {
         val maxConnectionAttempts = 3
         val maxRateLimitSleepMs = 5_000L
@@ -184,7 +204,7 @@ class BybitClient(
         while (connectionAttempt < maxConnectionAttempts) {
             connectionAttempt++
             try {
-                return doPostSignedOnce(path, jsonBody)
+                return once()
             } catch (e: RateLimitSignal) {
                 if (rateLimitRetried) {
                     throw BybitRateLimitException("Rate limit not cleared after retry; path=$path")
@@ -202,13 +222,13 @@ class BybitClient(
                 throw e
             } catch (e: Exception) {
                 lastEx = e
-                log.warn("postSigned attempt {} for {} failed: {}", connectionAttempt, path, e.message)
+                log.warn("signed request attempt {} for {} failed: {}", connectionAttempt, path, e.message)
                 if (connectionAttempt < maxConnectionAttempts) {
                     Thread.sleep(transportRetryDelayMs(connectionAttempt))
                 }
             }
         }
-        throw lastEx ?: error("postSigned exhausted retries with no captured exception")
+        throw lastEx ?: error("signed request exhausted retries with no captured exception")
     }
 
     private fun doPostSignedOnce(
@@ -231,6 +251,45 @@ class BybitClient(
                 .addHeader("X-BAPI-RECV-WINDOW", recvWindow)
                 .build()
 
+        return execute(req)
+    }
+
+    /**
+     * Single signed GET. Bybit v5 signs the *query string* (not a JSON body):
+     * `sign = HMAC(timestamp + apiKey + recvWindow + queryString)`. The identical
+     * encoded query string is signed and placed on the URL so the server re-derives the
+     * same signature. Calling Bybit's query endpoints (e.g. `/v5/order/realtime`,
+     * `/v5/account/wallet-balance`) via POST instead returns HTTP 404.
+     */
+    private fun doGetSignedOnce(
+        path: String,
+        query: Map<String, String>,
+    ): String {
+        val timestamp = clock.now().toString()
+        val recvWindow = resolvedRecvWindowMs.toString()
+        val queryString =
+            query.entries.joinToString("&") { (k, v) ->
+                "$k=${java.net.URLEncoder.encode(v, "UTF-8")}"
+            }
+        val preSign = timestamp + resolvedApiKey + recvWindow + queryString
+        val signature = signer.signHex(preSign)
+        val url = if (queryString.isEmpty()) "$restBaseUrl$path" else "$restBaseUrl$path?$queryString"
+
+        val req =
+            Request
+                .Builder()
+                .url(url)
+                .get()
+                .addHeader("X-BAPI-API-KEY", resolvedApiKey)
+                .addHeader("X-BAPI-TIMESTAMP", timestamp)
+                .addHeader("X-BAPI-SIGN", signature)
+                .addHeader("X-BAPI-RECV-WINDOW", recvWindow)
+                .build()
+
+        return execute(req)
+    }
+
+    private fun execute(req: Request): String {
         httpClient.newCall(req).execute().use { resp ->
             if (resp.code == 429) {
                 val resetAtMs = resp.header("X-Bapi-Limit-Reset-Timestamp")?.toLongOrNull() ?: 0L

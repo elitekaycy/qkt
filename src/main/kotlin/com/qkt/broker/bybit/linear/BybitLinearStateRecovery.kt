@@ -46,7 +46,10 @@ class BybitLinearStateRecovery(
 
     private fun reconcileOpenOrders() {
         val response =
-            transport.postSigned("/v5/order/realtime", """{"category":"linear","openOnly":0,"limit":50}""")
+            transport.getSigned(
+                "/v5/order/realtime",
+                mapOf("category" to "linear", "openOnly" to "0", "limit" to "50"),
+            )
         val tree = json.parseToJsonElement(response).jsonObject
         if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
         val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
@@ -73,13 +76,14 @@ class BybitLinearStateRecovery(
         var totalProcessed = 0
         val cap = BybitSpotStateRecovery.MAX_EXECUTIONS_PER_RECONCILE
         while (totalProcessed < cap) {
-            val body =
-                if (cursor.isEmpty()) {
-                    """{"category":"linear","startTime":$startTime,"limit":50}"""
-                } else {
-                    """{"category":"linear","startTime":$startTime,"limit":50,"cursor":"$cursor"}"""
+            val params =
+                buildMap {
+                    put("category", "linear")
+                    put("startTime", startTime.toString())
+                    put("limit", "50")
+                    if (cursor.isNotEmpty()) put("cursor", cursor)
                 }
-            val response = transport.postSigned("/v5/execution/list", body)
+            val response = transport.getSigned("/v5/execution/list", params)
             val tree = json.parseToJsonElement(response).jsonObject
             if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
             val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
@@ -114,9 +118,9 @@ class BybitLinearStateRecovery(
 
     private fun reconcileBalances() {
         val response =
-            transport.postSigned(
+            transport.getSigned(
                 "/v5/account/wallet-balance",
-                """{"accountType":"${transport.accountType}"}""",
+                mapOf("accountType" to transport.accountType),
             )
         val parsed = BybitBalanceTranslator.parseWalletBalance(response)
         transport.updateBalances(parsed)
@@ -131,7 +135,10 @@ class BybitLinearStateRecovery(
 
     private fun reconcilePositions() {
         val response =
-            transport.postSigned("/v5/position/list", """{"category":"linear","settleCoin":"USDT"}""")
+            transport.getSigned(
+                "/v5/position/list",
+                mapOf("category" to "linear", "settleCoin" to "USDT"),
+            )
         val tree = json.parseToJsonElement(response).jsonObject
         if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
         val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return

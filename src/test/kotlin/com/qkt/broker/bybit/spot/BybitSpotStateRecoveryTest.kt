@@ -299,7 +299,7 @@ class BybitSpotStateRecoveryTest {
     }
 
     @Test
-    fun `reconcile sends accountType UNIFIED in wallet-balance request body`() {
+    fun `reconcile sends accountType UNIFIED in the wallet-balance query`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
         client.responses["/v5/execution/list"] = emptyExecutionsResponse()
@@ -317,8 +317,10 @@ class BybitSpotStateRecoveryTest {
             )
         recovery.reconcile()
 
-        val balancePost = client.posts.first { it.path == "/v5/account/wallet-balance" }
-        assertThat(balancePost.body).contains("\"accountType\":\"UNIFIED\"")
+        // GET query form (was a POST JSON body before the GET fix); a revert to POST
+        // would serialize {"accountType":...} and fail this assertion.
+        val balanceCall = client.posts.first { it.path == "/v5/account/wallet-balance" }
+        assertThat(balanceCall.body).contains("accountType=UNIFIED")
     }
 
     @Test
