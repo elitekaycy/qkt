@@ -11,7 +11,7 @@ services:
     restart: "no"
 
   mt5-gateway:
-    image: elitekaycy/mt5-gateway-api:latest
+    image: elitekaycy/mt5-gateway-api:bot
     container_name: qkt-mt5
     restart: unless-stopped
     depends_on:
@@ -25,6 +25,12 @@ services:
       MT5_RECONNECT_ATTEMPTS: 5
       MT5_RECONNECT_BASE_DELAY: "2.0"
       LOG_LEVEL: ${MT5_LOG_LEVEL:-INFO}
+      # Headless env login (optional). Set MT5_LOGIN/PASSWORD/SERVER in .env to
+      # log in on boot with no VNC (the broker directory ships baked in :bot).
+      # Leave MT5_LOGIN empty to keep the one-time VNC flow.
+      MT5_LOGIN: ${MT5_LOGIN:-}
+      MT5_PASSWORD: ${MT5_PASSWORD:-}
+      MT5_SERVER: ${MT5_SERVER:-}
     ports:
       # MT5 REST API. Bind to loopback only — the gateway has no auth.
       - "127.0.0.1:5020:5001"
