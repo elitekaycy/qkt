@@ -97,7 +97,7 @@ Subject only. **No body. No footer. No `Co-Authored-By` lines. No AI references 
 
 Match the package layout under `com.qkt.*`:
 
-`common`, `marketdata`, `execution`, `strategy`, `broker`, `engine`, `risk`, `backtesting`, `dsl`, `app`.
+`common`, `marketdata`, `execution`, `strategy`, `broker`, `engine`, `risk`, `backtesting`, `dsl`, `app`, `research`.
 
 Plus non-source scopes: `build`, `ci`, `docs`, `scripts`, `skill`.
 

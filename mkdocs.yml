@@ -137,6 +137,7 @@ nav:
       - Add a stop-loss: how-to/add-stop-loss.md
       - Run a parameter sweep: how-to/parameter-sweep.md
       - Debug a strategy that isn't firing: how-to/debug-not-firing.md
+      - Iterate in the research REPL: how-to/research-repl.md
       - Deploy live on Exness (MT5): how-to/deploy-exness.md
   - Concepts:
       - concepts/index.md
