@@ -10,6 +10,7 @@ internal fun runMain(argv: Array<String>): Int {
         when (args.subcommand) {
             "parse" -> ParseCommand(args).run()
             "backtest" -> BacktestCommand(args).run()
+            "research" -> ResearchCommand(args).run()
             "run" -> RunCommand(args).run()
             "deploy" -> DeployCommand(args).run()
             "list" -> ListCommand(args).run()
@@ -56,6 +57,7 @@ private fun printHelp() {
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
             backtest <file> ...     run a one-shot backtest against historical data
+            research <file> ...     interactive playback REPL over historical data
             run <file> ...          run a strategy in foreground (paper-trading)
 
         DAEMON LIFECYCLE
