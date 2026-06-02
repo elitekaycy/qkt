@@ -13,7 +13,10 @@ sealed interface TapeEvent {
     val timestamp: Long
 
     /** A strategy emitted a trading intent (before risk/broker). */
-    data class SignalEmitted(override val timestamp: Long, val signal: Signal) : TapeEvent
+    data class SignalEmitted(
+        override val timestamp: Long,
+        val signal: Signal,
+    ) : TapeEvent
 
     /** A broker fill landed. [realized] is the realized P&L of this fill. */
     data class Filled(
@@ -24,5 +27,9 @@ sealed interface TapeEvent {
     ) : TapeEvent
 
     /** The risk engine vetoed an order. [reason] is the rule label; [symbol] the order's symbol. */
-    data class Rejected(override val timestamp: Long, val symbol: String, val reason: String) : TapeEvent
+    data class Rejected(
+        override val timestamp: Long,
+        val symbol: String,
+        val reason: String,
+    ) : TapeEvent
 }

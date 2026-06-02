@@ -72,22 +72,23 @@ class Backtest(
     )
 
     fun run(): BacktestResult =
-        com.qkt.research.ReplayEngine(
-            strategies = strategies,
-            rules = rules,
-            feed = feed,
-            candleWindow = candleWindow,
-            initialTimestamp = initialTimestamp,
-            source = source,
-            calendar = calendar,
-            warmupSpec = warmupSpec,
-            symbols = symbols,
-            cadence = cadence,
-            startingBalance = startingBalance,
-            instruments = instruments,
-            brokerKind = brokerKind,
-            latencyEnabled = latencyEnabled,
-        ).runToEnd()
+        com.qkt.research
+            .ReplayEngine(
+                strategies = strategies,
+                rules = rules,
+                feed = feed,
+                candleWindow = candleWindow,
+                initialTimestamp = initialTimestamp,
+                source = source,
+                calendar = calendar,
+                warmupSpec = warmupSpec,
+                symbols = symbols,
+                cadence = cadence,
+                startingBalance = startingBalance,
+                instruments = instruments,
+                brokerKind = brokerKind,
+                latencyEnabled = latencyEnabled,
+            ).runToEnd()
 
     companion object {
         fun fromStore(
