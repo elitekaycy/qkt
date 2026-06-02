@@ -37,8 +37,11 @@ data class Config(
      * Engine state persistence settings (Phase 29). Knobs:
      *   - `enabled` — `true` (default) wires [com.qkt.persistence.FileStatePersistor]; `false`
      *     uses [com.qkt.persistence.NoopStatePersistor] (no disk I/O, no restart recovery).
-     *   - `dir` — root directory for state files. `~/` is expanded against `$HOME`.
-     *     Default: `~/.qkt/state`.
+     *   - `async` — see [stateAsync].
+     *
+     * The state directory is not set here: [statePersistor] receives its root from the
+     * caller. The daemon passes [com.qkt.cli.daemon.StateDir.stateRoot], which honors
+     * `QKT_STATE_DIR` (and `--state-dir`), so state lands on the operator's volume.
      */
     val state: Map<String, String> = emptyMap(),
     /**
@@ -59,10 +62,6 @@ data class Config(
     val stateEnabled: Boolean
         get() = state["enabled"]?.lowercase()?.let { it != "false" } ?: true
 
-    /** Effective `state.dir`; defaults to `~/.qkt/state`. `~/` expanded against `$HOME`. */
-    val stateDir: String
-        get() = (state["dir"] ?: "~/.qkt/state").replaceFirst("~/", System.getProperty("user.home") + "/")
-
     /**
      * Effective `state.async`. When `true`, wraps the file persistor in [com.qkt.persistence.AsyncStatePersistor]
      * so disk I/O runs on a background thread instead of the bus dispatch thread. Defaults to
@@ -72,18 +71,17 @@ data class Config(
         get() = state["async"]?.lowercase() == "true"
 
     /**
-     * Returns the [com.qkt.persistence.StatePersistor] for this config. Layered by flag:
+     * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under
+     * [stateRoot]. Layered by flag:
      *   - `state.enabled = false`              → [com.qkt.persistence.NoopStatePersistor].
      *   - `state.enabled = true`, `async = false` → [com.qkt.persistence.FileStatePersistor] (synchronous).
      *   - `state.enabled = true`, `async = true`  → [com.qkt.persistence.AsyncStatePersistor] wrapping [com.qkt.persistence.FileStatePersistor].
+     *
+     * @param stateRoot directory the file persistor writes under (`<stateRoot>/<strategyId>/...`).
      */
-    fun statePersistor(): com.qkt.persistence.StatePersistor {
+    fun statePersistor(stateRoot: Path): com.qkt.persistence.StatePersistor {
         if (!stateEnabled) return com.qkt.persistence.NoopStatePersistor()
-        val file =
-            com.qkt.persistence.FileStatePersistor(
-                java.nio.file.Path
-                    .of(stateDir),
-            )
+        val file = com.qkt.persistence.FileStatePersistor(stateRoot)
         return if (stateAsync) com.qkt.persistence.AsyncStatePersistor(file) else file
     }
 
