@@ -188,6 +188,27 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `startingBalances set the strategy equity basis`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val strategy = CapturingStrategy()
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                startingBalances = mapOf("test" to java.math.BigDecimal("60000")),
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        val equity = handle.dailySummaryRows().first { it.strategyId == "test" }.equity
+        assertThat(equity).isEqualByComparingTo(java.math.BigDecimal("60000"))
+    }
+
+    @Test
     fun `recentTrades returns the trades captured so far`() {
         val src = InMemoryMarketSource()
         src.seedLive(
