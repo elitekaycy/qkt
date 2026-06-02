@@ -92,6 +92,7 @@ class ReplayEngine(
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
     private val rejections = mutableListOf<RiskRejectedEvent>()
+    private val tape = mutableListOf<TapeEvent>()
 
     init {
         require(this.cadence != SampleCadence.CANDLE_CLOSE || candleWindow != null) {
@@ -172,8 +173,12 @@ class ReplayEngine(
                 onFilled = { trade, realized, strategyId ->
                     val risk = holder[0]?.orderManager?.riskUsdFor(trade.orderId)
                     tradeRecords.add(TradeRecord(trade, realized, strategyId, risk))
+                    tape.add(TapeEvent.Filled(currentTimestamp, trade, realized, strategyId))
                 },
-                onRejected = { e -> rejections.add(e) },
+                onRejected = { e ->
+                    rejections.add(e)
+                    tape.add(TapeEvent.Rejected(currentTimestamp, e.request.symbol, e.reason))
+                },
                 onCandle = { barsClosed++ },
                 instruments = instruments,
                 latencyEnabled = latencyEnabled,
@@ -186,6 +191,10 @@ class ReplayEngine(
                 spec = warmupSpec,
                 now = Instant.ofEpochMilli(initialTimestamp),
             )
+        }
+
+        bus.subscribe<com.qkt.events.SignalEvent> { e ->
+            tape.add(TapeEvent.SignalEmitted(currentTimestamp, e.signal))
         }
     }
 
@@ -258,6 +267,13 @@ class ReplayEngine(
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
         )
+    }
+
+    /** Returns tape events accumulated since the last drain, then clears the buffer. */
+    fun drainTape(): List<TapeEvent> {
+        val out = tape.toList()
+        tape.clear()
+        return out
     }
 
     override fun close() = feed.close()
