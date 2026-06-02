@@ -6,6 +6,7 @@ Status legend:
 - `done` — shipped and merged
 - `progress` — actively in flight (spec/plan/branch in progress, or partial implementation merged)
 - `tbd` — queued, not started
+- `dropped` — closed without building (not planned); kept for the record
 
 **Issue tracking.** Every open item is mirrored as a GitHub issue, linked at the end of its line. The working flow: find a bug or pick up an item → the issue holds the problem statement and proposed solution → solve it → close the issue. This file stays the tiered roadmap; issues are the per-item tracker. When an item ships, flip its marker to `done` here and close its issue.
 
@@ -87,8 +88,8 @@ Status legend:
 
 - `tbd` — News pipeline: Twitter, Yahoo, economic calendar, per-symbol curation; integrates into DSL ([#67](https://github.com/elitekaycy/qkt/issues/67))
 - `tbd` — AI strategy-tuning pipeline: train on a strategy, derive best configs, agent layer for buy/sell decisions, continuous retraining ([#68](https://github.com/elitekaycy/qkt/issues/68))
-- `tbd` — Portfolio v3: `WEIGHT` clause for capital allocation, import-time overrides, nested portfolios (carryover from Phase 14 known limitations) ([#69](https://github.com/elitekaycy/qkt/issues/69))
-- `tbd` — Symbol watch dynamic extension: how strategies declare and acquire data for a totally new symbol at runtime ([#70](https://github.com/elitekaycy/qkt/issues/70))
+- `progress` — Portfolio v3 ([#69](https://github.com/elitekaycy/qkt/issues/69)): `WEIGHT` capital allocation shipped (#224); import-time overrides split to [#223](https://github.com/elitekaycy/qkt/issues/223); nested-portfolio allocation deferred (blocked by `PortfolioLoader` rejecting nesting)
+- `dropped` — Symbol watch dynamic extension: closed as not-planned ([#70](https://github.com/elitekaycy/qkt/issues/70)) — no concrete need, and the "arbitrary new symbol at runtime" framing fights backtest=live determinism. If revived, the tractable path is lazy activation of a known universe (see the issue's closing note).
 - `done` — Editor tooling for `.qkt` files — parser/AST/linter, syntax highlighting, language server, VSCode + Neovim extensions. Shipped under epic [#71](https://github.com/elitekaycy/qkt/issues/71) with children [#82](https://github.com/elitekaycy/qkt/issues/82)–[#86](https://github.com/elitekaycy/qkt/issues/86).
 - `done` — Landing page — shipped via mkdocs hero section on the documentation site. ([#72](https://github.com/elitekaycy/qkt/issues/72))
 
@@ -241,8 +242,8 @@ following are likely to surface as the second/third strategy gets written:
   equity). Currently strategies are isolated via `StrategyPositionTracker` namespacing;
   cross-reads would need an explicit query primitive.
   ([#76](https://github.com/elitekaycy/qkt/issues/76))
-- `tbd` — Symbol watch dynamic extension (tracked in the **Future** section above,
-  [#70](https://github.com/elitekaycy/qkt/issues/70)).
+- `dropped` — Symbol watch dynamic extension (closed as not-planned; tracked in the
+  **Future** section above, [#70](https://github.com/elitekaycy/qkt/issues/70)).
 - `tbd` — DSL action: `SCHEDULE` for time-of-day non-tick-driven actions (currently
   done via `WHEN NOW.minute_utc = N`, which works but is awkward).
   ([#77](https://github.com/elitekaycy/qkt/issues/77))
@@ -255,8 +256,10 @@ following are likely to surface as the second/third strategy gets written:
   engine internals. ([#79](https://github.com/elitekaycy/qkt/issues/79))
 - `tbd` — Multi-host deployment (active-passive failover for the qkt daemon).
   ([#80](https://github.com/elitekaycy/qkt/issues/80))
-- `tbd` — `qkt research` REPL — interactive strategy authoring with live tick replay
-  against historical data. ([#81](https://github.com/elitekaycy/qkt/issues/81))
+- `done` — `qkt research` REPL — playback v1 shipped (#225): session core + Playback mode
+  (steppable event tape over a historical replay, bit-identical to backtest). Watch mode,
+  expression REPL, and DSL parameters deferred as #81 epic follow-ups.
+  ([#81](https://github.com/elitekaycy/qkt/issues/81))
 
 ---
 
