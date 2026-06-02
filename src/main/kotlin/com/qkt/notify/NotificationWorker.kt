@@ -4,6 +4,7 @@ import com.qkt.notify.TelegramClient.Outcome
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import org.slf4j.LoggerFactory
 
 /**
@@ -26,7 +27,13 @@ class NotificationWorker(
     private val log = LoggerFactory.getLogger(NotificationWorker::class.java)
     private val queue = ArrayBlockingQueue<String>(queueCapacity)
     private val running = AtomicBoolean(true)
-    private val inFlight = AtomicBoolean(false)
+
+    // Items accepted into the queue but not yet fully delivered. Incremented before the
+    // item is offered, so the worker can never dequeue-and-decrement ahead of the producer;
+    // decremented only after delivery completes. flush() waits for this to reach zero —
+    // unlike a separate queue.isEmpty()/inFlight pair, there is no gap between "removed from
+    // queue" and "marked busy" for flush to mistake for idle.
+    private val pending = AtomicInteger(0)
 
     @Volatile private var lastDropLogMs: Long = 0L
 
@@ -41,7 +48,9 @@ class NotificationWorker(
             metrics.recordDropped()
             return
         }
+        pending.incrementAndGet()
         if (!queue.offer(text)) {
+            pending.decrementAndGet()
             metrics.recordDropped()
             maybeLogDrop()
         }
@@ -54,7 +63,7 @@ class NotificationWorker(
     fun flush(timeoutMs: Long) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (queue.isEmpty() && !inFlight.get()) return
+            if (pending.get() == 0) return
             Thread.sleep(5)
         }
     }
@@ -74,11 +83,10 @@ class NotificationWorker(
                     Thread.currentThread().interrupt()
                     return
                 }
-            inFlight.set(true)
             try {
                 deliver(text)
             } finally {
-                inFlight.set(false)
+                pending.decrementAndGet()
             }
         }
     }
