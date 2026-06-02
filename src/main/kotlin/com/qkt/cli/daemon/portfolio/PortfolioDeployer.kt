@@ -13,6 +13,7 @@ import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.dsl.portfolio.CompiledChild
 import com.qkt.dsl.portfolio.PortfolioCompiled
+import com.qkt.dsl.portfolio.capitalAllocations
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
@@ -58,8 +59,10 @@ class PortfolioDeployer(
         val children = mutableListOf<StrategyHandle>()
         val childWrappers = mutableListOf<ChildHandle>()
         try {
+            val allocations = capitalAllocations(compiled.ast)
             for (compiledChild in compiled.children) {
-                val (handle, wrapper) = createChild(portfolioName, compiledChild)
+                val (handle, wrapper) =
+                    createChild(portfolioName, compiledChild, allocations[compiledChild.alias])
                 children.add(handle)
                 childWrappers.add(wrapper)
             }
@@ -96,6 +99,7 @@ class PortfolioDeployer(
     private fun createChild(
         portfolioName: String,
         compiledChild: CompiledChild,
+        allocatedCapital: java.math.BigDecimal? = null,
     ): Pair<StrategyHandle, ChildHandle> {
         val childName = "$portfolioName/${compiledChild.alias}"
         val gateActive = AtomicBoolean(false)
@@ -153,6 +157,8 @@ class PortfolioDeployer(
                 persistor = persistor,
                 notifier = notifier,
                 notifyEvents = notifyEvents,
+                startingBalances =
+                    allocatedCapital?.let { mapOf(compiledChild.strategyId to it) } ?: emptyMap(),
             ).start()
 
         val server =

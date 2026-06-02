@@ -40,6 +40,8 @@ enum class TokenKind {
     AS,
     RUN,
     HOLD,
+    CAPITAL,
+    WEIGHT,
 
     MARKET,
     LIMIT,

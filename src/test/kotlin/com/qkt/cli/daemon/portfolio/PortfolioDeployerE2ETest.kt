@@ -133,4 +133,36 @@ class PortfolioDeployerE2ETest {
             assertThat(child.isRunning()).`as`("${child.name} should be stopped after cascade").isFalse
         }
     }
+
+    @Test
+    fun `weighted portfolio allocates capital times weight to each child's equity`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val deployer =
+            PortfolioDeployer(
+                stateDir = stateDir,
+                marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+            )
+
+        val portfolioPath = Path.of("src/test/resources/dsl/portfolio_weighted.qkt")
+        val compiled = PortfolioLoader.load(portfolioPath)
+        val record = deployer.deploy("weighted_book", compiled)
+
+        try {
+            val childrenByAlias = record.children.associateBy { it.childMeta?.alias }
+            val childA = childrenByAlias["a"] ?: error("child 'a' missing")
+            val childB = childrenByAlias["b"] ?: error("child 'b' missing")
+
+            // ACCOUNT.equity resolves through the same equityFor() that dailySummaryRows
+            // reads; with no open position, each child's equity is exactly its allocation.
+            val rowsA = childA.live.dailySummaryRows()
+            val rowsB = childB.live.dailySummaryRows()
+            assertThat(rowsA.first().equity).isEqualByComparingTo(BigDecimal("60000"))
+            assertThat(rowsB.first().equity).isEqualByComparingTo(BigDecimal("40000"))
+        } finally {
+            record.supervisor.stop()
+            for (child in record.children) runCatching { child.close() }
+        }
+    }
 }

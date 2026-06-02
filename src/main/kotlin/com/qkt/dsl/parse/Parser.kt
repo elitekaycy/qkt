@@ -133,12 +133,19 @@ class Parser(
     internal fun parsePortfolio(): ParseResult<com.qkt.dsl.ast.PortfolioAst> {
         var name = "_unparsed"
         var version = 0
+        var capital: java.math.BigDecimal? = null
         try {
             expect(TokenKind.PORTFOLIO, "expected PORTFOLIO")
             name = expect(TokenKind.IDENT, "expected portfolio name").lexeme
             expect(TokenKind.VERSION, "expected VERSION")
             val v = expect(TokenKind.NUMBER, "expected integer version")
             version = v.lexeme.toIntOrNull() ?: error("VERSION must be an integer, got '${v.lexeme}'")
+            if (peek().kind == TokenKind.CAPITAL) {
+                advance()
+                val capTok = expect(TokenKind.NUMBER, "expected number after CAPITAL")
+                capital = capTok.lexeme.toBigDecimalOrNull()
+                    ?: error("CAPITAL must be a number, got '${capTok.lexeme}'")
+            }
         } catch (_: ParseException) {
             synchronize()
         }
@@ -169,7 +176,7 @@ class Parser(
         return try {
             ParseResult.Success(
                 com.qkt.dsl.ast
-                    .PortfolioAst(name, version, streams, imports, rules),
+                    .PortfolioAst(name, version, streams, imports, rules, capital),
             )
         } catch (e: IllegalArgumentException) {
             ParseResult.Failure(
@@ -208,15 +215,24 @@ class Parser(
                 expect(TokenKind.RUN, "expected RUN after WHEN expression")
                 val alias = expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
                 com.qkt.dsl.ast
-                    .WhenRun(cond, alias)
+                    .WhenRun(cond, alias, parseOptionalWeight())
             }
             TokenKind.RUN -> {
                 advance()
                 val alias = expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
                 com.qkt.dsl.ast
-                    .AlwaysRun(alias)
+                    .AlwaysRun(alias, parseOptionalWeight())
             }
             else -> error("expected WHEN or RUN, got '${peek().lexeme}'")
+        }
+
+    private fun parseOptionalWeight(): java.math.BigDecimal? =
+        if (peek().kind == TokenKind.WEIGHT) {
+            advance()
+            val tok = expect(TokenKind.NUMBER, "expected number after WEIGHT")
+            tok.lexeme.toBigDecimalOrNull() ?: error("WEIGHT must be a number, got '${tok.lexeme}'")
+        } else {
+            null
         }
 
     fun parseStrategy(): ParseResult<StrategyAst> {

@@ -118,6 +118,14 @@ class LiveSession(
      * [com.qkt.app.TradingPipeline.ingest].
      */
     private val scheduleHeartbeatIntervalMs: Long = 1000L,
+    /**
+     * Starting balance per strategy id, the basis for `ACCOUNT.equity`
+     * (equity = starting balance + realized + unrealized). The portfolio deployer
+     * supplies a child's allocated capital here (CAPITAL x WEIGHT) so the child sizes
+     * off its slice of the book; standalone sessions leave it empty and equity starts
+     * at zero. e.g. {"book:hs" -> 60000} -> the hs child's ACCOUNT.equity reads 60000.
+     */
+    private val startingBalances: Map<String, java.math.BigDecimal> = emptyMap(),
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -422,6 +430,7 @@ class LiveSession(
         val instruments = buildInstrumentRegistry()
         val pnl = PnLCalculator(positions, priceTracker, instruments)
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
+        startingBalances.forEach { (id, balance) -> strategyPnL.setStartingBalance(id, balance) }
 
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
