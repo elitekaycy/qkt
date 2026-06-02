@@ -1,0 +1,6 @@
+PORTFOLIO weighted_book VERSION 1 CAPITAL 100000
+IMPORT 'weighted_child_a.qkt' AS a
+IMPORT 'weighted_child_b.qkt' AS b
+RULES
+    RUN a WEIGHT 0.6
+    RUN b WEIGHT 0.4

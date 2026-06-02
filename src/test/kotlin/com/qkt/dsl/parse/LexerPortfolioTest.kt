@@ -16,4 +16,16 @@ class LexerPortfolioTest {
             TokenKind.EOF,
         )
     }
+
+    @Test
+    fun `CAPITAL and WEIGHT lex as keyword tokens`() {
+        val tokens = Lexer("CAPITAL WEIGHT capital weight").tokenize()
+        assertThat(tokens.map { it.kind }).containsExactly(
+            TokenKind.CAPITAL,
+            TokenKind.WEIGHT,
+            TokenKind.CAPITAL,
+            TokenKind.WEIGHT,
+            TokenKind.EOF,
+        )
+    }
 }
