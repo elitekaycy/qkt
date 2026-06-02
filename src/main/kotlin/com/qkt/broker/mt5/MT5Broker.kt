@@ -313,6 +313,19 @@ class MT5Broker(
                 is PrepareResult.Ok -> result.wire
                 is PrepareResult.Reject -> return reject(request, result.reason)
             }
+        // #185 diagnostic: the gateway rejects a STOP entry whose trigger sits the wrong side
+        // of the live quote (BUY_STOP <= ask). Log the submitted trigger vs the last market
+        // price we saw, so a rejection's stale-quote delta is visible — without a fresh
+        // getTick, which would add the signal-to-submission latency that causes the staleness.
+        if ("STOP" in prepared.type) {
+            log.info(
+                "STOP submit {} type={} price={} lastSeen={}",
+                request.id,
+                prepared.type,
+                prepared.price?.toPlainString(),
+                priceTracker?.lastPrice(request.symbol)?.toPlainString(),
+            )
+        }
         val resp = client.placeOrder(prepared)
         if (!isOrderSuccessful(resp.result.retcode)) {
             return reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
