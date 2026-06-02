@@ -45,24 +45,33 @@ internal class StateFileWriter(
             val dir = rootDir.resolve(strategyName)
             Files.createDirectories(dir)
             val target = dir.resolve(fileName)
-            val temp = dir.resolve("$fileName.tmp")
-            Files.writeString(
-                temp,
-                json,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE,
-            )
+            // Unique temp per write. A shared temp lets concurrent writers to the same
+            // target collide: one writer's rename consumes the temp another is mid-write on,
+            // so the loser's move fails. e.g. two saves of bracket-pairs.json racing under
+            // the async persistor's caller-runs fallback.
+            val temp = Files.createTempFile(dir, "$fileName.", ".tmp")
             try {
-                Files.move(
+                Files.writeString(
                     temp,
-                    target,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
+                    json,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE,
                 )
-            } catch (_: UnsupportedOperationException) {
-                // ATOMIC_MOVE not supported on this filesystem; fall back to non-atomic.
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
+                try {
+                    Files.move(
+                        temp,
+                        target,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING,
+                    )
+                } catch (_: UnsupportedOperationException) {
+                    // ATOMIC_MOVE not supported on this filesystem; fall back to non-atomic.
+                    Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
+                }
+            } finally {
+                // On success the temp is already renamed away; on failure this reaps the
+                // orphan so unique temps don't accumulate.
+                Files.deleteIfExists(temp)
             }
             totalWrites.incrementAndGet()
             totalBytesWritten.addAndGet(json.length.toLong())
