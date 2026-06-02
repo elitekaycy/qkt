@@ -106,7 +106,9 @@ class ReplayEngine(
         for ((id, _) in strategies) strategyPnL.setStartingBalance(id, startingBalance)
         val bus = EventBus(clock, sequencer)
         val engine = Engine(bus, priceTracker)
-        val candleHub = com.qkt.dsl.compile.CandleHub()
+        val candleHub =
+            com.qkt.dsl.compile
+                .CandleHub()
 
         val dslStrategies =
             strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
@@ -232,8 +234,7 @@ class ReplayEngine(
     fun equity(): BigDecimal = startingBalance + pnl.realizedTotal() + pnl.unrealizedTotal()
 
     /** Currently open (non-flat) positions keyed by symbol. */
-    fun openPositions(): Map<String, Position> =
-        positions.allPositions().filterValues { it.quantity.signum() != 0 }
+    fun openPositions(): Map<String, Position> = positions.allPositions().filterValues { it.quantity.signum() != 0 }
 
     /** Build a [BacktestResult] from current state — valid mid-replay or at end. */
     fun snapshot(): BacktestResult {

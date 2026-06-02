@@ -52,7 +52,11 @@ class ReplaySession(
     private var engine: ReplayEngine = buildEngine()
 
     private val candleWindow: TimeWindow?
-        get() = ast.streams.firstOrNull()?.timeframe?.let { TimeWindow.parse(it) }
+        get() =
+            ast.streams
+                .firstOrNull()
+                ?.timeframe
+                ?.let { TimeWindow.parse(it) }
 
     private fun parseOrThrow(): StrategyAst =
         when (val r = Dsl.parseFile(strategyPath)) {

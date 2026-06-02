@@ -3,17 +3,20 @@ package com.qkt.research
 import com.qkt.common.Money
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.Tick
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class ReplaySessionTest {
     private fun ticks() = (1..10).map { Tick("BACKTEST:BTCUSDT", Money.of((100 + it).toString()), it * 60_000L) }
 
-    private fun writeStrategy(dir: Path, threshold: String): Path {
+    private fun writeStrategy(
+        dir: Path,
+        threshold: String,
+    ): Path {
         val p = dir.resolve("s.qkt")
         Files.writeString(
             p,

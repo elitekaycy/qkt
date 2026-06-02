@@ -3,9 +3,9 @@ package com.qkt.research
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.Trade
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 
 class TapeRendererTest {
     private val footer =
@@ -39,7 +39,11 @@ class TapeRendererTest {
             StepResult(
                 tape = emptyList(),
                 footer = footer,
-                reloadErrors = listOf(com.qkt.dsl.parse.ParseError(2, 5, "unexpected token")),
+                reloadErrors =
+                    listOf(
+                        com.qkt.dsl.parse
+                            .ParseError(2, 5, "unexpected token"),
+                    ),
             )
         val out = TapeRenderer.render(r)
         assertThat(out).contains("2:5")

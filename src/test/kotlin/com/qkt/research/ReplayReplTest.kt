@@ -3,14 +3,14 @@ package com.qkt.research
 import com.qkt.common.Money
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.Tick
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import java.io.BufferedReader
 import java.io.StringReader
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class ReplayReplTest {
     @Test

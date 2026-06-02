@@ -13,13 +13,19 @@ sealed interface ReplayCommand {
     data object Run : ReplayCommand
 
     /** Advance [n] bars (primary timeframe), or [n] ticks when the strategy has no timeframe. */
-    data class StepBars(val n: Int) : ReplayCommand
+    data class StepBars(
+        val n: Int,
+    ) : ReplayCommand
 
     /** Advance by a wall-clock span of [millis]. */
-    data class StepDuration(val millis: Long) : ReplayCommand
+    data class StepDuration(
+        val millis: Long,
+    ) : ReplayCommand
 
     /** Advance until the engine clock reaches [epochMillis] (reset-and-forward if in the past). */
-    data class RunToTime(val epochMillis: Long) : ReplayCommand
+    data class RunToTime(
+        val epochMillis: Long,
+    ) : ReplayCommand
 
     /** Advance until the next fill. */
     data object RunToNextTrade : ReplayCommand
@@ -37,7 +43,9 @@ sealed interface ReplayCommand {
     data object Quit : ReplayCommand
 
     /** Unrecognised input; [input] is the trimmed line. */
-    data class Unknown(val input: String) : ReplayCommand
+    data class Unknown(
+        val input: String,
+    ) : ReplayCommand
 
     companion object {
         /** Parse one REPL line. Never throws — bad input returns [Unknown]. */
@@ -57,14 +65,20 @@ sealed interface ReplayCommand {
             }
         }
 
-        private fun parseRunTo(raw: String, args: List<String>): ReplayCommand {
+        private fun parseRunTo(
+            raw: String,
+            args: List<String>,
+        ): ReplayCommand {
             val arg = args.firstOrNull() ?: return Unknown(raw)
             if (arg == "next-trade") return RunToNextTrade
             val millis = parseInstantMillis(arg) ?: return Unknown(raw)
             return RunToTime(millis)
         }
 
-        private fun parseStep(raw: String, arg: String?): ReplayCommand {
+        private fun parseStep(
+            raw: String,
+            arg: String?,
+        ): ReplayCommand {
             if (arg == null) return Unknown(raw)
             arg.toIntOrNull()?.let { return StepBars(it) }
             val m = Regex("^(\\d+)([smhd])$").matchEntire(arg) ?: return Unknown(raw)
@@ -85,7 +99,11 @@ sealed interface ReplayCommand {
                 if (s.contains('T')) {
                     Instant.parse(if (s.endsWith("Z")) s else "${s}Z").toEpochMilli()
                 } else {
-                    LocalDate.parse(s).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+                    LocalDate
+                        .parse(s)
+                        .atStartOfDay(ZoneOffset.UTC)
+                        .toInstant()
+                        .toEpochMilli()
                 }
             } catch (e: java.time.format.DateTimeParseException) {
                 null
