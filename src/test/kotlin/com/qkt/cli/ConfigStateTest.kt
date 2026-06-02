@@ -10,14 +10,13 @@ import org.junit.jupiter.api.io.TempDir
 
 class ConfigStateTest {
     @Test
-    fun `state defaults to enabled with ~ slash qkt slash state dir`(
+    fun `state defaults to enabled`(
         @TempDir tmp: Path,
     ) {
         val cfg = tmp.resolve("qkt.config.yaml")
         Files.writeString(cfg, "source: tv\n")
         val c = Config.load(cfg)
         assertThat(c.stateEnabled).isTrue
-        assertThat(c.stateDir).endsWith("/.qkt/state")
     }
 
     @Test
@@ -34,7 +33,7 @@ class ConfigStateTest {
         )
         val c = Config.load(cfg)
         assertThat(c.stateEnabled).isFalse
-        assertThat(c.statePersistor()).isInstanceOf(NoopStatePersistor::class.java)
+        assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(NoopStatePersistor::class.java)
     }
 
     @Test
@@ -47,28 +46,25 @@ class ConfigStateTest {
             """
             state:
               enabled: true
-              dir: ${tmp.resolve("custom-state")}
             """.trimIndent(),
         )
         val c = Config.load(cfg)
         assertThat(c.stateEnabled).isTrue
-        assertThat(c.stateDir).isEqualTo(tmp.resolve("custom-state").toString())
-        assertThat(c.statePersistor()).isInstanceOf(FileStatePersistor::class.java)
+        assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(FileStatePersistor::class.java)
     }
 
     @Test
-    fun `state dir without ~ stays unchanged`(
+    fun `statePersistor writes strategy files under the given root`(
         @TempDir tmp: Path,
     ) {
         val cfg = tmp.resolve("qkt.config.yaml")
-        Files.writeString(
-            cfg,
-            """
-            state:
-              dir: /var/lib/qkt/state
-            """.trimIndent(),
-        )
+        Files.writeString(cfg, "source: tv\n")
         val c = Config.load(cfg)
-        assertThat(c.stateDir).isEqualTo("/var/lib/qkt/state")
+        val root = tmp.resolve("state")
+        val persistor = c.statePersistor(root)
+
+        persistor.saveBracketPairs("hedge-straddle", emptyList())
+
+        assertThat(root.resolve("hedge-straddle").resolve("bracket-pairs.json")).exists()
     }
 }
