@@ -82,4 +82,39 @@ class StateFileWriterTest {
             pool.shutdownNow()
         }
     }
+
+    @Test
+    fun `concurrent writes to the same file never collide or fail`(
+        @TempDir tmp: Path,
+    ) {
+        val w = StateFileWriter(tmp)
+        val v1 = """{"v":1}"""
+        val v2 = """{"v":2,"x":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"""
+        val writerCount = 16
+        val perWriter = 100
+        val pool = Executors.newFixedThreadPool(writerCount)
+        val ready = CountDownLatch(writerCount)
+        try {
+            repeat(writerCount) { t ->
+                pool.submit {
+                    ready.countDown()
+                    ready.await()
+                    repeat(perWriter) { i ->
+                        w.write("hedge", "legbook.json", if ((t + i) % 2 == 0) v1 else v2)
+                    }
+                }
+            }
+            pool.shutdown()
+            assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue
+        } finally {
+            pool.shutdownNow()
+        }
+
+        // A shared temp path makes concurrent writers race: one writer's rename consumes
+        // the temp another is mid-write on, so the loser's move fails. None may fail.
+        assertThat(w.failedWrites.get()).isZero
+        assertThat(w.totalWrites.get()).isEqualTo((writerCount * perWriter).toLong())
+        // Whatever commits is always one complete version — never a torn document.
+        assertThat(w.read("hedge", "legbook.json")).isIn(v1, v2)
+    }
 }
