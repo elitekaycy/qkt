@@ -147,7 +147,7 @@ class DaemonCommand(
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source)
 
-        val statePersistor = cfg.statePersistor()
+        val statePersistor = cfg.statePersistor(stateDir.stateRoot)
         val registry =
             StrategyRegistry(
                 StrategyHandle.RealFactory(
@@ -193,6 +193,7 @@ class DaemonCommand(
 
         println("[INFO] qkt ${BuildInfo.VERSION} daemon starting")
         println("[INFO] state directory: ${stateDir.root}")
+        println("[INFO] strategy state: ${stateDir.stateRoot}")
         println(
             "[INFO] control plane: http://127.0.0.1:${plane.boundPort} " +
                 "(state file: ${stateDir.controlPortFile})",
