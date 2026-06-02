@@ -17,6 +17,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.positions.PositionProvider
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
 import org.assertj.core.api.Assertions.assertThat
@@ -66,7 +67,13 @@ class LiveSessionBrokerCoverageTest {
     }
 
     /** Broker factory that should not be called — the validation must fire before factory invocation. */
-    private val unusedFactory: BrokerFactory = { _: EventBus, _: Clock, _: MarketPriceTracker, _: String? ->
+    private val unusedFactory: BrokerFactory = {
+        _: EventBus,
+        _: Clock,
+        _: MarketPriceTracker,
+        _: PositionProvider,
+        _: String?,
+        ->
         object : Broker {
             override val name: String = "unused"
             override val capabilities: Set<OrderTypeCapability> = emptySet()
@@ -114,7 +121,7 @@ class LiveSessionBrokerCoverageTest {
                 declaredStreams =
                     mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
             )
-        val paperFactory: BrokerFactory = { bus, clock, priceTracker, _ -> PaperBroker(bus, clock, priceTracker) }
+        val paperFactory: BrokerFactory = { bus, clock, priceTracker, _, _ -> PaperBroker(bus, clock, priceTracker) }
         val session =
             LiveSession(
                 strategies = listOf("alpha" to strategy),
@@ -128,6 +135,35 @@ class LiveSessionBrokerCoverageTest {
         val handle = session.start()
         handle.stop()
         handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
+    fun `factory receives the session PositionProvider (Bybit linear wiring, G1)`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("btc" to HubKey(broker = "BYBIT_LINEAR", symbol = "BTCUSDT", timeframe = "5m")),
+            )
+        var captured: PositionProvider? = null
+        val factory: BrokerFactory = { bus, clock, priceTracker, positions, _ ->
+            captured = positions
+            PaperBroker(bus, clock, priceTracker)
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("BYBIT_LINEAR:BTCUSDT"),
+                clock = FixedClock(time = 0L),
+                brokerFactories = mapOf("bybit_linear" to factory),
+            )
+
+        val handle = session.start()
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+        // A BYBIT_LINEAR: prefix resolves to the bybit_linear factory, which is handed the
+        // engine's PositionProvider — what BybitLinearBroker needs for position reconcile.
+        assertThat(captured).isNotNull()
     }
 
     @Test
