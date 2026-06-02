@@ -11,8 +11,9 @@ import java.math.BigDecimal
  * Durable storage for the in-memory engine state that doesn't survive restart:
  * leg metadata, bracket linkages, in-flight orders, and STACK_AT tier-fired state.
  *
- * Production implementations write atomic JSON files under `~/.qkt/state/<strategyId>/`.
- * Tests use [NoopStatePersistor] (in-memory) by default.
+ * Production implementations ([FileStatePersistor]) write atomic JSON files under
+ * `<stateRoot>/<strategyId>/`, where the root is the daemon state directory (honors
+ * `QKT_STATE_DIR`). Tests use [NoopStatePersistor] (in-memory) by default.
  *
  * All methods are write-on-mutate: the call site invokes a `save*` method synchronously
  * after every mutation to the underlying state object. Reads happen once at boot via
