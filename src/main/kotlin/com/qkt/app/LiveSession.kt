@@ -31,6 +31,7 @@ import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.StrategySummary
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
+import com.qkt.positions.PositionProvider
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.HaltRule
@@ -246,6 +247,7 @@ class LiveSession(
         bus: EventBus,
         clock: Clock,
         priceTracker: MarketPriceTracker,
+        positions: PositionProvider,
     ): Broker {
         if (brokerFactories.isEmpty()) return paperBroker
         val dslStrategies =
@@ -278,7 +280,7 @@ class LiveSession(
         val routes =
             brokerSymbols.map { (label, syms) ->
                 val factory = brokerFactories.getValue(label)
-                val instance = factory.invoke(bus, clock, priceTracker, owningStrategy)
+                val instance = factory.invoke(bus, clock, priceTracker, positions, owningStrategy)
                 builtBrokers.add(instance)
                 com.qkt.marketdata.source.SymbolPattern
                     .exactSet(syms.toSet()) to instance
@@ -414,7 +416,7 @@ class LiveSession(
         val strategyPositions = StrategyPositionTracker(persistor)
         val bus = EventBus(clock, sequencer)
         val paperBroker = PaperBroker(bus, clock, priceTracker)
-        val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker)
+        val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
