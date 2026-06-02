@@ -19,6 +19,18 @@ Phase 29 makes the qkt engine's in-memory state durable on disk so a daemon rest
 
 ---
 
+## Update — 2026-06-02 (#227)
+
+The `state.dir` config key documented below has been **removed**. The state directory is
+no longer set in `qkt.config.yaml`; it is the daemon state dir resolved by `StateDir`
+(`--state-dir` > `QKT_STATE_DIR` > `XDG_STATE_HOME/qkt` > `~/.local/state/qkt`), and
+strategy files live under `<stateDir>/state/<strategyId>/`. This fixed a prod bug where
+`QKT_STATE_DIR` was silently ignored and state landed on ephemeral container storage. The
+`state.dir` lines in the Configuration and "Custom state directory" sections below are
+superseded — set `QKT_STATE_DIR` (or `--state-dir`) instead. `Config.statePersistor()`
+now takes the root as a parameter. See
+`docs/superpowers/specs/2026-06-02-issue227-state-dir-unify-design.md`.
+
 ## What's new
 
 ### Persistor surface
@@ -252,7 +264,7 @@ Each integration test constructs a `NoopStatePersistor`, drives the engine throu
 - **No `MfeTracker` hwm persistence.** Tick-frequency state. Acceptable loss — on restart MFE re-warms from current price. The tier-fired flag IS persisted, so even if MFE re-crosses the threshold post-restart, the tier doesn't re-fire (the seed-from-persistor path in `StackOrchestrator` skips already-fired tiers).
 - **`OrderRequest.Bracket` is skipped from `pending-orders.json`.** Only `Market` / `Limit` / `Stop` / `IfTouched` variants persist. Bracket-pair linkage is captured separately in `bracket-pairs.json`. Engine-internal expansions (`ScaleOut`, `TimeExit`, `Stack`) are also skipped — they're tracker-derived, not directly submitted.
 - **Multi-position-per-symbol netting on `Broker.getOpenPositions()`.** MT5 reports one row per ticket; `MT5Broker` nets them into a signed-quantity `Position` via weighted-average entry. For multi-position brokers (Bybit linear), the current netting collapses concurrent longs+shorts that should be tracked separately. Bybit linear's override isn't implemented yet — returns empty, so reconcile is a no-op there.
-- **No multi-instance support.** Single-writer assumption. Two daemons writing to the same `state.dir` simultaneously will race on file writes. Out of scope indefinitely.
+- **No multi-instance support.** Single-writer assumption. Two daemons writing to the same state root simultaneously will race on file writes. Out of scope indefinitely.
 - **No encryption at rest.** State files contain trading metadata (leg sizes, prices) but no secrets. Encrypt the volume if your threat model requires.
 - **`AsyncStatePersistor` crash window.** Up to `queueCapacity` writes (default 1024) can be in-flight between mutation and disk flush. For typical trade-event rates that window is < 1 second; high-frequency strategies should size the queue and shutdown timeout to their throughput.
 - **No event-sourced audit log.** Snapshot-only. If compliance demands tamper-evident order history, Phase 30+ would add an append-only event log alongside the snapshots.
