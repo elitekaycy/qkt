@@ -133,11 +133,9 @@ object Routes {
                     alive.set(false)
                     false
                 }
-            // Immediate prelude so the client unblocks on response start
-            if (!writeFrame(": connected\n\n".toByteArray(Charsets.UTF_8))) {
-                runCatching { out.close() }
-                return@HttpHandler
-            }
+            // Subscribe before the prelude: a client that reacts to ": connected" by
+            // emitting events must not race the subscription. EventRing has no backlog, so
+            // any event appended before subscribe lands has no listener and is lost.
             val sub =
                 ring.subscribe { entry ->
                     if (!alive.get()) return@subscribe
@@ -149,6 +147,12 @@ object Routes {
                         )
                     writeFrame("event: ${entry.kind}\ndata: $payload\n\n".toByteArray(Charsets.UTF_8))
                 }
+            // Prelude so the client unblocks on response start.
+            if (!writeFrame(": connected\n\n".toByteArray(Charsets.UTF_8))) {
+                sub.close()
+                runCatching { out.close() }
+                return@HttpHandler
+            }
             try {
                 while (alive.get()) {
                     Thread.sleep(15_000)
