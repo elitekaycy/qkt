@@ -74,6 +74,15 @@ class LocalMarketSourceTest {
     }
 
     @Test
+    fun `ticks resolves a broker-prefixed symbol to the bare store and stamps the prefixed id`() {
+        val src = sourceAt("2024-01-16T00:00:00Z")
+        val range = TimeRange(Instant.parse("2024-01-15T00:00:00Z"), Instant.parse("2024-01-16T00:00:00Z"))
+        val ticks = src.ticks("BACKTEST:X", range).toList()
+        assertThat(ticks.map { it.timestamp }).containsExactly(day15 + 1000L, day15 + 31_000L, day15 + 61_000L)
+        assertThat(ticks.map { it.symbol }).allMatch { it == "BACKTEST:X" }
+    }
+
+    @Test
     fun `look ahead query throws`() {
         val src = sourceAt("2024-01-15T00:00:00Z")
         val range = TimeRange(Instant.parse("2024-01-15T00:00:00Z"), Instant.parse("2024-01-16T00:00:00Z"))
