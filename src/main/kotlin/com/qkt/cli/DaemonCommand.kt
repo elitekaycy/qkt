@@ -68,7 +68,13 @@ class DaemonCommand(
         val channelRegistry = ChannelRegistry.DEFAULT
         val channelNotifiers: List<Pair<ChannelConfig, Notifier>> =
             cfg.notify.enabledChannels().mapNotNull { ch ->
-                channelRegistry.get(ch.type)?.let { provider -> ch to provider.notifier(ch) }
+                val provider = channelRegistry.get(ch.type)
+                if (provider == null) {
+                    println("[WARN] unknown notify channel type: ${ch.type}")
+                    null
+                } else {
+                    ch to provider.notifier(ch)
+                }
             }
         val notifyEventKinds = cfg.notify.enabledEventKinds()
         val notifier: Notifier =
