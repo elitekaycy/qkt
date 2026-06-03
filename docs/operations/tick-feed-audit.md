@@ -81,7 +81,28 @@ multiple runs over time.
 
 ## Latest result
 
-_Pending — first live audit not yet run. See issue #54._
+**Not run — blocked, and not currently applicable to this deployment (2026-06-03, #54 parked).**
+
+Attempting the live audit against the prod `qkt` container surfaced three things:
+
+1. **TradingView blocks the prod VPS IP.** `curl https://data.tradingview.com/` from the
+   prod host returns `(52) Empty reply from server` (TCP/TLS connects, then TV drops it), and
+   the anonymous WebSocket gets a ping/pong timeout with zero ticks — a datacenter-IP block.
+   The audit captures `no samples` because the TV side never delivers.
+2. **This deployment doesn't use TradingView.** Prod config is `source: local`: every strategy
+   trades ticks *and* orders through the exness `mt5-gateway`. If authoring/backtesting also run
+   on MT5 bars (`qkt fetch EXNESS:XAUUSD`), TradingView is in no part of the path — so the
+   TV-vs-MT5 drift this tool measures is not a risk the current setup actually has.
+3. **The command can't bridge the two symbol conventions.** `--symbol XAUUSD` fails TV's
+   required `EXCHANGE:SYMBOL` form; the TV side needs `OANDA:XAUUSD`, but `audit-ticks` reuses the
+   one `--symbol` for the MT5 side too, and `MT5Symbol.toBroker` can't map an exchange-prefixed TV
+   symbol to the broker symbol. A working audit needs *separate* TV/MT5 symbols (as the
+   `runParityTicksXauusd` tool already takes), plus an authenticated TV token and a non-datacenter
+   IP for TV to serve the feed.
+
+When this becomes relevant again — i.e. if a strategy is ever authored or backtested against a
+TradingView feed it does not also execute on — reopen #54, fix the symbol handling, and run from a
+host TradingView will serve.
 
 | date | symbol | duration | samples | mean | median | p95 | max | notes |
 |------|--------|----------|---------|------|--------|-----|-----|-------|
