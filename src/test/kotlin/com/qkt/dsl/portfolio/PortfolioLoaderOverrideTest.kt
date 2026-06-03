@@ -90,4 +90,48 @@ class PortfolioLoaderOverrideTest {
         assertThatThrownBy { PortfolioLoader.load(pf) }
             .hasMessageContaining("riskPct")
     }
+
+    @Test
+    fun `conflicting overrides for the same alias is an error`(
+        @TempDir tmp: Path,
+    ) {
+        tmp.resolve("child.qkt").writeText(child)
+        val pf = tmp.resolve("portfolio.qkt")
+        pf.writeText(
+            """
+            PORTFOLIO book VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+            IMPORT 'child.qkt' AS a
+            RULES
+                WHEN btc.close > 100 RUN a OVERRIDE { riskPct = 0.008 }
+                RUN a OVERRIDE { riskPct = 0.003 }
+            """.trimIndent(),
+        )
+
+        assertThatThrownBy { PortfolioLoader.load(pf) }
+            .hasMessageContaining("conflicting")
+    }
+
+    @Test
+    fun `identical overrides for the same alias do not throw`(
+        @TempDir tmp: Path,
+    ) {
+        tmp.resolve("child.qkt").writeText(child)
+        val pf = tmp.resolve("portfolio.qkt")
+        pf.writeText(
+            """
+            PORTFOLIO book VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+            IMPORT 'child.qkt' AS a
+            RULES
+                WHEN btc.close > 100 RUN a OVERRIDE { riskPct = 0.008 }
+                RUN a OVERRIDE { riskPct = 0.008 }
+            """.trimIndent(),
+        )
+
+        val compiled = PortfolioLoader.load(pf)
+        assertThat(riskPctOf(compiled.children.first())).isEqualByComparingTo(BigDecimal("0.008"))
+    }
 }

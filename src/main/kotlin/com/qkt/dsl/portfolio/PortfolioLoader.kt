@@ -1,5 +1,8 @@
 package com.qkt.dsl.portfolio
 
+import com.qkt.dsl.ast.AlwaysRun
+import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.ParseResult
@@ -39,13 +42,13 @@ object PortfolioLoader {
                         error("parse error at $path: ${parsed.errors.joinToString { it.message }}")
                 }
 
-            val overridesByAlias: Map<String, Map<String, com.qkt.dsl.ast.ExprAst>> =
+            val overridesByAlias: Map<String, Map<String, ExprAst>> =
                 ast.rules
                     .mapNotNull { rule ->
                         val (alias, ov) =
                             when (rule) {
-                                is com.qkt.dsl.ast.WhenRun -> rule.alias to rule.overrides
-                                is com.qkt.dsl.ast.AlwaysRun -> rule.alias to rule.overrides
+                                is WhenRun -> rule.alias to rule.overrides
+                                is AlwaysRun -> rule.alias to rule.overrides
                             }
                         if (ov.isEmpty()) null else alias to ov
                     }.groupBy({ it.first }, { it.second })
@@ -83,9 +86,11 @@ object PortfolioLoader {
                     val declared = childAst.params.associateBy { it.name }
                     for ((key, value) in overrides) {
                         val decl = declared[key] ?: error("OVERRIDE: child '${imp.alias}' has no PARAM '$key'")
-                        require(value::class == decl.value::class) {
-                            "OVERRIDE: PARAM '$key' of '${imp.alias}' is " +
-                                "${decl.value::class.simpleName}, got ${value::class.simpleName}"
+                        if (value::class != decl.value::class) {
+                            error(
+                                "OVERRIDE: PARAM '$key' of '${imp.alias}' is " +
+                                    "${decl.value::class.simpleName}, got ${value::class.simpleName}",
+                            )
                         }
                     }
                     val effectiveAst =
