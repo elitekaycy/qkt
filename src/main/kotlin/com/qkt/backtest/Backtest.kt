@@ -178,20 +178,25 @@ class Backtest(
             window: TimeWindow?,
         ): TickFeed {
             val caps = source.capabilities
-            if (MarketSourceCapability.TICKS in caps) {
+            val ticksAvailable = MarketSourceCapability.TICKS in caps
+            if (ticksAvailable) {
                 val iter = source.ticks(symbol, range).iterator()
                 if (iter.hasNext()) {
                     val first = iter.next()
                     return SequenceTickFeed(sequenceOf(first) + iter.asSequence())
                 }
             }
-            require(MarketSourceCapability.BARS in caps) {
-                "no tick data for $symbol and source ${source.name} has no BARS to synthesize from"
+            // No recorded ticks for this symbol/range. Synthesize from OHLC bars when we can.
+            if (MarketSourceCapability.BARS in caps && window != null) {
+                return BarTickFeed(source.bars(symbol, window, range))
             }
-            requireNotNull(window) {
+            // Can't synthesize. A tick-capable source with an empty range is a legitimate gap
+            // (e.g. a market-closed day) — yield nothing. A bars-only source reaching here means
+            // no candle window was supplied, which is a real misconfiguration.
+            require(ticksAvailable) {
                 "bar-based backtest for $symbol needs a candle window (timeframe) — pass candleWindow"
             }
-            return BarTickFeed(source.bars(symbol, window, range))
+            return SequenceTickFeed(emptySequence())
         }
     }
 }
