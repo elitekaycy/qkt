@@ -48,8 +48,9 @@ RULES
     THEN BUY gold SIZING RISK $ (ACCOUNT.equity * riskPct)
 ```
 
-- **Types:** the scalar literal kinds the DSL already has — number (`BigDecimal`), boolean, string,
-  duration. A param's type is the type of its default; an override must match it.
+- **Types:** the scalar literal kinds the DSL's `ExprAst` actually has — number (`NumLit`/`BigDecimal`),
+  boolean (`BoolLit`), string (`StringLit`). (Duration is *not* an `ExprAst` literal, so it is out of
+  the MVP.) A param's type is the type of its default; an override must match it.
 - **Standalone:** a strategy with `PARAM`s runs directly (backtest/live) using the declared defaults —
   functionally identical to having hardcoded those literals.
 - **Reference:** a `PARAM` name resolves like a `LET` name in any expression. `PARAM` and `LET` names
@@ -94,19 +95,33 @@ Grounded in the current parser/AST (file:line from the codebase):
 
 ## Compile seam + determinism
 
-The override is a **pure, compile-time AST transform**, applied at the one place children are compiled:
+Params are resolved by **pure, compile-time AST substitution**, split across two places:
 
-- In `dsl/portfolio/PortfolioLoader.kt` (~42-77), each child file is parsed then compiled
-  (`AstCompiler().compile(childAst)`, ~line 66). **Before** that compile call, apply the alias's
-  overrides: produce a copy of `childAst` whose matching `ParamDecl` default values are replaced by the
-  override literals. Compile the transformed AST.
-- A `PARAM` lowers like a literal-valued binding (the same shape a `LET = <literal>` produces): a named
-  constant in the compiled `Strategy`. The override only changes which literal.
-- **Determinism:** compilation is synchronous, happens once at load, and runs the identical code path for
-  backtest (`BacktestCommand`) and live (`RunCommand`). The transform reads no clock, randomness, or
-  environment — only the static portfolio file. Given the same portfolio file, the compiled child is
-  bit-identical across backtest and live, so the invariant holds. (Confirmed against `ScheduleRunner`'s
-  tick-only time guarantee — params are resolved before any tick.)
+- **Substitution lives in `AstCompiler.compile` (`dsl/compile/AstCompiler.kt:27`).** At the top of
+  compile, every `PARAM`'s effective value is substituted for its `Ref(name)` occurrences across the
+  ENTIRE strategy AST — conditions, actions, and `LET` right-hand sides — producing a param-free AST,
+  which then compiles exactly as today. *Why a full-AST substitution and not the `LetResolver`:* the
+  existing `LetResolver` runs only over rule conditions (`AstCompiler:44`), not actions, and
+  `ExprCompiler` errors on any un-substituted bare `Ref` (`ExprCompiler.kt:112`). A `PARAM` must work
+  anywhere a value goes (notably inside `SIZING` actions), so it is substituted to a literal everywhere
+  before compile. Putting this in `AstCompiler` means standalone strategies (defaults) and portfolio
+  children (post-override) both get it from the one path.
+- **Overrides are applied in `dsl/portfolio/PortfolioLoader.kt` (~42-77), before `AstCompiler().compile`
+  (~line 66):** replace the matching `ParamDecl`'s default value with the override literal in a copy of
+  `childAst`, then compile. `AstCompiler` then substitutes the (overridden) values away.
+- **Determinism:** substitution is synchronous, happens once at load, on the identical path for backtest
+  (`BacktestCommand`) and live (`RunCommand`), reading only the static `.qkt` files (no clock/random/env).
+  A `PARAM` reference becomes the same literal it would be if hand-edited into the child, so the compiled
+  strategy is bit-identical backtest vs live. Params are resolved before any tick (consistent with
+  `ScheduleRunner`'s tick-only time guarantee), so the invariant holds.
+
+## Required relaxation: duplicate import paths
+
+`PortfolioAst.init` (`dsl/ast/Portfolio.kt:21-24`) currently forbids importing the same file twice —
+`require(paths.distinct().size == paths.size) { "PORTFOLIO import paths must be unique (no overrides in v1)" }`.
+That guard's own comment anticipates this feature. The core use case (one child file under two aliases
+with different params) needs it relaxed: **drop the unique-paths requirement** (keep the unique-*aliases*
+requirement at `:17-20`). Duplicate paths are now meaningful because overrides differentiate the instances.
 
 ## Validation / error handling
 
