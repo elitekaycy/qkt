@@ -21,7 +21,7 @@ class ConfigNotifyTest {
             """.trimIndent(),
         )
         val c = Config.load(cfg)
-        assertThat(c.notify.telegram.enabled).isFalse()
+        assertThat(c.notify.channels).isEmpty()
     }
 
     @Test
@@ -48,11 +48,12 @@ class ConfigNotifyTest {
             """.trimIndent(),
         )
         val c = Config.load(cfg)
-        assertThat(c.notify.telegram.enabled).isTrue()
-        assertThat(c.notify.telegram.botToken).isEqualTo("T")
-        assertThat(c.notify.telegram.chatId).isEqualTo("C")
-        assertThat(c.notify.telegram.dailySummaryUtc).isEqualTo("01:23")
-        assertThat(c.notify.telegram.events).containsExactlyInAnyOrder(
+        val telegram = c.notify.channels.single()
+        assertThat(telegram.type).isEqualTo("telegram")
+        assertThat(telegram.enabled).isTrue()
+        assertThat(telegram.settings).containsEntry("bot_token", "T").containsEntry("chat_id", "C")
+        assertThat(telegram.dailySummaryUtc).isEqualTo("01:23")
+        assertThat(telegram.events).containsExactlyInAnyOrder(
             NotifyEventKind.ORDER_REJECTED,
             NotifyEventKind.HALTED,
         )

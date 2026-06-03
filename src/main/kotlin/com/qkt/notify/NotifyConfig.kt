@@ -20,41 +20,38 @@ enum class NotifyEventKind(
     }
 }
 
-data class TelegramConfig(
-    val enabled: Boolean,
-    val botToken: String,
-    val chatId: String,
-    val dailySummaryUtc: String, // "" disables
-    val queueCapacity: Int,
-    val events: Set<NotifyEventKind>,
-)
-
 data class NotifyConfig(
-    val telegram: TelegramConfig,
+    val channels: List<ChannelConfig>,
 ) {
+    fun enabledChannels(): List<ChannelConfig> = channels.filter { it.enabled }
+
+    fun enabledEventKinds(): Set<NotifyEventKind> = enabledChannels().flatMap { it.events }.toSet()
+
     companion object {
         private val log = LoggerFactory.getLogger(NotifyConfig::class.java)
+        private val COMMON_KEYS = setOf("enabled", "commands", "events", "daily_summary_utc")
 
-        val DISABLED: NotifyConfig =
-            NotifyConfig(
-                telegram =
-                    TelegramConfig(
-                        enabled = false,
-                        botToken = "",
-                        chatId = "",
-                        dailySummaryUtc = "",
-                        queueCapacity = 100,
-                        events = emptySet(),
-                    ),
-            )
+        val DISABLED: NotifyConfig = NotifyConfig(emptyList())
 
         @Suppress("UNCHECKED_CAST")
         fun parse(raw: Any?): NotifyConfig {
             if (raw == null) return DISABLED
             val map = raw as? Map<String, Any?> ?: return DISABLED
-            val tg = map["telegram"] as? Map<String, Any?> ?: return DISABLED
+            val channels =
+                map.entries.mapNotNull { (type, block) ->
+                    val sub = block as? Map<String, Any?> ?: return@mapNotNull null
+                    parseChannel(type, sub)
+                }
+            return NotifyConfig(channels)
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun parseChannel(
+            type: String,
+            sub: Map<String, Any?>,
+        ): ChannelConfig {
             val events =
-                (tg["events"] as? List<Any?>)
+                (sub["events"] as? List<Any?>)
                     ?.mapNotNull { it?.toString() }
                     ?.mapNotNull { name ->
                         NotifyEventKind.BY_NAME[name].also {
@@ -62,16 +59,17 @@ data class NotifyConfig(
                         }
                     }?.toSet()
                     ?: emptySet()
-            return NotifyConfig(
-                telegram =
-                    TelegramConfig(
-                        enabled = (tg["enabled"]?.toString()?.equals("true", ignoreCase = true)) ?: false,
-                        botToken = tg["bot_token"]?.toString().orEmpty(),
-                        chatId = tg["chat_id"]?.toString().orEmpty(),
-                        dailySummaryUtc = tg["daily_summary_utc"]?.toString() ?: "",
-                        queueCapacity = tg["queue_capacity"]?.toString()?.toIntOrNull() ?: 100,
-                        events = events,
-                    ),
+            val settings =
+                sub
+                    .filterKeys { it !in COMMON_KEYS }
+                    .mapValues { (_, v) -> v?.toString() ?: "" }
+            return ChannelConfig(
+                type = type,
+                enabled = sub["enabled"]?.toString()?.equals("true", ignoreCase = true) ?: false,
+                commands = sub["commands"]?.toString()?.equals("true", ignoreCase = true) ?: false,
+                events = events,
+                dailySummaryUtc = sub["daily_summary_utc"]?.toString() ?: "",
+                settings = settings,
             )
         }
     }
