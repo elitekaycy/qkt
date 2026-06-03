@@ -50,7 +50,7 @@ class BacktestCommand(
                 ?.filter { it.isNotEmpty() }
         val format: ReportFormat = if (args.flag("json")) ReportFormat.Json else ReportFormat.Text
 
-        val declaredSymbols = ast.streams.map { it.symbol }.distinct()
+        val declaredSymbols = ast.streams.map { it.qktSymbol }.distinct()
         val symbols =
             if (symbolsOverride != null) {
                 val unknown = symbolsOverride.filter { it !in declaredSymbols }
