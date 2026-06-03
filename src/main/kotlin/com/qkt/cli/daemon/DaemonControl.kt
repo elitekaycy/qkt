@@ -18,6 +18,18 @@ data class ControlResult(
     val unknown: List<String> = emptyList(),
 )
 
+/** A point-in-time view of every deployed strategy's run/halt state. */
+data class StatusReport(
+    val strategies: List<StrategyStatus>,
+)
+
+/** One strategy's state: whether its session is running and whether it is currently halted. */
+data class StrategyStatus(
+    val name: String,
+    val running: Boolean,
+    val halted: Boolean,
+)
+
 /**
  * In-process control surface over the running daemon. The HTTP control routes, the CLI
  * (via HTTP), and (later) inbound command channels all go through this one type so the
@@ -27,6 +39,8 @@ interface DaemonControl {
     fun halt(target: Target): ControlResult
 
     fun resume(target: Target): ControlResult
+
+    fun status(): StatusReport
 }
 
 /** [DaemonControl] backed by the live [StrategyRegistry]. */
@@ -36,6 +50,11 @@ class RegistryDaemonControl(
     override fun halt(target: Target): ControlResult = apply(target) { it.live.halt("operator") }
 
     override fun resume(target: Target): ControlResult = apply(target) { it.live.resume() }
+
+    override fun status(): StatusReport =
+        StatusReport(
+            registry.list().map { StrategyStatus(it.name, it.live.running, it.live.isHalted()) },
+        )
 
     private fun apply(
         target: Target,

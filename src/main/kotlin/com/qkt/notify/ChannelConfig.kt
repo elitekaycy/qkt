@@ -10,7 +10,7 @@ package com.qkt.notify
 data class ChannelConfig(
     val type: String,
     val enabled: Boolean,
-    /** Inbound control surface; parsed now, consumed in a later phase. */
+    /** When true, the daemon runs an inbound command channel on this channel's transport. */
     val commands: Boolean = false,
     val events: Set<NotifyEventKind> = emptySet(),
     /** "" disables the daily summary; "HH:MM" enables it. */

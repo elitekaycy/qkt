@@ -1,10 +1,13 @@
 package com.qkt.cli
 
+import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
+import com.qkt.cli.daemon.RegistryDaemonControl
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
+import com.qkt.cli.daemon.TelegramCommandChannel
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.ChannelConfig
@@ -180,6 +183,12 @@ class DaemonCommand(
                 ),
             )
         registryRef.set(registry)
+        val daemonControl = RegistryDaemonControl(registry)
+        val commandChannels: List<CommandChannel> =
+            cfg.notify
+                .enabledChannels()
+                .filter { it.commands && it.type == "telegram" }
+                .mapNotNull { TelegramCommandChannel.from(it, daemonControl) }
         val startedAt = Instant.now()
         val stopLatch = CountDownLatch(1)
 
@@ -207,6 +216,7 @@ class DaemonCommand(
             )
         plane.start()
         stateDir.writeControlPort(plane.boundPort)
+        commandChannels.forEach { it.start() }
 
         println("[INFO] qkt ${BuildInfo.VERSION} daemon starting")
         println("[INFO] state directory: ${stateDir.root}")
@@ -272,6 +282,7 @@ class DaemonCommand(
                     registry.stopAll()
                     runCatching { bybitClient?.close() }
                     plane.close()
+                    commandChannels.forEach { runCatching { it.close() } }
                     dailySummarySchedulers.forEach { it.close() }
                     notifier.close()
                     stateDir.deleteControlPort()
@@ -289,6 +300,7 @@ class DaemonCommand(
             runCatching { registry.stopAll() }
             runCatching { bybitClient?.close() }
             runCatching { plane.close() }
+            commandChannels.forEach { runCatching { it.close() } }
             runCatching { dailySummarySchedulers.forEach { it.close() } }
             runCatching { notifier.close() }
             runCatching { stateDir.deleteControlPort() }

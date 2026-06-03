@@ -708,6 +708,8 @@ class LiveSession(
                 riskState.resume()
             }
 
+            override fun isHalted(): Boolean = riskState.halted
+
             override fun flatten() {
                 val strategyId = strategies.firstOrNull()?.first ?: return
                 val current = positions.allPositions()
