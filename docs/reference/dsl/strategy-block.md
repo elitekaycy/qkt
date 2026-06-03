@@ -103,6 +103,30 @@ Each entry:
 
 Multiple streams = a multi-asset strategy. See [Streams](streams.md) for the full broker prefix / timeframe / multi-stream details.
 
+## `PARAM` declarations (optional)
+
+Declare an overridable scalar with a default value. A portfolio can retune it via `OVERRIDE` without touching the child file.
+
+```qkt
+PARAM riskPct = 0.01      -- default; a portfolio OVERRIDE can change this per-alias
+PARAM fastPeriod = 9
+```
+
+Use the name anywhere an expression is valid — conditions, sizing, indicator arguments:
+
+```qkt
+PARAM riskPct = 0.01
+
+RULES
+    WHEN btc.close > 100
+    THEN BUY btc SIZING riskPct
+```
+
+Constraints:
+- The value must be a literal: number, `TRUE`/`FALSE`, or a quoted string. No expressions.
+- The type is fixed at declaration. A portfolio override that changes a number to a string is a compile-time error.
+- `PARAM` names must be unique within a strategy.
+
 ## `LET` clauses (optional)
 
 Name an expression once, reuse it in many rules. Evaluated lazily per tick.
