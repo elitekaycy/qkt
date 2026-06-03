@@ -62,12 +62,16 @@ class LiveSessionHaltTest {
             ).start()
 
         // Engine thread is blocked on feedLatch — session is alive, not terminated.
+        assertThat(handle.isHalted()).isFalse()
+
         handle.halt("operator")
         assertThat(halted).hasSize(1)
         assertThat(halted.first().reason).isEqualTo("operator")
+        assertThat(handle.isHalted()).isTrue()
 
         handle.resume()
         assertThat(resumed).hasSize(1)
+        assertThat(handle.isHalted()).isFalse()
 
         // Let the engine thread drain and exit cleanly.
         feedLatch.countDown()

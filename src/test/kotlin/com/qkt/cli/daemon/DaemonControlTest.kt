@@ -28,10 +28,13 @@ class DaemonControlTest {
         opened.clear()
     }
 
-    private class RecordingHandle : LiveSessionHandle {
+    private class RecordingHandle(
+        initialRunning: Boolean = true,
+        private var halted: Boolean = false,
+    ) : LiveSessionHandle {
         val halts = mutableListOf<String>()
         var resumes = 0
-        private val alive = AtomicBoolean(true)
+        private val alive = AtomicBoolean(initialRunning)
 
         override val running: Boolean get() = alive.get()
         override val droppedTicks: Long = 0L
@@ -50,11 +53,15 @@ class DaemonControlTest {
 
         override fun halt(reason: String) {
             halts.add(reason)
+            halted = true
         }
 
         override fun resume() {
             resumes++
+            halted = false
         }
+
+        override fun isHalted(): Boolean = halted
     }
 
     private fun stubAst(name: String): StrategyAst =
@@ -159,5 +166,31 @@ class DaemonControlTest {
         assertThat(result.affected).containsExactlyInAnyOrder("alpha", "beta")
         assertThat(handles.getValue("alpha").resumes).isEqualTo(1)
         assertThat(handles.getValue("beta").resumes).isEqualTo(1)
+    }
+
+    @Test
+    fun `status returns one StrategyStatus per deployed strategy`(
+        @TempDir tmp: Path,
+    ) {
+        val names = listOf("alpha", "beta")
+        val (registry, handles) = registryWith(tmp, names)
+        // alpha: running, not halted; beta: running, halted
+        handles.getValue("beta").halt("operator")
+        val report = RegistryDaemonControl(registry).status()
+        assertThat(report.strategies).hasSize(2)
+        val byName = report.strategies.associateBy { it.name }
+        assertThat(byName.getValue("alpha").running).isTrue()
+        assertThat(byName.getValue("alpha").halted).isFalse()
+        assertThat(byName.getValue("beta").running).isTrue()
+        assertThat(byName.getValue("beta").halted).isTrue()
+    }
+
+    @Test
+    fun `status on empty registry returns empty report`(
+        @TempDir tmp: Path,
+    ) {
+        val (registry, _) = registryWith(tmp, emptyList())
+        val report = RegistryDaemonControl(registry).status()
+        assertThat(report.strategies).isEmpty()
     }
 }
