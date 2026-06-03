@@ -18,10 +18,6 @@ data class PortfolioAst(
         require(aliases.distinct().size == aliases.size) {
             "PORTFOLIO aliases must be unique: $aliases"
         }
-        val paths = imports.map { it.path }
-        require(paths.distinct().size == paths.size) {
-            "PORTFOLIO import paths must be unique (no overrides in v1): $paths"
-        }
         val knownAliases = aliases.toSet()
         for (rule in rules) {
             val refAlias =
@@ -81,9 +77,11 @@ data class WhenRun(
     val cond: ExprAst,
     val alias: String,
     val weight: BigDecimal? = null,
+    val overrides: Map<String, ExprAst> = emptyMap(),
 ) : PortfolioRule
 
 data class AlwaysRun(
     val alias: String,
     val weight: BigDecimal? = null,
+    val overrides: Map<String, ExprAst> = emptyMap(),
 ) : PortfolioRule
