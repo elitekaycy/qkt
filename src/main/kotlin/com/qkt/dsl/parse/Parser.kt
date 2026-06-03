@@ -51,6 +51,7 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
+import com.qkt.dsl.ast.ParamDecl
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
@@ -264,6 +265,15 @@ class Parser(
         val streams = symbolsBlock.streams
         val syncGroups = symbolsBlock.syncGroups
 
+        val params =
+            run {
+                val acc = mutableListOf<ParamDecl>()
+                while (peek().kind == TokenKind.PARAM) {
+                    tryParse { parseParams() }?.let { acc.addAll(it) }
+                }
+                acc
+            }
+
         val lets =
             if (peek().kind == TokenKind.LET) {
                 tryParse { parseLet() } ?: emptyList()
@@ -293,6 +303,7 @@ class Parser(
                 streams = streams,
                 constants = emptyList(),
                 lets = lets,
+                params = params,
                 defaults = defaults,
                 rules = rules,
                 syncGroups = syncGroups,
@@ -310,6 +321,42 @@ class Parser(
             val expr = parseExpr()
             out.add(LetDecl(name, expr))
         } while (match(TokenKind.COMMA))
+        return out
+    }
+
+    private fun parseLiteral(): ExprAst {
+        val negate = match(TokenKind.MINUS)
+        return when (peek().kind) {
+            TokenKind.NUMBER -> {
+                val t = advance()
+                val n = t.lexeme.toBigDecimalOrNull() ?: error("expected a number literal, got '${t.lexeme}'")
+                NumLit(if (negate) n.negate() else n)
+            }
+            TokenKind.TRUE -> {
+                advance()
+                if (negate) error("cannot negate a boolean")
+                BoolLit(true)
+            }
+            TokenKind.FALSE -> {
+                advance()
+                if (negate) error("cannot negate a boolean")
+                BoolLit(false)
+            }
+            TokenKind.STRING -> {
+                val t = advance()
+                if (negate) error("cannot negate a string")
+                StringLit(t.lexeme)
+            }
+            else -> error("expected a literal value (number, TRUE/FALSE, or string), got '${peek().lexeme}'")
+        }
+    }
+
+    private fun parseParams(): List<ParamDecl> {
+        val out = mutableListOf<ParamDecl>()
+        expect(TokenKind.PARAM, "expected PARAM")
+        val name = expect(TokenKind.IDENT, "expected param name").lexeme
+        expect(TokenKind.EQ, "expected '=' after param name")
+        out.add(ParamDecl(name, parseLiteral()))
         return out
     }
 
@@ -1555,6 +1602,7 @@ class Parser(
                 TokenKind.DEFAULTS,
                 TokenKind.SYMBOLS,
                 TokenKind.LET,
+                TokenKind.PARAM,
                 TokenKind.RULES,
                 TokenKind.WHEN,
                 TokenKind.FOR,
