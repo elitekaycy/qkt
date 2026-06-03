@@ -33,6 +33,12 @@ object ControlRoutes {
                     method == "GET" && path == "/list" -> handleList(ex, registry)
                     method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, path)
                     method == "POST" && path.startsWith("/start/") -> handleStart(ex, registry, path)
+                    method == "POST" && path == "/halt" -> handleHalt(ex, registry, null)
+                    method == "POST" && path.startsWith("/halt/") ->
+                        handleHalt(ex, registry, path.removePrefix("/halt/").trim('/').ifBlank { null })
+                    method == "POST" && path == "/resume" -> handleResume(ex, registry, null)
+                    method == "POST" && path.startsWith("/resume/") ->
+                        handleResume(ex, registry, path.removePrefix("/resume/").trim('/').ifBlank { null })
                     method == "POST" && path == "/shutdown" -> handleShutdown(ex, shutdown)
                     method == "GET" && path.startsWith("/logs/") ->
                         handleLogs(ex, registry, stateDir, path)
@@ -461,6 +467,35 @@ object ControlRoutes {
             start()
         }
     }
+
+    private fun handleHalt(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        name: String?,
+    ) {
+        val target = if (name == null) Target.All else Target.Strategy(name)
+        val result = RegistryDaemonControl(registry).halt(target)
+        if (result.unknown.isNotEmpty()) {
+            return respond(ex, 404, """{"error":"unknown strategy: ${result.unknown.first()}"}""")
+        }
+        respond(ex, 200, """{"state":"halted","affected":${jsonArray(result.affected)}}""")
+    }
+
+    private fun handleResume(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        name: String?,
+    ) {
+        val target = if (name == null) Target.All else Target.Strategy(name)
+        val result = RegistryDaemonControl(registry).resume(target)
+        if (result.unknown.isNotEmpty()) {
+            return respond(ex, 404, """{"error":"unknown strategy: ${result.unknown.first()}"}""")
+        }
+        respond(ex, 200, """{"state":"resumed","affected":${jsonArray(result.affected)}}""")
+    }
+
+    private fun jsonArray(items: List<String>): String =
+        items.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
 
     private fun handleStop(
         ex: HttpExchange,
