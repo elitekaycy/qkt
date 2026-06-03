@@ -300,7 +300,7 @@ class DaemonCommand(
             runCatching { registry.stopAll() }
             runCatching { bybitClient?.close() }
             runCatching { plane.close() }
-            runCatching { commandChannels.forEach { runCatching { it.close() } } }
+            commandChannels.forEach { runCatching { it.close() } }
             runCatching { dailySummarySchedulers.forEach { it.close() } }
             runCatching { notifier.close() }
             runCatching { stateDir.deleteControlPort() }
