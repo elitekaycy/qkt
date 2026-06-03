@@ -126,6 +126,13 @@ class LiveSession(
      * at zero. e.g. {"book:hs" -> 60000} -> the hs child's ACCOUNT.equity reads 60000.
      */
     private val startingBalances: Map<String, java.math.BigDecimal> = emptyMap(),
+    /**
+     * Injectable event bus for tests that need to observe bus events (e.g. [com.qkt.events.RiskEvent]).
+     * When `null` (the default), [start] constructs its own bus — the normal production path.
+     * e.g. test passes a bus, subscribes to [com.qkt.events.RiskEvent.Halted], calls
+     * [LiveSessionHandle.halt], then asserts the event arrived.
+     */
+    private val busOverride: EventBus? = null,
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -422,7 +429,7 @@ class LiveSession(
         val priceTracker = MarketPriceTracker()
         val positions = PositionTracker()
         val strategyPositions = StrategyPositionTracker(persistor)
-        val bus = EventBus(clock, sequencer)
+        val bus = busOverride ?: EventBus(clock, sequencer)
         val paperBroker = PaperBroker(bus, clock, priceTracker)
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
@@ -691,6 +698,14 @@ class LiveSession(
                     }
                 }
                 return out
+            }
+
+            override fun halt(reason: String) {
+                riskState.halt(reason)
+            }
+
+            override fun resume() {
+                riskState.resume()
             }
 
             override fun flatten() {

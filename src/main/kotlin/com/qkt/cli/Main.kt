@@ -16,6 +16,8 @@ internal fun runMain(argv: Array<String>): Int {
             "list" -> ListCommand(args).run()
             "stop" -> StopCommand(args).run()
             "start" -> StartCommand(args).run()
+            "halt" -> HaltCommand(args).run()
+            "resume" -> ResumeCommand(args).run()
             "brokers" -> BrokersCommand(args).run()
             "editor" -> EditorCommand(args).run()
             "create" -> CreateCommand(args).run()
