@@ -122,8 +122,13 @@ open class ControlClient(
         val url = if (name == null) "${baseUrl()}/halt" else "${baseUrl()}/halt/$name"
         val resp =
             http
-                .newCall(Request.Builder().url(url).post("".toRequestBody(JSON_MEDIA)).build())
-                .execute()
+                .newCall(
+                    Request
+                        .Builder()
+                        .url(url)
+                        .post("".toRequestBody(JSON_MEDIA))
+                        .build(),
+                ).execute()
         return readOrThrow(resp)
     }
 
@@ -131,8 +136,13 @@ open class ControlClient(
         val url = if (name == null) "${baseUrl()}/resume" else "${baseUrl()}/resume/$name"
         val resp =
             http
-                .newCall(Request.Builder().url(url).post("".toRequestBody(JSON_MEDIA)).build())
-                .execute()
+                .newCall(
+                    Request
+                        .Builder()
+                        .url(url)
+                        .post("".toRequestBody(JSON_MEDIA))
+                        .build(),
+                ).execute()
         return readOrThrow(resp)
     }
 
