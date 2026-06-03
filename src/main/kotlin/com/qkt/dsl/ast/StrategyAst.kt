@@ -8,6 +8,7 @@ data class StrategyAst(
     val streams: List<StreamDecl>,
     val constants: List<ConstantDecl>,
     val lets: List<LetDecl>,
+    val params: List<ParamDecl> = emptyList(),
     val defaults: DefaultsBlock?,
     val rules: List<RuleAst>,
     val syncGroups: List<SyncGroupDecl> = emptyList(),
@@ -16,6 +17,10 @@ data class StrategyAst(
     init {
         require(name.isNotBlank()) { "StrategyAst.name must not be blank" }
         require(version >= 0) { "StrategyAst.version must be >= 0: $version" }
+        val paramNames = params.map { it.name }
+        require(paramNames.distinct().size == paramNames.size) { "duplicate PARAM name in: $paramNames" }
+        val letNames = lets.map { it.name }.toSet()
+        for (n in paramNames) require(n !in letNames) { "PARAM '$n' collides with a LET of the same name" }
     }
 }
 
@@ -52,6 +57,18 @@ data class LetDecl(
 ) {
     init {
         require(name.isNotBlank()) { "LetDecl.name must not be blank" }
+    }
+}
+
+data class ParamDecl(
+    val name: String,
+    val value: ExprAst,
+) {
+    init {
+        require(name.isNotBlank()) { "ParamDecl.name must not be blank" }
+        require(value is NumLit || value is BoolLit || value is StringLit) {
+            "PARAM '$name' must be a literal value (number, true/false, or string)"
+        }
     }
 }
 

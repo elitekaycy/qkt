@@ -1,5 +1,8 @@
 package com.qkt.dsl.portfolio
 
+import com.qkt.dsl.ast.AlwaysRun
+import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.ParseResult
@@ -39,6 +42,22 @@ object PortfolioLoader {
                         error("parse error at $path: ${parsed.errors.joinToString { it.message }}")
                 }
 
+            val overridesByAlias: Map<String, Map<String, ExprAst>> =
+                ast.rules
+                    .mapNotNull { rule ->
+                        val (alias, ov) =
+                            when (rule) {
+                                is WhenRun -> rule.alias to rule.overrides
+                                is AlwaysRun -> rule.alias to rule.overrides
+                            }
+                        if (ov.isEmpty()) null else alias to ov
+                    }.groupBy({ it.first }, { it.second })
+                    .mapValues { (alias, list) ->
+                        val distinct = list.distinct()
+                        if (distinct.size > 1) error("conflicting OVERRIDE for alias '$alias'")
+                        distinct.first()
+                    }
+
             val children =
                 ast.imports.map { imp ->
                     val childPath =
@@ -63,16 +82,38 @@ object PortfolioLoader {
                             is ParseResult.Failure ->
                                 error("parse error at $childPath: ${childParsed.errors.joinToString { it.message }}")
                         }
-                    val compiled = AstCompiler().compile(childAst)
+                    val overrides = overridesByAlias[imp.alias].orEmpty()
+                    val declared = childAst.params.associateBy { it.name }
+                    for ((key, value) in overrides) {
+                        val decl = declared[key] ?: error("OVERRIDE: child '${imp.alias}' has no PARAM '$key'")
+                        if (value::class != decl.value::class) {
+                            error(
+                                "OVERRIDE: PARAM '$key' of '${imp.alias}' is " +
+                                    "${decl.value::class.simpleName}, got ${value::class.simpleName}",
+                            )
+                        }
+                    }
+                    val effectiveAst =
+                        if (overrides.isEmpty()) {
+                            childAst
+                        } else {
+                            childAst.copy(
+                                params =
+                                    childAst.params.map { p ->
+                                        overrides[p.name]?.let { p.copy(value = it) } ?: p
+                                    },
+                            )
+                        }
+                    val compiled = AstCompiler().compile(effectiveAst)
                     val childStrategyId = "${ast.name}:${imp.alias}"
                     CompiledChild(
                         alias = imp.alias,
                         hold = imp.hold,
                         strategyId = childStrategyId,
                         compiled = compiled,
-                        streams = childAst.streams.map { it.alias },
-                        symbols = childAst.streams.map { it.symbol }.distinct(),
-                        ast = childAst,
+                        streams = effectiveAst.streams.map { it.alias },
+                        symbols = effectiveAst.streams.map { it.symbol }.distinct(),
+                        ast = effectiveAst,
                     )
                 }
             return PortfolioCompiled(ast, children)
