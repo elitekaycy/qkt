@@ -48,6 +48,9 @@ interface LiveSessionHandle {
     /** Reverse [halt]: re-enable new-order submission. Default no-op. */
     fun resume() {}
 
+    /** Whether this session is currently halted (operator halt or a risk auto-halt). */
+    fun isHalted(): Boolean = false
+
     /** Cancels all working orders and flattens any open position at market. */
     fun flatten()
 
