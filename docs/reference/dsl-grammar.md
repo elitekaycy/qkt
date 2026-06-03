@@ -23,6 +23,9 @@ SYMBOLS
     <alias> = <BROKER>:<symbol> EVERY <timeframe>
     [ ... more streams ... ]
 
+[ PARAM <name> = <literal> ]
+[ ... more PARAMs ... ]
+
 [ LET <name> = <expression> ... ]
 
 RULES
@@ -32,6 +35,8 @@ RULES
 
 [ FOR EACH <ident> IN <stream-list> DO ... ]
 ```
+
+`PARAM` declares an overridable scalar (number, boolean, or string) with a default. Use the name in conditions and actions. A portfolio can override it via `RUN <alias> OVERRIDE { key = value }` — e.g. `PARAM riskPct = 0.01` in the child becomes `0.008` in an aggressive portfolio slot.
 
 ## PORTFOLIO
 
@@ -44,11 +49,13 @@ IMPORT '<path>' AS <alias> [ HOLD ]
 [ ... more imports ... ]
 
 RULES
-    [ WHEN <condition> ] RUN <alias>
+    [ WHEN <condition> ] RUN <alias> [ OVERRIDE { <key> = <literal> ... } ]
     [ ... more rules ... ]
 ```
 
 `HOLD` keeps a child's positions when the supervisor deactivates it. Without HOLD, deactivation flattens.
+
+`OVERRIDE` retunes a child's `PARAM` values for this portfolio deployment without editing the child file. Keys must match `PARAM` names declared in the child strategy; types must match.
 
 ## Stream declaration
 

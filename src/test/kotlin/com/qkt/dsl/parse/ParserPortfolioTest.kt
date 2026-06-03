@@ -2,6 +2,7 @@ package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.ImportClause
+import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PortfolioAst
 import com.qkt.dsl.ast.WhenRun
 import org.assertj.core.api.Assertions.assertThat
@@ -86,16 +87,44 @@ class ParserPortfolioTest {
     }
 
     @Test
-    fun `PORTFOLIO with duplicate import path rejected`() {
-        val failure =
-            parsePortfolioFailure(
+    fun `PORTFOLIO with duplicate import path is allowed`() {
+        val ast =
+            parsePortfolioText(
                 """
                 PORTFOLIO dup VERSION 1
                 IMPORT 'same.qkt' AS x
                 IMPORT 'same.qkt' AS y
+                RULES
+                    RUN x
+                    RUN y
                 """.trimIndent(),
             )
-        assertThat(failure.errors.joinToString { it.message }).contains("import paths must be unique")
+        assertThat(ast.imports).hasSize(2)
+        assertThat(ast.imports[0].path).isEqualTo("same.qkt")
+        assertThat(ast.imports[1].path).isEqualTo("same.qkt")
+    }
+
+    @Test
+    fun `parses OVERRIDE block after WEIGHT`() {
+        val p =
+            parsePortfolioText(
+                """
+                PORTFOLIO book VERSION 1 CAPITAL 100000
+                IMPORT 'child.qkt' AS a
+                IMPORT 'child.qkt' AS b
+                RULES
+                  RUN a WEIGHT 0.6 OVERRIDE { riskPct = 0.008, threshold = 30 }
+                  RUN b WEIGHT 0.4
+                """.trimIndent(),
+            )
+        val a = p.rules[0] as com.qkt.dsl.ast.AlwaysRun
+        assertThat(a.overrides.keys).containsExactlyInAnyOrder("riskPct", "threshold")
+        assertThat(a.overrides["riskPct"]).isEqualTo(
+            com.qkt.dsl.ast
+                .NumLit(java.math.BigDecimal("0.008")),
+        )
+        val b = p.rules[1] as com.qkt.dsl.ast.AlwaysRun
+        assertThat(b.overrides).isEmpty()
     }
 
     @Test

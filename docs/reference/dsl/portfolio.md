@@ -69,6 +69,20 @@ IMPORT 'longterm.qkt' AS longterm HOLD  -- keeps positions when deactivated
 
 `HOLD` mode is useful for long-horizon children whose entries take days to play out. You don't want a regime flip to flush a 3-day position.
 
+## `RUN <alias> OVERRIDE { ... }` — per-child param tuning
+
+Retune a child's `PARAM` values for this portfolio without editing the child file:
+
+```qkt
+RUN aggressive OVERRIDE { riskPct = 0.008 }
+RUN conservative OVERRIDE { riskPct = 0.003 }
+```
+
+- Each `key = value` maps to a `PARAM` declared in the child strategy. An unknown key or a type mismatch (number → string) is a compile-time error.
+- The result is identical to hand-editing the child's `PARAM riskPct = 0.008` line — the engine sees no difference.
+- Two `RUN` rules for the same alias with different `OVERRIDE` values are a compile-time error (use the same value or consolidate into one rule).
+- `OVERRIDE` is optional. `RUN a` with no override uses the child's declared defaults.
+
 ## `RUN <alias>` action
 
 The portfolio's only action verb. Activates the named child.
