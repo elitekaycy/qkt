@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
+import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
@@ -89,6 +90,7 @@ object ParamSubstitution {
             lets = ast.lets.map { it.copy(expr = s.subst(it.expr)) },
             rules = ast.rules.map { s.subst(it) },
             schedules = ast.schedules.map { it.copy(action = s.subst(it.action)) },
+            defaults = ast.defaults?.let { s.subst(it) },
         )
     }
 
@@ -119,6 +121,16 @@ object ParamSubstitution {
                 oco = opts.oco?.let { subst(it) },
                 stack = opts.stack?.let { subst(it) },
                 stackAts = opts.stackAts.map { subst(it) },
+            )
+
+        fun subst(d: DefaultsBlock): DefaultsBlock =
+            DefaultsBlock(
+                sizing = d.sizing?.let { subst(it) },
+                orderType = d.orderType?.let { subst(it) },
+                tif = d.tif?.let { subst(it) },
+                stopLoss = d.stopLoss?.let { subst(it) },
+                takeProfit = d.takeProfit?.let { subst(it) },
+                trailing = d.trailing?.let { subst(it) },
             )
 
         private fun subst(sizing: SizingAst): SizingAst =
