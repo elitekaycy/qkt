@@ -29,6 +29,7 @@ class FilteringNotifier(
 ) : Notifier {
     override fun notify(event: NotificationEvent) {
         val kind = kindOf(event)
+        // A null kind is the daily summary: scheduled, not events-gated, so it always passes.
         if (kind == null || kind in events) delegate.notify(event)
     }
 
