@@ -103,8 +103,7 @@ class HaltCommandTest {
     ) {
         val client =
             object : ControlClient(StateDir.resolve(tmp.toString())) {
-                override fun halt(name: String?): String =
-                    throw NoDaemonRunningException("no control.port file")
+                override fun halt(name: String?): String = throw NoDaemonRunningException("no control.port file")
             }
         val (code, _, stderr) = invokeHalt(arrayOf("halt"), client)
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
