@@ -46,6 +46,30 @@ jobs:
       - name: Build distribution tarball
         run: ./gradlew --no-daemon distTar
 
+      - name: Build self-contained linux-x64 bundle (#57)
+        run: ./gradlew --no-daemon selfContainedDist
+
+      - name: Identify self-contained bundle path
+        id: sc
+        run: |
+          set -e
+          path=$(ls build/distributions/qkt-*-linux-x64.tar.gz | head -1)
+          if [ -z "$path" ] || [ ! -f "$path" ]; then
+            echo "::error::no self-contained bundle found in build/distributions/"
+            exit 1
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Verify self-contained bundle has bin/qkt and a bundled runtime
+        env:
+          SC_PATH: ${{ steps.sc.outputs.path }}
+        run: |
+          set -e
+          tar -tzf "$SC_PATH" | grep -q '/bin/qkt$' \
+            || { echo "::error::bundle missing bin/qkt"; exit 1; }
+          tar -tzf "$SC_PATH" | grep -q '/runtime/bin/java$' \
+            || { echo "::error::bundle missing runtime/bin/java"; exit 1; }
+
       - name: Verify tarball contains the bundled .vsix
         run: |
           set -e
@@ -78,14 +102,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           TAR_PATH: ${{ steps.tar.outputs.path }}
+          SC_PATH: ${{ steps.sc.outputs.path }}
         run: |
           set -e
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG exists; attaching tarball"
-            gh release upload "$TAG" "$TAR_PATH" --clobber
+            echo "release $TAG exists; attaching tarballs"
+            gh release upload "$TAG" "$TAR_PATH" "$SC_PATH" --clobber
           else
             echo "release $TAG does not exist; creating draft"
-            gh release create "$TAG" "$TAR_PATH" \
+            gh release create "$TAG" "$TAR_PATH" "$SC_PATH" \
               --draft \
               --title "$TAG" \
               --notes "Draft release. Fill in notes before publishing. Tarball attached."
