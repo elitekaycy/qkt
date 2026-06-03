@@ -20,6 +20,8 @@ exposes only klines (bars), so crypto has **no backtest path at all**. Two concr
 - The fix preserves the backtest=live determinism invariant.
 - Real ticks are still used when available (MT5 venues with tick CSVs) — bar synthesis is the
   fallback for bars-only data.
+- `IndicatorWarmer` uses the same OHLC synthesis (fixing a pre-existing degenerate-warmup bug and
+  keeping warmup consistent with replay).
 - Correct `docs/how-to/fetch-data.md`.
 
 ## Non-goals
@@ -63,6 +65,21 @@ where `Δ = (endTime - startTime) / 4`. Two properties fall out:
 
 It stays the single tick pipeline (everything evaluates on ticks uniformly), so backtest=live holds
 and it's fully deterministic given the fixed convention.
+
+The candle→ticks mapping is a single shared function `candleToTicks(candle): List<Tick>` (the four
+O→L→H→C ticks above), used by **both** `BarTickFeed` and `IndicatorWarmer` — one definition of the
+convention, no fourth near-duplicate walker.
+
+### Warmup uses the same synthesis (fixes a pre-existing bug)
+
+`IndicatorWarmer` currently emits **one** close-tick per warmup bar
+(`IndicatorWarmer.kt:70-76`). That re-aggregates to a degenerate candle with `O=H=L=C=close`, so
+range-based indicators (`atr`, anything using `high - low`) warm up on **zero-range** candles, then
+jump to correct ranges the moment replay begins — a latent correctness bug independent of crypto.
+Replace warmup's single close-tick with the same `candleToTicks(candle)` (four ticks via
+`pipeline.ingestForWarmup`), so warmup candles re-aggregate to the real OHLC and warmup is consistent
+with replay. The look-ahead guard (each synthetic tick's timestamp must be `< now`) still applies to
+all four ticks.
 
 ### Fidelity caveat (documented, deliberate)
 
@@ -111,6 +128,8 @@ indicators, stops evaluate against the intra-bar low/high → trades.
   `BYBIT_SPOT:BTCUSDT`, run a backtest of a strategy with an always-true close rule
   (`WHEN btc.close > 0 THEN BUY btc`), assert **> 0 trades**. Plus a stop-strategy test asserting an
   intra-bar stop fills at the low (proving the OHLC synthesis, not just close).
+- Warmup: a range-based indicator (`atr`) warmed from bars gets a **non-zero** range (proving the
+  OHLC warmup, vs the degenerate zero-range close-only synthesis it replaces).
 - Determinism: the same bar store backtested twice yields identical trades.
 
 ## Backtest invariant / safety
