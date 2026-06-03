@@ -476,7 +476,7 @@ object ControlRoutes {
         val target = if (name == null) Target.All else Target.Strategy(name)
         val result = RegistryDaemonControl(registry).halt(target)
         if (result.unknown.isNotEmpty()) {
-            return respond(ex, 404, """{"error":"unknown strategy: ${result.unknown.first()}"}""")
+            return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
         respond(ex, 200, """{"state":"halted","affected":${jsonArray(result.affected)}}""")
     }
@@ -489,13 +489,12 @@ object ControlRoutes {
         val target = if (name == null) Target.All else Target.Strategy(name)
         val result = RegistryDaemonControl(registry).resume(target)
         if (result.unknown.isNotEmpty()) {
-            return respond(ex, 404, """{"error":"unknown strategy: ${result.unknown.first()}"}""")
+            return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
         respond(ex, 200, """{"state":"resumed","affected":${jsonArray(result.affected)}}""")
     }
 
-    private fun jsonArray(items: List<String>): String =
-        items.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
+    private fun jsonArray(items: List<String>): String = items.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
 
     private fun handleStop(
         ex: HttpExchange,
