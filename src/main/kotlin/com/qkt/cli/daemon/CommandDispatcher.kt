@@ -35,6 +35,6 @@ class CommandDispatcher(
         }
 
     private companion object {
-        private const val USAGE = "commands:\n/status\n/halt [name]\n/resume [name]\n/help"
+        const val USAGE = "commands:\n/status\n/halt [name]\n/resume [name]\n/help"
     }
 }
