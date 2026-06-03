@@ -3,6 +3,7 @@ package com.qkt.notify
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -95,6 +96,12 @@ class TelegramClient(
         }
     }
 
+    /**
+     * Long-polls the bot's pending updates. [offset] is the first update id to fetch (one past
+     * the last one handled); [timeoutSeconds] is how long Telegram holds the connection open
+     * waiting for a message. Returns [UpdatesOutcome.Failed] (never throws) on any
+     * network/HTTP/parse error so the caller can back off and retry.
+     */
     fun getUpdates(
         offset: Long,
         timeoutSeconds: Int,
@@ -119,8 +126,8 @@ class TelegramClient(
     private fun parseUpdates(body: String): UpdatesOutcome {
         return try {
             val root = JSON_PARSER.parseToJsonElement(body).jsonObject
-            val ok = root["ok"]?.jsonPrimitive?.content
-            if (ok != "true") return UpdatesOutcome.Failed
+            val ok = root["ok"]?.jsonPrimitive?.booleanOrNull
+            if (ok != true) return UpdatesOutcome.Failed
             val result = root["result"]?.jsonArray ?: return UpdatesOutcome.Received(emptyList())
             val updates =
                 result.map { element ->
