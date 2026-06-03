@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon
 
+import com.qkt.notify.ChannelConfig
 import com.qkt.notify.TelegramClient
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit.SECONDS
@@ -22,6 +23,7 @@ class TelegramCommandChannelTest {
     private val getUpdatesCalls = AtomicInteger(0)
     private val sendBody = AtomicReference<String?>(null)
     private val sendLatch = CountDownLatch(1)
+    private val secondPollLatch = CountDownLatch(1)
     private val getUpdatesOffsets = mutableListOf<String?>()
 
     @BeforeEach
@@ -45,7 +47,9 @@ class TelegramCommandChannelTest {
                             synchronized(getUpdatesOffsets) {
                                 getUpdatesOffsets += offsetOf(path)
                             }
-                            if (getUpdatesCalls.getAndIncrement() == 0) {
+                            val callIndex = getUpdatesCalls.getAndIncrement()
+                            if (callIndex >= 1) secondPollLatch.countDown()
+                            if (callIndex == 0) {
                                 MockResponse().setResponseCode(200).setBody(firstUpdates)
                             } else {
                                 Thread.sleep(50)
@@ -90,9 +94,55 @@ class TelegramCommandChannelTest {
                 """"chat":{"id":888,"type":"private"},"text":"/halt"}}]}""",
         )
 
-        assertThat(sendLatch.await(1, SECONDS)).isFalse()
+        assertThat(secondPollLatch.await(3, SECONDS)).isTrue()
+        assertThat(sendBody.get()).isNull()
         val offsets = synchronized(getUpdatesOffsets) { getUpdatesOffsets.toList() }
         assertThat(offsets).contains("8")
+    }
+
+    @Test
+    fun `from builds a channel when credentials are present`() {
+        val built =
+            TelegramCommandChannel.from(
+                ChannelConfig(
+                    type = "telegram",
+                    enabled = true,
+                    commands = true,
+                    settings = mapOf("bot_token" to "T", "chat_id" to "C"),
+                ),
+                EmptyControl,
+            )
+        assertThat(built).isNotNull()
+    }
+
+    @Test
+    fun `from returns null when bot_token is missing`() {
+        val built =
+            TelegramCommandChannel.from(
+                ChannelConfig(
+                    type = "telegram",
+                    enabled = true,
+                    commands = true,
+                    settings = mapOf("chat_id" to "C"),
+                ),
+                EmptyControl,
+            )
+        assertThat(built).isNull()
+    }
+
+    @Test
+    fun `from returns null when chat_id is missing`() {
+        val built =
+            TelegramCommandChannel.from(
+                ChannelConfig(
+                    type = "telegram",
+                    enabled = true,
+                    commands = true,
+                    settings = mapOf("bot_token" to "T"),
+                ),
+                EmptyControl,
+            )
+        assertThat(built).isNull()
     }
 
     private fun offsetOf(path: String): String? = Regex("offset=([^&]+)").find(path)?.groupValues?.get(1)
