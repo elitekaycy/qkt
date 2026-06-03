@@ -215,14 +215,16 @@ class Parser(
                 val cond = parseExpr()
                 expect(TokenKind.RUN, "expected RUN after WHEN expression")
                 val alias = expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
+                val weight = parseOptionalWeight()
                 com.qkt.dsl.ast
-                    .WhenRun(cond, alias, parseOptionalWeight())
+                    .WhenRun(cond, alias, weight, parseOptionalOverrides())
             }
             TokenKind.RUN -> {
                 advance()
                 val alias = expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
+                val weight = parseOptionalWeight()
                 com.qkt.dsl.ast
-                    .AlwaysRun(alias, parseOptionalWeight())
+                    .AlwaysRun(alias, weight, parseOptionalOverrides())
             }
             else -> error("expected WHEN or RUN, got '${peek().lexeme}'")
         }
@@ -235,6 +237,23 @@ class Parser(
         } else {
             null
         }
+
+    private fun parseOptionalOverrides(): Map<String, ExprAst> {
+        if (peek().kind != TokenKind.OVERRIDE) return emptyMap()
+        advance()
+        expect(TokenKind.LBRACE, "expected '{' after OVERRIDE")
+        val out = LinkedHashMap<String, ExprAst>()
+        if (peek().kind != TokenKind.RBRACE) {
+            do {
+                val key = expect(TokenKind.IDENT, "expected override key").lexeme
+                if (out.containsKey(key)) error("duplicate OVERRIDE key '$key'")
+                expect(TokenKind.EQ, "expected '=' after override key")
+                out[key] = parseLiteral()
+            } while (match(TokenKind.COMMA))
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close OVERRIDE")
+        return out
+    }
 
     fun parseStrategy(): ParseResult<StrategyAst> {
         var name = "_unparsed"
