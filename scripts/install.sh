@@ -32,18 +32,28 @@ need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
 need curl
 need tar
 
-JAVA_VERSION_OK=0
-if command -v java >/dev/null 2>&1; then
-    JV=$(java -version 2>&1 | head -1 | grep -oE '[0-9]+' | head -1)
-    if [ -n "$JV" ] && [ "$JV" -ge 21 ]; then
-        JAVA_VERSION_OK=1
-    fi
+# linux-x64 gets a self-contained bundle (app + a bundled minimal JRE), so no system
+# Java is needed. Other platforms use the JRE-less tarball and require a system JDK 21.
+OS=$(uname -s)
+ARCH=$(uname -m)
+SELF_CONTAINED=0
+if [ "$OS" = "Linux" ] && { [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; }; then
+    SELF_CONTAINED=1
 fi
 
-if [ "$JAVA_VERSION_OK" -ne 1 ]; then
-    warn "JDK 21+ not detected on PATH."
-    warn "qkt requires a JDK 21 runtime. Install Temurin from https://adoptium.net/"
-    warn "Continuing installation, but \`qkt --version\` will fail until JDK 21 is available."
+if [ "$SELF_CONTAINED" -ne 1 ]; then
+    JAVA_VERSION_OK=0
+    if command -v java >/dev/null 2>&1; then
+        JV=$(java -version 2>&1 | head -1 | grep -oE '[0-9]+' | head -1)
+        if [ -n "$JV" ] && [ "$JV" -ge 21 ]; then
+            JAVA_VERSION_OK=1
+        fi
+    fi
+    if [ "$JAVA_VERSION_OK" -ne 1 ]; then
+        warn "JDK 21+ not detected on PATH."
+        warn "qkt requires a JDK 21 runtime on $OS/$ARCH. Install Temurin from https://adoptium.net/"
+        warn "Continuing installation, but \`qkt --version\` will fail until JDK 21 is available."
+    fi
 fi
 
 # ─────────────────────────────── resolve version ──────────────────────── #
@@ -57,9 +67,14 @@ else
     say "Installing pinned version: $VERSION"
 fi
 
-# Strip leading 'v' for the tar name (release artifacts are qkt-X.Y.Z.tar)
+# Strip leading 'v' for the artifact name. linux-x64 fetches the self-contained
+# bundle (qkt-X.Y.Z-linux-x64.tar.gz); other platforms fetch the JRE-less qkt-X.Y.Z.tar.
 VERSION_NUM="${VERSION#v}"
-TARBALL_NAME="qkt-${VERSION_NUM}.tar"
+if [ "$SELF_CONTAINED" -eq 1 ]; then
+    TARBALL_NAME="qkt-${VERSION_NUM}-linux-x64.tar.gz"
+else
+    TARBALL_NAME="qkt-${VERSION_NUM}.tar"
+fi
 TARBALL_URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL_NAME}"
 
 # ─────────────────────────────── download ─────────────────────────────── #
@@ -76,19 +91,33 @@ say "Extracting to $PREFIX"
 mkdir -p "$PREFIX"
 # Wipe the prefix first so old files don't linger across versions.
 # Keep the user's strategies/ dir if they put one in PREFIX (unusual but possible).
-rm -rf "$PREFIX/bin" "$PREFIX/lib"
+rm -rf "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/runtime"
+# tar -xf auto-detects gzip, so it handles both .tar and the self-contained .tar.gz.
 tar -xf "$TMP_DIR/$TARBALL_NAME" -C "$PREFIX" --strip-components=1
 [ -x "$PREFIX/bin/qkt" ] || die "tarball did not contain bin/qkt — release artifact is broken"
 
-# ─────────────────────────────── symlink ──────────────────────────────── #
+# ─────────────────────────────── launcher ─────────────────────────────── #
 mkdir -p "$BIN_DIR"
-ln -sf "$PREFIX/bin/qkt" "$BIN_DIR/qkt"
-ok "Symlinked $BIN_DIR/qkt → $PREFIX/bin/qkt"
+if [ "$SELF_CONTAINED" -eq 1 ]; then
+    # A wrapper points JAVA_HOME at the bundled runtime so qkt runs with no system Java.
+    cat > "$BIN_DIR/qkt" <<WRAP
+#!/bin/sh
+export JAVA_HOME="$PREFIX/runtime"
+exec "$PREFIX/bin/qkt" "\$@"
+WRAP
+    chmod +x "$BIN_DIR/qkt"
+    ok "Installed self-contained launcher at $BIN_DIR/qkt (bundled JRE, no system Java needed)"
+else
+    ln -sf "$PREFIX/bin/qkt" "$BIN_DIR/qkt"
+    ok "Symlinked $BIN_DIR/qkt → $PREFIX/bin/qkt"
+fi
 
 # ─────────────────────────────── verify ───────────────────────────────── #
 if "$BIN_DIR/qkt" --version >/dev/null 2>&1; then
     INSTALLED_VERSION=$("$BIN_DIR/qkt" --version 2>&1 | head -1)
     ok "Installed: $INSTALLED_VERSION"
+elif [ "$SELF_CONTAINED" -eq 1 ]; then
+    warn "qkt installed but \`--version\` failed unexpectedly — please report this."
 else
     warn "qkt binary present but \`--version\` failed (probably JDK 21 not on PATH)."
 fi

@@ -52,6 +52,48 @@ distributions {
     }
 }
 
+// A jlink-minimized JRE carrying only the modules qkt loads (mirrors the Dockerfile).
+// jdk.crypto.ec (TLS) and jdk.unsupported (sun.misc.Unsafe, used by okio/kotlin) are
+// loaded reflectively, so jdeps misses them and they are named explicitly.
+val jlinkRuntimeDir = layout.buildDirectory.dir("jlink-runtime")
+val jlinkRuntime by tasks.registering(Exec::class) {
+    group = "distribution"
+    description = "Build a minimal JRE with only the modules qkt needs."
+    val launcher = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
+    outputs.dir(jlinkRuntimeDir)
+    doFirst {
+        val out = jlinkRuntimeDir.get().asFile
+        delete(out) // jlink refuses to write into an existing directory
+        commandLine(
+            "${launcher.get().metadata.installationPath.asFile.absolutePath}/bin/jlink",
+            "--add-modules",
+            "java.base,java.logging,java.naming,java.xml,jdk.httpserver,jdk.crypto.ec,jdk.unsupported",
+            "--strip-debug",
+            "--no-man-pages",
+            "--no-header-files",
+            "--compress=zip-6",
+            "--output",
+            out.absolutePath,
+        )
+    }
+}
+
+// Self-contained linux-x64 distribution: the app plus the bundled runtime, so `qkt`
+// runs with no system Java. Powers the one-shot installer (#57). The launcher reads
+// JAVA_HOME, which the installer points at the bundled runtime/ directory.
+tasks.register<Tar>("selfContainedDist") {
+    group = "distribution"
+    description = "App plus a bundled jlink runtime (no system Java required)."
+    dependsOn("installDist", jlinkRuntime)
+    compression = Compression.GZIP
+    archiveFileName.set("qkt-${project.version}-linux-x64.tar.gz")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    into("qkt") {
+        from(layout.buildDirectory.dir("install/qkt"))
+        from(jlinkRuntimeDir) { into("runtime") }
+    }
+}
+
 tasks.register<JavaExec>("runDemo") {
     group = "application"
     description = "Run the legacy mock-tick demo (predates the qkt CLI)"
