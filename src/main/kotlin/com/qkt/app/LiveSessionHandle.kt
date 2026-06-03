@@ -38,6 +38,16 @@ interface LiveSessionHandle {
     /** Layers from active STACK plans that haven't triggered yet. */
     fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo>
 
+    /**
+     * Operator halt: stop submitting NEW orders for this session (existing positions keep
+     * being managed). Default is a no-op so non-daemon handles (tests, replay) need not
+     * implement it; the live daemon session overrides it to drive its risk state.
+     */
+    fun halt(reason: String) {}
+
+    /** Reverse [halt]: re-enable new-order submission. Default no-op. */
+    fun resume() {}
+
     /** Cancels all working orders and flattens any open position at market. */
     fun flatten()
 
