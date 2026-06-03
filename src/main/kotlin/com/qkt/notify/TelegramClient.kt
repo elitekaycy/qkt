@@ -2,10 +2,30 @@ package com.qkt.notify
 
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+
+/** One inbound Telegram update. [chatId]/[text] are null when the update isn't a text message. */
+data class TelegramUpdate(
+    val updateId: Long,
+    val chatId: Long?,
+    val text: String?,
+)
+
+/** Result of a getUpdates long-poll. [Failed] = network/HTTP/parse error; the caller backs off. */
+sealed interface UpdatesOutcome {
+    data class Received(
+        val updates: List<TelegramUpdate>,
+    ) : UpdatesOutcome
+
+    data object Failed : UpdatesOutcome
+}
 
 /**
  * Single-request HTTP wrapper around the Telegram bot `sendMessage` endpoint.
@@ -75,6 +95,56 @@ class TelegramClient(
         }
     }
 
+    fun getUpdates(
+        offset: Long,
+        timeoutSeconds: Int,
+    ): UpdatesOutcome {
+        val req =
+            Request
+                .Builder()
+                .url("$baseUrl/bot$botToken/getUpdates?offset=$offset&timeout=$timeoutSeconds")
+                .get()
+                .build()
+        return try {
+            http.newCall(req).execute().use { res ->
+                if (res.code != 200) return UpdatesOutcome.Failed
+                val body = res.body?.string() ?: return UpdatesOutcome.Failed
+                parseUpdates(body)
+            }
+        } catch (e: IOException) {
+            UpdatesOutcome.Failed
+        }
+    }
+
+    private fun parseUpdates(body: String): UpdatesOutcome {
+        return try {
+            val root = JSON_PARSER.parseToJsonElement(body).jsonObject
+            val ok = root["ok"]?.jsonPrimitive?.content
+            if (ok != "true") return UpdatesOutcome.Failed
+            val result = root["result"]?.jsonArray ?: return UpdatesOutcome.Received(emptyList())
+            val updates =
+                result.map { element ->
+                    val obj = element.jsonObject
+                    val updateId =
+                        obj["update_id"]?.jsonPrimitive?.content?.toLongOrNull()
+                            ?: return UpdatesOutcome.Failed
+                    val message = obj["message"]?.jsonObject
+                    val chat = message?.get("chat")?.jsonObject
+                    val chatId =
+                        chat
+                            ?.get("id")
+                            ?.jsonPrimitive
+                            ?.content
+                            ?.toLongOrNull()
+                    val text = message?.get("text")?.jsonPrimitive?.content
+                    TelegramUpdate(updateId = updateId, chatId = chatId, text = text)
+                }
+            UpdatesOutcome.Received(updates)
+        } catch (e: Exception) {
+            UpdatesOutcome.Failed
+        }
+    }
+
     private fun escape(s: String): String =
         s
             .replace("\\", "\\\\")
@@ -85,5 +155,6 @@ class TelegramClient(
 
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
+        val JSON_PARSER = Json { ignoreUnknownKeys = true }
     }
 }
