@@ -43,16 +43,21 @@ class LocalMarketSource(
         require(range.to <= now) {
             "look-ahead bias: cannot query ticks beyond current time. now=$now, requested to=${range.to}; symbol=$symbol"
         }
+        // The tick store is keyed by the bare symbol (`symbols/BTCUSDT/`), but strategies route
+        // by the broker-prefixed id (`BACKTEST:BTCUSDT`). Strip the prefix to find the file, then
+        // stamp each tick with the requested prefixed id so it matches the strategy's stream.
+        // A bare symbol (no `:`) is left unchanged. Mirrors how `bars()` splits the prefix.
+        val storeKey = symbol.substringAfter(':')
         return sequence {
             val days = daysCovering(range)
             for (day in days) {
-                val path = store.dayFile(symbol, day) ?: continue
+                val path = store.dayFile(storeKey, day) ?: continue
                 CsvTickFeed(path).use { feed ->
                     while (true) {
                         val t = feed.next() ?: break
                         if (t.timestamp < range.from.toEpochMilli()) continue
                         if (t.timestamp >= range.to.toEpochMilli()) return@use
-                        yield(t)
+                        yield(if (t.symbol == symbol) t else t.copy(symbol = symbol))
                     }
                 }
             }
