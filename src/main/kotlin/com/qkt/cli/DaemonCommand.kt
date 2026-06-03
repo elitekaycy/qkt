@@ -7,9 +7,13 @@ import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.notify.ChannelConfig
+import com.qkt.notify.ChannelRegistry
+import com.qkt.notify.CompositeNotifier
 import com.qkt.notify.DailySummaryScheduler
+import com.qkt.notify.FilteringNotifier
 import com.qkt.notify.NotificationEvent
-import com.qkt.notify.NotifierFactory
+import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.aggregateDailySummary
 import java.time.Instant
@@ -61,7 +65,20 @@ class DaemonCommand(
                 ?: java.nio.file.Path
                     .of("./qkt.config.yaml")
         val cfg = Config.load(configPathEarly)
-        val notifier = NotifierFactory.fromConfig(cfg.notify.telegram)
+        val channelRegistry = ChannelRegistry.DEFAULT
+        val channelNotifiers: List<Pair<ChannelConfig, Notifier>> =
+            cfg.notify.enabledChannels().mapNotNull { ch ->
+                val provider = channelRegistry.get(ch.type)
+                if (provider == null) {
+                    println("[WARN] unknown notify channel type: ${ch.type}")
+                    null
+                } else {
+                    ch to provider.notifier(ch)
+                }
+            }
+        val notifyEventKinds = cfg.notify.enabledEventKinds()
+        val notifier: Notifier =
+            CompositeNotifier(channelNotifiers.map { (ch, n) -> FilteringNotifier(ch.events, n) })
         val mt5Profiles =
             try {
                 com.qkt.broker.mt5
@@ -159,7 +176,7 @@ class DaemonCommand(
                     perStrategyRisk = cfg.perStrategyRisk,
                     persistor = statePersistor,
                     notifier = notifier,
-                    notifyEvents = cfg.notify.telegram.events,
+                    notifyEvents = notifyEventKinds,
                 ),
             )
         registryRef.set(registry)
@@ -175,7 +192,7 @@ class DaemonCommand(
                     maxDailyLoss = cfg.maxDailyLoss,
                     persistor = statePersistor,
                     notifier = notifier,
-                    notifyEvents = cfg.notify.telegram.events,
+                    notifyEvents = notifyEventKinds,
                 )
         val plane =
             ControlPlane(
@@ -204,7 +221,7 @@ class DaemonCommand(
         }
 
         loadDirIfRequested(args.option("load-dir"), registry) { name, message ->
-            if (NotifyEventKind.STRATEGY_ERROR in cfg.notify.telegram.events) {
+            if (NotifyEventKind.STRATEGY_ERROR in notifyEventKinds) {
                 notifier.notify(
                     NotificationEvent.StrategyError(
                         strategyId = name,
@@ -217,7 +234,7 @@ class DaemonCommand(
 
         println("[INFO] daemon ready")
 
-        if (NotifyEventKind.DAEMON_STARTED in cfg.notify.telegram.events) {
+        if (NotifyEventKind.DAEMON_STARTED in notifyEventKinds) {
             notifier.notify(
                 NotificationEvent.DaemonStarted(
                     version = BuildInfo.VERSION,
@@ -227,24 +244,23 @@ class DaemonCommand(
             )
         }
 
-        // One daily-summary scheduler for the whole daemon. Its producer aggregates the
-        // per-strategy rows of every live session, so a multi-strategy daemon sends one
-        // summary message at the UTC tick instead of one per session.
-        val dailySummaryScheduler =
-            if (cfg.notify.telegram.dailySummaryUtc
-                    .isNotBlank()
-            ) {
-                DailySummaryScheduler(
-                    notifier = notifier,
-                    producer = {
-                        aggregateDailySummary(
-                            rowsPerSession = registry.list().map { it.live.dailySummaryRows() },
-                            nowMs = Instant.now().toEpochMilli(),
-                        )
-                    },
-                ).also { it.startAtUtc(cfg.notify.telegram.dailySummaryUtc) }
-            } else {
-                null
+        // One daily-summary scheduler per channel that opts in, each pointed at that channel's own
+        // notifier so the summary reaches only the channels that asked for it. The producer
+        // aggregates every live session's rows into one message.
+        val dailySummaryProducer = {
+            aggregateDailySummary(
+                rowsPerSession = registry.list().map { it.live.dailySummaryRows() },
+                nowMs = Instant.now().toEpochMilli(),
+            )
+        }
+        val dailySummarySchedulers: List<DailySummaryScheduler> =
+            channelNotifiers.mapNotNull { (ch, channelNotifier) ->
+                ch.dailySummaryUtc
+                    .takeIf { it.isNotBlank() }
+                    ?.let { utc ->
+                        DailySummaryScheduler(notifier = channelNotifier, producer = dailySummaryProducer)
+                            .also { it.startAtUtc(utc) }
+                    }
             }
 
         val shutdown =
@@ -256,7 +272,7 @@ class DaemonCommand(
                     registry.stopAll()
                     runCatching { bybitClient?.close() }
                     plane.close()
-                    dailySummaryScheduler?.close()
+                    dailySummarySchedulers.forEach { it.close() }
                     notifier.close()
                     stateDir.deleteControlPort()
                     println("[INFO] daemon stopped")
@@ -273,7 +289,7 @@ class DaemonCommand(
             runCatching { registry.stopAll() }
             runCatching { bybitClient?.close() }
             runCatching { plane.close() }
-            runCatching { dailySummaryScheduler?.close() }
+            runCatching { dailySummarySchedulers.forEach { it.close() } }
             runCatching { notifier.close() }
             runCatching { stateDir.deleteControlPort() }
             ExitCodes.SUCCESS

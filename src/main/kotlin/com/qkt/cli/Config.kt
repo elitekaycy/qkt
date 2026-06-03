@@ -45,9 +45,9 @@ data class Config(
      */
     val state: Map<String, String> = emptyMap(),
     /**
-     * Telegram alerts (Phase 31). Defaults to [NotifyConfig.DISABLED]. Operators flip
-     * `notify.telegram.enabled` to `true` and provide bot_token + chat_id to receive
-     * critical-event and daily-summary messages on a Telegram chat.
+     * Outbound alert channels. Defaults to [NotifyConfig.DISABLED]. Each channel block (e.g.
+     * `notify.telegram`) is turned on with `enabled: true` plus that channel's credentials, and
+     * receives critical-event and daily-summary messages. Telegram is the built-in channel.
      */
     val notify: NotifyConfig = NotifyConfig.DISABLED,
 ) {
