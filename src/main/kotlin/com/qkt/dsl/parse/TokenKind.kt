@@ -8,6 +8,7 @@ enum class TokenKind {
     SYNCHRONIZE,
     SCHEDULE,
     LET,
+    PARAM,
     RULES,
 
     WHEN,
@@ -42,6 +43,7 @@ enum class TokenKind {
     HOLD,
     CAPITAL,
     WEIGHT,
+    OVERRIDE,
 
     MARKET,
     LIMIT,
