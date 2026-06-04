@@ -38,6 +38,7 @@ class Mt5TickFeedSource(
         onTick: (Tick) -> Unit,
         onError: (Throwable) -> Unit,
         onDisconnect: () -> Unit,
+        onReconnect: () -> Unit,
     ) {
         check(running.compareAndSet(false, true)) { "Mt5TickFeedSource already started" }
         val client = Mt5TickClient(baseUrl, http)
