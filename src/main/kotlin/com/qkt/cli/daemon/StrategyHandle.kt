@@ -132,6 +132,7 @@ class StrategyHandle(
                     onTrade = { trade, realized, _ ->
                         com.qkt.cli.daemon.logging.withMdc("strategy", name) {
                             ring.append("trade", tradeToJson(trade, realized))
+                            TradeLog.emit(trade, realized)
                         }
                     },
                     onSignal = { sig ->
