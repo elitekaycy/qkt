@@ -7,6 +7,7 @@ import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.source.MarketRequest
+import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.ScriptDataFetcher
 import java.math.BigDecimal
@@ -128,7 +129,7 @@ class BacktestCommand(
                     instruments = instruments,
                     barStore =
                         com.qkt.marketdata.store
-                            .LocalBarStore(),
+                            .LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
                     brokerKind = brokerKind,
                 )
             val result = backtest.run()

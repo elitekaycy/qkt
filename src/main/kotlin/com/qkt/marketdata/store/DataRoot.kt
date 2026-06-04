@@ -13,4 +13,10 @@ object DataRoot {
         } else {
             Path.of(System.getProperty("user.home"), ".qkt", "data")
         }
+
+    /**
+     * Store root that honors an explicit `--data-root` flag over the [ENV] var and the default.
+     * e.g. `forDataRoot("./data")` -> `./data`; `forDataRoot(null)` -> [resolve].
+     */
+    fun forDataRoot(dataRoot: String?): Path = dataRoot?.let { Path.of(it) } ?: resolve()
 }
