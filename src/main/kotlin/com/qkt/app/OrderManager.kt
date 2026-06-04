@@ -54,6 +54,14 @@ class OrderManager(
 
     private val orders: MutableMap<String, ManagedOrder> = mutableMapOf()
 
+    /**
+     * Ids of orders that are not yet terminal. The per-tick [evaluateTriggers] scan walks this
+     * instead of every order ever created, so its cost tracks live orders, not all-time orders.
+     * A LinkedHashSet populated in [track] order keeps iteration order identical to [orders]
+     * (a LinkedHashMap), so trigger-firing order is unchanged.
+     */
+    private val liveOrderIds: LinkedHashSet<String> = LinkedHashSet()
+
     private val trailingHwm: MutableMap<String, BigDecimal> = mutableMapOf()
 
     /**
@@ -189,6 +197,7 @@ class OrderManager(
                             lastUpdatedAt = now,
                         )
                     orders[leg.clientOrderId] = managed
+                    indexLive(managed)
                     siblings[leg.clientOrderId] = leg.siblingIds
                     recovered += managed
                 }
@@ -773,6 +782,7 @@ class OrderManager(
                 strategyId = req.strategyId,
             )
         orders.remove(req.id)
+        liveOrderIds.remove(req.id)
         return submit(oto)
     }
 
@@ -894,8 +904,14 @@ class OrderManager(
         )
     }
 
+    /** Keep [liveOrderIds] in sync: a non-terminal order is live, a terminal one is not. */
+    private fun indexLive(managed: ManagedOrder) {
+        if (managed.state.isTerminal) liveOrderIds.remove(managed.id) else liveOrderIds.add(managed.id)
+    }
+
     private fun track(managed: ManagedOrder) {
         orders[managed.id] = managed
+        indexLive(managed)
         persistAll()
     }
 
@@ -903,7 +919,11 @@ class OrderManager(
         id: String,
         change: (ManagedOrder) -> ManagedOrder,
     ) {
-        orders[id]?.let { orders[id] = change(it) }
+        orders[id]?.let {
+            val updated = change(it)
+            orders[id] = updated
+            indexLive(updated)
+        }
         persistAll()
     }
 
@@ -1085,7 +1105,10 @@ class OrderManager(
 
     private fun evaluateTriggers(tick: Tick) {
         lastObservedPrice[tick.symbol] = tick.price
-        for (managed in orders.values.toList()) {
+        // An id in liveOrderIds with no entry in orders is an invariant violation, not an
+        // expected absence — surface it instead of silently skipping the order.
+        val live = liveOrderIds.map { orders[it] ?: error("live order index desync: $it") }
+        for (managed in live) {
             if (managed.state != OrderState.PENDING) continue
             if (managed.request.symbol != tick.symbol) continue
             updateTrailingHwm(managed, tick.price)
@@ -1096,7 +1119,7 @@ class OrderManager(
         // PaperBroker, Bybit, and LogBroker fall through here.
         if (!broker.supportsNativeGtd) {
             val nowMs = clock.now()
-            for (managed in orders.values.toList()) {
+            for (managed in live) {
                 if (managed.state.isTerminal) continue
                 if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
                 val deadline = managed.request.expiresAt ?: continue
@@ -1123,11 +1146,10 @@ class OrderManager(
         }
 
         val triggered: List<ManagedOrder> =
-            orders.values
+            live
                 .filter { it.state == OrderState.PENDING }
                 .filter { it.request.symbol == tick.symbol }
                 .filter { triggerHit(it, tick.price) }
-                .toList()
         for (managed in triggered) {
             fireFallbackTrigger(managed, tick.price)
         }
