@@ -142,6 +142,8 @@ class PortfolioDeployer(
                     com.qkt.cli.daemon.logging.withMdc("strategy", childName) {
                         com.qkt.cli.daemon.logging.withMdc("parent", portfolioName) {
                             ring.append("trade", tradeToJson(trade, realized))
+                            com.qkt.cli.daemon.TradeLog
+                                .emit(trade, realized)
                         }
                     }
                 },

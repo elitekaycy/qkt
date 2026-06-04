@@ -10,6 +10,7 @@ import okhttp3.Response
 open class ControlClient(
     private val stateDir: StateDir,
     private val http: OkHttpClient = OkHttpClient(),
+    private val explicitPort: Int? = null,
 ) {
     class NoDaemonRunningException(
         msg: String,
@@ -22,11 +23,18 @@ open class ControlClient(
 
     private fun baseUrl(): String {
         val port =
-            stateDir.readControlPort()
+            explicitPort
+                ?: stateDir.readControlPort()
                 ?: throw NoDaemonRunningException(
                     "no daemon running (no control.port file at ${stateDir.controlPortFile})",
                 )
         return "http://127.0.0.1:$port"
+    }
+
+    open fun metrics(): String {
+        val resp =
+            http.newCall(Request.Builder().url("${baseUrl()}/metrics").build()).execute()
+        return readOrThrow(resp)
     }
 
     open fun health(): String {
