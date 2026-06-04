@@ -127,6 +127,23 @@ class OrderManagerGcTest {
     }
 
     @Test
+    fun `repeated fills do not accumulate orders`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val om = OrderManager(LogBroker(bus, clock), bus, MarketPriceTracker(), clock)
+
+        repeat(5_000) { i ->
+            om.submit(market("c$i"))
+            bus.publish(fill("c$i", "1.10"))
+            bus.publish(tick("1.11")) // each tick drains the GC
+        }
+
+        // Every order filled and was unreferenced, so all should be reclaimed.
+        assertThat(om.activeOrders()).isEmpty()
+        assertThat((0 until 5_000).count { om.getOrder("c$it") != null }).isEqualTo(0)
+    }
+
+    @Test
     fun `an OCO sibling is cancelled correctly even though GC runs between fill and cancel`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
