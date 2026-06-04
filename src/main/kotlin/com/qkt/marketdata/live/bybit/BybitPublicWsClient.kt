@@ -30,16 +30,19 @@ class BybitPublicWsClient(
     private val state: MutableMap<String, MutableMap<String, BigDecimal>> = mutableMapOf()
     private var onTick: ((Tick) -> Unit)? = null
     private var onDisconnect: (() -> Unit)? = null
+    private var onReconnect: (() -> Unit)? = null
     private var hasDisconnected: Boolean = false
 
     fun subscribe(
         symbols: List<String>,
         onTick: (Tick) -> Unit,
         onDisconnect: () -> Unit,
+        onReconnect: () -> Unit = {},
     ) {
         this.symbols.addAll(symbols)
         this.onTick = onTick
         this.onDisconnect = onDisconnect
+        this.onReconnect = onReconnect
         ws.addListener(this)
         sendSubscribe()
     }
@@ -72,6 +75,7 @@ class BybitPublicWsClient(
     override fun onConnected() {
         if (hasDisconnected && symbols.isNotEmpty()) {
             sendSubscribe()
+            onReconnect?.invoke()
         }
     }
 

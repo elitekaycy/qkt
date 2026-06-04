@@ -1,5 +1,6 @@
 package com.qkt.marketdata.live
 
+import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.marketdata.Tick
 import java.util.concurrent.CountDownLatch
@@ -18,16 +19,19 @@ class LiveTickFeedTest {
         var onTick: ((Tick) -> Unit)? = null
         var onError: ((Throwable) -> Unit)? = null
         var onDisconnect: (() -> Unit)? = null
+        var onReconnect: (() -> Unit)? = null
         var stopped: Boolean = false
 
         override fun start(
             onTick: (Tick) -> Unit,
             onError: (Throwable) -> Unit,
             onDisconnect: () -> Unit,
+            onReconnect: () -> Unit,
         ) {
             this.onTick = onTick
             this.onError = onError
             this.onDisconnect = onDisconnect
+            this.onReconnect = onReconnect
         }
 
         override fun stop() {
@@ -118,12 +122,15 @@ class LiveTickFeedTest {
     }
 
     @Test
-    fun `next returns null after source disconnects and queue drains`() {
+    fun `next returns null after a disconnect outlasts the reconnect budget`() {
         val src = FakeSource()
-        val feed = LiveTickFeed(src, queueCapacity = 10, pollIntervalMs = 25)
+        val clock = FixedClock(0L)
+        val feed =
+            LiveTickFeed(src, queueCapacity = 10, pollIntervalMs = 25, clock = clock, reconnectBudgetMs = 1_000L)
         src.onTick!!(tick("X", 1L, "100"))
         src.onTick!!(tick("X", 2L, "101"))
-        src.onDisconnect!!()
+        src.onDisconnect!!() // disconnectedSince = 0
+        clock.time = 2_000L // advance past the 1s budget
 
         val first = feed.next()
         val second = feed.next()

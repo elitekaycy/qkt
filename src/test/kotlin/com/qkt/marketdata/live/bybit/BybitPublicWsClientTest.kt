@@ -44,6 +44,31 @@ class BybitPublicWsClientTest {
     }
 
     @Test
+    fun `reconnect fires onReconnect`() {
+        val ws = FakeBybitWebSocket()
+        val client = BybitPublicWsClient(ws, clock = FixedClock(0L))
+        var reconnects = 0
+        client.subscribe(listOf("BTCUSDT"), onTick = {}, onDisconnect = {}, onReconnect = { reconnects++ })
+
+        ws.simulateDisconnect("oops")
+        ws.simulateConnect()
+
+        assertThat(reconnects).isEqualTo(1)
+    }
+
+    @Test
+    fun `onConnected before any disconnect does not fire onReconnect`() {
+        val ws = FakeBybitWebSocket()
+        val client = BybitPublicWsClient(ws, clock = FixedClock(0L))
+        var reconnects = 0
+        client.subscribe(listOf("BTCUSDT"), onTick = {}, onDisconnect = {}, onReconnect = { reconnects++ })
+
+        ws.simulateConnect()
+
+        assertThat(reconnects).isEqualTo(0)
+    }
+
+    @Test
     fun `tickers frame emits Tick with bid ask price`() {
         val ws = FakeBybitWebSocket()
         val client = BybitPublicWsClient(ws, clock = FixedClock(100L))
