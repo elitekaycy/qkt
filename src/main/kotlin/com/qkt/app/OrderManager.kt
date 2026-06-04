@@ -54,6 +54,20 @@ class OrderManager(
 
     private val orders: MutableMap<String, ManagedOrder> = mutableMapOf()
 
+    /**
+     * Ids of orders that are not yet terminal. The per-tick [evaluateTriggers] scan walks this
+     * instead of every order ever created, so its cost tracks live orders, not all-time orders.
+     * A LinkedHashSet populated in [track] order keeps iteration order identical to [orders]
+     * (a LinkedHashMap), so trigger-firing order is unchanged.
+     */
+    private val liveOrderIds: LinkedHashSet<String> = LinkedHashSet()
+
+    /**
+     * Ids awaiting reclamation. An order is enqueued when it goes terminal in [update]; [runGc]
+     * drains it once per pass, reclaiming it if nothing references it and re-queuing it otherwise.
+     */
+    private val gcQueue: ArrayDeque<String> = ArrayDeque()
+
     private val trailingHwm: MutableMap<String, BigDecimal> = mutableMapOf()
 
     /**
@@ -189,6 +203,7 @@ class OrderManager(
                             lastUpdatedAt = now,
                         )
                     orders[leg.clientOrderId] = managed
+                    indexLive(managed)
                     siblings[leg.clientOrderId] = leg.siblingIds
                     recovered += managed
                 }
@@ -210,7 +225,8 @@ class OrderManager(
     /**
      * Recover the originating symbol/side/quantity for [clientOrderId] — the fields a
      * [BrokerEvent.OrderRejected] event omits. Returns `null` for an order this manager
-     * never saw. The order is retained through rejection, so this resolves post-reject.
+     * never saw. A rejected order is retained only until the next GC drain (a tick), so read
+     * this synchronously within the rejection handler; a deferred read may find it reclaimed.
      */
     fun orderDetailsFor(clientOrderId: String): OrderDetails? =
         orders[clientOrderId]?.request?.let { OrderDetails(it.symbol, it.side, it.quantity) }
@@ -773,6 +789,7 @@ class OrderManager(
                 strategyId = req.strategyId,
             )
         orders.remove(req.id)
+        liveOrderIds.remove(req.id)
         return submit(oto)
     }
 
@@ -894,8 +911,61 @@ class OrderManager(
         )
     }
 
+    /** Keep [liveOrderIds] in sync: a non-terminal order is live, a terminal one is not. */
+    private fun indexLive(managed: ManagedOrder) {
+        if (managed.state.isTerminal) liveOrderIds.remove(managed.id) else liveOrderIds.add(managed.id)
+    }
+
+    /**
+     * True while some active structure still points at [id], so reclaiming it would break a
+     * later lookup: a pending timed-exit whose target is this order, or an active stack that
+     * owns it as the parent, layer-one, or a pending/filled/closed layer. Per-order satellite
+     * data (siblings, trailing state) is NOT a reference — it is read synchronously during the
+     * order's own terminal transition and evicted on reclaim, never read afterwards.
+     */
+    private fun isReferenced(id: String): Boolean {
+        if (timeExits.values.any { it.target.id == id }) return true
+        for (s in stacks.all()) {
+            if (id == s.id || id == s.layerOneOrderId) return true
+            if (id in s.pendingLayerIds || id in s.filledLayerIds || id in s.closedLayerIds) return true
+        }
+        return false
+    }
+
+    /** Drop a dead, unreferenced order and all its order-keyed satellite state. */
+    private fun reclaim(id: String) {
+        orders.remove(id)
+        liveOrderIds.remove(id)
+        trailingHwm.remove(id)
+        armedTrailArmed.remove(id)
+        siblings.remove(id)
+        scaleOutLegs.remove(id)
+        pendingChildren.remove(id)
+    }
+
+    /**
+     * Reclaim terminal orders that nothing references. Processes each queued id once per drain;
+     * a still-referenced id (e.g. a filled entry a pending timed-exit still points at) is
+     * re-queued for a later pass, so per-drain cost tracks freshly-finished plus still-referenced
+     * terminal orders. Only removes dead, unreferenced orders, so it can never change a trading
+     * decision.
+     */
+    private fun runGc() {
+        repeat(gcQueue.size) {
+            val id = gcQueue.removeFirst()
+            val managed = orders[id]
+            when {
+                managed == null -> Unit
+                !managed.state.isTerminal -> Unit
+                isReferenced(id) -> gcQueue.addLast(id)
+                else -> reclaim(id)
+            }
+        }
+    }
+
     private fun track(managed: ManagedOrder) {
         orders[managed.id] = managed
+        indexLive(managed)
         persistAll()
     }
 
@@ -903,7 +973,15 @@ class OrderManager(
         id: String,
         change: (ManagedOrder) -> ManagedOrder,
     ) {
-        orders[id]?.let { orders[id] = change(it) }
+        orders[id]?.let {
+            val wasTerminal = it.state.isTerminal
+            val updated = change(it)
+            orders[id] = updated
+            indexLive(updated)
+            // Enqueue once, on the transition into terminal — a redundant terminal->terminal
+            // update (e.g. a replayed fill) must not re-queue the id.
+            if (updated.state.isTerminal && !wasTerminal) gcQueue.addLast(id)
+        }
         persistAll()
     }
 
@@ -1085,7 +1163,10 @@ class OrderManager(
 
     private fun evaluateTriggers(tick: Tick) {
         lastObservedPrice[tick.symbol] = tick.price
-        for (managed in orders.values.toList()) {
+        // An id in liveOrderIds with no entry in orders is an invariant violation, not an
+        // expected absence — surface it instead of silently skipping the order.
+        val live = liveOrderIds.map { orders[it] ?: error("live order index desync: $it") }
+        for (managed in live) {
             if (managed.state != OrderState.PENDING) continue
             if (managed.request.symbol != tick.symbol) continue
             updateTrailingHwm(managed, tick.price)
@@ -1096,7 +1177,7 @@ class OrderManager(
         // PaperBroker, Bybit, and LogBroker fall through here.
         if (!broker.supportsNativeGtd) {
             val nowMs = clock.now()
-            for (managed in orders.values.toList()) {
+            for (managed in live) {
                 if (managed.state.isTerminal) continue
                 if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
                 val deadline = managed.request.expiresAt ?: continue
@@ -1123,14 +1204,15 @@ class OrderManager(
         }
 
         val triggered: List<ManagedOrder> =
-            orders.values
+            live
                 .filter { it.state == OrderState.PENDING }
                 .filter { it.request.symbol == tick.symbol }
                 .filter { triggerHit(it, tick.price) }
-                .toList()
         for (managed in triggered) {
             fireFallbackTrigger(managed, tick.price)
         }
+
+        runGc()
     }
 
     private fun handleTimeExitExpiry(te: OrderRequest.TimeExit) {
