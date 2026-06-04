@@ -1,7 +1,7 @@
 STRATEGY mb VERSION 1
 
 SYMBOLS
-    btc  = BYBIT:BTCUSDT       EVERY 1m,
+    btc  = BYBIT_SPOT:BTCUSDT  EVERY 1m,
     gold = INTERACTIVE:XAUUSD  EVERY 1m,
     aapl = ALPACA:AAPL         EVERY 1m
 
