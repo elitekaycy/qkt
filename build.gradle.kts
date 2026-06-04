@@ -202,6 +202,12 @@ tasks.test {
         events("passed", "failed", "skipped")
         showStandardStreams = true
     }
+    // Forward `-Dsoak.*` to the test JVM so soak runs can be scaled from the command line
+    // (e.g. -Dsoak.ticks=50000000 for a multi-hour run). Gradle's -D lands on the build JVM
+    // only; without this the soak knobs never reach the fork.
+    for (name in System.getProperties().stringPropertyNames()) {
+        if (name.startsWith("soak.")) systemProperty(name, System.getProperty(name))
+    }
 }
 
 tasks.register("dockerBuild") {
