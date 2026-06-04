@@ -225,7 +225,8 @@ class OrderManager(
     /**
      * Recover the originating symbol/side/quantity for [clientOrderId] — the fields a
      * [BrokerEvent.OrderRejected] event omits. Returns `null` for an order this manager
-     * never saw. The order is retained through rejection, so this resolves post-reject.
+     * never saw. A rejected order is retained only until the next GC drain (a tick), so read
+     * this synchronously within the rejection handler; a deferred read may find it reclaimed.
      */
     fun orderDetailsFor(clientOrderId: String): OrderDetails? =
         orders[clientOrderId]?.request?.let { OrderDetails(it.symbol, it.side, it.quantity) }
