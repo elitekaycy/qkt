@@ -8,6 +8,7 @@ import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.SequenceTickFeed
+import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.research.ReplayRepl
@@ -49,7 +50,12 @@ class ResearchCommand(
         val symbols = ast.streams.map { it.symbol }.distinct()
 
         val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = null)
-        val source = LocalMarketSource(store, FixedClock(time = to.toEpochMilli()), barStore = LocalBarStore())
+        val source =
+            LocalMarketSource(
+                store,
+                FixedClock(time = to.toEpochMilli()),
+                barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
+            )
         val range = TimeRange(from, to)
         val perSymbolFeeds = symbols.map { SequenceTickFeed(source.ticks(it, range)) }
         val feed = if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)

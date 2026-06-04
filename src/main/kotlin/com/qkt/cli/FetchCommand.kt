@@ -7,6 +7,7 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.live.bybit.BybitKlineClient
 import com.qkt.marketdata.live.mt5.Mt5BarFetcher
+import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.LocalBarStore
 import java.nio.file.Path
 import java.time.LocalDate
@@ -35,8 +36,10 @@ class FetchCommand(
         val target =
             args.positional(0) ?: run {
                 System.err.println("qkt: missing BROKER:SYMBOL target")
-                System.err.println("usage: qkt fetch BROKER:SYMBOL --tf <tf> --from <date> --to <date>")
-                System.err.println("       qkt fetch BROKER:SYMBOL --tf <tf> --last <Nd>")
+                System.err.println(
+                    "usage: qkt fetch BROKER:SYMBOL --tf <tf> --from <date> --to <date> [--data-root <dir>]",
+                )
+                System.err.println("       qkt fetch BROKER:SYMBOL --tf <tf> --last <Nd> [--data-root <dir>]")
                 return ExitCodes.ARG_ERROR
             }
         val parts = target.split(":", limit = 2)
@@ -74,7 +77,7 @@ class FetchCommand(
         }
 
         val fetcher = buildFetcher(broker) ?: return ExitCodes.USER_ERROR
-        val store = LocalBarStore()
+        val store = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root")))
 
         val totalDays =
             java.time.temporal.ChronoUnit.DAYS
