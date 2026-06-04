@@ -109,9 +109,8 @@ jobs:
             echo "release $TAG exists; attaching tarballs"
             gh release upload "$TAG" "$TAR_PATH" "$SC_PATH" --clobber
           else
-            echo "release $TAG does not exist; creating draft"
+            echo "release $TAG does not exist; creating it"
             gh release create "$TAG" "$TAR_PATH" "$SC_PATH" \
-              --draft \
               --title "$TAG" \
-              --notes "Draft release. Fill in notes before publishing. Tarball attached."
+              --generate-notes
           fi
