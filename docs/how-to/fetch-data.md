@@ -66,6 +66,8 @@ brokers:
 
 Each `*.csv` is one UTC day with header `timestamp,open,high,low,close,volume`. The manifest tracks contiguous ranges so re-fetching is a no-op (it skips days already on disk and coalesces adjacent days into a single range).
 
+The store root is `~/.qkt/data` by default. Override it with `--data-root <dir>` (on both `qkt fetch` and `qkt backtest`) or the `QKT_DATA_HOME` env var; the flag wins over the env var. Point `fetch` and `backtest` at the same root so the backtest finds what you fetched.
+
 ## How backtests pick it up
 
 `qkt backtest` wires the bar store into `LocalMarketSource`. When a strategy asks for bars on `(broker, symbol, tf)` and every UTC day in the requested range is on disk, the source reads from the bar store directly. If any day is missing, it falls back to tick aggregation (your `~/.qkt/data/symbols/…/{date}.csv` tick files). The two stores coexist safely — no migration needed.
