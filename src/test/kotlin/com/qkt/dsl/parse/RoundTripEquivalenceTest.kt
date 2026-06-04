@@ -64,7 +64,7 @@ class RoundTripEquivalenceTest {
         val parsed = parsedAst("multi_broker.qkt")
         val handwritten =
             strategy("mb", 1) {
-                val btc = stream("btc", "BYBIT", "BTCUSDT", "1m")
+                val btc = stream("btc", "BYBIT_SPOT", "BTCUSDT", "1m")
                 val gold = stream("gold", "INTERACTIVE", "XAUUSD", "1m")
                 val aapl = stream("aapl", "ALPACA", "AAPL", "1m")
                 rule {
@@ -135,8 +135,8 @@ class RoundTripEquivalenceTest {
         val parsed = parsedAst("momentum_basket.qkt")
         val handwritten =
             strategy("momentum_basket", 1) {
-                val btc = stream("btc", "BYBIT", "BTCUSDT", "1m")
-                val btcH1 = stream("btc_h1", "BYBIT", "BTCUSDT", "1h")
+                val btc = stream("btc", "BYBIT_SPOT", "BTCUSDT", "1m")
+                val btcH1 = stream("btc_h1", "BYBIT_SPOT", "BTCUSDT", "1h")
                 val gold = stream("gold", "INTERACTIVE", "XAUUSD", "15m")
                 val aapl = stream("aapl", "ALPACA", "AAPL", "5m")
                 defaults {
