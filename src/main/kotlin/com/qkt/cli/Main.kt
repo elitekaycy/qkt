@@ -26,6 +26,7 @@ internal fun runMain(argv: Array<String>): Int {
             "daemon" -> DaemonCommand(args).run()
             "logs" -> LogsCommand(args).run()
             "status" -> StatusCommand(args).run()
+            "observe" -> ObserveCommand(args).run()
             "--version", "-v" -> {
                 println(BuildInfo.versionLine())
                 ExitCodes.SUCCESS
