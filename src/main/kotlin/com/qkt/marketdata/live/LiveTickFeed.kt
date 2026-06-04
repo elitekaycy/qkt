@@ -36,8 +36,11 @@ class LiveTickFeed(
         source.start(
             onTick = { tick ->
                 if (!queue.offer(tick)) {
-                    queue.poll()
-                    droppedTicks.incrementAndGet()
+                    // Buffer full: shed the oldest to make room for the freshest price.
+                    // A concurrent consumer can empty the slot first, so poll() may come
+                    // back null — only count a tick we actually evicted, or droppedTicks
+                    // over-reports under load.
+                    if (queue.poll() != null) droppedTicks.incrementAndGet()
                     queue.offer(tick)
                 }
             },
