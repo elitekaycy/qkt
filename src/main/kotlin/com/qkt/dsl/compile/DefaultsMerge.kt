@@ -53,6 +53,9 @@ private fun mergeOpts(
                 d.takeProfit?.let { t.childPrice(it) },
             ),
         oco = opts.oco,
+        // DEFAULTS has no stack surface — carry the action's own stacks through untouched.
+        stack = opts.stack,
+        stackAts = opts.stackAts,
     )
 }
 
