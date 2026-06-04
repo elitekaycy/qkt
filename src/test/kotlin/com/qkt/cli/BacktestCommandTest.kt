@@ -1,7 +1,13 @@
 package com.qkt.cli
 
+import com.qkt.marketdata.Candle
+import com.qkt.marketdata.store.LocalBarStore
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.math.BigDecimal
+import java.nio.file.Path
+import java.time.Instant
+import java.time.LocalDate
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -10,6 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class BacktestCommandTest {
     private fun runBacktest(vararg argv: String): Triple<Int, String, String> {
@@ -105,5 +112,47 @@ class BacktestCommandTest {
             )
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(stderr).contains("file not found")
+    }
+
+    @Test
+    fun `--data-root makes the backtest read fetched bars from that root`(
+        @TempDir dataRoot: Path,
+    ) {
+        // Seed bars only under the custom root; the default ~/.qkt/data has nothing for this symbol.
+        // Before the fix the bar store ignored --data-root and found no bars -> zero trades.
+        val day = LocalDate.parse("2024-01-15")
+        val day15 = Instant.parse("2024-01-15T00:00:00Z").toEpochMilli()
+        val bars =
+            (0 until 5).map { i ->
+                val start = day15 + i * 60_000L
+                Candle(
+                    "BACKTEST:BTCUSDT",
+                    BigDecimal("42000"),
+                    BigDecimal("42010"),
+                    BigDecimal("41990"),
+                    BigDecimal("42005"),
+                    BigDecimal("1"),
+                    start,
+                    start + 60_000L,
+                )
+            }
+        LocalBarStore(root = dataRoot).writeDay("BACKTEST", "BTCUSDT", "1m", day, bars)
+
+        val (code, stdout, stderr) =
+            runBacktest(
+                "backtest",
+                "src/test/resources/cli/valid_strategy.qkt",
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                dataRoot.toString(),
+                "--json",
+            )
+
+        assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
+        val obj = Json.parseToJsonElement(stdout.trim().lines().last()) as JsonObject
+        assertThat(obj["trades"]?.jsonPrimitive?.intOrNull).isNotNull.isGreaterThan(0)
     }
 }

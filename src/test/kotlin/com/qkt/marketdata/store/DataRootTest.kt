@@ -17,4 +17,14 @@ class DataRootTest {
         val resolved = DataRoot.resolveExplicit(env = "/tmp/qkt-test")
         assertThat(resolved).isEqualTo(Path.of("/tmp/qkt-test"))
     }
+
+    @Test
+    fun `forDataRoot prefers an explicit --data-root flag`() {
+        assertThat(DataRoot.forDataRoot("./mydata")).isEqualTo(Path.of("./mydata"))
+    }
+
+    @Test
+    fun `forDataRoot falls back to the env-or-default root when no flag`() {
+        assertThat(DataRoot.forDataRoot(null)).isEqualTo(DataRoot.resolve())
+    }
 }
