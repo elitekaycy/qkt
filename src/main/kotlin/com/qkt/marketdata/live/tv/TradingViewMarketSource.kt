@@ -85,6 +85,7 @@ class TradingViewMarketSource(
             onTick: (Tick) -> Unit,
             onError: (Throwable) -> Unit,
             onDisconnect: () -> Unit,
+            onReconnect: () -> Unit,
         ) {
             val qs = TradingViewQuoteSession(ws, clock)
             session = qs

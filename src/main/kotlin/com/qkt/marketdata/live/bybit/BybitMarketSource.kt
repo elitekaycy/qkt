@@ -100,12 +100,13 @@ private class BybitTickFeedSource(
         onTick: (Tick) -> Unit,
         onError: (Throwable) -> Unit,
         onDisconnect: () -> Unit,
+        onReconnect: () -> Unit,
     ) {
         val w = wsFactory(wsUrl)
         ws = w
         val c = BybitPublicWsClient(w, clock)
         client = c
-        c.subscribe(symbols, onTick = onTick, onDisconnect = onDisconnect)
+        c.subscribe(symbols, onTick = onTick, onDisconnect = onDisconnect, onReconnect = onReconnect)
     }
 
     override fun stop() {
