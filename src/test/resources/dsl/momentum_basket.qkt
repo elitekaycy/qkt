@@ -10,8 +10,8 @@ DEFAULTS {
 }
 
 SYMBOLS
-    btc    = BYBIT:BTCUSDT       EVERY 1m,
-    btc_h1 = BYBIT:BTCUSDT       EVERY 1h,
+    btc    = BYBIT_SPOT:BTCUSDT  EVERY 1m,
+    btc_h1 = BYBIT_SPOT:BTCUSDT  EVERY 1h,
     gold   = INTERACTIVE:XAUUSD  EVERY 15m,
     aapl   = ALPACA:AAPL         EVERY 5m
 
