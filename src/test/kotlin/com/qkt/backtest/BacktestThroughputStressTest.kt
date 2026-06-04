@@ -6,7 +6,6 @@ import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.Tick
-import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -64,17 +63,20 @@ class BacktestThroughputStressTest {
     private fun generateTicks(): List<Tick> {
         val random = java.util.Random(seed)
         val ticks = ArrayList<Tick>(tickCount)
-        var price = BigDecimal("50000")
+        // Walk in Double, not BigDecimal: a BigDecimal walk grows its scale a few digits every
+        // tick (each multiply accumulates precision), so generating a million ticks slows to a
+        // crawl. Double is O(1) and plenty for a synthetic price.
+        var price = 50_000.0
         val tickInterval = 60_000L / 10L // 10 ticks per minute → 1 candle per 60_000ms
         for (i in 0 until tickCount) {
             // Walk price by up to ±0.05% per tick.
             val deltaBps = (random.nextInt(11) - 5) // -5..5
-            price = price.add(price.multiply(BigDecimal(deltaBps).divide(BigDecimal(10_000))))
-            if (price.signum() <= 0) price = BigDecimal("50000")
+            price += price * deltaBps / 10_000.0
+            if (price <= 0) price = 50_000.0
             ticks.add(
                 Tick(
                     symbol = symbol,
-                    price = Money.of(price.toPlainString()),
+                    price = Money.of(String.format(java.util.Locale.ROOT, "%.2f", price)),
                     timestamp = i * tickInterval,
                 ),
             )
