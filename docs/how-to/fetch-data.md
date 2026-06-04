@@ -70,6 +70,10 @@ Each `*.csv` is one UTC day with header `timestamp,open,high,low,close,volume`. 
 
 `qkt backtest` wires the bar store into `LocalMarketSource`. When a strategy asks for bars on `(broker, symbol, tf)` and every UTC day in the requested range is on disk, the source reads from the bar store directly. If any day is missing, it falls back to tick aggregation (your `~/.qkt/data/symbols/…/{date}.csv` tick files). The two stores coexist safely — no migration needed.
 
+The engine is tick-driven (backtest and live differ only in feed and clock), so each fetched bar is **replayed as four synthetic ticks** in Open → Low → High → Close order. Those four re-aggregate to exactly the stored bar — first=open, max=high, min=low, last=close, with the bar's volume on the close tick — so indicators and candle-close rules see the identical OHLC they would from real candles. This is what lets **bars-only venues backtest at all**: a crypto symbol like `BYBIT_SPOT:BTCUSDT`, where there are no recorded ticks to replay, drives the same single pipeline off its bars. When real ticks *are* present for a symbol, they are preferred and the bar synthesis is not used.
+
+**Intra-bar fidelity caveat.** The true order in which a bar's high and low were hit is unknowable from OHLC alone, so the replay always visits the **low before the high**. This is the pessimistic choice: for a long with a protective stop, the adverse extreme is reached first, so a stop is filled at the low rather than skipped — a bar-based backtest will not *overstate* a risk-managed strategy. Fills that depend on the exact within-bar path (e.g. a stop and a take-profit both inside one bar) are therefore an approximation, not tick-accurate.
+
 ## Limits and gotchas
 
 - **MT5 historical APIs are broker-dependent.** Some brokers throttle aggressively or only serve a limited window (e.g. 90 days). On rate-limit / data-unavailable, `qkt fetch` stops and prints the error; re-run after the broker recovers.

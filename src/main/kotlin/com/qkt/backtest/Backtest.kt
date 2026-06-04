@@ -8,6 +8,7 @@ import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.source.BarTickFeed
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSource
@@ -135,14 +136,17 @@ class Backtest(
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
             brokerKind: BrokerKind = BrokerKind.PAPER,
         ): Backtest {
-            require(MarketSourceCapability.TICKS in source.capabilities) {
-                "Backtest requires a MarketSource that supports TICKS; ${source.name} has ${source.capabilities}"
+            require(
+                MarketSourceCapability.TICKS in source.capabilities ||
+                    MarketSourceCapability.BARS in source.capabilities,
+            ) {
+                "Backtest requires a MarketSource with TICKS or BARS; ${source.name} has ${source.capabilities}"
             }
             val from = request.from ?: error("Backtest.fromSource requires explicit MarketRequest.from")
             val to = request.to ?: error("Backtest.fromSource requires explicit MarketRequest.to")
             val range = TimeRange(from, to)
             val perSymbolFeeds: List<TickFeed> =
-                request.symbols.map { sym -> SequenceTickFeed(source.ticks(sym, range)) }
+                request.symbols.map { sym -> replayFeed(source, sym, range, candleWindow) }
             val feed: TickFeed =
                 if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
             return Backtest(
@@ -159,6 +163,40 @@ class Backtest(
                 instruments = instruments,
                 brokerKind = brokerKind,
             )
+        }
+
+        /**
+         * Picks the replay feed for one symbol: real recorded ticks when the source has them,
+         * otherwise synthesized O->L->H->C ticks from its OHLC bars (the only path for bars-only
+         * venues like crypto). Preferring ticks keeps tick-sourced backtests (e.g. MT5) byte-for-byte
+         * unchanged; the bar fallback is what makes a `qkt fetch`ed crypto symbol backtest at all.
+         */
+        private fun replayFeed(
+            source: MarketSource,
+            symbol: String,
+            range: TimeRange,
+            window: TimeWindow?,
+        ): TickFeed {
+            val caps = source.capabilities
+            val ticksAvailable = MarketSourceCapability.TICKS in caps
+            if (ticksAvailable) {
+                val iter = source.ticks(symbol, range).iterator()
+                if (iter.hasNext()) {
+                    val first = iter.next()
+                    return SequenceTickFeed(sequenceOf(first) + iter.asSequence())
+                }
+            }
+            // No recorded ticks for this symbol/range. Synthesize from OHLC bars when we can.
+            if (MarketSourceCapability.BARS in caps && window != null) {
+                return BarTickFeed(source.bars(symbol, window, range))
+            }
+            // Can't synthesize. A tick-capable source with an empty range is a legitimate gap
+            // (e.g. a market-closed day) — yield nothing. A bars-only source reaching here means
+            // no candle window was supplied, which is a real misconfiguration.
+            require(ticksAvailable) {
+                "bar-based backtest for $symbol needs a candle window (timeframe) — pass candleWindow"
+            }
+            return SequenceTickFeed(emptySequence())
         }
     }
 }

@@ -144,7 +144,8 @@ class LiveSessionTest {
 
         session.start().awaitTermination(Duration.ofSeconds(2))
 
-        assertThat(seenWarmup).hasSize(10)
+        // Widest spec is 10 bars; warmup emits four OHLC ticks (O, L, H, C) per bar.
+        assertThat(seenWarmup).hasSize(40)
     }
 
     @Test
@@ -184,7 +185,8 @@ class LiveSessionTest {
             )
         session.start().awaitTermination(Duration.ofSeconds(2))
 
-        assertThat(seenWarmup).hasSize(30)
+        // Override is 30 bars; warmup emits four OHLC ticks (O, L, H, C) per bar.
+        assertThat(seenWarmup).hasSize(120)
     }
 
     @Test

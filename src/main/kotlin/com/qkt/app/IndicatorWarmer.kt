@@ -2,9 +2,9 @@ package com.qkt.app
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
-import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.marketdata.source.candleToTicks
 import com.qkt.strategy.WarmupSpec
 import java.time.Instant
 import org.slf4j.LoggerFactory
@@ -61,20 +61,14 @@ class IndicatorWarmer(
         val range = TimeRange(Instant.ofEpochMilli(lowerMs), Instant.ofEpochMilli(upperMs))
 
         for (candle in source.bars(symbol, bars.window, range)) {
-            val syntheticTs = candle.endTime - 1
-            require(syntheticTs < now.toEpochMilli()) {
-                "look-ahead bias: warmup tick beyond now=$now, requested to=${Instant.ofEpochMilli(
-                    syntheticTs,
-                )}; symbol=$symbol"
+            for (tick in candleToTicks(candle.copy(symbol = symbol))) {
+                require(tick.timestamp < now.toEpochMilli()) {
+                    "look-ahead bias: warmup tick beyond now=$now, requested to=${Instant.ofEpochMilli(
+                        tick.timestamp,
+                    )}; symbol=$symbol"
+                }
+                pipeline.ingestForWarmup(tick)
             }
-            val tick =
-                Tick(
-                    symbol = symbol,
-                    price = candle.close,
-                    timestamp = syntheticTs,
-                    volume = candle.volume,
-                )
-            pipeline.ingestForWarmup(tick)
         }
     }
 

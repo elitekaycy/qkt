@@ -79,7 +79,10 @@ class BacktestCommandTest {
         assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
         val payload = stdout.trim().lines().last()
         val obj = Json.parseToJsonElement(payload) as JsonObject
-        assertThat(obj["trades"]?.jsonPrimitive?.intOrNull).isNotNull
+        // The fixture strategy declares `BACKTEST:BTCUSDT` and buys on every close > 100; with the
+        // broker-prefixed symbol flowing through to the feed, those ticks route to the strategy and
+        // actually fill. A zero here means the symbol mismatch is back (#214).
+        assertThat(obj["trades"]?.jsonPrimitive?.intOrNull).isNotNull.isGreaterThan(0)
         assertThat(obj["finalRealized"]).isNotNull
         assertThat(obj["finalUnrealized"]).isNotNull
         assertThat(obj["totalPnL"]).isNotNull
