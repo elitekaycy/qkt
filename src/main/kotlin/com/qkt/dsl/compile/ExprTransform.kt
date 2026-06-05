@@ -180,6 +180,7 @@ class ExprTransform(
             is OcoEntry -> OcoEntry(action(a.leg1), action(a.leg2))
             is Log -> a.copy(fields = a.fields.mapValues { expr(it.value) })
             is Close, is Cancel, CloseAll, CancelAll -> a
+            is com.qkt.dsl.ast.Latch -> a
         }
 
     fun defaultsBlock(d: DefaultsBlock): DefaultsBlock =
