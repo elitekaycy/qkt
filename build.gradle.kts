@@ -120,16 +120,31 @@ val windowsAppImage by tasks.registering(Exec::class) {
         out.mkdirs()
         val jpackage =
             "${launcher.get().metadata.installationPath.asFile.absolutePath}/bin/jpackage$toolExt"
-        commandLine(
-            jpackage,
-            "--type", "app-image",
-            "--name", "qkt",
-            "--input", libDir.get().asFile.absolutePath,
-            "--main-jar", "qkt-$ver.jar",
-            "--main-class", "com.qkt.cli.MainKt",
-            "--runtime-image", runtimeDir.get().asFile.absolutePath,
-            "--dest", out.absolutePath,
-        )
+        val args =
+            mutableListOf(
+                jpackage,
+                "--type",
+                "app-image",
+                "--name",
+                "qkt",
+                "--input",
+                libDir.get().asFile.absolutePath,
+                "--main-jar",
+                "qkt-$ver.jar",
+                "--main-class",
+                "com.qkt.cli.MainKt",
+                "--runtime-image",
+                runtimeDir.get().asFile.absolutePath,
+                "--dest",
+                out.absolutePath,
+            )
+
+        // qkt is a console CLI, but jpackage app-image launchers default to the GUI
+        // subsystem, so the JVM exit code never reaches the shell (qkt.exe --version
+        // prints fine yet reports failure). Force a console launcher. --win-console is
+        // Windows-only, so guard on the host tool suffix.
+        if (toolExt == ".exe") args.add("--win-console")
+        commandLine(args)
     }
 }
 
