@@ -72,4 +72,18 @@ class ParserLatchTest {
             assertThat(entry.order).isInstanceOf(LatchLimit::class.java)
         }
     }
+
+    @Test
+    fun `latch-stack example compiles end-to-end with LET-named distances`() {
+        val ast = (Dsl.parseFile(Path.of("examples/latch-stack/latch-stack.qkt")) as ParseResult.Success).value
+        assertThat(ast.rules).isNotEmpty // guard: a silent parse miss leaves rules empty and would pass vacuously
+
+        // Must not throw "LATCH distances must be compile-time constants" — ExprTransform
+        // inlines the LET refs (trip/near/mid/deep/sl/tp) to literals before LatchCompiler.
+        val strategy =
+            com.qkt.dsl.compile
+                .AstCompiler()
+                .compile(ast)
+        assertThat(strategy).isNotNull
+    }
 }
