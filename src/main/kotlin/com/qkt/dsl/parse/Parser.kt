@@ -12,6 +12,7 @@ import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
+import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
@@ -30,6 +31,8 @@ import com.qkt.dsl.ast.CrossDir
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
+import com.qkt.dsl.ast.DirRel
+import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.DurationAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
@@ -40,6 +43,13 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.IsNull
+import com.qkt.dsl.ast.Latch
+import com.qkt.dsl.ast.LatchBracket
+import com.qkt.dsl.ast.LatchEntry
+import com.qkt.dsl.ast.LatchLimit
+import com.qkt.dsl.ast.LatchMarket
+import com.qkt.dsl.ast.LatchOrder
+import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
@@ -850,7 +860,8 @@ class Parser(
             k == TokenKind.CANCEL ||
             k == TokenKind.CANCEL_ALL ||
             k == TokenKind.LOG ||
-            k == TokenKind.OCO_ENTRY
+            k == TokenKind.OCO_ENTRY ||
+            k == TokenKind.LATCH
 
     private fun parseForEach(): List<RuleAst> {
         expect(TokenKind.FOR, "expected FOR")
@@ -907,6 +918,7 @@ class Parser(
             }
             TokenKind.LOG -> parseLogAction()
             TokenKind.OCO_ENTRY -> parseOcoEntry()
+            TokenKind.LATCH -> parseLatch()
             else -> error("expected action keyword, got '${peek().lexeme}'")
         }
 
@@ -924,6 +936,113 @@ class Parser(
         }
         expect(TokenKind.RBRACE, "expected '}' to close OCO_ENTRY (exactly two legs)")
         return OcoEntry(leg1, leg2)
+    }
+
+    private fun parseLatch(): ActionAst {
+        expect(TokenKind.LATCH, "expected LATCH")
+        val stream = expect(TokenKind.IDENT, "expected stream alias after LATCH").lexeme
+        expect(TokenKind.OFFSET, "expected OFFSET after LATCH stream")
+        val offset = parseExpr()
+        val reference =
+            if (match(TokenKind.FROM)) {
+                parseExpr()
+            } else {
+                null
+            }
+        expect(TokenKind.ARM, "expected ARM <duration> in LATCH")
+        val armWindow = parseDuration()
+        val name =
+            if (match(TokenKind.AS)) {
+                expect(TokenKind.IDENT, "expected name after AS").lexeme
+            } else {
+                null
+            }
+        expect(TokenKind.LBRACE, "expected '{' to open LATCH block")
+        val entries = mutableListOf(parseLatchEntry())
+
+        while (match(TokenKind.SEMICOLON)) {
+            entries.add(parseLatchEntry())
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close LATCH block")
+        return Latch(stream, BreakOffset(reference, offset), armWindow, name, entries)
+    }
+
+    private fun parseLatchEntry(): LatchEntry {
+        expect(TokenKind.ENTER, "expected ENTER in LATCH block")
+        val order = parseLatchOrder()
+        var bracket: LatchBracket? = null
+        var sizing: SizingAst? = null
+        var expire: DurationAst? = null
+        loop@ while (true) {
+            when (peek().kind) {
+                TokenKind.BRACKET -> {
+                    advance()
+                    bracket = parseLatchBracket()
+                }
+                TokenKind.SIZING -> {
+                    advance()
+                    sizing = parseSizing()
+                }
+                TokenKind.EXPIRE -> {
+                    advance()
+                    expire = parseDuration()
+                }
+                else -> break@loop
+            }
+        }
+        return LatchEntry(order, bracket, sizing, expire)
+    }
+
+    private fun parseLatchOrder(): LatchOrder =
+        when (peek().kind) {
+            TokenKind.MARKET -> {
+                advance()
+                LatchMarket
+            }
+            TokenKind.LIMIT -> {
+                advance()
+                LatchLimit(parseDirRel())
+            }
+            TokenKind.STOP -> {
+                advance()
+                LatchStop(parseDirRel())
+            }
+            else -> error("expected MARKET/LIMIT/STOP after ENTER, got '${peek().lexeme}'")
+        }
+
+    private fun parseDirRel(): DirRel {
+        val sense =
+            when (peek().kind) {
+                TokenKind.WITH -> DirSense.WITH
+                TokenKind.AGAINST -> DirSense.AGAINST
+                TokenKind.RETRACE -> DirSense.AGAINST
+                else -> error("expected WITH/AGAINST/RETRACE, got '${peek().lexeme}'")
+            }
+        advance()
+        return DirRel(sense, parseExpr())
+    }
+
+    private fun parseLatchBracket(): LatchBracket {
+        expect(TokenKind.LBRACE, "expected '{' to open BRACKET block")
+        var stopLoss: DirRel? = null
+        var takeProfit: DirRel? = null
+        do {
+            when (peek().kind) {
+                TokenKind.STOP -> {
+                    advance()
+                    expect(TokenKind.LOSS, "expected LOSS after STOP")
+                    stopLoss = parseDirRel()
+                }
+                TokenKind.TAKE -> {
+                    advance()
+                    expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
+                    takeProfit = parseDirRel()
+                }
+                else -> error("expected STOP LOSS or TAKE PROFIT in BRACKET, got '${peek().lexeme}'")
+            }
+        } while (match(TokenKind.COMMA))
+        expect(TokenKind.RBRACE, "expected '}' to close BRACKET block")
+        return LatchBracket(stopLoss, takeProfit)
     }
 
     private fun parseLogAction(): Log {

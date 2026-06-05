@@ -180,7 +180,46 @@ class ExprTransform(
             is OcoEntry -> OcoEntry(action(a.leg1), action(a.leg2))
             is Log -> a.copy(fields = a.fields.mapValues { expr(it.value) })
             is Close, is Cancel, CloseAll, CancelAll -> a
+            is com.qkt.dsl.ast.Latch -> latch(a)
         }
+
+    // Walk a latch's expressions so LET (and other expr transforms) reach the offset,
+    // each entry's direction-relative distance, and the bracket distances. Without this
+    // the latch is a passthrough and `RETRACE near` (a LET ref) never resolves to a literal.
+    private fun latch(a: com.qkt.dsl.ast.Latch): com.qkt.dsl.ast.Latch =
+        a.copy(
+            sensor =
+                when (val s = a.sensor) {
+                    is com.qkt.dsl.ast.BreakOffset ->
+                        com.qkt.dsl.ast
+                            .BreakOffset(s.reference?.let(::expr), expr(s.offset))
+                },
+            entries = a.entries.map(::latchEntry),
+        )
+
+    private fun latchEntry(e: com.qkt.dsl.ast.LatchEntry): com.qkt.dsl.ast.LatchEntry =
+        e.copy(
+            order =
+                when (val o = e.order) {
+                    com.qkt.dsl.ast.LatchMarket -> o
+                    is com.qkt.dsl.ast.LatchLimit ->
+                        com.qkt.dsl.ast
+                            .LatchLimit(dirRel(o.price))
+                    is com.qkt.dsl.ast.LatchStop ->
+                        com.qkt.dsl.ast
+                            .LatchStop(dirRel(o.price))
+                },
+            bracket =
+                e.bracket?.let { b ->
+                    com.qkt.dsl.ast
+                        .LatchBracket(b.stopLoss?.let(::dirRel), b.takeProfit?.let(::dirRel))
+                },
+            sizing = e.sizing?.let(::sizing),
+        )
+
+    private fun dirRel(r: com.qkt.dsl.ast.DirRel): com.qkt.dsl.ast.DirRel =
+        com.qkt.dsl.ast
+            .DirRel(r.sense, expr(r.dist))
 
     fun defaultsBlock(d: DefaultsBlock): DefaultsBlock =
         DefaultsBlock(

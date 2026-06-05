@@ -161,6 +161,7 @@ nav:
           - SIZING: reference/dsl/sizing.md
           - BRACKET: reference/dsl/bracket.md
           - STACK (pyramiding): reference/dsl/stack.md
+          - LATCH: reference/dsl/latch.md
           - FOR EACH: reference/dsl/foreach.md
           - PORTFOLIO files: reference/dsl/portfolio.md
       - DSL grammar (cheat sheet): reference/dsl-grammar.md

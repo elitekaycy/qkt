@@ -1,0 +1,50 @@
+STRATEGY latch_stack VERSION 1
+
+# Retrace-ladder on a session break.
+#
+# Mechanism: at the top of each hour, if flat, arm two price wires `trip` points
+# either side of the current bar's close. The first wire the market crosses (up or
+# down) establishes the break direction and locks in anchor O. Three resting LIMIT
+# orders are then placed at increasing retracement depths below (for a long break)
+# or above (for a short break) O:
+#
+#   near (depth 2):  O +/- 2  — quick fade for a partial fill
+#   mid  (depth 4):  O +/- 4  — main body of the retrace
+#   deep (depth 6):  O +/- 6  — maximum-conviction add if the retrace runs far
+#
+# All three share the same anchor-relative SL (`sl` points against the break) and
+# TP (`tp` points with the break). Every depth is less than `sl`, so no entry has
+# inverted geometry regardless of direction. If no wire is crossed within the
+# 5-minute arm window, the latch drops silently and re-arms at the next :00 close.
+
+SYMBOLS
+    gold = BACKTEST:XAUUSD EVERY 5m
+
+# trip = wire distance; near/mid/deep = retrace depths (all < sl);
+# sl/tp = the shared stop/target anchored to the break level.
+LET trip = 0.50,
+    near = 2,
+    mid  = 4,
+    deep = 6,
+    sl   = 14,
+    tp   = 8
+
+RULES
+    WHEN NOW.minute_utc = 0 AND POSITION.gold = 0
+    THEN LATCH gold OFFSET trip ARM 5m {
+        ENTER LIMIT RETRACE near
+            BRACKET { STOP LOSS AGAINST sl, TAKE PROFIT WITH tp }
+            SIZING RISK $ 100
+            EXPIRE 2h ;
+        ENTER LIMIT RETRACE mid
+            BRACKET { STOP LOSS AGAINST sl, TAKE PROFIT WITH tp }
+            SIZING RISK $ 100
+            EXPIRE 2h ;
+        ENTER LIMIT RETRACE deep
+            BRACKET { STOP LOSS AGAINST sl, TAKE PROFIT WITH tp }
+            SIZING RISK $ 100
+            EXPIRE 2h
+    }
+
+    WHEN POSITION.gold.holding_duration > 14400
+    THEN CLOSE gold ; LOG "session timeout" pnl=POSITION.gold.pnl
