@@ -228,6 +228,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
                 walkAction(a.leg1)
                 walkAction(a.leg2)
             }
+            is com.qkt.dsl.ast.Latch -> out.add(a.stream)
         }
     }
 
