@@ -107,9 +107,9 @@ data class Config(
             home: Path = Path.of(System.getProperty("user.home")),
         ): List<Path> {
             val paths = mutableListOf(Path.of("./qkt.config.yaml"))
-            if (!userDirs.isWindows) paths += Path.of("/etc/qkt/qkt.config.yaml")
-            paths += userDirs.configHome().resolve("qkt.config.yaml")
-            paths += home.resolve(".qkt").resolve("qkt.config.yaml")
+            if (!userDirs.isWindows) paths.add(Path.of("/etc/qkt/qkt.config.yaml"))
+            paths.add(userDirs.configHome().resolve("qkt.config.yaml"))
+            paths.add(home.resolve(".qkt").resolve("qkt.config.yaml"))
             return paths
         }
 
