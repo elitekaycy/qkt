@@ -139,6 +139,7 @@ nav:
       - Debug a strategy that isn't firing: how-to/debug-not-firing.md
       - Iterate in the research REPL: how-to/research-repl.md
       - Deploy live on Exness (MT5): how-to/deploy-exness.md
+      - Install on Windows: how-to/install-windows.md
   - Concepts:
       - concepts/index.md
       - Architecture: concepts/architecture.md
