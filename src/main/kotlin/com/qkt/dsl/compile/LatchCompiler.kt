@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
+import com.qkt.common.Side
 import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.DirSense
@@ -12,7 +13,6 @@ import com.qkt.dsl.ast.LatchMarket
 import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
-import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
@@ -122,16 +122,38 @@ class LatchCompiler(
             val entryReq: OrderRequest =
                 when (val o = entry.order) {
                     is LatchMarket ->
-                        OrderRequest.Market(id, ec.candle.symbol, side, BigDecimal.ONE, TimeInForce.GTC, now, strategyId)
+                        OrderRequest.Market(
+                            id,
+                            ec.candle.symbol,
+                            side,
+                            BigDecimal.ONE,
+                            TimeInForce.GTC,
+                            now,
+                            strategyId,
+                        )
                     is LatchLimit ->
                         OrderRequest.Limit(
-                            id, ec.candle.symbol, side, BigDecimal.ONE, resolve(o.price),
-                            TimeInForce.GTC, now, strategyId, expiresAt(now, expiresInMs),
+                            id,
+                            ec.candle.symbol,
+                            side,
+                            BigDecimal.ONE,
+                            resolve(o.price),
+                            TimeInForce.GTC,
+                            now,
+                            strategyId,
+                            expiresAt(now, expiresInMs),
                         )
                     is LatchStop ->
                         OrderRequest.Stop(
-                            id, ec.candle.symbol, side, BigDecimal.ONE, resolve(o.price),
-                            TimeInForce.GTC, now, strategyId, expiresAt(now, expiresInMs),
+                            id,
+                            ec.candle.symbol,
+                            side,
+                            BigDecimal.ONE,
+                            resolve(o.price),
+                            TimeInForce.GTC,
+                            now,
+                            strategyId,
+                            expiresAt(now, expiresInMs),
                         )
                 }
 
@@ -154,7 +176,10 @@ class LatchCompiler(
                 return@LatchEntryBuilder null
             }
             OrderRequest.Bracket(
-                id, ec.candle.symbol, side, qty,
+                id,
+                ec.candle.symbol,
+                side,
+                qty,
                 entry = withQty(entryReq, qty),
                 takeProfit = tpPrice,
                 stopLoss = StopLossSpec.Fixed(slPrice ?: entryPrice),
@@ -179,7 +204,10 @@ class LatchCompiler(
         return if (rel.sense == DirSense.WITH) d else d.negate()
     }
 
-    private fun expiresAt(now: Long, ms: Long?): Long? = ms?.let { now + it }
+    private fun expiresAt(
+        now: Long,
+        ms: Long?,
+    ): Long? = ms?.let { now + it }
 
     private fun invalidStop(
         side: Side,

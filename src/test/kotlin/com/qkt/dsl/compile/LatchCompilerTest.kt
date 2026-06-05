@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.common.Side
 import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.DirSense
@@ -10,7 +11,6 @@ import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import java.math.BigDecimal
