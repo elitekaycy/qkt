@@ -102,6 +102,17 @@ class TradingPipeline(
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
     val orderManager: OrderManager = OrderManager(broker, bus, priceTracker, clock, persistor)
+    val latchManager: LatchManager =
+        LatchManager(
+            emit = { req ->
+                when (val decision = riskEngine.approve(req)) {
+                    is com.qkt.risk.Decision.Approve -> bus.publish(com.qkt.events.OrderEvent(req))
+                    is com.qkt.risk.Decision.Reject ->
+                        bus.publish(com.qkt.events.RiskRejectedEvent(req, decision.reason))
+                }
+            },
+            clock = clock,
+        )
 
     /**
      * Clock-driven scheduler for DSL `SCHEDULE` blocks (#77). Single instance shared
@@ -150,6 +161,8 @@ class TradingPipeline(
                 bus.publish(SignalEvent(sig))
                 if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
                     orderManager.cancelPendingForSymbol(sig.symbol)
+                } else if (sig is com.qkt.strategy.Signal.ArmLatch) {
+                    latchManager.arm(sig.compiled, sig.ec)
                 } else {
                     val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
                     if (request != null) {
@@ -183,6 +196,7 @@ class TradingPipeline(
                 bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
             }
         }
+        bus.subscribe<TickEvent> { e -> latchManager.onTick(e.tick) }
         bus.subscribe<TickEvent> { e ->
             strategyPositions.onTick(e.tick.symbol, e.tick.price)
             riskState.onTick()
