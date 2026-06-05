@@ -57,7 +57,9 @@ class ActionCompiler(
             is CancelAll -> compileCancelAll()
             is Block -> compileBlock(action)
             is OcoEntry -> compileOcoEntry(action)
-            is Latch -> { ec -> listOf(Signal.ArmLatch(latchCompiler.compile(action, ec.strategyContext.strategyId), ec)) }
+            is Latch -> { ec ->
+                listOf(Signal.ArmLatch(latchCompiler.compile(action, ec.strategyContext.strategyId), ec))
+            }
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
 
