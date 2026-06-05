@@ -36,12 +36,9 @@ class UserDirs(
             else -> home.resolve(".config").resolve("qkt")
         }
 
-    private fun localAppData(): Path =
-        envPath("LOCALAPPDATA") ?: home.resolve("AppData").resolve("Local")
+    private fun localAppData(): Path = envPath("LOCALAPPDATA") ?: home.resolve("AppData").resolve("Local")
 
-    private fun appData(): Path =
-        envPath("APPDATA") ?: home.resolve("AppData").resolve("Roaming")
+    private fun appData(): Path = envPath("APPDATA") ?: home.resolve("AppData").resolve("Roaming")
 
-    private fun envPath(key: String): Path? =
-        env[key]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+    private fun envPath(key: String): Path? = env[key]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
 }
