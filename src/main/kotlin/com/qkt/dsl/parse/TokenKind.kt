@@ -70,6 +70,16 @@ enum class TokenKind {
     LOSS,
     RR,
 
+    LATCH,
+    ENTER,
+    OFFSET,
+    ARM,
+    WITH,
+    AGAINST,
+    RETRACE,
+    FROM,
+    EXPIRE,
+
     TIF,
     GTC,
     IOC,
