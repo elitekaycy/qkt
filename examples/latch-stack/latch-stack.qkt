@@ -1,0 +1,43 @@
+STRATEGY latch_stack VERSION 1
+
+# Retrace-ladder on a session break.
+#
+# Mechanism: at the top of each hour, if flat, arm two price wires 0.50 points either
+# side of the current bar's close. The first wire the market crosses (up or down)
+# establishes the break direction and locks in anchor O. Three resting LIMIT orders
+# are then placed at increasing retracement depths below (for a long break) or above
+# (for a short break) O:
+#
+#   near (depth 2):  O ± 2  — quick fade for partial fill
+#   mid  (depth 4):  O ± 4  — main body of the retrace
+#   deep (depth 6):  O ± 6  — maximum-conviction add if the retrace runs far
+#
+# All three share the same anchor-relative SL (14 points against the break) and TP
+# (8 points with the break). Depths (2, 4, 6) are all less than the SL distance (14),
+# so no entry has inverted geometry regardless of direction.
+#
+# If no wire is crossed within the 5-minute arm window, all latches drop silently
+# and the strategy tries again at the next :00 candle close.
+
+SYMBOLS
+    gold = BACKTEST:XAUUSD EVERY 5m
+
+RULES
+    WHEN NOW.minute_utc = 0 AND POSITION.gold = 0
+    THEN LATCH gold OFFSET 0.50 ARM 5m {
+        ENTER LIMIT RETRACE 2
+            BRACKET { STOP LOSS AGAINST 14, TAKE PROFIT WITH 8 }
+            SIZING RISK $ 100
+            EXPIRE 2h ;
+        ENTER LIMIT RETRACE 4
+            BRACKET { STOP LOSS AGAINST 14, TAKE PROFIT WITH 8 }
+            SIZING RISK $ 100
+            EXPIRE 2h ;
+        ENTER LIMIT RETRACE 6
+            BRACKET { STOP LOSS AGAINST 14, TAKE PROFIT WITH 8 }
+            SIZING RISK $ 100
+            EXPIRE 2h
+    }
+
+    WHEN POSITION.gold.holding_duration > 14400
+    THEN CLOSE gold ; LOG "session timeout" pnl=POSITION.gold.pnl

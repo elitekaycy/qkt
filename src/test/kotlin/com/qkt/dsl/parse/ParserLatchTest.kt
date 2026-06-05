@@ -5,6 +5,8 @@ import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
+import com.qkt.dsl.ast.WhenThen
+import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -58,5 +60,16 @@ class ParserLatchTest {
             ) as Latch
         assertThat(latch.name).isEqualTo("brk")
         assertThat((latch.sensor as BreakOffset).reference).isNotNull
+    }
+
+    @Test
+    fun `latch-stack example file parses to a Latch with 3 entries`() {
+        val ast = (Dsl.parseFile(Path.of("examples/latch-stack/latch-stack.qkt")) as ParseResult.Success).value
+        val firstRule = ast.rules.first() as WhenThen
+        val latch = firstRule.action as Latch
+        assertThat(latch.entries).hasSize(3)
+        latch.entries.forEach { entry ->
+            assertThat(entry.order).isInstanceOf(LatchLimit::class.java)
+        }
     }
 }
