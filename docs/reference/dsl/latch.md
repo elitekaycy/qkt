@@ -131,7 +131,7 @@ If a single tick straddles both wires (i.e., crosses both up and down simultaneo
 
 ## Constraints
 
-- **Distances must be numeric literals.** `OFFSET`, `RETRACE`, `WITH`, and `AGAINST` distances must be numeric literals. `LET` references, indicator calls, `NOW.<field>`, and runtime expressions are not resolved inside latch distance expressions and will cause a compile error.
+- **Distances must be compile-time constants.** `OFFSET`, `RETRACE`, `WITH`, and `AGAINST` distances must resolve to a constant — a numeric literal, or a `LET` bound to one (`LET near = 4` then `RETRACE near` works; the `LET` is inlined before compilation). Genuine runtime expressions — indicator calls, `NOW.<field>`, price refs — are rejected with a compile error, because the risk-sizing stop distance (`|SL_dist − entry_dist|`) is computed statically at compile time.
 - **Geometry validation.** A BUY LIMIT above the entry anchor, or a SL above a BUY entry, is skipped at runtime with an WARN log. The compiler cannot detect this because the direction is only known at wire-cross time.
 - **Transient arm — no persistence.** Armed latches live in memory only. A restart mid-arm drops them silently. The strategy re-arms on the next qualifying candle close.
 - **At most one fire per arm.** A latch fires on the first wire cross, then removes itself. It does not re-arm automatically.
