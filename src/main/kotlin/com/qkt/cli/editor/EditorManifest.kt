@@ -1,5 +1,6 @@
 package com.qkt.cli.editor
 
+import com.qkt.cli.UserDirs
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.serialization.Serializable
@@ -51,12 +52,8 @@ data class EditorManifest(
         fun defaultPath(
             env: Map<String, String> = System.getenv(),
             home: Path = Path.of(System.getProperty("user.home")),
-        ): Path {
-            val cfg =
-                env["XDG_CONFIG_HOME"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
-                    ?: home.resolve(".config")
-            return cfg.resolve("qkt/editor-install.json")
-        }
+            osName: String = System.getProperty("os.name", "").lowercase(),
+        ): Path = UserDirs(osName = osName, env = env, home = home).configHome().resolve("editor-install.json")
 
         fun load(path: Path): EditorManifest {
             if (!Files.isRegularFile(path)) return EditorManifest()
