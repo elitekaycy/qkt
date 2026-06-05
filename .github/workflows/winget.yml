@@ -1,0 +1,22 @@
+name: winget
+
+# Submits a version-bump PR to microsoft/winget-pkgs whenever a release is
+# published, computing the installer SHA from the release's windows-x64 zip.
+# One-time bootstrap (the first manifest) is manual — see
+# docs/how-to/winget-bootstrap.md. Requires:
+#   - a fork of microsoft/winget-pkgs under the token owner
+#   - secret WINGET_TOKEN: a classic PAT with public_repo scope
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: elitekaycy.qkt
+          installers-regex: 'windows-x64\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}
