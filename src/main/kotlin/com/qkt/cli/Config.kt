@@ -102,12 +102,16 @@ data class Config(
          *     image mounts the operator's config here).
          *  3. `~/.qkt/qkt.config.yaml` — per-user config for non-container deployments.
          */
-        fun defaultSearchPaths(): List<Path> =
-            listOf(
-                Path.of("./qkt.config.yaml"),
-                Path.of("/etc/qkt/qkt.config.yaml"),
-                Path.of(System.getProperty("user.home") + "/.qkt/qkt.config.yaml"),
-            )
+        fun defaultSearchPaths(
+            userDirs: UserDirs = UserDirs(),
+            home: Path = Path.of(System.getProperty("user.home")),
+        ): List<Path> {
+            val paths = mutableListOf(Path.of("./qkt.config.yaml"))
+            if (!userDirs.isWindows) paths.add(Path.of("/etc/qkt/qkt.config.yaml"))
+            paths.add(userDirs.configHome().resolve("qkt.config.yaml"))
+            paths.add(home.resolve(".qkt").resolve("qkt.config.yaml"))
+            return paths
+        }
 
         /**
          * Return the first existing file from [searchPaths], or null if none exist.

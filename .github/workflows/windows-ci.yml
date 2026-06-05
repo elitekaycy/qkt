@@ -1,0 +1,67 @@
+name: windows-ci
+
+# Builds the Windows self-contained zip on a real Windows runner and smoke-tests
+# the actual qkt.exe (and install.ps1) on every PR that touches the build or the
+# installer. This is the gate that proves the jpackage packaging and the PowerShell
+# installer work before merge — release.yml then reuses the same Gradle task to
+# attach the artifact to releases.
+
+on:
+  pull_request:
+    paths:
+      - 'build.gradle.kts'
+      - 'gradle/**'
+      - 'src/main/**'
+      - 'editor/**'
+      - 'scripts/install.ps1'
+      - '.github/workflows/windows-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build VSCode extension (.vsix)
+        working-directory: editor/vscode
+        run: npx --yes @vscode/vsce@latest package --no-dependencies
+
+      - name: Build Windows self-contained zip
+        run: ./gradlew.bat --no-daemon windowsSelfContainedDist
+
+      - name: Smoke test qkt.exe (version + parse)
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem build/distributions/qkt-*-windows-x64.zip | Select-Object -First 1
+          if (-not $zip) { throw "no windows zip produced" }
+          Expand-Archive $zip.FullName -DestinationPath build/smoke -Force
+          $exe = "build/smoke/qkt/qkt.exe"
+          if (-not (Test-Path $exe)) { throw "qkt.exe missing from zip" }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "qkt --version failed" }
+          & $exe parse examples/hedge-straddle/hedge-straddle.qkt
+          if ($LASTEXITCODE -ne 0) { throw "qkt parse failed" }
+
+      - name: Smoke test install.ps1 (install from the built zip, run installed exe)
+        shell: pwsh
+        run: |
+          $zip = (Get-ChildItem build/distributions/qkt-*-windows-x64.zip | Select-Object -First 1).FullName
+          $env:QKT_ARCHIVE = $zip
+          $env:QKT_PREFIX  = "$env:RUNNER_TEMP\qkt-install\qkt"
+          ./scripts/install.ps1
+          $installed = "$env:RUNNER_TEMP\qkt-install\qkt\qkt.exe"
+          if (-not (Test-Path $installed)) { throw "install.ps1 did not place qkt.exe" }
+          & $installed --version
+          if ($LASTEXITCODE -ne 0) { throw "installed qkt --version failed" }

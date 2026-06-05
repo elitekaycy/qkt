@@ -86,7 +86,17 @@ git clone https://github.com/elitekaycy/qkt.git && cd qkt
 ./build/install/qkt/bin/qkt --version
 ```
 
-> Windows: a native install path is on the roadmap. For now, use Docker or run from source under WSL2.
+### Windows
+
+```powershell
+# winget (recommended)
+winget install elitekaycy.qkt
+
+# or the one-line installer
+irm https://raw.githubusercontent.com/elitekaycy/qkt/main/scripts/install.ps1 | iex
+```
+
+Both install a self-contained build (bundled Java runtime — no prerequisites). Open a new terminal, then `qkt --version`.
 
 ## A 60-second tour
 
