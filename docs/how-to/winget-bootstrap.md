@@ -7,8 +7,12 @@ qkt ships a winget package (`elitekaycy.qkt`) so Windows users can run
 ## One-time bootstrap
 
 1. Fork `microsoft/winget-pkgs` under the account that owns `WINGET_TOKEN`.
-2. Create a classic Personal Access Token with the `public_repo` scope and add it
-   to the qkt repo secrets as `WINGET_TOKEN`.
+2. Create a **fine-grained** Personal Access Token scoped to **only your
+   `winget-pkgs` fork**, with **Contents: Read and write** and **Pull requests:
+   Read and write** permissions, and add it to the qkt repo secrets as
+   `WINGET_TOKEN`. (A classic `public_repo` PAT also works but grants write to
+   *all* your public repos — prefer the fork-scoped fine-grained token so an
+   exfiltrated token cannot touch anything else.)
 3. After the first release that includes `qkt-X.Y.Z-windows-x64.zip`, create the
    initial manifest from a Windows machine (or any host with winget tooling):
 
