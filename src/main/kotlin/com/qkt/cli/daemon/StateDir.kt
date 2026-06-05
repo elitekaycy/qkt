@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon
 
+import com.qkt.cli.UserDirs
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -41,8 +42,7 @@ class StateDir private constructor(
                 when {
                     override != null -> Path.of(override)
                     System.getenv("QKT_STATE_DIR") != null -> Path.of(System.getenv("QKT_STATE_DIR"))
-                    System.getenv("XDG_STATE_HOME") != null -> Path.of(System.getenv("XDG_STATE_HOME"), "qkt")
-                    else -> Path.of(System.getProperty("user.home"), ".local", "state", "qkt")
+                    else -> UserDirs().stateHome()
                 }
             return StateDir(root)
         }

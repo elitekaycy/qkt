@@ -1,0 +1,30 @@
+name: winget
+
+# Submits a version-bump PR to microsoft/winget-pkgs whenever a release is
+# published, computing the installer SHA from the release's windows-x64 zip.
+# One-time bootstrap (the first manifest) is manual — see
+# docs/how-to/winget-bootstrap.md. Requires:
+#   - a fork of microsoft/winget-pkgs under the token owner
+#   - secret WINGET_TOKEN: a fine-grained PAT scoped to the winget-pkgs fork only
+#     (Contents + Pull requests: read/write) — see docs/how-to/winget-bootstrap.md
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # The default GITHUB_TOKEN needs no write access here: the action authenticates
+    # to the winget-pkgs fork with WINGET_TOKEN, so keep GITHUB_TOKEN read-only.
+    permissions:
+      contents: read
+    steps:
+      # Third-party single-maintainer action pinned to a commit SHA (supply-chain
+      # hardening — a moved tag can't swap in malicious code holding WINGET_TOKEN).
+      # The trailing comment tracks the human-readable tag; bump the SHA to update.
+      - uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
+        with:
+          identifier: elitekaycy.qkt
+          installers-regex: 'windows-x64\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}

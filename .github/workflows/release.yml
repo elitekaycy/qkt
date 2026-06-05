@@ -23,18 +23,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-attach:
+  build-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-
       - uses: gradle/actions/setup-gradle@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -49,68 +46,85 @@ jobs:
       - name: Build self-contained linux-x64 bundle (#57)
         run: ./gradlew --no-daemon selfContainedDist
 
-      - name: Identify self-contained bundle path
-        id: sc
+      - name: Verify tarball + self-contained bundle contents
         run: |
           set -e
-          path=$(ls build/distributions/qkt-*-linux-x64.tar.gz | head -1)
-          if [ -z "$path" ] || [ ! -f "$path" ]; then
-            echo "::error::no self-contained bundle found in build/distributions/"
-            exit 1
-          fi
-          echo "path=$path" >> "$GITHUB_OUTPUT"
+          tar=$(ls build/distributions/qkt-*.tar | head -1)
+          sc=$(ls build/distributions/qkt-*-linux-x64.tar.gz | head -1)
+          tar -tf "$tar" | grep -q '/bin/qkt$'          || { echo "::error::tarball missing bin/qkt"; exit 1; }
+          tar -tf "$tar" | grep -qE 'share/editor/vscode/qkt-[0-9].*\.vsix$' \
+            || { echo "::error::tarball missing share/editor/*.vsix"; exit 1; }
+          tar -tzf "$sc" | grep -q '/bin/qkt$'           || { echo "::error::bundle missing bin/qkt"; exit 1; }
+          tar -tzf "$sc" | grep -q '/runtime/bin/java$'  || { echo "::error::bundle missing runtime/bin/java"; exit 1; }
 
-      - name: Verify self-contained bundle has bin/qkt and a bundled runtime
-        env:
-          SC_PATH: ${{ steps.sc.outputs.path }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-dist
+          path: |
+            build/distributions/qkt-*.tar
+            build/distributions/qkt-*-linux-x64.tar.gz
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build VSCode extension (.vsix)
+        working-directory: editor/vscode
+        run: npx --yes @vscode/vsce@latest package --no-dependencies
+
+      - name: Build Windows self-contained zip
+        run: ./gradlew.bat --no-daemon windowsSelfContainedDist
+
+      - name: Verify zip has qkt.exe and runtime
+        shell: pwsh
         run: |
-          set -e
-          tar -tzf "$SC_PATH" | grep -q '/bin/qkt$' \
-            || { echo "::error::bundle missing bin/qkt"; exit 1; }
-          tar -tzf "$SC_PATH" | grep -q '/runtime/bin/java$' \
-            || { echo "::error::bundle missing runtime/bin/java"; exit 1; }
+          $zip = Get-ChildItem build/distributions/qkt-*-windows-x64.zip | Select-Object -First 1
+          if (-not $zip) { throw "no windows zip produced" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $names = [System.IO.Compression.ZipFile]::OpenRead($zip.FullName).Entries.FullName
+          if (-not ($names -contains 'qkt/qkt.exe')) { throw "zip missing qkt/qkt.exe" }
+          if (-not ($names -like 'qkt/runtime/*'))   { throw "zip missing qkt/runtime" }
 
-      - name: Verify tarball contains the bundled .vsix
-        run: |
-          set -e
-          path=$(ls build/distributions/qkt-*.tar | head -1)
-          tar -tf "$path" | grep -qE 'share/editor/vscode/qkt-[0-9].*\.vsix$' \
-            || { echo "::error::tarball missing share/editor/vscode/*.vsix"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: build/distributions/qkt-*-windows-x64.zip
+          if-no-files-found: error
 
-      - name: Identify tarball path
-        id: tar
-        run: |
-          set -e
-          path=$(ls build/distributions/qkt-*.tar | head -1)
-          if [ -z "$path" ] || [ ! -f "$path" ]; then
-            echo "::error::no tarball found in build/distributions/"
-            exit 1
-          fi
-          echo "path=$path" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename "$path")" >> "$GITHUB_OUTPUT"
+  publish:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
-      - name: Verify tarball has bin/qkt
-        env:
-          TAR_PATH: ${{ steps.tar.outputs.path }}
-        run: |
-          set -e
-          tar -tf "$TAR_PATH" | grep -q '/bin/qkt$' \
-            || { echo "::error::tarball missing bin/qkt"; exit 1; }
-
-      - name: Upload to GitHub release
+      - name: Create + publish the release with all assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-          TAR_PATH: ${{ steps.tar.outputs.path }}
-          SC_PATH: ${{ steps.sc.outputs.path }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -e
+          assets=$(ls dist/qkt-*.tar dist/qkt-*-linux-x64.tar.gz dist/qkt-*-windows-x64.zip)
+          echo "attaching:"; echo "$assets"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG exists; attaching tarballs"
-            gh release upload "$TAG" "$TAR_PATH" "$SC_PATH" --clobber
+            echo "release $TAG exists; uploading assets"
+            gh release upload "$TAG" $assets --clobber
           else
-            echo "release $TAG does not exist; creating it"
-            gh release create "$TAG" "$TAR_PATH" "$SC_PATH" \
-              --title "$TAG" \
-              --generate-notes
+            echo "creating release $TAG"
+            gh release create "$TAG" $assets --title "$TAG" --generate-notes
           fi
