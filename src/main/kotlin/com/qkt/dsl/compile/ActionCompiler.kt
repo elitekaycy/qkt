@@ -17,6 +17,7 @@ import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
@@ -38,10 +39,12 @@ class ActionCompiler(
     private val strategyLogger: Logger = LoggerFactory.getLogger("com.qkt.dsl.strategy"),
     private val ids: IdGenerator = SequentialIdGenerator(prefix = "dsl-anonymous-"),
     private val pendingStacks: PendingStacks? = null,
+    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
 ) {
     private val orderTypeCompiler = OrderTypeCompiler(exprCompiler)
     private val childPriceResolver = ChildPriceResolver(exprCompiler)
     private val sizingCompiler = SizingCompiler(exprCompiler)
+    private val latchCompiler = LatchCompiler(exprCompiler, sizingCompiler, ids, clock)
 
     fun compile(action: ActionAst): (EvalContext) -> List<Signal> =
         when (action) {
@@ -54,6 +57,9 @@ class ActionCompiler(
             is CancelAll -> compileCancelAll()
             is Block -> compileBlock(action)
             is OcoEntry -> compileOcoEntry(action)
+            is Latch -> { ec ->
+                listOf(Signal.ArmLatch(latchCompiler.compile(action, ec.strategyContext.strategyId), ec))
+            }
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
 

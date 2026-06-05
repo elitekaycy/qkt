@@ -240,6 +240,10 @@ class RunCommand(
                     put("kind", JsonPrimitive("cancel_stacks"))
                     put("symbol", JsonPrimitive(sig.symbol))
                 }
+                is com.qkt.strategy.Signal.ArmLatch -> {
+                    put("kind", JsonPrimitive("arm_latch"))
+                    put("name", JsonPrimitive(sig.compiled.name ?: ""))
+                }
             }
         }
 

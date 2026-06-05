@@ -244,6 +244,7 @@ internal fun collectMetaRefs(
                 walkAction(a.leg1)
                 walkAction(a.leg2)
             }
+            is com.qkt.dsl.ast.Latch -> Unit
         }
     }
 
