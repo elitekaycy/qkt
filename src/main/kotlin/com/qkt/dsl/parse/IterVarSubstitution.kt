@@ -25,6 +25,7 @@ import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.IsNull
+import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OcoEntry
@@ -109,6 +110,7 @@ private fun subst(
         is Cancel -> if (action.stream == v) Cancel(alias) else action
         is Block -> Block(action.actions.map { subst(it, v, alias) })
         is OcoEntry -> OcoEntry(subst(action.leg1, v, alias), subst(action.leg2, v, alias))
+        is Latch -> if (action.stream == v) action.copy(stream = alias) else action
         else -> action
     }
 
