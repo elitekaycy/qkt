@@ -86,6 +86,20 @@ class EditorManifestTest {
     }
 
     @Test
+    fun `defaultPath on windows uses APPDATA-qkt`(
+        @TempDir tmp: Path,
+    ) {
+        val appData = tmp.resolve("Roaming")
+        val p =
+            EditorManifest.defaultPath(
+                env = mapOf("APPDATA" to appData.toString()),
+                home = tmp,
+                osName = "windows 11",
+            )
+        assertThat(p).isEqualTo(appData.resolve("qkt/editor-install.json"))
+    }
+
+    @Test
     fun `save creates parent directories`(
         @TempDir tmp: Path,
     ) {
