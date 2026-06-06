@@ -58,6 +58,18 @@ class MT5PositionPoller(
     private var thread: Thread? = null
     private var lastSnapshot: Map<Long, MT5Position> = emptyMap()
 
+    /**
+     * Tickets for which a close has already been published, mapped to the time it was
+     * observed. MT5 never reuses a ticket number across positions, so once a ticket is
+     * gone it cannot legitimately re-open — any later re-appearance in `/positions` is a
+     * snapshot flicker. Ignoring these tickets stops the poller from re-diffing a flicker
+     * into a phantom re-open and a duplicate close (which, after the meta was consumed,
+     * surfaced as a blank-strategy "opened outside this session" event). Reaped after
+     * [CLOSED_TICKET_RETENTION_MULTIPLIER] × [MT5BrokerProfile.pollIntervalMs] purely for
+     * memory hygiene — far longer than any plausible snapshot hiccup.
+     */
+    private val closedTickets: MutableMap<Long, Long> = mutableMapOf()
+
     fun start() {
         if (!running.compareAndSet(false, true)) return
         lastSnapshot = client.getPositions(magic = profile.magic).associateBy { it.ticket }
@@ -92,9 +104,18 @@ class MT5PositionPoller(
         if (calendar != null && !calendar.isInSession("", Instant.ofEpochMilli(clock.now()))) {
             return
         }
-        val current = client.getPositions(magic = profile.magic).associateBy { it.ticket }
+        val now = clock.now()
+        closedTickets.entries.removeIf { now - it.value >= profile.pollIntervalMs * CLOSED_TICKET_RETENTION_MULTIPLIER }
+        // A ticket we've already reported closed cannot legitimately reappear, so drop any
+        // flicker that re-surfaces it before diffing — see [closedTickets].
+        val current =
+            client
+                .getPositions(magic = profile.magic)
+                .filter { it.ticket !in closedTickets }
+                .associateBy { it.ticket }
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
+            closedTickets[ticket] = now
             val p = lastSnapshot[ticket] ?: continue
             val qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(p.symbol)}"
             val closeSide = if (p.type == 0) Side.SELL else Side.BUY
@@ -131,6 +152,11 @@ class MT5PositionPoller(
             onPositionOpened?.invoke(p)
         }
         lastSnapshot = current
+    }
+
+    private companion object {
+        /** Multiples of the poll interval to retain a closed ticket before reaping. */
+        const val CLOSED_TICKET_RETENTION_MULTIPLIER: Long = 100L
     }
 }
 
