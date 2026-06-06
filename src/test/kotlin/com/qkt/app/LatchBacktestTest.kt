@@ -15,6 +15,7 @@ import com.qkt.dsl.ast.LatchBracket
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.EvalContext
@@ -23,6 +24,8 @@ import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.compile.LatchCompiler
 import com.qkt.dsl.compile.PendingStacks
 import com.qkt.dsl.compile.SizingCompiler
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
 import com.qkt.engine.Engine
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
@@ -35,6 +38,7 @@ import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskState
 import com.qkt.strategy.Mode
 import com.qkt.strategy.Signal
+import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -85,12 +89,32 @@ class LatchBacktestTest {
                 ),
         )
 
+    // Single unbracketed limit 0.20 below the anchor, expiring 100s after it is placed.
+    // Drives the EXPIRE-in-backtest proof: the pending limit must be swept against the
+    // sim clock before a pullback can fill it.
+    private val expireLatchAst =
+        Latch(
+            stream = streamAlias,
+            sensor = BreakOffset(reference = null, offset = NumLit(BigDecimal("0.50"))),
+            armWindow = DurationAst(3_600_000L),
+            name = null,
+            entries =
+                listOf(
+                    LatchEntry(
+                        order = LatchLimit(DirRel(DirSense.AGAINST, NumLit(BigDecimal("0.20")))),
+                        bracket = null,
+                        sizing = null,
+                        expire = DurationAst(100_000L),
+                    ),
+                ),
+        )
+
     /**
-     * Stub DSL strategy that arms the latch once on the first candle close.
+     * Stub DSL strategy that arms [ast] once on the first candle close.
      * Mirrors the stub shape from TradingPipelineStackTest.
      */
     private inner class LatchStubStrategy(
-        private val clock: FixedClock,
+        private val ast: Latch = latchAst,
     ) : DslCompiledStrategy {
         override val declaredStreams: Map<String, HubKey> = mapOf(streamAlias to hubKey)
         override val retentionByKey: Map<HubKey, Int> = mapOf(hubKey to 1)
@@ -105,8 +129,8 @@ class LatchBacktestTest {
                 val exprCompiler = ExprCompiler()
                 val sizingCompiler = SizingCompiler(exprCompiler)
                 val ids = SequentialIdGenerator(prefix = "latch-e2e-")
-                val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids, clock)
-                val compiled = compiler.compile(latchAst, ctx.strategyId)
+                val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
+                val compiled = compiler.compile(ast, ctx.strategyId)
                 val ec =
                     EvalContext(
                         candle = candle,
@@ -129,9 +153,10 @@ class LatchBacktestTest {
         val pipeline: TradingPipeline,
         val strategyPnL: StrategyPnL,
         val clock: FixedClock,
+        val positions: PositionTracker,
     )
 
-    private fun harness(): Harness {
+    private fun harness(makeStrategy: () -> Strategy = { LatchStubStrategy() }): Harness {
         val clock = FixedClock(time = 0L)
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
@@ -145,7 +170,7 @@ class LatchBacktestTest {
         val engine = Engine(bus, priceTracker)
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
-        val strategy = LatchStubStrategy(clock)
+        val strategy = makeStrategy()
         val pipeline =
             TradingPipeline(
                 clock = clock,
@@ -167,7 +192,7 @@ class LatchBacktestTest {
                 source = NullMarketSource,
                 candleWindow = null,
             )
-        return Harness(pipeline, strategyPnL, clock)
+        return Harness(pipeline, strategyPnL, clock, positions)
     }
 
     @Test
@@ -199,6 +224,40 @@ class LatchBacktestTest {
     }
 
     @Test
+    fun `DSL latch with LET-named distances arms and trades end-to-end through AstCompiler`() {
+        // Regression for the LET-in-action wiring: the stub strategy compiles the latch
+        // directly, bypassing AstCompiler. A real AstCompiler-compiled strategy with
+        // LET-named distances would throw "LATCH distances must be compile-time constants"
+        // at the wire cross unless the action is LET-resolved at compile time. Same price
+        // path as the literal-distance test (off=0.50, near=4, sl=12, tp=5).
+        val dsl =
+            """
+            STRATEGY let_latch VERSION 1
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            LET wire = 0.50, near = 4, sl = 12, tp = 5
+            RULES
+                WHEN POSITION.gold = 0
+                THEN LATCH gold OFFSET wire ARM 5m {
+                    ENTER LIMIT RETRACE near BRACKET { STOP LOSS AGAINST sl, TAKE PROFIT WITH tp } SIZING 1
+                }
+            """.trimIndent()
+        val ast = (Dsl.parse(dsl) as ParseResult.Success).value
+        val h = harness { AstCompiler().compile(ast) }
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 0L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 60_001L)) // close candle → arm
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 60_002L)) // cross up-wire → place limit
+        h.pipeline.ingest(Tick(symbol, BigDecimal("1996.40"), 60_003L)) // pullback fills entry
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2005.60"), 60_004L)) // TP exits
+
+        val realized = h.strategyPnL.realizedFor(strategyId)
+        assertThat(realized)
+            .withFailMessage("expected positive realized PnL from a LET-named latch, got $realized")
+            .isGreaterThan(BigDecimal.ZERO)
+    }
+
+    @Test
     fun `no wire cross means no position opened`() {
         val h = harness()
 
@@ -216,6 +275,46 @@ class LatchBacktestTest {
         val realized = h.strategyPnL.realizedFor(strategyId)
         assertThat(realized)
             .withFailMessage("expected zero realized PnL with no wire cross, got $realized")
+            .isEqualByComparingTo(BigDecimal.ZERO)
+    }
+
+    @Test
+    fun `latch limit fills on a pullback when ingested before its EXPIRE deadline`() {
+        // Positive control for the EXPIRE test below: with the sim clock still inside
+        // the entry's 100s window, the pending limit is live and a pullback fills it.
+        val h = harness { LatchStubStrategy(expireLatchAst) }
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 0L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 60_001L)) // close candle → arm
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 60_002L)) // cross up-wire → place BUY LIMIT 2000.30
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.25"), 60_003L)) // pullback ≤ 2000.30 fills it
+
+        assertThat(h.positions.positionFor(symbol)?.quantity)
+            .withFailMessage("expected the limit to fill into a long position before expiry")
+            .isEqualByComparingTo(BigDecimal.ONE)
+    }
+
+    @Test
+    fun `latch limit is swept by EXPIRE against the sim clock before a pullback can fill it`() {
+        // Regression for the latch clock bug: the entry builder stamped expiresAt from
+        // SystemClock (wall-clock ms) instead of the runtime sim clock, so the GTD sweep —
+        // which keys on the sim clock — never reached the deadline in backtest and the
+        // stale deep leg lingered. Same price path as the control above; only the clock moves.
+        val h = harness { LatchStubStrategy(expireLatchAst) }
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 0L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 60_001L)) // close candle → arm (clock.now()=0)
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 60_002L)) // cross → rest BUY LIMIT 2000.30
+
+        // Advance the sim clock past the entry's 100s deadline, then deliver a tick above
+        // the limit (no fill) — exactly the deep-leg case: price drifts away while the order
+        // sits unfilled. The GTD sweep must cancel the stale resting limit on this tick.
+        h.clock.time = 100_001L
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.55"), 60_003L)) // no fill; sweep cancels the expired limit
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.25"), 60_004L)) // pullback finds nothing left to fill
+
+        assertThat(h.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO)
+            .withFailMessage("expected EXPIRE to cancel the resting limit, leaving no position")
             .isEqualByComparingTo(BigDecimal.ZERO)
     }
 }

@@ -1,6 +1,5 @@
 package com.qkt.dsl.compile
 
-import com.qkt.common.FixedClock
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.dsl.ast.Latch
 import com.qkt.marketdata.Candle
@@ -8,13 +7,11 @@ import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 
 object LatchCompilerFixture {
-    private val clock = FixedClock(time = 0L)
-
     fun compile(latch: Latch): CompiledLatch {
         val exprCompiler = ExprCompiler()
         val sizingCompiler = SizingCompiler(exprCompiler)
         val ids = SequentialIdGenerator(prefix = "latch-test-")
-        val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids, clock)
+        val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
         return compiler.compile(latch, strategyId = "test")
     }
 

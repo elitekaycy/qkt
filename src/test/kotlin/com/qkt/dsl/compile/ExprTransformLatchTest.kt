@@ -10,6 +10,9 @@ import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.WhenThen
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -43,6 +46,36 @@ class ExprTransformLatchTest {
         val out = transform.action(latch) as Latch
         assertThat((out.sensor as BreakOffset).offset).isEqualTo(NumLit(BigDecimal("0.50")))
         val entry = out.entries.single()
+        assertThat((entry.order as LatchLimit).price.dist).isEqualTo(NumLit(BigDecimal("4")))
+        assertThat(entry.bracket!!.stopLoss!!.dist).isEqualTo(NumLit(BigDecimal("12")))
+        assertThat(entry.bracket!!.takeProfit!!.dist).isEqualTo(NumLit(BigDecimal("5")))
+    }
+
+    @Test
+    fun `LetResolver inlines LET refs inside a parsed latch action`() {
+        // Guards the action-resolution wiring: LET-named latch distances must become
+        // literals before compilation, otherwise LatchCompiler rejects them at fire time.
+        val ast =
+            (
+                Dsl.parse(
+                    """
+                    STRATEGY t VERSION 1
+                    SYMBOLS
+                        gold = BACKTEST:XAUUSD EVERY 5m
+                    LET wire = 0.50, near = 4, sl = 12, tp = 5
+                    RULES
+                        WHEN POSITION.gold = 0
+                        THEN LATCH gold OFFSET wire ARM 5m {
+                            ENTER LIMIT RETRACE near BRACKET { STOP LOSS AGAINST sl, TAKE PROFIT WITH tp } SIZING 1
+                        }
+                    """.trimIndent(),
+                ) as ParseResult.Success
+            ).value
+        val action = (ast.rules.single() as WhenThen).action
+        val resolved = LetResolver(ast.lets).resolve(action) as Latch
+
+        assertThat((resolved.sensor as BreakOffset).offset).isEqualTo(NumLit(BigDecimal("0.50")))
+        val entry = resolved.entries.single()
         assertThat((entry.order as LatchLimit).price.dist).isEqualTo(NumLit(BigDecimal("4")))
         assertThat(entry.bracket!!.stopLoss!!.dist).isEqualTo(NumLit(BigDecimal("12")))
         assertThat(entry.bracket!!.takeProfit!!.dist).isEqualTo(NumLit(BigDecimal("5")))
