@@ -318,6 +318,9 @@ private data class OrderRequestDto(
     val triggerPrice: String? = null,
     val onTrigger: String? = null,
     val expiresAt: Long? = null,
+    val entryPrice: String? = null,
+    val trailDistance: String? = null,
+    val mfeThreshold: String? = null,
 ) {
     fun toDomain(): com.qkt.execution.OrderRequest {
         val sideEnum =
@@ -382,6 +385,29 @@ private data class OrderRequestDto(
                     strategyId = strategyId,
                     expiresAt = expiresAt,
                 )
+            "ArmedTrailingStop" ->
+                com.qkt.execution.OrderRequest.ArmedTrailingStop(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    entryPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(entryPrice) { "ArmedTrailingStop DTO missing entryPrice" },
+                        ),
+                    trailDistance =
+                        java.math.BigDecimal(
+                            requireNotNull(trailDistance) { "ArmedTrailingStop DTO missing trailDistance" },
+                        ),
+                    mfeThreshold =
+                        java.math.BigDecimal(
+                            requireNotNull(mfeThreshold) { "ArmedTrailingStop DTO missing mfeThreshold" },
+                        ),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
             else -> error("Unknown OrderRequest type in persisted state: $type")
         }
     }
@@ -439,6 +465,21 @@ private data class OrderRequestDto(
                         triggerPrice = req.triggerPrice.toPlainString(),
                         onTrigger = req.onTrigger.name,
                         limitPrice = req.limitPrice?.toPlainString(),
+                        expiresAt = req.expiresAt,
+                    )
+                is com.qkt.execution.OrderRequest.ArmedTrailingStop ->
+                    OrderRequestDto(
+                        type = "ArmedTrailingStop",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        entryPrice = req.entryPrice.toPlainString(),
+                        trailDistance = req.trailDistance.toPlainString(),
+                        mfeThreshold = req.mfeThreshold.toPlainString(),
                         expiresAt = req.expiresAt,
                     )
                 else -> null // non-persistable variant (Bracket, ScaleOut, TimeExit, Stack, etc.)
