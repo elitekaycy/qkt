@@ -344,4 +344,27 @@ class MT5ClientTest {
         assertThat(isOrderSuccessful(resp.result.retcode)).isFalse
         assertThat(resp.errorMessage).contains("Failed to close position")
     }
+
+    @Test
+    fun `modifyPosition posts position sl tp and parses the result`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"message":"SL/TP modified","result":{"retcode":10009,"order":0,"deal":0,"price":"0","comment":"ok"}}""",
+            ),
+        )
+        val resp = client.modifyPosition(ticket = 424242L, sl = BigDecimal("1.0950"), tp = BigDecimal("1.1100"))
+        assertThat(resp.result.retcode).isEqualTo(10009)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/modify_sl_tp")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":424242,"sl":1.0950,"tp":1.1100}""")
+    }
+
+    @Test
+    fun `modifyPosition surfaces a gateway failure`() {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"Position 1 not found"}"""))
+        val resp = client.modifyPosition(ticket = 1L, sl = BigDecimal("1.0"))
+        assertThat(isOrderSuccessful(resp.result.retcode)).isFalse
+        assertThat(resp.errorMessage).contains("not found")
+    }
 }
