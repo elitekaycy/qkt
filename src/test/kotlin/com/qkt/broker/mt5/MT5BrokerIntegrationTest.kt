@@ -152,6 +152,24 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `modifyPosition posts to modify_sl_tp and reports accepted`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":0,"price":"0","comment":"ok"}}""",
+            ),
+        )
+        val ack = broker.modifyPosition("424242", sl = BigDecimal("1.0950"), tp = BigDecimal("1.1100"))
+        assertThat(ack.accepted).isTrue
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/modify_sl_tp")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":424242,"sl":1.0950,"tp":1.1100}""")
+    }
+
+    @Test
     fun `bracket submit includes sl tp in payload`() {
         server.enqueue(
             MockResponse().setBody(

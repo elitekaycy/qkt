@@ -85,6 +85,32 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `stack-open captures the venue ticket and a venue close by ticket realizes the STACK leg`() {
+        val tracker = StrategyPositionTracker()
+        tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))
+        tracker.registerStackOpen("alpha", "stack-tier0-entry", "stack-tier0", "primary-1")
+        tracker.applyFill(
+            fill("alpha", "stack-tier0-entry", "BTCUSDT", Side.BUY, "0.5", "110").copy(brokerOrderId = "T-STACK"),
+        )
+
+        // The stack leg carries its venue ticket, so a venue-side close can target it.
+        val stackLeg = tracker.legBookFor("alpha", "BTCUSDT")!!.stacks().single()
+        assertThat(stackLeg.brokerTicket).isEqualTo("T-STACK")
+
+        // The venue closes the stack position (attached TP hit). The poller reports it under the
+        // layer entry id with the position ticket — it must realize the STACK leg, not net into
+        // the primary.
+        val realized =
+            tracker.applyFill(
+                fill("alpha", "stack-tier0-entry", "BTCUSDT", Side.SELL, "0.5", "130").copy(brokerOrderId = "T-STACK"),
+            )
+        assertThat(realized).isEqualByComparingTo("10") // 0.5 * (130 - 110)
+        assertThat(tracker.legBookFor("alpha", "BTCUSDT")!!.stacks()).isEmpty()
+        // Primary untouched — the close did not net.
+        assertThat(tracker.legBookFor("alpha", "BTCUSDT")!!.primary()!!.entryPrice).isEqualByComparingTo("100")
+    }
+
+    @Test
     fun `independent-open fills coexist as separate legs and do not net`() {
         val tracker = StrategyPositionTracker()
         // Straddle: a BUY entry and a SELL entry, each registered as its own independent position.

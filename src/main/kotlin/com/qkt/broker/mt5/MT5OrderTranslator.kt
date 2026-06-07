@@ -89,18 +89,18 @@ class MT5OrderTranslator(
                     (if (req.side == Side.BUY) "BUY_LIMIT" else "SELL_LIMIT") to entry.limitPrice
                 else -> error("MT5 bracket entry must be Market/Stop/Limit, got ${entry::class.simpleName}")
             }
-        // TODO(#48-task6): handle StopLossSpec.ArmedTrail — currently MT5-native bracket
-        // submissions cannot carry the engine-managed armed semantics; armed trails will
-        // need to fall through the bracket-fallback path so OrderManager owns the stop.
+        // An armed trail attaches its PRE-ARM level (`entry ∓ trailDistance`) to the position as
+        // the venue-side floor; the engine then tightens it via `modifyPosition` as the trail
+        // moves. So the venue always holds a stop (broker-enforced even if qkt is offline) and
+        // closes the position itself rather than the engine sending an opposite (counter) order.
         val slPrice =
             when (val sl = req.stopLoss) {
                 is StopLossSpec.Fixed -> sl.price
-                is StopLossSpec.ArmedTrail ->
-                    error(
-                        "MT5 bracket cannot carry an armed-trail stop natively; the engine " +
-                            "should have routed this through the bracket-fallback path. " +
-                            "Surface from a programming error before #48 Task 6 wired routing.",
-                    )
+                is StopLossSpec.ArmedTrail -> {
+                    val entryPx =
+                        price ?: error("armed-trail bracket needs a known entry price to attach a pre-arm stop")
+                    if (req.side == Side.BUY) entryPx - sl.trailDistance else entryPx + sl.trailDistance
+                }
             }
         return MT5OrderRequest(
             symbol = symbol.toBroker(bare(req.symbol)),
