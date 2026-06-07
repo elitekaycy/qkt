@@ -266,4 +266,82 @@ class MT5ClientTest {
         server.enqueue(MockResponse().setResponseCode(404).setBody(""))
         assertThat(client.getSymbolInfo("UNKNOWN")).isNull()
     }
+
+    @Test
+    fun `getAccount parses margin mode and flags hedging`() {
+        // Real Exness demo /account shape (login 435898347): margin_mode 2 = RETAIL_HEDGING.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":2390.91,"equity":1895.99,"currency":"USD","leverage":100,"margin_mode":2}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.marginMode).isEqualTo(2)
+        assertThat(acct.isHedging).isTrue
+        assertThat(acct.balance).isEqualByComparingTo("2390.91")
+        assertThat(acct.equity).isEqualByComparingTo("1895.99")
+        assertThat(acct.currency).isEqualTo("USD")
+        assertThat(acct.leverage).isEqualTo(100)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/account")
+        assertThat(recorded.method).isEqualTo("GET")
+    }
+
+    @Test
+    fun `getAccount reads a netting account as not hedging`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":1000.0,"equity":1000.0,"currency":"USD","leverage":500,"margin_mode":0}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.marginMode).isEqualTo(0)
+        assertThat(acct.isHedging).isFalse
+    }
+
+    @Test
+    fun `getAccount returns null on gateway failure`() {
+        server.enqueue(MockResponse().setResponseCode(500))
+        assertThat(client.getAccount()).isNull()
+    }
+
+    @Test
+    fun `closePosition posts the ticket and parses the close deal`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":555,"price":"2000.5","comment":"ok"}}""",
+            ),
+        )
+        val resp = client.closePosition(ticket = 2814861313L)
+        assertThat(resp.result.retcode).isEqualTo(10009)
+        assertThat(resp.result.deal).isEqualTo(555L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/close_position")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":{"ticket":2814861313}}""")
+    }
+
+    @Test
+    fun `closePosition includes volume for a partial close`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":1,"price":"2000","comment":"ok"}}""",
+            ),
+        )
+        client.closePosition(ticket = 42L, volume = BigDecimal("0.10"))
+        assertThat(server.takeRequest().body.readUtf8()).isEqualTo("""{"position":{"ticket":42,"volume":0.10}}""")
+    }
+
+    @Test
+    fun `closePosition surfaces the gateway error envelope as a failed result`() {
+        // Confirmed prod shape for a bad ticket: {"error":...,"error_type":"validation_error",...}
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setBody("""{"error":"Failed to close position","error_type":"validation_error"}"""),
+        )
+        val resp = client.closePosition(ticket = 1L)
+        assertThat(isOrderSuccessful(resp.result.retcode)).isFalse
+        assertThat(resp.errorMessage).contains("Failed to close position")
+    }
 }

@@ -117,6 +117,65 @@ class MT5Client(
         )
     }
 
+    /**
+     * Fetch the account snapshot via `GET /account`. The [MT5AccountInfo.marginMode] field
+     * tells the broker whether the venue is netting (`0`) or hedging (`2`) — the routing
+     * decision for closing a position. Returns `null` if the call fails.
+     */
+    fun getAccount(): MT5AccountInfo? {
+        val raw = getWithRetry("$gatewayUrl/account") ?: return null
+        val obj = json.parseToJsonElement(raw).jsonObject
+        return MT5AccountInfo(
+            balance = obj["balance"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            equity = obj["equity"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            currency = obj["currency"]?.jsonPrimitive?.contentOrNull ?: "",
+            leverage = obj["leverage"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            marginMode = obj["margin_mode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: MARGIN_MODE_NETTING,
+        )
+    }
+
+    /**
+     * Close an open position by its venue ticket via `POST /close_position`, optionally a
+     * partial [volume]. This is how a hedging account is reduced without opening a counter
+     * position. The gateway wraps `order_send` underneath, so a success mirrors the
+     * `POST /order` `{"result":{...}}` shape; a non-2xx (e.g. a bad ticket returns
+     * `{"error":...}`) is captured in [MT5OrderResponse.errorMessage]. Not retried —
+     * a duplicate close is worse than a surfaced failure.
+     */
+    fun closePosition(
+        ticket: Long,
+        volume: BigDecimal? = null,
+    ): MT5OrderResponse {
+        val body = encodeClosePosition(ticket, volume).toRequestBody(JSON_MEDIA)
+        val request =
+            Request
+                .Builder()
+                .url("$gatewayUrl/close_position")
+                .post(body)
+                .build()
+        val resp = http.newCall(request).execute()
+        resp.use {
+            val raw = it.body?.string().orEmpty()
+            if (!it.isSuccessful) {
+                return MT5OrderResponse(
+                    result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
+                    errorMessage = "HTTP ${it.code}: $raw",
+                )
+            }
+            return parseOrderResponse(raw)
+        }
+    }
+
+    private fun encodeClosePosition(
+        ticket: Long,
+        volume: BigDecimal?,
+    ): String =
+        if (volume != null) {
+            "{\"position\":{\"ticket\":$ticket,\"volume\":${volume.toPlainString()}}}"
+        } else {
+            "{\"position\":{\"ticket\":$ticket}}"
+        }
+
     fun getTick(brokerSymbol: String): MT5Tick? {
         val raw = getWithRetry("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
