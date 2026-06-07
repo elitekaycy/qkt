@@ -101,7 +101,19 @@ class TradingPipeline(
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
-    val orderManager: OrderManager = OrderManager(broker, bus, priceTracker, clock, persistor)
+    val orderManager: OrderManager =
+        OrderManager(
+            broker,
+            bus,
+            priceTracker,
+            clock,
+            persistor,
+            // An engine-managed exit id is `${bracketId}-sl`; the independent leg's id IS the
+            // bracket id, so strip the suffix and look up that leg's venue ticket.
+            closeTicketFor = { strategyId, exitId ->
+                strategyPositions.ticketForLeg(strategyId, exitId.removeSuffix("-sl"))
+            },
+        )
     val latchManager: LatchManager =
         LatchManager(
             emit = { req ->

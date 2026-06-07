@@ -433,6 +433,19 @@ class StrategyPositionTracker(
         symbol: String,
     ): LegBook? = byStrategy[strategyId]?.get(symbol)
 
+    /**
+     * Venue ticket of the leg with [legId] for [strategyId], searching across that strategy's
+     * symbols, or null if no such leg (or it has no ticket). Lets an engine-fired exit close the
+     * exact venue position by ticket — e.g. a trailing stop closing its independent straddle leg.
+     */
+    fun ticketForLeg(
+        strategyId: String,
+        legId: String,
+    ): String? =
+        byStrategy[strategyId]?.values?.firstNotNullOfOrNull { book ->
+            book.all().firstOrNull { it.legId == legId }?.brokerTicket
+        }
+
     /** Open position count on [symbol] for [strategyId] — the real number of legs, not the net. */
     fun openCountFor(
         strategyId: String,
