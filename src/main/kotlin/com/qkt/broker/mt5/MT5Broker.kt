@@ -76,6 +76,7 @@ class MT5Broker(
             clock,
             onPositionOpened = ::onPendingPositionOpened,
             closedTicketMeta = ::lookupClosedTicketMeta,
+            closedByEngine = ::consumeEngineClose,
             priceProvider = priceTracker,
             calendar =
                 com.qkt.common.TradingCalendar
@@ -137,6 +138,14 @@ class MT5Broker(
      */
     private val recentlyFilledTickets: MutableMap<Long, Long> = ConcurrentHashMap()
 
+    /**
+     * Tickets qkt closed itself via [submitCloseByTicket], with the time it did so. The
+     * position poller consults [consumeEngineClose] before publishing a close so it does not
+     * emit a second (duplicate) close when it sees one of these tickets gone. Reaped on the
+     * same [DISAMBIGUATION_TTL_MULTIPLIER] × [profile.pollIntervalMs] window.
+     */
+    private val recentlyClosedByTicket: MutableMap<Long, Long> = ConcurrentHashMap()
+
     private data class PendingMeta(
         val orderId: String,
         val strategyId: String,
@@ -155,6 +164,9 @@ class MT5Broker(
     override fun supports(symbol: String): Boolean = true
 
     override fun submit(request: OrderRequest): SubmitAck {
+        if (request is OrderRequest.Market && request.closesTicket != null) {
+            return submitCloseByTicket(request, request.closesTicket)
+        }
         val translation =
             runCatching { translator.translate(request) }.getOrElse { ex ->
                 return reject(request, ex.message ?: "translation failed")
@@ -164,6 +176,50 @@ class MT5Broker(
             is MT5Translation.Single -> submitSingle(request, translation.request)
             is MT5Translation.Composite -> submitComposite(request, translation)
         }
+    }
+
+    /**
+     * Close the venue position [ticketStr] via the gateway instead of placing an opposite
+     * order. On a hedging account an opposite order opens a counter; this actually closes the
+     * position. Emits the close as an attributed [BrokerEvent.OrderFilled] under [request.id]
+     * so the strategy's position tracker realizes it, and marks the ticket via
+     * [recentlyClosedByTicket] so the position poller does not publish a duplicate close.
+     */
+    private fun submitCloseByTicket(
+        request: OrderRequest.Market,
+        ticketStr: String,
+    ): SubmitAck {
+        val ticket =
+            ticketStr.toLongOrNull()
+                ?: return reject(request, "closesTicket is not a valid ticket: $ticketStr")
+        val resp =
+            runCatching { client.closePosition(ticket, volume = request.quantity) }
+                .getOrElse { ex -> return reject(request, ex.message ?: "close_position failed") }
+        if (!isOrderSuccessful(resp.result.retcode)) {
+            return reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
+        }
+        positionMetaByTicket.remove(ticket)
+        recentlyClosedByTicket[ticket] = clock.now()
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = request.id,
+                brokerOrderId = ticket.toString(),
+                timestamp = clock.now(),
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = request.id,
+                brokerOrderId = ticket.toString(),
+                symbol = request.symbol,
+                side = request.side,
+                price = resp.result.price,
+                quantity = request.quantity,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        return SubmitAck(request.id, ticket.toString(), accepted = true)
     }
 
     /**
@@ -676,6 +732,18 @@ class MT5Broker(
     private fun lookupClosedTicketMeta(ticket: Long): ClosedPositionMeta? {
         val meta = positionMetaByTicket.remove(ticket) ?: return null
         return ClosedPositionMeta(clientOrderId = meta.orderId, strategyId = meta.strategyId)
+    }
+
+    /**
+     * True (consuming the marker) when qkt closed [ticket] itself via [submitCloseByTicket].
+     * Lets [MT5PositionPoller] skip publishing a duplicate close for it. Reaps stale markers
+     * past the disambiguation window.
+     */
+    private fun consumeEngineClose(ticket: Long): Boolean {
+        val now = clock.now()
+        val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
+        recentlyClosedByTicket.entries.removeIf { now - it.value >= ttlMs }
+        return recentlyClosedByTicket.remove(ticket) != null
     }
 
     /**

@@ -121,6 +121,53 @@ class LegBookTest {
     }
 
     @Test
+    fun `multiple INDEPENDENT legs coexist without netting and report truthful counts`() {
+        // The straddle: a filled long and a filled short held as two real positions, not one
+        // net-zero position. They are peers — neither is the single PRIMARY nor a STACK child.
+        val book = LegBook("EURUSD")
+        book.add(leg("e1", Side.BUY, "0.25", "1.10", role = LegRole.INDEPENDENT))
+        book.add(leg("e2", Side.SELL, "0.25", "1.10", role = LegRole.INDEPENDENT))
+        assertThat(book.size()).isEqualTo(2)
+        assertThat(book.longCount()).isEqualTo(1)
+        assertThat(book.shortCount()).isEqualTo(1)
+        assertThat(book.grossQuantity()).isEqualByComparingTo("0.5")
+        assertThat(book.netQuantity()).isEqualByComparingTo("0")
+        assertThat(book.primary()).isNull()
+        assertThat(book.stacks()).isEmpty()
+        // Closing one leg leaves the other intact and independently tracked.
+        assertThat(book.close("e1")?.legId).isEqualTo("e1")
+        assertThat(book.size()).isEqualTo(1)
+        assertThat(book.shortCount()).isEqualTo(1)
+        assertThat(book.netQuantity()).isEqualByComparingTo("-0.25")
+    }
+
+    @Test
+    fun `truthful counts expose a long and a short the net hides`() {
+        // The straddle case: a filled long and a filled short. netQuantity nets to 0.1, but
+        // there really are TWO open positions. count/longs/shorts/gross tell the truth.
+        val book = LegBook("EURUSD")
+        book.add(leg("p1", Side.BUY, "0.2", "1.10"))
+        book.add(leg("s1", Side.SELL, "0.1", "1.20", role = LegRole.STACK, parentLegId = "p1"))
+        assertThat(book.size()).isEqualTo(2)
+        assertThat(book.longCount()).isEqualTo(1)
+        assertThat(book.shortCount()).isEqualTo(1)
+        assertThat(book.grossQuantity()).isEqualByComparingTo("0.3")
+        assertThat(book.netQuantity()).isEqualByComparingTo("0.1")
+    }
+
+    @Test
+    fun `equal-and-opposite legs report two positions even though net is zero`() {
+        val book = LegBook("EURUSD")
+        book.add(leg("p1", Side.BUY, "0.1", "1.10"))
+        book.add(leg("s1", Side.SELL, "0.1", "1.15", role = LegRole.STACK, parentLegId = "p1"))
+        assertThat(book.netQuantity()).isEqualByComparingTo("0")
+        assertThat(book.size()).isEqualTo(2)
+        assertThat(book.longCount()).isEqualTo(1)
+        assertThat(book.shortCount()).isEqualTo(1)
+        assertThat(book.grossQuantity()).isEqualByComparingTo("0.2")
+    }
+
+    @Test
     fun `equal-and-opposite legs return zero-quantity view`() {
         val book = LegBook("EURUSD")
         book.add(leg("p1", Side.BUY, "0.1", "1.10"))

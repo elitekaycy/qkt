@@ -102,6 +102,30 @@ class MT5PositionPollerCloseTest {
     }
 
     @Test
+    fun `poller skips a close the engine already published`() {
+        // qkt closed the ticket itself (close-by-ticket) and already emitted the fill; the
+        // poller seeing the ticket gone must NOT publish a second, duplicate close.
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = { ClosedPositionMeta("ord", "alpha") },
+                closedByEngine = { it == 7001L },
+                priceProvider = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) },
+            )
+        poller.tick() // observes 7001 open
+        poller.tick() // observes 7001 gone — but the engine already published this close
+
+        assertThat(fills).isEmpty()
+    }
+
+    @Test
     fun `close with no meta lookup falls back to synthetic id and blank strategyId`() {
         server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(8888L, 1, "2050.00")))))
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))

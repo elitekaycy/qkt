@@ -40,6 +40,12 @@ class MT5PositionPoller(
      */
     private val closedTicketMeta: ((Long) -> ClosedPositionMeta?)? = null,
     /**
+     * Returns true (consuming the marker) when qkt closed this ticket itself — e.g. via
+     * `closePosition` for an active close-by-ticket. The close was already published, so the
+     * poller must skip it when it sees the ticket gone, otherwise the trade is counted twice.
+     */
+    private val closedByEngine: ((Long) -> Boolean)? = null,
+    /**
      * Best-effort source for the close price. The position snapshot diff only tells
      * us *that* a ticket closed, not at what price — the venue has already discarded
      * the position by the time we observe it gone. The latest market tick is the
@@ -116,6 +122,8 @@ class MT5PositionPoller(
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
             closedTickets[ticket] = now
+            // qkt closed this ticket itself and already published the close — don't double-count.
+            if (closedByEngine?.invoke(ticket) == true) continue
             val p = lastSnapshot[ticket] ?: continue
             val qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(p.symbol)}"
             val closeSide = if (p.type == 0) Side.SELL else Side.BUY

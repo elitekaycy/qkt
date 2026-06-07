@@ -86,6 +86,15 @@ class StrategyPositionTracker(
      */
     private val pendingStackCloses: MutableMap<String, String> = ConcurrentHashMap()
 
+    /**
+     * Pre-registered independent-leg open ids. Key is `"$strategyId|$clientOrderId"`, value
+     * is the [legId] the fill should open as an [LegRole.INDEPENDENT] leg — a standalone
+     * position that does NOT net against existing legs (each leg of an OCO_ENTRY straddle is
+     * one of these). Populated at order-emit time; closed via [registerStackClose] (which
+     * closes any leg by id) when the leg's bracket exit fills.
+     */
+    private val pendingIndependentOpens: MutableMap<String, String> = ConcurrentHashMap()
+
     private data class StackOpenIntent(
         val stackLegId: String,
         val parentLegId: String,
@@ -118,6 +127,20 @@ class StrategyPositionTracker(
         pendingStackCloses["$strategyId|$clientOrderId"] = stackLegId
     }
 
+    /**
+     * Declare that a future [BrokerEvent.OrderFilled] with [clientOrderId] should open an
+     * [LegRole.INDEPENDENT] leg with id [legId] — a standalone position that coexists with
+     * others on the symbol without netting (the truthful-position path; e.g. each leg of an
+     * OCO_ENTRY straddle). Close it via [registerStackClose] when its bracket exit fills.
+     */
+    fun registerIndependentOpen(
+        strategyId: String,
+        clientOrderId: String,
+        legId: String,
+    ) {
+        pendingIndependentOpens["$strategyId|$clientOrderId"] = legId
+    }
+
     fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal {
         if (event.strategyId.isBlank()) return Money.ZERO
 
@@ -132,6 +155,11 @@ class StrategyPositionTracker(
             val realized = applyStackClose(event, stackLegId)
             persistBook(event.strategyId, event.symbol)
             return realized
+        }
+        pendingIndependentOpens.remove(key)?.let { legId ->
+            applyIndependentOpen(event, legId)
+            persistBook(event.strategyId, event.symbol)
+            return Money.ZERO
         }
 
         val trade =
@@ -206,6 +234,26 @@ class StrategyPositionTracker(
             ),
         )
         return Money.ZERO
+    }
+
+    private fun applyIndependentOpen(
+        event: BrokerEvent.OrderFilled,
+        legId: String,
+    ) {
+        val books = byStrategy.getOrPut(event.strategyId) { ConcurrentHashMap() }
+        val book = books.getOrPut(event.symbol) { LegBook(event.symbol) }
+        book.add(
+            PositionLeg(
+                legId = legId,
+                symbol = event.symbol,
+                side = event.side,
+                quantity = event.quantity,
+                entryPrice = event.price,
+                openedAt = event.timestamp,
+                role = LegRole.INDEPENDENT,
+                brokerTicket = event.brokerOrderId,
+            ),
+        )
     }
 
     private fun applyStackClose(
@@ -384,6 +432,30 @@ class StrategyPositionTracker(
         strategyId: String,
         symbol: String,
     ): LegBook? = byStrategy[strategyId]?.get(symbol)
+
+    /** Open position count on [symbol] for [strategyId] — the real number of legs, not the net. */
+    fun openCountFor(
+        strategyId: String,
+        symbol: String,
+    ): Int = byStrategy[strategyId]?.get(symbol)?.size() ?: 0
+
+    /** Open long-side legs on [symbol] for [strategyId]. */
+    fun longCountFor(
+        strategyId: String,
+        symbol: String,
+    ): Int = byStrategy[strategyId]?.get(symbol)?.longCount() ?: 0
+
+    /** Open short-side legs on [symbol] for [strategyId]. */
+    fun shortCountFor(
+        strategyId: String,
+        symbol: String,
+    ): Int = byStrategy[strategyId]?.get(symbol)?.shortCount() ?: 0
+
+    /** Gross exposure (sum of leg sizes, side-blind) on [symbol] for [strategyId]. */
+    fun grossFor(
+        strategyId: String,
+        symbol: String,
+    ): BigDecimal = byStrategy[strategyId]?.get(symbol)?.grossQuantity() ?: Money.ZERO
 
     fun driftFor(
         symbol: String,

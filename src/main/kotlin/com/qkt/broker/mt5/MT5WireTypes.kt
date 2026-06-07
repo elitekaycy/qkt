@@ -16,7 +16,22 @@ data class MT5AccountInfo(
     val equity: BigDecimal,
     val currency: String,
     val leverage: Int,
-)
+    val marginMode: Int,
+) {
+    /**
+     * True when the venue keeps a long and a short on the same symbol as two separate
+     * tickets (`RETAIL_HEDGING`) instead of netting them into one signed position. qkt's
+     * position model is netting, so on a hedging account a closing order must target the
+     * specific ticket rather than send an opposite order (which would open a counter).
+     */
+    val isHedging: Boolean get() = marginMode == MARGIN_MODE_HEDGING
+}
+
+/** `ACCOUNT_MARGIN_MODE_RETAIL_NETTING` — opposite orders net into one position per symbol. */
+const val MARGIN_MODE_NETTING: Int = 0
+
+/** `ACCOUNT_MARGIN_MODE_RETAIL_HEDGING` — long and short coexist as independent tickets. */
+const val MARGIN_MODE_HEDGING: Int = 2
 
 /** Open position on the venue, filtered by [MT5BrokerProfile.magic] during reconciliation. */
 data class MT5Position(
