@@ -13,6 +13,18 @@ interface StrategyPositionView {
      * Backs the DSL accessor `POSITION.<stream>.mfe`.
      */
     fun mfeFor(symbol: String): BigDecimal? = null
+
+    /** Real number of open positions (legs) on [symbol] — not the net. Backs `POSITION.<stream>.count`. */
+    fun openCountFor(symbol: String): Int = 0
+
+    /** Open long-side legs on [symbol]. Backs `POSITION.<stream>.longs`. */
+    fun longCountFor(symbol: String): Int = 0
+
+    /** Open short-side legs on [symbol]. Backs `POSITION.<stream>.shorts`. */
+    fun shortCountFor(symbol: String): Int = 0
+
+    /** Gross exposure (side-blind sum of leg sizes) on [symbol]. Backs `POSITION.<stream>.gross`. */
+    fun grossFor(symbol: String): BigDecimal = BigDecimal.ZERO
 }
 
 internal class StrategyPositionViewImpl(
@@ -24,4 +36,12 @@ internal class StrategyPositionViewImpl(
     override fun allPositions(): Map<String, Position> = tracker.positionsFor(strategyId)
 
     override fun mfeFor(symbol: String): BigDecimal? = tracker.primaryMfeFor(strategyId, symbol)
+
+    override fun openCountFor(symbol: String): Int = tracker.openCountFor(strategyId, symbol)
+
+    override fun longCountFor(symbol: String): Int = tracker.longCountFor(strategyId, symbol)
+
+    override fun shortCountFor(symbol: String): Int = tracker.shortCountFor(strategyId, symbol)
+
+    override fun grossFor(symbol: String): BigDecimal = tracker.grossFor(strategyId, symbol)
 }
