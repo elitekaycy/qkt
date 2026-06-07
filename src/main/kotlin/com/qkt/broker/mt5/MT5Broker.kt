@@ -629,6 +629,32 @@ class MT5Broker(
             }
     }
 
+    override fun modifyPosition(
+        ticket: String,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+    ): SubmitAck {
+        fun ack(
+            accepted: Boolean,
+            reason: String? = null,
+        ) = SubmitAck(clientOrderId = ticket, brokerOrderId = ticket, accepted = accepted, rejectReason = reason)
+
+        val t = ticket.toLongOrNull() ?: return ack(false, "modifyPosition: bad ticket $ticket")
+        val resp =
+            runCatching { client.modifyPosition(t, sl, tp) }
+                .getOrElse { ex -> return ack(false, ex.message) }
+        val ok = isOrderSuccessful(resp.result.retcode)
+        if (!ok) {
+            log.warn(
+                "MT5Broker {} modifyPosition({}) rejected: {}",
+                profile.name,
+                ticket,
+                resp.errorMessage ?: resp.result.retcode,
+            )
+        }
+        return ack(ok, if (ok) null else resp.errorMessage)
+    }
+
     override fun modify(
         orderId: String,
         changes: OrderModification,
