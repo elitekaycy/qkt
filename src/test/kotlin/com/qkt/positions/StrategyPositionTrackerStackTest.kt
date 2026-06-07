@@ -131,6 +131,15 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `ticketForLeg returns the venue ticket of an independent leg`() {
+        val tracker = StrategyPositionTracker()
+        tracker.registerIndependentOpen("alpha", "entry-1", "leg-1")
+        tracker.applyFill(fill("alpha", "entry-1", "XAUUSD", Side.BUY, "0.25", "2000").copy(brokerOrderId = "TICKET-7"))
+        assertThat(tracker.ticketForLeg("alpha", "leg-1")).isEqualTo("TICKET-7")
+        assertThat(tracker.ticketForLeg("alpha", "no-such-leg")).isNull()
+    }
+
+    @Test
     fun `unregistered fill on same symbol falls through to existing PRIMARY averaging logic`() {
         val tracker = StrategyPositionTracker()
         tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))
