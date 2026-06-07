@@ -85,6 +85,30 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `independent-open fills coexist as separate legs and do not net`() {
+        val tracker = StrategyPositionTracker()
+        // Straddle: a BUY entry and a SELL entry, each registered as its own independent position.
+        tracker.registerIndependentOpen("alpha", "straddle-long", "leg-long")
+        tracker.registerIndependentOpen("alpha", "straddle-short", "leg-short")
+        tracker.applyFill(fill("alpha", "straddle-long", "XAUUSD", Side.BUY, "0.25", "2000"))
+        tracker.applyFill(fill("alpha", "straddle-short", "XAUUSD", Side.SELL, "0.25", "2000"))
+
+        // Two real positions, not one net-zero position.
+        assertThat(tracker.openCountFor("alpha", "XAUUSD")).isEqualTo(2)
+        assertThat(tracker.longCountFor("alpha", "XAUUSD")).isEqualTo(1)
+        assertThat(tracker.shortCountFor("alpha", "XAUUSD")).isEqualTo(1)
+        // The net view still nets to zero — back-compat: POSITION.quantity is unchanged.
+        assertThat(tracker.positionFor("alpha", "XAUUSD")?.quantity).isEqualByComparingTo("0")
+
+        // The long leg's TP closes ONLY that leg and realizes its own PnL.
+        tracker.registerStackClose("alpha", "long-tp", "leg-long")
+        val realized = tracker.applyFill(fill("alpha", "long-tp", "XAUUSD", Side.SELL, "0.25", "2020"))
+        assertThat(realized).isEqualByComparingTo("5") // 0.25 * (2020 - 2000)
+        assertThat(tracker.openCountFor("alpha", "XAUUSD")).isEqualTo(1)
+        assertThat(tracker.shortCountFor("alpha", "XAUUSD")).isEqualTo(1)
+    }
+
+    @Test
     fun `unregistered fill on same symbol falls through to existing PRIMARY averaging logic`() {
         val tracker = StrategyPositionTracker()
         tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))
