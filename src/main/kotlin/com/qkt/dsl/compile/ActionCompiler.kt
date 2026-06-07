@@ -28,6 +28,7 @@ import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.execution.At
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.execution.withExpiresAt
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
@@ -106,12 +107,9 @@ class ActionCompiler(
                 val sym = ctx.streams[streamAlias]?.qktSymbol ?: continue
                 out.add(Signal.CancelPendingForSymbol(sym))
             }
-            for ((symbol, position) in ctx.strategyContext.positions.allPositions()) {
-                val qty = position.quantity
-                when {
-                    qty.signum() > 0 -> out.add(Signal.Sell(symbol, qty))
-                    qty.signum() < 0 -> out.add(Signal.Buy(symbol, qty.abs()))
-                }
+            val open = ctx.strategyContext.positions.allPositions()
+            for (symbol in open.keys) {
+                out.addAll(closeSignalsFor(ctx, symbol))
             }
             out
         }
@@ -119,18 +117,51 @@ class ActionCompiler(
     private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> =
         { ctx ->
             val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
-            val qty =
-                ctx.strategyContext.positions
-                    .positionFor(symbol)
-                    ?.quantity ?: BigDecimal.ZERO
             val signals = mutableListOf<Signal>()
             signals.add(Signal.CancelPendingForSymbol(symbol))
-            when {
-                qty.signum() > 0 -> signals.add(Signal.Sell(symbol, qty))
-                qty.signum() < 0 -> signals.add(Signal.Buy(symbol, qty.abs()))
-            }
+            signals.addAll(closeSignalsFor(ctx, symbol))
             signals
         }
+
+    /**
+     * Signals that flatten [symbol]. When the position is held as independent legs (e.g. a
+     * filled straddle), each leg is closed individually and attributed to its leg id — so a
+     * net-zero pair still closes both sides, and on a hedging venue each close targets the
+     * exact ticket instead of opening a counter. A plain single position (no independent legs)
+     * keeps the net-quantity close. Both reach the same net position, so backtest == live.
+     */
+    private fun closeSignalsFor(
+        ctx: EvalContext,
+        symbol: String,
+    ): List<Signal> {
+        val legs = ctx.strategyContext.positions.legsFor(symbol)
+        if (legs.any { it.role == com.qkt.positions.LegRole.INDEPENDENT }) {
+            return legs.map { leg ->
+                val exitSide = if (leg.side == Side.BUY) Side.SELL else Side.BUY
+                Signal.Submit(
+                    OrderRequest.Market(
+                        id = ids.next(),
+                        symbol = symbol,
+                        side = exitSide,
+                        quantity = leg.quantity,
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = ctx.strategyContext.clock.now(),
+                        closesTicket = leg.brokerTicket,
+                        closesLegId = leg.legId,
+                    ),
+                )
+            }
+        }
+        val qty =
+            ctx.strategyContext.positions
+                .positionFor(symbol)
+                ?.quantity ?: BigDecimal.ZERO
+        return when {
+            qty.signum() > 0 -> listOf(Signal.Sell(symbol, qty))
+            qty.signum() < 0 -> listOf(Signal.Buy(symbol, qty.abs()))
+            else -> emptyList()
+        }
+    }
 
     private fun compileCancel(streamAlias: String): (EvalContext) -> List<Signal> =
         { ctx ->

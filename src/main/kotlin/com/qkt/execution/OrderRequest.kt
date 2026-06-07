@@ -65,6 +65,12 @@ sealed interface OrderRequest {
          * they may ignore it; [com.qkt.broker.mt5.MT5Broker] routes it to a close-by-ticket.
          */
         val closesTicket: String? = null,
+        /**
+         * When set, this market order closes the position leg with this qkt id — the model-side
+         * counterpart of [closesTicket]. It tells the position tracker to realize *that* leg
+         * (not net into the primary), so it works in the backtest too, where there is no ticket.
+         */
+        val closesLegId: String? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
