@@ -250,8 +250,16 @@ class IndicatorBinding private constructor(
             }
         }
 
+        /**
+         * Tick-fed bindings grouped by root alias. Bindings are added only at compile time (via
+         * [bind]) and read only at runtime (per tick), so this is built once on first access instead
+         * of re-filtering the full binding list on every tick.
+         */
+        private val tickFedByAlias: Map<String, List<IndicatorBinding>> by lazy {
+            bindings.filter { it.isTickFed() }.groupBy { it.rootAlias ?: "" }
+        }
+
         /** Bindings that consume raw ticks. Used by [CompiledStrategy.onTick] dispatch. */
-        fun tickFedForAlias(alias: String): List<IndicatorBinding> =
-            bindings.filter { it.isTickFed() && it.rootAlias == alias }
+        fun tickFedForAlias(alias: String): List<IndicatorBinding> = tickFedByAlias[alias] ?: emptyList()
     }
 }

@@ -70,6 +70,13 @@ class OrderManager(
     private val liveOrderIds: LinkedHashSet<String> = LinkedHashSet()
 
     /**
+     * Live order ids bucketed by symbol, maintained in lockstep with [liveOrderIds]. Lets the
+     * per-tick scan touch only the tick's symbol — O(this symbol's orders) instead of O(all live
+     * orders) — so per-tick cost stays flat as more symbols/strategies are added.
+     */
+    private val liveBySymbol: MutableMap<String, LinkedHashSet<String>> = mutableMapOf()
+
+    /**
      * Ids awaiting reclamation. An order is enqueued when it goes terminal in [update]; [runGc]
      * drains it once per pass, reclaiming it if nothing references it and re-queuing it otherwise.
      */
@@ -849,6 +856,7 @@ class OrderManager(
             )
         orders.remove(req.id)
         liveOrderIds.remove(req.id)
+        liveBySymbol[req.symbol]?.remove(req.id)
         return submit(oto)
     }
 
@@ -1062,9 +1070,16 @@ class OrderManager(
         )
     }
 
-    /** Keep [liveOrderIds] in sync: a non-terminal order is live, a terminal one is not. */
+    /** Keep [liveOrderIds] + [liveBySymbol] in sync: a non-terminal order is live, a terminal one is not. */
     private fun indexLive(managed: ManagedOrder) {
-        if (managed.state.isTerminal) liveOrderIds.remove(managed.id) else liveOrderIds.add(managed.id)
+        val symbol = managed.request.symbol
+        if (managed.state.isTerminal) {
+            liveOrderIds.remove(managed.id)
+            liveBySymbol[symbol]?.remove(managed.id)
+        } else {
+            liveOrderIds.add(managed.id)
+            liveBySymbol.getOrPut(symbol) { LinkedHashSet() }.add(managed.id)
+        }
     }
 
     /**
@@ -1085,8 +1100,10 @@ class OrderManager(
 
     /** Drop a dead, unreferenced order and all its order-keyed satellite state. */
     private fun reclaim(id: String) {
+        val symbol = orders[id]?.request?.symbol
         orders.remove(id)
         liveOrderIds.remove(id)
+        if (symbol != null) liveBySymbol[symbol]?.remove(id)
         trailingHwm.remove(id)
         armedTrailArmed.remove(id)
         siblings.remove(id)
@@ -1314,21 +1331,25 @@ class OrderManager(
 
     private fun evaluateTriggers(tick: Tick) {
         lastObservedPrice[tick.symbol] = tick.price
-        // An id in liveOrderIds with no entry in orders is an invariant violation, not an
-        // expected absence — surface it instead of silently skipping the order.
-        val live = liveOrderIds.map { orders[it] ?: error("live order index desync: $it") }
-        for (managed in live) {
+        // Only this symbol's live orders drive trailing + trigger evaluation — O(this symbol),
+        // not O(all live). An id in the index with no entry in [orders] is an invariant violation,
+        // not an expected absence, so surface it.
+        val symbolLive =
+            liveBySymbol[tick.symbol]?.map { orders[it] ?: error("live order index desync: $it") }
+                ?: emptyList()
+        for (managed in symbolLive) {
             if (managed.state != OrderState.PENDING) continue
-            if (managed.request.symbol != tick.symbol) continue
             updateTrailingHwm(managed, tick.price)
         }
 
         // Phase 38: sweep pending GTD orders past their deadline when the broker doesn't
-        // self-cancel. MT5 returns supportsNativeGtd=true and the venue handles expiry;
-        // PaperBroker, Bybit, and LogBroker fall through here.
+        // self-cancel. This is the one all-symbols pass, but it only runs when the venue can't
+        // self-expire — MT5 returns supportsNativeGtd=true and skips it; PaperBroker, Bybit, and
+        // LogBroker fall through here.
         if (!broker.supportsNativeGtd) {
             val nowMs = clock.now()
-            for (managed in live) {
+            val allLive = liveOrderIds.map { orders[it] ?: error("live order index desync: $it") }
+            for (managed in allLive) {
                 if (managed.state.isTerminal) continue
                 if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
                 val deadline = managed.request.expiresAt ?: continue
@@ -1355,9 +1376,8 @@ class OrderManager(
         }
 
         val triggered: List<ManagedOrder> =
-            live
+            symbolLive
                 .filter { it.state == OrderState.PENDING }
-                .filter { it.request.symbol == tick.symbol }
                 .filter { triggerHit(it, tick.price) }
         for (managed in triggered) {
             fireFallbackTrigger(managed, tick.price)
