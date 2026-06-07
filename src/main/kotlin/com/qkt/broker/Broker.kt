@@ -61,6 +61,17 @@ interface Broker {
     ): SubmitAck = throw UnsupportedOperationException("$name does not support modify")
 
     /**
+     * Move an open position's stop-loss / take-profit on the venue (not a pending order). Used to
+     * keep a trailing stop's level mirrored onto the position so the broker still closes it if the
+     * engine is offline. Default no-op (accepted) for brokers without venue-attached position SL/TP.
+     */
+    fun modifyPosition(
+        ticket: String,
+        sl: BigDecimal? = null,
+        tp: BigDecimal? = null,
+    ): SubmitAck = SubmitAck(ticket, ticket, accepted = true)
+
+    /**
      * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol.
      *
      * Returns a **list per symbol** because hedge-mode-capable brokers (MT5, Bybit linear)

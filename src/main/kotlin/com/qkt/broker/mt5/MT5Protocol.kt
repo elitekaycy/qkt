@@ -32,5 +32,6 @@ object MT5Protocol {
             OrderTypeCapability.TRAILING_STOP,
             OrderTypeCapability.MODIFY,
             OrderTypeCapability.MULTI_POSITION_PER_SYMBOL,
+            OrderTypeCapability.POSITION_MODIFY,
         )
 }

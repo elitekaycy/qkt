@@ -298,13 +298,24 @@ class OrderManager(
                         stop = riskStop,
                     )
                 }
-                // Armed-trail stops are engine-managed — never delegate to a broker that
-                // would only see the pre-arm fixed price and miss the arming behaviour.
-                val mustFallback = request.stopLoss is StopLossSpec.ArmedTrail
-                if (!mustFallback && OrderTypeCapability.BRACKET in broker.capabilitiesFor(request.symbol)) {
-                    submitToBroker(request)
-                } else {
-                    submitBracketFallback(request)
+                val caps = broker.capabilitiesFor(request.symbol)
+                val isArmedTrail = request.stopLoss is StopLossSpec.ArmedTrail
+                val canAttach =
+                    OrderTypeCapability.BRACKET in caps && OrderTypeCapability.POSITION_MODIFY in caps
+                when {
+                    // Venue that both attaches SL/TP to an order and can modify an open position's
+                    // SL/TP: ship the bracket keyed under its entry id so the venue holds the SL/TP
+                    // on the position (closing that ticket on a hedging account instead of a resting
+                    // exit opening a counter) and the fill flows through the entry.id tracking paths.
+                    // Armed trail also runs the engine trail on top (fires close-by-ticket at the
+                    // tightened level, #278); the venue's attached stop is the offline backstop.
+                    canAttach -> submitBracketAttached(request)
+                    // BRACKET but no position-modify, fixed SL: ship whole (venue attaches SL/TP,
+                    // nothing to trail).
+                    !isArmedTrail && OrderTypeCapability.BRACKET in caps -> submitToBroker(request)
+                    // No venue attach (backtest / restricted venue): decompose into engine-watched
+                    // resting exits.
+                    else -> submitBracketFallback(request)
                 }
             }
 
@@ -415,6 +426,18 @@ class OrderManager(
             stacks.setAnchor(owner, e.price, clock.now())
             materializePendingLayers(owner, anchor = e.price)
         }
+        // On a venue that holds attached position SL/TP, attach the layer's fixed exits to the
+        // position so the broker closes that exact ticket — a resting exit order would instead
+        // open a counter on a hedging account. Otherwise decompose into separate resting exits.
+        if (OrderTypeCapability.POSITION_MODIFY in broker.capabilitiesFor(e.symbol)) {
+            attachLayerSlTpToVenue(
+                stackId = owner,
+                layerOrderId = e.clientOrderId,
+                fillPrice = e.price,
+                ticket = e.brokerOrderId,
+            )
+            return
+        }
         val slId = "${e.clientOrderId}-sl"
         val tpId = "${e.clientOrderId}-tp"
         val slDistance = attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
@@ -424,6 +447,35 @@ class OrderManager(
             siblings[slId] = listOf(tpId)
             siblings[tpId] = listOf(slId)
         }
+    }
+
+    /**
+     * Attach a filled stack layer's fixed SL/TP to its venue position, so the broker closes that
+     * exact ticket when a level is hit. The levels are computed off the actual fill (a stack fires
+     * at market, so they aren't known until fill) — hence a position modify rather than the entry
+     * wire. Used when the broker supports [OrderTypeCapability.POSITION_MODIFY]; without it the
+     * layer's exits rest as separate orders (see [attachLayerSl] / [attachLayerTp]).
+     */
+    private fun attachLayerSlTpToVenue(
+        stackId: String,
+        layerOrderId: String,
+        fillPrice: BigDecimal,
+        ticket: String?,
+    ) {
+        val resolvedTicket = ticket?.takeIf { it.isNotBlank() } ?: return
+        val state = stacks.get(stackId) ?: return
+        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return
+        val slPrice =
+            state.outerBracket?.stopLoss?.let {
+                computeChildPrice(it, parent.side, fillPrice, isStopLoss = true)
+            }
+        val slDistance = slPrice?.let { (fillPrice - it).abs() }
+        val tpPrice =
+            state.outerBracket?.takeProfit?.let {
+                computeChildPrice(it, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
+            }
+        if (slPrice == null && tpPrice == null) return
+        broker.modifyPosition(resolvedTicket, sl = slPrice, tp = tpPrice)
     }
 
     private fun attachLayerSl(
@@ -798,6 +850,83 @@ class OrderManager(
         orders.remove(req.id)
         liveOrderIds.remove(req.id)
         return submit(oto)
+    }
+
+    /**
+     * Ship an armed-trail bracket to a venue that holds attached SL/TP on the position.
+     *
+     * The bracket goes to the broker keyed under the ENTRY id, so [MT5OrderTranslator] attaches
+     * the pre-arm SL (`entry ∓ trailDistance`, via the bracket's [StopLossSpec.ArmedTrail]) and
+     * the TP to the resulting position — the venue then closes that exact ticket when a level is
+     * hit (no counter on a hedging account) and keeps protecting it even if qkt is offline.
+     * Keying under the entry id (not the bracket id) means the fill — and the ticket it carries —
+     * flow through the same entry.id paths the position tracking already uses (sibling-cancel,
+     * `registerIndependentOpen`, poller close attribution).
+     *
+     * The engine still runs the trail on top: the [OrderRequest.ArmedTrailingStop] is dispatched
+     * when the entry fills (via [pendingChildren]) and, once armed, fires a close-by-ticket at the
+     * tightened level — finer than the static venue stop, which remains the offline backstop.
+     */
+    private fun submitBracketAttached(req: OrderRequest.Bracket): SubmitAck {
+        val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
+        val now = clock.now()
+        // Ship keyed under the ENTRY id so the venue attaches the SL/TP to the position AND the
+        // fill — with its ticket — flows through the same entry.id paths the position tracking
+        // uses (registerIndependentOpen / registerStackOpen, sibling-cancel, poller close
+        // attribution). A native bracket keyed under its own id would fill under the bracket id
+        // and silently miss those registrations.
+        val attached = req.copy(id = req.entry.id)
+        // An armed trail is engine-managed on top of the venue's static pre-arm stop: dispatched
+        // on the entry fill, it fires close-by-ticket at the tightened level. A fixed bracket has
+        // no engine exit — the venue's attached SL/TP closes it outright.
+        val trail =
+            (req.stopLoss as? StopLossSpec.ArmedTrail)?.let { spec ->
+                OrderRequest.ArmedTrailingStop(
+                    id = "${req.id}-sl",
+                    symbol = req.symbol,
+                    side = exitSide,
+                    quantity = req.quantity,
+                    entryPrice = bracketEntryEstimate(req),
+                    trailDistance = spec.trailDistance,
+                    mfeThreshold = spec.mfeThreshold,
+                    timeInForce = req.timeInForce,
+                    timestamp = now,
+                    strategyId = req.strategyId,
+                )
+            }
+        update(req.id) {
+            it.copy(
+                state = OrderState.WORKING,
+                childClientOrderIds = listOfNotNull(attached.id, trail?.id),
+                lastUpdatedAt = now,
+            )
+        }
+        track(
+            ManagedOrder(
+                id = attached.id,
+                request = attached,
+                state = OrderState.CREATED,
+                parentClientOrderId = req.id,
+                createdAt = now,
+                lastUpdatedAt = now,
+            ),
+        )
+        if (trail != null) {
+            track(
+                ManagedOrder(
+                    id = trail.id,
+                    request = trail,
+                    state = OrderState.CREATED,
+                    parentClientOrderId = req.id,
+                    createdAt = now,
+                    lastUpdatedAt = now,
+                ),
+            )
+            // Arm the trail only once the position exists — dispatched on the entry's fill.
+            pendingChildren[attached.id] = listOf(trail)
+        }
+        val ack = submitToBroker(attached)
+        return SubmitAck(req.id, req.id, accepted = ack.accepted, rejectReason = ack.rejectReason)
     }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {

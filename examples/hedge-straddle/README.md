@@ -27,6 +27,18 @@ Each side's three `STACK_AT` clauses are independent:
 - **Independent bracket.** Each stack leg gets its own SL/TP bracket from the `BRACKET { ... }` block — closing the parent does not close stacks, and a stack hitting its own TP does not affect the parent or other stacks.
 - **Per-side independence.** The BUY side's stacks attach only to a BUY winner; SELL side's stacks only to a SELL winner. Since `OCO_ENTRY` cancels the losing side before it fills, only one side's stacks ever activate per session.
 
+## How exits close on a hedging account (live)
+
+This account is a *hedging* account: the broker keeps every buy and every sell as its own ticket, even when they offset. A naive "close" — sending the opposite order — would just open a *new* opposite position and leave the original open, piling up net-zero pairs that never clear. To avoid that, qkt does not send opposite orders to exit. The stop-loss and take-profit ride **attached to the position at the broker**:
+
+- **Entry + bracket.** Each pending entry carries its SL and TP to the broker. When it fills, the live position is born with both already set — protected even if qkt is offline.
+- **Closing.** When price hits the SL or TP, the broker closes *that exact position* — no opposite order, nothing new opened. qkt sees the close on its next poll and books the result against the right leg.
+- **Trailing stop.** The broker holds a fixed safety stop as the floor; while qkt is running it watches live and closes at the tighter trailing level once the trade has moved far enough.
+- **Stacks.** Each stack trade attaches its own SL/TP the same way and is tracked as its own position by ticket — so the open count is accurate and "close the winner" closes every stack with it.
+- **Timeout close.** Closing the winner sends one close-this-ticket instruction per real position, not opposite orders.
+
+In **backtest** there is no real broker to attach levels to, so the simulator uses the older separate-order method — which produces the same result it measures, so backtest and live stay in agreement.
+
 ## What's *not* here yet
 
 - **Whipsaw filter (`cutClosePips`).** The production strategy requires the candle to close at least 20 points from entry before considering a breach valid, filtering out wicks that immediately retrace. Easily added as a `WHEN` condition once you have intrabar data.
@@ -78,7 +90,7 @@ Live trading via MT5 is supported as of Phase 26b/c/d:
 
 The production scaffold at `~/Desktop/personal/qkt-strategies-live/` has docker-compose + `.env.example` + a `deploy.sh` helper. See its README for the go-live checklist (credentials, prereq check, paper-mode validation, lot-sizing tier-up).
 
-**Phase 27 status:** the qkt strategy file now carries the three-tier `STACK_AT` clauses per side. End-to-end stack lifecycle (engine construction on parent fill, MFE-driven tier firing, parent-bracket close detection) works for the PaperBroker backtest path. Tracker-side stack-leg routing (so the `LegBook` reflects PRIMARY + STACK legs distinctly) is a follow-up; until it lands, stack fills currently average into the primary leg in the position view.
+**Phase 27 status:** the qkt strategy file carries the three-tier `STACK_AT` clauses per side. The full stack lifecycle works end to end — engine construction on parent fill, MFE-driven tier firing, parent-bracket close detection — and the `LegBook` now reflects PRIMARY and STACK legs distinctly (stacks no longer average into the primary). On a hedging venue each stack is tracked by its own ticket; see "How exits close on a hedging account" above.
 
 ## Expected performance
 
