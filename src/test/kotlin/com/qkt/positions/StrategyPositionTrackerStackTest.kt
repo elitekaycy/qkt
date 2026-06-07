@@ -109,6 +109,28 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `independent-open captures the venue ticket from the fill brokerOrderId`() {
+        val tracker = StrategyPositionTracker()
+        tracker.registerIndependentOpen("alpha", "straddle-long", "leg-long")
+        tracker.applyFill(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "straddle-long",
+                brokerOrderId = "2814861313",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                price = Money.of("2000"),
+                quantity = Money.of("0.25"),
+                strategyId = "alpha",
+                timestamp = 0L,
+            ),
+        )
+        val leg = tracker.legBookFor("alpha", "XAUUSD")!!.all().single()
+        assertThat(leg.legId).isEqualTo("leg-long")
+        // The venue ticket is captured so a close can target this exact position by ticket.
+        assertThat(leg.brokerTicket).isEqualTo("2814861313")
+    }
+
+    @Test
     fun `unregistered fill on same symbol falls through to existing PRIMARY averaging logic`() {
         val tracker = StrategyPositionTracker()
         tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))

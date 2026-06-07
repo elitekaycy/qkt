@@ -251,6 +251,7 @@ class StrategyPositionTracker(
                 entryPrice = event.price,
                 openedAt = event.timestamp,
                 role = LegRole.INDEPENDENT,
+                brokerTicket = event.brokerOrderId,
             ),
         )
     }
