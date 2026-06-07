@@ -131,6 +131,36 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `venue-detected close by ticket realizes the right independent leg`() {
+        val tracker = StrategyPositionTracker()
+        // Two independent legs (a straddle) with distinct venue tickets.
+        tracker.registerIndependentOpen("alpha", "e-long", "leg-long")
+        tracker.registerIndependentOpen("alpha", "e-short", "leg-short")
+        tracker.applyFill(fill("alpha", "e-long", "XAUUSD", Side.BUY, "0.25", "2000").copy(brokerOrderId = "T-LONG"))
+        tracker.applyFill(fill("alpha", "e-short", "XAUUSD", Side.SELL, "0.25", "2000").copy(brokerOrderId = "T-SHORT"))
+        assertThat(tracker.openCountFor("alpha", "XAUUSD")).isEqualTo(2)
+
+        // The venue closes the long leg (its attached TP hit) — the poller reports it under the
+        // entry id with the position's ticket. It must realize the LONG leg, not net.
+        val realized =
+            tracker.applyFill(
+                fill("alpha", "e-long", "XAUUSD", Side.SELL, "0.25", "2020").copy(brokerOrderId = "T-LONG"),
+            )
+        assertThat(realized).isEqualByComparingTo("5") // 0.25 * (2020 - 2000)
+        assertThat(tracker.openCountFor("alpha", "XAUUSD")).isEqualTo(1)
+        assertThat(tracker.shortCountFor("alpha", "XAUUSD")).isEqualTo(1)
+    }
+
+    @Test
+    fun `ticketForLeg returns the venue ticket of an independent leg`() {
+        val tracker = StrategyPositionTracker()
+        tracker.registerIndependentOpen("alpha", "entry-1", "leg-1")
+        tracker.applyFill(fill("alpha", "entry-1", "XAUUSD", Side.BUY, "0.25", "2000").copy(brokerOrderId = "TICKET-7"))
+        assertThat(tracker.ticketForLeg("alpha", "leg-1")).isEqualTo("TICKET-7")
+        assertThat(tracker.ticketForLeg("alpha", "no-such-leg")).isNull()
+    }
+
+    @Test
     fun `unregistered fill on same symbol falls through to existing PRIMARY averaging logic`() {
         val tracker = StrategyPositionTracker()
         tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))
