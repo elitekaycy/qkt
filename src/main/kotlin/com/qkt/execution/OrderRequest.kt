@@ -57,6 +57,20 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        /**
+         * When set, this market order closes the existing venue position with this ticket
+         * rather than opening a new one. On a hedging account that is the difference between
+         * actually closing the position and opening an offsetting counter. Brokers that net
+         * (and the backtest) reach the same end state by filling the opposite quantity, so
+         * they may ignore it; [com.qkt.broker.mt5.MT5Broker] routes it to a close-by-ticket.
+         */
+        val closesTicket: String? = null,
+        /**
+         * When set, this market order closes the position leg with this qkt id — the model-side
+         * counterpart of [closesTicket]. It tells the position tracker to realize *that* leg
+         * (not net into the primary), so it works in the backtest too, where there is no ticket.
+         */
+        val closesLegId: String? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }

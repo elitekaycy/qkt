@@ -29,6 +29,8 @@ private val emptyPositions =
         override fun positionFor(symbol: String): Position? = null
 
         override fun allPositions(): Map<String, Position> = emptyMap()
+
+        override fun legsFor(symbol: String): List<com.qkt.positions.PositionLeg> = emptyList()
     }
 
 private val emptyPnL =

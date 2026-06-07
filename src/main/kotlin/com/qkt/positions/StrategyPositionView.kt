@@ -25,6 +25,13 @@ interface StrategyPositionView {
 
     /** Gross exposure (side-blind sum of leg sizes) on [symbol]. Backs `POSITION.<stream>.gross`. */
     fun grossFor(symbol: String): BigDecimal = BigDecimal.ZERO
+
+    /**
+     * The individual open position legs on [symbol] — each with its side, quantity, and venue
+     * ticket. Lets a `CLOSE` close each real position by ticket instead of netting. Empty when
+     * flat or for views that don't track legs.
+     */
+    fun legsFor(symbol: String): List<PositionLeg> = emptyList()
 }
 
 internal class StrategyPositionViewImpl(
@@ -44,4 +51,7 @@ internal class StrategyPositionViewImpl(
     override fun shortCountFor(symbol: String): Int = tracker.shortCountFor(strategyId, symbol)
 
     override fun grossFor(symbol: String): BigDecimal = tracker.grossFor(strategyId, symbol)
+
+    override fun legsFor(symbol: String): List<PositionLeg> =
+        tracker.legBookFor(strategyId, symbol)?.all() ?: emptyList()
 }
