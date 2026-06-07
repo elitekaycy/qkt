@@ -76,6 +76,7 @@ class MT5Broker(
             clock,
             onPositionOpened = ::onPendingPositionOpened,
             closedTicketMeta = ::lookupClosedTicketMeta,
+            closedByEngine = ::consumeEngineClose,
             priceProvider = priceTracker,
             calendar =
                 com.qkt.common.TradingCalendar
@@ -137,6 +138,14 @@ class MT5Broker(
      */
     private val recentlyFilledTickets: MutableMap<Long, Long> = ConcurrentHashMap()
 
+    /**
+     * Tickets qkt closed itself via [submitCloseByTicket], with the time it did so. The
+     * position poller consults [consumeEngineClose] before publishing a close so it does not
+     * emit a second (duplicate) close when it sees one of these tickets gone. Reaped on the
+     * same [DISAMBIGUATION_TTL_MULTIPLIER] × [profile.pollIntervalMs] window.
+     */
+    private val recentlyClosedByTicket: MutableMap<Long, Long> = ConcurrentHashMap()
+
     private data class PendingMeta(
         val orderId: String,
         val strategyId: String,
@@ -173,12 +182,8 @@ class MT5Broker(
      * Close the venue position [ticketStr] via the gateway instead of placing an opposite
      * order. On a hedging account an opposite order opens a counter; this actually closes the
      * position. Emits the close as an attributed [BrokerEvent.OrderFilled] under [request.id]
-     * so the strategy's position tracker realizes it.
-     *
-     * The ticket's meta is dropped here. Suppressing the position poller's own (duplicate)
-     * close event when it next sees this ticket gone is a follow-up — it needs the poller to
-     * skip tickets we closed ourselves, and nothing emits a [OrderRequest.Market.closesTicket]
-     * yet, so no duplicate can occur in practice until that wiring lands.
+     * so the strategy's position tracker realizes it, and marks the ticket via
+     * [recentlyClosedByTicket] so the position poller does not publish a duplicate close.
      */
     private fun submitCloseByTicket(
         request: OrderRequest.Market,
@@ -194,6 +199,7 @@ class MT5Broker(
             return reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
         }
         positionMetaByTicket.remove(ticket)
+        recentlyClosedByTicket[ticket] = clock.now()
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
@@ -726,6 +732,18 @@ class MT5Broker(
     private fun lookupClosedTicketMeta(ticket: Long): ClosedPositionMeta? {
         val meta = positionMetaByTicket.remove(ticket) ?: return null
         return ClosedPositionMeta(clientOrderId = meta.orderId, strategyId = meta.strategyId)
+    }
+
+    /**
+     * True (consuming the marker) when qkt closed [ticket] itself via [submitCloseByTicket].
+     * Lets [MT5PositionPoller] skip publishing a duplicate close for it. Reaps stale markers
+     * past the disambiguation window.
+     */
+    private fun consumeEngineClose(ticket: Long): Boolean {
+        val now = clock.now()
+        val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
+        recentlyClosedByTicket.entries.removeIf { now - it.value >= ttlMs }
+        return recentlyClosedByTicket.remove(ticket) != null
     }
 
     /**
