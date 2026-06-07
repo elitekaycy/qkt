@@ -156,6 +156,44 @@ class MT5PositionPollerCloseTest {
     }
 
     @Test
+    fun `re-observed close after a snapshot flicker emits one attributed close, not a blank-strategy duplicate`() {
+        // Prod 2026-06-05 (v0.29.14): ticket 2814861313 (dsl-hedge_straddle--10) closed,
+        // then a later /positions snapshot briefly re-surfaced it before it vanished again.
+        // The poller re-diffed that flicker as a fresh open→close. The qkt-side meta had
+        // been consumed on the first lookup, so the second close carried a blank strategyId
+        // and an "opened outside this session" id — inflating the trade count and breaking
+        // per-strategy PnL. The poller must never re-report a ticket it already closed.
+        val t = 2814861313L
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(t, 0, "2000.00"))))) // open
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList()))) // closed
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(t, 0, "2000.00"))))) // flicker back
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList()))) // gone again
+
+        // Mimic the real MT5Broker.lookupClosedTicketMeta contract: meta is consumed on first read.
+        val meta = mutableMapOf(t to ClosedPositionMeta("dsl-hedge_straddle--10", "hedge_straddle"))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = { meta.remove(it) },
+                priceProvider = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("2000.00")) },
+            )
+        poller.tick() // open
+        poller.tick() // close → exactly one attributed event
+        poller.tick() // flicker re-surfaces the closed ticket
+        poller.tick() // it disappears again → must NOT emit a second (blank) close
+
+        assertThat(fills).hasSize(1)
+        val e = fills.single()
+        assertThat(e.strategyId).isEqualTo("hedge_straddle")
+        assertThat(e.clientOrderId).isEqualTo("dsl-hedge_straddle--10")
+        assertThat(e.brokerOrderId).isEqualTo(t.toString())
+    }
+
+    @Test
     fun `close with no price provider falls back to priceOpen`() {
         server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(9999L, 0, "1.0500")))))
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
