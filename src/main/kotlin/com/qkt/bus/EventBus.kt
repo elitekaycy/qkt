@@ -94,7 +94,10 @@ class EventBus(
         }
         val stamped = stamp(event)
         log.trace("publish {} seq={} ts={}", stamped::class.simpleName, stamped.sequenceId, stamped.timestamp)
-        subscribers[stamped::class]?.forEach { it(stamped) }
+        // Index loop over the handler list (the single most-traversed line in the engine) avoids
+        // allocating an Iterator per published event.
+        val handlers = subscribers[stamped::class] ?: return
+        for (i in handlers.indices) handlers[i](stamped)
     }
 
     private fun stamp(event: Event): Event {
