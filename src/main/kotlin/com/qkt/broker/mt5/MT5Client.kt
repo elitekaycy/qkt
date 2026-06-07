@@ -176,6 +176,53 @@ class MT5Client(
             "{\"position\":{\"ticket\":$ticket}}"
         }
 
+    /**
+     * Modify an OPEN position's SL/TP via `POST /modify_sl_tp` (gateway `TRADE_ACTION_SLTP`).
+     * This is how a trailing stop keeps a venue-side stop in place — push the new SL level onto
+     * the position so the broker still protects it even if qkt is offline. Returns the standard
+     * `{"result":{...}}` envelope; a non-2xx is captured in [MT5OrderResponse.errorMessage].
+     *
+     * The gateway treats an omitted `sl`/`tp` as `0.0`, which *clears* that level. To avoid
+     * clearing the take-profit when only trailing the stop, pass the current [tp] alongside [sl].
+     * Not retried — a duplicate modify is harmless but a surfaced failure is preferable to silent
+     * retries racing the trail.
+     */
+    fun modifyPosition(
+        ticket: Long,
+        sl: BigDecimal? = null,
+        tp: BigDecimal? = null,
+    ): MT5OrderResponse {
+        val body = encodeModifyPosition(ticket, sl, tp).toRequestBody(JSON_MEDIA)
+        val request =
+            Request
+                .Builder()
+                .url("$gatewayUrl/modify_sl_tp")
+                .post(body)
+                .build()
+        val resp = http.newCall(request).execute()
+        resp.use {
+            val raw = it.body?.string().orEmpty()
+            if (!it.isSuccessful) {
+                return MT5OrderResponse(
+                    result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
+                    errorMessage = "HTTP ${it.code}: $raw",
+                )
+            }
+            return parseOrderResponse(raw)
+        }
+    }
+
+    private fun encodeModifyPosition(
+        ticket: Long,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+    ): String {
+        val fields = mutableListOf("\"position\":$ticket")
+        if (sl != null) fields += "\"sl\":${sl.toPlainString()}"
+        if (tp != null) fields += "\"tp\":${tp.toPlainString()}"
+        return "{" + fields.joinToString(",") + "}"
+    }
+
     fun getTick(brokerSymbol: String): MT5Tick? {
         val raw = getWithRetry("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject

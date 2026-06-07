@@ -49,6 +49,13 @@ class OrderManager(
     private val priceProvider: MarketPriceProvider,
     private val clock: Clock,
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    /**
+     * Resolves an engine-managed exit's clientOrderId to the venue ticket of the position it
+     * closes, or null when there's no such ticketed position (a plain netting close). Lets a
+     * fired trailing stop close its position by ticket on a hedging account instead of opening a
+     * counter. Wired by [TradingPipeline] to the position tracker; null in tests/backtest.
+     */
+    private val closeTicketFor: ((String, String) -> String?)? = null,
 ) {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -1463,6 +1470,9 @@ class OrderManager(
                         quantity = req.quantity,
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
+                        // Close the exact venue position by ticket when this exit belongs to an
+                        // independent leg (hedging) — otherwise a plain market opens a counter.
+                        closesTicket = closeTicketFor?.invoke(req.strategyId, req.id),
                     )
                 is OrderRequest.TrailingStopLimit -> {
                     val level = trailLevel(managed) ?: error("TrailingStopLimit level missing for ${managed.id}")
