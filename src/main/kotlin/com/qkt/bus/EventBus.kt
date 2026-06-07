@@ -38,6 +38,31 @@ class EventBus(
     internal val subscribers = mutableMapOf<KClass<out Event>, MutableList<(Event) -> Unit>>()
 
     /**
+     * Live-mode binding: the single engine-loop thread and a sink that hands an event to that
+     * loop's inbound queue. When set, a [publish] called from any OTHER thread (a broker poller,
+     * a WebSocket reader, the schedule heartbeat, an HTTP control request) is rerouted to [sink]
+     * instead of dispatching inline — so every subscriber still runs on exactly one thread, the
+     * way the engine assumes. Left null in backtest (one thread already), where publish is always
+     * inline and behaviour is unchanged.
+     */
+    @Volatile private var engineThread: Thread? = null
+
+    @Volatile private var offThreadSink: ((Event) -> Unit)? = null
+
+    /**
+     * Route off-thread publishes onto the single-consumer engine loop. [engineThread] is the loop
+     * thread; [sink] enqueues an event for that loop to publish inline when it drains the queue.
+     * Call once, before any off-thread source can publish.
+     */
+    fun bindEngineLoop(
+        engineThread: Thread,
+        sink: (Event) -> Unit,
+    ) {
+        this.engineThread = engineThread
+        this.offThreadSink = sink
+    }
+
+    /**
      * Registers [handler] to be invoked for every published event of type [T].
      *
      * Handlers run synchronously on the publishing thread, in registration order. A
@@ -58,6 +83,15 @@ class EventBus(
      * Dispatch is synchronous; the call returns once all subscribers have run.
      */
     fun publish(event: Event) {
+        // Live mode: a publish from any thread other than the engine loop is handed to the loop's
+        // inbound queue (raw, unstamped — the loop stamps it inline so the deterministic sequence
+        // id stays single-threaded). The engine thread, and any backtest (no binding), dispatch
+        // inline here.
+        val sink = offThreadSink
+        if (sink != null && Thread.currentThread() !== engineThread) {
+            sink(event)
+            return
+        }
         val stamped = stamp(event)
         log.trace("publish {} seq={} ts={}", stamped::class.simpleName, stamped.sequenceId, stamped.timestamp)
         subscribers[stamped::class]?.forEach { it(stamped) }

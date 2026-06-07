@@ -12,6 +12,7 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -44,10 +45,20 @@ class LiveSessionHaltTest {
         val sequencer = MonotonicSequenceGenerator()
         val bus = EventBus(clock, sequencer)
 
+        // halt/resume publish their RiskEvent from the control (this) thread, so the live bus
+        // routes them onto the engine loop — delivery is async, on the engine thread. Await it.
         val halted = mutableListOf<RiskEvent.Halted>()
         val resumed = mutableListOf<RiskEvent.Resumed>()
-        bus.subscribe<RiskEvent.Halted> { halted.add(it) }
-        bus.subscribe<RiskEvent.Resumed> { resumed.add(it) }
+        val haltedSeen = CountDownLatch(1)
+        val resumedSeen = CountDownLatch(1)
+        bus.subscribe<RiskEvent.Halted> {
+            halted.add(it)
+            haltedSeen.countDown()
+        }
+        bus.subscribe<RiskEvent.Resumed> {
+            resumed.add(it)
+            resumedSeen.countDown()
+        }
 
         val handle =
             LiveSession(
@@ -65,13 +76,16 @@ class LiveSessionHaltTest {
         assertThat(handle.isHalted()).isFalse()
 
         handle.halt("operator")
+        // Flag is set synchronously on the control thread; the event is delivered on the engine thread.
+        assertThat(handle.isHalted()).isTrue()
+        assertThat(haltedSeen.await(2, TimeUnit.SECONDS)).isTrue()
         assertThat(halted).hasSize(1)
         assertThat(halted.first().reason).isEqualTo("operator")
-        assertThat(handle.isHalted()).isTrue()
 
         handle.resume()
-        assertThat(resumed).hasSize(1)
         assertThat(handle.isHalted()).isFalse()
+        assertThat(resumedSeen.await(2, TimeUnit.SECONDS)).isTrue()
+        assertThat(resumed).hasSize(1)
 
         // Let the engine thread drain and exit cleanly.
         feedLatch.countDown()
