@@ -115,6 +115,44 @@ class OrderManagerAttachedBracketTest {
     }
 
     @Test
+    fun `fixed bracket on an attach venue ships native keyed under the entry id`() {
+        // The orchestrator stack-tier shape: a market entry with a fixed SL/TP. Keying the venue
+        // order under the entry id is what lets registerStackOpen (which keys on entry.id) match
+        // the fill, so the STACK leg is tracked on a hedging venue — not just in backtest.
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        val bracket =
+            OrderRequest.Bracket(
+                id = "stk-tier0",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                entry =
+                    OrderRequest.Market(
+                        id = "stk-tier0-entry",
+                        symbol = "X",
+                        side = Side.BUY,
+                        quantity = Money.of("1"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 0L,
+                    ),
+                takeProfit = Money.of("130"),
+                stopLoss = StopLossSpec.Fixed(Money.of("90")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            )
+        om.submit(bracket)
+
+        assertThat(broker.submits).hasSize(1)
+        val shipped = broker.submits.single()
+        assertThat(shipped).isInstanceOf(OrderRequest.Bracket::class.java)
+        assertThat(shipped.id).isEqualTo("stk-tier0-entry")
+    }
+
+    @Test
     fun `without POSITION_MODIFY it falls back to decomposed resting exits`() {
         val clock = FixedClock(0L)
         val bus = newBus(clock)
