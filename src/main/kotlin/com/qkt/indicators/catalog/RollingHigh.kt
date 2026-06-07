@@ -20,22 +20,25 @@ class RollingHigh(
         require(period > 0) { "period must be > 0: $period" }
     }
 
-    private val window: ArrayDeque<BigDecimal> = ArrayDeque(period)
+    // Monotonic deque, decreasing by value — the front is always the window maximum, so value() is
+    // O(1) instead of an O(period) rescan. Each entry is (position, value); positions disambiguate
+    // equal values so the correct one expires out of the window.
+    private val mono: ArrayDeque<Pair<Long, BigDecimal>> = ArrayDeque()
+    private var count: Long = 0L
 
     override val warmupBars: Int = period
 
     override val isReady: Boolean
-        get() = window.size >= period
+        get() = count >= period
 
     override fun update(input: BigDecimal) {
-        window.addLast(input)
-        while (window.size > period) window.removeFirst()
+        val pos = count
+        count++
+        while (mono.isNotEmpty() && mono.last().second <= input) mono.removeLast()
+        mono.addLast(pos to input)
+        val oldest = pos - period + 1
+        while (mono.isNotEmpty() && mono.first().first < oldest) mono.removeFirst()
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
-        var hi = window.first()
-        for (v in window) if (v > hi) hi = v
-        return hi
-    }
+    override fun value(): BigDecimal? = if (isReady) mono.first().second else null
 }

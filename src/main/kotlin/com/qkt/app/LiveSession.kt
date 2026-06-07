@@ -584,40 +584,104 @@ class LiveSession(
 
         val running = AtomicBoolean(true)
         val terminated = CountDownLatch(1)
+        val inbound = java.util.concurrent.LinkedBlockingQueue<Inbound>()
 
+        // Flattening mutates the OrderManager and publishes closes, so it must run on the engine
+        // thread — the HTTP control path enqueues [Inbound.Flatten] rather than touching engine
+        // state from its own worker thread.
+        fun doFlatten() {
+            val strategyId = strategies.firstOrNull()?.first ?: return
+            for ((symbol, pos) in positions.allPositions()) {
+                if (pos.quantity.signum() == 0) continue
+                pipeline.orderManager.cancelPendingForSymbol(symbol)
+                val side =
+                    if (pos.quantity.signum() > 0) com.qkt.common.Side.SELL else com.qkt.common.Side.BUY
+                bus.publish(
+                    com.qkt.events.OrderEvent(
+                        com.qkt.execution.OrderRequest.Market(
+                            id = ids.next(),
+                            symbol = symbol,
+                            side = side,
+                            quantity = pos.quantity.abs(),
+                            timeInForce = com.qkt.execution.TimeInForce.GTC,
+                            timestamp = clock.now(),
+                            strategyId = strategyId,
+                        ),
+                    ),
+                )
+            }
+        }
+
+        // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
+        // positions, and the schedule runner. The tick feed, the heartbeat, the broker pollers
+        // (via the bus), and the HTTP flatten all POST onto [inbound]; this loop drains it
+        // serially, restoring the "engine is single-threaded" invariant in live mode.
         val thread =
             Thread({
                 if (mdcStrategy != null) org.slf4j.MDC.put("strategy", mdcStrategy)
                 try {
                     while (running.get()) {
-                        val tick = feed.next() ?: break
-                        pipeline.ingest(tick)
+                        when (val msg = inbound.take()) {
+                            is Inbound.FeedTick -> {
+                                // Drive event-time from the tick being PROCESSED (not when it was
+                                // read off the feed) so a deterministic clock stays in lockstep with
+                                // processing — preserving backtest==live. No-op for SystemClock.
+                                (clock as? com.qkt.common.MutableClock)?.advanceTo(msg.tick.timestamp)
+                                pipeline.ingest(msg.tick)
+                            }
+                            is Inbound.BusEvent -> bus.publish(msg.event)
+                            is Inbound.Heartbeat -> runCatching { pipeline.scheduleHeartbeat(msg.nowMs) }
+                            Inbound.Flatten -> runCatching { doFlatten() }
+                            // Feed ended (finite source drained): stop AFTER draining everything
+                            // already queued ahead of this sentinel, so no tick is dropped.
+                            Inbound.FeedEnded -> running.set(false)
+                        }
                     }
                 } catch (e: InterruptedException) {
                     log.info("LiveSession engine thread interrupted")
                     Thread.currentThread().interrupt()
                 } finally {
-                    runCatching { feed.close() }
                     running.set(false)
                     terminated.countDown()
                     if (mdcStrategy != null) org.slf4j.MDC.remove("strategy")
                 }
             }, "qkt-live-engine")
         thread.isDaemon = true
+        // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
+        // loop's queue, so subscribers only ever run on the engine thread.
+        bus.bindEngineLoop(thread) { ev -> if (running.get()) inbound.put(Inbound.BusEvent(ev)) }
         thread.start()
 
-        // Quiet-market heartbeat (#77 Phase 40 follow-up). Without this, SCHEDULE
-        // fires only happen when ticks arrive — a 19:55 UTC placement would slip
-        // by seconds on a quiet Asia session. 1Hz is configurable via
-        // [scheduleHeartbeatIntervalMs]; default 1s is sub-millisecond cost on
-        // modern hardware.
+        // Feed reader: turn the blocking tick feed into queue messages so the engine loop stays a
+        // pure single consumer rather than blocking on the feed itself.
+        val feedThread =
+            Thread({
+                try {
+                    while (running.get()) {
+                        val tick = feed.next() ?: break
+                        inbound.put(Inbound.FeedTick(tick))
+                    }
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                } finally {
+                    runCatching { feed.close() }
+                    // Non-blocking: tell the consumer the feed is done so it drains-then-stops.
+                    inbound.offer(Inbound.FeedEnded)
+                }
+            }, "qkt-live-feed")
+        feedThread.isDaemon = true
+        feedThread.start()
+
+        // Quiet-market heartbeat (#77 Phase 40 follow-up). Without this, SCHEDULE fires only happen
+        // when ticks arrive — a 19:55 UTC placement would slip by seconds on a quiet Asia session.
+        // It posts onto the queue so scheduleRunner.tick only ever runs on the engine thread.
         val scheduleHeartbeat: java.util.concurrent.ScheduledExecutorService =
             java.util.concurrent.Executors
                 .newSingleThreadScheduledExecutor { r ->
                     Thread(r, "qkt-schedule-heartbeat").apply { isDaemon = true }
                 }
         scheduleHeartbeat.scheduleAtFixedRate(
-            { runCatching { pipeline.scheduleHeartbeat(clock.now()) } },
+            { runCatching { inbound.put(Inbound.Heartbeat(clock.now())) } },
             scheduleHeartbeatIntervalMs,
             scheduleHeartbeatIntervalMs,
             java.util.concurrent.TimeUnit.MILLISECONDS,
@@ -647,6 +711,7 @@ class LiveSession(
             override fun stop() {
                 running.set(false)
                 thread.interrupt()
+                feedThread.interrupt()
                 // Stop the schedule heartbeat thread so it doesn't outlive the session.
                 runCatching {
                     scheduleHeartbeat.shutdownNow()
@@ -710,31 +775,30 @@ class LiveSession(
 
             override fun isHalted(): Boolean = riskState.halted
 
+            // Run the actual flatten on the engine thread (it mutates the OrderManager and
+            // publishes closes); this HTTP-pool call just posts the command onto the queue.
             override fun flatten() {
-                val strategyId = strategies.firstOrNull()?.first ?: return
-                val current = positions.allPositions()
-                for ((symbol, pos) in current) {
-                    if (pos.quantity.signum() == 0) continue
-                    pipeline.orderManager.cancelPendingForSymbol(symbol)
-                    val side =
-                        if (pos.quantity.signum() > 0) {
-                            com.qkt.common.Side.SELL
-                        } else {
-                            com.qkt.common.Side.BUY
-                        }
-                    val request =
-                        com.qkt.execution.OrderRequest.Market(
-                            id = ids.next(),
-                            symbol = symbol,
-                            side = side,
-                            quantity = pos.quantity.abs(),
-                            timeInForce = com.qkt.execution.TimeInForce.GTC,
-                            timestamp = clock.now(),
-                            strategyId = strategyId,
-                        )
-                    bus.publish(com.qkt.events.OrderEvent(request))
-                }
+                inbound.put(Inbound.Flatten)
             }
         }
     }
+}
+
+/** Messages drained by the live engine loop's single consumer thread (see [LiveSession.start]). */
+private sealed interface Inbound {
+    data class FeedTick(
+        val tick: com.qkt.marketdata.Tick,
+    ) : Inbound
+
+    data class BusEvent(
+        val event: com.qkt.events.Event,
+    ) : Inbound
+
+    data class Heartbeat(
+        val nowMs: Long,
+    ) : Inbound
+
+    object Flatten : Inbound
+
+    object FeedEnded : Inbound
 }

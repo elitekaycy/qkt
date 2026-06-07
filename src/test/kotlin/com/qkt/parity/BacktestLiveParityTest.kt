@@ -56,18 +56,16 @@ class BacktestLiveParityTest {
             }
         }
 
-    private class ClockAdvancingFeed(
+    // The engine clock is driven by the tick being PROCESSED (LiveSession advances a MutableClock in
+    // its consumer loop), so the feed just returns ticks — it no longer touches the clock.
+    private class TickListFeed(
         private val ticks: List<Tick>,
-        private val clock: FixedClock,
     ) : TickFeed {
         private val idx = AtomicInteger(0)
 
         override fun next(): Tick? {
             val i = idx.getAndIncrement()
-            if (i >= ticks.size) return null
-            val t = ticks[i]
-            clock.time = t.timestamp
-            return t
+            return if (i >= ticks.size) null else ticks[i]
         }
 
         override fun close() = Unit
@@ -75,14 +73,13 @@ class BacktestLiveParityTest {
 
     private class FakeSource(
         private val ticks: List<Tick>,
-        private val clock: FixedClock,
     ) : MarketSource {
         override val name: String = "ParityFake"
         override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.LIVE_TICKS)
 
         override fun supports(symbol: String): Boolean = true
 
-        override fun liveTicks(symbols: List<String>): TickFeed = ClockAdvancingFeed(ticks, clock)
+        override fun liveTicks(symbols: List<String>): TickFeed = TickListFeed(ticks)
     }
 
     @Test
@@ -103,7 +100,7 @@ class BacktestLiveParityTest {
         val session =
             LiveSession(
                 strategies = listOf("s" to makeStrategy()),
-                source = FakeSource(tickSeq, liveClock),
+                source = FakeSource(tickSeq),
                 symbols = listOf(symbol),
                 clock = liveClock,
                 onTrade = { trade, _, _ -> liveTrades.add(trade) },
