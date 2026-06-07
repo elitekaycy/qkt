@@ -44,6 +44,14 @@ data class PositionLeg(
     val openedAt: Long,
     val role: LegRole,
     val parentLegId: String? = null,
+    /**
+     * The venue position ticket this leg corresponds to, captured from the opening fill's
+     * `brokerOrderId`. Lets a close target the exact position on a hedging account (close it
+     * by ticket) rather than send an opposite order that would open a counter. Null for legs
+     * opened before this was tracked, or restored as null after a restart until reconciliation
+     * re-attaches the venue ticket.
+     */
+    val brokerTicket: String? = null,
 ) {
     init {
         require(quantity.signum() > 0) { "PositionLeg.quantity must be > 0: $quantity" }
