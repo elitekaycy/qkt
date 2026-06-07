@@ -50,4 +50,38 @@ class FileStatePersistorOcoLegsTest {
     ) {
         assertThat(FileStatePersistor(tmp).loadOcoLegs("never-saved")).isEmpty()
     }
+
+    @Test
+    fun `armed trailing stop oco leg round-trips through the file persistor`(
+        @TempDir tmp: Path,
+    ) {
+        // hedge-straddle v2 brackets use STOP LOSS TRAILING, whose SL leg is an
+        // ArmedTrailingStop. It must persist so its OCO sibling linkage survives a
+        // restart — previously it was dropped as a "non-persistable variant".
+        val p = FileStatePersistor(tmp)
+        val leg =
+            PersistedOcoLeg(
+                clientOrderId = "trail-sl",
+                brokerOrderId = "ticket-trail",
+                strategyId = "alpha",
+                request =
+                    OrderRequest.ArmedTrailingStop(
+                        id = "trail-sl",
+                        symbol = "XAUUSD",
+                        side = Side.SELL,
+                        quantity = BigDecimal("0.25"),
+                        entryPrice = BigDecimal("2000.50"),
+                        trailDistance = BigDecimal("18"),
+                        mfeThreshold = BigDecimal("18"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 0L,
+                        strategyId = "alpha",
+                    ),
+                siblingIds = listOf("trail-tp"),
+            )
+
+        p.saveOcoLegs("alpha", listOf(leg))
+
+        assertThat(p.loadOcoLegs("alpha")).containsExactly(leg)
+    }
 }
