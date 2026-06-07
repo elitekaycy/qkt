@@ -425,6 +425,18 @@ class OrderManager(
             stacks.setAnchor(owner, e.price, clock.now())
             materializePendingLayers(owner, anchor = e.price)
         }
+        // On a venue that holds attached position SL/TP, attach the layer's fixed exits to the
+        // position so the broker closes that exact ticket — a resting exit order would instead
+        // open a counter on a hedging account. Otherwise decompose into separate resting exits.
+        if (OrderTypeCapability.POSITION_MODIFY in broker.capabilitiesFor(e.symbol)) {
+            attachLayerSlTpToVenue(
+                stackId = owner,
+                layerOrderId = e.clientOrderId,
+                fillPrice = e.price,
+                ticket = e.brokerOrderId,
+            )
+            return
+        }
         val slId = "${e.clientOrderId}-sl"
         val tpId = "${e.clientOrderId}-tp"
         val slDistance = attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
@@ -434,6 +446,35 @@ class OrderManager(
             siblings[slId] = listOf(tpId)
             siblings[tpId] = listOf(slId)
         }
+    }
+
+    /**
+     * Attach a filled stack layer's fixed SL/TP to its venue position, so the broker closes that
+     * exact ticket when a level is hit. The levels are computed off the actual fill (a stack fires
+     * at market, so they aren't known until fill) — hence a position modify rather than the entry
+     * wire. Used when the broker supports [OrderTypeCapability.POSITION_MODIFY]; without it the
+     * layer's exits rest as separate orders (see [attachLayerSl] / [attachLayerTp]).
+     */
+    private fun attachLayerSlTpToVenue(
+        stackId: String,
+        layerOrderId: String,
+        fillPrice: BigDecimal,
+        ticket: String?,
+    ) {
+        val resolvedTicket = ticket?.takeIf { it.isNotBlank() } ?: return
+        val state = stacks.get(stackId) ?: return
+        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return
+        val slPrice =
+            state.outerBracket?.stopLoss?.let {
+                computeChildPrice(it, parent.side, fillPrice, isStopLoss = true)
+            }
+        val slDistance = slPrice?.let { (fillPrice - it).abs() }
+        val tpPrice =
+            state.outerBracket?.takeProfit?.let {
+                computeChildPrice(it, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
+            }
+        if (slPrice == null && tpPrice == null) return
+        broker.modifyPosition(resolvedTicket, sl = slPrice, tp = tpPrice)
     }
 
     private fun attachLayerSl(
