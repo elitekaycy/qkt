@@ -170,6 +170,7 @@ class TradingPipeline(
                         when (val decision = riskEngine.approve(request)) {
                             is Decision.Approve -> {
                                 registerOcoEntryLegs(strategyId, request)
+                                registerLegClose(strategyId, request)
                                 bus.publish(OrderEvent(request))
                             }
                             is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
@@ -367,6 +368,21 @@ class TradingPipeline(
                 "Strategy '$strategyId' uses STACK_AT on $symbol but routing broker " +
                     "'${broker.name}' does not declare MULTI_POSITION_PER_SYMBOL"
             }
+        }
+    }
+
+    /**
+     * A `CLOSE` of an independent leg is emitted as a market tagged with `closesLegId`
+     * ([com.qkt.dsl.compile.ActionCompiler.closeSignalsFor]). Register the fill so the tracker
+     * realizes that specific leg instead of netting into the primary. Works in backtest and
+     * live; the venue-side close (by ticket) is handled separately by the MT5 broker.
+     */
+    private fun registerLegClose(
+        strategyId: String,
+        request: com.qkt.execution.OrderRequest,
+    ) {
+        if (request is com.qkt.execution.OrderRequest.Market && request.closesLegId != null) {
+            strategyPositions.registerStackClose(strategyId, request.id, request.closesLegId)
         }
     }
 
