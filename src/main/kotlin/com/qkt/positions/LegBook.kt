@@ -55,6 +55,23 @@ class LegBook(
         return sum
     }
 
+    /** Open legs on the long side. A straddle that filled both ways has [longCount] 1. */
+    fun longCount(): Int = legs.values.count { it.side == Side.BUY }
+
+    /** Open legs on the short side. */
+    fun shortCount(): Int = legs.values.count { it.side == Side.SELL }
+
+    /**
+     * Total exposure across all legs ignoring side — the sum of leg sizes. Unlike
+     * [netQuantity] this does not let a long and a short cancel, so an equal-and-opposite
+     * pair reports its true `0.2 + 0.1` exposure rather than a misleading net `0.1`.
+     */
+    fun grossQuantity(): BigDecimal {
+        var sum = BigDecimal.ZERO
+        for (leg in legs.values) sum = sum.add(leg.quantity)
+        return sum
+    }
+
     /**
      * Derived [Position] view — net quantity + weighted average entry price across all legs.
      * Returns `null` if the book is empty.
