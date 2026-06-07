@@ -559,6 +559,10 @@ class Parser(
                         "unrealized_pnl" -> StateAccessor(StateSource.POSITION_UNREALIZED_PNL, streamAlias)
                         "holding_duration" -> StateAccessor(StateSource.POSITION_HOLDING_DURATION, streamAlias)
                         "mfe" -> StateAccessor(StateSource.POSITION_MFE, streamAlias)
+                        "count", "open_count" -> StateAccessor(StateSource.POSITION_OPEN_COUNT, streamAlias)
+                        "longs", "long_count" -> StateAccessor(StateSource.POSITION_LONG_COUNT, streamAlias)
+                        "shorts", "short_count" -> StateAccessor(StateSource.POSITION_SHORT_COUNT, streamAlias)
+                        "gross" -> StateAccessor(StateSource.POSITION_GROSS, streamAlias)
                         "trades_today" -> StateAccessor(StateSource.POSITION_TRADES_TODAY, streamAlias)
                         "last_trade_at" -> StateAccessor(StateSource.POSITION_LAST_TRADE_AT, streamAlias)
                         else -> {

@@ -168,7 +168,11 @@ class TradingPipeline(
                     if (request != null) {
                         logSubmitContext(request)
                         when (val decision = riskEngine.approve(request)) {
-                            is Decision.Approve -> bus.publish(OrderEvent(request))
+                            is Decision.Approve -> {
+                                registerOcoEntryLegs(strategyId, request)
+                                registerLegClose(strategyId, request)
+                                bus.publish(OrderEvent(request))
+                            }
                             is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
                         }
                     }
@@ -364,6 +368,42 @@ class TradingPipeline(
                 "Strategy '$strategyId' uses STACK_AT on $symbol but routing broker " +
                     "'${broker.name}' does not declare MULTI_POSITION_PER_SYMBOL"
             }
+        }
+    }
+
+    /**
+     * A `CLOSE` of an independent leg is emitted as a market tagged with `closesLegId`
+     * ([com.qkt.dsl.compile.ActionCompiler.closeSignalsFor]). Register the fill so the tracker
+     * realizes that specific leg instead of netting into the primary. Works in backtest and
+     * live; the venue-side close (by ticket) is handled separately by the MT5 broker.
+     */
+    private fun registerLegClose(
+        strategyId: String,
+        request: com.qkt.execution.OrderRequest,
+    ) {
+        if (request is com.qkt.execution.OrderRequest.Market && request.closesLegId != null) {
+            strategyPositions.registerStackClose(strategyId, request.id, request.closesLegId)
+        }
+    }
+
+    /**
+     * For an `OCO_ENTRY` whose legs are brackets (e.g. a straddle), register each leg's entry
+     * fill to open its own [com.qkt.positions.LegRole.INDEPENDENT] position leg — so a filled
+     * long and a filled short coexist as two real positions instead of netting to zero — and
+     * register each bracket's TP/SL exit to close that leg. Mirrors the stack machinery in
+     * [wireStackOrchestrator], reusing OrderManager's deterministic `<bracket-id>-tp`/`-sl`
+     * exit naming. No-op for any other request, so single-position strategies are unaffected.
+     */
+    private fun registerOcoEntryLegs(
+        strategyId: String,
+        request: com.qkt.execution.OrderRequest,
+    ) {
+        if (request !is com.qkt.execution.OrderRequest.StandaloneOCO) return
+        for (leg in listOf(request.leg1, request.leg2)) {
+            if (leg !is com.qkt.execution.OrderRequest.Bracket) continue
+            strategyPositions.registerIndependentOpen(strategyId, leg.entry.id, leg.id)
+            strategyPositions.registerStackClose(strategyId, "${leg.id}-tp", leg.id)
+            strategyPositions.registerStackClose(strategyId, "${leg.id}-sl", leg.id)
         }
     }
 

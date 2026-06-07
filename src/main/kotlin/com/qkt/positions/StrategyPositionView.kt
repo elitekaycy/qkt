@@ -13,6 +13,25 @@ interface StrategyPositionView {
      * Backs the DSL accessor `POSITION.<stream>.mfe`.
      */
     fun mfeFor(symbol: String): BigDecimal? = null
+
+    /** Real number of open positions (legs) on [symbol] — not the net. Backs `POSITION.<stream>.count`. */
+    fun openCountFor(symbol: String): Int = 0
+
+    /** Open long-side legs on [symbol]. Backs `POSITION.<stream>.longs`. */
+    fun longCountFor(symbol: String): Int = 0
+
+    /** Open short-side legs on [symbol]. Backs `POSITION.<stream>.shorts`. */
+    fun shortCountFor(symbol: String): Int = 0
+
+    /** Gross exposure (side-blind sum of leg sizes) on [symbol]. Backs `POSITION.<stream>.gross`. */
+    fun grossFor(symbol: String): BigDecimal = BigDecimal.ZERO
+
+    /**
+     * The individual open position legs on [symbol] — each with its side, quantity, and venue
+     * ticket. Lets a `CLOSE` close each real position by ticket instead of netting. Empty when
+     * flat or for views that don't track legs.
+     */
+    fun legsFor(symbol: String): List<PositionLeg> = emptyList()
 }
 
 internal class StrategyPositionViewImpl(
@@ -24,4 +43,15 @@ internal class StrategyPositionViewImpl(
     override fun allPositions(): Map<String, Position> = tracker.positionsFor(strategyId)
 
     override fun mfeFor(symbol: String): BigDecimal? = tracker.primaryMfeFor(strategyId, symbol)
+
+    override fun openCountFor(symbol: String): Int = tracker.openCountFor(strategyId, symbol)
+
+    override fun longCountFor(symbol: String): Int = tracker.longCountFor(strategyId, symbol)
+
+    override fun shortCountFor(symbol: String): Int = tracker.shortCountFor(strategyId, symbol)
+
+    override fun grossFor(symbol: String): BigDecimal = tracker.grossFor(strategyId, symbol)
+
+    override fun legsFor(symbol: String): List<PositionLeg> =
+        tracker.legBookFor(strategyId, symbol)?.all() ?: emptyList()
 }

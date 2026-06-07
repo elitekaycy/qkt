@@ -293,6 +293,29 @@ class ExprCompiler(
                     val mfe = ctx.strategyContext.positions.mfeFor(symbol) ?: BigDecimal.ZERO
                     Value.Num(mfe)
                 }
+            StateSource.POSITION_OPEN_COUNT ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    val n = ctx.strategyContext.positions.openCountFor(symbol)
+                    Value.Num(BigDecimal.valueOf(n.toLong()))
+                }
+            StateSource.POSITION_LONG_COUNT ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    val n = ctx.strategyContext.positions.longCountFor(symbol)
+                    Value.Num(BigDecimal.valueOf(n.toLong()))
+                }
+            StateSource.POSITION_SHORT_COUNT ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    val n = ctx.strategyContext.positions.shortCountFor(symbol)
+                    Value.Num(BigDecimal.valueOf(n.toLong()))
+                }
+            StateSource.POSITION_GROSS ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    Value.Num(ctx.strategyContext.positions.grossFor(symbol))
+                }
             StateSource.POSITION_TRADES_TODAY ->
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")

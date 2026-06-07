@@ -858,8 +858,15 @@ class OrderManager(
                 ),
             )
         }
-        siblings[req.leg1.id] = listOf(req.leg2.id)
-        siblings[req.leg2.id] = listOf(req.leg1.id)
+        // Key the sibling link by the id each leg's fill arrives under, not the leg's own
+        // id. A Bracket leg is placed as an OTO whose parent is the inner entry, so the
+        // broker fills `Bracket.entry` (a distinct id) — keying by the bracket id would
+        // leave the link unreachable and the sibling would never cancel on fill. Leaf legs
+        // (Stop/Limit) fill under their own id, so this is a no-op for them.
+        val fill1 = ocoFillId(req.leg1)
+        val fill2 = ocoFillId(req.leg2)
+        siblings[fill1] = listOf(fill2)
+        siblings[fill2] = listOf(fill1)
 
         // Place legs one at a time and unwind on rejection — a half-placed OCO would
         // run one-legged (a directional bet, not a hedge).
@@ -875,6 +882,14 @@ class OrderManager(
         }
         return SubmitAck(req.id, req.id, accepted = true)
     }
+
+    /**
+     * The clientOrderId under which [leg]'s fill is reported. A Bracket leg is placed as an
+     * OTO whose parent is `Bracket.entry`, so the broker fills the inner entry — its id, not
+     * the bracket wrapper's. Leaf legs (Stop/Limit) fill under their own id. Mirrors the
+     * compiler's [com.qkt.dsl.compile.ActionCompiler.parentClientOrderIdFor].
+     */
+    private fun ocoFillId(leg: OrderRequest): String = (leg as? OrderRequest.Bracket)?.entry?.id ?: leg.id
 
     private fun rejectOco(
         ocoId: String,
