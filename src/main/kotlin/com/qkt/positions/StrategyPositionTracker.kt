@@ -161,10 +161,10 @@ class StrategyPositionTracker(
             persistBook(event.strategyId, event.symbol)
             return Money.ZERO
         }
-        // A venue-detected close of an independent leg held with attached SL/TP arrives under the
-        // entry's id (the position poller), not a registered exit id, so it isn't caught above.
-        // Match it to the leg by its venue ticket and realize that leg, instead of netting.
-        closeIndependentLegByTicket(event)?.let { realized ->
+        // A venue-detected close of a leg held with attached SL/TP arrives under the entry's id
+        // (the position poller), not a registered exit id, so it isn't caught above. Match it to
+        // the leg by its venue ticket and realize that leg, instead of netting.
+        closeLegByTicket(event)?.let { realized ->
             persistBook(event.strategyId, event.symbol)
             return realized
         }
@@ -238,6 +238,7 @@ class StrategyPositionTracker(
                 openedAt = event.timestamp,
                 role = LegRole.STACK,
                 parentLegId = intent.parentLegId,
+                brokerTicket = event.brokerOrderId,
             ),
         )
         return Money.ZERO
@@ -264,16 +265,19 @@ class StrategyPositionTracker(
     }
 
     /**
-     * Close the [LegRole.INDEPENDENT] leg whose venue ticket matches this close fill's
-     * [BrokerEvent.OrderFilled.brokerOrderId], realizing its PnL at the close price. Returns the
-     * realized PnL, or null if no such leg (so the caller falls through to the netting path).
+     * Close the leg whose venue ticket matches this close fill's
+     * [BrokerEvent.OrderFilled.brokerOrderId], realizing its PnL at the close price. Matches any
+     * ticketed leg — an [LegRole.INDEPENDENT] straddle leg or a [LegRole.STACK] tier — since both
+     * are held with venue-attached SL/TP and close by ticket. Returns the realized PnL, or null if
+     * no such leg (so the caller falls through to the netting path). PRIMARY legs carry no ticket,
+     * so they never match here.
      */
-    private fun closeIndependentLegByTicket(event: BrokerEvent.OrderFilled): BigDecimal? {
+    private fun closeLegByTicket(event: BrokerEvent.OrderFilled): BigDecimal? {
         val ticket = event.brokerOrderId?.takeIf { it.isNotBlank() } ?: return null
         val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return null
         val leg =
             book.all().firstOrNull {
-                it.role == LegRole.INDEPENDENT && it.brokerTicket == ticket
+                it.brokerTicket == ticket
             } ?: return null
         val closed = book.close(leg.legId) ?: return null
         val priceDiff =
