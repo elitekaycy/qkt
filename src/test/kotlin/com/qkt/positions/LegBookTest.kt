@@ -121,6 +121,32 @@ class LegBookTest {
     }
 
     @Test
+    fun `truthful counts expose a long and a short the net hides`() {
+        // The straddle case: a filled long and a filled short. netQuantity nets to 0.1, but
+        // there really are TWO open positions. count/longs/shorts/gross tell the truth.
+        val book = LegBook("EURUSD")
+        book.add(leg("p1", Side.BUY, "0.2", "1.10"))
+        book.add(leg("s1", Side.SELL, "0.1", "1.20", role = LegRole.STACK, parentLegId = "p1"))
+        assertThat(book.size()).isEqualTo(2)
+        assertThat(book.longCount()).isEqualTo(1)
+        assertThat(book.shortCount()).isEqualTo(1)
+        assertThat(book.grossQuantity()).isEqualByComparingTo("0.3")
+        assertThat(book.netQuantity()).isEqualByComparingTo("0.1")
+    }
+
+    @Test
+    fun `equal-and-opposite legs report two positions even though net is zero`() {
+        val book = LegBook("EURUSD")
+        book.add(leg("p1", Side.BUY, "0.1", "1.10"))
+        book.add(leg("s1", Side.SELL, "0.1", "1.15", role = LegRole.STACK, parentLegId = "p1"))
+        assertThat(book.netQuantity()).isEqualByComparingTo("0")
+        assertThat(book.size()).isEqualTo(2)
+        assertThat(book.longCount()).isEqualTo(1)
+        assertThat(book.shortCount()).isEqualTo(1)
+        assertThat(book.grossQuantity()).isEqualByComparingTo("0.2")
+    }
+
+    @Test
     fun `equal-and-opposite legs return zero-quantity view`() {
         val book = LegBook("EURUSD")
         book.add(leg("p1", Side.BUY, "0.1", "1.10"))

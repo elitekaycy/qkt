@@ -180,6 +180,40 @@ class ExprCompilerStateTest {
     }
 
     @Test
+    fun `POSITION count longs shorts gross read the truthful leg view`() {
+        // A filled long and a filled short net to a misleading 0.1, but there are really TWO
+        // open positions. The truthful accessors expose count/longs/shorts/gross.
+        val pos =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String): Position? = null
+
+                override fun allPositions() = emptyMap<String, Position>()
+
+                override fun openCountFor(symbol: String) = if (symbol == "BACKTEST:BTCUSDT") 2 else 0
+
+                override fun longCountFor(symbol: String) = if (symbol == "BACKTEST:BTCUSDT") 1 else 0
+
+                override fun shortCountFor(symbol: String) = if (symbol == "BACKTEST:BTCUSDT") 1 else 0
+
+                override fun grossFor(symbol: String) =
+                    if (symbol == "BACKTEST:BTCUSDT") BigDecimal("0.3") else BigDecimal.ZERO
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+
+        fun read(src: StateSource) = (ExprCompiler().compile(StateAccessor(src, "btc")).evaluate(ec) as Value.Num).v
+        assertThat(read(StateSource.POSITION_OPEN_COUNT)).isEqualByComparingTo("2")
+        assertThat(read(StateSource.POSITION_LONG_COUNT)).isEqualByComparingTo("1")
+        assertThat(read(StateSource.POSITION_SHORT_COUNT)).isEqualByComparingTo("1")
+        assertThat(read(StateSource.POSITION_GROSS)).isEqualByComparingTo("0.3")
+    }
+
+    @Test
     fun `POSITION on unknown stream alias errors at evaluation`() {
         val ec =
             EvalContext(

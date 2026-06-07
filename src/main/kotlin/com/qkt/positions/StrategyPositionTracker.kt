@@ -385,6 +385,30 @@ class StrategyPositionTracker(
         symbol: String,
     ): LegBook? = byStrategy[strategyId]?.get(symbol)
 
+    /** Open position count on [symbol] for [strategyId] — the real number of legs, not the net. */
+    fun openCountFor(
+        strategyId: String,
+        symbol: String,
+    ): Int = byStrategy[strategyId]?.get(symbol)?.size() ?: 0
+
+    /** Open long-side legs on [symbol] for [strategyId]. */
+    fun longCountFor(
+        strategyId: String,
+        symbol: String,
+    ): Int = byStrategy[strategyId]?.get(symbol)?.longCount() ?: 0
+
+    /** Open short-side legs on [symbol] for [strategyId]. */
+    fun shortCountFor(
+        strategyId: String,
+        symbol: String,
+    ): Int = byStrategy[strategyId]?.get(symbol)?.shortCount() ?: 0
+
+    /** Gross exposure (sum of leg sizes, side-blind) on [symbol] for [strategyId]. */
+    fun grossFor(
+        strategyId: String,
+        symbol: String,
+    ): BigDecimal = byStrategy[strategyId]?.get(symbol)?.grossQuantity() ?: Money.ZERO
+
     fun driftFor(
         symbol: String,
         brokerView: PositionProvider,
