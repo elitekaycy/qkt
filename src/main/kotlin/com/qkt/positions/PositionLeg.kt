@@ -13,6 +13,15 @@ enum class LegRole {
      * Each STACK leg has its own bracket and tracks independently after the primary closes.
      */
     STACK,
+
+    /**
+     * A standalone position that coexists with other positions on the same symbol without
+     * netting against them — e.g. each leg of an OCO_ENTRY straddle, where a filled long and
+     * a filled short are two real positions, not one net-zero position. Multiple INDEPENDENT
+     * legs are allowed; each carries its own bracket/exit and closes on its own. Unlike a
+     * STACK it has no parent — its peers are equals, not a primary it was stacked onto.
+     */
+    INDEPENDENT,
 }
 
 /**
