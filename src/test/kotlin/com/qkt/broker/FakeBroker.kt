@@ -66,6 +66,23 @@ class FakeBroker(
         )
     }
 
+    data class ModifyPositionCall(
+        val ticket: String,
+        val sl: BigDecimal?,
+        val tp: BigDecimal?,
+    )
+
+    val modifyPositions: MutableList<ModifyPositionCall> = mutableListOf()
+
+    override fun modifyPosition(
+        ticket: String,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+    ): SubmitAck {
+        modifyPositions.add(ModifyPositionCall(ticket, sl, tp))
+        return SubmitAck(ticket, ticket, accepted = true)
+    }
+
     fun emitFill(
         request: OrderRequest,
         price: BigDecimal,
