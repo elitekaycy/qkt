@@ -219,6 +219,13 @@ class PaperBrokerTest {
     }
 
     @Test
+    fun `does not advertise POSITION_MODIFY so bracket exits use the resting-order fallback`() {
+        val bus = newBus()
+        val b = PaperBroker(bus, FixedClock(0L), MarketPriceTracker())
+        assertThat(b.capabilities).doesNotContain(OrderTypeCapability.POSITION_MODIFY)
+    }
+
+    @Test
     fun `multiple market fills on the same symbol each emit a distinct OrderFilled`() {
         val tracker = MarketPriceTracker()
         tracker.update("EURUSD", Money.of("1.10"))

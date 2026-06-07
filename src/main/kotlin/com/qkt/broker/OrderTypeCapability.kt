@@ -43,4 +43,13 @@ enum class OrderTypeCapability {
      * Bybit Spot is netting-only and does not.
      */
     MULTI_POSITION_PER_SYMBOL,
+
+    /**
+     * The broker can set or adjust the attached SL/TP on an already-open position
+     * (MT5 `TRADE_ACTION_SLTP`, wrapped by `modifyPosition`). The venue then closes
+     * that position itself when a level is hit — on a hedging account this closes the
+     * exact ticket rather than opening a counter, which a standalone resting exit order
+     * would do. Lets bracket exits attach to the position instead of resting separately.
+     */
+    POSITION_MODIFY,
 }
