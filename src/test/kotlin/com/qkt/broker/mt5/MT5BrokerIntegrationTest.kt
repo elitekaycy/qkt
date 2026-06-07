@@ -92,6 +92,66 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `submit market with closesTicket closes the position by ticket`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":777,"price":"1.1050","comment":"ok"}}""",
+            ),
+        )
+        val req =
+            OrderRequest.Market(
+                id = "close-1",
+                symbol = "EXNESS:EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+                closesTicket = "424242",
+            )
+        val ack = broker.submit(req)
+        assertThat(ack.accepted).isTrue
+        assertThat(ack.brokerOrderId).isEqualTo("424242")
+        assertThat(captured).hasSize(2)
+        assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
+        val filled = captured[1] as BrokerEvent.OrderFilled
+        assertThat(filled.clientOrderId).isEqualTo("close-1")
+        assertThat(filled.brokerOrderId).isEqualTo("424242")
+        assertThat(filled.symbol).isEqualTo("EXNESS:EURUSD")
+        assertThat(filled.side).isEqualTo(Side.SELL)
+        assertThat(filled.price).isEqualByComparingTo("1.1050")
+        // The gateway was hit at /close_position with the ticket — NOT /order.
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/close_position")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":{"ticket":424242,"volume":0.1}}""")
+    }
+
+    @Test
+    fun `closesTicket close failure is rejected`() {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody("""{"error":"Failed to close position"}"""),
+        )
+        val req =
+            OrderRequest.Market(
+                id = "close-x",
+                symbol = "EXNESS:EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+                closesTicket = "999",
+            )
+        val ack = broker.submit(req)
+        assertThat(ack.accepted).isFalse
+        assertThat(captured.any { it is BrokerEvent.OrderRejected }).isTrue
+    }
+
+    @Test
     fun `bracket submit includes sl tp in payload`() {
         server.enqueue(
             MockResponse().setBody(
