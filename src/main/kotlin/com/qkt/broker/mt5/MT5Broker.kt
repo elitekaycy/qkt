@@ -155,6 +155,9 @@ class MT5Broker(
     override fun supports(symbol: String): Boolean = true
 
     override fun submit(request: OrderRequest): SubmitAck {
+        if (request is OrderRequest.Market && request.closesTicket != null) {
+            return submitCloseByTicket(request, request.closesTicket)
+        }
         val translation =
             runCatching { translator.translate(request) }.getOrElse { ex ->
                 return reject(request, ex.message ?: "translation failed")
@@ -164,6 +167,53 @@ class MT5Broker(
             is MT5Translation.Single -> submitSingle(request, translation.request)
             is MT5Translation.Composite -> submitComposite(request, translation)
         }
+    }
+
+    /**
+     * Close the venue position [ticketStr] via the gateway instead of placing an opposite
+     * order. On a hedging account an opposite order opens a counter; this actually closes the
+     * position. Emits the close as an attributed [BrokerEvent.OrderFilled] under [request.id]
+     * so the strategy's position tracker realizes it.
+     *
+     * The ticket's meta is dropped here. Suppressing the position poller's own (duplicate)
+     * close event when it next sees this ticket gone is a follow-up — it needs the poller to
+     * skip tickets we closed ourselves, and nothing emits a [OrderRequest.Market.closesTicket]
+     * yet, so no duplicate can occur in practice until that wiring lands.
+     */
+    private fun submitCloseByTicket(
+        request: OrderRequest.Market,
+        ticketStr: String,
+    ): SubmitAck {
+        val ticket =
+            ticketStr.toLongOrNull()
+                ?: return reject(request, "closesTicket is not a valid ticket: $ticketStr")
+        val resp =
+            runCatching { client.closePosition(ticket, volume = request.quantity) }
+                .getOrElse { ex -> return reject(request, ex.message ?: "close_position failed") }
+        if (!isOrderSuccessful(resp.result.retcode)) {
+            return reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
+        }
+        positionMetaByTicket.remove(ticket)
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = request.id,
+                brokerOrderId = ticket.toString(),
+                timestamp = clock.now(),
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = request.id,
+                brokerOrderId = ticket.toString(),
+                symbol = request.symbol,
+                side = request.side,
+                price = resp.result.price,
+                quantity = request.quantity,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        return SubmitAck(request.id, ticket.toString(), accepted = true)
     }
 
     /**
