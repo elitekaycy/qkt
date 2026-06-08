@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
+import java.util.concurrent.ConcurrentHashMap
 
 object NyseCalendar : TradingCalendar {
     override val name: String = "nyse"
@@ -77,9 +78,9 @@ object NyseCalendar : TradingCalendar {
 
     private fun isHoliday(d: LocalDate): Boolean = d in holidaysFor(d.year)
 
-    private val holidayCache = mutableMapOf<Int, Set<LocalDate>>()
+    private val holidayCache = ConcurrentHashMap<Int, Set<LocalDate>>()
 
-    private fun holidaysFor(year: Int): Set<LocalDate> = holidayCache.getOrPut(year) { computeHolidays(year) }
+    private fun holidaysFor(year: Int): Set<LocalDate> = holidayCache.computeIfAbsent(year) { computeHolidays(year) }
 
     private fun computeHolidays(year: Int): Set<LocalDate> {
         val days = mutableSetOf<LocalDate>()
