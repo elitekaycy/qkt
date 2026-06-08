@@ -115,4 +115,14 @@ class FakeBroker(
             ),
         )
     }
+
+    var stubOpenPositions: Map<String, List<com.qkt.positions.Position>> = emptyMap()
+
+    override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> = stubOpenPositions
+
+    val recovered: MutableList<com.qkt.execution.ManagedOrder> = mutableListOf()
+
+    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
+        recovered.addAll(orders)
+    }
 }

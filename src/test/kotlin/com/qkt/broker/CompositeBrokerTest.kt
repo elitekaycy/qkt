@@ -196,4 +196,69 @@ class CompositeBrokerTest {
         composite.cancel("c1")
         assertThat(brokerA.cancels).isEmpty()
     }
+
+    @Test
+    fun `getOpenPositions merges positions across leaves`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val brokerA =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET)).apply {
+                stubOpenPositions =
+                    mapOf("A:X" to listOf(com.qkt.positions.Position("A:X", Money.of("1"), Money.of("100"))))
+            }
+        val brokerB =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET)).apply {
+                stubOpenPositions =
+                    mapOf("B:Y" to listOf(com.qkt.positions.Position("B:Y", Money.of("2"), Money.of("200"))))
+            }
+        val composite =
+            CompositeBroker(
+                routes = listOf(SymbolPattern.prefix("A:") to brokerA, SymbolPattern.prefix("B:") to brokerB),
+                bus = bus,
+            )
+
+        val all = composite.getOpenPositions()
+
+        assertThat(all.keys).containsExactlyInAnyOrder("A:X", "B:Y")
+        assertThat(all["A:X"]!!.single().avgEntryPrice).isEqualByComparingTo("100")
+    }
+
+    @Test
+    fun `recoverPendingOrders routes each order to its owning leaf and restores cancel routing`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val brokerA = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val brokerB = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val composite =
+            CompositeBroker(
+                routes = listOf(SymbolPattern.prefix("A:") to brokerA, SymbolPattern.prefix("B:") to brokerB),
+                bus = bus,
+            )
+        val orderA =
+            com.qkt.execution.ManagedOrder(
+                "c1",
+                marketReq("c1", "A:X"),
+                com.qkt.execution.OrderState.WORKING,
+                createdAt = 0L,
+                lastUpdatedAt = 0L,
+            )
+        val orderB =
+            com.qkt.execution.ManagedOrder(
+                "c2",
+                marketReq("c2", "B:Y"),
+                com.qkt.execution.OrderState.WORKING,
+                createdAt = 0L,
+                lastUpdatedAt = 0L,
+            )
+
+        composite.recoverPendingOrders(listOf(orderA, orderB))
+
+        assertThat(brokerA.recovered.map { it.id }).containsExactly("c1")
+        assertThat(brokerB.recovered.map { it.id }).containsExactly("c2")
+
+        // Routing is restored: a later cancel of a recovered order reaches the right leaf.
+        composite.cancel("c1")
+        assertThat(brokerA.cancels).containsExactly("c1")
+        assertThat(brokerB.cancels).isEmpty()
+    }
 }
