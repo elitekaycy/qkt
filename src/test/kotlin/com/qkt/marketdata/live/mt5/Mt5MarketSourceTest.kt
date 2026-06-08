@@ -1,7 +1,9 @@
 package com.qkt.marketdata.live.mt5
 
 import com.qkt.broker.mt5.MT5BrokerProfile
+import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.broker.mt5.SymbolPolicy
+import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.source.MarketSourceCapability
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -49,7 +51,13 @@ class Mt5MarketSourceTest {
                 ),
             )
             val profile = exness.copy(gatewayUrl = server.url("/").toString().trimEnd('/'), pollIntervalMs = 5L)
-            val source = Mt5MarketSource(profile, calendar = null)
+            // Crypto calendar is always in-session, so the round never skips — lets the test
+            // fetch a tick regardless of wall-clock (the old `calendar = null` no-gating intent).
+            val source =
+                Mt5MarketSource(
+                    profile,
+                    symbolCalendars = SymbolCalendars(emptyList(), default = TradingCalendar.crypto()),
+                )
             val feed = source.liveTicks(listOf("EXNESS:XAUUSD"))
             val tick = feed.next()
             feed.close()

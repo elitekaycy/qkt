@@ -2,7 +2,6 @@ package com.qkt.broker.mt5
 
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
-import com.qkt.common.TradingCalendar
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
@@ -23,15 +22,16 @@ import org.slf4j.LoggerFactory
  * — every tick observes "no pendings disappeared" because the snapshot starts empty
  * and stays empty.
  *
- * Session gate: when [calendar] is non-null, [tick] skips the HTTP round-trip whenever
- * the calendar reports out-of-session. Avoids hammering the gateway on weekends and FX
- * holiday gaps. Null calendar (default) keeps the legacy always-on behavior.
+ * Session gate: when [sessionGate] is non-null, [tick] skips the HTTP round-trip whenever it
+ * returns false (out of session). Avoids hammering the gateway on weekends and FX holiday gaps.
+ * Null gate (default) keeps the legacy always-on behavior; [MT5Broker] wires it to the profile's
+ * [SymbolCalendars] so a multi-asset broker keeps polling while any asset class is open.
  */
 class MT5PendingOrderPoller(
     private val client: MT5Client,
     private val profile: MT5BrokerProfile,
     private val clock: Clock = SystemClock(),
-    private val calendar: TradingCalendar? = null,
+    private val sessionGate: ((Instant) -> Boolean)? = null,
     private val onPendingDisappeared: ((Long) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PendingOrderPoller::class.java)
@@ -73,7 +73,7 @@ class MT5PendingOrderPoller(
     internal fun tickForTesting() = tick()
 
     private fun tick() {
-        if (calendar != null && !calendar.isInSession("", Instant.ofEpochMilli(clock.now()))) {
+        if (sessionGate != null && !sessionGate(Instant.ofEpochMilli(clock.now()))) {
             return
         }
         val current = client.getPendingOrders(magic = profile.magic).associateBy { it.ticket }
