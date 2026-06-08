@@ -7,6 +7,11 @@ data class PerformanceReport(
     val unrealizedTotal: BigDecimal,
     val totalPnL: BigDecimal,
     val tradeCount: Int,
+    /**
+     * Fraction of *decided* trades that were profitable. Break-even (zero-PnL) trades are
+     * excluded from the denominator, so this is not wins/total — e.g. 12 wins of 24 decided
+     * trades is 0.50 even if 3 more closed flat. Zero when no trades closed.
+     */
     val winRate: BigDecimal,
     val maxDrawdown: BigDecimal,
     val profitFactor: BigDecimal?,
@@ -15,7 +20,18 @@ data class PerformanceReport(
     val largestWin: BigDecimal,
     val largestLoss: BigDecimal,
     val maxConsecutiveLosses: Int,
+    /**
+     * Annualized Sharpe ratio, risk-free rate 0, computed from equity-curve returns. The
+     * annualization factor is *inferred from the average sample spacing* in TICK mode, so very
+     * short or sparse runs can distort it. Null when undefined (fewer than two samples, or zero
+     * return variance).
+     */
     val sharpeRatio: BigDecimal?,
+    /**
+     * Calmar ratio = **total** return / max drawdown. Uses the total (not annualized) return, so
+     * it reads high on short backtests; compare across runs of equal length. Null when max
+     * drawdown is zero.
+     */
     val calmarRatio: BigDecimal?,
     val equityCurve: List<EquitySample>,
     val drawdownPeriods: List<DrawdownPeriod> = emptyList(),

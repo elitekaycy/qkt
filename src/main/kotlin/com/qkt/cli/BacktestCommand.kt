@@ -205,7 +205,13 @@ class BacktestCommand(
                     brokerKind = brokerKind,
                 )
             val result = backtest.run()
-            ReportPrinter.print(result, format, System.out)
+            ReportPrinter.print(result, format, System.out, brokerKind)
+            if (brokerKind == BrokerKind.PAPER) {
+                System.err.println(
+                    "qkt: note: paper broker fills at mid with no spread/slippage — results are optimistic. " +
+                        "Use --broker mt5-sim and set commissionPerLot in instruments.yaml for cost-realistic backtests.",
+                )
+            }
             ExitCodes.SUCCESS
         } catch (e: IllegalStateException) {
             System.err.println("qkt: error: ${e.message}")
