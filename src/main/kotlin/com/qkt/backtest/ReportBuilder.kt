@@ -1,5 +1,6 @@
 package com.qkt.backtest
 
+import com.qkt.backtest.metrics.DRAWDOWN_PERIOD_THRESHOLD
 import com.qkt.backtest.metrics.DrawdownAnalyzer
 import com.qkt.backtest.metrics.MonteCarlo
 import com.qkt.backtest.metrics.calmar
@@ -17,7 +18,8 @@ object ReportBuilder {
         finalRealized: BigDecimal,
         finalUnrealized: BigDecimal,
         annualizationFactor: BigDecimal,
-    ): PerformanceReport = build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor)
+        metrics: EquityMetrics? = null,
+    ): PerformanceReport = build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics)
 
     fun buildPerStrategy(
         strategyId: String,
@@ -26,17 +28,25 @@ object ReportBuilder {
         finalRealized: BigDecimal,
         finalUnrealized: BigDecimal,
         annualizationFactor: BigDecimal,
+        metrics: EquityMetrics? = null,
     ): PerformanceReport {
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
-        return build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor)
+        return build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics)
     }
 
+    /**
+     * Build a report. Curve-derived metrics (drawdown, Sharpe, drawdown periods, starting equity)
+     * come from [metrics] when supplied — the live path, where [equityCurve] is a thinned chart view
+     * and recomputing from it would be wrong. When [metrics] is null they fall back to a one-pass
+     * computation over [equityCurve] itself.
+     */
     private fun build(
         trades: List<TradeRecord>,
         equityCurve: List<EquitySample>,
         finalRealized: BigDecimal,
         finalUnrealized: BigDecimal,
         annualizationFactor: BigDecimal,
+        metrics: EquityMetrics?,
     ): PerformanceReport {
         val realizeds = trades.map { it.realized }
         val closing = realizeds.filter { it.signum() != 0 }
@@ -52,12 +62,13 @@ object ReportBuilder {
 
         val pf = profitFactor(realizeds)
         val wl = winLossStats(realizeds)
-        val drawdown = DrawdownTracker.fromCurve(equityCurve.map { it.equity })
-        val sharpeR = sharpe(equityCurve.map { it.equity }, annualizationFactor)
+        val drawdown = metrics?.maxDrawdown() ?: DrawdownTracker.fromCurve(equityCurve.map { it.equity })
+        val sharpeR = metrics?.sharpe(annualizationFactor) ?: sharpe(equityCurve.map { it.equity }, annualizationFactor)
         val calmarR = calmar(finalRealized.add(finalUnrealized), drawdown)
-        val drawdownPeriods = DrawdownAnalyzer.analyze(equityCurve, BigDecimal("-0.01"))
+        val drawdownPeriods =
+            metrics?.drawdownPeriods() ?: DrawdownAnalyzer.analyze(equityCurve, DRAWDOWN_PERIOD_THRESHOLD)
         val startingEquity =
-            equityCurve.firstOrNull()?.equity ?: BigDecimal.ZERO
+            metrics?.startingEquity() ?: equityCurve.firstOrNull()?.equity ?: BigDecimal.ZERO
         val monteCarlo =
             if (trades.size >= 30) {
                 MonteCarlo.run(
