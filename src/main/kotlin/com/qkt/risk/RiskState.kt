@@ -53,6 +53,7 @@ class RiskState(
 
     fun onTick() {
         equityTracker.update()
+        equityTracker.updateStrategies()
     }
 
     fun onFill(
