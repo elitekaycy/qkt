@@ -7,12 +7,14 @@ import com.qkt.indicators.catalog.BollingerBands
 import com.qkt.indicators.catalog.EMA
 import com.qkt.indicators.catalog.MACD
 import com.qkt.indicators.catalog.RSI
+import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
 import com.qkt.indicators.catalog.Stddev
 import com.qkt.indicators.catalog.VWAP
 import com.qkt.indicators.catalog.WMA
+import com.qkt.indicators.catalog.ZScore
 import java.math.BigDecimal
 
 /**
@@ -75,6 +77,15 @@ object IndicatorRegistry {
             "STDDEV" to
                 IndicatorSpec("STDDEV", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     Stddev(period = args[0].toInt())
+                },
+            // ---- statistical ----
+            "ZSCORE" to
+                IndicatorSpec("ZSCORE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    ZScore(period = args[0].toInt())
+                },
+            "REGRESSION_SLOPE" to
+                IndicatorSpec("REGRESSION_SLOPE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    RegressionSlope(period = args[0].toInt())
                 },
             // ---- MACD (three outputs) ----
             "MACD" to
