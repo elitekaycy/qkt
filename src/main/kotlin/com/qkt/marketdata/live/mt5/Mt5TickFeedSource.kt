@@ -75,7 +75,9 @@ class Mt5TickFeedSource(
                                             price =
                                                 (if (tick.last.signum() > 0) tick.last else tick.mid)
                                                     .setScale(Money.SCALE, Money.ROUNDING),
-                                            timestamp = clock.now(),
+                                            // Stamp the broker's authoritative tick time, not local wall-clock,
+                                            // so candle boundaries match MT5 replay and the Bybit convention.
+                                            timestamp = tick.brokerTimeMs,
                                             bid = tick.bid.setScale(Money.SCALE, Money.ROUNDING),
                                             ask = tick.ask.setScale(Money.SCALE, Money.ROUNDING),
                                             volume = null,
