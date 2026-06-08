@@ -184,6 +184,7 @@ class PortfolioDeployer(
                         startedAt.toString(),
                         session.recentTrades(),
                         layers,
+                        pnl = session.pnlSnapshot(compiledChild.ast.name),
                     )
                 },
                 running = { session.running },
