@@ -1,6 +1,5 @@
 package com.qkt.dsl.compile
 
-import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.ast.BreakOffset
@@ -65,7 +64,6 @@ class LatchCompiler(
     private val exprCompiler: ExprCompiler,
     private val sizingCompiler: SizingCompiler,
     private val ids: IdGenerator,
-    private val clock: Clock,
 ) {
     private val log = LoggerFactory.getLogger(LatchCompiler::class.java)
 
@@ -111,7 +109,7 @@ class LatchCompiler(
         return LatchEntryBuilder { direction, anchor, ec ->
             val dir = BigDecimal(direction)
             val side = if (direction > 0) Side.BUY else Side.SELL
-            val now = clock.now()
+            val now = ec.strategyContext.clock.now()
             val id = ids.next()
 
             fun resolve(rel: DirRel): BigDecimal {
