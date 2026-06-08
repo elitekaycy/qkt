@@ -177,6 +177,10 @@ class FetchCommand(
                             raw = cfg.brokers,
                             defaults = MT5DefaultProfiles.all,
                             env = System.getenv(),
+                            calendars = cfg.brokerCalendars,
+                            aliases = cfg.brokerAliases,
+                            capabilityRestrictions = cfg.brokerCapabilityRestrictions,
+                            instrumentOverrides = cfg.brokerInstrumentOverrides,
                         )
                     } catch (e: Exception) {
                         System.err.println("qkt: failed to load broker profiles: ${e.message}")

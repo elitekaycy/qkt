@@ -22,6 +22,17 @@ data class Config(
     val fetchers: Map<String, Map<String, String>> = emptyMap(),
     val brokers: Map<String, Map<String, String>> = emptyMap(),
     /**
+     * Per-broker nested config blocks the flat [brokers] reader can't carry. Keyed by broker name.
+     * [brokerCalendars] = ordered `(symbolPattern, calendarName)` rules (per-symbol session
+     * calendar); [brokerAliases] = `(qktSymbol, brokerSymbol)`; [brokerCapabilityRestrictions] =
+     * disabled order-type capability names; [brokerInstrumentOverrides] = `symbol → (field →
+     * value)` venue specs. All feed [com.qkt.broker.mt5.MT5BrokerProfileLoader.load].
+     */
+    val brokerCalendars: Map<String, List<Pair<String, String>>> = emptyMap(),
+    val brokerAliases: Map<String, Map<String, String>> = emptyMap(),
+    val brokerCapabilityRestrictions: Map<String, List<String>> = emptyMap(),
+    val brokerInstrumentOverrides: Map<String, Map<String, Map<String, String>>> = emptyMap(),
+    /**
      * Daemon-level risk knobs. Currently honored:
      *   - `max_daily_loss` — global daily-loss cap in account currency (BigDecimal).
      *     Defaults to [DEFAULT_MAX_DAILY_LOSS] when unset. Set to "0" to disable.
@@ -146,6 +157,10 @@ data class Config(
                 tv = parseFlat(map["tv"]),
                 fetchers = parseNested(map["fetchers"]),
                 brokers = parseNested(map["brokers"]),
+                brokerCalendars = parseBrokerCalendars(map["brokers"]),
+                brokerAliases = parseBrokerStringMap(map["brokers"], "aliases"),
+                brokerCapabilityRestrictions = parseBrokerStringList(map["brokers"], "capability_restrictions"),
+                brokerInstrumentOverrides = parseBrokerInstrumentOverrides(map["brokers"]),
                 risk = parseFlat(map["risk"]),
                 perStrategyRisk = parsePerStrategyRisk(map["risk"]),
                 state = parseFlat(map["state"]),
@@ -173,6 +188,61 @@ data class Config(
                 (v as? Map<String, Any?> ?: emptyMap())
                     .mapValues { (_, vv) -> vv?.toString() ?: "" }
             }
+        }
+
+        /**
+         * Ordered per-symbol calendar rules per broker: `brokers.<name>.calendars` is a YAML map
+         * `pattern: calendarName`. SnakeYAML preserves insertion order, so first-match-wins is
+         * well-defined. e.g. `{ "BTC*": crypto, "*": fx }` → `[(BTC*, crypto), (*, fx)]`.
+         */
+        @Suppress("UNCHECKED_CAST")
+        private fun parseBrokerCalendars(raw: Any?): Map<String, List<Pair<String, String>>> {
+            val brokers = raw as? Map<String, Any?> ?: return emptyMap()
+            return brokers.mapNotNull { (name, cfg) ->
+                val block = (cfg as? Map<String, Any?>)?.get("calendars") as? Map<String, Any?> ?: return@mapNotNull null
+                name to block.map { (pattern, cal) -> pattern to (cal?.toString() ?: "") }
+            }.toMap()
+        }
+
+        /** A nested `string → string` block under each broker (e.g. `aliases`). */
+        @Suppress("UNCHECKED_CAST")
+        private fun parseBrokerStringMap(
+            raw: Any?,
+            key: String,
+        ): Map<String, Map<String, String>> {
+            val brokers = raw as? Map<String, Any?> ?: return emptyMap()
+            return brokers.mapNotNull { (name, cfg) ->
+                val block = (cfg as? Map<String, Any?>)?.get(key) as? Map<String, Any?> ?: return@mapNotNull null
+                name to block.mapValues { (_, v) -> v?.toString() ?: "" }
+            }.toMap()
+        }
+
+        /** A nested list block under each broker (e.g. `capability_restrictions`). */
+        @Suppress("UNCHECKED_CAST")
+        private fun parseBrokerStringList(
+            raw: Any?,
+            key: String,
+        ): Map<String, List<String>> {
+            val brokers = raw as? Map<String, Any?> ?: return emptyMap()
+            return brokers.mapNotNull { (name, cfg) ->
+                val block = (cfg as? Map<String, Any?>)?.get(key) as? List<Any?> ?: return@mapNotNull null
+                name to block.map { it?.toString() ?: "" }
+            }.toMap()
+        }
+
+        /** `brokers.<name>.instrument_overrides` = `symbol → (field → value)`. */
+        @Suppress("UNCHECKED_CAST")
+        private fun parseBrokerInstrumentOverrides(raw: Any?): Map<String, Map<String, Map<String, String>>> {
+            val brokers = raw as? Map<String, Any?> ?: return emptyMap()
+            return brokers.mapNotNull { (name, cfg) ->
+                val block =
+                    (cfg as? Map<String, Any?>)?.get("instrument_overrides") as? Map<String, Any?>
+                        ?: return@mapNotNull null
+                name to
+                    block.mapValues { (_, spec) ->
+                        (spec as? Map<String, Any?> ?: emptyMap()).mapValues { (_, v) -> v?.toString() ?: "" }
+                    }
+            }.toMap()
         }
 
         @Suppress("UNCHECKED_CAST")

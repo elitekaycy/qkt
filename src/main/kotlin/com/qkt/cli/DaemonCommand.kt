@@ -90,6 +90,10 @@ class DaemonCommand(
                         raw = cfg.brokers,
                         defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
                         env = System.getenv(),
+                        calendars = cfg.brokerCalendars,
+                        aliases = cfg.brokerAliases,
+                        capabilityRestrictions = cfg.brokerCapabilityRestrictions,
+                        instrumentOverrides = cfg.brokerInstrumentOverrides,
                     )
             } catch (e: Exception) {
                 println("[WARN] mt5 profile load failed: ${e.message}")
