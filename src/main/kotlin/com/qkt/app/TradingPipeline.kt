@@ -283,6 +283,12 @@ class TradingPipeline(
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
+            strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
+        }
+        bus.subscribe<BrokerEvent.OrderCancelled> { e ->
+            // The losing leg of an OCO bracket cancels once its sibling fills; drop its
+            // pre-registered open/close intent so the pending maps don't leak.
+            strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
         bus.subscribe<RiskRejectedEvent> { e -> onRejected(e) }
         bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
