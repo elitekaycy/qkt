@@ -73,6 +73,7 @@ data class PersistedLeg(
     val quantity: BigDecimal,
     val entryPrice: BigDecimal,
     val openedAt: Long,
+    val brokerTicket: String? = null,
 ) {
     fun toPositionLeg(): PositionLeg =
         PositionLeg(
@@ -84,6 +85,7 @@ data class PersistedLeg(
             quantity = quantity,
             entryPrice = entryPrice,
             openedAt = openedAt,
+            brokerTicket = brokerTicket,
         )
 
     companion object {
@@ -97,6 +99,7 @@ data class PersistedLeg(
                 quantity = leg.quantity,
                 entryPrice = leg.entryPrice,
                 openedAt = leg.openedAt,
+                brokerTicket = leg.brokerTicket,
             )
     }
 }

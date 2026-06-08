@@ -54,6 +54,30 @@ class FileStatePersistorLegBookTest {
     }
 
     @Test
+    fun `saveLegBook preserves brokerTicket across reload`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val book = LegBook("XAUUSDm")
+        book.add(
+            PositionLeg(
+                legId = "leg-1",
+                symbol = "XAUUSDm",
+                side = Side.BUY,
+                quantity = BigDecimal("0.20"),
+                entryPrice = BigDecimal("4700.0"),
+                openedAt = 1000L,
+                role = LegRole.PRIMARY,
+                brokerTicket = "ticket-9981",
+            ),
+        )
+        persistor.saveLegBook("hedge", "XAUUSDm", book)
+        val loaded = persistor.loadLegBook("hedge", "XAUUSDm")
+        assertThat(loaded).isNotNull
+        assertThat(loaded!!.legs.single().brokerTicket).isEqualTo("ticket-9981")
+    }
+
+    @Test
     fun `loadLegBook returns null when file missing`(
         @TempDir tmp: Path,
     ) {
