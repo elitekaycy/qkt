@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.app.LiveSession
+import com.qkt.app.SessionPnl
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
@@ -162,7 +163,15 @@ class RunCommand(
                                     quantity = it.quantity,
                                 )
                             }
-                        buildSnapshot(ast.name, ast.version, startMs, startedAt, session.recentTrades(), layers)
+                        buildSnapshot(
+                            ast.name,
+                            ast.version,
+                            startMs,
+                            startedAt,
+                            session.recentTrades(),
+                            layers,
+                            pnl = session.pnlSnapshot(ast.name),
+                        )
                     },
                     running = { session.running },
                     onStop = { flatten ->
@@ -254,20 +263,19 @@ class RunCommand(
         startedAt: String,
         trades: List<Trade>,
         pendingStackLayers: List<PendingStackLayer> = emptyList(),
+        pnl: SessionPnl = SessionPnl.ZERO,
     ): StatusSnapshot {
         val now = System.currentTimeMillis()
         val last = trades.lastOrNull()
-        val realized =
-            trades.fold(BigDecimal.ZERO) { acc, _ -> acc }
         return StatusSnapshot(
             strategy = strategyName,
             version = strategyVersion,
             uptimeMs = now - startMs,
             startedAt = startedAt,
-            equity = BigDecimal.ZERO,
-            balance = BigDecimal.ZERO,
-            realized = realized,
-            unrealized = BigDecimal.ZERO,
+            equity = pnl.equity,
+            balance = pnl.balance,
+            realized = pnl.realized,
+            unrealized = pnl.unrealized,
             positions = emptyList<PositionDto>(),
             lastTrade =
                 last?.let {
