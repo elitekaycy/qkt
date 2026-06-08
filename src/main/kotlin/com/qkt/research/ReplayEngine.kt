@@ -25,6 +25,8 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
+import com.qkt.pnl.CommissionBook
+import com.qkt.pnl.PerLotCommission
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.Position
@@ -89,6 +91,7 @@ class ReplayEngine(
     private val pnl: PnLCalculator
     private val strategyPnL: StrategyPnL
     private val collector: EquityCurveCollector
+    private val commissionBook = CommissionBook(PerLotCommission(instruments))
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
     private val rejections = mutableListOf<RiskRejectedEvent>()
@@ -183,6 +186,7 @@ class ReplayEngine(
                 },
                 onCandle = { barsClosed++ },
                 instruments = instruments,
+                commissionBook = commissionBook,
                 latencyEnabled = latencyEnabled,
             )
         holder[0] = pipeline
@@ -247,6 +251,7 @@ class ReplayEngine(
                 finalUnrealized = pnl.unrealizedTotal(),
                 annualizationFactor = annualizationFactor,
                 metrics = collector.globalMetrics(),
+                commissionPaid = commissionBook.total(),
             )
         val perStrategy =
             strategies.associate { (id, _) ->
@@ -259,6 +264,7 @@ class ReplayEngine(
                         finalUnrealized = strategyPnL.unrealizedTotalFor(id),
                         annualizationFactor = annualizationFactor,
                         metrics = collector.metricsFor(id),
+                        commissionPaid = commissionBook.totalFor(id),
                     )
             }
         return BacktestResult(

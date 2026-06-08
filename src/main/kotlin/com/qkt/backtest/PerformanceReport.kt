@@ -20,4 +20,10 @@ data class PerformanceReport(
     val equityCurve: List<EquitySample>,
     val drawdownPeriods: List<DrawdownPeriod> = emptyList(),
     val monteCarlo: MonteCarloSummary? = null,
+    /**
+     * Total commission charged over the run (#335). The realized/total PnL above are already
+     * net of this; it is reported separately as the bridge from gross trade PnL to net —
+     * `gross = totalPnL + commissionPaid`. Zero when no commission was configured.
+     */
+    val commissionPaid: BigDecimal = BigDecimal.ZERO,
 )
