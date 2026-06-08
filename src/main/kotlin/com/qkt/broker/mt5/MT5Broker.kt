@@ -755,6 +755,12 @@ class MT5Broker(
         // Mark the ticket as recently filled so the pending-order poller doesn't
         // mistake the subsequent "disappeared from /orders" for an external cancel.
         recentlyFilledTickets[position.ticket] = clock.now()
+        // Sweep stale entries on this always-firing position path too: the matching sweep in
+        // onPendingDisappeared only runs when the gateway exposes an /orders endpoint, so without
+        // this a gateway lacking /orders would let recentlyFilledTickets grow unbounded.
+        recentlyFilledTickets.entries.removeIf {
+            clock.now() - it.value >= profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
+        }
         // Keep the meta accessible to the position poller for the eventual close event.
         positionMetaByTicket[position.ticket] = meta
         val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(position.symbol)}"
