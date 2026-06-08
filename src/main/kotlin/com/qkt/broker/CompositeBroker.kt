@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.source.SymbolPattern
+import java.util.Collections
 import org.slf4j.LoggerFactory
 
 /**
@@ -37,9 +38,28 @@ class CompositeBroker(
 
     private val orderIdToBroker: MutableMap<String, Broker> = mutableMapOf()
 
+    /**
+     * Venue ticket → owning leaf, captured from each fill's `brokerOrderId` (the same value the
+     * position tracker stores as the leg's `brokerTicket`). Lets [modifyPosition] — which is keyed
+     * by venue ticket, not order id — reach the leaf that holds the position. Bounded so a 24/7
+     * session can't accumulate every ticket forever; the cap is far above any realistic count of
+     * concurrently-open positions, so it never evicts a live ticket.
+     */
+    private val ticketToBroker: MutableMap<String, Broker> =
+        Collections.synchronizedMap(
+            object : LinkedHashMap<String, Broker>(16, 0.75f, false) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Broker>): Boolean = size > 10_000
+            },
+        )
+
     init {
         bus?.let { b ->
-            b.subscribe<BrokerEvent.OrderFilled> { e -> orderIdToBroker.remove(e.clientOrderId) }
+            b.subscribe<BrokerEvent.OrderFilled> { e ->
+                orderIdToBroker[e.clientOrderId]?.let { broker ->
+                    e.brokerOrderId?.let { ticket -> ticketToBroker[ticket] = broker }
+                }
+                orderIdToBroker.remove(e.clientOrderId)
+            }
             b.subscribe<BrokerEvent.OrderCancelled> { e -> orderIdToBroker.remove(e.clientOrderId) }
             b.subscribe<BrokerEvent.OrderRejected> { e -> orderIdToBroker.remove(e.clientOrderId) }
         }
@@ -81,6 +101,26 @@ class CompositeBroker(
             )
         } else {
             target.modify(orderId, changes)
+        }
+    }
+
+    override fun modifyPosition(
+        ticket: String,
+        sl: java.math.BigDecimal?,
+        tp: java.math.BigDecimal?,
+    ): SubmitAck {
+        val target = ticketToBroker[ticket]
+        return if (target == null) {
+            // No leaf has reported a fill for this ticket — don't claim success (the Broker default
+            // returns accepted=true), so a venue SL/TP mirror to an unknown ticket is surfaced.
+            SubmitAck(
+                clientOrderId = ticket,
+                brokerOrderId = ticket,
+                accepted = false,
+                rejectReason = "no leaf owns ticket $ticket",
+            )
+        } else {
+            target.modifyPosition(ticket, sl, tp)
         }
     }
 
