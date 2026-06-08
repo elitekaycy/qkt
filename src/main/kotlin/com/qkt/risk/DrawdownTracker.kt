@@ -32,16 +32,35 @@ class DrawdownTracker(
 
     companion object {
         fun fromCurve(samples: List<BigDecimal>): BigDecimal {
-            var peak = Money.ZERO
-            var maxDd = Money.ZERO
-            for (e in samples) {
-                if (e > peak) peak = e
-                if (peak.signum() > 0 && e < peak) {
-                    val dd = peak.subtract(e).divide(peak, Money.CONTEXT)
-                    if (dd > maxDd) maxDd = dd
-                }
-            }
-            return maxDd.setScale(Money.SCALE, Money.ROUNDING)
+            val acc = MaxDrawdownAccumulator()
+            samples.forEach(acc::accept)
+            return acc.value()
         }
     }
+}
+
+/**
+ * Online maximum-drawdown accumulator: feed equity readings one at a time, read the worst peak-to-
+ * trough drop seen so far at any point. Drawdown is `(peak − equity) / peak`, the largest such ratio
+ * over the stream.
+ *
+ * Holds only the running peak and worst drop, so memory is constant no matter how many readings pass
+ * through — matching what a one-pass [DrawdownTracker.fromCurve] over the whole curve would return.
+ *
+ * e.g. feed 100, 120, 90 → peak 120, trough 90 → max drawdown 0.25.
+ */
+class MaxDrawdownAccumulator {
+    private var peak: BigDecimal = Money.ZERO
+    private var maxDd: BigDecimal = Money.ZERO
+
+    fun accept(equity: BigDecimal) {
+        if (equity > peak) peak = equity
+        if (peak.signum() > 0 && equity < peak) {
+            val dd = peak.subtract(equity).divide(peak, Money.CONTEXT)
+            if (dd > maxDd) maxDd = dd
+        }
+    }
+
+    /** Worst drawdown seen so far, scaled to money precision. Non-destructive. */
+    fun value(): BigDecimal = maxDd.setScale(Money.SCALE, Money.ROUNDING)
 }

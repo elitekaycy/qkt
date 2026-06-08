@@ -5,7 +5,7 @@ import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
-import com.qkt.backtest.EquitySample
+import com.qkt.backtest.EquityMetrics
 import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
@@ -238,7 +238,7 @@ class ReplayEngine(
 
     /** Build a [BacktestResult] from current state — valid mid-replay or at end. */
     fun snapshot(): BacktestResult {
-        val annualizationFactor = annualizationFactorFor(collector.global())
+        val annualizationFactor = annualizationFactorFor(collector.globalMetrics())
         val globalReport =
             ReportBuilder.buildGlobal(
                 trades = tradeRecords,
@@ -246,6 +246,7 @@ class ReplayEngine(
                 finalRealized = pnl.realizedTotal(),
                 finalUnrealized = pnl.unrealizedTotal(),
                 annualizationFactor = annualizationFactor,
+                metrics = collector.globalMetrics(),
             )
         val perStrategy =
             strategies.associate { (id, _) ->
@@ -257,6 +258,7 @@ class ReplayEngine(
                         finalRealized = strategyPnL.realizedFor(id),
                         finalUnrealized = strategyPnL.unrealizedTotalFor(id),
                         annualizationFactor = annualizationFactor,
+                        metrics = collector.metricsFor(id),
                     )
             }
         return BacktestResult(
@@ -279,14 +281,15 @@ class ReplayEngine(
 
     override fun close() = feed.close()
 
-    private fun annualizationFactorFor(curve: List<EquitySample>): BigDecimal {
+    private fun annualizationFactorFor(metrics: EquityMetrics): BigDecimal {
         if (cadence == SampleCadence.CANDLE_CLOSE && candleWindow != null) {
             return calendar.tradingPeriodsPerYear(candleWindow)
         }
-        if (curve.size < 2) return BigDecimal("252")
-        val spanMs = curve.last().timestamp - curve.first().timestamp
+        if (metrics.count < 2) return BigDecimal("252")
+        val first = metrics.firstTimestamp() ?: return BigDecimal("252")
+        val spanMs = metrics.lastTimestamp() - first
         if (spanMs <= 0L) return BigDecimal("252")
-        val avgIntervalMs = BigDecimal(spanMs).divide(BigDecimal(curve.size - 1), Money.CONTEXT)
+        val avgIntervalMs = BigDecimal(spanMs).divide(BigDecimal(metrics.count - 1), Money.CONTEXT)
         val msPerYear = BigDecimal("31557600000")
         return msPerYear.divide(avgIntervalMs, Money.CONTEXT)
     }
