@@ -167,6 +167,53 @@ class OrderManagerOcoTest {
     }
 
     @Test
+    fun `bracket-legged straddle stays hedge-safe under delayed venue accepts`() {
+        // End-to-end of the prod hedge-straddle (#269) against a venue that acknowledges
+        // acceptance asynchronously: leg2's entry is held until leg1's entry is accepted, and
+        // when leg1 fills before leg2's entry is acknowledged the losing-side cancel is deferred
+        // until leg2's ticket is known. At no point are both entries live as a directional bet.
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT, OrderTypeCapability.STOP),
+            )
+        broker.emitAcceptOnSubmit = false
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        om.submit(
+            OrderRequest.StandaloneOCO(
+                id = "oco1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                leg1 = trailingBracket("b1", "e1", Side.BUY, "110"),
+                leg2 = trailingBracket("b2", "e2", Side.SELL, "90"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        // Only leg1's entry is placed; leg2's entry waits for leg1's acceptance.
+        assertThat(broker.submits.map { it.id }).containsExactly("e1")
+
+        broker.emitAccept("e1")
+        assertThat(broker.submits.map { it.id }).contains("e1", "e2")
+
+        // leg1's entry fills before leg2's entry is acknowledged — the sibling cancel is deferred,
+        // not fired against an unknown venue ticket.
+        broker.emitFill(broker.submits.first { it.id == "e1" }, price = Money.of("110"))
+        assertThat(om.getOrder("e1")?.state).isEqualTo(OrderState.FILLED)
+        assertThat(broker.cancels).doesNotContain("e2")
+
+        // leg2's entry is finally acknowledged — the deferred cancel fires, closing the window.
+        broker.emitAccept("e2")
+        assertThat(broker.cancels).contains("e2")
+    }
+
+    @Test
     fun `submits both legs of OCO to broker`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
