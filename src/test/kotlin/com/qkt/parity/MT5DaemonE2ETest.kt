@@ -132,12 +132,16 @@ class MT5DaemonE2ETest {
             // Wait briefly for ticks to drain through the live session
             Thread.sleep(500)
 
-            // Drain the recovery + poller-seed requests (state, position seed, pending-order seed)
-            server.takeRequest(2, TimeUnit.SECONDS)
-            server.takeRequest(2, TimeUnit.SECONDS)
-            server.takeRequest(2, TimeUnit.SECONDS)
-            // The actual order request
-            val orderReq = server.takeRequest(5, TimeUnit.SECONDS)
+            // Startup issues a variable number of gateway polls (state recovery, position/pending
+            // seeds, and the reconciliation getOpenPositions poll). Drain until the actual /order
+            // request appears rather than assuming a fixed count.
+            var found: okhttp3.mockwebserver.RecordedRequest? = null
+            val deadline = System.currentTimeMillis() + 8_000L
+            while (found == null && System.currentTimeMillis() < deadline) {
+                val req = server.takeRequest(2, TimeUnit.SECONDS) ?: break
+                if (req.path == "/order") found = req
+            }
+            val orderReq = found
             assertThat(orderReq).isNotNull
             assertThat(orderReq!!.path).isEqualTo("/order")
             val body = orderReq.body.readUtf8()
