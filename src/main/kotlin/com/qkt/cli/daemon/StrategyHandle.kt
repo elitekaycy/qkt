@@ -17,6 +17,7 @@ import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import java.nio.file.Path
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicLong
 
 class StrategyHandle(
     val name: String,
@@ -27,6 +28,7 @@ class StrategyHandle(
     val logFile: Path,
     val startedAt: Instant,
     val childMeta: ChildMeta? = null,
+    private val fillCount: AtomicLong = AtomicLong(0),
 ) : AutoCloseable {
     data class ChildMeta(
         val parent: String,
@@ -37,7 +39,9 @@ class StrategyHandle(
     )
 
     val port: Int get() = observability.boundPort
-    val tradeCount: Int get() = ring.size()
+
+    /** Number of fills (trades) this strategy has produced. Counts trades only — not signals — and does not plateau. */
+    val tradeCount: Int get() = fillCount.get().toInt()
 
     fun isRunning(): Boolean = live.running
 
@@ -107,6 +111,7 @@ class StrategyHandle(
 
             val source = marketSourceProvider(symbols)
             val ring = EventRing(capacity = ringSize)
+            val fillCount = AtomicLong(0)
             val startMs = System.currentTimeMillis()
             val startedAt = Instant.ofEpochMilli(startMs)
 
@@ -131,6 +136,7 @@ class StrategyHandle(
                     candleHub = candleHub,
                     onTrade = { trade, realized, _ ->
                         com.qkt.cli.daemon.logging.withMdc("strategy", name) {
+                            fillCount.incrementAndGet()
                             ring.append("trade", tradeToJson(trade, realized))
                             TradeLog.emit(trade, realized)
                         }
@@ -201,6 +207,7 @@ class StrategyHandle(
                 ring = ring,
                 logFile = logFile,
                 startedAt = startedAt,
+                fillCount = fillCount,
             )
         }
     }
