@@ -56,6 +56,28 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `placeOrder serializes the GTD expiration on the wire`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":12345,"deal":67890,"price":"1.1234","comment":"ok"}}""",
+            ),
+        )
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY_LIMIT",
+                price = BigDecimal("1.0900"),
+                magic = 10001,
+                comment = "ord-gtd",
+                expiration = 1_778_000_000L,
+            ),
+        )
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"expiration\":1778000000")
+    }
+
+    @Test
     fun `placeOrderAsync delivers the parsed response via the callback`() {
         server.enqueue(
             MockResponse().setBody(
