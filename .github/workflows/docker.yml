@@ -29,9 +29,25 @@ jobs:
       - uses: docker/build-push-action@v5
         with:
           context: .
+          target: runtime
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Developer image (`:dev`) — runtime + editor + shell, for authoring and
+      # testing strategies inside a container. Mutable tag, rebuilt on every main
+      # push (like `:latest`); not published on version tags.
+      - name: build and push dev image
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: dev
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/qkt:dev
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
