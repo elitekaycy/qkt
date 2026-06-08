@@ -89,9 +89,7 @@ class LatchBacktestTest {
      * Stub DSL strategy that arms the latch once on the first candle close.
      * Mirrors the stub shape from TradingPipelineStackTest.
      */
-    private inner class LatchStubStrategy(
-        private val clock: FixedClock,
-    ) : DslCompiledStrategy {
+    private inner class LatchStubStrategy : DslCompiledStrategy {
         override val declaredStreams: Map<String, HubKey> = mapOf(streamAlias to hubKey)
         override val retentionByKey: Map<HubKey, Int> = mapOf(hubKey to 1)
         override val pendingStacks: PendingStacks = PendingStacks()
@@ -105,7 +103,7 @@ class LatchBacktestTest {
                 val exprCompiler = ExprCompiler()
                 val sizingCompiler = SizingCompiler(exprCompiler)
                 val ids = SequentialIdGenerator(prefix = "latch-e2e-")
-                val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids, clock)
+                val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
                 val compiled = compiler.compile(latchAst, ctx.strategyId)
                 val ec =
                     EvalContext(
@@ -145,7 +143,7 @@ class LatchBacktestTest {
         val engine = Engine(bus, priceTracker)
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
-        val strategy = LatchStubStrategy(clock)
+        val strategy = LatchStubStrategy()
         val pipeline =
             TradingPipeline(
                 clock = clock,
