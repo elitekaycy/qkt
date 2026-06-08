@@ -45,11 +45,15 @@ class VWAPTest {
     }
 
     @Test
-    fun `throws on null volume`() {
+    fun `skips null-volume ticks without throwing or polluting the average`() {
         val vwap = VWAP(2)
-        assertThatThrownBy { vwap.update(tick("10", volume = null)) }
-            .isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("volume")
+        vwap.update(tick("10", "1"))
+        // A volume-less tick (FX/metals feeds report no volume) must be skipped, not crash
+        // the live session, and must not enter the volume-weighted average.
+        vwap.update(tick("99999", volume = null))
+        vwap.update(tick("20", "1"))
+        assertThat(vwap.isReady).isTrue()
+        assertThat(vwap.value()).isEqualByComparingTo(Money.of("15"))
     }
 
     @Test
