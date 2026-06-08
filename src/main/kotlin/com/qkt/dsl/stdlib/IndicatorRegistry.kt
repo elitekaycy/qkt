@@ -5,18 +5,23 @@ import com.qkt.indicators.IndicatorOutput
 import com.qkt.indicators.catalog.ATR
 import com.qkt.indicators.catalog.Beta
 import com.qkt.indicators.catalog.BollingerBands
+import com.qkt.indicators.catalog.CCI
 import com.qkt.indicators.catalog.Correlation
 import com.qkt.indicators.catalog.EMA
 import com.qkt.indicators.catalog.MACD
+import com.qkt.indicators.catalog.OBV
 import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
 import com.qkt.indicators.catalog.Stddev
+import com.qkt.indicators.catalog.Stochastic
 import com.qkt.indicators.catalog.VWAP
 import com.qkt.indicators.catalog.WMA
+import com.qkt.indicators.catalog.WilliamsR
 import com.qkt.indicators.catalog.ZScore
+import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 
 /**
@@ -100,6 +105,42 @@ object IndicatorRegistry {
                 IndicatorSpec("BETA", IndicatorInput.NUMERIC_SERIES, arity = 3, seriesCount = 2) { args ->
                     Beta(period = args[0].toInt())
                 },
+            // ---- candle-fed oscillators ----
+            "WILLIAMS_R" to
+                IndicatorSpec("WILLIAMS_R", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    WilliamsR(period = args[0].toInt())
+                },
+            "CCI" to
+                IndicatorSpec("CCI", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    CCI(period = args[0].toInt())
+                },
+            "STOCH_K" to
+                IndicatorSpec("STOCH_K", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
+                    val s = Stochastic(kPeriod = args[0].toInt(), dPeriod = args[1].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = s.update(input)
+
+                        override fun value(): BigDecimal? = s.lines()?.k
+
+                        override val isReady: Boolean get() = s.isReady
+                        override val warmupBars: Int = s.warmupBars
+                    }
+                },
+            "STOCH_D" to
+                IndicatorSpec("STOCH_D", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
+                    val s = Stochastic(kPeriod = args[0].toInt(), dPeriod = args[1].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = s.update(input)
+
+                        override fun value(): BigDecimal? = s.lines()?.d
+
+                        override val isReady: Boolean get() = s.isReady
+                        override val warmupBars: Int = s.warmupBars
+                    }
+                },
+            // ---- volume ----
+            "OBV" to
+                IndicatorSpec("OBV", IndicatorInput.CANDLE_SERIES, arity = 1) { OBV() },
             // ---- MACD (three outputs) ----
             "MACD" to
                 IndicatorSpec("MACD", IndicatorInput.NUMERIC_SERIES, arity = 4) { args ->
