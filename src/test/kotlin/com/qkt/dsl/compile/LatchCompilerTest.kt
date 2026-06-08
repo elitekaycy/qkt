@@ -1,5 +1,7 @@
 package com.qkt.dsl.compile
 
+import com.qkt.common.FixedClock
+import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.DirRel
@@ -63,6 +65,26 @@ class LatchCompilerTest {
         assertThat(entry.limitPrice).isEqualByComparingTo("2003.50") // O + 4
         assertThat(bracket.takeProfit).isEqualByComparingTo("1994.50") // O - 5
         assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("2011.50") // O + 12
+    }
+
+    @Test
+    fun `latch entry stamps timestamp and expiry from the engine clock`() {
+        val exprCompiler = ExprCompiler()
+        val sizingCompiler = SizingCompiler(exprCompiler)
+        val ids = SequentialIdGenerator(prefix = "latch-ts-")
+        // The engine clock lives in the EvalContext and is the FixedClock a backtest replays on.
+        // The order must take that clock, not wall-clock.
+        val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
+        val compiled = compiler.compile(limitLatch(), strategyId = "test")
+        val ec =
+            LatchCompilerFixture.ctx(
+                symbol = "XAUUSD",
+                close = BigDecimal("2000.00"),
+                clock = FixedClock(time = 9_999_000L),
+            )
+        val req = compiled.entryBuilders.single().build(1, BigDecimal("2000.50"), ec) as OrderRequest.Bracket
+        assertThat(req.timestamp).isEqualTo(9_999_000L)
+        assertThat(req.expiresAt).isEqualTo(9_999_000L + 7_200_000L)
     }
 
     @Test
