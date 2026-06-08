@@ -178,6 +178,7 @@ class StrategyHandle(
                             session.recentTrades(),
                             layers,
                             streamBrokers = session.streamBrokers(),
+                            pnl = session.pnlSnapshot(ast.name),
                         )
                     },
                     running = { session.running },
