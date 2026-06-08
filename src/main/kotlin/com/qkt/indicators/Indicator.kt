@@ -33,3 +33,17 @@ interface Indicator<TIn> : IndicatorOutput {
     /** Feed one input to the indicator. Effects on [value] / [isReady] are immediate. */
     fun update(input: TIn)
 }
+
+/**
+ * Write side for indicators that consume **two** aligned numeric series — e.g. correlation or
+ * beta between two instruments. The binding layer feeds one `(a, b)` pair per bar, the latest
+ * values of the two series. Read side is the shared [IndicatorOutput].
+ * e.g. `CORRELATION(gold.close, silver.close, 60)` → `update(gold, silver)` once per bar.
+ */
+interface BiIndicator : IndicatorOutput {
+    /** Feed one aligned pair. Effects on [value] / [isReady] are immediate. */
+    fun update(
+        a: BigDecimal,
+        b: BigDecimal,
+    )
+}
