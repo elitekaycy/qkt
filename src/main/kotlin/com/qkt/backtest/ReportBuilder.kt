@@ -19,7 +19,9 @@ object ReportBuilder {
         finalUnrealized: BigDecimal,
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics? = null,
-    ): PerformanceReport = build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics)
+        commissionPaid: BigDecimal = BigDecimal.ZERO,
+    ): PerformanceReport =
+        build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid)
 
     fun buildPerStrategy(
         strategyId: String,
@@ -29,9 +31,10 @@ object ReportBuilder {
         finalUnrealized: BigDecimal,
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics? = null,
+        commissionPaid: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
-        return build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics)
+        return build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid)
     }
 
     /**
@@ -47,6 +50,7 @@ object ReportBuilder {
         finalUnrealized: BigDecimal,
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics?,
+        commissionPaid: BigDecimal,
     ): PerformanceReport {
         val realizeds = trades.map { it.realized }
         val closing = realizeds.filter { it.signum() != 0 }
@@ -99,6 +103,7 @@ object ReportBuilder {
             equityCurve = equityCurve,
             drawdownPeriods = drawdownPeriods,
             monteCarlo = monteCarlo,
+            commissionPaid = commissionPaid.setScale(Money.SCALE, Money.ROUNDING),
         )
     }
 }
