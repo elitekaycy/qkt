@@ -61,6 +61,21 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `forgetPending drops a stack-open intent so a later fill adds no STACK leg`() {
+        val tracker = StrategyPositionTracker()
+        tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))
+        tracker.registerStackOpen("alpha", "stack-tier0-entry", "stack-tier0", "primary-1")
+
+        // The stack-open order is cancelled (e.g. its OCO sibling filled) — forget the intent.
+        tracker.forgetPending("alpha", "stack-tier0-entry")
+
+        // A stray fill for that now-cancelled order must not resurrect the stack leg.
+        tracker.applyFill(fill("alpha", "stack-tier0-entry", "BTCUSDT", Side.BUY, "0.5", "110"))
+
+        assertThat(tracker.legBookFor("alpha", "BTCUSDT")!!.stacks()).isEmpty()
+    }
+
+    @Test
     fun `pre-registered stack-close fill closes the right leg and returns its realized PnL`() {
         val tracker = StrategyPositionTracker()
         // Primary + stack setup
