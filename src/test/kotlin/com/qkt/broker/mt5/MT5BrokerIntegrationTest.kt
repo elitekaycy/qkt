@@ -20,7 +20,18 @@ class MT5BrokerIntegrationTest {
     private lateinit var server: MockWebServer
     private lateinit var broker: MT5Broker
     private lateinit var bus: EventBus
-    private val captured = mutableListOf<BrokerEvent>()
+
+    // Placement is async (OkHttp dispatcher thread), so events land off the test thread.
+    private val captured = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent>()
+
+    /** Poll until [predicate] holds or [timeoutMs] elapses — used to await async venue events. */
+    private fun awaitCaptured(
+        timeoutMs: Long = 2000,
+        predicate: () -> Boolean,
+    ) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline && !predicate()) Thread.sleep(5)
+    }
 
     @BeforeEach
     fun setup() {
@@ -75,6 +86,7 @@ class MT5BrokerIntegrationTest {
             )
         val ack = broker.submit(req)
         assertThat(ack.accepted).isTrue
+        awaitCaptured { captured.size >= 2 }
         assertThat(captured).hasSize(2)
         assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
         assertThat(captured[1]).isInstanceOf(BrokerEvent.OrderFilled::class.java)
@@ -89,6 +101,36 @@ class MT5BrokerIntegrationTest {
         val body = recordedOrder.body.readUtf8()
         assertThat(body).contains("\"symbol\":\"EURUSDm\"")
         assertThat(body).contains("\"magic\":10001")
+    }
+
+    @Test
+    fun `submit returns an optimistic ack without blocking on the venue round-trip`() {
+        // The gateway response is delayed; submit must return immediately with an optimistic ack
+        // (no broker order id yet) and publish events only once the delayed response lands.
+        server.enqueue(
+            MockResponse()
+                .setBody("""{"result":{"retcode":10009,"order":9,"deal":9,"price":"1.1234","comment":"ok"}}""")
+                .setBodyDelay(300, java.util.concurrent.TimeUnit.MILLISECONDS),
+        )
+        val req =
+            OrderRequest.Market(
+                id = "ord-async",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        val ack = broker.submit(req)
+        // Returned before the venue responded: optimistic, no broker order id, no events yet.
+        assertThat(ack.accepted).isTrue
+        assertThat(ack.brokerOrderId).isNull()
+        assertThat(captured).isEmpty()
+        // The venue result arrives later, as events.
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>()).hasSize(1)
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).hasSize(1)
     }
 
     @Test
@@ -228,6 +270,7 @@ class MT5BrokerIntegrationTest {
             )
         val ack = broker.submit(req)
         assertThat(ack.accepted).isTrue
+        awaitCaptured { captured.size >= 1 }
         // OrderAccepted but no OrderFilled — pending fills arrive via the position poller in Phase 26c.
         assertThat(captured).hasSize(1)
         assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
@@ -289,6 +332,7 @@ class MT5BrokerIntegrationTest {
             )
         captured.clear()
         fastBroker.submit(req)
+        awaitCaptured { captured.any { it is BrokerEvent.OrderAccepted } }
         assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>()).hasSize(1)
 
         // Now flip the dispatcher so /positions returns the new position. The poller
@@ -414,6 +458,8 @@ class MT5BrokerIntegrationTest {
                 strategyId = "s1",
             )
         broker.submit(req)
+        // Placement is async; wait for the accept so the venue ticket is registered before modify.
+        awaitCaptured { captured.any { it is BrokerEvent.OrderAccepted } }
 
         // Now modify
         server.enqueue(
@@ -609,6 +655,8 @@ class MT5BrokerIntegrationTest {
                 strategyId = "s1",
             )
         xauBroker.submit(bracket)
+        // Placement is async; wait for the wire to land before shutting the broker down.
+        awaitCaptured { placedBodies.isNotEmpty() }
         xauBroker.shutdown()
         assertThat(placedBodies).hasSize(1)
         val body = placedBodies[0]
@@ -834,6 +882,8 @@ class MT5BrokerIntegrationTest {
         val pendingBroker = MT5Broker(pendingBrokerProfile, bus, FixedClock(time = 1L))
         captured.clear()
         val ack = pendingBroker.submit(bracket)
+        // Await the async accept before shutting the broker (and its HTTP client) down.
+        awaitCaptured { captured.any { it is BrokerEvent.OrderAccepted } }
         pendingBroker.shutdown()
 
         assertThat(ack.accepted).isTrue

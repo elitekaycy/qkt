@@ -95,21 +95,9 @@ class BybitSpotBroker(
             }
         reconciler.start()
 
-        bus.subscribe<BrokerEvent.OrderFilled> { e ->
-            symbolByClientOrderId.remove(e.clientOrderId)
-            strategyByClientOrderId.remove(e.clientOrderId)
-            knownOrders.remove(e.clientOrderId)
-        }
-        bus.subscribe<BrokerEvent.OrderCancelled> { e ->
-            symbolByClientOrderId.remove(e.clientOrderId)
-            strategyByClientOrderId.remove(e.clientOrderId)
-            knownOrders.remove(e.clientOrderId)
-        }
-        bus.subscribe<BrokerEvent.OrderRejected> { e ->
-            symbolByClientOrderId.remove(e.clientOrderId)
-            strategyByClientOrderId.remove(e.clientOrderId)
-            knownOrders.remove(e.clientOrderId)
-        }
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> forgetTracking(e.clientOrderId) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { e -> forgetTracking(e.clientOrderId) }
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> forgetTracking(e.clientOrderId) }
     }
 
     override fun submit(request: OrderRequest): SubmitAck {
@@ -122,11 +110,55 @@ class BybitSpotBroker(
             )
         }
         val body = BybitOrderTranslator.toCreateBody(request)
-        val response =
-            try {
-                transport.postSigned("/v5/order/create", body)
-            } catch (e: Exception) {
+        // Register tracking BEFORE the send: Bybit's private WS order/execution frame can arrive
+        // ahead of the REST reply, and onOrderFrame/onExecutionFrame read these maps to attribute
+        // the strategy. A rejected placement forgets them in [handlePlacementResult].
+        registerTracking(request)
+        // Non-blocking placement: the HTTP send runs on the dispatcher and the venue result returns
+        // as bus events via [handlePlacementResult]. submit returns an optimistic ack at once so the
+        // engine thread never waits on the order round-trip — the real accept/reject/fill follows on
+        // the bus, which is what the event-driven OCO/OTO sequencing consumes.
+        transport.postSignedAsync("/v5/order/create", body) { result -> handlePlacementResult(request, result) }
+        return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = true)
+    }
+
+    private fun registerTracking(request: OrderRequest) {
+        strategyByClientOrderId[request.id] = request.strategyId
+        symbolByClientOrderId[request.id] = request.symbol
+        knownOrders[request.id] =
+            BybitSpotStateRecovery.ManagedOrderView(
+                clientOrderId = request.id,
+                symbol = request.symbol,
+                side = request.side,
+                strategyId = request.strategyId,
+            )
+    }
+
+    private fun forgetTracking(clientOrderId: String) {
+        strategyByClientOrderId.remove(clientOrderId)
+        symbolByClientOrderId.remove(clientOrderId)
+        knownOrders.remove(clientOrderId)
+    }
+
+    /**
+     * Turn the venue's placement reply into bus events. Runs off the engine thread (the HTTP
+     * dispatcher); every bus.publish here is routed onto the engine loop and the tracking maps it
+     * touches are concurrent. A transport failure or non-zero retCode becomes [BrokerEvent.OrderRejected]
+     * and the order's tracking is forgotten; a clean reply leaves tracking in place for the WS
+     * order/execution stream to drive OrderAccepted/OrderFilled.
+     */
+    private fun handlePlacementResult(
+        request: OrderRequest,
+        result: Result<String>,
+    ) {
+        result.fold(
+            onSuccess = { body ->
+                val ack = parseSubmitResponse(request.id, body, request.strategyId)
+                if (!ack.accepted) forgetTracking(request.id)
+            },
+            onFailure = { e ->
                 log.warn("Bybit submit failed: {}", e.message)
+                forgetTracking(request.id)
                 bus.publish(
                     BrokerEvent.OrderRejected(
                         clientOrderId = request.id,
@@ -136,28 +168,8 @@ class BybitSpotBroker(
                         timestamp = clock.now(),
                     ),
                 )
-                return SubmitAck(
-                    clientOrderId = request.id,
-                    brokerOrderId = null,
-                    accepted = false,
-                    rejectReason = e.message ?: "transport failure",
-                )
-            }
-        strategyByClientOrderId[request.id] = request.strategyId
-        val ack = parseSubmitResponse(request.id, response, request.strategyId)
-        if (ack.accepted) {
-            symbolByClientOrderId[request.id] = request.symbol
-            knownOrders[request.id] =
-                BybitSpotStateRecovery.ManagedOrderView(
-                    clientOrderId = request.id,
-                    symbol = request.symbol,
-                    side = request.side,
-                    strategyId = request.strategyId,
-                )
-        } else {
-            strategyByClientOrderId.remove(request.id)
-        }
-        return ack
+            },
+        )
     }
 
     override fun cancel(orderId: String) {

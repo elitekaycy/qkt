@@ -31,9 +31,24 @@ class MT5PollerRaceTest {
     private lateinit var server: MockWebServer
     private lateinit var broker: MT5Broker
     private lateinit var bus: EventBus
-    private val fills = mutableListOf<BrokerEvent.OrderFilled>()
-    private val cancels = mutableListOf<BrokerEvent.OrderCancelled>()
-    private val accepts = mutableListOf<BrokerEvent.OrderAccepted>()
+
+    // Placement is async (OkHttp dispatcher thread); accepts land off the test thread.
+    private val fills = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent.OrderFilled>()
+    private val cancels = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent.OrderCancelled>()
+    private val accepts = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent.OrderAccepted>()
+
+    /**
+     * Wait for the async placement to acknowledge [n] orders. Because the broker registers the
+     * venue ticket before publishing [BrokerEvent.OrderAccepted], observing the accept also
+     * guarantees the pending-ticket bookkeeping the pollers correlate against is in place.
+     */
+    private fun awaitAccepts(
+        n: Int,
+        timeoutMs: Long = 2000,
+    ) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline && accepts.size < n) Thread.sleep(5)
+    }
 
     @BeforeEach
     fun setup() {
@@ -109,6 +124,7 @@ class MT5PollerRaceTest {
             ),
         )
         broker.submit(pendingBracket("ord-1", Side.BUY, "1.1200"))
+        awaitAccepts(1)
         assertThat(accepts).hasSize(1)
         assertThat(fills).isEmpty()
 
@@ -155,6 +171,7 @@ class MT5PollerRaceTest {
             ),
         )
         broker.submit(pendingBracket("ord-2", Side.BUY, "1.1200"))
+        awaitAccepts(1)
 
         // Seed pending-poller with the BUY ticket.
         server.enqueue(
@@ -191,6 +208,7 @@ class MT5PollerRaceTest {
             ),
         )
         broker.submit(pendingBracket("ord-3", Side.BUY, "1.1200"))
+        awaitAccepts(1)
 
         server.enqueue(
             MockResponse().setBody(
@@ -258,6 +276,7 @@ class MT5PollerRaceTest {
                 ),
             )
             broker.submit(pendingBracket("ord-9100", Side.BUY, "1.1200"))
+            awaitAccepts(1)
 
             server.enqueue(
                 MockResponse().setBody(
