@@ -56,6 +56,12 @@ class OrderManager(
      * counter. Wired by [TradingPipeline] to the position tracker; null in tests/backtest.
      */
     private val closeTicketFor: ((String, String) -> String?)? = null,
+    /**
+     * Record per-bracket risk into [riskByClientOrderId] for the backtest report to read via
+     * [riskUsdFor]. Only the backtest path consumes it, so live leaves this false — otherwise the
+     * map would grow unbounded over a 24/7 session. Wired by [TradingPipeline] to `mode == BACKTEST`.
+     */
+    private val trackRisk: Boolean = false,
 ) {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -149,6 +155,9 @@ class OrderManager(
         entry: BigDecimal,
         stop: BigDecimal,
     ) {
+        // Risk-per-trade is consumed only by the backtest report (via [riskUsdFor] in ReplayEngine).
+        // In live nothing reads it, so recording would just leak ~2 entries per bracket forever.
+        if (!trackRisk) return
         val risk = entry.subtract(stop).abs().multiply(quantity)
         for (id in clientOrderIds) riskByClientOrderId[id] = risk
     }

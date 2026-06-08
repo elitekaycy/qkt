@@ -113,6 +113,9 @@ class TradingPipeline(
             closeTicketFor = { strategyId, exitId ->
                 strategyPositions.ticketForLeg(strategyId, exitId.removeSuffix("-sl"))
             },
+            // Risk-per-trade is a backtest-report feature; only record it there so the live
+            // daemon's risk map doesn't grow unbounded.
+            trackRisk = mode == Mode.BACKTEST,
         )
     val latchManager: LatchManager =
         LatchManager(
