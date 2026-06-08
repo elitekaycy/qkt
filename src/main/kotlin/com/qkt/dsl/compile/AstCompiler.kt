@@ -83,7 +83,7 @@ class AstCompiler {
                     streams[ruleAlias]?.qktSymbol
                         ?: error("Unknown stream alias: $ruleAlias")
                 val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
-                val mergedAction = mergeDefaults(rule.action, ast.defaults)
+                val mergedAction = resolver.resolve(mergeDefaults(rule.action, ast.defaults))
                 val action = actionCompiler.compile(mergedAction)
                 val isBuy = primary is Buy
                 val isSell = primary is Sell
@@ -133,7 +133,7 @@ class AstCompiler {
             ast.schedules.map { decl ->
                 CompiledSchedule(
                     decl = decl,
-                    action = actionCompiler.compile(mergeDefaults(decl.action, ast.defaults)),
+                    action = actionCompiler.compile(resolver.resolve(mergeDefaults(decl.action, ast.defaults))),
                 )
             }
 
