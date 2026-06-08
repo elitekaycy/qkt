@@ -7,7 +7,9 @@ import com.qkt.indicators.catalog.Beta
 import com.qkt.indicators.catalog.BollingerBands
 import com.qkt.indicators.catalog.CCI
 import com.qkt.indicators.catalog.Correlation
+import com.qkt.indicators.catalog.DEMA
 import com.qkt.indicators.catalog.EMA
+import com.qkt.indicators.catalog.HMA
 import com.qkt.indicators.catalog.MACD
 import com.qkt.indicators.catalog.OBV
 import com.qkt.indicators.catalog.RSI
@@ -17,7 +19,9 @@ import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
 import com.qkt.indicators.catalog.Stddev
 import com.qkt.indicators.catalog.Stochastic
+import com.qkt.indicators.catalog.TEMA
 import com.qkt.indicators.catalog.VWAP
+import com.qkt.indicators.catalog.Variance
 import com.qkt.indicators.catalog.WMA
 import com.qkt.indicators.catalog.WilliamsR
 import com.qkt.indicators.catalog.ZScore
@@ -73,6 +77,18 @@ object IndicatorRegistry {
                 IndicatorSpec("WMA", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     WMA(period = args[0].toInt())
                 },
+            "DEMA" to
+                IndicatorSpec("DEMA", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    DEMA(period = args[0].toInt())
+                },
+            "TEMA" to
+                IndicatorSpec("TEMA", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    TEMA(period = args[0].toInt())
+                },
+            "HMA" to
+                IndicatorSpec("HMA", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    HMA(period = args[0].toInt())
+                },
             // ---- oscillators ----
             "RSI" to
                 IndicatorSpec("RSI", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
@@ -86,6 +102,10 @@ object IndicatorRegistry {
             "STDDEV" to
                 IndicatorSpec("STDDEV", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     Stddev(period = args[0].toInt())
+                },
+            "VARIANCE" to
+                IndicatorSpec("VARIANCE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    Variance(period = args[0].toInt())
                 },
             // ---- statistical ----
             "ZSCORE" to
