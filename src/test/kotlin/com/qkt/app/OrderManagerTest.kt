@@ -9,6 +9,7 @@ import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
 import org.assertj.core.api.Assertions.assertThat
@@ -40,6 +41,57 @@ class OrderManagerTest {
         val managed = om.getOrder("c1")!!
         assertThat(managed.state).isEqualTo(OrderState.WORKING)
         assertThat(managed.brokerOrderId).isEqualTo("c1")
+    }
+
+    private fun bracket(
+        id: String,
+        entryId: String,
+    ) = OrderRequest.Bracket(
+        id = id,
+        symbol = "EURUSD",
+        side = Side.BUY,
+        quantity = Money.of("1"),
+        entry =
+            OrderRequest.Market(
+                id = entryId,
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        takeProfit = Money.of("1.12"),
+        stopLoss = StopLossSpec.Fixed(Money.of("1.09")),
+        timeInForce = TimeInForce.GTC,
+        timestamp = 0L,
+    )
+
+    @Test
+    fun `risk is not recorded when tracking is off, so the live map does not leak`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val broker = LogBroker(bus, clock)
+        val tracker = MarketPriceTracker().apply { update("EURUSD", Money.of("1.10")) }
+        val om = OrderManager(broker, bus, tracker, clock, trackRisk = false)
+
+        om.submit(bracket("b1", "e1"))
+
+        assertThat(om.riskUsdFor("e1")).isNull()
+        assertThat(om.riskUsdFor("b1")).isNull()
+    }
+
+    @Test
+    fun `risk is recorded for the backtest report when tracking is on`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val broker = LogBroker(bus, clock)
+        val tracker = MarketPriceTracker().apply { update("EURUSD", Money.of("1.10")) }
+        val om = OrderManager(broker, bus, tracker, clock, trackRisk = true)
+
+        om.submit(bracket("b1", "e1"))
+
+        // risk = |entry 1.10 - stop 1.09| * qty 1 = 0.01
+        assertThat(om.riskUsdFor("e1")).isEqualByComparingTo("0.01")
     }
 
     @Test
