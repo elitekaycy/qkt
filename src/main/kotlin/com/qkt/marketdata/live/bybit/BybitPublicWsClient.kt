@@ -5,6 +5,7 @@ import com.qkt.common.Money
 import com.qkt.common.SystemClock
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -27,10 +28,12 @@ class BybitPublicWsClient(
 ) : BybitPublicListener {
     private val log = LoggerFactory.getLogger(BybitPublicWsClient::class.java)
     private val symbols: MutableList<String> = mutableListOf()
-    private val state: MutableMap<String, MutableMap<String, BigDecimal>> = mutableMapOf()
+    private val state: ConcurrentHashMap<String, MutableMap<String, BigDecimal>> = ConcurrentHashMap()
     private var onTick: ((Tick) -> Unit)? = null
     private var onDisconnect: (() -> Unit)? = null
     private var onReconnect: (() -> Unit)? = null
+
+    @Volatile
     private var hasDisconnected: Boolean = false
 
     fun subscribe(
@@ -55,14 +58,14 @@ class BybitPublicWsClient(
     override fun onFrame(frame: BybitPublicFrame) {
         when (frame) {
             is BybitPublicFrame.Tickers -> {
-                val s = state.getOrPut(frame.symbol) { mutableMapOf() }
+                val s = state.computeIfAbsent(frame.symbol) { ConcurrentHashMap() }
                 s["bid"] = frame.bid
                 s["ask"] = frame.ask
                 s["last"] = frame.last
                 emit(frame.symbol, brokerTimeMs = null)
             }
             is BybitPublicFrame.Trade -> {
-                val s = state.getOrPut(frame.symbol) { mutableMapOf() }
+                val s = state.computeIfAbsent(frame.symbol) { ConcurrentHashMap() }
                 s["last"] = frame.price
                 s["volume"] = frame.volume
                 emit(frame.symbol, brokerTimeMs = frame.brokerTimeMs)
