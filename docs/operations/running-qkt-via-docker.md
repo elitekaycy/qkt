@@ -1,113 +1,120 @@
-# Running qkt via Docker
+# Using qkt with Docker
 
-You can use qkt entirely from Docker — author, backtest, and run strategies — without
-installing Java or qkt on your machine. Two images are published:
+Say you want to try qkt — write a strategy, backtest it, see how it behaves — but you'd rather
+not install Java and a build toolchain on your computer first. Docker lets you do all of it
+inside a self-contained box. Nothing to set up, nothing left behind on your machine, and you can
+throw the box away whenever you like.
 
-| Image | For | Default behavior |
-|---|---|---|
-| `ghcr.io/elitekaycy/qkt:latest` (and `:vX.Y.Z`) | production / the CLI | starts the **daemon** |
-| `ghcr.io/elitekaycy/qkt:dev` | authoring + testing | drops you into a **shell** with `qkt` + `vim`/`nano` |
+There are two ready-made boxes to choose from:
 
-The runtime image is deliberately minimal (no editor, non-root, daemon entrypoint) so the
-trading container stays small and locked down. The `:dev` image adds an editor and a shell for
-interactive work. **Do not deploy `:dev` to production.**
+- **The workbench (`qkt:dev`)** — comes with a text editor and a shell, so you can write, edit,
+  and run strategies all in one place. This is the one you want for trying things out.
+- **The engine (`qkt:latest`)** — the lean image that actually runs strategies live. It has no
+  editor on purpose, so the live trading box stays small and locked down. You'll use this one
+  later, when you go to production.
+
+This page is about the workbench. (For the live engine, see the deployment guide.)
 
 ---
 
-## Author + test in a dev container (recommended)
+## Set up your workbench
 
-Start one long-lived container, then `exec` into it to write and run strategies.
+First, pick a folder on your computer to keep your strategies in. Everything you write will live
+here, safe and sound, even after you close or delete the container:
 
 ```bash
-# A host folder for your strategies — files persist here and are editable from the host too.
 mkdir -p ~/qkt-lab
+```
 
-# Start the dev container (detached, interactive, workspace mounted writable).
+Now start the workbench. This launches it in the background and connects your folder to it, so
+the two share the same files:
+
+```bash
 docker run -dit --name qkt-dev -v ~/qkt-lab:/work ghcr.io/elitekaycy/qkt:dev
+```
 
-# Drop into it.
+Step inside whenever you want to work:
+
+```bash
 docker exec -it qkt-dev bash
 ```
 
-Inside the container — `qkt`, `vim`, and `nano` are all on `PATH`, and `/work` is writable:
+You're now in the workbench. `qkt`, `vim`, and `nano` are all here, and the `/work` folder is
+your `~/qkt-lab` from the outside. A typical first session looks like this:
 
 ```bash
-qkt --help
-qkt create template mystrat.qkt --kind minimal   # scaffold a starter into /work
-vim mystrat.qkt                                   # .qkt syntax highlighting is pre-installed
-qkt parse mystrat.qkt
+qkt --help                                        # see what qkt can do
+qkt create template mystrat.qkt --kind minimal    # start from a ready-made example
+vim mystrat.qkt                                    # edit it (qkt highlights .qkt files for you)
+qkt parse mystrat.qkt                              # check it's valid
 qkt backtest mystrat.qkt --from 2024-03-01 --to 2024-03-05
 ```
 
-Lifecycle:
-
-```bash
-docker stop qkt-dev      # pause — in-container state is kept
-docker start qkt-dev     # resume
-docker rm -f qkt-dev     # discard the container (your ~/qkt-lab files are untouched)
-```
-
-Your strategies live in `~/qkt-lab` on the host, so they survive `rm` and you can also edit
-them with your host editor (e.g. VSCode + the qkt extension) — same files, either way.
+That's the whole loop: scaffold, edit, check, backtest — repeat.
 
 ---
 
-## One-off CLI commands (runtime image)
+## Starting and stopping
 
-For a single command without a long-lived container, run the runtime image and override its
-daemon entrypoint. A shell alias makes it feel native:
+The workbench keeps running in the background until you tell it otherwise. You don't have to set
+it up again each time — just step back in with `docker exec` whenever you want to work.
+
+```bash
+docker stop qkt-dev      # take a break (everything stays as you left it)
+docker start qkt-dev     # come back to it
+docker rm -f qkt-dev     # throw the box away entirely
+```
+
+Throwing the box away is safe: your strategies live in `~/qkt-lab` on your computer, so they're
+never lost. If you ever rebuild the workbench, your work is still right there. You can even open
+that same folder in your own editor at home (for example VS Code) — it's the same files either
+way.
+
+---
+
+## A quicker way for one-off commands
+
+If you just want to run a single qkt command now and then — without keeping a workbench around —
+you can teach your terminal to treat `qkt` like a normal command that happens to run in Docker.
+Add this line to your shell (it runs qkt against whatever folder you're currently in):
 
 ```bash
 alias qkt='docker run --rm -it --entrypoint qkt \
   -u "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
   ghcr.io/elitekaycy/qkt:latest'
-
-qkt parse mystrat.qkt
-qkt backtest mystrat.qkt --from 2024-03-01 --to 2024-03-05
 ```
 
-Each invocation creates a fresh container, runs the one command, and `--rm` deletes it — only
-the mounted `/work` persists. `-u "$(id -u):$(id -g)"` runs as you, so files written to the
-mount are owned by you. This is stateless and clean; use the dev container above when you want
-to stay inside an environment.
+Now `qkt backtest mystrat.qkt --from ... --to ...` works from any folder. Each command spins up a
+fresh box, does the one job, and cleans up after itself. Handy for quick checks; the workbench
+above is nicer when you're in the middle of writing something.
 
 ---
 
-## Data persistence
+## Where your data lives
 
-Backtests read market data from a local store. Keep it under `/work` so it survives across
-runs and container rebuilds:
+Backtests need price history to run against. To make sure that history is saved between runs (so
+you're not re-downloading it every time), keep it inside your `/work` folder:
 
-- `qkt backtest` defaults to `--data-root ./data`, which is `/work/data` when your workspace is
-  mounted at `/work` — so the cache persists in `~/qkt-lab/data`.
-- `qkt fetch` defaults to `~/.qkt/data` inside the container, which is **not** persisted. Pass
-  `--data-root /work/data` so it lands in the same place the backtest reads from:
+- `qkt backtest` already saves it to `/work/data` by default — nothing to do.
+- `qkt fetch` saves elsewhere unless you tell it otherwise, so point it at the same place:
   ```bash
   qkt fetch BYBIT_SPOT:BTCUSDT --tf 5m --last 30d --data-root /work/data
   ```
 
-Sources today: crypto (`BYBIT_SPOT`/`BYBIT_LINEAR`) fetches from Bybit's public API with no
-extra setup; FX/metals (e.g. `EXNESS:XAUUSD`) need the MT5 gateway until seamless dukascopy
-auto-fetch lands, after which `qkt backtest` acquires its own data with no infra.
+Crypto history (the `BYBIT_*` symbols) downloads on its own with no extra setup. Gold and forex
+(like `EXNESS:XAUUSD`) currently need a connection to a broker; once seamless auto-download lands,
+those will fetch themselves too, and a backtest will need nothing but the command.
 
 ---
 
-## Updating
+## Keeping it up to date
 
-Both `:latest` and `:dev` are mutable tags. Docker caches them, so refresh explicitly:
+The `:dev` and `:latest` names always point at the newest build, but Docker keeps a local copy
+and won't refresh it on its own. Grab the latest whenever you want:
 
 ```bash
 docker pull ghcr.io/elitekaycy/qkt:dev
-docker pull ghcr.io/elitekaycy/qkt:latest
 ```
 
-To pin an exact release for reproducibility, use a version tag: `ghcr.io/elitekaycy/qkt:v0.34.0`.
-
----
-
-## Daemon vs CLI
-
-The runtime image's entrypoint is `qkt daemon --load-dir /strategies` — running it with no
-arguments starts the long-lived daemon (how production deploys it). The CLI subcommands
-(`parse`, `backtest`, `run`, `create`, `editor`, …) are reached either through the `:dev`
-shell, or by overriding the entrypoint as in the one-off alias above.
+If you'd rather stay on one exact version (so results don't shift under you), use a version name
+instead, like `ghcr.io/elitekaycy/qkt:v0.34.0`.
