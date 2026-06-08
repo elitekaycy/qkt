@@ -141,6 +141,22 @@ class StrategyPositionTracker(
         pendingIndependentOpens["$strategyId|$clientOrderId"] = legId
     }
 
+    /**
+     * Drop any registered-but-unfilled pending intent for [clientOrderId]. Called when an
+     * order is cancelled or rejected (e.g. the losing leg of an OCO bracket) — its open/close
+     * intent will never be matched by a fill, so without this it would leak in the pending maps
+     * for the life of the session.
+     */
+    fun forgetPending(
+        strategyId: String,
+        clientOrderId: String,
+    ) {
+        val key = "$strategyId|$clientOrderId"
+        pendingStackOpens.remove(key)
+        pendingStackCloses.remove(key)
+        pendingIndependentOpens.remove(key)
+    }
+
     fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal {
         if (event.strategyId.isBlank()) return Money.ZERO
 
