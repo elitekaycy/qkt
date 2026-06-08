@@ -175,8 +175,7 @@ class MT5BrokerProfileLoader {
         symbol: String,
         spec: Map<String, String>,
     ): InstrumentSpec {
-        fun req(key: String): String =
-            spec[key] ?: error("MT5 profile '$profile' instrument '$symbol' missing '$key'")
+        fun req(key: String): String = spec[key] ?: error("MT5 profile '$profile' instrument '$symbol' missing '$key'")
         return InstrumentSpec(
             minVolume = BigDecimal(req("min_volume")),
             volumeStep = BigDecimal(req("volume_step")),

@@ -198,10 +198,12 @@ data class Config(
         @Suppress("UNCHECKED_CAST")
         private fun parseBrokerCalendars(raw: Any?): Map<String, List<Pair<String, String>>> {
             val brokers = raw as? Map<String, Any?> ?: return emptyMap()
-            return brokers.mapNotNull { (name, cfg) ->
-                val block = (cfg as? Map<String, Any?>)?.get("calendars") as? Map<String, Any?> ?: return@mapNotNull null
-                name to block.map { (pattern, cal) -> pattern to (cal?.toString() ?: "") }
-            }.toMap()
+            return brokers
+                .mapNotNull { (name, cfg) ->
+                    val block =
+                        (cfg as? Map<String, Any?>)?.get("calendars") as? Map<String, Any?> ?: return@mapNotNull null
+                    name to block.map { (pattern, cal) -> pattern to (cal?.toString() ?: "") }
+                }.toMap()
         }
 
         /** A nested `string → string` block under each broker (e.g. `aliases`). */
@@ -211,10 +213,11 @@ data class Config(
             key: String,
         ): Map<String, Map<String, String>> {
             val brokers = raw as? Map<String, Any?> ?: return emptyMap()
-            return brokers.mapNotNull { (name, cfg) ->
-                val block = (cfg as? Map<String, Any?>)?.get(key) as? Map<String, Any?> ?: return@mapNotNull null
-                name to block.mapValues { (_, v) -> v?.toString() ?: "" }
-            }.toMap()
+            return brokers
+                .mapNotNull { (name, cfg) ->
+                    val block = (cfg as? Map<String, Any?>)?.get(key) as? Map<String, Any?> ?: return@mapNotNull null
+                    name to block.mapValues { (_, v) -> v?.toString() ?: "" }
+                }.toMap()
         }
 
         /** A nested list block under each broker (e.g. `capability_restrictions`). */
@@ -224,25 +227,27 @@ data class Config(
             key: String,
         ): Map<String, List<String>> {
             val brokers = raw as? Map<String, Any?> ?: return emptyMap()
-            return brokers.mapNotNull { (name, cfg) ->
-                val block = (cfg as? Map<String, Any?>)?.get(key) as? List<Any?> ?: return@mapNotNull null
-                name to block.map { it?.toString() ?: "" }
-            }.toMap()
+            return brokers
+                .mapNotNull { (name, cfg) ->
+                    val block = (cfg as? Map<String, Any?>)?.get(key) as? List<Any?> ?: return@mapNotNull null
+                    name to block.map { it?.toString() ?: "" }
+                }.toMap()
         }
 
         /** `brokers.<name>.instrument_overrides` = `symbol → (field → value)`. */
         @Suppress("UNCHECKED_CAST")
         private fun parseBrokerInstrumentOverrides(raw: Any?): Map<String, Map<String, Map<String, String>>> {
             val brokers = raw as? Map<String, Any?> ?: return emptyMap()
-            return brokers.mapNotNull { (name, cfg) ->
-                val block =
-                    (cfg as? Map<String, Any?>)?.get("instrument_overrides") as? Map<String, Any?>
-                        ?: return@mapNotNull null
-                name to
-                    block.mapValues { (_, spec) ->
-                        (spec as? Map<String, Any?> ?: emptyMap()).mapValues { (_, v) -> v?.toString() ?: "" }
-                    }
-            }.toMap()
+            return brokers
+                .mapNotNull { (name, cfg) ->
+                    val block =
+                        (cfg as? Map<String, Any?>)?.get("instrument_overrides") as? Map<String, Any?>
+                            ?: return@mapNotNull null
+                    name to
+                        block.mapValues { (_, spec) ->
+                            (spec as? Map<String, Any?> ?: emptyMap()).mapValues { (_, v) -> v?.toString() ?: "" }
+                        }
+                }.toMap()
         }
 
         @Suppress("UNCHECKED_CAST")
