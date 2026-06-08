@@ -164,4 +164,34 @@ class EquityCurveCollectorTest {
         assertThat(collector.global()).hasSize(1)
         assertThat(collector.global()[0].timestamp).isEqualTo(5_000L)
     }
+
+    @Test
+    fun `chart curve stays bounded under a tick flood while metrics see every sample`() {
+        val rig = newRig()
+        val bus = rig.bus
+        val clock = rig.clock
+
+        val cap = 100
+        val collector =
+            EquityCurveCollector(
+                cadence = SampleCadence.TICK,
+                bus = bus,
+                pnl = rig.pnl,
+                strategyPnL = rig.strategyPnL,
+                strategyIds = listOf("s1"),
+                curveCap = cap,
+            )
+
+        val ticks = 50_000
+        for (i in 1..ticks) {
+            clock.time = i.toLong()
+            bus.publish(TickEvent(Tick("X", Money.of("100"), i.toLong())))
+        }
+
+        // Stored chart curve is thinned to the cap (+1 trailing point), not one-per-tick.
+        assertThat(collector.global().size).isLessThanOrEqualTo(cap + 1)
+        // Metrics still reflect the full-resolution stream.
+        assertThat(collector.globalMetrics().count).isEqualTo(ticks)
+        assertThat(collector.global().last().timestamp).isEqualTo(ticks.toLong())
+    }
 }
