@@ -261,4 +261,49 @@ class CompositeBrokerTest {
         assertThat(brokerA.cancels).containsExactly("c1")
         assertThat(brokerB.cancels).isEmpty()
     }
+
+    @Test
+    fun `modifyPosition routes to the leaf that filled the ticket`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val brokerA = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val brokerB = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val composite =
+            CompositeBroker(
+                routes = listOf(SymbolPattern.prefix("A:") to brokerA, SymbolPattern.prefix("B:") to brokerB),
+                bus = bus,
+            )
+
+        composite.submit(marketReq("c1", "A:X"))
+        // Leaf A fills the order; the venue ticket "T1" is now owned by A.
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "c1",
+                brokerOrderId = "T1",
+                symbol = "A:X",
+                side = Side.BUY,
+                price = Money.of("1"),
+                quantity = Money.of("1"),
+            ),
+        )
+
+        val ack = composite.modifyPosition("T1", sl = Money.of("0.9"), tp = Money.of("1.2"))
+
+        assertThat(ack.accepted).isTrue
+        assertThat(brokerA.modifyPositions.map { it.ticket }).containsExactly("T1")
+        assertThat(brokerB.modifyPositions).isEmpty()
+    }
+
+    @Test
+    fun `modifyPosition rejects an unknown ticket instead of falsely succeeding`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val brokerA = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val composite = CompositeBroker(routes = listOf(SymbolPattern.prefix("A:") to brokerA), bus = bus)
+
+        val ack = composite.modifyPosition("UNKNOWN", sl = Money.of("1"), tp = null)
+
+        assertThat(ack.accepted).isFalse
+        assertThat(brokerA.modifyPositions).isEmpty()
+    }
 }
