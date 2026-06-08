@@ -42,9 +42,10 @@ class VWAP(
         get() = window.size >= period
 
     override fun update(input: Tick) {
-        val volume =
-            input.volume
-                ?: error("VWAP requires non-null Tick.volume; got null for ${input.symbol} @ ${input.timestamp}")
+        // Quote-driven feeds (FX, metals) report no volume. A volume-less tick carries no weight
+        // for a volume-weighted average, so skip it rather than crash the live session. VWAP then
+        // averages only the ticks that actually carry volume.
+        val volume = input.volume ?: return
         val pv = input.price.multiply(volume, MathContext.DECIMAL128)
         window.addLast(Sample(pv, volume))
         numerator = numerator.add(pv, MathContext.DECIMAL128)
