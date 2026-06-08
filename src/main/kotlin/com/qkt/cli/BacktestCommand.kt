@@ -21,6 +21,7 @@ import java.time.ZoneOffset
 /** `qkt backtest <strategy.qkt>` — historical replay producing a backtest report. */
 class BacktestCommand(
     private val args: Args,
+    private val fetcherOverride: com.qkt.marketdata.store.DataFetcher? = null,
 ) {
     fun run(): Int {
         val file = args.requirePositional(0, "<strategy.qkt>")
@@ -84,7 +85,20 @@ class BacktestCommand(
                 ?.let { TimeWindow.parse(it) }
 
         val strategies = listOf(ast.name to AstCompiler().compile(ast))
-        val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
+        // Default to dukascopy auto-fetch so a backtest acquires its own data with no broker
+        // running. `--no-fetch` works offline against the cache; the legacy `--fetcher` script
+        // path still wins when set; tests inject via fetcherOverride.
+        val noFetch = args.flag("no-fetch")
+        val storeFetcher: com.qkt.marketdata.store.DataFetcher? =
+            when {
+                noFetch -> null
+                fetcherOverride != null -> fetcherOverride
+                fetcher != null -> fetcher
+                else ->
+                    com.qkt.marketdata.store.dukascopy
+                        .DukascopyTickFetcher()
+            }
+        val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = storeFetcher)
         val request = MarketRequest(symbols = symbols, from = from, to = to)
 
         // Phase 30: load instruments.yaml so SIZING RISK and PaperBroker fill PnL see
@@ -117,6 +131,64 @@ class BacktestCommand(
                     return ExitCodes.USER_ERROR
                 }
             }
+
+        // Seamless data (#337): auto-fetch the days the replay will touch and refuse to run on
+        // holes. Provisions bare symbols (the tick store's keying) over [from, to)'s covered days.
+        // Only dukascopy-servable symbols (FX/metals) are provisioned; anything else (e.g. crypto
+        // bars from `qkt fetch`) falls through to the existing data path untouched.
+        val provisionStreams =
+            ast.streams
+                .filter {
+                    it.qktSymbol in symbols &&
+                        com.qkt.marketdata.store.dukascopy.DukascopyInstrument
+                            .ofOrNull(it.symbol) != null
+                }.map { com.qkt.backtest.ProvisionStream(broker = it.broker, bareSymbol = it.symbol) }
+        val calendars =
+            com.qkt.broker.mt5.SymbolCalendars(
+                rules =
+                    listOf(
+                        com.qkt.broker.mt5.SymbolCalendars
+                            .Rule(
+                                "BTC*",
+                                com.qkt.common.TradingCalendar
+                                    .crypto(),
+                            ),
+                        com.qkt.broker.mt5.SymbolCalendars
+                            .Rule(
+                                "ETH*",
+                                com.qkt.common.TradingCalendar
+                                    .crypto(),
+                            ),
+                        com.qkt.broker.mt5.SymbolCalendars
+                            .Rule(
+                                "*USDT",
+                                com.qkt.common.TradingCalendar
+                                    .crypto(),
+                            ),
+                    ),
+                default =
+                    com.qkt.common.TradingCalendar
+                        .fxDefault(),
+            )
+        val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
+        val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
+        if (!provisionTo.isBefore(provisionFrom)) {
+            try {
+                com.qkt.backtest
+                    .BacktestDataProvisioner(store)
+                    .ensure(
+                        streams = provisionStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = !noFetch,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { calendars.calendarFor(it) },
+                    )
+            } catch (e: com.qkt.backtest.IncompleteDataException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
+        }
 
         return try {
             val backtest =
