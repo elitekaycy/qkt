@@ -60,6 +60,18 @@ That's a complete strategy: a 9/21 EMA crossover on 5-minute gold, one position 
 
 ### Docker (no local Java)
 
+Two ready-made images, nothing to install.
+
+**Try it out** — a self-contained workbench with an editor built in, so you can write, edit, and backtest strategies all in one place. Your work is saved in `~/qkt-lab` on your computer:
+
+```bash
+mkdir -p ~/qkt-lab
+docker run -dit --name qkt-dev -v ~/qkt-lab:/work ghcr.io/elitekaycy/qkt:dev
+docker exec -it qkt-dev bash          # qkt + vim ready; then: qkt create template mystrat.qkt
+```
+
+**Run it for real** — the lean image that hosts your strategies live:
+
 ```bash
 docker run -d --name qkt \
   -v "$(pwd)/strategies:/strategies" \
@@ -67,6 +79,8 @@ docker run -d --name qkt \
   ghcr.io/elitekaycy/qkt:latest
 docker exec qkt qkt list
 ```
+
+Full walkthrough: [Using qkt with Docker](docs/operations/running-qkt-via-docker.md).
 
 ### Linux (x64) — self-contained binary, no Java required
 
