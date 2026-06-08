@@ -10,7 +10,9 @@ import java.math.BigDecimal
  * tags every order so the daemon can identify its own positions on restart;
  * [symbolPolicy] handles suffix differences between brokers (Exness adds `m`, others
  * don't). [capabilityRestrictions] subtracts from [MT5Protocol.capabilities] to model
- * brokers that disable certain order types.
+ * brokers that disable certain order types. [symbolCalendars] picks the trading-session
+ * calendar per symbol, so one broker can offer FX, crypto, and index CFDs at once; it
+ * defaults to all-FX, matching the historical single-calendar behaviour.
  */
 data class MT5BrokerProfile(
     val name: String,
@@ -24,6 +26,7 @@ data class MT5BrokerProfile(
     val retryAttempts: Int = 3,
     val deviationPoints: Int = 20,
     val capabilityRestrictions: Set<OrderTypeCapability> = emptySet(),
+    val symbolCalendars: SymbolCalendars = SymbolCalendars.fxDefault(),
 ) {
     /** Effective capabilities for this profile after applying [capabilityRestrictions]. */
     val capabilities: Set<OrderTypeCapability>
