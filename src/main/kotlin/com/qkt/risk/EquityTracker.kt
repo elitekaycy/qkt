@@ -40,6 +40,18 @@ class EquityTracker(
         if (total > peak) perStrategyPeak[strategyId] = total
     }
 
+    /**
+     * Refresh current + peak equity for every strategy already being tracked. Driven from the
+     * engine tick so per-strategy peak captures intra-tick unrealized highs between fills — the
+     * same way [update] tracks the global peak. Keeps `MaxStrategyDrawdown` measuring drawdown
+     * against a live peak instead of a stale fill-point one.
+     */
+    fun updateStrategies() {
+        for (strategyId in perStrategyCurrent.keys) {
+            updateStrategy(strategyId)
+        }
+    }
+
     fun currentEquity(): BigDecimal = currentTotalEquity
 
     fun peakEquity(): BigDecimal = peakTotalEquity

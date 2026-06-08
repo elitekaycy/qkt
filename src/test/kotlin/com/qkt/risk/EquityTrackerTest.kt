@@ -87,4 +87,24 @@ class EquityTrackerTest {
         assertThat(tracker.currentEquityFor("B")).isEqualByComparingTo(BigDecimal("-1000"))
         assertThat(tracker.peakEquityFor("A")).isEqualByComparingTo(BigDecimal("2000"))
     }
+
+    @Test
+    fun `updateStrategies refreshes per-strategy peak between fills`() {
+        val positions = PositionTracker()
+        val prices = MarketPriceTracker()
+        val pnl = PnLCalculator(positions, prices)
+        val strategyPositions = StrategyPositionTracker()
+        val strategyPnL = StrategyPnL(strategyPositions, prices)
+        val tracker = EquityTracker(pnl, strategyPnL)
+
+        strategyPositions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        prices.update("BTCUSDT", Money.of("80500"))
+        tracker.updateStrategy("A")
+        assertThat(tracker.peakEquityFor("A")).isEqualByComparingTo(BigDecimal("500"))
+
+        // Price climbs further with no new fill — a tick refresh must lift the per-strategy peak.
+        prices.update("BTCUSDT", Money.of("82000"))
+        tracker.updateStrategies()
+        assertThat(tracker.peakEquityFor("A")).isEqualByComparingTo(BigDecimal("2000"))
+    }
 }
