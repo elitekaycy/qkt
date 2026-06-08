@@ -2,6 +2,7 @@ package com.qkt.app
 
 import com.qkt.execution.Trade
 import com.qkt.notify.StrategySummary
+import java.math.BigDecimal
 import java.time.Duration
 
 /**
@@ -68,4 +69,23 @@ interface LiveSessionHandle {
      * empty for non-live handles or plain strategies.
      */
     fun streamBrokers(): Map<String, String> = emptyMap()
+
+    /**
+     * Current P&L scalars for [strategyId] — equity, balance, realized, unrealized. Defaults
+     * to zero for handles that aren't full live sessions (tests, replay); the live daemon
+     * session overrides it to read from its strategy P&L tracker so `/status` shows real P&L.
+     */
+    fun pnlSnapshot(strategyId: String): SessionPnl = SessionPnl.ZERO
+}
+
+/** A point-in-time P&L reading for one strategy, surfaced through `/status`. */
+data class SessionPnl(
+    val equity: BigDecimal,
+    val balance: BigDecimal,
+    val realized: BigDecimal,
+    val unrealized: BigDecimal,
+) {
+    companion object {
+        val ZERO = SessionPnl(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+    }
 }
