@@ -321,6 +321,9 @@ private data class OrderRequestDto(
     val entryPrice: String? = null,
     val trailDistance: String? = null,
     val mfeThreshold: String? = null,
+    val trailAmount: String? = null,
+    val trailMode: String? = null,
+    val limitOffset: String? = null,
 ) {
     fun toDomain(): com.qkt.execution.OrderRequest {
         val sideEnum =
@@ -408,6 +411,67 @@ private data class OrderRequestDto(
                     strategyId = strategyId,
                     expiresAt = expiresAt,
                 )
+            "StopLimit" ->
+                com.qkt.execution.OrderRequest.StopLimit(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    stopPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(stopPrice) { "StopLimit DTO missing stopPrice" },
+                        ),
+                    limitPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(limitPrice) { "StopLimit DTO missing limitPrice" },
+                        ),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
+            "TrailingStop" ->
+                com.qkt.execution.OrderRequest.TrailingStop(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    trailAmount =
+                        java.math.BigDecimal(
+                            requireNotNull(trailAmount) { "TrailingStop DTO missing trailAmount" },
+                        ),
+                    trailMode =
+                        com.qkt.execution.TrailMode.valueOf(
+                            requireNotNull(trailMode) { "TrailingStop DTO missing trailMode" },
+                        ),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
+            "TrailingStopLimit" ->
+                com.qkt.execution.OrderRequest.TrailingStopLimit(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    trailAmount =
+                        java.math.BigDecimal(
+                            requireNotNull(trailAmount) { "TrailingStopLimit DTO missing trailAmount" },
+                        ),
+                    trailMode =
+                        com.qkt.execution.TrailMode.valueOf(
+                            requireNotNull(trailMode) { "TrailingStopLimit DTO missing trailMode" },
+                        ),
+                    limitOffset =
+                        java.math.BigDecimal(
+                            requireNotNull(limitOffset) { "TrailingStopLimit DTO missing limitOffset" },
+                        ),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
             else -> error("Unknown OrderRequest type in persisted state: $type")
         }
     }
@@ -482,7 +546,58 @@ private data class OrderRequestDto(
                         mfeThreshold = req.mfeThreshold.toPlainString(),
                         expiresAt = req.expiresAt,
                     )
-                else -> null // non-persistable variant (Bracket, ScaleOut, TimeExit, Stack, etc.)
+                is com.qkt.execution.OrderRequest.StopLimit ->
+                    OrderRequestDto(
+                        type = "StopLimit",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        stopPrice = req.stopPrice.toPlainString(),
+                        limitPrice = req.limitPrice.toPlainString(),
+                        expiresAt = req.expiresAt,
+                    )
+                is com.qkt.execution.OrderRequest.TrailingStop ->
+                    OrderRequestDto(
+                        type = "TrailingStop",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        trailAmount = req.trailAmount.toPlainString(),
+                        trailMode = req.trailMode.name,
+                        expiresAt = req.expiresAt,
+                    )
+                is com.qkt.execution.OrderRequest.TrailingStopLimit ->
+                    OrderRequestDto(
+                        type = "TrailingStopLimit",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        trailAmount = req.trailAmount.toPlainString(),
+                        trailMode = req.trailMode.name,
+                        limitOffset = req.limitOffset.toPlainString(),
+                        expiresAt = req.expiresAt,
+                    )
+                // Composite variants are persisted by their dedicated paths (OCO legs,
+                // bracket pairs, stack tiers), not as flat pending orders — skip them here.
+                is com.qkt.execution.OrderRequest.StandaloneOCO,
+                is com.qkt.execution.OrderRequest.OTO,
+                is com.qkt.execution.OrderRequest.Bracket,
+                is com.qkt.execution.OrderRequest.ScaleOut,
+                is com.qkt.execution.OrderRequest.TimeExit,
+                is com.qkt.execution.OrderRequest.Stack,
+                -> null
             }
     }
 }
@@ -585,6 +700,7 @@ private data class LegDto(
     val quantity: String,
     val entryPrice: String,
     val openedAt: Long,
+    val brokerTicket: String? = null,
 ) {
     fun toDomain(): PersistedLeg =
         PersistedLeg(
@@ -596,6 +712,7 @@ private data class LegDto(
             quantity = BigDecimal(quantity),
             entryPrice = BigDecimal(entryPrice),
             openedAt = openedAt,
+            brokerTicket = brokerTicket,
         )
 
     companion object {
@@ -609,6 +726,7 @@ private data class LegDto(
                 quantity = leg.quantity.toPlainString(),
                 entryPrice = leg.entryPrice.toPlainString(),
                 openedAt = leg.openedAt,
+                brokerTicket = leg.brokerTicket,
             )
     }
 }
