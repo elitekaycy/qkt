@@ -84,6 +84,30 @@ class CompositeBroker(
         }
     }
 
+    override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
+        val merged = LinkedHashMap<String, MutableList<com.qkt.positions.Position>>()
+        for (leaf in allLeaves()) {
+            for ((symbol, positions) in leaf.getOpenPositions()) {
+                merged.getOrPut(symbol) { mutableListOf() }.addAll(positions)
+            }
+        }
+        return merged
+    }
+
+    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
+        val byBroker = LinkedHashMap<Broker, MutableList<com.qkt.execution.ManagedOrder>>()
+        for (order in orders) {
+            val target = brokerFor(order.request.symbol) ?: continue
+            // Restore orderId → broker routing so a later cancel()/modify() of a recovered order
+            // reaches the right leaf. Without this, OCO restart recovery is dead on a composite.
+            orderIdToBroker[order.id] = target
+            byBroker.getOrPut(target) { mutableListOf() }.add(order)
+        }
+        for ((broker, group) in byBroker) runCatching { broker.recoverPendingOrders(group) }
+    }
+
+    private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
+
     private fun brokerFor(symbol: String): Broker? =
         routes.firstOrNull { (pattern, _) -> pattern.matches(symbol) }?.second ?: fallback
 
