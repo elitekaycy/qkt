@@ -23,6 +23,7 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.pnl.CommissionBook
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.pnl.StrategyPnLViewImpl
@@ -77,6 +78,13 @@ class TradingPipeline(
      * (wired by [com.qkt.app.LiveSession] for live, by `Backtest.fromStore` for backtest).
      */
     val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+    /**
+     * Trading-cost ledger ([#335](https://github.com/elitekaycy/qkt/issues/335)). A backtest
+     * passes a [CommissionBook] wrapping a real [com.qkt.pnl.PerLotCommission] so fills pay the
+     * venue's commission; the cost is subtracted from realized PnL and tallied for the report.
+     * Default charges nothing — live runs leave it so, since the real broker already bills.
+     */
+    val commissionBook: CommissionBook = CommissionBook(),
     /**
      * Phase 25-followup ([#132](https://github.com/elitekaycy/qkt/issues/132)):
      * per-strategy trade history (last fill, last P&L, win/loss streaks). Default
@@ -239,13 +247,18 @@ class TradingPipeline(
             // reports. Default 1 preserves pre-Phase-30 behavior for symbols not in the
             // registry.
             val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            // Commission is a per-fill cash charge (#335). Net it out of the realized PnL the
+            // accumulators see, so equity/drawdown/Sharpe go net; trade-level stats below stay
+            // gross, and the report's commissionPaid bridges the two. Zero unless a backtest
+            // configured a rate, so live and pre-cost-model runs are unchanged.
+            val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             val rawRealized = positions.applyFill(e)
             val realized = rawRealized.multiply(cs)
-            pnl.recordRealized(realized)
+            pnl.recordRealized(realized.subtract(commission))
 
             val rawStratRealized = strategyPositions.applyFill(e)
             val stratRealized = rawStratRealized.multiply(cs)
-            strategyPnL.recordRealized(e.strategyId, stratRealized)
+            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(commission))
             tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized, e.symbol)
             riskState.onFill(e.strategyId, stratRealized)
             riskEngine.evaluateHaltRules()
@@ -275,13 +288,14 @@ class TradingPipeline(
                     timestamp = e.timestamp,
                 )
             val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             val rawRealized = positions.applyFill(asFill)
             val realized = rawRealized.multiply(cs)
-            pnl.recordRealized(realized)
+            pnl.recordRealized(realized.subtract(commission))
 
             val rawStratRealized = strategyPositions.applyFill(asFill)
             val stratRealized = rawStratRealized.multiply(cs)
-            strategyPnL.recordRealized(e.strategyId, stratRealized)
+            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(commission))
             riskState.onFill(e.strategyId, stratRealized)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->

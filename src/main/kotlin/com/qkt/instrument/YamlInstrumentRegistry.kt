@@ -22,6 +22,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *     pointSize: 0.001
  *     digits: 3
  *     tradeStopsLevelPoints: 0
+ *     commissionPerLot: 3.50   # optional, default 0 — backtest cost per lot per side
  * ```
  *
  * Duplicate `qktSymbol` entries fail loudly at [load] — fail-fast keeps a YAML edit
@@ -75,6 +76,7 @@ class YamlInstrumentRegistry private constructor(
                 pointSize = bd("pointSize"),
                 digits = int("digits"),
                 tradeStopsLevelPoints = int("tradeStopsLevelPoints"),
+                commissionPerLot = bdOpt("commissionPerLot") ?: BigDecimal.ZERO,
             )
         }
     }
