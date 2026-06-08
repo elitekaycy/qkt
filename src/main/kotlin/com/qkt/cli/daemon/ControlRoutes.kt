@@ -423,7 +423,14 @@ object ControlRoutes {
                     Files
                         .newInputStream(logFile)
                         .use { input ->
-                            input.skip(lastSize)
+                            // skip() may skip fewer bytes than asked; loop so we don't re-send
+                            // already-streamed log bytes to the follower.
+                            var toSkip = lastSize
+                            while (toSkip > 0) {
+                                val skipped = input.skip(toSkip)
+                                if (skipped <= 0) break
+                                toSkip -= skipped
+                            }
                             val bytes = input.readBytes()
                             try {
                                 out.write(bytes)
