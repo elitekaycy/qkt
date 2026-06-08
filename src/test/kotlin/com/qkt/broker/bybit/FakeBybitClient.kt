@@ -17,6 +17,9 @@ class FakeBybitClient : BybitTransport {
 
     val dynamicResponses: MutableList<Pair<(String, String) -> Boolean, () -> String>> = mutableListOf()
 
+    /** Async posts whose (path, body) match the predicate fail with the paired error. */
+    val asyncFailures: MutableList<Pair<(String, String) -> Boolean, Throwable>> = mutableListOf()
+
     private val topicListeners: MutableMap<String, MutableList<(JsonObject) -> Unit>> = mutableMapOf()
     private val disconnectListeners: MutableList<(String) -> Unit> = mutableListOf()
     private val onReconnectListeners: MutableList<() -> Unit> = mutableListOf()
@@ -45,6 +48,27 @@ class FakeBybitClient : BybitTransport {
         if (matched != null) return matched.second
         return responses[path]
             ?: """{"retCode":0,"retMsg":"OK","result":{}}"""
+    }
+
+    override fun postSignedAsync(
+        path: String,
+        jsonBody: String,
+        onResult: (Result<String>) -> Unit,
+    ) {
+        posts.add(Posted(path, jsonBody))
+        val failure = asyncFailures.firstOrNull { it.first(path, jsonBody) }
+        if (failure != null) {
+            onResult(Result.failure(failure.second))
+            return
+        }
+        val dynMatched = dynamicResponses.firstOrNull { it.first(path, jsonBody) }
+        val matched = responsesByPredicate.firstOrNull { it.first(path, jsonBody) }
+        val body =
+            dynMatched?.second?.invoke()
+                ?: matched?.second
+                ?: responses[path]
+                ?: """{"retCode":0,"retMsg":"OK","result":{}}"""
+        onResult(Result.success(body))
     }
 
     override fun getSigned(

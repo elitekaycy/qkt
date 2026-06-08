@@ -56,6 +56,61 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `placeOrderAsync delivers the parsed response via the callback`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":12345,"deal":67890,"price":"1.1234","comment":"ok"}}""",
+            ),
+        )
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+        client.placeOrderAsync(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY",
+                magic = 10001,
+                comment = "ord-async",
+            ),
+        ) { resp ->
+            result.set(resp)
+            latch.countDown()
+        }
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(10009)
+        assertThat(result.get().result.order).isEqualTo(12345L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/order")
+        assertThat(recorded.method).isEqualTo("POST")
+    }
+
+    @Test
+    fun `placeOrderAsync delivers a synthetic failure on a non-2xx response`() {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"boom"}"""))
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+        client.placeOrderAsync(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY",
+                magic = 10001,
+                comment = "ord-fail",
+            ),
+        ) { resp ->
+            result.set(resp)
+            latch.countDown()
+        }
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(isOrderSuccessful(result.get().result.retcode)).isFalse
+        assertThat(result.get().errorMessage).contains("HTTP 500")
+    }
+
+    @Test
     fun `placeOrder caps an over-long comment to the MT5 wire limit`() {
         // mt5.order_send rejects comments longer than MT5_COMMENT_MAX_LENGTH with
         // `Invalid "comment" argument`. The hedge-straddle stack-tier clientOrderId

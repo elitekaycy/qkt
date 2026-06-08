@@ -15,6 +15,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -63,6 +65,20 @@ interface BybitTransport {
         path: String,
         jsonBody: String,
     ): String
+
+    /**
+     * Send a signed POST WITHOUT blocking the caller. The request runs on the HTTP client's
+     * dispatcher; [onResult] is invoked off the calling thread with the response body on success
+     * (any 2xx — including a non-zero `retCode` the caller must inspect) or a [Result.failure]
+     * carrying the transport/HTTP error. Unlike [postSigned] the send is NOT retried — a duplicate
+     * order is worse than a surfaced failure. Used for order placement so the engine thread never
+     * waits on the venue round-trip; the real accept/reject follows on the bus.
+     */
+    fun postSignedAsync(
+        path: String,
+        jsonBody: String,
+        onResult: (Result<String>) -> Unit,
+    )
 
     fun getSigned(
         path: String,
@@ -234,24 +250,63 @@ class BybitClient(
     private fun doPostSignedOnce(
         path: String,
         jsonBody: String,
-    ): String {
+    ): String = execute(buildSignedPost(path, jsonBody))
+
+    /**
+     * Build a signed POST request. Bybit v5 signs `timestamp + apiKey + recvWindow + body`; the
+     * same timestamp/signature go on the headers so the server re-derives the signature. Shared
+     * by the blocking [doPostSignedOnce] and the non-blocking [postSignedAsync].
+     */
+    private fun buildSignedPost(
+        path: String,
+        jsonBody: String,
+    ): Request {
         val timestamp = clock.now().toString()
         val recvWindow = resolvedRecvWindowMs.toString()
         val preSign = timestamp + resolvedApiKey + recvWindow + jsonBody
         val signature = signer.signHex(preSign)
+        return Request
+            .Builder()
+            .url("$restBaseUrl$path")
+            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .addHeader("X-BAPI-API-KEY", resolvedApiKey)
+            .addHeader("X-BAPI-TIMESTAMP", timestamp)
+            .addHeader("X-BAPI-SIGN", signature)
+            .addHeader("X-BAPI-RECV-WINDOW", recvWindow)
+            .build()
+    }
 
-        val req =
-            Request
-                .Builder()
-                .url("$restBaseUrl$path")
-                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .addHeader("X-BAPI-API-KEY", resolvedApiKey)
-                .addHeader("X-BAPI-TIMESTAMP", timestamp)
-                .addHeader("X-BAPI-SIGN", signature)
-                .addHeader("X-BAPI-RECV-WINDOW", recvWindow)
-                .build()
+    override fun postSignedAsync(
+        path: String,
+        jsonBody: String,
+        onResult: (Result<String>) -> Unit,
+    ) {
+        httpClient.newCall(buildSignedPost(path, jsonBody)).enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    e: java.io.IOException,
+                ) {
+                    onResult(Result.failure(e))
+                }
 
-        return execute(req)
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    response.use {
+                        val body = it.body?.string().orEmpty()
+                        onResult(
+                            when {
+                                it.code == 429 -> Result.failure(BybitRateLimitException("rate limited; path=$path"))
+                                !it.isSuccessful -> Result.failure(BybitApiException(it.code, "HTTP ${it.code}: $body"))
+                                else -> Result.success(body)
+                            },
+                        )
+                    }
+                }
+            },
+        )
     }
 
     /**

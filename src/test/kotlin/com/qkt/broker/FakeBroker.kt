@@ -83,6 +83,21 @@ class FakeBroker(
         return SubmitAck(ticket, ticket, accepted = true)
     }
 
+    /**
+     * Publish a venue acceptance for a previously-submitted order. Used with
+     * [emitAcceptOnSubmit] = false to simulate a real venue that confirms acceptance
+     * asynchronously, after `submit` has already returned its optimistic ack.
+     */
+    fun emitAccept(orderId: String) {
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = orderId,
+                brokerOrderId = orderId,
+                timestamp = clock.now(),
+            ),
+        )
+    }
+
     fun emitFill(
         request: OrderRequest,
         price: BigDecimal,

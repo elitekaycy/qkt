@@ -382,22 +382,38 @@ class MT5Broker(
                 priceTracker?.lastPrice(request.symbol)?.toPlainString(),
             )
         }
-        val resp = client.placeOrder(prepared)
+        // Non-blocking placement: the HTTP send runs on OkHttp's dispatcher and the venue's
+        // result returns as bus events via [handlePlacementResult] (rerouted onto the engine
+        // thread by the single-consumer loop). submit returns an optimistic ack at once so the
+        // engine thread never waits on the order round-trip — the real accept/reject/fill
+        // follows on the bus, which is what the event-driven OCO/OTO sequencing consumes.
+        client.placeOrderAsync(prepared) { resp -> handlePlacementResult(request, resp) }
+        return SubmitAck(
+            clientOrderId = request.id,
+            brokerOrderId = null,
+            accepted = true,
+        )
+    }
+
+    /**
+     * Turn the venue's placement response into bus events. Runs on an OkHttp dispatcher thread
+     * (off the engine thread); every `bus.publish` here is rerouted onto the engine thread by
+     * the single-consumer loop, and the ticket maps it mutates are concurrent. A bad retcode
+     * becomes [BrokerEvent.OrderRejected]; success becomes [BrokerEvent.OrderAccepted] plus, for
+     * an instant-fill market, [BrokerEvent.OrderFilled].
+     */
+    private fun handlePlacementResult(
+        request: OrderRequest,
+        resp: MT5OrderResponse,
+    ) {
         if (!isOrderSuccessful(resp.result.retcode)) {
-            return reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
+            reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
+            return
         }
         val brokerOrderId =
             resp.result.order
                 .takeIf { it != 0L }
                 ?.toString() ?: resp.result.deal.toString()
-        bus.publish(
-            BrokerEvent.OrderAccepted(
-                clientOrderId = request.id,
-                brokerOrderId = brokerOrderId,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
         // A Bracket with a Market entry fills synchronously like a plain Market; a Bracket
         // whose entry is Stop/Limit places a pending order on the venue and waits for the
         // position poller to surface the eventual fill. Treating every Bracket as an
@@ -407,22 +423,12 @@ class MT5Broker(
         val isInstantFill =
             request is OrderRequest.Market ||
                 (request is OrderRequest.Bracket && request.entry is OrderRequest.Market)
+        // Register the venue ticket BEFORE announcing acceptance so any consumer reacting to
+        // [BrokerEvent.OrderAccepted] (e.g. a follow-up modify keyed by clientOrderId) sees the
+        // broker's bookkeeping already consistent.
         if (isInstantFill) {
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    clientOrderId = request.id,
-                    brokerOrderId = brokerOrderId,
-                    symbol = request.symbol,
-                    side = request.side,
-                    price = resp.result.price,
-                    quantity = request.quantity,
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
-            // Register the position ticket so [MT5PositionPoller] can resolve a close
-            // event back to this strategy. Use whichever of `order` / `deal` is non-zero;
-            // for instant-fill markets MT5 typically returns `order=0` and `deal=N`.
+            // Use whichever of `order` / `deal` is non-zero; instant-fill markets typically
+            // return `order=0` and `deal=N`. Lets [MT5PositionPoller] attribute the close.
             val positionTicket =
                 resp.result.order.takeIf { it != 0L }
                     ?: resp.result.deal.takeIf { it != 0L }
@@ -438,11 +444,28 @@ class MT5Broker(
                     pendingByTicket[ticket] = PendingMeta(request.id, request.strategyId)
                 }
         }
-        return SubmitAck(
-            clientOrderId = request.id,
-            brokerOrderId = brokerOrderId,
-            accepted = true,
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = request.id,
+                brokerOrderId = brokerOrderId,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
         )
+        if (isInstantFill) {
+            bus.publish(
+                BrokerEvent.OrderFilled(
+                    clientOrderId = request.id,
+                    brokerOrderId = brokerOrderId,
+                    symbol = request.symbol,
+                    side = request.side,
+                    price = resp.result.price,
+                    quantity = request.quantity,
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+        }
     }
 
     private fun submitComposite(
