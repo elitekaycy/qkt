@@ -53,4 +53,18 @@ class CandleIndicatorRegistryTest {
         obv.update(candle("11", "11", "11", vol = "200"))
         assertThat(obv.value()).isEqualByComparingTo(Money.of("200"))
     }
+
+    @Test
+    fun `keltner and adx multi-output wrappers feed candles and report values`() {
+        for (name in listOf("KELTNER_UPPER", "KELTNER_MIDDLE", "KELTNER_LOWER")) {
+            val ind = create(name, listOf(5, 2))
+            repeat(12) { ind.update(candle("105", "95", "100")) }
+            assertThat(ind.value()).withFailMessage("$name should report a value").isNotNull()
+        }
+        for (name in listOf("PLUS_DI", "MINUS_DI", "ADX")) {
+            val ind = create(name, listOf(14))
+            repeat(40) { i -> ind.update(candle("${100 + i}", "${99 + i}", "${100 + i}")) }
+            assertThat(ind.value()).withFailMessage("$name should report a value").isNotNull()
+        }
+    }
 }
