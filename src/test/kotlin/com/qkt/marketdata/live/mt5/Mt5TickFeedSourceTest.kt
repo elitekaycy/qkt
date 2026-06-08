@@ -94,4 +94,42 @@ class Mt5TickFeedSourceTest {
             server.shutdown()
         }
     }
+
+    @Test
+    fun `stamps the emitted tick with the broker time, not wall-clock`() {
+        val brokerMs = 1778662794911L
+        val server = MockWebServer()
+        val counter = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val ms = brokerMs + counter.incrementAndGet()
+                    return MockResponse().setBody(
+                        """{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}""",
+                    )
+                }
+            }
+        server.start()
+        try {
+            val source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
+                    pollIntervalMs = 5L,
+                    http = OkHttpClient(),
+                )
+            val captured = CopyOnWriteArrayList<Tick>()
+            source.start(onTick = { captured.add(it) }, onError = { it.printStackTrace() }, onDisconnect = {})
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (captured.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
+            source.stop()
+            assertThat(captured).isNotEmpty
+            // The first poll's broker time is brokerMs + 1; the emitted tick must carry it, not clock.now().
+            assertThat(captured.first().timestamp).isEqualTo(brokerMs + 1)
+        } finally {
+            server.shutdown()
+        }
+    }
 }
