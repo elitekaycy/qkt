@@ -2,6 +2,7 @@ package com.qkt.dsl.stdlib
 
 import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
+import com.qkt.indicators.catalog.ADX
 import com.qkt.indicators.catalog.ATR
 import com.qkt.indicators.catalog.Beta
 import com.qkt.indicators.catalog.BollingerBands
@@ -10,6 +11,7 @@ import com.qkt.indicators.catalog.Correlation
 import com.qkt.indicators.catalog.DEMA
 import com.qkt.indicators.catalog.EMA
 import com.qkt.indicators.catalog.HMA
+import com.qkt.indicators.catalog.KeltnerChannels
 import com.qkt.indicators.catalog.MACD
 import com.qkt.indicators.catalog.OBV
 import com.qkt.indicators.catalog.RSI
@@ -161,6 +163,80 @@ object IndicatorRegistry {
             // ---- volume ----
             "OBV" to
                 IndicatorSpec("OBV", IndicatorInput.CANDLE_SERIES, arity = 1) { OBV() },
+            // ---- Keltner Channels (three outputs, candle) ----
+            "KELTNER_UPPER" to
+                IndicatorSpec("KELTNER_UPPER", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
+                    val k = KeltnerChannels(period = args[0].toInt(), atrMult = args[1])
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = k.update(input)
+
+                        override fun value(): BigDecimal? = k.bands()?.upper
+
+                        override val isReady: Boolean get() = k.isReady
+                        override val warmupBars: Int = k.warmupBars
+                    }
+                },
+            "KELTNER_MIDDLE" to
+                IndicatorSpec("KELTNER_MIDDLE", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
+                    val k = KeltnerChannels(period = args[0].toInt(), atrMult = args[1])
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = k.update(input)
+
+                        override fun value(): BigDecimal? = k.bands()?.middle
+
+                        override val isReady: Boolean get() = k.isReady
+                        override val warmupBars: Int = k.warmupBars
+                    }
+                },
+            "KELTNER_LOWER" to
+                IndicatorSpec("KELTNER_LOWER", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
+                    val k = KeltnerChannels(period = args[0].toInt(), atrMult = args[1])
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = k.update(input)
+
+                        override fun value(): BigDecimal? = k.bands()?.lower
+
+                        override val isReady: Boolean get() = k.isReady
+                        override val warmupBars: Int = k.warmupBars
+                    }
+                },
+            // ---- directional movement (three outputs, candle) ----
+            "PLUS_DI" to
+                IndicatorSpec("PLUS_DI", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    val a = ADX(period = args[0].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = a.update(input)
+
+                        override fun value(): BigDecimal? = a.lines()?.plusDi
+
+                        override val isReady: Boolean get() = a.isReady
+                        override val warmupBars: Int = a.warmupBars
+                    }
+                },
+            "MINUS_DI" to
+                IndicatorSpec("MINUS_DI", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    val a = ADX(period = args[0].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = a.update(input)
+
+                        override fun value(): BigDecimal? = a.lines()?.minusDi
+
+                        override val isReady: Boolean get() = a.isReady
+                        override val warmupBars: Int = a.warmupBars
+                    }
+                },
+            "ADX" to
+                IndicatorSpec("ADX", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    val a = ADX(period = args[0].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = a.update(input)
+
+                        override fun value(): BigDecimal? = a.lines()?.adx
+
+                        override val isReady: Boolean get() = a.isReady
+                        override val warmupBars: Int = a.warmupBars
+                    }
+                },
             // ---- MACD (three outputs) ----
             "MACD" to
                 IndicatorSpec("MACD", IndicatorInput.NUMERIC_SERIES, arity = 4) { args ->
