@@ -765,6 +765,14 @@ class LiveSession(
                 return out
             }
 
+            override fun pnlSnapshot(strategyId: String): SessionPnl =
+                SessionPnl(
+                    equity = strategyPnL.equityFor(strategyId),
+                    balance = strategyPnL.balanceFor(strategyId),
+                    realized = strategyPnL.realizedFor(strategyId),
+                    unrealized = strategyPnL.unrealizedTotalFor(strategyId),
+                )
+
             override fun halt(reason: String) {
                 riskState.halt(reason)
             }

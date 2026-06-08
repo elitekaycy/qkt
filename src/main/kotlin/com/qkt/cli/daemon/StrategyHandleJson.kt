@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon
 
+import com.qkt.app.SessionPnl
 import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.cli.observe.PositionDto
 import com.qkt.cli.observe.StatusSnapshot
@@ -60,6 +61,7 @@ internal fun buildSnapshot(
     trades: List<Trade>,
     pendingStackLayers: List<PendingStackLayer> = emptyList(),
     streamBrokers: Map<String, String> = emptyMap(),
+    pnl: SessionPnl = SessionPnl.ZERO,
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
     val last = trades.lastOrNull()
@@ -68,10 +70,10 @@ internal fun buildSnapshot(
         version = strategyVersion,
         uptimeMs = now - startMs,
         startedAt = startedAt,
-        equity = BigDecimal.ZERO,
-        balance = BigDecimal.ZERO,
-        realized = BigDecimal.ZERO,
-        unrealized = BigDecimal.ZERO,
+        equity = pnl.equity,
+        balance = pnl.balance,
+        realized = pnl.realized,
+        unrealized = pnl.unrealized,
         positions = emptyList<PositionDto>(),
         lastTrade =
             last?.let {
