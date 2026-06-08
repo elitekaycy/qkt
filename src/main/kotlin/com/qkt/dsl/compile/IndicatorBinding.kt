@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.stdlib.IndicatorInput
 import com.qkt.dsl.stdlib.IndicatorRegistry
 import com.qkt.dsl.stdlib.IndicatorSpec
+import com.qkt.indicators.BiIndicator
 import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
 import com.qkt.marketdata.Candle
@@ -20,6 +21,7 @@ class IndicatorBinding private constructor(
     private val inputKind: IndicatorInput,
     private val source: IndicatorBinding?,
     private val seriesExpr: CompiledExpr?,
+    private val seriesExprB: CompiledExpr? = null,
 ) {
     val rootAlias: String? get() = streamAlias ?: source?.rootAlias
 
@@ -33,6 +35,15 @@ class IndicatorBinding private constructor(
         }
         val symbol = ctx.streams[streamAlias!!]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
         if (ctx.candle.symbol != symbol) return
+        // Two-series bindings (#319): feed the aligned (a, b) pair. Both compiled series evaluate
+        // in the current context, so the second stream reads its latest closed candle via the hub.
+        // Gated on the primary (first) stream's bar close, like the expression-fed path.
+        if (seriesExprB != null) {
+            val a = (seriesExpr!!.evaluate(ctx) as? Value.Num)?.v ?: return
+            val b = (seriesExprB.evaluate(ctx) as? Value.Num)?.v ?: return
+            (indicator as BiIndicator).update(a, b)
+            return
+        }
         // Expression-fed bindings (#174): evaluate the compiled series expression in
         // the current context and feed the numeric result to the indicator. Updates
         // are gated to the *primary alias* (the first stream the expression references)
@@ -126,6 +137,24 @@ class IndicatorBinding private constructor(
                 source = null,
                 seriesExpr = seriesExpr,
             )
+
+        internal fun seriesFedPair(
+            call: IndicatorCall,
+            indicator: IndicatorOutput,
+            primaryAlias: String,
+            seriesExprA: CompiledExpr,
+            seriesExprB: CompiledExpr,
+        ): IndicatorBinding =
+            IndicatorBinding(
+                call,
+                indicator,
+                streamAlias = primaryAlias,
+                field = null,
+                inputKind = IndicatorInput.NUMERIC_SERIES,
+                source = null,
+                seriesExpr = seriesExprA,
+                seriesExprB = seriesExprB,
+            )
     }
 
     class Bag {
@@ -155,6 +184,35 @@ class IndicatorBinding private constructor(
                                 "or routed via Bag.bindExpression for arbitrary expressions",
                         )
                 }
+            bindings.add(binding)
+            return binding
+        }
+
+        /**
+         * Bind a two-series indicator (#319, e.g. correlation/beta). Both series are pre-compiled
+         * by [ExprCompiler] into [CompiledExpr]s and fed as an aligned pair each bar; [primaryAlias]
+         * gates the update to the first series' stream. Only NUMERIC_SERIES specs are supported.
+         */
+        fun bindPair(
+            call: IndicatorCall,
+            seriesExprA: CompiledExpr,
+            seriesExprB: CompiledExpr,
+            primaryAlias: String,
+        ): IndicatorBinding {
+            val spec = IndicatorRegistry.spec(call.name) ?: error("Unknown indicator: ${call.name}")
+            require(call.args.size == spec.arity) {
+                "Indicator ${call.name} expects ${spec.arity} args, got ${call.args.size}"
+            }
+            require(spec.inputKind == IndicatorInput.NUMERIC_SERIES) {
+                "Indicator ${call.name} two-series binding only supports NUMERIC_SERIES"
+            }
+            val constArgs =
+                call.args.drop(spec.seriesCount).map {
+                    require(it is NumLit) { "Indicator ${call.name} non-series arg must be a numeric literal" }
+                    it.value
+                }
+            val ind = IndicatorRegistry.create(call.name, constArgs)
+            val binding = seriesFedPair(call, ind, primaryAlias, seriesExprA, seriesExprB)
             bindings.add(binding)
             return binding
         }

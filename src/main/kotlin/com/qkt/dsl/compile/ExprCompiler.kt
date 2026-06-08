@@ -401,22 +401,32 @@ class ExprCompiler(
     }
 
     private fun compileIndicator(call: IndicatorCall): CompiledExpr {
-        val seriesArg = call.args.firstOrNull()
+        val spec =
+            com.qkt.dsl.stdlib.IndicatorRegistry
+                .spec(call.name)
         val binding =
-            when (seriesArg) {
-                is StreamFieldRef, is IndicatorCall, null -> bindings.bind(call)
-                else -> {
-                    // #174 expression-fed: compile the series expression and bind via
-                    // primary alias. Gate on the first StreamFieldRef the expression
-                    // references; reject if it references no stream (caller mistake).
-                    val primaryAlias =
-                        streamAliasesIn(seriesArg).firstOrNull()
-                            ?: error(
-                                "Indicator ${call.name} expression-fed series must reference at least one " +
-                                    "stream (e.g. stddev(gold.close - silver.close, 60))",
-                            )
-                    val compiledSeries = compile(seriesArg, null)
-                    bindings.bindExpression(call, compiledSeries, primaryAlias)
+            if (spec != null && spec.seriesCount >= 2) {
+                // #319 two-series (e.g. correlation): compile both series args and bind as a pair,
+                // gated on the first series' stream. Each series may itself be a cross-stream expr.
+                val primaryAlias =
+                    streamAliasesIn(call.args[0]).firstOrNull()
+                        ?: error("Indicator ${call.name} first series must reference a stream")
+                bindings.bindPair(call, compile(call.args[0], null), compile(call.args[1], null), primaryAlias)
+            } else {
+                when (val seriesArg = call.args.firstOrNull()) {
+                    is StreamFieldRef, is IndicatorCall, null -> bindings.bind(call)
+                    else -> {
+                        // #174 expression-fed: compile the series expression and bind via
+                        // primary alias. Gate on the first StreamFieldRef the expression
+                        // references; reject if it references no stream (caller mistake).
+                        val primaryAlias =
+                            streamAliasesIn(seriesArg).firstOrNull()
+                                ?: error(
+                                    "Indicator ${call.name} expression-fed series must reference at least one " +
+                                        "stream (e.g. stddev(gold.close - silver.close, 60))",
+                                )
+                        bindings.bindExpression(call, compile(seriesArg, null), primaryAlias)
+                    }
                 }
             }
         return CompiledExpr {

@@ -3,7 +3,9 @@ package com.qkt.dsl.stdlib
 import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
 import com.qkt.indicators.catalog.ATR
+import com.qkt.indicators.catalog.Beta
 import com.qkt.indicators.catalog.BollingerBands
+import com.qkt.indicators.catalog.Correlation
 import com.qkt.indicators.catalog.EMA
 import com.qkt.indicators.catalog.MACD
 import com.qkt.indicators.catalog.RSI
@@ -31,6 +33,8 @@ data class IndicatorSpec(
     val name: String,
     val inputKind: IndicatorInput,
     val arity: Int,
+    /** Number of leading series args (1 for normal indicators, 2 for two-series like CORRELATION). */
+    val seriesCount: Int = 1,
     val factory: (List<BigDecimal>) -> IndicatorOutput,
 )
 
@@ -86,6 +90,15 @@ object IndicatorRegistry {
             "REGRESSION_SLOPE" to
                 IndicatorSpec("REGRESSION_SLOPE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     RegressionSlope(period = args[0].toInt())
+                },
+            // ---- cross-series (two-input) ----
+            "CORRELATION" to
+                IndicatorSpec("CORRELATION", IndicatorInput.NUMERIC_SERIES, arity = 3, seriesCount = 2) { args ->
+                    Correlation(period = args[0].toInt())
+                },
+            "BETA" to
+                IndicatorSpec("BETA", IndicatorInput.NUMERIC_SERIES, arity = 3, seriesCount = 2) { args ->
+                    Beta(period = args[0].toInt())
                 },
             // ---- MACD (three outputs) ----
             "MACD" to
@@ -178,8 +191,9 @@ object IndicatorRegistry {
         constArgs: List<BigDecimal>,
     ): IndicatorOutput {
         val s = spec(name) ?: error("Unknown indicator: $name")
-        require(constArgs.size == s.arity - 1) {
-            "Indicator $name expects ${s.arity - 1} constant args, got ${constArgs.size}"
+        val expectedConst = s.arity - s.seriesCount
+        require(constArgs.size == expectedConst) {
+            "Indicator $name expects $expectedConst constant args, got ${constArgs.size}"
         }
         return s.factory(constArgs)
     }

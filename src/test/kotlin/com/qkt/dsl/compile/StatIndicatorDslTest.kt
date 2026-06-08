@@ -53,4 +53,32 @@ class StatIndicatorDslTest {
             """.trimIndent()
         assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
     }
+
+    @Test
+    fun `correlation of two stream closes compiles`() {
+        val src =
+            """
+            STRATEGY pairs VERSION 1
+            SYMBOLS
+              a = X:A EVERY 1h
+              b = X:B EVERY 1h
+            RULES
+              WHEN correlation(a.close, b.close, 60) > 0.8 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `beta of two stream closes compiles`() {
+        val src =
+            """
+            STRATEGY hedge VERSION 1
+            SYMBOLS
+              a = X:A EVERY 1h
+              m = X:M EVERY 1h
+            RULES
+              WHEN beta(a.close, m.close, 60) > 1 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
 }
