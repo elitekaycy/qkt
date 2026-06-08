@@ -26,6 +26,7 @@ dependencies {
     implementation(libs.slf4j.api)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    implementation(libs.xz)
     implementation(libs.snakeyaml.engine)
     implementation(libs.logback.classic)
     testImplementation(libs.logback.classic)
