@@ -60,7 +60,7 @@ class MT5PollerSessionGateTest {
                 client = client,
                 profile = profile,
                 clock = FixedClock(closedSaturdayUtc),
-                calendar = closedCalendar(),
+                sessionGate = { false },
             )
         poller.tickForTesting()
         assertThat(server.requestCount).isZero()
@@ -74,24 +74,60 @@ class MT5PollerSessionGateTest {
                 client = client,
                 profile = profile,
                 clock = FixedClock(openSundayUtc),
-                calendar = openCalendar(),
+                sessionGate = { true },
             )
         poller.tickForTesting()
         assertThat(server.requestCount).isEqualTo(1)
     }
 
     @Test
-    fun `pending poller with null calendar always calls client backward-compat`() {
+    fun `pending poller with null gate always calls client backward-compat`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
         val poller =
             MT5PendingOrderPoller(
                 client = client,
                 profile = profile,
                 clock = FixedClock(closedSaturdayUtc),
-                calendar = null,
+                sessionGate = null,
             )
         poller.tickForTesting()
         assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `pending poller polls when any configured calendar is open multi-asset`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+        val sc =
+            SymbolCalendars(
+                listOf(
+                    SymbolCalendars.Rule("CLOSED*", closedCalendar()),
+                    SymbolCalendars.Rule("OPEN*", openCalendar()),
+                ),
+                default = closedCalendar(),
+            )
+        val poller =
+            MT5PendingOrderPoller(
+                client = client,
+                profile = profile.copy(symbolCalendars = sc),
+                clock = FixedClock(closedSaturdayUtc),
+                sessionGate = sc::anyCalendarInSession,
+            )
+        poller.tickForTesting()
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `pending poller skips when all configured calendars closed multi-asset`() {
+        val sc = SymbolCalendars(emptyList(), default = closedCalendar())
+        val poller =
+            MT5PendingOrderPoller(
+                client = client,
+                profile = profile.copy(symbolCalendars = sc),
+                clock = FixedClock(closedSaturdayUtc),
+                sessionGate = sc::anyCalendarInSession,
+            )
+        poller.tickForTesting()
+        assertThat(server.requestCount).isZero()
     }
 
     private fun closedCalendar(): TradingCalendar =

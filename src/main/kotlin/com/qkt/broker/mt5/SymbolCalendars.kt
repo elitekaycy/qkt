@@ -47,6 +47,14 @@ class SymbolCalendars(
     val calendars: Set<TradingCalendar>
         get() = (compiled.map { it.second } + default).toSet()
 
+    /**
+     * True when any configured calendar reports [t] in-session. Used by the account-wide MT5
+     * pollers, which have no per-symbol subscription list: a broker is "open" if any asset class
+     * it's configured for is open (so a 24/7 crypto calendar keeps the poller running while FX
+     * sleeps). For an all-FX resolver this is exactly the historical single-calendar check.
+     */
+    fun anyCalendarInSession(t: Instant): Boolean = calendars.any { it.isInSession("", t) }
+
     companion object {
         /** All-FX resolver — the behaviour for a profile that declares no calendar rules. */
         fun fxDefault(): SymbolCalendars = SymbolCalendars(emptyList(), TradingCalendar.fxDefault())
