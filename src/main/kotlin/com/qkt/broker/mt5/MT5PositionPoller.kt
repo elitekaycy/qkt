@@ -3,7 +3,6 @@ package com.qkt.broker.mt5
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
-import com.qkt.common.TradingCalendar
 import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceProvider
 import java.time.Instant
@@ -53,11 +52,11 @@ class MT5PositionPoller(
      */
     private val priceProvider: MarketPriceProvider? = null,
     /**
-     * Session gate: when non-null, [tick] skips the venue HTTP call whenever the
-     * calendar reports out-of-session. Null keeps the legacy always-on behavior.
-     * Wired by [MT5Broker] to [TradingCalendar.fxDefault] for FX/metals deployments.
+     * Session gate: when non-null, [tick] skips the venue HTTP call whenever it returns false
+     * (out of session). Null keeps the legacy always-on behavior. [MT5Broker] wires this to the
+     * profile's [SymbolCalendars] so a multi-asset broker polls whenever any asset class is open.
      */
-    private val calendar: TradingCalendar? = null,
+    private val sessionGate: ((Instant) -> Boolean)? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PositionPoller::class.java)
     private val running = AtomicBoolean(false)
@@ -107,7 +106,7 @@ class MT5PositionPoller(
     }
 
     internal fun tick() {
-        if (calendar != null && !calendar.isInSession("", Instant.ofEpochMilli(clock.now()))) {
+        if (sessionGate != null && !sessionGate(Instant.ofEpochMilli(clock.now()))) {
             return
         }
         val now = clock.now()

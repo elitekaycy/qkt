@@ -1,5 +1,6 @@
 package com.qkt.broker.mt5
 
+import com.qkt.broker.OrderTypeCapability
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -88,5 +89,111 @@ class MT5BrokerProfileLoaderTest {
             )
         assertThatThrownBy { loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()) }
             .hasMessageContaining("magic")
+    }
+
+    private fun extendingExness(
+        name: String,
+        magic: String,
+    ) = mapOf(name to mapOf("type" to "mt5", "extends" to "exness", "gateway_url" to "http://h", "magic" to magic))
+
+    @Test
+    fun `calendars map builds a per-symbol resolver`() {
+        val profiles =
+            loader.load(
+                extendingExness("x", "11000"),
+                MT5DefaultProfiles.all,
+                env = emptyMap(),
+                calendars = mapOf("x" to listOf("BTC*" to "crypto", "*" to "fx")),
+            )
+        val p = profiles.first { it.name == "x" }
+        assertThat(p.symbolCalendars.calendarFor("BTCUSD").name).isEqualTo("crypto")
+        assertThat(p.symbolCalendars.calendarFor("EURUSD").name).isEqualTo("fx")
+    }
+
+    @Test
+    fun `unknown calendar name is rejected`() {
+        assertThatThrownBy {
+            loader.load(
+                extendingExness("x", "11001"),
+                MT5DefaultProfiles.all,
+                env = emptyMap(),
+                calendars = mapOf("x" to listOf("*" to "stonks")),
+            )
+        }.hasMessageContaining("unknown calendar")
+    }
+
+    @Test
+    fun `aliases from yaml merge over extends base`() {
+        val profiles =
+            loader.load(
+                extendingExness("x", "11002"),
+                MT5DefaultProfiles.all,
+                env = emptyMap(),
+                aliases = mapOf("x" to mapOf("BTCUSD" to "BTCUSD")),
+            )
+        val p = profiles.first { it.name == "x" }
+        assertThat(p.symbolPolicy.aliases["BTCUSD"]).isEqualTo("BTCUSD")
+        assertThat(p.symbolPolicy.aliases).containsKey("NAS100")
+    }
+
+    @Test
+    fun `capability restrictions are parsed and subtracted`() {
+        val profiles =
+            loader.load(
+                extendingExness("x", "11003"),
+                MT5DefaultProfiles.all,
+                env = emptyMap(),
+                capabilityRestrictions = mapOf("x" to listOf("TRAILING_STOP")),
+            )
+        assertThat(profiles.first { it.name == "x" }.capabilities)
+            .doesNotContain(OrderTypeCapability.TRAILING_STOP)
+    }
+
+    @Test
+    fun `unknown capability name is rejected`() {
+        assertThatThrownBy {
+            loader.load(
+                extendingExness("x", "11004"),
+                MT5DefaultProfiles.all,
+                env = emptyMap(),
+                capabilityRestrictions = mapOf("x" to listOf("NONSENSE")),
+            )
+        }.hasMessageContaining("unknown capability")
+    }
+
+    @Test
+    fun `instrument overrides are parsed into specs`() {
+        val profiles =
+            loader.load(
+                extendingExness("x", "11005"),
+                MT5DefaultProfiles.all,
+                env = emptyMap(),
+                instrumentOverrides =
+                    mapOf(
+                        "x" to
+                            mapOf(
+                                "XAUUSD" to
+                                    mapOf(
+                                        "min_volume" to "0.01",
+                                        "volume_step" to "0.01",
+                                        "point_size" to "0.01",
+                                        "digits" to "2",
+                                        "trade_stops_level_points" to "50",
+                                    ),
+                            ),
+                    ),
+            )
+        val spec = profiles.first { it.name == "x" }.instrumentOverrides["XAUUSD"]!!
+        assertThat(spec.digits).isEqualTo(2)
+        assertThat(spec.tradeStopsLevelPoints).isEqualTo(50)
+        assertThat(spec.minVolume).isEqualByComparingTo("0.01")
+    }
+
+    @Test
+    fun `profile with no calendars block defaults to all-fx`() {
+        val raw = mapOf("exness" to mapOf("type" to "mt5", "gateway_url" to "http://h"))
+        val p = loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()).first { it.name == "exness" }
+        assertThat(p.symbolCalendars.calendarFor("EURUSD").name).isEqualTo("fx")
+        assertThat(p.symbolCalendars.calendarFor("BTCUSD").name).isEqualTo("fx")
     }
 }
