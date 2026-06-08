@@ -40,6 +40,10 @@ class BrokersCommand(
                     raw = config.brokers,
                     defaults = MT5DefaultProfiles.all,
                     env = System.getenv(),
+                    calendars = config.brokerCalendars,
+                    aliases = config.brokerAliases,
+                    capabilityRestrictions = config.brokerCapabilityRestrictions,
+                    instrumentOverrides = config.brokerInstrumentOverrides,
                 )
             } catch (e: Exception) {
                 System.err.println("qkt: brokers load failed: ${e.message}")

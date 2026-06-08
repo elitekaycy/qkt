@@ -1,5 +1,6 @@
 package com.qkt.marketdata.live.mt5
 
+import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.common.SessionAnchor
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
@@ -40,6 +41,30 @@ class Mt5TickFeedSourceCalendarTest {
         ): TimeRange = TimeRange(Instant.EPOCH, Instant.EPOCH)
     }
 
+    private object AlwaysOpen : TradingCalendar {
+        override val name: String = "always-open"
+
+        override fun isInSession(
+            symbol: String,
+            t: Instant,
+        ): Boolean = true
+
+        override fun sessionRange(
+            symbol: String,
+            t: Instant,
+        ): TimeRange = TimeRange(Instant.EPOCH, Instant.MAX)
+
+        override fun anchorEpochFor(
+            anchor: SessionAnchor,
+            t: Instant,
+        ): Long = 0L
+
+        override fun rangeFor(
+            anchor: SessionAnchor,
+            anchorEpoch: Long,
+        ): TimeRange = TimeRange(Instant.EPOCH, Instant.MAX)
+    }
+
     @Test
     fun `out-of-session skip avoids hitting the gateway`() {
         val server = MockWebServer()
@@ -61,7 +86,7 @@ class Mt5TickFeedSourceCalendarTest {
                     symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
                     pollIntervalMs = 5L,
                     http = OkHttpClient(),
-                    calendar = AlwaysClosed,
+                    symbolCalendars = SymbolCalendars(emptyList(), default = AlwaysClosed),
                     outOfSessionSleepMs = 60_000L,
                 )
             val captured = CopyOnWriteArrayList<Tick>()
@@ -70,6 +95,43 @@ class Mt5TickFeedSourceCalendarTest {
             source.stop()
             assertThat(requestCount.get()).isZero
             assertThat(captured).isEmpty()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `multi-asset feed keeps polling when one calendar is open`() {
+        val server = MockWebServer()
+        val requestCount = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requestCount.incrementAndGet()
+                    return MockResponse().setBody(
+                        """{"bid":1.0,"ask":1.0,"last":1.0,"flags":6,"time":1,"time_msc":1000,"volume":0,"volume_real":0}""",
+                    )
+                }
+            }
+        server.start()
+        try {
+            val source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("BTCUSDm" to "EXNESS:BTCUSD"),
+                    pollIntervalMs = 5L,
+                    http = OkHttpClient(),
+                    // FX rule is closed, but the crypto default is open → round runs.
+                    symbolCalendars =
+                        SymbolCalendars(listOf(SymbolCalendars.Rule("XAU*", AlwaysClosed)), default = AlwaysOpen),
+                    outOfSessionSleepMs = 60_000L,
+                )
+            val captured = CopyOnWriteArrayList<Tick>()
+            source.start(onTick = { captured.add(it) }, onError = {}, onDisconnect = {})
+            Thread.sleep(300L)
+            source.stop()
+            assertThat(requestCount.get()).isPositive
+            assertThat(captured).isNotEmpty
         } finally {
             server.shutdown()
         }
