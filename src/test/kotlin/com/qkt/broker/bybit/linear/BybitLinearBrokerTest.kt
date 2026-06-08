@@ -6,6 +6,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.positions.PositionTracker
@@ -17,12 +18,15 @@ class BybitLinearBrokerTest {
 
     private fun emptyOk() = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
 
-    private fun makeBroker(client: FakeBybitClient): BybitLinearBroker {
+    private fun makeBroker(
+        client: FakeBybitClient,
+        bus: EventBus = newBus(),
+    ): BybitLinearBroker {
         client.responses["/v5/order/realtime"] = emptyOk()
         client.responses["/v5/execution/list"] = emptyOk()
         client.responses["/v5/account/wallet-balance"] = emptyOk()
         client.responses["/v5/position/list"] = emptyOk()
-        val broker = BybitLinearBroker(client, newBus(), FixedClock(0L), PositionTracker())
+        val broker = BybitLinearBroker(client, bus, FixedClock(0L), PositionTracker())
         client.posts.clear()
         return broker
     }
@@ -99,9 +103,12 @@ class BybitLinearBrokerTest {
     }
 
     @Test
-    fun `submit Market posts to v5 order create with category linear and positionIdx`() {
+    fun `submit Market posts create and publishes OrderAccepted with the venue order id`() {
         val client = FakeBybitClient()
-        val broker = makeBroker(client)
+        val bus = newBus()
+        val accepts = mutableListOf<BrokerEvent.OrderAccepted>()
+        bus.subscribe<BrokerEvent.OrderAccepted> { accepts.add(it) }
+        val broker = makeBroker(client, bus)
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c1"}}"""
 
@@ -120,8 +127,39 @@ class BybitLinearBrokerTest {
         assertThat(client.posts.single().path).isEqualTo("/v5/order/create")
         assertThat(client.posts.single().body).contains("\"category\":\"linear\"")
         assertThat(client.posts.single().body).contains("\"positionIdx\":0")
+        // Optimistic ack returns immediately with no venue id; the id arrives on OrderAccepted.
         assertThat(ack.accepted).isTrue
-        assertThat(ack.brokerOrderId).isEqualTo("abc")
+        assertThat(ack.brokerOrderId).isNull()
+        assertThat(accepts).hasSize(1)
+        assertThat(accepts.single().brokerOrderId).isEqualTo("abc")
+    }
+
+    @Test
+    fun `submit transport failure publishes OrderRejected`() {
+        val client = FakeBybitClient()
+        val bus = newBus()
+        val rejects = mutableListOf<BrokerEvent.OrderRejected>()
+        bus.subscribe<BrokerEvent.OrderRejected> { rejects.add(it) }
+        client.asyncFailures.add(
+            { path: String, _: String -> path == "/v5/order/create" } to RuntimeException("connection reset"),
+        )
+        val broker = makeBroker(client, bus)
+
+        val ack =
+            broker.submit(
+                OrderRequest.Market(
+                    id = "c1",
+                    symbol = "BYBIT_LINEAR:BTCUSDT",
+                    side = Side.BUY,
+                    quantity = Money.of("0.01"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(ack.accepted).isTrue
+        assertThat(rejects).hasSize(1)
+        assertThat(rejects.single().reason).contains("connection reset")
     }
 
     @Test

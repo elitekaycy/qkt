@@ -59,12 +59,13 @@ class BybitSpotBrokerTest {
         assertThat(client.posts).hasSize(1)
         assertThat(client.posts.single().path).isEqualTo("/v5/order/create")
         assertThat(client.posts.single().body).contains("\"category\":\"spot\"")
+        // Optimistic ack: accepted at once, no venue order id yet (it arrives over the WS stream).
         assertThat(ack.accepted).isTrue()
-        assertThat(ack.brokerOrderId).isEqualTo("abc-123")
+        assertThat(ack.brokerOrderId).isNull()
     }
 
     @Test
-    fun `submit Limit returns accepted=true on retCode 0`() {
+    fun `submit returns an optimistic ack before the venue replies`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc-456","orderLinkId":"c2"}}"""
@@ -84,11 +85,11 @@ class BybitSpotBrokerTest {
             )
 
         assertThat(ack.accepted).isTrue()
-        assertThat(ack.brokerOrderId).isEqualTo("abc-456")
+        assertThat(ack.brokerOrderId).isNull()
     }
 
     @Test
-    fun `submit non-zero retCode produces accepted=false and OrderRejected`() {
+    fun `submit non-zero retCode publishes OrderRejected and forgets tracking`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =
             """{"retCode":10001,"retMsg":"params error","result":{}}"""
@@ -109,10 +110,44 @@ class BybitSpotBrokerTest {
                 ),
             )
 
-        assertThat(ack.accepted).isFalse()
-        assertThat(ack.rejectReason).contains("10001")
+        // The optimistic ack still reports accepted; the rejection arrives on the bus.
+        assertThat(ack.accepted).isTrue()
         assertThat(rejects).hasSize(1)
+        assertThat(rejects.single().reason).contains("10001")
         assertThat(rejects.single().reason).contains("params error")
+        // Rejected order forgot its tracking, so a follow-up cancel is a no-op (no cancel post).
+        broker.cancel("c3")
+        assertThat(client.posts.none { it.path == "/v5/order/cancel" }).isTrue()
+    }
+
+    @Test
+    fun `submit transport failure publishes OrderRejected and forgets tracking`() {
+        val client = FakeBybitClient()
+        client.asyncFailures.add(
+            { path: String, _: String -> path == "/v5/order/create" } to RuntimeException("connection reset"),
+        )
+        val bus = newBus()
+        val rejects = mutableListOf<BrokerEvent.OrderRejected>()
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> rejects.add(e) }
+        val broker = BybitSpotBroker(client, bus, FixedClock(0L)).also { client.posts.clear() }
+
+        val ack =
+            broker.submit(
+                OrderRequest.Market(
+                    id = "c4",
+                    symbol = "BYBIT_SPOT:BTCUSDT",
+                    side = Side.BUY,
+                    quantity = Money.of("0.01"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(ack.accepted).isTrue()
+        assertThat(rejects).hasSize(1)
+        assertThat(rejects.single().reason).contains("connection reset")
+        broker.cancel("c4")
+        assertThat(client.posts.none { it.path == "/v5/order/cancel" }).isTrue()
     }
 
     @Test
