@@ -40,12 +40,11 @@ class ActionCompiler(
     private val strategyLogger: Logger = LoggerFactory.getLogger("com.qkt.dsl.strategy"),
     private val ids: IdGenerator = SequentialIdGenerator(prefix = "dsl-anonymous-"),
     private val pendingStacks: PendingStacks? = null,
-    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
 ) {
     private val orderTypeCompiler = OrderTypeCompiler(exprCompiler)
     private val childPriceResolver = ChildPriceResolver(exprCompiler)
     private val sizingCompiler = SizingCompiler(exprCompiler)
-    private val latchCompiler = LatchCompiler(exprCompiler, sizingCompiler, ids, clock)
+    private val latchCompiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
 
     fun compile(action: ActionAst): (EvalContext) -> List<Signal> =
         when (action) {
