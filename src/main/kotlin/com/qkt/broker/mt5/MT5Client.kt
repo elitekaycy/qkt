@@ -394,6 +394,10 @@ class MT5Client(
         if (req.slDistance != null) field("sl_distance", req.slDistance.toString())
         field("deviation", req.deviation.toString())
         field("magic", req.magic.toString())
+        // GTD expiry (epoch seconds). Without this a GTD pending rests GTC-forever on MT5
+        // and fills late. Mirrors encodeModification, which the gateway accepts without an
+        // explicit type_time — it infers TIME_SPECIFIED from the expiration's presence.
+        if (req.expiration != null) field("expiration", req.expiration.toString())
         field("comment", "\"${req.comment.take(MT5_COMMENT_MAX_LENGTH)}\"", last = true)
         sb.append("}")
         return sb.toString()
