@@ -7,6 +7,7 @@ import com.qkt.broker.SubmitAck
 import com.qkt.broker.bybit.BybitOrderTranslator
 import com.qkt.broker.bybit.BybitSymbol
 import com.qkt.broker.bybit.BybitTransport
+import com.qkt.broker.bybit.boundedExecIdSet
 import com.qkt.broker.bybit.spot.BybitSpotStateRecovery
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
@@ -46,7 +47,7 @@ class BybitLinearBroker(
     private val symbolByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
     private val strategyByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
     private val knownOrders: MutableMap<String, BybitSpotStateRecovery.ManagedOrderView> = ConcurrentHashMap()
-    private val seenExecIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
 
     private val reconciler: PeriodicReconciler
