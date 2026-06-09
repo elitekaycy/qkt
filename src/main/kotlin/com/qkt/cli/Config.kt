@@ -69,6 +69,26 @@ data class Config(
     val maxDailyLoss: BigDecimal
         get() = risk["max_daily_loss"]?.let(::BigDecimal) ?: DEFAULT_MAX_DAILY_LOSS
 
+    /** Total-drawdown halt threshold as a fraction (config `max_drawdown_pct` is a percent), or null if unset. */
+    val maxDrawdownPct: BigDecimal?
+        get() = pctFraction(risk["max_drawdown_pct"])
+
+    /** Daily-drawdown halt threshold as a fraction (config `max_daily_drawdown_pct` is a percent), or null. */
+    val maxDailyDrawdownPct: BigDecimal?
+        get() = pctFraction(risk["max_daily_drawdown_pct"])
+
+    /** Total-drawdown basis (`total_dd_basis`); defaults to static (from initial balance). */
+    val totalDdBasis: com.qkt.risk.DrawdownBasis
+        get() =
+            com.qkt.risk.DrawdownBasis
+                .fromConfig(risk["total_dd_basis"])
+
+    /** Daily-drawdown day-start reference basis (`daily_dd_basis`); defaults to balance. */
+    val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis
+        get() =
+            com.qkt.risk.DailyDrawdownBasis
+                .fromConfig(risk["daily_dd_basis"])
+
     /** Effective `state.enabled` from config; defaults to `true`. */
     val stateEnabled: Boolean
         get() = state["enabled"]?.lowercase()?.let { it != "false" } ?: true
@@ -260,8 +280,18 @@ data class Config(
                     maxDailyLoss = m["max_daily_loss"]?.toString()?.let(::BigDecimal),
                     maxPositionSize = m["max_position_size"]?.toString()?.let(::BigDecimal),
                     maxOpenPositions = m["max_open_positions"]?.toString()?.toIntOrNull(),
+                    maxDrawdownPct = pctFraction(m["max_drawdown_pct"]?.toString()),
+                    maxDailyDrawdownPct = pctFraction(m["max_daily_drawdown_pct"]?.toString()),
                 )
             }
+        }
+
+        /** Parse a percent string (e.g. "8") into a fraction (0.08), validated to `(0, 100]`. Null passes through. */
+        fun pctFraction(raw: String?): BigDecimal? {
+            if (raw == null) return null
+            val pct = BigDecimal(raw)
+            require(pct.signum() > 0 && pct <= BigDecimal(100)) { "drawdown pct must be in (0, 100]: $raw" }
+            return pct.divide(BigDecimal(100), java.math.MathContext.DECIMAL64)
         }
 
         private fun expandVars(s: String): String =
