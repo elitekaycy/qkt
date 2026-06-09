@@ -108,6 +108,15 @@ class LiveSession(
     private val perStrategyMaxDailyLoss: java.math.BigDecimal? = null,
     private val perStrategyMaxPositionSize: java.math.BigDecimal? = null,
     private val perStrategyMaxOpenPositions: Int? = null,
+    private val perStrategyMaxDrawdownPct: java.math.BigDecimal? = null,
+    private val perStrategyMaxDailyDrawdownPct: java.math.BigDecimal? = null,
+    /**
+     * Account starting balance — the basis for static total drawdown and the daily-drawdown
+     * reference. Prop-firm limits measure against this. Defaults to zero (drawdown halts inert).
+     */
+    private val initialBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
+    private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
+    private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
     /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
@@ -444,7 +453,7 @@ class LiveSession(
         reconcileOrPreload(strategyPositions, broker)
 
         val engine = Engine(bus, priceTracker)
-        val riskState = RiskState(pnl, strategyPnL, clock, bus)
+        val riskState = RiskState(pnl, strategyPnL, clock, bus, initialBalance, dailyDdBasis)
 
         // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
         // The daemon creates one LiveSession per deployed strategy, so the first entry is
@@ -469,6 +478,19 @@ class LiveSession(
                 perStrategyRiskRules.add(
                     com.qkt.risk.rules
                         .MaxStrategyOpenPositions(riskOwnerStrategyId, it, strategyPositions),
+                )
+            }
+            val ownerInitialBalance = startingBalances[riskOwnerStrategyId] ?: java.math.BigDecimal.ZERO
+            perStrategyMaxDrawdownPct?.let {
+                perStrategyHaltRules.add(
+                    com.qkt.risk.rules
+                        .MaxStrategyDrawdown(riskOwnerStrategyId, it, totalDdBasis, ownerInitialBalance),
+                )
+            }
+            perStrategyMaxDailyDrawdownPct?.let {
+                perStrategyHaltRules.add(
+                    com.qkt.risk.rules
+                        .MaxStrategyDailyDrawdown(riskOwnerStrategyId, it),
                 )
             }
         }
