@@ -1,5 +1,6 @@
 package com.qkt.risk.rules
 
+import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltDecision
 import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskState
@@ -9,10 +10,13 @@ import java.math.RoundingMode
 /**
  * Per-strategy variant of [MaxDrawdown]: halts only [strategyId] when its own
  * drawdown fraction exceeds [maxFraction]. Other strategies on the account continue.
+ * [basis] selects trailing (peak-relative) or static (vs [initialBalance]) measurement.
  */
 class MaxStrategyDrawdown(
     private val strategyId: String,
     private val maxFraction: BigDecimal,
+    private val basis: DrawdownBasis = DrawdownBasis.STATIC,
+    private val initialBalance: BigDecimal = BigDecimal.ZERO,
 ) : HaltRule {
     init {
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
@@ -22,7 +26,11 @@ class MaxStrategyDrawdown(
     }
 
     override fun evaluate(riskState: RiskState): HaltDecision {
-        val dd = riskState.drawdownTracker.strategyDrawdown(strategyId)
+        val dd =
+            when (basis) {
+                DrawdownBasis.TRAILING -> riskState.drawdownTracker.strategyDrawdown(strategyId)
+                DrawdownBasis.STATIC -> riskState.drawdownTracker.strategyStaticDrawdown(strategyId, initialBalance)
+            }
         return if (dd > maxFraction) {
             HaltDecision.Halt(
                 reason = "strategy drawdown ${dd.setScale(4, RoundingMode.HALF_UP)} exceeds max $maxFraction",
