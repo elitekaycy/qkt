@@ -132,6 +132,8 @@ class PortfolioDeployer(
                     override fun flatten() = w.handle.live.flatten()
 
                     override fun halt(reason: String) = w.handle.live.halt(reason)
+
+                    override fun resume() = w.handle.live.resume()
                 }
             }
         val bookRiskState =
@@ -161,7 +163,7 @@ class PortfolioDeployer(
                     )
                 }
             }
-        return PortfolioRiskAggregator(targets, bookRiskState, haltRules)
+        return PortfolioRiskAggregator(targets, bookRiskState, haltRules, clock)
     }
 
     private fun createChild(

@@ -2,6 +2,7 @@ package com.qkt.risk.rules
 
 import com.qkt.risk.HaltDecision
 import com.qkt.risk.HaltRule
+import com.qkt.risk.HaltScope
 import com.qkt.risk.RiskState
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -27,6 +28,7 @@ class MaxStrategyDailyDrawdown(
             HaltDecision.Halt(
                 reason = "strategy daily drawdown ${dd.setScale(4, RoundingMode.HALF_UP)} exceeds max $maxFraction",
                 strategyId = strategyId,
+                scope = HaltScope.DAILY,
             )
         } else {
             HaltDecision.Continue
