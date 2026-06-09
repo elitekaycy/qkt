@@ -26,6 +26,7 @@ class EquityMetrics(
     private val maxDrawdown = MaxDrawdownAccumulator()
     private val sharpe = SharpeAccumulator()
     private val episodes = DrawdownEpisodeAccumulator(drawdownThreshold)
+    private val dailyDrawdown = DailyDrawdownAccumulator()
 
     private var firstTimestamp: Long? = null
     private var firstEquity: BigDecimal = BigDecimal.ZERO
@@ -48,9 +49,13 @@ class EquityMetrics(
         maxDrawdown.accept(equity)
         sharpe.accept(equity)
         episodes.accept(timestamp, equity)
+        dailyDrawdown.accept(timestamp, equity)
     }
 
     fun maxDrawdown(): BigDecimal = maxDrawdown.value()
+
+    /** Worst single-day intraday equity drawdown across the run (#348). */
+    fun maxDailyDrawdown(): BigDecimal = dailyDrawdown.maxDailyDrawdown()
 
     fun sharpe(annualizationFactor: BigDecimal): BigDecimal? = sharpe.value(annualizationFactor)
 
