@@ -51,6 +51,7 @@ class PortfolioDeployer(
     private val maxDailyDrawdownPct: java.math.BigDecimal? = null,
     private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
     private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
+    private val riskIntervalMs: Long = 1000L,
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
@@ -85,6 +86,7 @@ class PortfolioDeployer(
                     children = childWrappers,
                     marketSource = if (symbols.isEmpty()) null else marketSourceProvider(symbols),
                     riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers),
+                    riskIntervalMs = riskIntervalMs,
                 )
             supervisor.start()
 
