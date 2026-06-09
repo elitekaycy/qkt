@@ -36,8 +36,17 @@ data class CompletenessReport(
  * session. A trading day must have a tick in every *interior* session hour (the first and last
  * session hour of the day are exempt, since the open/close boundary can be legitimately thin). A
  * trading day with no ticks is MISSING; a non-trading day (no session hours) expects nothing.
+ *
+ * One isolated empty interior hour is tolerated: FX and especially metals halt for roughly an hour
+ * every session (e.g. dukascopy XAUUSD has no ticks 21:00-22:00 UTC), and that maintenance break
+ * is indistinguishable, at the data layer, from a market closure. A genuinely failed or partial
+ * fetch leaves the day MISSING or drops several hours, so it is still caught. The tolerance keeps
+ * the check from false-failing an otherwise-complete day on the routine daily break.
  */
 object TickCompletenessValidator {
+    /** Empty interior hours up to this count are treated as the routine daily break, not a hole. */
+    private const val TOLERATED_EMPTY_INTERIOR_HOURS = 1
+
     fun validate(
         store: DataStore,
         symbol: String,
@@ -70,10 +79,11 @@ object TickCompletenessValidator {
         val hoursWithTicks = hoursWithTicks(store, symbol, day)
         if (hoursWithTicks.isEmpty()) return DayCompleteness(day, DayCompleteness.Status.MISSING)
 
-        // Exempt the boundary session hours; require coverage of the interior ones.
+        // Exempt the boundary session hours; require coverage of the interior ones, allowing the
+        // routine daily maintenance break (a single empty interior hour).
         val interior = sessionHours.drop(1).dropLast(1)
         val emptyInterior = interior.filter { it !in hoursWithTicks }
-        return if (emptyInterior.isEmpty()) {
+        return if (emptyInterior.size <= TOLERATED_EMPTY_INTERIOR_HOURS) {
             DayCompleteness(day, DayCompleteness.Status.COMPLETE)
         } else {
             DayCompleteness(day, DayCompleteness.Status.INCOMPLETE, emptyInterior)
