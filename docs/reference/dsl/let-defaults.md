@@ -40,13 +40,15 @@ RULES
          }
 ```
 
-The `--param` CLI flag overrides any `LET`:
+The `--param` CLI flag overrides any `PARAM` or `LET` by name, just for that run:
 
 ```bash
 qkt backtest strategy.qkt --param fast=12 --param slow=26 --param rrRatio=2.5
 ```
 
-The file's `LET` value is the default; `--param` only applies to the run. This is how parameter sweeps work — see [Run a parameter sweep](../../how-to/parameter-sweep.md).
+The file's value is the default; `--param` only applies to the run. Pass a comma-list
+(`--param fast=8,12,16`) to `qkt sweep` to grid-search instead — see
+[Run a parameter sweep](../../how-to/parameter-sweep.md).
 
 ### Composing `LET`s
 
