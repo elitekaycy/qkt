@@ -136,6 +136,7 @@ nav:
       - EMA crossover strategy: how-to/ema-crossover.md
       - Add a stop-loss: how-to/add-stop-loss.md
       - Run a parameter sweep: how-to/parameter-sweep.md
+      - Backfill historical data: how-to/fetch-data.md
       - Debug a strategy that isn't firing: how-to/debug-not-firing.md
       - Iterate in the research REPL: how-to/research-repl.md
       - Deploy live on Exness (MT5): how-to/deploy-exness.md
@@ -144,9 +145,19 @@ nav:
       - concepts/index.md
       - Architecture: concepts/architecture.md
       - Determinism: concepts/determinism.md
-      - Backtest model: concepts/backtest-model.md
       - Broker integration: concepts/broker-integration.md
       - Why qkt vs alternatives: concepts/why-qkt.md
+  - Backtesting:
+      - How a backtest runs: concepts/backtest-model.md
+      - How backtest data works: operations/backtest-data.md
+      - Trust & parity overview: parity/README.md
+      - Backtest vs live execution: parity/backtest-vs-live.md
+      - Data source — dukascopy vs MT5: parity/parity-dukascopy-vs-mt5-xauusd.md
+      - Vendor check — bars (TV vs MT5): parity/parity-bars-xauusd-m5.md
+      - Vendor check — ticks (TV vs MT5): parity/parity-ticks-xauusd.md
+  - Research:
+      - DSL quant-completeness & data structures: research/2026-06-08-dsl-quant-completeness-and-dsa.md
+      - MT5 as the universal provider: research/2026-06-08-mt5-universal-provider.md
   - Reference:
       - reference/index.md
       - DSL deep-dive:
@@ -169,9 +180,12 @@ nav:
       - Config schema: reference/config-schema.md
   - Operations:
       - operations/index.md
+      - Use qkt with Docker (qkt:dev): operations/running-qkt-via-docker.md
       - Deploy with Docker: operations/deploy-docker.md
       - Production deploy (qkt-prod): operations/deploy.md
       - Monitoring: operations/monitoring.md
+      - Metrics: operations/metrics.md
+      - Tick-feed audit: operations/tick-feed-audit.md
       - State backup: operations/state-backup.md
       - Logging: operations/logging.md
       - Troubleshooting: operations/troubleshooting.md

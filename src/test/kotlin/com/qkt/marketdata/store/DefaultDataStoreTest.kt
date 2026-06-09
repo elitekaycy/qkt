@@ -250,4 +250,16 @@ class DefaultDataStoreTest {
         store.prefetch(request)
         assertThat(fetched).isEqualTo(2)
     }
+
+    @Test
+    fun `rebuildManifests clears stale ranges when a symbol has no day files`() {
+        // A manifest claims coverage but the day file is gone — e.g. the provisioner deleted it
+        // to force a refetch. rebuildManifests must drop the stale range so a later prefetch
+        // re-materializes the day; leaving it would make the store skip the refetch forever.
+        writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
+        Files.createDirectories(dir.resolve("symbols").resolve("X"))
+        val store = DefaultDataStore(root = dir)
+        store.rebuildManifests()
+        assertThat(store.manifest("X").ranges).isEmpty()
+    }
 }
