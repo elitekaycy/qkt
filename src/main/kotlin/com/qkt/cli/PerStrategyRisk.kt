@@ -24,6 +24,8 @@ data class PerStrategyRisk(
     val maxDailyLoss: BigDecimal? = null,
     val maxPositionSize: BigDecimal? = null,
     val maxOpenPositions: Int? = null,
+    val maxDrawdownPct: BigDecimal? = null,
+    val maxDailyDrawdownPct: BigDecimal? = null,
 ) {
     init {
         if (maxDailyLoss != null) {
@@ -34,6 +36,16 @@ data class PerStrategyRisk(
         }
         if (maxOpenPositions != null) {
             require(maxOpenPositions > 0) { "PerStrategyRisk.maxOpenPositions must be > 0: $maxOpenPositions" }
+        }
+        if (maxDrawdownPct != null) {
+            require(maxDrawdownPct.signum() > 0 && maxDrawdownPct <= BigDecimal.ONE) {
+                "PerStrategyRisk.maxDrawdownPct must be in (0, 1]: $maxDrawdownPct"
+            }
+        }
+        if (maxDailyDrawdownPct != null) {
+            require(maxDailyDrawdownPct.signum() > 0 && maxDailyDrawdownPct <= BigDecimal.ONE) {
+                "PerStrategyRisk.maxDailyDrawdownPct must be in (0, 1]: $maxDailyDrawdownPct"
+            }
         }
     }
 }
