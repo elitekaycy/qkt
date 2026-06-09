@@ -47,13 +47,26 @@ class RiskState(
         private set
 
     @Volatile
+    private var haltScope: HaltScope = HaltScope.PERSISTENT
+
+    @Volatile
+    private var haltEpochDay: Long = 0L
+
+    @Volatile
     var warmupComplete: Boolean = false
 
-    private val haltedStrategies: MutableMap<String, String> = ConcurrentHashMap()
+    /** Per-strategy halt record: reason + scope + the UTC day it tripped (for daily auto-resume). */
+    private data class HaltInfo(
+        val reason: String,
+        val scope: HaltScope,
+        val epochDay: Long,
+    )
+
+    private val haltedStrategies: MutableMap<String, HaltInfo> = ConcurrentHashMap()
 
     fun isStrategyHalted(strategyId: String): Boolean = halted || strategyId in haltedStrategies
 
-    fun haltReasonFor(strategyId: String): String? = if (halted) haltReason else haltedStrategies[strategyId]
+    fun haltReasonFor(strategyId: String): String? = if (halted) haltReason else haltedStrategies[strategyId]?.reason
 
     fun onTick() {
         equityTracker.update()
@@ -70,20 +83,46 @@ class RiskState(
     }
 
     @Synchronized
-    fun halt(reason: String) {
+    fun halt(
+        reason: String,
+        scope: HaltScope = HaltScope.PERSISTENT,
+    ) {
         if (halted) return
         halted = true
         haltReason = reason
+        haltScope = scope
+        haltEpochDay = epochDay()
         bus.publish(RiskEvent.Halted(reason = reason, strategyId = null, timestamp = clock.now()))
     }
 
     fun haltStrategy(
         strategyId: String,
         reason: String,
+        scope: HaltScope = HaltScope.PERSISTENT,
     ) {
-        if (haltedStrategies.putIfAbsent(strategyId, reason) != null) return
+        if (haltedStrategies.putIfAbsent(strategyId, HaltInfo(reason, scope, epochDay())) != null) return
         bus.publish(RiskEvent.Halted(reason = reason, strategyId = strategyId, timestamp = clock.now()))
     }
+
+    /**
+     * Auto-resume DAILY-scoped halts once the UTC day they tripped on has passed — daily limits
+     * reset each day. PERSISTENT halts (total/trailing drawdown) are left for an operator. Called by
+     * [RiskEngine] before each halt-rule evaluation.
+     */
+    fun clearExpiredDailyHalts() {
+        val today = epochDay()
+        if (halted && haltScope == HaltScope.DAILY && haltEpochDay < today) resume()
+        for ((id, info) in haltedStrategies) {
+            if (info.scope == HaltScope.DAILY && info.epochDay < today) resumeStrategy(id)
+        }
+    }
+
+    private fun epochDay(): Long =
+        java.time.Instant
+            .ofEpochMilli(clock.now())
+            .atZone(java.time.ZoneOffset.UTC)
+            .toLocalDate()
+            .toEpochDay()
 
     @Synchronized
     fun resume() {

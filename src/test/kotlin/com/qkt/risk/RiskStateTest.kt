@@ -13,8 +13,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class RiskStateTest {
-    private fun newRiskState(): Pair<RiskState, MutableList<RiskEvent>> {
-        val clock = FixedClock(0L)
+    private fun newRiskState(clock: FixedClock = FixedClock(0L)): Pair<RiskState, MutableList<RiskEvent>> {
         val sequencer = MonotonicSequenceGenerator()
         val bus = EventBus(clock, sequencer)
         val prices = MarketPriceTracker()
@@ -96,5 +95,50 @@ class RiskStateTest {
         state.resumeStrategy("A")
 
         assertThat(events).isEmpty()
+    }
+
+    @Test
+    fun `clearExpiredDailyHalts auto-resumes a daily halt on the next UTC day`() {
+        val clock = FixedClock(0L)
+        val (state, _) = newRiskState(clock)
+
+        state.halt("daily loss", HaltScope.DAILY)
+        state.clearExpiredDailyHalts() // same UTC day — stays halted
+        assertThat(state.halted).isTrue
+
+        clock.time = DAY_MS // next UTC day
+        state.clearExpiredDailyHalts()
+        assertThat(state.halted).isFalse
+    }
+
+    @Test
+    fun `clearExpiredDailyHalts leaves a persistent halt latched across a UTC day`() {
+        val clock = FixedClock(0L)
+        val (state, _) = newRiskState(clock)
+
+        state.halt("total drawdown", HaltScope.PERSISTENT)
+
+        clock.time = DAY_MS
+        state.clearExpiredDailyHalts()
+        assertThat(state.halted).isTrue
+    }
+
+    @Test
+    fun `clearExpiredDailyHalts auto-resumes daily strategy halts but not persistent ones`() {
+        val clock = FixedClock(0L)
+        val (state, _) = newRiskState(clock)
+
+        state.haltStrategy("A", "daily loss", HaltScope.DAILY)
+        state.haltStrategy("B", "total drawdown", HaltScope.PERSISTENT)
+
+        clock.time = DAY_MS
+        state.clearExpiredDailyHalts()
+
+        assertThat(state.isStrategyHalted("A")).isFalse
+        assertThat(state.isStrategyHalted("B")).isTrue
+    }
+
+    private companion object {
+        const val DAY_MS = 24L * 60 * 60 * 1000
     }
 }
