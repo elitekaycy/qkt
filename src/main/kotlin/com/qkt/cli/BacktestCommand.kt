@@ -101,25 +101,32 @@ class BacktestCommand(
         val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = storeFetcher)
         val request = MarketRequest(symbols = symbols, from = from, to = to)
 
-        // Phase 30: load instruments.yaml so SIZING RISK and PaperBroker fill PnL see
-        // real contract sizes. Default path follows the data root; --instruments overrides.
-        // Backwards-compat: when the file is absent and no flag is set, use Noop so
-        // strategies that don't depend on contract-size math keep working.
+        // Instrument metadata (contract size, volume steps, commission) so SIZING RISK and fill PnL
+        // are in real dollars. Built-in StandardInstrumentRegistry covers the FX/metals a backtest
+        // can auto-fetch, so the common case needs no setup. A user instruments.yaml layers ahead of
+        // it and overrides — that's where you set commission or add a non-standard symbol. Default
+        // path follows the data root; --instruments overrides the path.
         val instrumentsPath: Path =
             args
                 .option("instruments")
                 ?.let(Paths::get)
                 ?: Paths.get(dataRoot).resolve("instruments.yaml")
+        val standard = com.qkt.instrument.StandardInstrumentRegistry
         val instruments: com.qkt.instrument.InstrumentRegistry =
             if (Files.exists(instrumentsPath)) {
-                com.qkt.instrument.YamlInstrumentRegistry
-                    .load(instrumentsPath)
+                com.qkt.instrument.LayeredInstrumentRegistry(
+                    listOf(
+                        com.qkt.instrument.YamlInstrumentRegistry
+                            .load(instrumentsPath),
+                        standard,
+                    ),
+                )
             } else {
                 if (args.option("instruments") != null) {
                     System.err.println("qkt: error: --instruments file not found: $instrumentsPath")
                     return ExitCodes.USER_ERROR
                 }
-                com.qkt.instrument.NoopInstrumentRegistry
+                standard
             }
 
         val brokerKind =

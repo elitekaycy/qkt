@@ -27,6 +27,33 @@ Dukascopy provides FX majors and metals (for example `XAUUSD`, `EURUSD`). A symb
 mapping fails fast with a clear message rather than guessing — add it to `DukascopyInstrument` if
 you need it.
 
+## Contract specs (lot size, commission)
+
+To turn lots into dollars, the backtest needs each instrument's contract specs — how big one lot
+is (gold = 100 oz, an FX major = 100,000 units), the lot step, and price precision. Live trading
+gets these from the broker automatically; a backtest has no broker, so qkt ships them.
+
+- **Built in, no setup.** For every FX major and metal it can fetch, qkt knows the standard specs,
+  so `qkt backtest <gold strategy>` sizes and prices correctly out of the box.
+- **`instruments.yaml` is an override, not a requirement.** Drop a file at `<data-root>/instruments.yaml`
+  (or pass `--instruments <path>`) to override any symbol — that's where you set the broker's
+  **commission** (built-in default is zero) or add a symbol the standard table doesn't cover. Each
+  entry is keyed by the broker-prefixed symbol from your strategy, e.g. `BACKTEST:XAUUSD`:
+
+  ```yaml
+  instruments:
+    - qktSymbol: BACKTEST:XAUUSD
+      contractSize: 100
+      volumeStep: 0.01
+      volumeMin: 0.01
+      pointSize: 0.001
+      digits: 3
+      tradeStopsLevelPoints: 0
+      commissionPerLot: 7.0   # optional — $ per lot per fill
+  ```
+
+  A symbol present in the file wins; anything you omit falls back to the built-in specs.
+
 ## Good to know
 
 - Dukascopy is an independent feed, not your exact broker's ticks — its prices and spreads differ
