@@ -29,10 +29,14 @@ class RiskState(
     strategyPnL: StrategyPnL,
     private val clock: Clock,
     private val bus: EventBus,
+    initialBalance: BigDecimal = BigDecimal.ZERO,
+    dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
 ) {
     val equityTracker: EquityTracker = EquityTracker(pnl, strategyPnL)
     val drawdownTracker: DrawdownTracker = DrawdownTracker(equityTracker)
     val dailyPnLTracker: DailyPnLTracker = DailyPnLTracker(clock)
+    val dailyDrawdownTracker: DailyDrawdownTracker =
+        DailyDrawdownTracker(clock, dailyDdBasis, initialBalance, pnl, strategyPnL)
 
     @Volatile
     var halted: Boolean = false

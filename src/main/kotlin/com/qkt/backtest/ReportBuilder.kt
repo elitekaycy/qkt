@@ -85,6 +85,18 @@ object ReportBuilder {
                 null
             }
 
+        val dailyPnL =
+            trades
+                .groupBy {
+                    java.time.Instant
+                        .ofEpochMilli(it.trade.timestamp)
+                        .atZone(java.time.ZoneOffset.UTC)
+                        .toLocalDate()
+                }.mapValues { (_, recs) ->
+                    recs.fold(BigDecimal.ZERO) { acc, r -> acc.add(r.realized) }.setScale(Money.SCALE, Money.ROUNDING)
+                }
+        val maxDailyDd = metrics?.maxDailyDrawdown() ?: DailyDrawdownAccumulator.fromCurve(equityCurve)
+
         return PerformanceReport(
             realizedTotal = finalRealized.setScale(Money.SCALE, Money.ROUNDING),
             unrealizedTotal = finalUnrealized.setScale(Money.SCALE, Money.ROUNDING),
@@ -104,6 +116,8 @@ object ReportBuilder {
             drawdownPeriods = drawdownPeriods,
             monteCarlo = monteCarlo,
             commissionPaid = commissionPaid.setScale(Money.SCALE, Money.ROUNDING),
+            dailyPnL = dailyPnL,
+            maxDailyDrawdown = maxDailyDd,
         )
     }
 }

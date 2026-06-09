@@ -97,17 +97,29 @@ Daemon-wide and per-strategy risk caps.
 risk:
   max_daily_loss: "1000"          # daemon-global daily realized-P&L floor (0 to disable)
 
+  # Prop-firm drawdown limits (#348). *_pct values are PERCENTS (8 => 8%).
+  max_drawdown_pct: "8"           # halt the account at 8% total drawdown
+  max_daily_drawdown_pct: "4"     # halt at 4% drawdown within a single UTC day
+  total_dd_basis: static          # static (vs initial balance, default) | trailing (vs high-water peak)
+  daily_dd_basis: balance         # balance (day-start closed balance, default) | equity (incl. open float)
+
   # Phase 25D: per-strategy overrides keyed by strategy name. Each field is optional.
   per_strategy:
     ema_cross:
       max_daily_loss: "500"        # halts only ema_cross when its realized loss exceeds $500
       max_position_size: "1.0"     # rejects ema_cross orders that push |position| above 1.0
       max_open_positions: 3        # rejects ema_cross new-symbol entries past 3 concurrent positions
+      max_drawdown_pct: "5"        # per-strategy total-drawdown halt (percent)
+      max_daily_drawdown_pct: "3"  # per-strategy daily-drawdown halt (percent)
     rsi_mean_reversion:
       max_daily_loss: "300"
 ```
 
-Per-strategy caps **layer on top of** the global rules — both apply. A strategy without an entry under `per_strategy` only sees the global rules. A strategy with an entry gets its own per-strategy halt (`MaxStrategyDailyLoss`) and per-strategy order rules (`MaxStrategyPositionSize`, `MaxStrategyOpenPositions`) added in addition. The global `max_daily_loss` always halts *every* strategy on breach.
+Per-strategy caps **layer on top of** the global rules — both apply. A strategy without an entry under `per_strategy` only sees the global rules. A strategy with an entry gets its own per-strategy halts (`MaxStrategyDailyLoss`, `MaxStrategyDrawdown`, `MaxStrategyDailyDrawdown`) and per-strategy order rules (`MaxStrategyPositionSize`, `MaxStrategyOpenPositions`) added in addition. The global `max_daily_loss` / `max_drawdown_pct` / `max_daily_drawdown_pct` always halt *every* strategy on breach.
+
+**Drawdown basis.** `total_dd_basis` and `daily_dd_basis` are account-level (not per-strategy). *Static* total drawdown measures loss from the account's starting balance (the prop-firm "max loss" rule); *trailing* measures from the running high-water peak. The daily reference is captured at UTC midnight: *balance* uses the day-start closed balance, *equity* includes open-position float. `total_dd_basis` defaults to **static**, `daily_dd_basis` to **balance**.
+
+**Backtest daily metrics.** `qkt backtest --json` emits `maxDailyDrawdown` (worst single-day intraday equity decline, a fraction) and `dailyPnL` (`{ "YYYY-MM-DD": realized }`), so you can size a strategy against these limits before deploying. (`maxDailyDrawdown` is distinct from `maxDrawdown`, the peak-to-trough over the whole run.)
 
 `max_open_positions` counts symbols with a non-zero position; opening on a new symbol when at the cap is rejected. Adding to an existing-symbol position is always permitted by this rule (the position-size rule still applies).
 
