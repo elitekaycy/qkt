@@ -10,6 +10,8 @@ internal fun runMain(argv: Array<String>): Int {
         when (args.subcommand) {
             "parse" -> ParseCommand(args).run()
             "backtest" -> BacktestCommand(args).run()
+            "sweep" -> SweepCommand(args).run()
+            "walkforward" -> WalkForwardCommand(args).run()
             "research" -> ResearchCommand(args).run()
             "run" -> RunCommand(args).run()
             "deploy" -> DeployCommand(args).run()
@@ -59,7 +61,9 @@ private fun printHelp() {
 
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
-            backtest <file> ...     run a one-shot backtest against historical data
+            backtest <file> ...     run a one-shot backtest (--param fast=12 overrides a value)
+            sweep <file> ...        grid-search params (--param fast=5,10,15 --rank sharpe)
+            walkforward <file> ...  rolling in-sample/out-of-sample validation
             research <file> ...     interactive playback REPL over historical data
             run <file> ...          run a strategy in foreground (paper-trading)
 
