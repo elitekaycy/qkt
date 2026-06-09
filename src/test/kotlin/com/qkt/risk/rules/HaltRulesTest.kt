@@ -11,6 +11,7 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
+import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltDecision
 import com.qkt.risk.RiskState
 import java.math.BigDecimal
@@ -71,7 +72,7 @@ class HaltRulesTest {
         val rig = newRig()
         rig.applyAndRecord(fill("A", "X", Side.BUY, "10", "100"))
         rig.state.equityTracker.update()
-        assertThat(MaxDrawdown(BigDecimal("0.10")).evaluate(rig.state))
+        assertThat(MaxDrawdown(BigDecimal("0.10"), DrawdownBasis.TRAILING).evaluate(rig.state))
             .isEqualTo(HaltDecision.Continue)
     }
 
@@ -87,7 +88,7 @@ class HaltRulesTest {
         rig.state.equityTracker.update()
         // realized = 0; drawdown = 200/200 = 1.0
         assertThat(rig.state.drawdownTracker.globalDrawdown()).isEqualByComparingTo(BigDecimal("1.0"))
-        val decision = MaxDrawdown(BigDecimal("0.5")).evaluate(rig.state)
+        val decision = MaxDrawdown(BigDecimal("0.5"), DrawdownBasis.TRAILING).evaluate(rig.state)
         assertThat(decision).isInstanceOf(HaltDecision.Halt::class.java)
     }
 
@@ -117,7 +118,7 @@ class HaltRulesTest {
         rig.applyAndRecord(fill("A", "X", Side.BUY, "10", "100"))
         rig.applyAndRecord(fill("A", "X", Side.SELL, "10", "80"))
         rig.state.equityTracker.updateStrategy("A")
-        val decision = MaxStrategyDrawdown("A", BigDecimal("0.5")).evaluate(rig.state)
+        val decision = MaxStrategyDrawdown("A", BigDecimal("0.5"), DrawdownBasis.TRAILING).evaluate(rig.state)
         assertThat(decision).isInstanceOf(HaltDecision.Halt::class.java)
         assertThat((decision as HaltDecision.Halt).strategyId).isEqualTo("A")
     }
