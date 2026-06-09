@@ -43,6 +43,16 @@ class PortfolioDeployer(
      * `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
      */
     private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
+    /**
+     * Book-level (account-wide) drawdown halts (#351). Fractions; null disables. The book's basis is
+     * the portfolio `CAPITAL`; on breach the aggregator flattens + halts every child.
+     */
+    private val maxDrawdownPct: java.math.BigDecimal? = null,
+    private val maxDailyDrawdownPct: java.math.BigDecimal? = null,
+    private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
+    private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
+    private val riskIntervalMs: Long = 1000L,
+    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
     private val notifier: Notifier = NoopNotifier,
@@ -75,6 +85,8 @@ class PortfolioDeployer(
                     ast = compiled.ast,
                     children = childWrappers,
                     marketSource = if (symbols.isEmpty()) null else marketSourceProvider(symbols),
+                    riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers),
+                    riskIntervalMs = riskIntervalMs,
                 )
             supervisor.start()
 
@@ -94,6 +106,62 @@ class PortfolioDeployer(
             for (h in children) runCatching { h.close() }
             throw e
         }
+    }
+
+    /**
+     * Build the book-level drawdown aggregator, or null when there's nothing to enforce (no
+     * portfolio `CAPITAL` to form a basis, or no drawdown config). Reads each child's live PnL
+     * snapshot and acts via its `flatten`/`halt`. [compiled.children] and [wrappers] are built in
+     * the same order in [deploy], so `zip` pairs each child's strategyId with its handle.
+     */
+    private fun buildRiskAggregator(
+        portfolioName: String,
+        compiled: PortfolioCompiled,
+        wrappers: List<ChildHandle>,
+    ): PortfolioRiskAggregator? {
+        val capital = compiled.ast.capital
+        if (capital == null || (maxDrawdownPct == null && maxDailyDrawdownPct == null)) return null
+
+        val pnlSources: List<() -> com.qkt.app.SessionPnl> =
+            compiled.children.zip(wrappers).map { (child, w) ->
+                { w.handle.live.pnlSnapshot(child.strategyId) }
+            }
+        val targets: List<ChildRiskTarget> =
+            wrappers.map { w ->
+                object : ChildRiskTarget {
+                    override fun flatten() = w.handle.live.flatten()
+
+                    override fun halt(reason: String) = w.handle.live.halt(reason)
+                }
+            }
+        val bookRiskState =
+            com.qkt.risk.RiskState(
+                BookPnLProvider(pnlSources),
+                com.qkt.pnl.StrategyPnL(
+                    com.qkt.positions.StrategyPositionTracker(),
+                    com.qkt.marketdata.MarketPriceTracker(),
+                ),
+                clock,
+                com.qkt.bus.EventBus(clock, com.qkt.common.MonotonicSequenceGenerator()),
+                capital,
+                dailyDdBasis,
+            )
+        val haltRules =
+            buildList {
+                maxDrawdownPct?.let {
+                    add(
+                        com.qkt.risk.rules
+                            .MaxDrawdown(it, totalDdBasis, capital),
+                    )
+                }
+                maxDailyDrawdownPct?.let {
+                    add(
+                        com.qkt.risk.rules
+                            .MaxDailyDrawdown(it),
+                    )
+                }
+            }
+        return PortfolioRiskAggregator(targets, bookRiskState, haltRules)
     }
 
     private fun createChild(
