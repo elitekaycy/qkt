@@ -78,7 +78,13 @@ class DefaultDataStore(
                             .sorted()
                             .toList()
                     }
-                if (days.isEmpty()) continue
+                if (days.isEmpty()) {
+                    // No day files left (e.g. every day was deleted for a refetch). Clear the
+                    // manifest so a later prefetch re-materializes it; leaving the old ranges would
+                    // make the store claim coverage it no longer has and skip the refetch.
+                    manifestStore.write(Manifest(symbol = sym, ranges = emptyList()))
+                    continue
+                }
                 val ranges = mutableListOf<DayRange>()
                 var rangeStart: String? = null
                 var rangeEnd: String? = null

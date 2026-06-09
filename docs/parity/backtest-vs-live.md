@@ -112,4 +112,4 @@ Tracked as a future engine phase — not scheduled. Until it ships, this documen
 - `PaperBroker` fills — `src/main/kotlin/com/qkt/broker/PaperBroker.kt`
 - `MT5Broker` quantization (v0.26.3 + v0.26.4) — `src/main/kotlin/com/qkt/broker/mt5/MT5Broker.kt` (`quantizeForPlacement`)
 - Strategy-port parity (separate concern) — `qkt-prod/docs/PARITY.md`
-- Data-source parity (separate concern) — `docs/parity/parity-bars-xauusd-m5.md`, `docs/parity/parity-ticks-xauusd.md`
+- Data-source parity (the prices, separate concern) — `docs/parity/parity-dukascopy-vs-mt5-xauusd.md` (dukascopy is the backtest source); `docs/parity/parity-bars-xauusd-m5.md`, `docs/parity/parity-ticks-xauusd.md` (TV vendor cross-check)
