@@ -42,4 +42,15 @@ data class PerformanceReport(
      * `gross = totalPnL + commissionPaid`. Zero when no commission was configured.
      */
     val commissionPaid: BigDecimal = BigDecimal.ZERO,
+    /**
+     * Realized PnL bucketed by UTC day (#348) — `{ 2026-06-04: +120.50, ... }`. Empty when no
+     * trades closed. Sums each trade's realized PnL into the day of its fill timestamp.
+     */
+    val dailyPnL: Map<java.time.LocalDate, BigDecimal> = emptyMap(),
+    /**
+     * Worst single-day intraday equity drawdown over the run (#348), as a fraction of that day's
+     * opening equity — the figure to size against a prop-firm daily limit. Zero when equity never
+     * fell intraday. Distinct from [maxDrawdown], which is the peak-to-trough over the whole run.
+     */
+    val maxDailyDrawdown: BigDecimal = BigDecimal.ZERO,
 )

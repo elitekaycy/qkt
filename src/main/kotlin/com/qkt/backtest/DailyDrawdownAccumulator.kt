@@ -44,4 +44,13 @@ class DailyDrawdownAccumulator {
 
     /** Worst intraday drawdown across all days seen so far, scaled to money precision. */
     fun maxDailyDrawdown(): BigDecimal = worst.setScale(Money.SCALE, Money.ROUNDING)
+
+    companion object {
+        /** One-pass worst daily drawdown over a full equity curve. */
+        fun fromCurve(samples: List<EquitySample>): BigDecimal {
+            val acc = DailyDrawdownAccumulator()
+            samples.forEach { acc.accept(it.timestamp, it.equity) }
+            return acc.maxDailyDrawdown()
+        }
+    }
 }
