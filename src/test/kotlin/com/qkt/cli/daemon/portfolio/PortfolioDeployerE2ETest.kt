@@ -165,4 +165,38 @@ class PortfolioDeployerE2ETest {
             for (child in record.children) runCatching { child.close() }
         }
     }
+
+    @Test
+    fun `book with drawdown config deploys, runs the risk heartbeat, and stays un-halted with no losses`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val deployer =
+            PortfolioDeployer(
+                stateDir = stateDir,
+                marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+                maxDrawdownPct = BigDecimal("0.08"),
+                maxDailyDrawdownPct = BigDecimal("0.04"),
+                riskIntervalMs = 20L,
+            )
+
+        val compiled = PortfolioLoader.load(Path.of("src/test/resources/dsl/portfolio_weighted.qkt"))
+        val record = deployer.deploy("weighted_book", compiled)
+
+        try {
+            assertThat(record.supervisor.running).isTrue
+            // The risk heartbeat is running (interval 20ms); with no fills the book is flat,
+            // so it must not halt any child.
+            Thread.sleep(100)
+            for (child in record.children) {
+                assertThat(child.isRunning()).`as`("${child.name} running").isTrue
+                assertThat(child.live.isHalted()).`as`("${child.name} halted").isFalse
+            }
+        } finally {
+            record.supervisor.stop()
+            for (child in record.children) runCatching { child.close() }
+        }
+
+        assertThat(record.supervisor.running).isFalse
+    }
 }
