@@ -45,10 +45,13 @@ class PortfolioSupervisor(
     val ast: PortfolioAst,
     val children: List<ChildHandle>,
     val marketSource: MarketSource?,
+    private val riskAggregator: PortfolioRiskAggregator? = null,
+    private val riskIntervalMs: Long = 1000L,
 ) {
     private val log = LoggerFactory.getLogger(PortfolioSupervisor::class.java)
     private val runFlag = AtomicBoolean(false)
     private var thread: Thread? = null
+    private var riskThread: Thread? = null
 
     /** True between [start] and [stop]. */
     val running: Boolean get() = runFlag.get()
@@ -57,6 +60,7 @@ class PortfolioSupervisor(
     fun start() {
         if (!runFlag.compareAndSet(false, true)) return
         applyAlwaysRunRules()
+        startRiskHeartbeat()
         if (marketSource == null) return
         thread =
             Thread({
@@ -72,12 +76,41 @@ class PortfolioSupervisor(
             }
     }
 
+    /**
+     * Evaluate the book-level drawdown aggregator on a fixed cadence, independent of market streams,
+     * so always-run books (no book-level streams) are still checked. No-op when no aggregator.
+     */
+    private fun startRiskHeartbeat() {
+        val agg = riskAggregator ?: return
+        riskThread =
+            Thread({
+                org.slf4j.MDC.put("strategy", ast.name)
+                try {
+                    while (runFlag.get()) {
+                        runCatching { agg.evaluate() }
+                            .onFailure { log.warn("portfolio risk eval failed: {}", it.message) }
+                        Thread.sleep(riskIntervalMs)
+                    }
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                } finally {
+                    org.slf4j.MDC.remove("strategy")
+                }
+            }, "qkt-portfolio-risk-${ast.name}").apply {
+                isDaemon = true
+                start()
+            }
+    }
+
     /** Stop the supervisor thread and join it (5s timeout). Idempotent. */
     fun stop() {
         if (!runFlag.compareAndSet(true, false)) return
         thread?.interrupt()
         thread?.join(5000)
         thread = null
+        riskThread?.interrupt()
+        riskThread?.join(5000)
+        riskThread = null
     }
 
     internal fun applyDesired(desired: Map<String, Boolean>) {
