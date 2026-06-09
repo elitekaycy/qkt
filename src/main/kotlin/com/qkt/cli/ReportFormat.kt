@@ -54,6 +54,7 @@ object ReportPrinter {
         out.println("Sharpe (annual):  ${g.sharpeRatio?.toPlainString() ?: "n/a"}")
         out.println("Calmar:           ${g.calmarRatio?.toPlainString() ?: "n/a"}")
         out.println("Max drawdown:     ${g.maxDrawdown.toPlainString()}")
+        out.println("Max daily DD:     ${g.maxDailyDrawdown.toPlainString()}")
         out.println()
         out.println("Assumptions & conventions")
         out.println("  Execution:  ${executionModel(brokerKind)}")
@@ -94,6 +95,14 @@ object ReportPrinter {
         sb.append("\"sharpeRatio\":").append(g.sharpeRatio?.toPlainString() ?: "null").append(',')
         sb.append("\"calmarRatio\":").append(g.calmarRatio?.toPlainString() ?: "null").append(',')
         sb.append("\"executionModel\":\"").append(brokerKind.name.lowercase()).append("\",")
+        sb.append("\"maxDailyDrawdown\":").append(g.maxDailyDrawdown.toPlainString()).append(',')
+        sb.append("\"dailyPnL\":{")
+        sb.append(
+            g.dailyPnL.entries
+                .sortedBy { it.key }
+                .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" },
+        )
+        sb.append("},")
         sb.append("\"cadence\":\"").append(r.cadence.name).append('"')
         sb.append('}')
         out.println(sb.toString())
