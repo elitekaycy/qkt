@@ -2,6 +2,7 @@ package com.qkt.risk.rules
 
 import com.qkt.risk.HaltDecision
 import com.qkt.risk.HaltRule
+import com.qkt.risk.HaltScope
 import com.qkt.risk.RiskState
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -23,7 +24,10 @@ class MaxDailyDrawdown(
     override fun evaluate(riskState: RiskState): HaltDecision {
         val dd = riskState.dailyDrawdownTracker.globalDrawdownToday()
         return if (dd > maxFraction) {
-            HaltDecision.Halt("daily drawdown ${dd.setScale(4, RoundingMode.HALF_UP)} exceeds max $maxFraction")
+            HaltDecision.Halt(
+                "daily drawdown ${dd.setScale(4, RoundingMode.HALF_UP)} exceeds max $maxFraction",
+                scope = HaltScope.DAILY,
+            )
         } else {
             HaltDecision.Continue
         }

@@ -2,6 +2,7 @@ package com.qkt.risk.rules
 
 import com.qkt.risk.HaltDecision
 import com.qkt.risk.HaltRule
+import com.qkt.risk.HaltScope
 import com.qkt.risk.RiskState
 import java.math.BigDecimal
 
@@ -25,6 +26,7 @@ class MaxStrategyDailyLoss(
             HaltDecision.Halt(
                 reason = "strategy daily loss ${realized.negate()} exceeds max $maxLoss",
                 strategyId = strategyId,
+                scope = HaltScope.DAILY,
             )
         } else {
             HaltDecision.Continue
