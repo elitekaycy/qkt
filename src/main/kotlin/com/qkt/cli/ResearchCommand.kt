@@ -4,28 +4,26 @@ import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
-import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.SequenceTickFeed
-import com.qkt.marketdata.store.DataRoot
-import com.qkt.marketdata.store.DefaultDataStore
-import com.qkt.marketdata.store.LocalBarStore
+import com.qkt.marketdata.store.DataFetcher
 import com.qkt.research.ReplayRepl
 import com.qkt.research.ReplaySession
 import java.io.BufferedReader
+import java.io.InputStream
 import java.io.InputStreamReader
+import java.io.PrintStream
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
 
 /** `qkt research <strategy.qkt> --from <d> --to <d>` — interactive playback REPL (#81). */
 class ResearchCommand(
     private val args: Args,
+    private val fetcherOverride: DataFetcher? = null,
+    private val input: InputStream = System.`in`,
+    private val output: PrintStream = System.out,
 ) {
     fun run(): Int {
         val file = args.requirePositional(0, "<strategy.qkt>")
@@ -43,20 +41,26 @@ class ResearchCommand(
                 }
             }
 
-        val from = parseInstant(args.requireOption("from"))
-        val to = parseInstant(args.requireOption("to"))
-        val dataRoot = args.option("data-root") ?: "./data"
         val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
-        val symbols = ast.streams.map { it.symbol }.distinct()
 
-        val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = null)
-        val source =
-            LocalMarketSource(
-                store,
-                FixedClock(time = to.toEpochMilli()),
-                barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
-            )
-        val range = TimeRange(from, to)
+        val ctx =
+            try {
+                BacktestContext.build(args, ast, fetcherOverride)
+            } catch (e: BacktestContext.Companion.SetupError) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
+        try {
+            ctx.provision()
+        } catch (e: com.qkt.backtest.IncompleteDataException) {
+            System.err.println("qkt: error: ${e.message}")
+            return ExitCodes.USER_ERROR
+        }
+
+        // Bare stream symbols match the tick store's keying; LocalMarketSource bridges the broker prefix.
+        val symbols = ast.streams.map { it.symbol }.distinct()
+        val source = LocalMarketSource(ctx.store, FixedClock(time = ctx.to.toEpochMilli()), barStore = ctx.barStore)
+        val range = TimeRange(ctx.from, ctx.to)
         val perSymbolFeeds = symbols.map { SequenceTickFeed(source.ticks(it, range)) }
         val feed = if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
         val ticks =
@@ -69,7 +73,11 @@ class ResearchCommand(
                 }
             }
         if (ticks.isEmpty()) {
-            System.err.println("qkt: error: no ticks for $symbols in [$from, $to] under $dataRoot")
+            System.err.println(
+                "qkt: error: no ticks for $symbols in [${ctx.from}, ${ctx.to}] under ${args.option(
+                    "data-root",
+                ) ?: "./data"}",
+            )
             return ExitCodes.USER_ERROR
         }
 
@@ -78,17 +86,10 @@ class ResearchCommand(
                 ticks = ticks,
                 strategyPath = path,
                 startingBalance = startingBalance,
-                instruments = NoopInstrumentRegistry,
+                instruments = ctx.instruments,
             )
-        println("loaded ${ticks.size} ticks for $symbols  [$from .. $to]")
-        ReplayRepl(session).run(BufferedReader(InputStreamReader(System.`in`)), System.out)
+        output.println("loaded ${ticks.size} ticks for $symbols  [${ctx.from} .. ${ctx.to}]")
+        ReplayRepl(session).run(BufferedReader(InputStreamReader(input)), output)
         return ExitCodes.SUCCESS
     }
-
-    private fun parseInstant(s: String): Instant =
-        if (s.contains('T')) {
-            Instant.parse(if (s.endsWith("Z")) s else "${s}Z")
-        } else {
-            LocalDate.parse(s).atStartOfDay(ZoneOffset.UTC).toInstant()
-        }
 }

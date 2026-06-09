@@ -60,4 +60,39 @@ class BacktestCommandDataTest {
         // Data landed under the bare-keyed tick store.
         assertThat(Files.exists(tmp.resolve("data/symbols/XAUUSD/2024-03-06.csv.gz"))).isTrue()
     }
+
+    @Test
+    fun `--param with a comma value is rejected and points at sweep`(
+        @TempDir tmp: Path,
+    ) {
+        val strat = tmp.resolve("s.qkt")
+        Files.writeString(
+            strat,
+            """
+            STRATEGY s VERSION 1
+            SYMBOLS
+              gold = EXNESS:XAUUSD EVERY 5m
+            LET thr = 0
+            RULES
+              WHEN gold.close > thr THEN LOG "tick"
+            """.trimIndent(),
+        )
+        val args =
+            Args(
+                arrayOf(
+                    "backtest",
+                    strat.toString(),
+                    "--from",
+                    "2024-03-06",
+                    "--to",
+                    "2024-03-07",
+                    "--data-root",
+                    tmp.resolve("data").toString(),
+                    "--param",
+                    "thr=5,10",
+                ),
+            )
+        val code = BacktestCommand(args, fetcherOverride = FullDayFetcher()).run()
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+    }
 }

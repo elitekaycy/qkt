@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
 
@@ -17,13 +18,35 @@ import com.qkt.dsl.ast.WhenThen
  * A strategy with no `PARAM` declarations is returned unchanged.
  */
 object ParamSubstitution {
-    fun apply(ast: StrategyAst): StrategyAst {
-        val values: Map<String, ExprAst> = ast.params.associate { it.name to it.value }
-        if (values.isEmpty()) return ast
-        val t = ExprTransform { ref -> values[ref.name] ?: ref }
+    fun apply(
+        ast: StrategyAst,
+        overrides: Map<String, String> = emptyMap(),
+    ): StrategyAst {
+        if (ast.params.isEmpty() && overrides.isEmpty()) return ast
+
+        val paramNames = ast.params.map { it.name }.toSet()
+        val letNames = ast.lets.map { it.name }.toSet()
+        val parsed: Map<String, NumLit> =
+            overrides.mapValues { (name, raw) ->
+                require(name in paramNames || name in letNames) {
+                    "unknown parameter '$name'; strategy declares: ${(paramNames + letNames).sorted()}"
+                }
+                val v =
+                    raw.toBigDecimalOrNull()
+                        ?: throw IllegalArgumentException("parameter '$name' must be numeric, got '$raw'")
+                NumLit(v)
+            }
+
+        val paramValues: Map<String, ExprAst> =
+            ast.params.associate { it.name to (parsed[it.name] ?: it.value) }
+        val t = ExprTransform { ref -> paramValues[ref.name] ?: ref }
+
         return ast.copy(
             params = emptyList(),
-            lets = ast.lets.map { it.copy(expr = t.expr(it.expr)) },
+            lets =
+                ast.lets.map { let ->
+                    parsed[let.name]?.let { lit -> let.copy(expr = lit) } ?: let.copy(expr = t.expr(let.expr))
+                },
             rules =
                 ast.rules.map { rule ->
                     when (rule) {
