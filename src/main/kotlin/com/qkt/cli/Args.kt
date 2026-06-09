@@ -25,6 +25,21 @@ class Args(
         return if (i >= 0 && i + 1 < rest.size) rest[i + 1] else null
     }
 
+    /** Returns the value of every `--[name] <value>` occurrence, in argv order. */
+    fun options(name: String): List<String> {
+        val out = mutableListOf<String>()
+        var i = 0
+        while (i < rest.size) {
+            if (rest[i] == "--$name" && i + 1 < rest.size) {
+                out.add(rest[i + 1])
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        return out
+    }
+
     /** Same as [option] but throws [ArgError] when missing. */
     fun requireOption(name: String): String = option(name) ?: throw ArgError("missing required flag --$name")
 
