@@ -80,11 +80,31 @@ class TickCompletenessValidatorTest {
     }
 
     @Test
-    fun `an interior empty hour on a trading day is incomplete`(
+    fun `a single interior empty hour is tolerated as the daily maintenance break`(
         @TempDir tmp: Path,
     ) {
-        // All hours except 12 — an interior hole.
-        writeDay(tmp, "EURUSD", LocalDate.of(2024, 3, 6), (0..23).filter { it != 12 })
+        // Mirrors real dukascopy XAUUSD: every hour has ticks except 21:00-22:00 UTC, gold's
+        // daily halt. One empty interior hour is the routine break, not a failed fetch.
+        writeDay(tmp, "EURUSD", LocalDate.of(2024, 3, 6), (0..23).filter { it != 21 })
+        val store = DefaultDataStore(root = tmp)
+        val report =
+            TickCompletenessValidator.validate(
+                store,
+                "EURUSD",
+                LocalDate.of(2024, 3, 6),
+                LocalDate.of(2024, 3, 6),
+                TradingCalendar.fxDefault(),
+            )
+        assertThat(report.hasHoles).isFalse()
+        assertThat(report.days.single().status).isEqualTo(DayCompleteness.Status.COMPLETE)
+    }
+
+    @Test
+    fun `two or more interior empty hours is incomplete`(
+        @TempDir tmp: Path,
+    ) {
+        // Beyond the single tolerated break: a real fetch hole drops more than one hour.
+        writeDay(tmp, "EURUSD", LocalDate.of(2024, 3, 6), (0..23).filter { it != 12 && it != 14 })
         val store = DefaultDataStore(root = tmp)
         val report =
             TickCompletenessValidator.validate(
@@ -96,6 +116,6 @@ class TickCompletenessValidatorTest {
             )
         assertThat(report.hasHoles).isTrue()
         assertThat(report.days.single().status).isEqualTo(DayCompleteness.Status.INCOMPLETE)
-        assertThat(report.days.single().emptyHours).contains(12)
+        assertThat(report.days.single().emptyHours).contains(12, 14)
     }
 }
