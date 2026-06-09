@@ -14,6 +14,7 @@ import com.qkt.dsl.parse.ParsedFile
 import com.qkt.dsl.parse.Parser
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class ParamSubstitutionTest {
@@ -95,5 +96,70 @@ class ParamSubstitutionTest {
                 """.trimIndent(),
             )
         assertThat(ParamSubstitution.apply(a)).isSameAs(a)
+    }
+
+    @Test
+    fun `an override replaces a PARAM default`() {
+        val a =
+            ast(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS gold = BYBIT:XAUUSD EVERY 5m
+                PARAM threshold = 100
+                RULES
+                  WHEN gold.close > threshold THEN BUY gold
+                """.trimIndent(),
+            )
+        val out = ParamSubstitution.apply(a, mapOf("threshold" to "200"))
+        val cond = (out.rules.single() as WhenThen).cond as CmpOp
+        assertThat(cond.rhs).isEqualTo(NumLit(BigDecimal(200)))
+    }
+
+    @Test
+    fun `an override replaces a LET value by name`() {
+        val a =
+            ast(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS gold = BYBIT:XAUUSD EVERY 5m
+                LET fast = 9
+                RULES
+                  WHEN gold.close > fast THEN BUY gold
+                """.trimIndent(),
+            )
+        val out = ParamSubstitution.apply(a, mapOf("fast" to "12"))
+        assertThat(out.lets.single { it.name == "fast" }.expr).isEqualTo(NumLit(BigDecimal(12)))
+    }
+
+    @Test
+    fun `an unknown override name fails loudly`() {
+        val a =
+            ast(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS gold = BYBIT:XAUUSD EVERY 5m
+                LET fast = 9
+                RULES
+                  WHEN gold.close > fast THEN BUY gold
+                """.trimIndent(),
+            )
+        assertThatThrownBy { ParamSubstitution.apply(a, mapOf("nope" to "1")) }
+            .hasMessageContaining("unknown parameter 'nope'")
+    }
+
+    @Test
+    fun `a non-numeric override fails loudly`() {
+        val a =
+            ast(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS gold = BYBIT:XAUUSD EVERY 5m
+                LET fast = 9
+                RULES
+                  WHEN gold.close > fast THEN BUY gold
+                """.trimIndent(),
+            )
+        assertThatThrownBy { ParamSubstitution.apply(a, mapOf("fast" to "abc")) }
+            .hasMessageContaining("must be numeric")
     }
 }

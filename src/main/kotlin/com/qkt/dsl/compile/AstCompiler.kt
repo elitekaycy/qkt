@@ -24,8 +24,11 @@ import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 
 class AstCompiler {
-    fun compile(rawAst: StrategyAst): Strategy {
-        val ast = ParamSubstitution.apply(rawAst)
+    fun compile(
+        rawAst: StrategyAst,
+        overrides: Map<String, String> = emptyMap(),
+    ): Strategy {
+        val ast = ParamSubstitution.apply(rawAst, overrides)
         val streams: Map<String, HubKey> =
             ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) }
         val resolver = LetResolver(ast.lets)
