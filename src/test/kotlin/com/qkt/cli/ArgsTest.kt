@@ -34,4 +34,15 @@ class ArgsTest {
             .isInstanceOf(ArgError::class.java)
             .hasMessageContaining("--from")
     }
+
+    @Test
+    fun `options collects every occurrence of a repeated flag in order`() {
+        val a = Args(arrayOf("sweep", "s.qkt", "--param", "fast=5", "--param", "slow=10,20"))
+        assertThat(a.options("param")).containsExactly("fast=5", "slow=10,20")
+    }
+
+    @Test
+    fun `options is empty when the flag is absent`() {
+        assertThat(Args(arrayOf("backtest", "s.qkt")).options("param")).isEmpty()
+    }
 }
