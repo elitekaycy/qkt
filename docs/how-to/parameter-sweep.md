@@ -2,15 +2,37 @@
 
 Grid-search over your strategy's parameters to find what worked on historical data.
 
-!!! info "CLI wrapper coming in Phase 25"
-    The **parameter-sweep harness exists** in the engine (`com.qkt.backtest.sweep.BacktestSweep`), but a `qkt sweep` CLI command isn't shipped yet. See [Planned features](../planned.md#phase-25-operator-tooling-dsl-extensions). Today you drive sweeps **programmatically from Kotlin**. This page shows that workflow.
+## From the CLI
 
-    A `qkt walkforward` CLI is also planned for the same phase.
+Mark the values you want to tune with `PARAM` (or a plain `LET`), then sweep them. A single value
+is a fixed override; a comma-list is a sweep axis, and `qkt sweep` runs the cartesian product:
 
-!!! warning "Overfitting is real"
-    A sweep with 100 parameter combos and 50 trades per combo will find ~5 winners by chance alone. Always walk-forward validate. See [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) for the protocol.
+```bash
+# one combo — just override the file defaults
+qkt backtest strategy.qkt --from 2024-01-01 --to 2024-02-01 --param fast=12 --param slow=26
 
-## What you can do today
+# grid: 3 x 2 = 6 combos, ranked by Sharpe
+qkt sweep strategy.qkt --from 2024-01-01 --to 2024-02-01 \
+    --param fast=8,12,16 --param slow=20,40 --rank sharpe
+```
+
+`--rank` accepts `sharpe` (default), `calmar`, `profitFactor`, `totalPnL`, or `winRate`. Add
+`--json` for machine-readable rows, or `--parallelism N` to run combos concurrently.
+
+!!! warning "A sweep alone proves nothing — walk-forward validate"
+    A sweep with 100 parameter combos and 50 trades per combo will find ~5 winners by chance alone.
+    Use `qkt walkforward` to check the winner holds up out-of-sample:
+
+    ```bash
+    qkt walkforward strategy.qkt --from 2024-01-01 --to 2024-06-01 \
+        --param fast=8,12,16 --train 60d --test 20d --step 20d --rank sharpe
+    ```
+
+    It trains on each rolling window (picking the best params), tests them on the *next, unseen*
+    window, and reports mean in-sample vs out-of-sample score — a large gap is overfitting.
+    See [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) for the protocol.
+
+## Programmatic (advanced)
 
 The `BacktestSweep` class takes a Kotlin lambda that builds a strategy per parameter combination, runs each on the same tick stream, and returns ranked results. It's a small wrapper around `Backtest.run()`.
 
