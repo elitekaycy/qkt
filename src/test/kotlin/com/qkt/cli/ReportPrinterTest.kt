@@ -85,4 +85,23 @@ class ReportPrinterTest {
         assertThat(json).contains("\"commissionPaid\":5.00")
         assertThat(json).contains("\"executionModel\":\"paper\"")
     }
+
+    @Test
+    fun `daily metrics appear in text and json`() {
+        val r =
+            report("0").copy(
+                maxDailyDrawdown = BigDecimal("0.04"),
+                dailyPnL = mapOf(java.time.LocalDate.of(2026, 6, 4) to BigDecimal("12.50")),
+            )
+        val res = BacktestResult(emptyList(), emptyList(), emptyMap(), r, emptyMap(), SampleCadence.TICK)
+
+        val text = ByteArrayOutputStream()
+        ReportPrinter.print(res, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER)
+        assertThat(text.toString()).contains("Max daily DD:")
+
+        val json = ByteArrayOutputStream()
+        ReportPrinter.print(res, ReportFormat.Json, PrintStream(json), BrokerKind.PAPER)
+        assertThat(json.toString()).contains("\"maxDailyDrawdown\":0.04")
+        assertThat(json.toString()).contains("\"dailyPnL\":{\"2026-06-04\":12.50}")
+    }
 }
