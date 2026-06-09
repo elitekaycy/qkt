@@ -107,4 +107,36 @@ class ReportBuilderTest {
         assertThat(report.profitFactor).isNull()
         assertThat(report.sharpeRatio).isNull()
     }
+
+    @Test
+    fun `buildGlobal reports per-day pnl and max daily drawdown`() {
+        val day1 = 86_400_000L // 1970-01-02 UTC
+        val trades =
+            listOf(
+                tradeRecord("10", ts = 0L),
+                tradeRecord("-3", ts = 1_000L),
+                tradeRecord("20", ts = day1),
+            )
+        val curve =
+            listOf(
+                EquitySample(0L, BigDecimal("100")),
+                EquitySample(1_000L, BigDecimal("90")), // day 0: 10% intraday
+                EquitySample(day1, BigDecimal("90")),
+                EquitySample(day1 + 1_000L, BigDecimal("81")), // day 1: 10% intraday
+            )
+
+        val report =
+            ReportBuilder.buildGlobal(
+                trades = trades,
+                equityCurve = curve,
+                finalRealized = BigDecimal("27"),
+                finalUnrealized = Money.ZERO,
+                annualizationFactor = BigDecimal("525960"),
+            )
+
+        assertThat(report.dailyPnL).hasSize(2)
+        assertThat(report.dailyPnL[java.time.LocalDate.of(1970, 1, 1)]).isEqualByComparingTo(BigDecimal("7"))
+        assertThat(report.dailyPnL[java.time.LocalDate.of(1970, 1, 2)]).isEqualByComparingTo(BigDecimal("20"))
+        assertThat(report.maxDailyDrawdown).isEqualByComparingTo(BigDecimal("0.10"))
+    }
 }

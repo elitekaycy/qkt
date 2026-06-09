@@ -30,6 +30,30 @@ class DrawdownTracker(
         return peak.subtract(current).divide(peak, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
     }
 
+    /**
+     * Total drawdown measured from [initialBalance] rather than the peak — the prop-firm "static"
+     * limit. Equity is PnL-relative (0-based), so absolute equity is `initialBalance + pnl` and the
+     * static drawdown reduces to `max(0, −pnl) / initialBalance`. Returns zero when in profit or when
+     * [initialBalance] is non-positive.
+     */
+    fun globalStaticDrawdown(initialBalance: BigDecimal): BigDecimal {
+        if (initialBalance.signum() <= 0) return Money.ZERO
+        val pnl = equityTracker.currentEquity()
+        if (pnl.signum() >= 0) return Money.ZERO
+        return pnl.negate().divide(initialBalance, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    /** Per-strategy static drawdown measured from [initialBalance]; see [globalStaticDrawdown]. */
+    fun strategyStaticDrawdown(
+        strategyId: String,
+        initialBalance: BigDecimal,
+    ): BigDecimal {
+        if (initialBalance.signum() <= 0) return Money.ZERO
+        val pnl = equityTracker.currentEquityFor(strategyId)
+        if (pnl.signum() >= 0) return Money.ZERO
+        return pnl.negate().divide(initialBalance, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+    }
+
     companion object {
         fun fromCurve(samples: List<BigDecimal>): BigDecimal {
             val acc = MaxDrawdownAccumulator()
