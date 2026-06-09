@@ -121,6 +121,8 @@ Per-strategy caps **layer on top of** the global rules — both apply. A strateg
 
 **Backtest daily metrics.** `qkt backtest --json` emits `maxDailyDrawdown` (worst single-day intraday equity decline, a fraction) and `dailyPnL` (`{ "YYYY-MM-DD": realized }`), so you can size a strategy against these limits before deploying. (`maxDailyDrawdown` is distinct from `maxDrawdown`, the peak-to-trough over the whole run.)
 
+**Portfolio (book-level) drawdown.** The same `max_drawdown_pct` / `max_daily_drawdown_pct` keys also apply at the **portfolio book** level: the account is the sum of the children's equity, and the basis is the portfolio's `CAPITAL`. On breach the book **flattens and halts every child** (latched for that deployment). A portfolio without `CAPITAL` can't form a basis, so its book-level drawdown halt is disabled (children still run with the per-strategy daily-loss halt).
+
 `max_open_positions` counts symbols with a non-zero position; opening on a new symbol when at the cap is rejected. Adding to an existing-symbol position is always permitted by this rule (the position-size rule still applies).
 
 ## Inspect resolved profiles
