@@ -79,6 +79,16 @@ class StrategyHandle(
          * rules. Default empty map means every strategy uses only the global rules.
          */
         private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
+        /**
+         * Prop-firm drawdown halts (#348). [maxDrawdownPct]/[maxDailyDrawdownPct] are fractions
+         * (null disables); [totalDdBasis]/[dailyDdBasis] pick how each is measured; [startingBalance]
+         * is the account basis for static total DD and the daily reference.
+         */
+        private val maxDrawdownPct: java.math.BigDecimal? = null,
+        private val maxDailyDrawdownPct: java.math.BigDecimal? = null,
+        private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
+        private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
+        private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
         private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
         /**
          * Telegram alert sink shared across every strategy this daemon hosts. Default
@@ -116,13 +126,25 @@ class StrategyHandle(
             val startedAt = Instant.ofEpochMilli(startMs)
 
             val haltRules: List<com.qkt.risk.HaltRule> =
-                if (maxDailyLoss.signum() > 0) {
-                    listOf(
-                        com.qkt.risk.rules
-                            .MaxDailyLoss(maxDailyLoss),
-                    )
-                } else {
-                    emptyList()
+                buildList {
+                    if (maxDailyLoss.signum() > 0) {
+                        add(
+                            com.qkt.risk.rules
+                                .MaxDailyLoss(maxDailyLoss),
+                        )
+                    }
+                    maxDrawdownPct?.let {
+                        add(
+                            com.qkt.risk.rules
+                                .MaxDrawdown(it, totalDdBasis, startingBalance),
+                        )
+                    }
+                    maxDailyDrawdownPct?.let {
+                        add(
+                            com.qkt.risk.rules
+                                .MaxDailyDrawdown(it),
+                        )
+                    }
                 }
             val perStrategyOverride = perStrategyRisk[ast.name]
             val session =
@@ -154,6 +176,11 @@ class StrategyHandle(
                     perStrategyMaxDailyLoss = perStrategyOverride?.maxDailyLoss,
                     perStrategyMaxPositionSize = perStrategyOverride?.maxPositionSize,
                     perStrategyMaxOpenPositions = perStrategyOverride?.maxOpenPositions,
+                    perStrategyMaxDrawdownPct = perStrategyOverride?.maxDrawdownPct,
+                    perStrategyMaxDailyDrawdownPct = perStrategyOverride?.maxDailyDrawdownPct,
+                    initialBalance = startingBalance,
+                    totalDdBasis = totalDdBasis,
+                    dailyDdBasis = dailyDdBasis,
                 ).start()
 
             val server =
