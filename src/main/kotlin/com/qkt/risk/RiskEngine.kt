@@ -48,15 +48,16 @@ class RiskEngine(
 
     fun evaluateHaltRules() {
         if (!riskState.warmupComplete) return
+        riskState.clearExpiredDailyHalts()
         for (rule in haltRules) {
             runCatching {
                 when (val decision = rule.evaluate(riskState)) {
                     HaltDecision.Continue -> Unit
                     is HaltDecision.Halt ->
                         if (decision.strategyId != null) {
-                            riskState.haltStrategy(decision.strategyId, decision.reason)
+                            riskState.haltStrategy(decision.strategyId, decision.reason, decision.scope)
                         } else {
-                            riskState.halt(decision.reason)
+                            riskState.halt(decision.reason, decision.scope)
                         }
                 }
             }.onFailure { log.warn("HaltRule {} threw: {}", rule::class.simpleName, it.message) }
