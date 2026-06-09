@@ -189,6 +189,13 @@ tasks.register<JavaExec>("runParityTicksXauusd") {
     mainClass.set("com.qkt.tools.parity.ParityTicksXauusdKt")
 }
 
+tasks.register<JavaExec>("runParityDataXauusd") {
+    group = "verification"
+    description = "Compare the backtest data source (dukascopy) vs the live broker feed (MT5) for XAUUSD"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.qkt.tools.parity.ParityDukascopyMt5XauusdKt")
+}
+
 tasks.register<JavaExec>("runStateDemo") {
     group = "verification"
     description = "Write a sample engine-state snapshot to /tmp/qkt-demo-state and list the files"
