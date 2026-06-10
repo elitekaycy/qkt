@@ -156,6 +156,7 @@ class ReplayEngine(
                 pnl = pnl,
                 strategyPnL = strategyPnL,
                 strategyIds = strategies.map { it.first },
+                startingBalance = startingBalance,
             )
 
         val holder = arrayOfNulls<TradingPipeline>(1)
