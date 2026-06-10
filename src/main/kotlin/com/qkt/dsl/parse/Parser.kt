@@ -1155,7 +1155,9 @@ class Parser(
                 "STACK layer-list cannot be combined with outer SIZING; specify size on each layer or remove the layer list",
             )
         }
-        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco, finalStack, stackAts)
+        // orderType stays null here so DEFAULTS ORDER_TYPE can fill it during the
+        // defaults merge; ActionCompiler applies the Market fallback after the merge.
+        return ActionOpts(sizing, orderType, tif, bracket, oco, finalStack, stackAts)
     }
 
     /**
