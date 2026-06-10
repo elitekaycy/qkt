@@ -7,9 +7,11 @@ import com.qkt.marketdata.TickFeed
 /**
  * Synthesizes four sub-bar ticks from one OHLC [candle], in the order Open, Low, High, Close.
  *
- * The Low-before-High order is the pessimistic convention: the adverse extreme (the low, for a long)
- * is reached before the favorable one, so a bar-based backtest will not overstate a risk-managed
- * strategy. The four ticks fall at strictly increasing timestamps inside the candle's
+ * The Low-before-High order is pessimistic for LONG positions (the adverse extreme
+ * arrives first) and, unavoidably, OPTIMISTIC for shorts — the high a short fears comes
+ * after the low it profits from. One fixed ordering cannot be worst-case for both
+ * sides; read short-side bar-backtest results conservatively (see the divergence
+ * catalog, row A6). The four ticks fall at strictly increasing timestamps inside the candle's
  * `[startTime, endTime)` window and re-aggregate (via `CandleAggregator`) to exactly this candle —
  * first=open, max=high, min=low, last=close — with the volume on the close tick so the aggregated
  * volume matches. The true intra-bar High/Low order is unknowable from OHLC alone; this is a

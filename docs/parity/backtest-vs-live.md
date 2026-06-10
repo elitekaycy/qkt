@@ -103,6 +103,26 @@ Plus a sibling test `BacktestMT5LiveParityTest` that replays a recorded MT5 sess
 
 Tracked as a future engine phase — not scheduled. Until it ships, this document is the answer to "can I trust the backtest."
 
+## 2026-06-10 audit addendum — divergences this catalog was missing
+
+Rows surfaced by the full engine audit (#142, issues #356-#401). Items marked
+FIXED now behave identically in both modes; the rest are inherent differences to
+keep in mind when reading a backtest.
+
+| # | Divergence | Status |
+| --- | --- | --- |
+| A1 | Halt rules: backtest used to wire ZERO halt rules while live halts | FIXED (#362) — backtests build the same config-driven halt set and report halts |
+| A2 | Warmup: live waited a full live window post-deploy; backtest consumed the first N bars | FIXED (#383) — seeded history credits the gate in live |
+| A3 | GTD expiry: venue ignores expiration; engine sweep was disabled | FIXED (#368) — engine sweep owns GTD in live; backtest sweep identical |
+| A4 | Trigger side: everything triggered on mid; venue triggers on bid/ask | FIXED (#382) — side-aware in PaperBroker, MT5_SIM, and engine-held triggers; bar-sourced backtests have no quote depth, so they still effectively trigger on the synthesized price |
+| A5 | Costs: live PnL/halts were commission/swap-blind | FIXED (#392) — venue costs net out of realized in live; backtest has the per-lot commission model. Swap is venue-reported only — backtests do not model it |
+| A6 | Bar synthesis order: `BarTickFeed` emits O→L→H→C — for SHORT positions the favorable extreme arrives before the adverse one (optimistic). One ordering cannot be worst-case for both sides | INHERENT — read short-side backtest results on bar data conservatively |
+| A7 | Tick sampling: backtest replays every stored tick; live MT5 polls at ~50ms with dedupe and burst shedding. Engine-held trails/latches/stacks walk different price paths | INHERENT — quantified in the data parity reports |
+| A8 | SCHEDULE timing: backtest fires on the next replayed tick after the trigger time; live fires from a 1Hz wall-clock heartbeat even with no ticks | INHERENT — sub-second placement differences |
+| A9 | Calendars: the backtest CLI uses fixed per-symbol calendar rules (crypto for `BTC*`/`*USDT`, FX default otherwise); live uses the broker profile's calendars. The FX weekend boundary is a FIXED UTC hour year-round and does not track New York DST (up to 1h off near the close/open in winter) | INHERENT — pinned by `FxCalendarTest` |
+| A10 | `x.bid` / `x.ask` / `x.spread` evaluate Undefined on bar-sourced backtest data — spread-aware rules silently never fire in bar backtests (tick-sourced backtests carry real quotes) | OPEN (#389) — prefer tick data for spread-aware strategies |
+| A11 | Live-only operational effects: restart reconcile, OCO restore, poller-synthesized closes, gateway-outage suspensions, the runaway breaker and market-data gate (#395/#396 are live-only by design) | INHERENT — none have a backtest equivalent |
+
 ## File pointers
 
 - Pipeline contract — `docs/phases/phase-4-backtest.md` (the "Same pipeline, live execution" section)
