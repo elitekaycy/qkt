@@ -66,8 +66,7 @@ class EquityTracker(
     fun currentEquityFor(strategyId: String): BigDecimal =
         perStrategyCurrent[strategyId] ?: strategyPnL.equityFor(strategyId)
 
-    fun peakEquityFor(strategyId: String): BigDecimal =
-        perStrategyPeak[strategyId] ?: strategyPnL.equityFor(strategyId)
+    fun peakEquityFor(strategyId: String): BigDecimal = perStrategyPeak[strategyId] ?: strategyPnL.equityFor(strategyId)
 
     /** The strategy's equity anchor — its starting balance as registered with [StrategyPnL]. */
     fun startingBalanceFor(strategyId: String): BigDecimal = strategyPnL.startingBalanceFor(strategyId)
