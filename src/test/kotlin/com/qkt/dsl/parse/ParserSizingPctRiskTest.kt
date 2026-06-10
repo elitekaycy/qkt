@@ -48,4 +48,13 @@ class ParserSizingPctRiskTest {
         val s = parseSizing("0.5 % OF EQUITY")
         assertThat(s).isInstanceOf(SizePctEquity::class.java)
     }
+
+    @Test
+    fun `percent-of-equity uses the same percentage convention as PCT RISK`() {
+        // `2 % OF EQUITY` and `2 PCT RISK` both read "2" as 2 percent.
+        val equity = parseSizing("2 % OF EQUITY") as SizePctEquity
+        assertThat((equity.frac as NumLit).value).isEqualByComparingTo(BigDecimal("0.02"))
+        val risk = parseSizing("2 PCT RISK") as SizeRiskFrac
+        assertThat((risk.frac as NumLit).value).isEqualByComparingTo(BigDecimal("0.02"))
+    }
 }

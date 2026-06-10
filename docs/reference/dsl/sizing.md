@@ -42,6 +42,8 @@ SIZING 10 PCT OF BALANCE    -- 10% of cash balance only (ignores open P&L)
 
 The difference matters when you have unrealized P&L: `EQUITY` includes it (the size scales with open profit/loss), `BALANCE` doesn't.
 
+**Convention:** the number before `%`/`PCT` is always a percentage, in every sizing form. `SIZING 5.0 PCT OF EQUITY` and `SIZING 5.0 % OF EQUITY` both mean 5% (fraction 0.05), the same way `SIZING 0.5 PCT RISK` means 0.5% (fraction 0.005).
+
 **When to use:** position sizing that scales with account performance. Good for compounding strategies.
 
 ## Fixed USD notional
