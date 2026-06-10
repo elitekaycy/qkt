@@ -41,6 +41,25 @@ class CandleAggregator private constructor(
         state.update(tick)
     }
 
+    /**
+     * Close every in-progress candle whose window already ended at [nowMs] — the
+     * time-driven close for quiet symbols. Without it a candle only closes when the
+     * NEXT tick arrives: on a thin session edge the last bar never closes, its rules
+     * never evaluate, and partial sync windows are immortal. The live heartbeat drives
+     * this; backtests stay purely tick-driven (event-time has no "quiet wall clock"),
+     * a documented divergence (catalog row A12).
+     */
+    fun flushClosed(nowMs: Long) {
+        val it = open.entries.iterator()
+        while (it.hasNext()) {
+            val (_, state) = it.next()
+            if (nowMs >= state.endTime) {
+                emit(state.toCandle())
+                it.remove()
+            }
+        }
+    }
+
     private fun newState(tick: Tick): MutableCandle {
         val start = window.windowStartFor(tick.timestamp)
         val end = start + window.durationMs
