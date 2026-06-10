@@ -240,7 +240,12 @@ class TradingPipeline(
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
             positions.reset(e.symbol, e.newQty, e.newAvgPx)
         }
-        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+        // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
+        // side effects runs — OrderManager cancels OCO siblings and dispatches children,
+        // and the stack orchestrator risk-checks child tiers against position state.
+        // Both subscribe earlier in construction order, so ordinary subscribe() here
+        // would run them against a pre-fill book (#374, #377).
+        bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
             if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
             // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
             // the instrument's contractSize here so dollar amounts match what the venue
