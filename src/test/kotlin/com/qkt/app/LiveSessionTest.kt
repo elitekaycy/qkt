@@ -78,6 +78,62 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `a strategy exception does not kill the engine loop and raises an alert`() {
+        val src = InMemoryMarketSource()
+        src.seedLive(
+            "X",
+            listOf(
+                Tick("X", Money.of("100"), now.toEpochMilli()),
+                Tick("X", Money.of("101"), now.plus(Duration.ofSeconds(1)).toEpochMilli()),
+            ),
+        )
+        val seen = mutableListOf<Tick>()
+        var thrown = false
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    seen.add(tick)
+                    if (!thrown) {
+                        thrown = true
+                        throw IllegalStateException("boom on first tick")
+                    }
+                }
+            }
+        val alerts = java.util.concurrent.CopyOnWriteArrayList<com.qkt.notify.NotificationEvent>()
+        val recordingNotifier =
+            object : com.qkt.notify.Notifier {
+                override fun notify(event: com.qkt.notify.NotificationEvent) {
+                    alerts.add(event)
+                }
+
+                override fun close() {}
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("boom" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                notifier = recordingNotifier,
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        // Tick N threw; tick N+1 must still be processed by the (alive) engine loop.
+        assertThat(seen).hasSize(2)
+        // The fault halts trading and raises a CRITICAL alert.
+        assertThat(handle.isHalted()).isTrue()
+        assertThat(
+            alerts.filterIsInstance<com.qkt.notify.NotificationEvent.StrategyError>(),
+        ).isNotEmpty
+    }
+
+    @Test
     fun `seeded history opens the warmup gate before the first live bar`() {
         // 5 historical bars cover WARMUP 5 BARS, so the rule must fire on the FIRST
         // live closed bar — not after five more live bars. Seeding must credit the
