@@ -67,9 +67,12 @@ class MT5PositionPollerCloseTest {
 
     @Test
     fun `close with meta lookup emits strategyId and real client-order id`() {
-        // Snapshot 1: ticket 7001 (BUY) open. Snapshot 2: empty (closed).
+        // Snapshot 1: ticket 7001 (BUY) open. Snapshot 2: empty (closed). The close
+        // then asks /history_deals_get — no closing deal recorded, so the price falls
+        // back to the provider's last tick.
         server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        server.enqueue(MockResponse().setBody("[]"))
 
         val registry = mapOf(7001L to ClosedPositionMeta("dsl-strat-42", "alpha"))
         val priceTracker = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) }
@@ -131,8 +134,41 @@ class MT5PositionPollerCloseTest {
         poller.tick() // recovered, 7001 still open — still no close
         assertThat(fills).isEmpty()
 
+        server.enqueue(MockResponse().setBody("[]")) // deals lookup for the close
         poller.tick() // 7001 genuinely closed now
         assertThat(fills).hasSize(1)
+    }
+
+    @Test
+    fun `venue-side close is priced from the closing deal, not the engine's last tick`() {
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        // The venue's SL filled at 1.0950 — two partial out-deals volume-weight to it.
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":1,"entry":0,"price":"1.1000","volume":"0.10"},
+                    {"ticket":2,"entry":1,"price":"1.0940","volume":"0.05"},
+                    {"ticket":3,"entry":1,"price":"1.0960","volume":"0.05"}]""",
+            ),
+        )
+
+        val priceTracker = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) }
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = { ClosedPositionMeta("ord-1", "alpha") },
+                priceProvider = priceTracker,
+            )
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).hasSize(1)
+        // (1.0940 * 0.05 + 1.0960 * 0.05) / 0.10 = 1.0950 — the deal truth, not 1.1200.
+        assertThat(fills.single().price).isEqualByComparingTo("1.0950")
     }
 
     @Test
@@ -163,6 +199,7 @@ class MT5PositionPollerCloseTest {
     fun `close with no meta lookup falls back to synthetic id and blank strategyId`() {
         server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(8888L, 1, "2050.00")))))
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        server.enqueue(MockResponse().setBody("[]")) // deals lookup for the close
 
         // Empty registry — position was opened outside this qkt session
         val poller =

@@ -283,6 +283,51 @@ class MT5Client(
         return "{" + fields.joinToString(",") + "}"
     }
 
+    /**
+     * The volume-weighted exit price of the deals that closed venue position
+     * [positionTicket], via `GET /history_deals_get`. This is the truth for a
+     * venue-side close (broker SL/TP, manual close, stop-out) — the engine's last
+     * tick is a proxy that is stalest exactly when venue-side closes happen.
+     *
+     * [fromUtcMs]/[toUtcMs] bound the search (the position's open time and now);
+     * both are padded a day and shifted to venue time. Returns `null` when the
+     * gateway can't be read or no closing deal exists in the window — callers fall
+     * back to their best local proxy.
+     */
+    fun getClosingDealPrice(
+        positionTicket: Long,
+        fromUtcMs: Long,
+        toUtcMs: Long,
+    ): BigDecimal? {
+        val from = venueIso(fromUtcMs - DEAL_WINDOW_PAD_MS)
+        val to = venueIso(toUtcMs + DEAL_WINDOW_PAD_MS)
+        val url = "$gatewayUrl/history_deals_get?from_date=$from&to_date=$to&position=$positionTicket"
+        val raw = getWithRetry(url) ?: return null
+        val arr = json.parseToJsonElement(raw) as? JsonArray ?: return null
+        // DEAL_ENTRY_IN (0) opened the position; OUT (1) / INOUT (2) / OUT_BY (3)
+        // reduced or closed it. The close may have happened in several partial deals —
+        // volume-weight them into the single price the synthesized fill carries.
+        var volume = BigDecimal.ZERO
+        var notional = BigDecimal.ZERO
+        for (el in arr) {
+            val d = el.jsonObject
+            val entry = d["entry"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+            if (entry == 0) continue
+            val price = d["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: continue
+            val vol = d["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: continue
+            if (vol.signum() <= 0) continue
+            volume = volume.add(vol)
+            notional = notional.add(price.multiply(vol))
+        }
+        if (volume.signum() == 0) return null
+        return notional.divide(volume, com.qkt.common.Money.CONTEXT)
+    }
+
+    private fun venueIso(utcMs: Long): String =
+        java.time.Instant
+            .ofEpochMilli(utcMs + tzOffsetMs)
+            .toString()
+
     fun getTick(brokerSymbol: String): MT5Tick? {
         val raw = getWithRetry("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
@@ -474,5 +519,8 @@ class MT5Client(
 
     companion object {
         private val JSON_MEDIA = "application/json".toMediaType()
+
+        /** Padding either side of the deal search window — venue clock skew is hours, not days. */
+        private const val DEAL_WINDOW_PAD_MS: Long = 24L * 3600_000L
     }
 }
