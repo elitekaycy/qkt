@@ -19,6 +19,12 @@ interface LiveSessionHandle {
     /** Count of ticks dropped because the strategy callback couldn't keep up. */
     val droppedTicks: Long
 
+    /**
+     * Depth of the inbound engine queue (control events + buffered ticks). A growing
+     * value flags a stalled or slow engine thread before it becomes dropped ticks.
+     */
+    fun inboundQueueDepth(): Int = 0
+
     /** Initiates graceful shutdown. Use [awaitTermination] to wait for completion. */
     fun stop()
 
