@@ -123,6 +123,8 @@ class ReplayEngine(
                 brokerSymbols.getOrPut(key.broker) { mutableSetOf() }.add(key.qktSymbol)
             }
         }
+        com.qkt.instrument.QuoteCurrencyGuard
+            .assertAccountQuoted(symbols + brokerSymbols.values.flatten())
         val brokerFactory: () -> com.qkt.broker.Broker =
             when (brokerKind) {
                 BrokerKind.PAPER -> { -> PaperBroker(bus, clock, priceTracker) }
