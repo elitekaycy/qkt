@@ -125,6 +125,16 @@ class ReplayEngine(
         }
         com.qkt.instrument.QuoteCurrencyGuard
             .assertAccountQuoted(symbols + brokerSymbols.values.flatten())
+        // Same deploy-time contract as live: a real registry that cannot resolve a traded
+        // symbol fails the run up front instead of silently booking contractSize=1.
+        if (instruments !is NoopInstrumentRegistry) {
+            for (symbol in (symbols + brokerSymbols.values.flatten()).distinct()) {
+                requireNotNull(instruments.lookup(symbol)) {
+                    "InstrumentMeta unresolvable for $symbol — refusing to backtest " +
+                        "(PnL would silently book contractSize=1)"
+                }
+            }
+        }
         val brokerFactory: () -> com.qkt.broker.Broker =
             when (brokerKind) {
                 BrokerKind.PAPER -> { -> PaperBroker(bus, clock, priceTracker) }

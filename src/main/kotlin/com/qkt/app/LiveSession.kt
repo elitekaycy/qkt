@@ -507,6 +507,19 @@ class LiveSession(
             if (balance.signum() > 0) strategyPnL.setStartingBalance(id, balance)
         }
 
+        // PnL books `contractSize` per symbol; on a real registry an unresolvable symbol
+        // must fail HERE at deploy, not silently book 1.0 at fill time (100-100,000x off
+        // for metals/FX). NoopInstrumentRegistry stays exempt — it is the explicit
+        // unit-contract default for paper/crypto paths.
+        if (instruments !is com.qkt.instrument.NoopInstrumentRegistry) {
+            for (symbol in symbols) {
+                requireNotNull(instruments.lookup(symbol)) {
+                    "InstrumentMeta unresolvable for $symbol at deploy — refusing to start " +
+                        "(PnL would silently book contractSize=1)"
+                }
+            }
+        }
+
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
         reconcileOrPreload(strategyPositions, broker)

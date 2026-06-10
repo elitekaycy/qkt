@@ -10,6 +10,12 @@ import java.math.BigDecimal
  * Global halt rule: trips when account-wide realized loss for the current UTC day
  * exceeds [maxLoss]. [maxLoss] is the magnitude (positive number); the rule compares
  * `-realized` against it. Daily scope — the halt auto-resumes at the next UTC midnight.
+ *
+ * REALIZED-ONLY: this rule is fill-driven and never sees open positions bleeding
+ * intraday — a position down $5k all day with a $1k limit halts nothing until it
+ * closes. To halt on open losses too, configure `max_daily_drawdown_pct` with
+ * `daily_dd_basis: equity` ([MaxDailyDrawdown] via the equity-based tracker), which
+ * marks open PnL on every tick.
  */
 class MaxDailyLoss(
     private val maxLoss: BigDecimal,

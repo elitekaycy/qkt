@@ -284,21 +284,22 @@ class MT5Client(
     }
 
     /**
-     * The volume-weighted exit price of the deals that closed venue position
-     * [positionTicket], via `GET /history_deals_get`. This is the truth for a
-     * venue-side close (broker SL/TP, manual close, stop-out) — the engine's last
-     * tick is a proxy that is stalest exactly when venue-side closes happen.
+     * The deals that closed venue position [positionTicket], via `GET /history_deals_get`:
+     * the volume-weighted exit price plus the position's total venue costs (commission +
+     * swap + fee across all its deals). This is the truth for a venue-side close (broker
+     * SL/TP, manual close, stop-out) — the engine's last tick is a proxy that is stalest
+     * exactly when venue-side closes happen.
      *
      * [fromUtcMs]/[toUtcMs] bound the search (the position's open time and now);
      * both are padded a day and shifted to venue time. Returns `null` when the
      * gateway can't be read or no closing deal exists in the window — callers fall
      * back to their best local proxy.
      */
-    fun getClosingDealPrice(
+    fun getClosingDeal(
         positionTicket: Long,
         fromUtcMs: Long,
         toUtcMs: Long,
-    ): BigDecimal? {
+    ): MT5ClosingDeal? {
         val from = venueIso(fromUtcMs - DEAL_WINDOW_PAD_MS)
         val to = venueIso(toUtcMs + DEAL_WINDOW_PAD_MS)
         val url = "$gatewayUrl/history_deals_get?from_date=$from&to_date=$to&position=$positionTicket"
@@ -307,10 +308,18 @@ class MT5Client(
         // DEAL_ENTRY_IN (0) opened the position; OUT (1) / INOUT (2) / OUT_BY (3)
         // reduced or closed it. The close may have happened in several partial deals —
         // volume-weight them into the single price the synthesized fill carries.
+        // Costs sum over ALL deals (entry + exit): MT5 books commission per deal and
+        // swap on the position's deals, all signed "added to profit" (negative = cost),
+        // so the charge is the negated sum.
         var volume = BigDecimal.ZERO
         var notional = BigDecimal.ZERO
+        var reported = BigDecimal.ZERO
         for (el in arr) {
             val d = el.jsonObject
+            val commission = d["commission"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+            val swap = d["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+            val fee = d["fee"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+            reported = reported.add(commission).add(swap).add(fee)
             val entry = d["entry"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
             if (entry == 0) continue
             val price = d["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: continue
@@ -320,7 +329,10 @@ class MT5Client(
             notional = notional.add(price.multiply(vol))
         }
         if (volume.signum() == 0) return null
-        return notional.divide(volume, com.qkt.common.Money.CONTEXT)
+        return MT5ClosingDeal(
+            price = notional.divide(volume, com.qkt.common.Money.CONTEXT),
+            costs = reported.negate(),
+        )
     }
 
     private fun venueIso(utcMs: Long): String =
