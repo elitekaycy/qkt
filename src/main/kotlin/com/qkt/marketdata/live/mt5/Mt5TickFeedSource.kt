@@ -31,6 +31,7 @@ class Mt5TickFeedSource(
     private val symbolCalendars: SymbolCalendars? = null,
     private val outOfSessionSleepMs: Long = 60_000L,
 ) : LiveTickSource {
+    private val log = org.slf4j.LoggerFactory.getLogger(Mt5TickFeedSource::class.java)
     private val symbols: List<String> = symbolMap.keys.toList()
 
     private val running = AtomicBoolean(false)
@@ -45,6 +46,12 @@ class Mt5TickFeedSource(
         check(running.compareAndSet(false, true)) { "Mt5TickFeedSource already started" }
         val client = Mt5TickClient(baseUrl, http)
         val lastBrokerMs = mutableMapOf<String, Long>()
+        // Repeated poll failure must surface as a DISCONNECT, not an endless onError
+        // stream: only onDisconnect starts the feed's reconnect budget, so without it a
+        // hung gateway means silent stale prices forever. Polling self-heals — a later
+        // successful round fires onReconnect and clears the budget.
+        var consecutiveFailedRounds = 0
+        var disconnected = false
         thread =
             Thread({
                 try {
@@ -61,10 +68,12 @@ class Mt5TickFeedSource(
                             }
                             continue
                         }
+                        var roundHadSuccess = false
                         for (sym in symbols) {
                             if (!running.get()) break
                             try {
                                 val tick = client.fetchOnce(sym, capturedAtMs = clock.now())
+                                roundHadSuccess = true
                                 val seen = lastBrokerMs[sym] ?: 0L
                                 if (tick.brokerTimeMs > seen) {
                                     lastBrokerMs[sym] = tick.brokerTimeMs
@@ -93,6 +102,27 @@ class Mt5TickFeedSource(
                                 onError(e)
                             }
                         }
+                        if (symbols.isNotEmpty()) {
+                            if (roundHadSuccess) {
+                                consecutiveFailedRounds = 0
+                                if (disconnected) {
+                                    disconnected = false
+                                    log.info("Mt5TickFeedSource {} gateway answering again", baseUrl)
+                                    onReconnect()
+                                }
+                            } else {
+                                consecutiveFailedRounds++
+                                if (!disconnected && consecutiveFailedRounds >= DISCONNECT_AFTER_FAILED_ROUNDS) {
+                                    disconnected = true
+                                    log.error(
+                                        "Mt5TickFeedSource {} treated as DISCONNECTED after {} fully-failed rounds",
+                                        baseUrl,
+                                        consecutiveFailedRounds,
+                                    )
+                                    onDisconnect()
+                                }
+                            }
+                        }
                         try {
                             Thread.sleep(pollIntervalMs)
                         } catch (e: InterruptedException) {
@@ -114,5 +144,10 @@ class Mt5TickFeedSource(
             thread?.interrupt()
             thread = null
         }
+    }
+
+    private companion object {
+        /** Fully-failed poll rounds before the source reports itself disconnected. */
+        const val DISCONNECT_AFTER_FAILED_ROUNDS: Int = 5
     }
 }
