@@ -110,6 +110,17 @@ class HaltRulesTest {
     }
 
     @Test
+    fun `MaxDailyLoss at exactly the threshold continues — strictly greater semantics`() {
+        val rig = newRig()
+        rig.state.dailyPnLTracker.recordRealized("A", BigDecimal("-100"))
+        assertThat(MaxDailyLoss(BigDecimal("100")).evaluate(rig.state))
+            .isEqualTo(HaltDecision.Continue)
+        rig.state.dailyPnLTracker.recordRealized("A", BigDecimal("-0.01"))
+        assertThat(MaxDailyLoss(BigDecimal("100")).evaluate(rig.state))
+            .isInstanceOf(HaltDecision.Halt::class.java)
+    }
+
+    @Test
     fun `MaxStrategyDrawdown halts only that strategy`() {
         val rig = newRig()
         rig.applyAndRecord(fill("A", "X", Side.BUY, "10", "100"))

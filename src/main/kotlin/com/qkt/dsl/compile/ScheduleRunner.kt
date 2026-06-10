@@ -183,15 +183,25 @@ class ScheduleRunner(
         from: Instant,
         fromMs: Long,
     ): Long {
+        val time = LocalTime.of(t.hour, t.minute, t.second)
         val todayLocal = from.atZone(zone).toLocalDate()
-        val candidate =
-            todayLocal
-                .atTime(LocalTime.of(t.hour, t.minute, t.second))
-                .atZone(zone)
-                .toInstant()
-                .toEpochMilli()
-        return if (candidate >= fromMs) candidate else candidate + DAY_MS
+        val candidate = localInstantMs(todayLocal, time, zone)
+        // Roll to the NEXT LOCAL DAY by date arithmetic, never by adding 24h of epoch
+        // millis: across a DST transition the same local clock time is a different
+        // UTC offset, and a fixed-day add fires an hour early or late.
+        return if (candidate >= fromMs) candidate else localInstantMs(todayLocal.plusDays(1), time, zone)
     }
+
+    private fun localInstantMs(
+        date: java.time.LocalDate,
+        time: LocalTime,
+        zone: ZoneId,
+    ): Long =
+        date
+            .atTime(time)
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
 
     private fun nextEveryHour(
         minuteOffset: Int,
@@ -220,8 +230,18 @@ class ScheduleRunner(
         from: Instant,
         fromMs: Long,
     ): Long {
-        var candidate = nextAt(t, zone, from, fromMs)
-        while (!isWeekday(candidate, zone)) candidate += DAY_MS
+        val time = LocalTime.of(t.hour, t.minute, t.second)
+        var date = from.atZone(zone).toLocalDate()
+        var candidate = localInstantMs(date, time, zone)
+        if (candidate < fromMs) {
+            date = date.plusDays(1)
+            candidate = localInstantMs(date, time, zone)
+        }
+        // Local-date arithmetic for the same DST reason as [nextAt].
+        while (!isWeekday(candidate, zone)) {
+            date = date.plusDays(1)
+            candidate = localInstantMs(date, time, zone)
+        }
         return candidate
     }
 
@@ -241,6 +261,5 @@ class ScheduleRunner(
     companion object {
         private val log = LoggerFactory.getLogger(ScheduleRunner::class.java)
         private const val HOUR_MS = 3_600_000L
-        private const val DAY_MS = 86_400_000L
     }
 }
