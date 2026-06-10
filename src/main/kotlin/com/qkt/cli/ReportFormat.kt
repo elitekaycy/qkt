@@ -55,6 +55,13 @@ object ReportPrinter {
         out.println("Calmar:           ${g.calmarRatio?.toPlainString() ?: "n/a"}")
         out.println("Max drawdown:     ${g.maxDrawdown.toPlainString()}")
         out.println("Max daily DD:     ${g.maxDailyDrawdown.toPlainString()}")
+        if (r.halts.isNotEmpty()) {
+            out.println("Risk halts:       ${r.halts.size}")
+            for (h in r.halts) {
+                val ts = java.time.Instant.ofEpochMilli(h.timestamp)
+                out.println("  $ts  ${h.reason}${h.strategyId?.let { " [$it]" } ?: ""}")
+            }
+        }
         out.println()
         out.println("Assumptions & conventions")
         out.println("  Execution:  ${executionModel(brokerKind)}")
@@ -103,6 +110,7 @@ object ReportPrinter {
                 .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" },
         )
         sb.append("},")
+        sb.append("\"halts\":").append(r.halts.size).append(',')
         sb.append("\"cadence\":\"").append(r.cadence.name).append('"')
         sb.append('}')
         out.println(sb.toString())

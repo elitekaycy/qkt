@@ -78,6 +78,160 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `a strategy exception does not kill the engine loop and raises an alert`() {
+        val src = InMemoryMarketSource()
+        src.seedLive(
+            "X",
+            listOf(
+                Tick("X", Money.of("100"), now.toEpochMilli()),
+                Tick("X", Money.of("101"), now.plus(Duration.ofSeconds(1)).toEpochMilli()),
+            ),
+        )
+        val seen = mutableListOf<Tick>()
+        var thrown = false
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    seen.add(tick)
+                    if (!thrown) {
+                        thrown = true
+                        throw IllegalStateException("boom on first tick")
+                    }
+                }
+            }
+        val alerts = java.util.concurrent.CopyOnWriteArrayList<com.qkt.notify.NotificationEvent>()
+        val recordingNotifier =
+            object : com.qkt.notify.Notifier {
+                override fun notify(event: com.qkt.notify.NotificationEvent) {
+                    alerts.add(event)
+                }
+
+                override fun close() {}
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("boom" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                notifier = recordingNotifier,
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        // Tick N threw; tick N+1 must still be processed by the (alive) engine loop.
+        assertThat(seen).hasSize(2)
+        // The fault halts trading and raises a CRITICAL alert.
+        assertThat(handle.isHalted()).isTrue()
+        assertThat(
+            alerts.filterIsInstance<com.qkt.notify.NotificationEvent.StrategyError>(),
+        ).isNotEmpty
+    }
+
+    @Test
+    fun `seeded history opens the warmup gate before the first live bar`() {
+        // 5 historical bars cover WARMUP 5 BARS, so the rule must fire on the FIRST
+        // live closed bar — not after five more live bars. Seeding must credit the
+        // gate (seed-before-bind); a cold gate here means every deploy starts with a
+        // dead window the length of the warmup.
+        val src = InMemoryMarketSource()
+        val warmupStart = now.minusSeconds(5 * 60).toEpochMilli()
+        src.seedBars(
+            "EXNESS:X",
+            TimeWindow.ONE_MINUTE,
+            (0 until 5).map { i ->
+                Candle(
+                    "EXNESS:X",
+                    Money.of((100 + i).toString()),
+                    Money.of((100 + i).toString()),
+                    Money.of((100 + i).toString()),
+                    Money.of((100 + i).toString()),
+                    Money.of("1"),
+                    warmupStart + i * 60_000L,
+                    warmupStart + (i + 1) * 60_000L,
+                )
+            },
+        )
+        src.seedLive(
+            "EXNESS:X",
+            listOf(
+                Tick("EXNESS:X", Money.of("200"), now.toEpochMilli()),
+                Tick("EXNESS:X", Money.of("201"), now.plus(Duration.ofSeconds(61)).toEpochMilli()),
+            ),
+        )
+        val parsed =
+            com.qkt.dsl.parse.Dsl.parse(
+                """
+                STRATEGY gatecheck VERSION 1
+                SYMBOLS
+                  x = EXNESS:X EVERY 1m WARMUP 5 BARS
+                RULES
+                  WHEN x.close > 0 THEN BUY x SIZING 1
+                """.trimIndent(),
+            ) as com.qkt.dsl.parse.ParseResult.Success
+        val strategy =
+            com.qkt.dsl.compile
+                .AstCompiler()
+                .compile(parsed.value)
+
+        val signals = mutableListOf<Signal>()
+        val handle =
+            LiveSession(
+                strategies = listOf("gatecheck" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("EXNESS:X"),
+                candleWindow = TimeWindow.ONE_MINUTE,
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                onSignal = { signals.add(it) },
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        assertThat(signals).isNotEmpty
+    }
+
+    @Test
+    fun `standalone deploy seeds the strategy starting balance from initialBalance`() {
+        // No startingBalances map (that's the portfolio path) — a standalone deploy
+        // must still give ACCOUNT.equity its configured balance, or % OF EQUITY
+        // sizing runs on zero.
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val equities = mutableListOf<java.math.BigDecimal>()
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    equities.add(ctx.pnl.equity())
+                }
+            }
+        val session =
+            LiveSession(
+                strategies = listOf("solo" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                initialBalance = Money.of("10000"),
+            )
+
+        val handle = session.start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+        assertThat(equities).isNotEmpty
+        assertThat(equities.first()).isEqualByComparingTo(Money.of("10000"))
+    }
+
+    @Test
     fun `running becomes false after stop`() {
         val src = InMemoryMarketSource()
         src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))

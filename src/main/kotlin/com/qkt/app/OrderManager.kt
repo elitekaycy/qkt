@@ -1519,6 +1519,7 @@ class OrderManager(
                             quantity = te.target.quantity,
                             timeInForce = te.timeInForce,
                             timestamp = clock.now(),
+                            strategyId = te.strategyId,
                         )
                     submit(closing)
                 } else if (!target.state.isTerminal) {
@@ -1685,6 +1686,7 @@ class OrderManager(
                         quantity = req.quantity,
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
+                        strategyId = req.strategyId,
                     )
                 is OrderRequest.StopLimit ->
                     OrderRequest.Limit(
@@ -1695,6 +1697,7 @@ class OrderManager(
                         limitPrice = req.limitPrice,
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
+                        strategyId = req.strategyId,
                     )
                 is OrderRequest.IfTouched ->
                     if (req.onTrigger == TriggerType.MARKET) {
@@ -1705,6 +1708,7 @@ class OrderManager(
                             quantity = req.quantity,
                             timeInForce = req.timeInForce,
                             timestamp = clock.now(),
+                            strategyId = req.strategyId,
                         )
                     } else {
                         OrderRequest.Limit(
@@ -1715,6 +1719,7 @@ class OrderManager(
                             limitPrice = req.limitPrice!!,
                             timeInForce = req.timeInForce,
                             timestamp = clock.now(),
+                            strategyId = req.strategyId,
                         )
                     }
                 is OrderRequest.TrailingStop ->
@@ -1725,6 +1730,7 @@ class OrderManager(
                         quantity = req.quantity,
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
+                        strategyId = req.strategyId,
                     )
                 is OrderRequest.ArmedTrailingStop ->
                     OrderRequest.Market(
@@ -1734,6 +1740,7 @@ class OrderManager(
                         quantity = req.quantity,
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
+                        strategyId = req.strategyId,
                         // Close the exact venue position by ticket when this exit belongs to an
                         // independent leg (hedging) — otherwise a plain market opens a counter.
                         closesTicket = closeTicketFor?.invoke(req.strategyId, req.id),
@@ -1750,6 +1757,7 @@ class OrderManager(
                         limitPrice = limitPrice.setScale(Money.SCALE, Money.ROUNDING),
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
+                        strategyId = req.strategyId,
                     )
                 }
                 else -> error("Not a Tier 2 fallback type: ${req::class.simpleName}")

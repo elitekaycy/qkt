@@ -46,6 +46,7 @@ class BacktestContext private constructor(
     val barStore: LocalBarStore,
     private val candleWindow: TimeWindow?,
     private val startingBalance: BigDecimal,
+    private val haltRules: List<com.qkt.risk.HaltRule>,
     private val provisioner: () -> Unit,
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
@@ -59,6 +60,7 @@ class BacktestContext private constructor(
         val strategy = AstCompiler().compile(ast, overrides)
         return Backtest.fromStore(
             strategies = listOf(ast.name to strategy),
+            haltRules = haltRules,
             store = store,
             request = MarketRequest(symbols = symbols, from = range.from, to = range.to),
             candleWindow = candleWindow,
@@ -168,6 +170,22 @@ class BacktestContext private constructor(
                 }
             }
 
+            // Same config-driven halt construction the live daemon uses, so a strategy
+            // that would halt live halts at the same point in its backtest. The basis
+            // balance is the backtest's own starting balance.
+            val cfg =
+                Config.load(
+                    Paths.get(args.option("config") ?: "./qkt.config.yaml"),
+                )
+            val haltRules =
+                com.qkt.risk.HaltRules.standard(
+                    maxDailyLoss = cfg.maxDailyLoss,
+                    maxDrawdownPct = cfg.maxDrawdownPct,
+                    maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
+                    totalDdBasis = cfg.totalDdBasis,
+                    startingBalance = startingBalance,
+                )
+
             return BacktestContext(
                 ast = ast,
                 from = from,
@@ -179,6 +197,7 @@ class BacktestContext private constructor(
                 barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
+                haltRules = haltRules,
                 provisioner = provisioner,
             )
         }
