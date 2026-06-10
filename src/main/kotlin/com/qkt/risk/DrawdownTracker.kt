@@ -32,26 +32,36 @@ class DrawdownTracker(
 
     /**
      * Total drawdown measured from [initialBalance] rather than the peak — the prop-firm "static"
-     * limit. Equity is PnL-relative (0-based), so absolute equity is `initialBalance + pnl` and the
-     * static drawdown reduces to `max(0, −pnl) / initialBalance`. Returns zero when in profit or when
+     * limit. The tracker's series is true equity (anchored at the account starting balance), so
+     * the loss is the shortfall below that balance. Returns zero when in profit or when
      * [initialBalance] is non-positive.
      */
     fun globalStaticDrawdown(initialBalance: BigDecimal): BigDecimal {
         if (initialBalance.signum() <= 0) return Money.ZERO
-        val pnl = equityTracker.currentEquity()
-        if (pnl.signum() >= 0) return Money.ZERO
-        return pnl.negate().divide(initialBalance, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+        // The tracker's series is true equity (anchored at the starting balance), so the
+        // static loss is the shortfall below that balance — not a sign test on raw PnL.
+        val loss = initialBalance.subtract(equityTracker.currentEquity())
+        if (loss.signum() <= 0) return Money.ZERO
+        return loss.divide(initialBalance, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
     }
 
-    /** Per-strategy static drawdown measured from [initialBalance]; see [globalStaticDrawdown]. */
+    /**
+     * Per-strategy static drawdown: the strategy's loss below its OWN equity anchor
+     * (its starting balance), expressed as a fraction of [initialBalance]. The anchor
+     * subtraction makes this `max(0, −strategyPnL) / initialBalance` whatever the anchor
+     * is, so a flat strategy always reads zero. See [globalStaticDrawdown].
+     */
     fun strategyStaticDrawdown(
         strategyId: String,
         initialBalance: BigDecimal,
     ): BigDecimal {
         if (initialBalance.signum() <= 0) return Money.ZERO
-        val pnl = equityTracker.currentEquityFor(strategyId)
-        if (pnl.signum() >= 0) return Money.ZERO
-        return pnl.negate().divide(initialBalance, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+        val loss =
+            equityTracker
+                .startingBalanceFor(strategyId)
+                .subtract(equityTracker.currentEquityFor(strategyId))
+        if (loss.signum() <= 0) return Money.ZERO
+        return loss.divide(initialBalance, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
     }
 
     companion object {

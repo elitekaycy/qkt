@@ -32,7 +32,7 @@ class RiskState(
     initialBalance: BigDecimal = BigDecimal.ZERO,
     dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
 ) {
-    val equityTracker: EquityTracker = EquityTracker(pnl, strategyPnL)
+    val equityTracker: EquityTracker = EquityTracker(pnl, strategyPnL, initialBalance)
     val drawdownTracker: DrawdownTracker = DrawdownTracker(equityTracker)
     val dailyPnLTracker: DailyPnLTracker = DailyPnLTracker(clock)
     val dailyDrawdownTracker: DailyDrawdownTracker =
