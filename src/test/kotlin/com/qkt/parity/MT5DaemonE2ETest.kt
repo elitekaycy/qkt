@@ -80,6 +80,12 @@ class MT5DaemonE2ETest {
                             )
                         path.startsWith("/get_positions") || path.startsWith("/orders") ->
                             MockResponse().setBody("[]")
+                        path.startsWith("/symbol_info/") ->
+                            MockResponse().setBody(
+                                """{"ask":"1.1","bid":"1.1","digits":5,"point":"0.00001",""" +
+                                    """"trade_stops_level":0,"volume_min":"0.01","volume_step":"0.01",""" +
+                                    """"trade_contract_size":"100000"}""",
+                            )
                         else -> MockResponse().setResponseCode(404)
                     }
                 }

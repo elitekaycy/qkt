@@ -164,12 +164,13 @@ class MT5PositionPoller(
                         )
                     }
             val strategyId = meta?.strategyId ?: ""
-            // The closing deal is the venue's truth for a venue-side close. The engine's
-            // last tick is a fallback proxy; the open price is the proxy of last resort
-            // (it fabricates a break-even close — better than nothing, loudly logged).
-            val dealPrice = client.getClosingDealPrice(ticket, fromUtcMs = p.openTime, toUtcMs = now)
+            // The closing deal is the venue's truth for a venue-side close — real exit
+            // price plus the position's commission/swap. The engine's last tick is a
+            // fallback proxy; the open price is the proxy of last resort (it fabricates
+            // a break-even close — better than nothing, loudly logged).
+            val deal = client.getClosingDeal(ticket, fromUtcMs = p.openTime, toUtcMs = now)
             val closePrice =
-                dealPrice ?: (priceProvider?.lastPrice(qktSymbol) ?: p.priceOpen).also { fallback ->
+                deal?.price ?: (priceProvider?.lastPrice(qktSymbol) ?: p.priceOpen).also { fallback ->
                     log.warn(
                         "MT5 poller for {} pricing close of ticket {} from local proxy {} — " +
                             "closing deal unavailable from gateway",
@@ -188,6 +189,7 @@ class MT5PositionPoller(
                     quantity = p.volume,
                     strategyId = strategyId,
                     timestamp = clock.now(),
+                    venueCosts = deal?.costs ?: java.math.BigDecimal.ZERO,
                 ),
             )
         }

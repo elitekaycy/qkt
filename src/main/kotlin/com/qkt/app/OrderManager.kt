@@ -30,6 +30,8 @@ import com.qkt.execution.isTerminal
 import com.qkt.execution.withStrategyId
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.buyExecPrice
+import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
@@ -1493,7 +1495,7 @@ class OrderManager(
         val triggered: List<ManagedOrder> =
             symbolLive
                 .filter { it.state == OrderState.PENDING }
-                .filter { triggerHit(it, tick.price) }
+                .filter { triggerHit(it, tick) }
         for (managed in triggered) {
             fireFallbackTrigger(managed, tick.price)
         }
@@ -1627,30 +1629,37 @@ class OrderManager(
         }
     }
 
+    // Side-aware like the venue: a BUY executes at the ask, a SELL at the bid, so the
+    // engine-held trigger compares against the side's execution price — otherwise
+    // engine-held triggers fire on mid while native venue triggers fire on bid/ask,
+    // and live is internally inconsistent (#382).
     private fun triggerHit(
         managed: ManagedOrder,
-        tickPrice: BigDecimal,
-    ): Boolean =
-        when (val request = managed.request) {
+        tick: com.qkt.marketdata.Tick,
+    ): Boolean {
+        val request = managed.request
+        val exec = if (request.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
+        return when (request) {
             is OrderRequest.Stop ->
-                if (request.side == Side.BUY) tickPrice >= request.stopPrice else tickPrice <= request.stopPrice
+                if (request.side == Side.BUY) exec >= request.stopPrice else exec <= request.stopPrice
             is OrderRequest.StopLimit ->
-                if (request.side == Side.BUY) tickPrice >= request.stopPrice else tickPrice <= request.stopPrice
+                if (request.side == Side.BUY) exec >= request.stopPrice else exec <= request.stopPrice
             is OrderRequest.IfTouched ->
-                if (request.side == Side.BUY) tickPrice <= request.triggerPrice else tickPrice >= request.triggerPrice
+                if (request.side == Side.BUY) exec <= request.triggerPrice else exec >= request.triggerPrice
             is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> {
                 val params = trailParams(request) ?: return false
                 val level = trailLevel(managed) ?: return false
-                if (params.side == Side.SELL) tickPrice <= level else tickPrice >= level
+                if (params.side == Side.SELL) exec <= level else exec >= level
             }
             is OrderRequest.ArmedTrailingStop -> {
                 val level = trailLevel(managed) ?: return false
                 // Exit SELL fires when price falls to the stop. Exit BUY fires when
                 // price rises to the stop. Matches [OrderRequest.TrailingStop] semantics.
-                if (request.side == Side.SELL) tickPrice <= level else tickPrice >= level
+                if (request.side == Side.SELL) exec <= level else exec >= level
             }
             else -> false
         }
+    }
 
     private data class TrailParams(
         val side: Side,

@@ -138,6 +138,16 @@ data class MT5OrderResult(
     val comment: String,
 )
 
+/**
+ * Aggregate view of the deals behind one closed venue position: the volume-weighted
+ * exit [price] and the position's total venue [costs] (commission + swap + fee,
+ * positive = charge in account currency).
+ */
+data class MT5ClosingDeal(
+    val price: BigDecimal,
+    val costs: BigDecimal,
+)
+
 /** Top-level response from `POST /order`. */
 data class MT5OrderResponse(
     val result: MT5OrderResult,

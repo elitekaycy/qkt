@@ -37,18 +37,35 @@ class StrategyPnL(
 
     fun realizedFor(strategyId: String): BigDecimal = realizedByStrategy[strategyId] ?: Money.ZERO
 
+    /**
+     * Open PnL on [symbol], summed PER LEG: each open leg contributes
+     * `signedQty x (mark - legEntry) x contractSize`. The netted position view cannot be
+     * the basis here — a hedged pair (equal long and short legs) nets to quantity zero
+     * while both legs are open at the broker, so a straddle locked in at a $300 spread
+     * loss would read as zero and equity, daily-loss, and drawdown halts would all be
+     * blind to it until the legs individually close.
+     */
     fun unrealizedFor(
         strategyId: String,
         symbol: String,
     ): BigDecimal {
-        val pos = strategyPositions.positionFor(strategyId, symbol) ?: return Money.ZERO
         val price = prices.lastPrice(symbol) ?: return Money.ZERO
         val cs = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
-        return price
-            .subtract(pos.avgEntryPrice)
-            .multiply(pos.quantity)
-            .multiply(cs)
-            .setScale(Money.SCALE, Money.ROUNDING)
+        val legs = strategyPositions.legBookFor(strategyId, symbol)?.all().orEmpty()
+        if (legs.isEmpty()) {
+            val pos = strategyPositions.positionFor(strategyId, symbol) ?: return Money.ZERO
+            return price
+                .subtract(pos.avgEntryPrice)
+                .multiply(pos.quantity)
+                .multiply(cs)
+                .setScale(Money.SCALE, Money.ROUNDING)
+        }
+        var sum = Money.ZERO
+        for (leg in legs) {
+            val signedQty = if (leg.side == com.qkt.common.Side.BUY) leg.quantity else leg.quantity.negate()
+            sum = sum.add(price.subtract(leg.entryPrice).multiply(signedQty).multiply(cs))
+        }
+        return sum.setScale(Money.SCALE, Money.ROUNDING)
     }
 
     fun unrealizedTotalFor(strategyId: String): BigDecimal =

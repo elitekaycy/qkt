@@ -16,28 +16,35 @@ import java.util.concurrent.ConcurrentHashMap
 class EquityTracker(
     private val pnl: PnLProvider,
     private val strategyPnL: StrategyPnL,
+    /**
+     * Account starting balance — the anchor that makes the series true equity. A 0-based
+     * PnL series makes trailing drawdown a fraction of peak PROFIT, not equity: a $100
+     * giveback off a $200 peak profit on a $10k account would read as 50% instead of 1%.
+     */
+    private val startingBalance: BigDecimal = Money.ZERO,
 ) {
     @Volatile
-    private var currentTotalEquity: BigDecimal = Money.ZERO
+    private var currentTotalEquity: BigDecimal = startingBalance
 
     @Volatile
-    private var peakTotalEquity: BigDecimal = Money.ZERO
+    private var peakTotalEquity: BigDecimal = startingBalance
 
     private val perStrategyCurrent: MutableMap<String, BigDecimal> = ConcurrentHashMap()
     private val perStrategyPeak: MutableMap<String, BigDecimal> = ConcurrentHashMap()
 
     fun update() {
-        val total = pnl.realizedTotal().add(pnl.unrealizedTotal())
+        val total = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         currentTotalEquity = total
         if (total > peakTotalEquity) peakTotalEquity = total
     }
 
     fun updateStrategy(strategyId: String) {
         if (strategyId.isBlank()) return
-        val total = strategyPnL.totalFor(strategyId)
+        // equityFor anchors at the strategy's own starting balance (set on every deploy path).
+        val total = strategyPnL.equityFor(strategyId)
         perStrategyCurrent[strategyId] = total
-        val peak = perStrategyPeak[strategyId] ?: Money.ZERO
-        if (total > peak) perStrategyPeak[strategyId] = total
+        val peak = perStrategyPeak[strategyId]
+        if (peak == null || total > peak) perStrategyPeak[strategyId] = total
     }
 
     /**
@@ -57,7 +64,10 @@ class EquityTracker(
     fun peakEquity(): BigDecimal = peakTotalEquity
 
     fun currentEquityFor(strategyId: String): BigDecimal =
-        perStrategyCurrent[strategyId] ?: strategyPnL.totalFor(strategyId)
+        perStrategyCurrent[strategyId] ?: strategyPnL.equityFor(strategyId)
 
-    fun peakEquityFor(strategyId: String): BigDecimal = perStrategyPeak[strategyId] ?: Money.ZERO
+    fun peakEquityFor(strategyId: String): BigDecimal = perStrategyPeak[strategyId] ?: strategyPnL.equityFor(strategyId)
+
+    /** The strategy's equity anchor — its starting balance as registered with [StrategyPnL]. */
+    fun startingBalanceFor(strategyId: String): BigDecimal = strategyPnL.startingBalanceFor(strategyId)
 }

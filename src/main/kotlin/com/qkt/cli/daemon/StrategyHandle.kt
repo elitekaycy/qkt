@@ -190,6 +190,7 @@ class StrategyHandle(
                             layers,
                             streamBrokers = session.streamBrokers(),
                             pnl = session.pnlSnapshot(ast.name),
+                            inboundQueueDepth = session.inboundQueueDepth(),
                         )
                     },
                     running = { session.running },

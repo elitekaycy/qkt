@@ -11,11 +11,15 @@ class DrawdownTrackerStaticTest {
     private fun tracker(
         realized: String,
         unrealized: String,
+        startingBalance: String = "10000",
     ): DrawdownTracker {
+        // Anchored at the same balance the rule measures against — the production wiring
+        // (RiskState seeds the tracker with the configured initialBalance).
         val et =
             EquityTracker(
                 FakePnL(BigDecimal(realized), BigDecimal(unrealized)),
                 StrategyPnL(StrategyPositionTracker(), MarketPriceTracker()),
+                BigDecimal(startingBalance),
             )
         et.update()
         return DrawdownTracker(et)
@@ -43,7 +47,7 @@ class DrawdownTrackerStaticTest {
 
     @Test
     fun `static drawdown is zero when initial balance is non-positive`() {
-        assertThat(tracker("-800", "0").globalStaticDrawdown(BigDecimal.ZERO))
+        assertThat(tracker("-800", "0", startingBalance = "0").globalStaticDrawdown(BigDecimal.ZERO))
             .isEqualByComparingTo(BigDecimal.ZERO)
     }
 }

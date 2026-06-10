@@ -309,6 +309,7 @@ class BybitSpotBroker(
                     quantity = exec.quantity,
                     strategyId = strategyId,
                     timestamp = clock.now(),
+                    venueCosts = exec.fee,
                 ),
             )
             lastFillTime.set(clock.now())
