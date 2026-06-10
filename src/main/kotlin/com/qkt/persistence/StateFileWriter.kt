@@ -51,11 +51,15 @@ internal class StateFileWriter(
             // the async persistor's caller-runs fallback.
             val temp = Files.createTempFile(dir, "$fileName.", ".tmp")
             try {
+                // DSYNC forces the bytes to the device before the rename commits — a
+                // host crash right after the move can't leave a durable name pointing
+                // at non-durable content. Costs one disk flush per state write.
                 Files.writeString(
                     temp,
                     json,
                     StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE,
+                    StandardOpenOption.DSYNC,
                 )
                 try {
                     Files.move(
@@ -89,7 +93,9 @@ internal class StateFileWriter(
             }
         } catch (e: Exception) {
             failedWrites.incrementAndGet()
-            log.warn("StateFileWriter.write failed for $strategyName/$fileName: ${e.message}")
+            // ERROR, not warn: a session restarting after persist failures reconciles
+            // against stale state — the operator must know the disk is failing NOW.
+            log.error("StateFileWriter.write FAILED for $strategyName/$fileName: ${e.message}", e)
         }
     }
 

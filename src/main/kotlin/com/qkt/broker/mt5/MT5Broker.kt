@@ -160,13 +160,21 @@ class MT5Broker(
     )
 
     init {
+        // Pollers start UNCONDITIONALLY: if recovery throws (one malformed gateway
+        // response) but the pollers never start, the broker still accepts orders and
+        // the session trades all day with no fill/close detection. Only recovery may
+        // degrade, and loudly.
         try {
             stateRecovery.recover()
-            poller.start()
-            pendingPoller.start()
         } catch (e: Exception) {
-            log.warn("MT5Broker ${profile.name} startup degraded: ${e.message}")
+            log.error(
+                "MT5Broker ${profile.name} state recovery FAILED — orphan attribution degraded; " +
+                    "positions opened before this start may close with blank strategyId",
+                e,
+            )
         }
+        poller.start()
+        pendingPoller.start()
     }
 
     override fun supports(symbol: String): Boolean = true
