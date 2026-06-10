@@ -240,7 +240,12 @@ class TradingPipeline(
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
             positions.reset(e.symbol, e.newQty, e.newAvgPx)
         }
-        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+        // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
+        // side effects runs — OrderManager cancels OCO siblings and dispatches children,
+        // and the stack orchestrator risk-checks child tiers against position state.
+        // Both subscribe earlier in construction order, so ordinary subscribe() here
+        // would run them against a pre-fill book (#374, #377).
+        bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
             if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
             // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
             // the instrument's contractSize here so dollar amounts match what the venue
@@ -252,15 +257,19 @@ class TradingPipeline(
             // gross, and the report's commissionPaid bridges the two. Zero unless a backtest
             // configured a rate, so live and pre-cost-model runs are unchanged.
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
+            // Venue-reported costs (MT5 deal commission/swap, Bybit execFee) net out the
+            // same way the modeled commission does — equity and halt inputs must be
+            // cost-true, or a strategy bleeding costs looks healthier than it is.
+            val costs = commission.add(e.venueCosts)
             val rawRealized = positions.applyFill(e)
             val realized = rawRealized.multiply(cs)
-            pnl.recordRealized(realized.subtract(commission))
+            pnl.recordRealized(realized.subtract(costs))
 
             val rawStratRealized = strategyPositions.applyFill(e)
             val stratRealized = rawStratRealized.multiply(cs)
-            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(commission))
+            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(costs))
             tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized, e.symbol)
-            riskState.onFill(e.strategyId, stratRealized)
+            riskState.onFill(e.strategyId, stratRealized.subtract(costs))
             riskEngine.evaluateHaltRules()
 
             val trade =

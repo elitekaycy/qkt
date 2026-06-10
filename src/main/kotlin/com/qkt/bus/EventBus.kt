@@ -66,14 +66,29 @@ class EventBus(
      * Registers [handler] to be invoked for every published event of type [T].
      *
      * Handlers run synchronously on the publishing thread, in registration order. A
-     * handler that throws will propagate and prevent later handlers from running for
-     * that event — keep handlers fast and exception-free.
+     * handler that throws no longer prevents later handlers from running — the bus
+     * dispatches to every subscriber, then rethrows the first failure (see [publish]).
      */
     inline fun <reified T : Event> subscribe(noinline handler: (T) -> Unit) {
         @Suppress("UNCHECKED_CAST")
         subscribers
             .getOrPut(T::class) { mutableListOf() }
             .add { event -> handler(event as T) }
+    }
+
+    /**
+     * Registers [handler] AHEAD of every already-registered handler for [T].
+     *
+     * Subscriber order on `OrderFilled` is load-bearing for risk: the book-applying
+     * handler must run before any handler with venue side effects (OCO sibling cancels,
+     * stack child submissions), or those act on pre-fill position state. This is the
+     * explicit hook for that invariant — use it only for book-keeping handlers.
+     */
+    inline fun <reified T : Event> subscribeFirst(noinline handler: (T) -> Unit) {
+        @Suppress("UNCHECKED_CAST")
+        subscribers
+            .getOrPut(T::class) { mutableListOf() }
+            .add(0) { event -> handler(event as T) }
     }
 
     /**
@@ -96,8 +111,22 @@ class EventBus(
         log.trace("publish {} seq={} ts={}", stamped::class.simpleName, stamped.sequenceId, stamped.timestamp)
         // Index loop over the handler list (the single most-traversed line in the engine) avoids
         // allocating an Iterator per published event.
+        // Per-subscriber isolation: one handler's exception must not silently skip the
+        // rest — a fill that mutated the venue (sibling cancelled, children sent) but
+        // never reached the book-applier leaves the engine permanently diverged. Every
+        // subscriber runs; the first failure then rethrows so the caller's fault
+        // handling (engine-loop halt + alert in live, loud failure in backtest) still fires.
         val handlers = subscribers[stamped::class] ?: return
-        for (i in handlers.indices) handlers[i](stamped)
+        var firstFailure: Exception? = null
+        for (i in handlers.indices) {
+            try {
+                handlers[i](stamped)
+            } catch (e: Exception) {
+                log.error("subscriber {} for {} failed", i, stamped::class.simpleName, e)
+                if (firstFailure == null) firstFailure = e
+            }
+        }
+        if (firstFailure != null) throw firstFailure
     }
 
     private fun stamp(event: Event): Event {

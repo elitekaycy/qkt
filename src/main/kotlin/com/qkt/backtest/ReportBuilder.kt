@@ -68,11 +68,20 @@ object ReportBuilder {
         val wl = winLossStats(realizeds)
         val drawdown = metrics?.maxDrawdown() ?: DrawdownTracker.fromCurve(equityCurve.map { it.equity })
         val sharpeR = metrics?.sharpe(annualizationFactor) ?: sharpe(equityCurve.map { it.equity }, annualizationFactor)
-        val calmarR = calmar(finalRealized.add(finalUnrealized), drawdown)
         val drawdownPeriods =
             metrics?.drawdownPeriods() ?: DrawdownAnalyzer.analyze(equityCurve, DRAWDOWN_PERIOD_THRESHOLD)
         val startingEquity =
             metrics?.startingEquity() ?: equityCurve.firstOrNull()?.equity ?: BigDecimal.ZERO
+        // Calmar must be unitless: total return as a FRACTION of starting capital over the
+        // drawdown fraction. Dollars over a fraction (the old shape) compares to nothing.
+        // Null when there is no capital basis — an unanchored curve has no return fraction.
+        val totalReturnFraction =
+            if (startingEquity.signum() > 0) {
+                finalRealized.add(finalUnrealized).divide(startingEquity, Money.CONTEXT)
+            } else {
+                null
+            }
+        val calmarR = totalReturnFraction?.let { calmar(it, drawdown) }
         val monteCarlo =
             if (trades.size >= 30) {
                 MonteCarlo.run(

@@ -144,11 +144,12 @@ class MT5PositionPollerCloseTest {
         server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
         // The venue's SL filled at 1.0950 — two partial out-deals volume-weight to it.
+        // Commission and swap are reported "added to profit" (negative = charge).
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":1,"entry":0,"price":"1.1000","volume":"0.10"},
-                    {"ticket":2,"entry":1,"price":"1.0940","volume":"0.05"},
-                    {"ticket":3,"entry":1,"price":"1.0960","volume":"0.05"}]""",
+                """[{"ticket":1,"entry":0,"price":"1.1000","volume":"0.10","commission":"-0.70"},
+                    {"ticket":2,"entry":1,"price":"1.0940","volume":"0.05","commission":"-0.35","swap":"-0.55"},
+                    {"ticket":3,"entry":1,"price":"1.0960","volume":"0.05","commission":"-0.35","swap":"-0.55"}]""",
             ),
         )
 
@@ -169,6 +170,8 @@ class MT5PositionPollerCloseTest {
         assertThat(fills).hasSize(1)
         // (1.0940 * 0.05 + 1.0960 * 0.05) / 0.10 = 1.0950 — the deal truth, not 1.1200.
         assertThat(fills.single().price).isEqualByComparingTo("1.0950")
+        // Costs sum over all the position's deals: 0.70 + 0.35 + 0.35 commission + 1.10 swap.
+        assertThat(fills.single().venueCosts).isEqualByComparingTo("2.50")
     }
 
     @Test

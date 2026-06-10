@@ -12,6 +12,8 @@ import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.buyExecPrice
+import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
 import java.math.RoundingMode
 import org.slf4j.LoggerFactory
@@ -132,7 +134,7 @@ class MT5BrokerSimulator(
     fun onTick(tick: Tick) {
         lastTickBySymbol[tick.symbol] = tick
         if (working.isEmpty()) return
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick.price) }
+        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
         for (wo in toFill) {
             working.remove(wo)
             fillFromTrigger(wo, tick)
@@ -270,22 +272,27 @@ class MT5BrokerSimulator(
         meta: InstrumentMeta,
     ): BigDecimal = qty.divide(meta.volumeStep, 0, RoundingMode.DOWN).multiply(meta.volumeStep)
 
+    // Side-aware like MT5 itself: BUY_STOP fires on the ask, SELL_STOP on the bid.
+    // See com.qkt.marketdata.buyExecPrice.
     private fun checkTrigger(
         req: OrderRequest,
-        tickPrice: BigDecimal,
-    ): Boolean =
-        when (req) {
+        tick: Tick,
+    ): Boolean {
+        val exec =
+            if (req.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
+        return when (req) {
             is OrderRequest.Limit ->
-                if (req.side == Side.BUY) tickPrice <= req.limitPrice else tickPrice >= req.limitPrice
+                if (req.side == Side.BUY) exec <= req.limitPrice else exec >= req.limitPrice
             is OrderRequest.Stop ->
-                if (req.side == Side.BUY) tickPrice >= req.stopPrice else tickPrice <= req.stopPrice
+                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
             is OrderRequest.StopLimit ->
-                if (req.side == Side.BUY) tickPrice >= req.stopPrice else tickPrice <= req.stopPrice
+                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
             is OrderRequest.IfTouched ->
-                if (req.side == Side.BUY) tickPrice <= req.triggerPrice else tickPrice >= req.triggerPrice
+                if (req.side == Side.BUY) exec <= req.triggerPrice else exec >= req.triggerPrice
             is OrderRequest.Market -> false
             else -> error("MT5BrokerSimulator.checkTrigger: unhandled order type ${req::class.simpleName}")
         }
+    }
 
     /**
      * Returns a copy of [request] with [newQuantity] in place of the original. Used

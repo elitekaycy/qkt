@@ -15,6 +15,13 @@ class EquityCurveCollector(
     private val strategyPnL: StrategyPnL,
     strategyIds: List<String>,
     curveCap: Int = DEFAULT_CURVE_CAP,
+    /**
+     * Account starting balance — anchors the curve at true equity. A 0-based PnL curve
+     * makes every derived metric capital-blind: a $500 peak dipping to $250 reads as a
+     * 50% drawdown when the account is $10k (really 2.5%), and Sharpe's returns are
+     * returns-on-profit instead of returns-on-capital.
+     */
+    private val startingBalance: BigDecimal = BigDecimal.ZERO,
 ) {
     private val globalMetricsAcc = EquityMetrics()
     private val globalCurve = DecimatedCurve(curveCap)
@@ -45,11 +52,11 @@ class EquityCurveCollector(
     fun metricsFor(strategyId: String): EquityMetrics? = strategyMetricsAcc[strategyId]
 
     private fun sample(timestamp: Long) {
-        val globalEquity: BigDecimal = pnl.realizedTotal().add(pnl.unrealizedTotal())
+        val globalEquity: BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         globalMetricsAcc.accept(timestamp, globalEquity)
         globalCurve.accept(EquitySample(timestamp, globalEquity))
         for ((strategyId, metrics) in strategyMetricsAcc) {
-            val equity = strategyPnL.totalFor(strategyId)
+            val equity = strategyPnL.equityFor(strategyId)
             metrics.accept(timestamp, equity)
             strategyCurve.getValue(strategyId).accept(EquitySample(timestamp, equity))
         }

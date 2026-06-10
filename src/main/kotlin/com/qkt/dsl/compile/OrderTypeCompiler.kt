@@ -27,6 +27,7 @@ fun interface BuildRequest {
     fun evaluate(
         ec: EvalContext,
         id: String,
+        symbol: String,
         side: Side,
         qty: BigDecimal,
         tif: TimeInForce,
@@ -35,12 +36,21 @@ fun interface BuildRequest {
     ): OrderRequest
 }
 
+/**
+ * Compiles a DSL order-type clause into a request builder. The order's symbol is the
+ * caller-resolved TARGET stream's symbol, never the evaluating candle's — a rule
+ * listening on gold whose action buys silver must order silver. [targetAlias] is the
+ * action's stream alias, used to read the target's latest close for entry estimates.
+ */
 class OrderTypeCompiler(
     private val exprCompiler: ExprCompiler,
 ) {
-    fun compile(ot: OrderTypeAst): CompiledOrderType =
+    fun compile(
+        ot: OrderTypeAst,
+        targetAlias: String? = null,
+    ): CompiledOrderType =
         when (ot) {
-            Market -> compileMarket()
+            Market -> compileMarket(targetAlias)
             is Limit -> compileLimit(ot)
             is Stop -> compileStop(ot)
             is StopLimit -> compileStopLimit(ot)
@@ -48,12 +58,33 @@ class OrderTypeCompiler(
             is TrailingPct -> compileTrailingPct(ot)
         }
 
-    private fun compileMarket(): CompiledOrderType {
+    /**
+     * The latest close of [targetAlias]'s stream — the evaluating candle when it IS the
+     * target, the hub's latest closed bar otherwise. Errors when the target has no bar
+     * yet: sizing a cross-stream market order off the wrong instrument's price is the
+     * silent alternative.
+     */
+    private fun targetClose(
+        ec: EvalContext,
+        targetAlias: String?,
+    ): BigDecimal {
+        if (targetAlias == null) return ec.candle.close
+        val key = ec.streams[targetAlias] ?: error("Unknown stream alias: $targetAlias")
+        if (ec.currentAlias == targetAlias ||
+            (ec.currentAlias == null && ec.candle.symbol == key.qktSymbol)
+        ) {
+            return ec.candle.close
+        }
+        return ec.hub.latest(key)?.close
+            ?: error("No closed bar yet for stream '$targetAlias' — cannot price its order")
+    }
+
+    private fun compileMarket(targetAlias: String?): CompiledOrderType {
         val build =
-            BuildRequest { ec, id, side, qty, tif, strategyId, ts ->
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
                 OrderRequest.Market(
                     id = id,
-                    symbol = ec.candle.symbol,
+                    symbol = symbol,
                     side = side,
                     quantity = qty,
                     timeInForce = tif,
@@ -61,16 +92,16 @@ class OrderTypeCompiler(
                     strategyId = strategyId,
                 )
             }
-        val entry = EntryPriceRef { ec -> ec.candle.close }
+        val entry = EntryPriceRef { ec -> targetClose(ec, targetAlias) }
         return CompiledOrderType(build, entry)
     }
 
     private fun compileLimit(o: Limit): CompiledOrderType {
         val priceEval = exprCompiler.compile(o.price)
         val build =
-            BuildRequest { ec, id, side, qty, tif, strategyId, ts ->
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
                 val p = (priceEval.evaluate(ec) as Value.Num).v
-                OrderRequest.Limit(id, ec.candle.symbol, side, qty, p, tif, ts, strategyId)
+                OrderRequest.Limit(id, symbol, side, qty, p, tif, ts, strategyId)
             }
         val entry = EntryPriceRef { ec -> (priceEval.evaluate(ec) as Value.Num).v }
         return CompiledOrderType(build, entry)
@@ -79,9 +110,9 @@ class OrderTypeCompiler(
     private fun compileStop(o: Stop): CompiledOrderType {
         val priceEval = exprCompiler.compile(o.price)
         val build =
-            BuildRequest { ec, id, side, qty, tif, strategyId, ts ->
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
                 val p = (priceEval.evaluate(ec) as Value.Num).v
-                OrderRequest.Stop(id, ec.candle.symbol, side, qty, p, tif, ts, strategyId)
+                OrderRequest.Stop(id, symbol, side, qty, p, tif, ts, strategyId)
             }
         val entry = EntryPriceRef { ec -> (priceEval.evaluate(ec) as Value.Num).v }
         return CompiledOrderType(build, entry)
@@ -91,10 +122,10 @@ class OrderTypeCompiler(
         val stopEval = exprCompiler.compile(o.stopPrice)
         val limitEval = exprCompiler.compile(o.limitPrice)
         val build =
-            BuildRequest { ec, id, side, qty, tif, strategyId, ts ->
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
                 val sp = (stopEval.evaluate(ec) as Value.Num).v
                 val lp = (limitEval.evaluate(ec) as Value.Num).v
-                OrderRequest.StopLimit(id, ec.candle.symbol, side, qty, sp, lp, tif, ts, strategyId)
+                OrderRequest.StopLimit(id, symbol, side, qty, sp, lp, tif, ts, strategyId)
             }
         val entry = EntryPriceRef { ec -> (stopEval.evaluate(ec) as Value.Num).v }
         return CompiledOrderType(build, entry)
@@ -103,11 +134,11 @@ class OrderTypeCompiler(
     private fun compileTrailingBy(o: TrailingBy): CompiledOrderType {
         val distEval = exprCompiler.compile(o.distance)
         val build =
-            BuildRequest { ec, id, side, qty, tif, strategyId, ts ->
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
                 val d = (distEval.evaluate(ec) as Value.Num).v
                 OrderRequest.TrailingStop(
                     id,
-                    ec.candle.symbol,
+                    symbol,
                     side,
                     qty,
                     d,
@@ -124,12 +155,12 @@ class OrderTypeCompiler(
     private fun compileTrailingPct(o: TrailingPct): CompiledOrderType {
         val fracEval = exprCompiler.compile(o.frac)
         val build =
-            BuildRequest { ec, id, side, qty, tif, strategyId, ts ->
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
                 val f = (fracEval.evaluate(ec) as Value.Num).v
                 val percent = f.multiply(BigDecimal("100"), Money.CONTEXT)
                 OrderRequest.TrailingStop(
                     id,
-                    ec.candle.symbol,
+                    symbol,
                     side,
                     qty,
                     percent,

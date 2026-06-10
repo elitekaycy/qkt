@@ -338,6 +338,7 @@ class BybitLinearBroker(
                     price = exec.price,
                     quantity = exec.quantity,
                     timestamp = clock.now(),
+                    venueCosts = exec.fee,
                 ),
             )
             lastFillTime.set(clock.now())

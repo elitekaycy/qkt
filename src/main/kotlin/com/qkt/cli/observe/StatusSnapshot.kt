@@ -82,4 +82,9 @@ data class StatusSnapshot(
      * Empty for plain (non-DSL) strategies or when not yet exposed by the handle.
      */
     val streamBrokers: Map<String, String> = emptyMap(),
+    /**
+     * Depth of the session's inbound engine queue at snapshot time. A growing value
+     * flags a stalled or slow engine thread before backlog turns into dropped ticks.
+     */
+    val inboundQueueDepth: Int = 0,
 )
