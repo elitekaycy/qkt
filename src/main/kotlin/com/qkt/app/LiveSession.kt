@@ -150,7 +150,6 @@ class LiveSession(
     private companion object {
         /** Attempts to read broker positions at reconcile before refusing to start. */
         const val RECONCILE_READ_ATTEMPTS: Int = 5
-
     }
 
     /** Accumulates trades/halts/equity-delta for the daily summary. */

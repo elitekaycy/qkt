@@ -67,15 +67,23 @@ class MT5DaemonE2ETest {
     fun setup() {
         server = MockWebServer()
         server.start()
-        // recovery + poller seed: empty positions
-        server.enqueue(MockResponse().setBody("[]"))
-        server.enqueue(MockResponse().setBody("[]"))
-        // The order placement
-        server.enqueue(
-            MockResponse().setBody(
-                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"1.1234","comment":"ok"}}""",
-            ),
-        )
+        // Route by path: startup issues a variable number of state reads (recovery,
+        // poller seeds, reconcile-with-retry), so a fixed enqueue order is brittle.
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/order") && request.method == "POST" ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"1.1234","comment":"ok"}}""",
+                            )
+                        path.startsWith("/get_positions") || path.startsWith("/orders") ->
+                            MockResponse().setBody("[]")
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
     }
 
     @AfterEach
