@@ -157,5 +157,18 @@ const val MT5_COMMENT_MAX_LENGTH: Int = 31
 /** MQL5 trade return code for a successful order (`TRADE_RETCODE_DONE`). */
 const val MT5_TRADE_RETCODE_DONE: Int = 10009
 
-/** Returns `true` iff [retcode] indicates a successful order placement. */
-fun isOrderSuccessful(retcode: Int): Boolean = retcode == MT5_TRADE_RETCODE_DONE
+/** MQL5 `TRADE_RETCODE_PLACED` — the order was placed (pending accepted by the venue). */
+const val MT5_TRADE_RETCODE_PLACED: Int = 10008
+
+/** MQL5 `TRADE_RETCODE_DONE_PARTIAL` — the request completed partially (partial fill). */
+const val MT5_TRADE_RETCODE_DONE_PARTIAL: Int = 10010
+
+/**
+ * Returns `true` iff [retcode] is in MT5's success family. 10008 (placed) and 10010
+ * (partial) mean the venue OWNS the order — treating them as rejections abandons a
+ * live order and double-submits on the strategy's next attempt.
+ */
+fun isOrderSuccessful(retcode: Int): Boolean =
+    retcode == MT5_TRADE_RETCODE_DONE ||
+        retcode == MT5_TRADE_RETCODE_PLACED ||
+        retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
