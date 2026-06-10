@@ -121,6 +121,7 @@ keep in mind when reading a backtest.
 | A8 | SCHEDULE timing: backtest fires on the next replayed tick after the trigger time; live fires from a 1Hz wall-clock heartbeat even with no ticks | INHERENT — sub-second placement differences |
 | A9 | Calendars: the backtest CLI uses fixed per-symbol calendar rules (crypto for `BTC*`/`*USDT`, FX default otherwise); live uses the broker profile's calendars. The FX weekend boundary is a FIXED UTC hour year-round and does not track New York DST (up to 1h off near the close/open in winter) | INHERENT — pinned by `FxCalendarTest` |
 | A10 | `x.bid` / `x.ask` / `x.spread` evaluate Undefined on bar-sourced backtest data — spread-aware rules silently never fire in bar backtests (tick-sourced backtests carry real quotes) | OPEN (#389) — prefer tick data for spread-aware strategies |
+| A12 | Quiet-symbol candle close: live closes an ended bar from the 1Hz heartbeat even with no next tick; backtest closes only on the next replayed tick (event time is its only clock) | INHERENT — affects the last bar before a session gap |
 | A11 | Live-only operational effects: restart reconcile, OCO restore, poller-synthesized closes, gateway-outage suspensions, the runaway breaker and market-data gate (#395/#396 are live-only by design) | INHERENT — none have a backtest equivalent |
 
 ## File pointers

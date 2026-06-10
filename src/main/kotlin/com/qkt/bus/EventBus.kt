@@ -63,6 +63,17 @@ class EventBus(
     }
 
     /**
+     * Bind ONLY the sink, before the engine thread exists. From this call until
+     * [bindEngineLoop] supplies the thread, EVERY publish (any thread — broker pollers
+     * starting at construction, the deploy thread's recovery events) is queued instead
+     * of dispatched inline, closing the window where early events raced a half-built
+     * pipeline on the wrong thread. Queued events drain in order once the loop starts.
+     */
+    fun bindSink(sink: (Event) -> Unit) {
+        this.offThreadSink = sink
+    }
+
+    /**
      * Registers [handler] to be invoked for every published event of type [T].
      *
      * Handlers run synchronously on the publishing thread, in registration order. A
