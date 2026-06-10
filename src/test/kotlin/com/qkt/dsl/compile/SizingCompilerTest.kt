@@ -121,7 +121,8 @@ class SizingCompilerTest {
         // 5% of $10,000 equity = $500 of exposure; at $2,000 x contractSize 100 = 0.0025 lots.
         val s =
             compiler().compile(
-                com.qkt.dsl.ast.SizePctEquity(NumLit(BigDecimal("0.05"))),
+                com.qkt.dsl.ast
+                    .SizePctEquity(NumLit(BigDecimal("0.05"))),
                 stopDistance = null,
                 streamAlias = "btc",
             )
@@ -132,7 +133,8 @@ class SizingCompilerTest {
     fun `SizePctBalance divides through contractSize so the result is lots`() {
         val s =
             compiler().compile(
-                com.qkt.dsl.ast.SizePctBalance(NumLit(BigDecimal("0.10"))),
+                com.qkt.dsl.ast
+                    .SizePctBalance(NumLit(BigDecimal("0.10"))),
                 stopDistance = null,
                 streamAlias = "btc",
             )
@@ -144,7 +146,9 @@ class SizingCompilerTest {
     fun `SizeNotional on an FX-shaped contractSize yields micro lots`() {
         // EURUSD-shaped: contractSize 100,000. $11,000 at 1.10 = 0.1 lots.
         val s = compiler().compile(SizeNotional(NumLit(BigDecimal("11000"))), stopDistance = null, streamAlias = "btc")
-        assertThat(s.evaluate(ecWith(BigDecimal("100000")), entryPrice = BigDecimal("1.10"))).isEqualByComparingTo("0.1")
+        assertThat(
+            s.evaluate(ecWith(BigDecimal("100000")), entryPrice = BigDecimal("1.10")),
+        ).isEqualByComparingTo("0.1")
     }
 
     @Test

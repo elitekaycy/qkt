@@ -70,8 +70,14 @@ class WarmupEndToEndTest {
         // unwarmed strategy trades from the first closed bar.
         assertThat(resultWithWarmup.trades).isNotEmpty
         assertThat(resultWithoutWarmup.trades).isNotEmpty
-        val firstWith = resultWithWarmup.trades.first().trade.timestamp
-        val firstWithout = resultWithoutWarmup.trades.first().trade.timestamp
+        val firstWith =
+            resultWithWarmup.trades
+                .first()
+                .trade.timestamp
+        val firstWithout =
+            resultWithoutWarmup.trades
+                .first()
+                .trade.timestamp
         assertThat(firstWithout).isLessThan(firstWith)
         assertThat(firstWith).isGreaterThanOrEqualTo(5 * 60_000L)
     }
