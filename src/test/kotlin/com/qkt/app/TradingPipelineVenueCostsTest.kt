@@ -81,5 +81,23 @@ class TradingPipelineVenueCostsTest {
         assertThat(pnl.realizedTotal()).isEqualByComparingTo("7.5")
         assertThat(strategyPnL.realizedFor("A")).isEqualByComparingTo("7.5")
         assertThat(riskState.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("7.5")
+
+        // Halt timing is therefore cost-aware: a losing round trip plus costs trips
+        // MaxDailyLoss at the NET number, not the healthier-looking gross one.
+        bus.publish(fill(Side.BUY, "100", "0.5"))
+        bus.publish(fill(Side.SELL, "95", "2.0")) // gross -5, net -7.5 -> day total 0
+        bus.publish(fill(Side.BUY, "100", "0.5"))
+        bus.publish(fill(Side.SELL, "95", "2.0")) // day total -7.5
+        assertThat(riskState.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("-7.5")
+        assertThat(
+            com.qkt.risk.rules
+                .MaxDailyLoss(java.math.BigDecimal("7"))
+                .evaluate(riskState),
+        ).isInstanceOf(com.qkt.risk.HaltDecision.Halt::class.java)
+        assertThat(
+            com.qkt.risk.rules
+                .MaxDailyLoss(java.math.BigDecimal("8"))
+                .evaluate(riskState),
+        ).isEqualTo(com.qkt.risk.HaltDecision.Continue)
     }
 }

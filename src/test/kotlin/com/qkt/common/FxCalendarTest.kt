@@ -14,6 +14,20 @@ class FxCalendarTest {
     }
 
     @Test
+    fun `weekend boundary is fixed UTC and does not follow New York DST`() {
+        // The FX calendar models the weekend close at a FIXED UTC hour year-round.
+        // The real market closes at NY 17:00, which is 22:00 UTC in summer (EDT) but
+        // 21:00 UTC in winter (EST) — so in winter the calendar is up to an hour
+        // optimistic at the Friday close and pessimistic at the Sunday open. Pinned
+        // here so the approximation is a documented choice, not an accident; the
+        // backtest=live divergence catalog carries the row.
+        val julyFriday2259 = Instant.parse("2024-07-19T21:59:00Z")
+        val januaryFriday2159 = Instant.parse("2024-01-19T21:59:00Z")
+        assertThat(cal.isInSession("EURUSD", julyFriday2259))
+            .isEqualTo(cal.isInSession("EURUSD", januaryFriday2159))
+    }
+
+    @Test
     fun `weekday afternoon UTC is in session`() {
         val mon = Instant.parse("2024-01-15T15:00:00Z")
         assertThat(cal.isInSession("EURUSD", mon)).isTrue()
