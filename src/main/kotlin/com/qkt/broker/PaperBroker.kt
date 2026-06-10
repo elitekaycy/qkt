@@ -10,6 +10,8 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.TriggerType
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.buyExecPrice
+import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
@@ -92,7 +94,7 @@ class PaperBroker(
 
     fun onTick(tick: Tick) {
         if (working.isEmpty()) return
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick.price) }
+        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
         for (wo in toFill) {
             working.remove(wo)
             fillFromTrigger(wo, tick.price)
@@ -159,20 +161,26 @@ class PaperBroker(
         )
     }
 
+    // Side-aware like the venue: a BUY executes at the ask, a SELL at the bid, so each
+    // side's trigger compares against ITS execution price (mid only when the feed has
+    // no quote depth). See com.qkt.marketdata.buyExecPrice.
     private fun checkTrigger(
         req: OrderRequest,
-        tickPrice: BigDecimal,
-    ): Boolean =
-        when (req) {
+        tick: Tick,
+    ): Boolean {
+        val exec =
+            if (req.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
+        return when (req) {
             is OrderRequest.Limit ->
-                if (req.side == Side.BUY) tickPrice <= req.limitPrice else tickPrice >= req.limitPrice
+                if (req.side == Side.BUY) exec <= req.limitPrice else exec >= req.limitPrice
             is OrderRequest.Stop ->
-                if (req.side == Side.BUY) tickPrice >= req.stopPrice else tickPrice <= req.stopPrice
+                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
             is OrderRequest.StopLimit ->
-                if (req.side == Side.BUY) tickPrice >= req.stopPrice else tickPrice <= req.stopPrice
+                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
             is OrderRequest.IfTouched ->
-                if (req.side == Side.BUY) tickPrice <= req.triggerPrice else tickPrice >= req.triggerPrice
+                if (req.side == Side.BUY) exec <= req.triggerPrice else exec >= req.triggerPrice
             is OrderRequest.Market -> false
             else -> false
         }
+    }
 }
