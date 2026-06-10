@@ -36,7 +36,7 @@ class AstCompilerSyncBindTest {
         )
 
     @Test
-    fun `sync-grouped rule fires once per window after every member closes`() {
+    fun `sync-grouped rule evaluates once per window after every member closes`() {
         val s =
             compile(
                 """
@@ -46,7 +46,7 @@ class AstCompilerSyncBindTest {
                   silver = EXNESS:XAGUSD EVERY 1m
                   SYNCHRONIZE gold silver
                 RULES
-                  WHEN gold.close > 0 THEN BUY gold SIZING 0.1
+                  WHEN gold.close > 500 THEN BUY gold SIZING 0.1
                 """.trimIndent(),
             )
         val hub = CandleHub()
@@ -56,17 +56,23 @@ class AstCompilerSyncBindTest {
         val signals = mutableListOf<Signal>()
         s.bindToHub(hub, testStrategyContext()) { sig -> signals.add(sig) }
 
-        // Drive gold only over three windows. Sync never completes → zero fires.
-        for (t in 0L..180_000L step 60_000L) hub.feed(tick("EXNESS:XAUUSD", t, "1000"))
+        // Gold alternates above/below 500 per window so each true window is a fresh
+        // rising edge (actions are edge-gated). Drive gold only over three windows:
+        // sync never completes → zero fires.
+        val goldPrices = listOf("1000", "100", "1000", "100")
+        for ((i, t) in (0L..180_000L step 60_000L).withIndex()) {
+            hub.feed(tick("EXNESS:XAUUSD", t, goldPrices[i]))
+        }
         assertThat(signals).isEmpty()
 
-        // Drive silver across the same windows. Each completes → one fire each.
+        // Drive silver across the same windows. Each window completes and evaluates:
+        // w0 true (edge, fires), w1 false (re-arms), w2 true (edge, fires).
         for (t in 0L..180_000L step 60_000L) hub.feed(tick("EXNESS:XAGUSD", t, "25"))
-        assertThat(signals).hasSize(3)
+        assertThat(signals).hasSize(2)
     }
 
     @Test
-    fun `non-sync strategy fires per close`() {
+    fun `non-sync strategy evaluates per close`() {
         val s =
             compile(
                 """
@@ -74,7 +80,7 @@ class AstCompilerSyncBindTest {
                 SYMBOLS
                   gold = EXNESS:XAUUSD EVERY 1m
                 RULES
-                  WHEN gold.close > 0 THEN BUY gold SIZING 0.1
+                  WHEN gold.close > 500 THEN BUY gold SIZING 0.1
                 """.trimIndent(),
             )
         val hub = CandleHub()
@@ -83,9 +89,13 @@ class AstCompilerSyncBindTest {
         val signals = mutableListOf<Signal>()
         s.bindToHub(hub, testStrategyContext()) { sig -> signals.add(sig) }
 
-        for (t in 0L..180_000L step 60_000L) hub.feed(tick("EXNESS:XAUUSD", t, "1000"))
-        // Three closes at endTime 60_000, 120_000, 180_000.
-        assertThat(signals).hasSize(3)
+        // Three closes at endTime 60_000, 120_000, 180_000 with closes 1000, 100, 1000:
+        // two rising edges → two fires (the middle close re-arms the rule).
+        val prices = listOf("1000", "100", "1000", "100")
+        for ((i, t) in (0L..180_000L step 60_000L).withIndex()) {
+            hub.feed(tick("EXNESS:XAUUSD", t, prices[i]))
+        }
+        assertThat(signals).hasSize(2)
     }
 
     @Test
@@ -111,18 +121,18 @@ class AstCompilerSyncBindTest {
         val signals = mutableListOf<Signal>()
         s.bindToHub(hub, testStrategyContext()) { sig -> signals.add(sig) }
 
-        // Drive btc alone — standalone rule fires per close.
+        // Drive btc alone — the standalone rule fires on its first true close
+        // (edge-gated thereafter); the sync rule stays silent with no gold/silver.
         for (t in 0L..120_000L step 60_000L) hub.feed(tick("BYBIT_SPOT:BTCUSDT", t, "50000"))
-        // 2 closes for btc, 0 for gold sync (no gold/silver ticks).
-        assertThat(signals).hasSize(2)
+        assertThat(signals).hasSize(1)
 
-        // Now drive gold+silver synchronously across two windows.
+        // Now drive gold+silver synchronously across two windows — the sync rule's
+        // first completed window is its rising edge.
         for (t in 0L..120_000L step 60_000L) {
             hub.feed(tick("EXNESS:XAUUSD", t, "1000"))
             hub.feed(tick("EXNESS:XAGUSD", t, "25"))
         }
-        // 2 more signals from the sync group, on top of the 2 btc signals.
-        assertThat(signals).hasSize(4)
+        assertThat(signals).hasSize(2)
     }
 
     @Test

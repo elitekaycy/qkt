@@ -9,7 +9,6 @@ import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
-import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Sell
@@ -22,7 +21,7 @@ object ActionScope {
     fun buy(
         stream: StreamRef,
         qty: ExprAst,
-        orderType: OrderTypeAst = Market,
+        orderType: OrderTypeAst? = null,
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
@@ -43,7 +42,7 @@ object ActionScope {
     fun buy(
         stream: StreamRef,
         sizing: SizingAst,
-        orderType: OrderTypeAst = Market,
+        orderType: OrderTypeAst? = null,
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
@@ -64,7 +63,7 @@ object ActionScope {
     fun sell(
         stream: StreamRef,
         qty: ExprAst,
-        orderType: OrderTypeAst = Market,
+        orderType: OrderTypeAst? = null,
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
@@ -85,7 +84,7 @@ object ActionScope {
     fun sell(
         stream: StreamRef,
         sizing: SizingAst,
-        orderType: OrderTypeAst = Market,
+        orderType: OrderTypeAst? = null,
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
@@ -135,7 +134,7 @@ object ActionScope {
 
     fun buy(
         stream: StreamRef,
-        orderType: OrderTypeAst = Market,
+        orderType: OrderTypeAst? = null,
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
@@ -155,7 +154,7 @@ object ActionScope {
 
     fun sell(
         stream: StreamRef,
-        orderType: OrderTypeAst = Market,
+        orderType: OrderTypeAst? = null,
         tif: TifAst? = null,
         bracket: BracketAst? = null,
         oco: OcoAst? = null,
