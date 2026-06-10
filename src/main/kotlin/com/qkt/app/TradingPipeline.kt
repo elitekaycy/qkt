@@ -252,15 +252,19 @@ class TradingPipeline(
             // gross, and the report's commissionPaid bridges the two. Zero unless a backtest
             // configured a rate, so live and pre-cost-model runs are unchanged.
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
+            // Venue-reported costs (MT5 deal commission/swap, Bybit execFee) net out the
+            // same way the modeled commission does — equity and halt inputs must be
+            // cost-true, or a strategy bleeding costs looks healthier than it is.
+            val costs = commission.add(e.venueCosts)
             val rawRealized = positions.applyFill(e)
             val realized = rawRealized.multiply(cs)
-            pnl.recordRealized(realized.subtract(commission))
+            pnl.recordRealized(realized.subtract(costs))
 
             val rawStratRealized = strategyPositions.applyFill(e)
             val stratRealized = rawStratRealized.multiply(cs)
-            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(commission))
+            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(costs))
             tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized, e.symbol)
-            riskState.onFill(e.strategyId, stratRealized)
+            riskState.onFill(e.strategyId, stratRealized.subtract(costs))
             riskEngine.evaluateHaltRules()
 
             val trade =

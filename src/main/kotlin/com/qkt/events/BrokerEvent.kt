@@ -58,6 +58,13 @@ sealed interface BrokerEvent : Event {
         override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
+        /**
+         * Venue-reported trading costs attached to this fill — commission + swap + fees,
+         * in account currency, positive = charge (negative = rebate). Zero when the venue
+         * reports none or the venue path cannot supply them. The pipeline nets this out
+         * of realized PnL so equity and halt inputs see cost-true numbers.
+         */
+        val venueCosts: BigDecimal = BigDecimal.ZERO,
     ) : OrderEvent
 
     /**

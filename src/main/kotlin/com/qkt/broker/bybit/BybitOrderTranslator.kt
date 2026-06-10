@@ -113,6 +113,8 @@ object BybitOrderTranslator {
         val side: Side,
         val price: BigDecimal,
         val quantity: BigDecimal,
+        /** Venue execution fee for this slice — positive = charge, negative = maker rebate. */
+        val fee: BigDecimal = Money.ZERO,
     )
 
     fun parseOpenOrder(json: JsonObject): ParsedOpenOrder {
@@ -148,6 +150,14 @@ object BybitOrderTranslator {
                     ?.toBigDecimal()
                     ?.setScale(Money.SCALE, Money.ROUNDING)
                     ?: error("missing execQty: $json"),
+            // Bybit reports execFee positive = charge (maker rebates arrive negative).
+            fee =
+                json["execFee"]
+                    ?.jsonPrimitive
+                    ?.content
+                    ?.toBigDecimalOrNull()
+                    ?.setScale(Money.SCALE, Money.ROUNDING)
+                    ?: Money.ZERO,
         )
     }
 }
