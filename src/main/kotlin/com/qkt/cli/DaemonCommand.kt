@@ -186,6 +186,8 @@ class DaemonCommand(
                     maxOrderNotional = cfg.maxOrderNotional,
                     priceCollarFrac = cfg.priceCollarFrac,
                     marginFloorPct = cfg.marginFloorPct,
+                    measuredUsageHours = cfg.measuredUsageHours,
+                    measuredUsageMaxQty = cfg.measuredUsageMaxQty,
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,

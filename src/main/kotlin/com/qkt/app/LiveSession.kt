@@ -133,6 +133,14 @@ class LiveSession(
      */
     private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
     /**
+     * Measured-usage window (#399): hours after start during which entries above
+     * [measuredUsageMaxQty] reject. Zero disables (the default here — the daemon path
+     * turns it on; embedded/test sessions opt in).
+     */
+    private val measuredUsageHours: Long = 0L,
+    private val measuredUsageMaxQty: java.math.BigDecimal =
+        com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
+    /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
      * at this cadence so a strategy's `SCHEDULE AT 09:00 UTC THEN …` still fires
@@ -643,9 +651,28 @@ class LiveSession(
             } else {
                 emptyList()
             }
+        val measuredRules =
+            if (measuredUsageHours > 0L) {
+                log.warn(
+                    "measured-usage window active for {}h: entries above {} reject " +
+                        "(risk.measured_usage_hours: 0 opts out)",
+                    measuredUsageHours,
+                    measuredUsageMaxQty.toPlainString(),
+                )
+                listOf(
+                    com.qkt.risk.rules.MeasuredUsage(
+                        clock = clock,
+                        startedAtMs = clock.now(),
+                        windowHours = measuredUsageHours,
+                        maxQty = measuredUsageMaxQty,
+                    ),
+                )
+            } else {
+                emptyList()
+            }
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRiskRules + preTradeRules + marginRules +
+                rules + perStrategyRiskRules + preTradeRules + marginRules + measuredRules +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
                 haltRules + perStrategyHaltRules,
                 positions,
