@@ -482,6 +482,10 @@ class LiveSession(
         }
 
     fun start(): LiveSessionHandle {
+        // No quote-currency conversion exists: refuse symbols whose PnL would book at
+        // the wrong magnitude (e.g. USDJPY's JPY PnL recorded as USD, ~150x off).
+        com.qkt.instrument.QuoteCurrencyGuard
+            .assertAccountQuoted(symbols)
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
