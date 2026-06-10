@@ -1245,6 +1245,18 @@ class OrderManager(
         orders[id]?.let {
             val wasTerminal = it.state.isTerminal
             val updated = change(it)
+            // Terminal states are SINKS (OrderState's documented contract): a late or
+            // duplicate broker event must not resurrect a FILLED/CANCELLED order into
+            // a live one — that re-arms triggers and double-counts it downstream.
+            if (wasTerminal && !updated.state.isTerminal) {
+                log.error(
+                    "ignoring illegal state transition {} -> {} for order {} — terminal states are sinks",
+                    it.state,
+                    updated.state,
+                    id,
+                )
+                return
+            }
             orders[id] = updated
             indexLive(updated)
             // Enqueue once, on the transition into terminal — a redundant terminal->terminal
