@@ -540,7 +540,28 @@ class LiveSession(
         reconcileOrPreload(strategyPositions, broker)
 
         val engine = Engine(bus, priceTracker)
-        val riskState = RiskState(pnl, strategyPnL, clock, bus, initialBalance, dailyDdBasis)
+        val riskPersistId = strategies.firstOrNull()?.first ?: "session"
+        val riskState =
+            RiskState(
+                pnl,
+                strategyPnL,
+                clock,
+                bus,
+                initialBalance,
+                dailyDdBasis,
+                persist = { snap ->
+                    runCatching { persistor.saveRiskState(riskPersistId, snap) }
+                        .onFailure { e -> log.warn("risk-state persist failed: ${e.message}") }
+                },
+            )
+        // Restore halts + the day's realized PnL: a restart must not un-halt a halted
+        // strategy or hand it a fresh daily budget the same day it exhausted one.
+        persistor.loadRiskState(riskPersistId)?.let { persisted ->
+            riskState.restore(persisted)
+            if (riskState.halted) {
+                log.warn("restored HALTED risk state for {}: {}", riskPersistId, riskState.haltReason)
+            }
+        }
 
         // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
         // The daemon creates one LiveSession per deployed strategy, so the first entry is

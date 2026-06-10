@@ -47,7 +47,57 @@ class FileStatePersistor(
         const val PENDING_ORDERS_FILE = "pending-orders.json"
         const val PENDING_STACKS_FILE = "pending-stacks.json"
         const val OCO_LEGS_FILE = "oco-legs.json"
+        const val RISK_STATE_FILE = "risk-state.json"
         const val SCHEMA_VERSION = 1
+    }
+
+    override fun saveRiskState(
+        strategyId: String,
+        state: PersistedRiskState,
+    ) {
+        val dto =
+            RiskStateDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                epochDay = state.epochDay,
+                realizedToday = state.realizedToday.toPlainString(),
+                perStrategyRealizedToday = state.perStrategyRealizedToday.mapValues { it.value.toPlainString() },
+                halted = state.halted,
+                haltReason = state.haltReason,
+                haltScope = state.haltScope,
+                haltEpochDay = state.haltEpochDay,
+                strategyHalts =
+                    state.strategyHalts.map {
+                        StrategyHaltDto(it.strategyId, it.reason, it.scope, it.epochDay)
+                    },
+            )
+        runCatching { json.encodeToString(RiskStateDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, RISK_STATE_FILE, it) }
+            .onFailure { e -> log.warn("saveRiskState encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadRiskState(strategyId: String): PersistedRiskState? {
+        val raw = writer.read(strategyId, RISK_STATE_FILE) ?: return null
+        val dto =
+            try {
+                json.decodeFromString(RiskStateDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadRiskState parse failed for $strategyId: ${e.message}")
+                return null
+            }
+        return PersistedRiskState(
+            epochDay = dto.epochDay,
+            realizedToday = dto.realizedToday.toBigDecimal(),
+            perStrategyRealizedToday = dto.perStrategyRealizedToday.mapValues { it.value.toBigDecimal() },
+            halted = dto.halted,
+            haltReason = dto.haltReason,
+            haltScope = dto.haltScope,
+            haltEpochDay = dto.haltEpochDay,
+            strategyHalts =
+                dto.strategyHalts.map {
+                    PersistedStrategyHalt(it.strategyId, it.reason, it.scope, it.epochDay)
+                },
+        )
     }
 
     override fun saveLegBook(
@@ -730,3 +780,26 @@ private data class LegDto(
             )
     }
 }
+
+
+@Serializable
+private data class RiskStateDto(
+    val version: Int,
+    val strategyId: String,
+    val epochDay: Long,
+    val realizedToday: String,
+    val perStrategyRealizedToday: Map<String, String>,
+    val halted: Boolean,
+    val haltReason: String?,
+    val haltScope: String,
+    val haltEpochDay: Long,
+    val strategyHalts: List<StrategyHaltDto>,
+)
+
+@Serializable
+private data class StrategyHaltDto(
+    val strategyId: String,
+    val reason: String,
+    val scope: String,
+    val epochDay: Long,
+)
