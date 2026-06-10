@@ -94,4 +94,21 @@ class EventBusEngineLoopTest {
 
         assertThat(sink.poll(2, TimeUnit.SECONDS)).isInstanceOf(TickEvent::class.java)
     }
+
+    @Test
+    fun `events published before the engine thread exists queue through the sink`() {
+        // Brokers (and their pollers) construct before the engine loop starts. With
+        // only the sink bound, an early publish must queue — dispatching inline would
+        // run subscribers against a half-built pipeline on the publisher's thread.
+        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+        val queued = mutableListOf<com.qkt.events.Event>()
+        bus.bindSink { queued.add(it) }
+        var dispatchedInline = false
+        bus.subscribe<TickEvent> { dispatchedInline = true }
+
+        bus.publish(TickEvent(Tick("X", BigDecimal.ONE, 1L)))
+
+        assertThat(dispatchedInline).isFalse()
+        assertThat(queued).hasSize(1)
+    }
 }

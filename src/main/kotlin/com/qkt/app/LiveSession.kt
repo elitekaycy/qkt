@@ -511,6 +511,13 @@ class LiveSession(
         val positions = PositionTracker()
         val strategyPositions = StrategyPositionTracker(persistor)
         val bus = busOverride ?: EventBus(clock, sequencer)
+        // The control queue and bus sink exist BEFORE any broker constructs: MT5
+        // pollers start at construction and publish from their own threads — without
+        // the sink those events dispatch inline against a half-built pipeline (#388).
+        // They queue here and drain, in order, once the engine loop starts.
+        val running = AtomicBoolean(true)
+        val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
+        bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
         val paperBroker = PaperBroker(bus, clock, priceTracker)
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
@@ -768,7 +775,6 @@ class LiveSession(
 
         val feed = source.liveTicks(symbols)
 
-        val running = AtomicBoolean(true)
         val terminated = CountDownLatch(1)
         // Control events (bus events from pollers, flatten, heartbeat, feed-end) are
         // low-rate and must NEVER be dropped; ticks are high-rate and individually
@@ -776,8 +782,8 @@ class LiveSession(
         // memory under a stalled consumer: the tick queue sheds its OLDEST on overflow
         // and the daemon can no longer OOM because one engine thread stalled. The loop
         // drains control ahead of ticks, so a flatten or fill never waits behind a
-        // tick backlog.
-        val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
+        // tick backlog. [control] itself is created before broker construction — see
+        // the bindSink note above.
         val tickQueue = java.util.concurrent.ArrayBlockingQueue<Inbound.FeedTick>(TICK_QUEUE_CAPACITY)
         val droppedInboundTicks =
             java.util.concurrent.atomic
