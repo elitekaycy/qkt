@@ -64,7 +64,8 @@ class BacktestContext private constructor(
         // baskets keep that limitation (divergence catalog row A9).
         val calendar =
             symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
-                ?: com.qkt.common.TradingCalendar.crypto()
+                ?: com.qkt.common.TradingCalendar
+                    .crypto()
         return Backtest.fromStore(
             strategies = listOf(ast.name to strategy),
             haltRules = haltRules,

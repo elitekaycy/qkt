@@ -127,6 +127,7 @@ class ExprCompilerOperatorsTest {
         CmpOp(
             Cmp.GT,
             NumLit(BigDecimal.ONE),
-            com.qkt.dsl.ast.IsNull(NumLit(BigDecimal.ONE), negated = false),
+            com.qkt.dsl.ast
+                .IsNull(NumLit(BigDecimal.ONE), negated = false),
         )
 }

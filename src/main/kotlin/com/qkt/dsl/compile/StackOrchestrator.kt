@@ -134,13 +134,20 @@ class StackOrchestrator(
                 strategyId = strategyId,
                 persistor = persistor,
                 primaryClientOrderId = persisted.primaryClientOrderId,
-                initialFiredTierIndices = persisted.tiers.filter { it.fired }.map { it.index }.toSet(),
+                initialFiredTierIndices =
+                    persisted.tiers
+                        .filter { it.fired }
+                        .map { it.index }
+                        .toSet(),
                 initialFiredLegIds =
                     persisted.tiers
                         .mapNotNull { t -> t.firedLegId?.let { t.index to it } }
                         .toMap(),
                 initialAbandonedTierIndices =
-                    persisted.tiers.filter { it.abandoned }.map { it.index }.toSet(),
+                    persisted.tiers
+                        .filter { it.abandoned }
+                        .map { it.index }
+                        .toSet(),
                 initialOpenedAtMs = persisted.openedAtMs,
             )
     }

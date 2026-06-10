@@ -15,7 +15,8 @@ object FxCalendar : TradingCalendar {
      */
     override fun tradingPeriodsPerYear(window: com.qkt.candles.TimeWindow): java.math.BigDecimal {
         val minutesPerYear =
-            java.math.BigDecimal("525960")
+            java.math
+                .BigDecimal("525960")
                 .multiply(java.math.BigDecimal(5))
                 .divide(java.math.BigDecimal(7), Money.CONTEXT)
         val windowMinutes =

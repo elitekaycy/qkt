@@ -1,27 +1,27 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.ast.ActionAst
+import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
-import com.qkt.dsl.ast.CaseWhen
-import com.qkt.dsl.ast.CmpOp
-import com.qkt.dsl.ast.Crosses
-import com.qkt.dsl.ast.ExprAst
-import com.qkt.dsl.ast.FuncCall
-import com.qkt.dsl.ast.InList
-import com.qkt.dsl.ast.IndicatorCall
-import com.qkt.dsl.ast.IsNull
-import com.qkt.dsl.ast.ActionAst
-import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.ChildArmedTrail
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
 import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
+import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.Crosses
+import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.Gtd
+import com.qkt.dsl.ast.InList
+import com.qkt.dsl.ast.IndicatorCall
+import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoEntry
@@ -239,8 +239,14 @@ object WarmupRequirements {
      * caller falls back to [numLitMax].
      */
     private fun registryWarmupBars(call: IndicatorCall): Int? {
-        val spec = com.qkt.dsl.stdlib.IndicatorRegistry.spec(call.name) ?: return null
-        val consts = call.args.drop(spec.seriesCount).filterIsInstance<NumLit>().map { it.value }
+        val spec =
+            com.qkt.dsl.stdlib.IndicatorRegistry
+                .spec(call.name) ?: return null
+        val consts =
+            call.args
+                .drop(spec.seriesCount)
+                .filterIsInstance<NumLit>()
+                .map { it.value }
         if (consts.size != spec.arity - spec.seriesCount) return null
         return runCatching {
             com.qkt.dsl.stdlib.IndicatorRegistry
