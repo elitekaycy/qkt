@@ -59,6 +59,55 @@ class Mt5TickFeedSourceTest {
     }
 
     @Test
+    fun `repeated poll failure fires onDisconnect and recovery fires onReconnect`() {
+        // A hung gateway used to surface only as an endless onError stream — the
+        // reconnect budget never started and strategies ran on silently stale prices.
+        val server = MockWebServer()
+        val counter = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val n = counter.incrementAndGet()
+                    return if (n <= 12) {
+                        MockResponse().setResponseCode(500).setBody("gateway down")
+                    } else {
+                        MockResponse().setBody(
+                            """{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,""" +
+                                """"time_msc":${1778662794911L + n},"volume":0,"volume_real":0}""",
+                        )
+                    }
+                }
+            }
+        server.start()
+        try {
+            val source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
+                    pollIntervalMs = 1L,
+                    http = OkHttpClient(),
+                )
+            val disconnects = AtomicInteger(0)
+            val reconnects = AtomicInteger(0)
+            source.start(
+                onTick = {},
+                onError = {},
+                onDisconnect = { disconnects.incrementAndGet() },
+                onReconnect = { reconnects.incrementAndGet() },
+            )
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (reconnects.get() == 0 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
+            source.stop()
+            assertThat(disconnects.get()).isEqualTo(1)
+            assertThat(reconnects.get()).isEqualTo(1)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `falls back to bid-ask mid when last is zero`() {
         val server = MockWebServer()
         val counter = AtomicInteger(0)

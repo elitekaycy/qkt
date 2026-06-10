@@ -59,10 +59,20 @@ class MT5Broker(
      * strategy mode preserves the pre-#154 behaviour). See [MT5StateRecovery]'s docstring.
      */
     private val siblingsLookup: () -> List<String> = { emptyList() },
+    /**
+     * Base backoff between venue queries while resolving an UNKNOWN send outcome
+     * (multiplied by attempt number). Tests shrink it; production keeps the default.
+     */
+    private val unknownResolveBackoffMs: Long = 500L,
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
-    override val supportsNativeGtd: Boolean = true
+
+    // The mt5-gateway's order route hardcodes ORDER_TIME_GTC and ignores the expiration
+    // field qkt sends, so the venue never expires a GTD on its own. Declaring false keeps
+    // the engine's GTD sweep active — it cancels expired pendings itself. Flip back only
+    // once the gateway honors expiration (type_time=TIME_SPECIFIED) end-to-end (#368).
+    override val supportsNativeGtd: Boolean = false
 
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
@@ -79,6 +89,7 @@ class MT5Broker(
             closedByEngine = ::consumeEngineClose,
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
+            onGatewayUnreachable = ::publishGatewayUnreachable,
         )
     internal val pendingPoller =
         MT5PendingOrderPoller(
@@ -87,6 +98,7 @@ class MT5Broker(
             clock = clock,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onPendingDisappeared = ::onPendingDisappeared,
+            onGatewayUnreachable = ::publishGatewayUnreachable,
         )
     private val stateRecovery =
         MT5StateRecovery(
@@ -158,6 +170,16 @@ class MT5Broker(
     }
 
     override fun supports(symbol: String): Boolean = true
+
+    private fun publishGatewayUnreachable(consecutiveFailures: Int) {
+        bus.publish(
+            BrokerEvent.GatewayUnreachable(
+                broker = profile.name,
+                consecutiveFailures = consecutiveFailures,
+                timestamp = clock.now(),
+            ),
+        )
+    }
 
     override fun submit(request: OrderRequest): SubmitAck {
         if (request is OrderRequest.Market && request.closesTicket != null) {
@@ -403,7 +425,15 @@ class MT5Broker(
         resp: MT5OrderResponse,
     ) {
         if (!isOrderSuccessful(resp.result.retcode)) {
-            reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
+            val message = resp.errorMessage
+            // An IO error or gateway 5xx AFTER the send leaves the outcome unknown — the
+            // order may have reached MT5 and filled. Telling the strategy "rejected"
+            // makes it re-fire and double the position; resolve against venue truth first.
+            if (message != null && isAmbiguousSendFailure(message)) {
+                resolveUnknownOutcome(request, message)
+                return
+            }
+            reject(request, message ?: "retcode=${resp.result.retcode}")
             return
         }
         val brokerOrderId =
@@ -462,6 +492,115 @@ class MT5Broker(
                 ),
             )
         }
+    }
+
+    /** True for failures where the request may have reached the venue despite the error. */
+    private fun isAmbiguousSendFailure(errorMessage: String): Boolean =
+        errorMessage.startsWith("IO error") || errorMessage.startsWith("HTTP 5")
+
+    /**
+     * Resolve an UNKNOWN send outcome by querying the venue for an order carrying this
+     * request's comment (the clientOrderId goes on the wire as the comment, and state
+     * recovery already correlates on its venue-truncated prefix).
+     *
+     *   - Found as a pending → the venue owns it: register tickets, publish Accepted.
+     *   - Found as a position → it filled: register meta, publish Accepted + Filled.
+     *   - Clean read, no match → it never landed: publish Rejected (retry is now safe).
+     *   - Reads keep failing → leave the order UNRESOLVED (no event): a false "rejected"
+     *     invites a duplicate submission, which is the worse failure. Alert the operator.
+     */
+    private fun resolveUnknownOutcome(
+        request: OrderRequest,
+        cause: String,
+    ) {
+        val wireComment = request.id.take(MT5_COMMENT_MAX_LENGTH)
+        val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
+        log.warn(
+            "MT5Broker {} order {} outcome UNKNOWN ({}) — querying venue before resolving",
+            profile.name,
+            request.id,
+            cause,
+        )
+        for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
+            Thread.sleep(unknownResolveBackoffMs * attempt)
+            val pendings = client.getPendingOrders(magic = profile.magic) ?: continue
+            val positions = client.getPositions(magic = profile.magic) ?: continue
+            val pendingMatch =
+                pendings.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
+            if (pendingMatch != null) {
+                pendingTickets[request.id] = pendingMatch.ticket
+                pendingByTicket[pendingMatch.ticket] = PendingMeta(request.id, request.strategyId)
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        clientOrderId = request.id,
+                        brokerOrderId = pendingMatch.ticket.toString(),
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                log.info(
+                    "MT5Broker {} order {} resolved as PENDING ticket {}",
+                    profile.name,
+                    request.id,
+                    pendingMatch.ticket,
+                )
+                return
+            }
+            val positionMatch =
+                positions.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
+            if (positionMatch != null) {
+                positionMetaByTicket[positionMatch.ticket] = PendingMeta(request.id, request.strategyId)
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        clientOrderId = request.id,
+                        brokerOrderId = positionMatch.ticket.toString(),
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                bus.publish(
+                    BrokerEvent.OrderFilled(
+                        clientOrderId = request.id,
+                        brokerOrderId = positionMatch.ticket.toString(),
+                        symbol = request.symbol,
+                        side = request.side,
+                        price = positionMatch.priceOpen,
+                        quantity = positionMatch.volume,
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                log.info(
+                    "MT5Broker {} order {} resolved as FILLED ticket {}",
+                    profile.name,
+                    request.id,
+                    positionMatch.ticket,
+                )
+                return
+            }
+            reject(request, "unknown-state send resolved as not placed ($cause)")
+            return
+        }
+        log.error(
+            "MT5Broker {} order {} send outcome UNRESOLVED after {} venue queries — " +
+                "no event emitted (a false reject invites a duplicate). Check the venue manually.",
+            profile.name,
+            request.id,
+            UNKNOWN_RESOLVE_ATTEMPTS,
+        )
+        publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
+    }
+
+    /**
+     * The venue stores only a truncated prefix (~16 chars) of the submitted comment, so
+     * match in both directions: stored is a prefix of the wire comment, or vice versa.
+     */
+    private fun matchesComment(
+        stored: String?,
+        wireComment: String,
+    ): Boolean {
+        if (stored.isNullOrBlank()) return false
+        return wireComment.startsWith(stored) || stored.startsWith(wireComment)
     }
 
     private fun submitComposite(
@@ -570,10 +709,11 @@ class MT5Broker(
     }
 
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
+        // A failed read must surface, not read as flat — a session that believes it is
+        // flat while holding leveraged positions re-enters and doubles up (#376).
         val positions =
-            runCatching { client.getPositions(magic = profile.magic) }
-                .onFailure { e -> log.warn("MT5Broker ${profile.name} getOpenPositions failed: ${e.message}") }
-                .getOrElse { return emptyMap() }
+            client.getPositions(magic = profile.magic)
+                ?: error("MT5Broker ${profile.name} getOpenPositions: gateway read failed")
         val out: MutableMap<String, MutableList<com.qkt.positions.Position>> = mutableMapOf()
         for (p in positions) {
             val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(p.symbol)}"
@@ -592,17 +732,15 @@ class MT5Broker(
     override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
         if (orders.isEmpty()) return
         val pending =
-            runCatching { client.getPendingOrders(magic = profile.magic) }
-                .getOrElse {
-                    log.warn("MT5Broker ${profile.name} recovery: getPendingOrders failed: ${it.message}")
-                    return
-                }
+            client.getPendingOrders(magic = profile.magic) ?: run {
+                log.warn("MT5Broker ${profile.name} recovery: getPendingOrders failed")
+                return
+            }
         val positions =
-            runCatching { client.getPositions(magic = profile.magic) }
-                .getOrElse {
-                    log.warn("MT5Broker ${profile.name} recovery: getPositions failed: ${it.message}")
-                    return
-                }
+            client.getPositions(magic = profile.magic) ?: run {
+                log.warn("MT5Broker ${profile.name} recovery: getPositions failed")
+                return
+            }
         val actions = classifyOcoRecovery(orders, pending.map { it.ticket }.toSet(), positions)
         // Pass 1: re-seed every still-pending leg before any fill is emitted, so a
         // cancel triggered by pass 2 can resolve its sibling's ticket.
@@ -826,10 +964,19 @@ class MT5Broker(
 
         // Cross-check /positions before treating as cancel. If the ticket is now a
         // position, the pending-poller observed the transition before the position-poller
-        // did — synthesize the fill path here instead of phantom-cancelling.
-        val asPosition =
-            runCatching { client.getPositions(magic = profile.magic).firstOrNull { it.ticket == ticket } }
-                .getOrNull()
+        // did — synthesize the fill path here instead of phantom-cancelling. A FAILED
+        // read leaves fill-vs-cancel unresolved: keep the order tracked and let the next
+        // poll cycle re-resolve rather than phantom-cancelling a possibly-filled leg.
+        val positionsNow =
+            client.getPositions(magic = profile.magic) ?: run {
+                log.warn(
+                    "MT5Broker ${profile.name} pending {} disappeared but /positions read failed — " +
+                        "deferring fill-vs-cancel resolution",
+                    ticket,
+                )
+                return
+            }
+        val asPosition = positionsNow.firstOrNull { it.ticket == ticket }
         if (asPosition != null) {
             onPendingPositionOpened(asPosition)
             return
@@ -891,5 +1038,8 @@ class MT5Broker(
          * position poller to tick at least once after the pending poller does.
          */
         private const val DISAMBIGUATION_TTL_MULTIPLIER: Long = 3L
+
+        /** Venue queries before giving up on resolving an UNKNOWN send outcome. */
+        private const val UNKNOWN_RESOLVE_ATTEMPTS: Int = 4
     }
 }

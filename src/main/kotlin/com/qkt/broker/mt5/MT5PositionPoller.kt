@@ -57,11 +57,17 @@ class MT5PositionPoller(
      * profile's [SymbolCalendars] so a multi-asset broker polls whenever any asset class is open.
      */
     private val sessionGate: ((Instant) -> Boolean)? = null,
+    /**
+     * Invoked once when [GATEWAY_FAILURE_ALERT_THRESHOLD] consecutive polls fail —
+     * the operator-alert hook. The poller keeps skipping diffs until a clean read.
+     */
+    private val onGatewayUnreachable: ((Int) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PositionPoller::class.java)
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
     private var lastSnapshot: Map<Long, MT5Position> = emptyMap()
+    private var consecutiveFailures: Int = 0
 
     /**
      * Tickets for which a close has already been published, mapped to the time it was
@@ -77,7 +83,7 @@ class MT5PositionPoller(
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
-        lastSnapshot = client.getPositions(magic = profile.magic).associateBy { it.ticket }
+        lastSnapshot = client.getPositions(magic = profile.magic)?.associateBy { it.ticket } ?: emptyMap()
         thread =
             Thread({
                 while (running.get()) {
@@ -111,11 +117,30 @@ class MT5PositionPoller(
         }
         val now = clock.now()
         closedTickets.entries.removeIf { now - it.value >= profile.pollIntervalMs * CLOSED_TICKET_RETENTION_MULTIPLIER }
+        // A failed read means UNKNOWN, not "everything closed" — diffing an outage
+        // snapshot would synthesize a close fill for every open position (#359).
+        val snapshot =
+            client.getPositions(magic = profile.magic) ?: run {
+                consecutiveFailures++
+                if (consecutiveFailures == GATEWAY_FAILURE_ALERT_THRESHOLD) {
+                    log.error(
+                        "MT5 poller for {} cannot reach the gateway ({} consecutive failures) — " +
+                            "position diffs suspended until a clean read",
+                        profile.name,
+                        consecutiveFailures,
+                    )
+                    onGatewayUnreachable?.invoke(consecutiveFailures)
+                }
+                return
+            }
+        if (consecutiveFailures >= GATEWAY_FAILURE_ALERT_THRESHOLD) {
+            log.info("MT5 poller for {} gateway recovered after {} failures", profile.name, consecutiveFailures)
+        }
+        consecutiveFailures = 0
         // A ticket we've already reported closed cannot legitimately reappear, so drop any
         // flicker that re-surfaces it before diffing — see [closedTickets].
         val current =
-            client
-                .getPositions(magic = profile.magic)
+            snapshot
                 .filter { it.ticket !in closedTickets }
                 .associateBy { it.ticket }
         val closed = lastSnapshot.keys - current.keys
@@ -139,7 +164,20 @@ class MT5PositionPoller(
                         )
                     }
             val strategyId = meta?.strategyId ?: ""
-            val closePrice = priceProvider?.lastPrice(qktSymbol) ?: p.priceOpen
+            // The closing deal is the venue's truth for a venue-side close. The engine's
+            // last tick is a fallback proxy; the open price is the proxy of last resort
+            // (it fabricates a break-even close — better than nothing, loudly logged).
+            val dealPrice = client.getClosingDealPrice(ticket, fromUtcMs = p.openTime, toUtcMs = now)
+            val closePrice =
+                dealPrice ?: (priceProvider?.lastPrice(qktSymbol) ?: p.priceOpen).also { fallback ->
+                    log.warn(
+                        "MT5 poller for {} pricing close of ticket {} from local proxy {} — " +
+                            "closing deal unavailable from gateway",
+                        profile.name,
+                        ticket,
+                        fallback.toPlainString(),
+                    )
+                }
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = clientOrderId,
@@ -164,6 +202,9 @@ class MT5PositionPoller(
     private companion object {
         /** Multiples of the poll interval to retain a closed ticket before reaping. */
         const val CLOSED_TICKET_RETENTION_MULTIPLIER: Long = 100L
+
+        /** Consecutive failed polls before [onGatewayUnreachable] fires. */
+        const val GATEWAY_FAILURE_ALERT_THRESHOLD: Int = 3
     }
 }
 
