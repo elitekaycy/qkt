@@ -29,15 +29,21 @@ class ParserSizingTest {
     }
 
     @Test
-    fun `pct equity`() {
-        val r = parseSizing("0.01 % OF EQUITY")
-        assertThat(r).isInstanceOf(SizePctEquity::class.java)
+    fun `pct equity normalizes percent to fraction`() {
+        val r = parseSizing("5 % OF EQUITY") as SizePctEquity
+        assertThat((r.frac as NumLit).value).isEqualByComparingTo(BigDecimal("0.05"))
     }
 
     @Test
-    fun `pct balance`() {
-        val r = parseSizing("0.5 % OF BALANCE")
-        assertThat(r).isInstanceOf(SizePctBalance::class.java)
+    fun `pct balance normalizes percent to fraction`() {
+        val r = parseSizing("0.5 % OF BALANCE") as SizePctBalance
+        assertThat((r.frac as NumLit).value).isEqualByComparingTo(BigDecimal("0.005"))
+    }
+
+    @Test
+    fun `PCT OF EQUITY is the documented spelling of percent-of-equity`() {
+        val r = parseSizing("5 PCT OF EQUITY") as SizePctEquity
+        assertThat((r.frac as NumLit).value).isEqualByComparingTo(BigDecimal("0.05"))
     }
 
     @Test

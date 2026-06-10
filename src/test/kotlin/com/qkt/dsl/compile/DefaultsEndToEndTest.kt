@@ -75,4 +75,92 @@ class DefaultsEndToEndTest {
         assertThat(br.takeProfit).isEqualByComparingTo("125")
         assertThat(br.side).isEqualTo(Side.BUY)
     }
+
+    @Test
+    fun `DEFAULTS ORDER_TYPE applies to actions without an explicit type`() {
+        // Through the text parser on purpose: the parse site used to stamp Market on
+        // every action before the defaults merge ran, making DEFAULTS ORDER_TYPE dead.
+        val src =
+            """
+            STRATEGY d VERSION 1
+
+            DEFAULTS {
+                ORDER_TYPE = LIMIT AT 100
+            }
+
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+
+            RULES
+                WHEN btc.close > 105
+                THEN BUY btc SIZING 1
+            """.trimIndent()
+        val parsed =
+            com.qkt.dsl.parse
+                .Parser(
+                    com.qkt.dsl.parse
+                        .Lexer(src)
+                        .tokenize(),
+                ).parseStrategy() as com.qkt.dsl.parse.ParseResult.Success
+        val strategy = AstCompiler().compile(parsed.value)
+
+        val captured = mutableListOf<Signal>()
+        val c =
+            Candle(
+                "BACKTEST:BTCUSDT",
+                BigDecimal("110"),
+                BigDecimal("110"),
+                BigDecimal("110"),
+                BigDecimal("110"),
+                BigDecimal.ZERO,
+                0L,
+                60_000L,
+            )
+        strategy.onCandle(c, testStrategyContext(), captured::add)
+
+        val submits = captured.filterIsInstance<Signal.Submit>()
+        assertThat(submits).isNotEmpty
+        val limit = submits.first().request as OrderRequest.Limit
+        assertThat(limit.limitPrice).isEqualByComparingTo("100")
+    }
+
+    @Test
+    fun `action without explicit type and no DEFAULTS still compiles to market`() {
+        val src =
+            """
+            STRATEGY d VERSION 1
+
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+
+            RULES
+                WHEN btc.close > 105
+                THEN BUY btc SIZING 1
+            """.trimIndent()
+        val parsed =
+            com.qkt.dsl.parse
+                .Parser(
+                    com.qkt.dsl.parse
+                        .Lexer(src)
+                        .tokenize(),
+                ).parseStrategy() as com.qkt.dsl.parse.ParseResult.Success
+        val strategy = AstCompiler().compile(parsed.value)
+
+        val captured = mutableListOf<Signal>()
+        val c =
+            Candle(
+                "BACKTEST:BTCUSDT",
+                BigDecimal("110"),
+                BigDecimal("110"),
+                BigDecimal("110"),
+                BigDecimal("110"),
+                BigDecimal.ZERO,
+                0L,
+                60_000L,
+            )
+        strategy.onCandle(c, testStrategyContext(), captured::add)
+
+        assertThat(captured).isNotEmpty
+        assertThat(captured.first()).isInstanceOf(Signal.Buy::class.java)
+    }
 }

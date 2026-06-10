@@ -183,6 +183,7 @@ class Parser(
             }
         }
 
+        requireEof()
         if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
         return try {
             ParseResult.Success(
@@ -324,6 +325,7 @@ class Parser(
                 emptyList()
             }
 
+        requireEof()
         if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
         return ParseResult.Success(
             StrategyAst(
@@ -337,6 +339,26 @@ class Parser(
                 rules = rules,
                 syncGroups = syncGroups,
                 schedules = schedules,
+            ),
+        )
+    }
+
+    /**
+     * Records an error unless every token has been consumed. Without this, the first
+     * unrecognized top-level token would silently end parsing — a strategy with a
+     * typo (`RULE` for `RULES`) or a misplaced block would deploy "ok" with whole
+     * sections missing.
+     */
+    private fun requireEof() {
+        if (peek().kind == TokenKind.EOF) return
+        val t = peek()
+        errors.add(
+            ParseError(
+                line = t.line,
+                col = t.col,
+                message =
+                    "unexpected '${t.lexeme}' after the last recognized block — " +
+                        "everything from here on would be silently ignored",
             ),
         )
     }
@@ -1133,7 +1155,9 @@ class Parser(
                 "STACK layer-list cannot be combined with outer SIZING; specify size on each layer or remove the layer list",
             )
         }
-        return ActionOpts(sizing, orderType ?: com.qkt.dsl.ast.Market, tif, bracket, oco, finalStack, stackAts)
+        // orderType stays null here so DEFAULTS ORDER_TYPE can fill it during the
+        // defaults merge; ActionCompiler applies the Market fallback after the merge.
+        return ActionOpts(sizing, orderType, tif, bracket, oco, finalStack, stackAts)
     }
 
     /**
@@ -1403,36 +1427,56 @@ class Parser(
                     }
                     TokenKind.PCT -> {
                         advance()
-                        expect(TokenKind.RISK, "expected RISK after PCT in SIZING")
-                        require(e is NumLit) {
-                            "SIZING N PCT RISK requires a numeric literal for N, got non-literal expression"
+                        if (peek().kind == TokenKind.OF) {
+                            advance()
+                            parsePercentOf(e)
+                        } else {
+                            expect(TokenKind.RISK, "expected RISK or OF after PCT in SIZING")
+                            require(e is NumLit) {
+                                "SIZING N PCT RISK requires a numeric literal for N, got non-literal expression"
+                            }
+                            val pct = e.value
+                            require(pct.signum() > 0) {
+                                "SIZING N PCT RISK requires N > 0, got $pct"
+                            }
+                            SizeRiskFrac(percentToFraction(e))
                         }
-                        val pct = e.value
-                        require(pct.signum() > 0) {
-                            "SIZING N PCT RISK requires N > 0, got $pct"
-                        }
-                        SizeRiskFrac(NumLit(pct.divide(BigDecimal(100), Money.CONTEXT)))
                     }
                     TokenKind.PERCENT -> {
                         advance()
                         expect(TokenKind.OF, "expected OF after %")
-                        when (peek().kind) {
-                            TokenKind.EQUITY -> {
-                                advance()
-                                SizePctEquity(e)
-                            }
-                            TokenKind.BALANCE -> {
-                                advance()
-                                SizePctBalance(e)
-                            }
-                            else -> error("expected EQUITY or BALANCE after % OF, got '${peek().lexeme}'")
-                        }
+                        parsePercentOf(e)
                     }
                     else -> SizeQty(e)
                 }
             }
         }
     }
+
+    private fun parsePercentOf(e: ExprAst): SizingAst =
+        when (peek().kind) {
+            TokenKind.EQUITY -> {
+                advance()
+                SizePctEquity(percentToFraction(e))
+            }
+            TokenKind.BALANCE -> {
+                advance()
+                SizePctBalance(percentToFraction(e))
+            }
+            else -> error("expected EQUITY or BALANCE after % OF, got '${peek().lexeme}'")
+        }
+
+    /**
+     * Normalizes the number before `%`/`PCT` from a percentage to a fraction — the
+     * single place the "N means N percent" sizing convention is applied, so every
+     * percent form agrees. e.g. `SIZING 2 % OF EQUITY` compiles with frac 0.02.
+     */
+    private fun percentToFraction(e: ExprAst): ExprAst =
+        if (e is NumLit) {
+            NumLit(e.value.divide(BigDecimal(100), Money.CONTEXT))
+        } else {
+            BinaryOp(BinOp.DIV, e, NumLit(BigDecimal(100)))
+        }
 
     private fun parseCaseWhen(): ExprAst {
         expect(TokenKind.CASE, "expected CASE")
