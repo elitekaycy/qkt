@@ -142,8 +142,16 @@ class LiveSession(
      * [LiveSessionHandle.halt], then asserts the event arrived.
      */
     private val busOverride: EventBus? = null,
+    /** Base backoff between reconcile read attempts; tests shrink it to keep retries fast. */
+    private val reconcileReadBackoffMs: Long = 500L,
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
+
+    private companion object {
+        /** Attempts to read broker positions at reconcile before refusing to start. */
+        const val RECONCILE_READ_ATTEMPTS: Int = 5
+
+    }
 
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
@@ -203,7 +211,33 @@ class LiveSession(
         strategyPositions: com.qkt.positions.StrategyPositionTracker,
         broker: Broker,
     ) {
-        val brokerByQktSymbol = runCatching { broker.getOpenPositions() }.getOrElse { emptyMap() }
+        // Never reconcile against assumed state: a transient broker error that reads as
+        // "no open positions" lets the session start flat while holding leveraged
+        // positions. Retry with backoff; refuse to start without one clean read.
+        var brokerByQktSymbol: Map<String, List<com.qkt.positions.Position>>? = null
+        var lastReadError: Throwable? = null
+        for (attempt in 1..RECONCILE_READ_ATTEMPTS) {
+            val read = runCatching { broker.getOpenPositions() }
+            val positions = read.getOrNull()
+            if (positions != null) {
+                brokerByQktSymbol = positions
+                break
+            }
+            lastReadError = read.exceptionOrNull()
+            log.warn(
+                "reconcile: broker position read failed (attempt {}/{}): {}",
+                attempt,
+                RECONCILE_READ_ATTEMPTS,
+                lastReadError?.message,
+            )
+            if (attempt < RECONCILE_READ_ATTEMPTS) Thread.sleep(reconcileReadBackoffMs * attempt)
+        }
+        if (brokerByQktSymbol == null) {
+            throw ReconcileException(
+                "broker position read failed $RECONCILE_READ_ATTEMPTS times — refusing to start " +
+                    "on assumed state. Last error: ${lastReadError?.message}",
+            )
+        }
         val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
         for ((strategyId, _) in strategies) {
             for (symbol in symbols) {

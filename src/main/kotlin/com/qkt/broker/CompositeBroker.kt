@@ -127,12 +127,16 @@ class CompositeBroker(
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
         val merged = LinkedHashMap<String, MutableList<com.qkt.positions.Position>>()
         for (leaf in allLeaves()) {
-            // A leaf that can't report (e.g. its venue poll fails) must not break the others or
-            // the caller — mirror the no-op default's never-throws contract and skip it.
+            // A failing leaf must surface, not vanish from the merged view — a caller
+            // reconciling against a silently-partial snapshot believes it is flat on
+            // that venue and trades on assumed state (#376).
             val leafPositions =
                 runCatching { leaf.getOpenPositions() }.getOrElse {
                     log.warn("CompositeBroker.getOpenPositions: leaf {} failed: {}", leaf.name, it.message)
-                    emptyMap()
+                    throw IllegalStateException(
+                        "CompositeBroker.getOpenPositions: leaf ${leaf.name} failed: ${it.message}",
+                        it,
+                    )
                 }
             for ((symbol, positions) in leafPositions) {
                 merged.getOrPut(symbol) { mutableListOf() }.addAll(positions)
