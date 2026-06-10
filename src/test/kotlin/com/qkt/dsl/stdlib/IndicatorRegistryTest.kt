@@ -114,14 +114,31 @@ class IndicatorRegistryTest {
     }
 
     @Test
-    fun `HIGHEST creates a RollingHigh instance`() {
-        val ind = IndicatorRegistry.create("HIGHEST", listOf(java.math.BigDecimal("20")))
-        assertThat(ind).isInstanceOf(com.qkt.indicators.catalog.RollingHigh::class.java)
+    fun `HIGHEST excludes the current bar so a breakout close can exceed it`() {
+        @Suppress("UNCHECKED_CAST")
+        val ind =
+            IndicatorRegistry.create("HIGHEST", listOf(java.math.BigDecimal("3")))
+                as com.qkt.indicators.Indicator<java.math.BigDecimal>
+        for (v in listOf("1", "2", "3")) ind.update(java.math.BigDecimal(v))
+        // Needs the N prior bars plus the in-progress one before it reads.
+        assertThat(ind.isReady).isFalse()
+        ind.update(java.math.BigDecimal("9"))
+        assertThat(ind.isReady).isTrue()
+        // Max of the 3 PRIOR bars — the breakout bar 9 is not inside its own window.
+        assertThat(ind.value()).isEqualByComparingTo("3")
+        assertThat(ind.warmupBars).isEqualTo(4)
     }
 
     @Test
-    fun `LOWEST creates a RollingLow instance`() {
-        val ind = IndicatorRegistry.create("LOWEST", listOf(java.math.BigDecimal("10")))
-        assertThat(ind).isInstanceOf(com.qkt.indicators.catalog.RollingLow::class.java)
+    fun `LOWEST excludes the current bar so a breakdown close can undercut it`() {
+        @Suppress("UNCHECKED_CAST")
+        val ind =
+            IndicatorRegistry.create("LOWEST", listOf(java.math.BigDecimal("3")))
+                as com.qkt.indicators.Indicator<java.math.BigDecimal>
+        for (v in listOf("5", "4", "3")) ind.update(java.math.BigDecimal(v))
+        assertThat(ind.isReady).isFalse()
+        ind.update(java.math.BigDecimal("1"))
+        assertThat(ind.isReady).isTrue()
+        assertThat(ind.value()).isEqualByComparingTo("3")
     }
 }
