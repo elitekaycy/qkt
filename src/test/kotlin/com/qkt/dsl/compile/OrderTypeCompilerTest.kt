@@ -51,6 +51,7 @@ class OrderTypeCompilerTest {
             c.buildRequest.evaluate(
                 ec = ec("100"),
                 id = "id-1",
+                symbol = "BACKTEST:BTCUSDT",
                 side = Side.BUY,
                 qty = BigDecimal.ONE,
                 tif = TimeInForce.GTC,
@@ -75,6 +76,7 @@ class OrderTypeCompilerTest {
             c.buildRequest.evaluate(
                 ec = ec("100"),
                 id = "id-2",
+                symbol = "BACKTEST:BTCUSDT",
                 side = Side.SELL,
                 qty = BigDecimal.ONE,
                 tif = TimeInForce.GTC,
@@ -91,6 +93,7 @@ class OrderTypeCompilerTest {
             c.buildRequest.evaluate(
                 ec = ec("100"),
                 id = "id-3",
+                symbol = "BACKTEST:BTCUSDT",
                 side = Side.SELL,
                 qty = BigDecimal.ONE,
                 tif = TimeInForce.GTC,
@@ -108,6 +111,7 @@ class OrderTypeCompilerTest {
             c.buildRequest.evaluate(
                 ec = ec("100"),
                 id = "id-4",
+                symbol = "BACKTEST:BTCUSDT",
                 side = Side.SELL,
                 qty = BigDecimal.ONE,
                 tif = TimeInForce.GTC,
@@ -125,6 +129,7 @@ class OrderTypeCompilerTest {
             c.buildRequest.evaluate(
                 ec = ec("100"),
                 id = "id-5",
+                symbol = "BACKTEST:BTCUSDT",
                 side = Side.SELL,
                 qty = BigDecimal.ONE,
                 tif = TimeInForce.GTC,
