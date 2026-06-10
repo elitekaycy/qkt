@@ -67,6 +67,7 @@ class MT5Broker(
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
+
     // The mt5-gateway's order route hardcodes ORDER_TIME_GTC and ignores the expiration
     // field qkt sends, so the venue never expires a GTD on its own. Declaring false keeps
     // the engine's GTD sweep active — it cancels expired pendings itself. Flip back only
@@ -537,7 +538,12 @@ class MT5Broker(
                         timestamp = clock.now(),
                     ),
                 )
-                log.info("MT5Broker {} order {} resolved as PENDING ticket {}", profile.name, request.id, pendingMatch.ticket)
+                log.info(
+                    "MT5Broker {} order {} resolved as PENDING ticket {}",
+                    profile.name,
+                    request.id,
+                    pendingMatch.ticket,
+                )
                 return
             }
             val positionMatch =
@@ -564,7 +570,12 @@ class MT5Broker(
                         timestamp = clock.now(),
                     ),
                 )
-                log.info("MT5Broker {} order {} resolved as FILLED ticket {}", profile.name, request.id, positionMatch.ticket)
+                log.info(
+                    "MT5Broker {} order {} resolved as FILLED ticket {}",
+                    profile.name,
+                    request.id,
+                    positionMatch.ticket,
+                )
                 return
             }
             reject(request, "unknown-state send resolved as not placed ($cause)")

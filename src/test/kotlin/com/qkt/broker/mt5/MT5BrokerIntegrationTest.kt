@@ -116,7 +116,9 @@ class MT5BrokerIntegrationTest {
         // POST /order dies with a gateway 500 AFTER the order actually landed. A
         // synthetic rejection would make the strategy re-fire and double the position;
         // the broker must query the venue and emit the fill it finds (#378).
-        val posts = java.util.concurrent.atomic.AtomicInteger(0)
+        val posts =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
         server.dispatcher =
             object : okhttp3.mockwebserver.Dispatcher() {
                 override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
