@@ -321,9 +321,46 @@ class TradingPipeline(
     }
 
     fun ingest(tick: Tick) {
+        // Hard floor on the most exposed input boundary the engine has: one glitched
+        // tick (zero/negative price, crossed quotes) marks every open position wrong,
+        // fires engine-held triggers, and poisons indicators for a full window. Drop
+        // it, count it, keep the last good price (#379). Identical in backtest and
+        // live so the gate itself cannot cause divergence.
+        if (!isValidTick(tick)) {
+            val n = malformedTickCount.incrementAndGet()
+            if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
+                log.error(
+                    "dropping malformed tick #{} for {}: price={} bid={} ask={}",
+                    n,
+                    tick.symbol,
+                    tick.price.toPlainString(),
+                    tick.bid?.toPlainString(),
+                    tick.ask?.toPlainString(),
+                )
+            }
+            return
+        }
         engine.onTick(tick)
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
+    }
+
+    private companion object {
+        /** Log cadence for malformed-tick drops — first occurrence, then every Nth. */
+        const val MALFORMED_TICK_LOG_EVERY: Long = 1000L
+    }
+
+    /** Count of ticks dropped by [ingest]'s validation floor. */
+    val malformedTickCount = java.util.concurrent.atomic.AtomicLong(0)
+
+    private fun isValidTick(tick: Tick): Boolean {
+        if (tick.price.signum() <= 0) return false
+        val bid = tick.bid
+        val ask = tick.ask
+        if (bid != null && bid.signum() <= 0) return false
+        if (ask != null && ask.signum() <= 0) return false
+        if (bid != null && ask != null && bid > ask) return false
+        return true
     }
 
     /**
