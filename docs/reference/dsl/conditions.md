@@ -143,7 +143,7 @@ These functions/properties act like read-only stream-field accesses:
 | `POSITION.<stream>` | Net position quantity (positive=long, negative=short, 0=flat) |
 | `POSITION.<stream>.pnl` | Open P&L on the current position |
 | `POSITION.<stream>.entry_price` | Average entry price |
-| `POSITION.<stream>.holding_duration` | How long the position has been open (ms) |
+| `POSITION.<stream>.holding_duration` | How long the position has been open (seconds) |
 
 ```qkt
 WHEN POSITION.btc = 0
@@ -151,7 +151,7 @@ WHEN POSITION.btc = 0
 THEN BUY btc SIZING 0.1
 
 WHEN POSITION.btc > 0
- AND POSITION.btc.holding_duration > 4 * 60 * 60 * 1000     -- 4h
+ AND POSITION.btc.holding_duration > 4 * 60 * 60     -- 4h (holding_duration is seconds)
  AND POSITION.btc.pnl < 0
 THEN CLOSE btc                                                -- time-stop on a losing position
 ```

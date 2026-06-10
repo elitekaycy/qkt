@@ -39,7 +39,7 @@ This is the first of three "docs-to-engine catch-up" phases that bring the docum
 | `POSITION.<stream>.pnl` | Strategy realized + this-symbol unrealized | `StrategyPnLView.realized() + unrealizedFor(symbol)` |
 | `POSITION.<stream>.realized_pnl` | Strategy-level realized P&L (not symbol-scoped — see Limitations) | `StrategyPnLView.realized()` |
 | `POSITION.<stream>.unrealized_pnl` | Open P&L on this position | `StrategyPnLView.unrealizedFor(symbol)` |
-| `POSITION.<stream>.holding_duration` | Milliseconds since position opened (0 if flat) | `clock.now() - Position.openedAt` |
+| `POSITION.<stream>.holding_duration` | Seconds since position opened (0 if flat) | `(clock.now() - Position.openedAt) / 1000` |
 
 ### Position schema
 
@@ -142,7 +142,7 @@ RULES
 
     -- Exit if the position has been open more than 4 hours and isn't profitable
     WHEN POSITION.btc > 0
-     AND POSITION.btc.holding_duration > 4 * 60 * 60 * 1000
+     AND POSITION.btc.holding_duration > 4 * 60 * 60
      AND POSITION.btc.unrealized_pnl < 0
     THEN CLOSE btc
          LOG "time stop — losing position aged out"
