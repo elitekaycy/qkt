@@ -132,6 +132,26 @@ ssh -L 3020:127.0.0.1:3020 root@173.249.58.247
 
 VNC password lives in `MT5_VNC_PASSWORD` in Dokploy env.
 
+## Margin floor and stop-out levels
+
+`risk.margin_floor_pct` (default 200) blocks NEW entries while the venue margin
+level sits below it; risk-reducing orders always pass. Set it against the broker's
+REAL stop-out level, not a guess — MT5 brokers force-close the largest losers when
+margin level hits their stop-out, the broker's choice of position, during the exact
+volatility spike that caused it:
+
+| Broker profile | Margin call | Stop-out |
+| --- | --- | --- |
+| Exness (standard) | 60% | 0% (!) — Exness liquidates at 0, but gaps can blow through |
+| ICMarkets | 100% | 50% |
+| FTMO | n/a (drawdown rules instead) | account breach rules |
+| Pepperstone | 90% | 50% |
+
+Verify the figures for YOUR account type in the broker terminal before trusting
+them; they vary by account tier and jurisdiction. A 200% floor keeps roughly 2x
+coverage — the practitioner norm. Weekend/news exposure reduction is tracked in
+#398 and not yet automated: reduce manually before weekends until it ships.
+
 ## Required: external deadman watchdog
 
 The daemon cannot report its own death — a host reboot or OOM on a Friday evening

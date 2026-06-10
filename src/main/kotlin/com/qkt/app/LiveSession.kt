@@ -127,6 +127,12 @@ class LiveSession(
     private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     /**
+     * Pre-entry margin floor in percent (#398); entries reject while the venue margin
+     * level is below it. Zero disables. Default 200 = keep 2x coverage, the
+     * practitioner norm against MT5's ~50% stop-out.
+     */
+    private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
+    /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
      * at this cadence so a strategy's `SCHEDULE AT 09:00 UTC THEN …` still fires
@@ -631,9 +637,15 @@ class LiveSession(
         // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
         // frozen data and drops implausible ticks before they poison indicators.
         val marketDataGate = com.qkt.marketdata.MarketDataGate(clock)
+        val marginRules =
+            if (marginFloorPct.signum() > 0) {
+                listOf(com.qkt.risk.rules.MarginFloor(broker, marginFloorPct))
+            } else {
+                emptyList()
+            }
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRiskRules + preTradeRules +
+                rules + perStrategyRiskRules + preTradeRules + marginRules +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
                 haltRules + perStrategyHaltRules,
                 positions,

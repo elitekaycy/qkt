@@ -17,6 +17,13 @@ data class MT5AccountInfo(
     val currency: String,
     val leverage: Int,
     val marginMode: Int,
+    /** Free margin in account currency; null when the gateway omits the field. */
+    val marginFree: BigDecimal? = null,
+    /**
+     * Margin level as the venue reports it — equity / used margin x 100 (a percent,
+     * e.g. 850 = 8.5x covered). Null when no margin is in use or the field is absent.
+     */
+    val marginLevel: BigDecimal? = null,
 ) {
     /**
      * True when the venue keeps a long and a short on the same symbol as two separate
