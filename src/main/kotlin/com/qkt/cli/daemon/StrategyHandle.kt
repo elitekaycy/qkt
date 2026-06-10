@@ -87,6 +87,12 @@ class StrategyHandle(
         private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
         private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
         private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
+        private val maxOrderQty: java.math.BigDecimal =
+            com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+        private val maxOrderNotional: java.math.BigDecimal =
+            com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+        private val priceCollarFrac: java.math.BigDecimal =
+            com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
         private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
         /**
          * Telegram alert sink shared across every strategy this daemon hosts. Default
@@ -165,6 +171,9 @@ class StrategyHandle(
                     initialBalance = startingBalance,
                     totalDdBasis = totalDdBasis,
                     dailyDdBasis = dailyDdBasis,
+                    maxOrderQty = maxOrderQty,
+                    maxOrderNotional = maxOrderNotional,
+                    priceCollarFrac = priceCollarFrac,
                 ).start()
 
             val server =

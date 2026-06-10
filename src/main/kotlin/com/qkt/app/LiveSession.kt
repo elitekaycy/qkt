@@ -117,6 +117,12 @@ class LiveSession(
     private val initialBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
     private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
+    /** Mandatory pre-trade caps (#393); defaults from [com.qkt.risk.rules.PreTradeControls]. */
+    private val maxOrderQty: java.math.BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+    private val maxOrderNotional: java.math.BigDecimal =
+        com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+    private val priceCollarFrac: java.math.BigDecimal =
+        com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
     /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
@@ -602,9 +608,19 @@ class LiveSession(
                 )
             }
         }
+        // Mandatory pre-trade controls are always on — they ship with defaults so "no
+        // limit configured" can never mean "no limit" (#393).
+        val preTradeRules =
+            com.qkt.risk.rules.PreTradeControls.standard(
+                prices = priceTracker,
+                instruments = instruments,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                priceCollarFrac = priceCollarFrac,
+            )
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRiskRules,
+                rules + perStrategyRiskRules + preTradeRules,
                 haltRules + perStrategyHaltRules,
                 positions,
                 riskState,
