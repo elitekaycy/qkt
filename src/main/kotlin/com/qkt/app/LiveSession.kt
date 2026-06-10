@@ -400,21 +400,6 @@ class LiveSession(
         }
     }
 
-    /**
-     * Subscribe notifier handlers for the bus-driven event kinds in [notifyEvents]. Must be
-     * called after [bus] is constructed and before any publish — handlers registered after a
-     * publish miss that event silently.
-     *
-     * Each handler is wrapped in [runCatching] so a notifier fault never propagates back into
-     * the bus dispatch loop, whose semantics prevent later handlers from running if any handler
-     * throws.
-     *
-     * [BrokerEvent.OrderRejected] omits symbol/side/quantity; [orderManager] recovers them
-     * via [OrderManager.orderDetailsFor]. Not wired here: [NotificationEvent.DaemonStarted]
-     * is a daemon-level concern fired by [com.qkt.cli.DaemonCommand];
-     * [NotificationEvent.StrategyError] has no bus source yet.
-     */
-
     /** Every order-lifecycle event lands in the append-only journal, in bus order. */
     private fun wireJournal(
         bus: EventBus,
@@ -479,6 +464,21 @@ class LiveSession(
             journal.append(e.strategyId.orEmpty(), "resumed", emptyMap<String, String?>())
         }
     }
+
+    /**
+     * Subscribe notifier handlers for the bus-driven event kinds in [notifyEvents]. Must be
+     * called after [bus] is constructed and before any publish — handlers registered after a
+     * publish miss that event silently.
+     *
+     * Each handler is wrapped in [runCatching] so a notifier fault never propagates back into
+     * the bus dispatch loop, whose semantics prevent later handlers from running if any handler
+     * throws.
+     *
+     * [BrokerEvent.OrderRejected] omits symbol/side/quantity; [orderManager] recovers them
+     * via [OrderManager.orderDetailsFor]. Not wired here: [NotificationEvent.DaemonStarted]
+     * is a daemon-level concern fired by [com.qkt.cli.DaemonCommand];
+     * [NotificationEvent.StrategyError] has no bus source yet.
+     */
 
     private fun wireNotifierSubscriptions(
         bus: EventBus,
