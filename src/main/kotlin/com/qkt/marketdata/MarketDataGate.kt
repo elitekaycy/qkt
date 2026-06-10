@@ -165,22 +165,9 @@ class MarketDataHealthRule(
         positions: com.qkt.positions.PositionProvider,
     ): com.qkt.risk.Decision {
         if (gate.isHealthy(request.symbol)) return com.qkt.risk.Decision.Approve
-        if (isRiskReducing(request, positions)) return com.qkt.risk.Decision.Approve
+        if (com.qkt.risk.isRiskReducing(request, positions)) return com.qkt.risk.Decision.Approve
         return com.qkt.risk.Decision.Reject(
             "market data for ${request.symbol} is stale — new orders suppressed until data resumes",
         )
-    }
-
-    private fun isRiskReducing(
-        request: com.qkt.execution.OrderRequest,
-        positions: com.qkt.positions.PositionProvider,
-    ): Boolean {
-        if (request is com.qkt.execution.OrderRequest.Market && request.closesTicket != null) return true
-        val net = positions.positionFor(request.symbol)?.quantity ?: return false
-        if (net.signum() == 0) return false
-        val opposes =
-            (net.signum() > 0 && request.side == com.qkt.common.Side.SELL) ||
-                (net.signum() < 0 && request.side == com.qkt.common.Side.BUY)
-        return opposes && request.quantity <= net.abs()
     }
 }

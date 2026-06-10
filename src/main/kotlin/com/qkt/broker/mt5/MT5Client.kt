@@ -191,6 +191,8 @@ class MT5Client(
             currency = obj["currency"]?.jsonPrimitive?.contentOrNull ?: "",
             leverage = obj["leverage"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             marginMode = obj["margin_mode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: MARGIN_MODE_NETTING,
+            marginFree = obj["margin_free"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
+            marginLevel = obj["margin_level"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
         )
     }
 
