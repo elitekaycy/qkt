@@ -36,6 +36,15 @@ interface DslCompiledStrategy : Strategy {
     val multiPositionPerSymbolSymbols: Set<String>
         get() = emptySet()
 
+    /**
+     * Stream aliases whose conditions read quote fields (`bid`/`ask`/`spread`). These
+     * evaluate Undefined unless the data source carries real quotes — bar-synthesized
+     * backtest feeds do not, so spread-aware rules silently never fire there. The
+     * backtest engine warns loudly when this is non-empty.
+     */
+    val quoteFieldStreams: Set<String>
+        get() = emptySet()
+
     /** Subscribes this strategy to the shared [CandleHub] for hub-driven dispatch. */
     fun bindToHub(
         hub: CandleHub,

@@ -67,6 +67,8 @@ class ReplayEngine(
     brokerKind: BrokerKind = BrokerKind.PAPER,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
 ) : AutoCloseable {
+    private val log = org.slf4j.LoggerFactory.getLogger(ReplayEngine::class.java)
+
     private val cadence: SampleCadence =
         cadence ?: if (candleWindow != null) SampleCadence.CANDLE_CLOSE else SampleCadence.TICK
 
@@ -117,6 +119,17 @@ class ReplayEngine(
 
         val dslStrategies =
             strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
+        for (s in dslStrategies) {
+            if (s.quoteFieldStreams.isNotEmpty()) {
+                log.warn(
+                    "strategy reads quote fields (bid/ask/spread) on streams {} — these evaluate " +
+                        "Undefined unless the backtest data source carries real ticks with quotes; " +
+                        "bar-synthesized feeds do not, so spread-aware rules will silently never fire " +
+                        "(divergence catalog row A10)",
+                    s.quoteFieldStreams,
+                )
+            }
+        }
         val brokerSymbols: MutableMap<String, MutableSet<String>> = mutableMapOf()
         for (s in dslStrategies) {
             for (key in s.declaredStreams.values) {
