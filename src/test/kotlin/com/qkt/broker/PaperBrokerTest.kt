@@ -125,6 +125,58 @@ class PaperBrokerTest {
     }
 
     @Test
+    fun `stop triggers are side-aware on the quote, not the mid`() {
+        // MT5 fires BUY_STOP on the ASK and SELL_STOP on the BID. With bid 100.4 /
+        // ask 100.6 (mid 100.5): a buy stop at 100.55 must trigger (ask crossed it)
+        // even though the mid never did, and a sell stop at 100.55 must NOT trigger
+        // (the bid never reached it) even though the ask did.
+        val tracker = MarketPriceTracker()
+        tracker.update("XAUUSD", Money.of("100.5"))
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        val b = PaperBroker(bus, FixedClock(0L), tracker)
+
+        b.submit(
+            OrderRequest.Stop(
+                id = "buy-stop",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("100.55"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        b.submit(
+            OrderRequest.Stop(
+                id = "sell-stop",
+                symbol = "XAUUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("100.45"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        b.onTick(
+            Tick(
+                symbol = "XAUUSD",
+                price = Money.of("100.5"),
+                timestamp = 1L,
+                bid = Money.of("100.48"),
+                ask = Money.of("100.56"),
+            ),
+        )
+
+        // Ask 100.56 crossed the 100.55 buy stop; bid 100.48 never reached the
+        // 100.45 sell stop — even though the mid (100.5) would have triggered neither
+        // or, with a wider spread, both.
+        assertThat(fills.map { it.clientOrderId }).containsExactly("buy-stop")
+    }
+
+    @Test
     fun `cancel removes a working Limit before fill`() {
         val tracker = MarketPriceTracker()
         val bus = newBus()
