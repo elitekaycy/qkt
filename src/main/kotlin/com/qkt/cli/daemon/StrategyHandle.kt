@@ -200,6 +200,7 @@ class StrategyHandle(
                             streamBrokers = session.streamBrokers(),
                             pnl = session.pnlSnapshot(ast.name),
                             inboundQueueDepth = session.inboundQueueDepth(),
+                            staleSymbols = session.staleSymbols().keys.sorted(),
                         )
                     },
                     running = { session.running },

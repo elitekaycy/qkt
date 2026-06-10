@@ -63,6 +63,7 @@ internal fun buildSnapshot(
     streamBrokers: Map<String, String> = emptyMap(),
     pnl: SessionPnl = SessionPnl.ZERO,
     inboundQueueDepth: Int = 0,
+    staleSymbols: List<String> = emptyList(),
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
     val last = trades.lastOrNull()
@@ -90,5 +91,6 @@ internal fun buildSnapshot(
         pendingStackLayers = pendingStackLayers,
         streamBrokers = streamBrokers,
         inboundQueueDepth = inboundQueueDepth,
+        staleSymbols = staleSymbols,
     )
 }
