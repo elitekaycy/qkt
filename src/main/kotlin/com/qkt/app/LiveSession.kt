@@ -446,7 +446,13 @@ class LiveSession(
         val instruments = buildInstrumentRegistry()
         val pnl = PnLCalculator(positions, priceTracker, instruments)
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
-        startingBalances.forEach { (id, balance) -> strategyPnL.setStartingBalance(id, balance) }
+        // Every deploy path needs a starting balance: portfolio deploys pass per-strategy
+        // entries in [startingBalances]; standalone deploys fall back to the session-level
+        // [initialBalance] so ACCOUNT.equity and % OF EQUITY sizing don't run on zero.
+        for ((id, _) in strategies) {
+            val balance = startingBalances[id] ?: initialBalance
+            if (balance.signum() > 0) strategyPnL.setStartingBalance(id, balance)
+        }
 
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
@@ -480,7 +486,7 @@ class LiveSession(
                         .MaxStrategyOpenPositions(riskOwnerStrategyId, it, strategyPositions),
                 )
             }
-            val ownerInitialBalance = startingBalances[riskOwnerStrategyId] ?: java.math.BigDecimal.ZERO
+            val ownerInitialBalance = startingBalances[riskOwnerStrategyId] ?: initialBalance
             perStrategyMaxDrawdownPct?.let {
                 perStrategyHaltRules.add(
                     com.qkt.risk.rules
