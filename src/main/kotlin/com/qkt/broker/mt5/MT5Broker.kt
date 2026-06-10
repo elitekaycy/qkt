@@ -83,6 +83,7 @@ class MT5Broker(
             closedByEngine = ::consumeEngineClose,
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
+            onGatewayUnreachable = ::publishGatewayUnreachable,
         )
     internal val pendingPoller =
         MT5PendingOrderPoller(
@@ -91,6 +92,7 @@ class MT5Broker(
             clock = clock,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onPendingDisappeared = ::onPendingDisappeared,
+            onGatewayUnreachable = ::publishGatewayUnreachable,
         )
     private val stateRecovery =
         MT5StateRecovery(
@@ -162,6 +164,16 @@ class MT5Broker(
     }
 
     override fun supports(symbol: String): Boolean = true
+
+    private fun publishGatewayUnreachable(consecutiveFailures: Int) {
+        bus.publish(
+            BrokerEvent.GatewayUnreachable(
+                broker = profile.name,
+                consecutiveFailures = consecutiveFailures,
+                timestamp = clock.now(),
+            ),
+        )
+    }
 
     override fun submit(request: OrderRequest): SubmitAck {
         if (request is OrderRequest.Market && request.closesTicket != null) {
@@ -574,10 +586,11 @@ class MT5Broker(
     }
 
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
+        // A failed read must surface, not read as flat — a session that believes it is
+        // flat while holding leveraged positions re-enters and doubles up (#376).
         val positions =
-            runCatching { client.getPositions(magic = profile.magic) }
-                .onFailure { e -> log.warn("MT5Broker ${profile.name} getOpenPositions failed: ${e.message}") }
-                .getOrElse { return emptyMap() }
+            client.getPositions(magic = profile.magic)
+                ?: error("MT5Broker ${profile.name} getOpenPositions: gateway read failed")
         val out: MutableMap<String, MutableList<com.qkt.positions.Position>> = mutableMapOf()
         for (p in positions) {
             val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(p.symbol)}"
@@ -596,17 +609,15 @@ class MT5Broker(
     override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
         if (orders.isEmpty()) return
         val pending =
-            runCatching { client.getPendingOrders(magic = profile.magic) }
-                .getOrElse {
-                    log.warn("MT5Broker ${profile.name} recovery: getPendingOrders failed: ${it.message}")
-                    return
-                }
+            client.getPendingOrders(magic = profile.magic) ?: run {
+                log.warn("MT5Broker ${profile.name} recovery: getPendingOrders failed")
+                return
+            }
         val positions =
-            runCatching { client.getPositions(magic = profile.magic) }
-                .getOrElse {
-                    log.warn("MT5Broker ${profile.name} recovery: getPositions failed: ${it.message}")
-                    return
-                }
+            client.getPositions(magic = profile.magic) ?: run {
+                log.warn("MT5Broker ${profile.name} recovery: getPositions failed")
+                return
+            }
         val actions = classifyOcoRecovery(orders, pending.map { it.ticket }.toSet(), positions)
         // Pass 1: re-seed every still-pending leg before any fill is emitted, so a
         // cancel triggered by pass 2 can resolve its sibling's ticket.
@@ -830,10 +841,19 @@ class MT5Broker(
 
         // Cross-check /positions before treating as cancel. If the ticket is now a
         // position, the pending-poller observed the transition before the position-poller
-        // did — synthesize the fill path here instead of phantom-cancelling.
-        val asPosition =
-            runCatching { client.getPositions(magic = profile.magic).firstOrNull { it.ticket == ticket } }
-                .getOrNull()
+        // did — synthesize the fill path here instead of phantom-cancelling. A FAILED
+        // read leaves fill-vs-cancel unresolved: keep the order tracked and let the next
+        // poll cycle re-resolve rather than phantom-cancelling a possibly-filled leg.
+        val positionsNow =
+            client.getPositions(magic = profile.magic) ?: run {
+                log.warn(
+                    "MT5Broker ${profile.name} pending {} disappeared but /positions read failed — " +
+                        "deferring fill-vs-cancel resolution",
+                    ticket,
+                )
+                return
+            }
+        val asPosition = positionsNow.firstOrNull { it.ticket == ticket }
         if (asPosition != null) {
             onPendingPositionOpened(asPosition)
             return

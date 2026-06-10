@@ -102,6 +102,40 @@ class MT5PositionPollerCloseTest {
     }
 
     @Test
+    fun `gateway outage does not read as all positions closed`() {
+        // Snapshot 1: ticket open. Snapshots 2-4: gateway down (HTTP 500). Snapshot 5:
+        // gateway back, position still open. No phantom close may be synthesized, and
+        // the unreachable hook fires once at the third consecutive failure.
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
+        repeat(3) { server.enqueue(MockResponse().setResponseCode(500).setBody("boom")) }
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+
+        val unreachable = mutableListOf<Int>()
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = { ClosedPositionMeta("ord", "alpha") },
+                priceProvider = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) },
+                onGatewayUnreachable = { unreachable.add(it) },
+            )
+        poller.tick() // sees 7001 open
+        repeat(3) { poller.tick() } // outage: diffs suspended
+        assertThat(fills).isEmpty()
+        assertThat(unreachable).containsExactly(3)
+
+        poller.tick() // recovered, 7001 still open — still no close
+        assertThat(fills).isEmpty()
+
+        poller.tick() // 7001 genuinely closed now
+        assertThat(fills).hasSize(1)
+    }
+
+    @Test
     fun `poller skips a close the engine already published`() {
         // qkt closed the ticket itself (close-by-ticket) and already emitted the fill; the
         // poller seeing the ticket gone must NOT publish a second, duplicate close.

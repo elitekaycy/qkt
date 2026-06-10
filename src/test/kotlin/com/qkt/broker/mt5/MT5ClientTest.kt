@@ -201,7 +201,7 @@ class MT5ClientTest {
                 """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"open_time":$serverEpochMs,"comment":"x"}]""",
             ),
         )
-        val positions = client.getPositions(magic = 10001)
+        val positions = client.getPositions(magic = 10001)!!
         assertThat(positions).hasSize(1)
         assertThat(positions[0].ticket).isEqualTo(1L)
         assertThat(positions[0].openTime).isEqualTo(expectedUtcMs)
@@ -279,7 +279,7 @@ class MT5ClientTest {
     @Test
     fun `getPendingOrders parses a wrapped orders object`() {
         server.enqueue(MockResponse().setBody("""{"orders":[$pendingOrderJson],"total":1}"""))
-        val orders = client.getPendingOrders(magic = 10001)
+        val orders = client.getPendingOrders(magic = 10001)!!
         assertThat(orders).hasSize(1)
         assertThat(orders[0].ticket).isEqualTo(7L)
         assertThat(orders[0].symbol).isEqualTo("XAUUSDm")
@@ -288,7 +288,7 @@ class MT5ClientTest {
     @Test
     fun `getPendingOrders parses a bare array`() {
         server.enqueue(MockResponse().setBody("""[$pendingOrderJson]"""))
-        val orders = client.getPendingOrders(magic = 10001)
+        val orders = client.getPendingOrders(magic = 10001)!!
         assertThat(orders).hasSize(1)
         assertThat(orders[0].ticket).isEqualTo(7L)
     }
@@ -297,6 +297,16 @@ class MT5ClientTest {
     fun `getPendingOrders returns empty for an object without orders`() {
         server.enqueue(MockResponse().setBody("""{"total":0}"""))
         assertThat(client.getPendingOrders(magic = 10001)).isEmpty()
+    }
+
+    @Test
+    fun `state reads return null on gateway failure, not empty`() {
+        // null = "could not read" so pollers can tell an outage apart from a genuinely
+        // flat account — an outage must never read as "all closed / all cancelled".
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertThat(client.getPositions(magic = 10001)).isNull()
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertThat(client.getPendingOrders(magic = 10001)).isNull()
     }
 
     @Test
@@ -342,7 +352,7 @@ class MT5ClientTest {
                     """{"symbol":"XAUUSDm","type":"BUY_STOP","magic":10001}]""",
             ),
         )
-        val orders = client.getPendingOrders(magic = 10001)
+        val orders = client.getPendingOrders(magic = 10001)!!
         assertThat(orders).hasSize(2)
         assertThat(orders[0].ticket).isEqualTo(7L)
         assertThat(orders[1].ticket).isEqualTo(0L)

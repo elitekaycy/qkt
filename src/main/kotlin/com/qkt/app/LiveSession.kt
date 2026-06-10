@@ -375,6 +375,22 @@ class LiveSession(
                 }.onFailure { t -> log.warn("[notify] handler failed for PositionReconciled", t) }
             }
         }
+        if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
+            val ownerForError = strategies.firstOrNull()?.first.orEmpty()
+            bus.subscribe<BrokerEvent.GatewayUnreachable> { ev ->
+                runCatching {
+                    notifier.notify(
+                        NotificationEvent.StrategyError(
+                            strategyId = ownerForError,
+                            message =
+                                "MT5 gateway '${ev.broker}' unreachable for ${ev.consecutiveFailures} " +
+                                    "consecutive polls — position/pending reconciliation suspended",
+                            timestamp = ev.timestamp,
+                        ),
+                    )
+                }.onFailure { t -> log.warn("[notify] handler failed for GatewayUnreachable", t) }
+            }
+        }
         if (NotifyEventKind.ORDER_REJECTED in notifyEvents) {
             bus.subscribe<BrokerEvent.OrderRejected> { ev ->
                 runCatching {
