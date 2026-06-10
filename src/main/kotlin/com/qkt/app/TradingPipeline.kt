@@ -119,6 +119,9 @@ class TradingPipeline(
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
+    /** The primary-window aggregator (candle events on the bus); null when no window configured. */
+    private val windowAggregator: CandleAggregator?
+
     val orderManager: OrderManager =
         OrderManager(
             broker,
@@ -171,7 +174,7 @@ class TradingPipeline(
             "Strategy ID must be non-blank"
         }
 
-        if (candleWindow != null) CandleAggregator(bus, candleWindow)
+        windowAggregator = if (candleWindow != null) CandleAggregator(bus, candleWindow) else null
 
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick.symbol, e.tick.price) }
 
@@ -388,6 +391,11 @@ class TradingPipeline(
      */
     fun scheduleHeartbeat(nowMs: Long) {
         scheduleRunner.tick(nowMs)
+        // Time-driven candle close: a quiet symbol's bar must close when its window
+        // ends, not when the next tick eventually arrives (live only — the heartbeat
+        // doesn't run in backtest, where event-time is the only clock).
+        windowAggregator?.flushClosed(nowMs)
+        candleHub.flushClosed(nowMs)
     }
 
     fun ingestForWarmup(tick: Tick) {

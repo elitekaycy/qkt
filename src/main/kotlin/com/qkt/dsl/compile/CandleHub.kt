@@ -87,6 +87,16 @@ class CandleHub {
     }
 
     /**
+     * Time-driven close: finish every in-progress candle whose window ended at
+     * [nowMs], across all keys, and sweep sync timeouts. Live's heartbeat calls this
+     * so a quiet symbol's last bar still closes and fires its rules.
+     */
+    fun flushClosed(nowMs: Long) {
+        for ((_, slot) in slots) slot.aggregator.flushClosed(nowMs)
+        sweepSyncTimeouts(nowMs)
+    }
+
+    /**
      * Route a closed bar into every sync group that contains [streamKey]. Stash the
      * bar under the group's pending map keyed by `closed.endTime`. If every member of
      * the group now has a bar for that window-end, fire the listeners once with one
