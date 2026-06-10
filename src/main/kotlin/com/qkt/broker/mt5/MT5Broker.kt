@@ -62,7 +62,11 @@ class MT5Broker(
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
-    override val supportsNativeGtd: Boolean = true
+    // The mt5-gateway's order route hardcodes ORDER_TIME_GTC and ignores the expiration
+    // field qkt sends, so the venue never expires a GTD on its own. Declaring false keeps
+    // the engine's GTD sweep active — it cancels expired pendings itself. Flip back only
+    // once the gateway honors expiration (type_time=TIME_SPECIFIED) end-to-end (#368).
+    override val supportsNativeGtd: Boolean = false
 
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
