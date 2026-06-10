@@ -54,6 +54,49 @@ class WarmupRequirementsTest {
     }
 
     @Test
+    fun `MACD warmup is the indicator's true requirement, not the max literal`() {
+        val s =
+            ast(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                RULES
+                  WHEN macd(g.close, 12, 26, 9) > 0 THEN FLATTEN
+                """.trimIndent(),
+            )
+        // The slow EMA needs 26 bars and the signal line 9 more on top — the max
+        // literal (26) under-warms by 8 bars. Read the truth from the indicator.
+        val derived = WarmupRequirements.compute(s).getValue("g")
+        val actual =
+            com.qkt.dsl.stdlib.IndicatorRegistry
+                .create(
+                    "MACD",
+                    listOf(java.math.BigDecimal(12), java.math.BigDecimal(26), java.math.BigDecimal(9)),
+                ).warmupBars
+        assertThat(derived).isEqualTo(actual)
+        assertThat(derived).isGreaterThan(26)
+    }
+
+    @Test
+    fun `action-side indicators count toward warmup`() {
+        val s =
+            ast(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                RULES
+                  WHEN g.close > 0
+                  THEN BUY g SIZING 1 BRACKET { STOP LOSS BY atr(g.candle, 50), TAKE PROFIT BY atr(g.candle, 50) }
+                """.trimIndent(),
+            )
+        // The ATR lives only in the bracket child price — it computes garbage on a
+        // half-warm window exactly like a condition-side indicator would.
+        assertThat(WarmupRequirements.compute(s).getValue("g")).isGreaterThanOrEqualTo(50)
+    }
+
+    @Test
     fun `max of explicit and indicator wins`() {
         val s =
             ast(
