@@ -89,8 +89,12 @@ class LiveSessionTest {
             (0 until total).map { i -> Tick("X", Money.of("100"), now.toEpochMilli() + i) },
         )
         val firstTickGate = java.util.concurrent.CountDownLatch(1)
-        val seen = java.util.concurrent.atomic.AtomicInteger(0)
-        val lastSeenTs = java.util.concurrent.atomic.AtomicLong(0)
+        val seen =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
+        val lastSeenTs =
+            java.util.concurrent.atomic
+                .AtomicLong(0)
         val strategy =
             object : Strategy {
                 override fun onTick(
