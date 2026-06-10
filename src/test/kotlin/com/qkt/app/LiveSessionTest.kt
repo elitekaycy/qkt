@@ -78,6 +78,69 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `seeded history opens the warmup gate before the first live bar`() {
+        // 5 historical bars cover WARMUP 5 BARS, so the rule must fire on the FIRST
+        // live closed bar — not after five more live bars. Seeding must credit the
+        // gate (seed-before-bind); a cold gate here means every deploy starts with a
+        // dead window the length of the warmup.
+        val src = InMemoryMarketSource()
+        val warmupStart = now.minusSeconds(5 * 60).toEpochMilli()
+        src.seedBars(
+            "EXNESS:X",
+            TimeWindow.ONE_MINUTE,
+            (0 until 5).map { i ->
+                Candle(
+                    "EXNESS:X",
+                    Money.of((100 + i).toString()),
+                    Money.of((100 + i).toString()),
+                    Money.of((100 + i).toString()),
+                    Money.of((100 + i).toString()),
+                    Money.of("1"),
+                    warmupStart + i * 60_000L,
+                    warmupStart + (i + 1) * 60_000L,
+                )
+            },
+        )
+        src.seedLive(
+            "EXNESS:X",
+            listOf(
+                Tick("EXNESS:X", Money.of("200"), now.toEpochMilli()),
+                Tick("EXNESS:X", Money.of("201"), now.plus(Duration.ofSeconds(61)).toEpochMilli()),
+            ),
+        )
+        val parsed =
+            com.qkt.dsl.parse.Dsl.parse(
+                """
+                STRATEGY gatecheck VERSION 1
+                SYMBOLS
+                  x = EXNESS:X EVERY 1m WARMUP 5 BARS
+                RULES
+                  WHEN x.close > 0 THEN BUY x SIZING 1
+                """.trimIndent(),
+            ) as com.qkt.dsl.parse.ParseResult.Success
+        val strategy =
+            com.qkt.dsl.compile
+                .AstCompiler()
+                .compile(parsed.value)
+
+        val signals = mutableListOf<Signal>()
+        val handle =
+            LiveSession(
+                strategies = listOf("gatecheck" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("EXNESS:X"),
+                candleWindow = TimeWindow.ONE_MINUTE,
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                onSignal = { signals.add(it) },
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        assertThat(signals).isNotEmpty
+    }
+
+    @Test
     fun `standalone deploy seeds the strategy starting balance from initialBalance`() {
         // No startingBalances map (that's the portfolio path) — a standalone deploy
         // must still give ACCOUNT.equity its configured balance, or % OF EQUITY

@@ -514,6 +514,33 @@ class LiveSession(
             candleHub ?: com.qkt.dsl.compile
                 .CandleHub()
 
+        val now = Instant.ofEpochMilli(clock.now())
+
+        // Phase 25B: per-stream pre-fetch + hub seeding for DSL strategies. Seeding
+        // must happen BEFORE TradingPipeline binds strategies to the hub: bindToHub
+        // credits the WarmupGate from hub.historySize, so seeding afterwards leaves
+        // the gate cold and every deploy waits out a full live warmup window on
+        // already-warm indicators. register() is idempotent — the pipeline's later
+        // registration extends these slots rather than replacing them. Retention is
+        // widened to the warmup bar count so the seeded history survives the ring.
+        // Fail-fast: any broker error here aborts deploy with a typed exception.
+        val perStreamSpecs: Map<String, WarmupSpec> =
+            strategies
+                .map { it.second }
+                .filterIsInstance<PerStreamWarmable>()
+                .flatMap { it.perStreamWarmup.entries }
+                .associate { it.key to it.value }
+        if (perStreamSpecs.isNotEmpty()) {
+            for ((strategyId, strategy) in strategies) {
+                if (strategy !is DslCompiledStrategy) continue
+                for ((key, retention) in strategy.retentionByKey) {
+                    val warmupBars = (perStreamSpecs[key.qktSymbol] as? WarmupSpec.Bars)?.count ?: 0
+                    pipelineCandleHub.register(key, maxOf(retention, warmupBars), strategyId)
+                }
+            }
+            seedHubFromHistory(strategies, pipelineCandleHub, perStreamSpecs, now)
+        }
+
         // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
         // session's route list and use its profile's `serverTzOffsetHours`.
         // LiveSession is per-strategy in the daemon model, so all calls return
@@ -580,20 +607,7 @@ class LiveSession(
             dailyTracker.recordHalt(ev.strategyId ?: ownerStrategyId)
         }
 
-        val now = Instant.ofEpochMilli(clock.now())
-
-        // Phase 25B: per-stream pre-fetch + hub seeding for DSL strategies.
-        // Seeds candle history (so lookback works on the first live bar) and triggers
-        // indicator warmup via the existing IndicatorWarmer pipeline. Fail-fast: any
-        // broker error here aborts deploy with a typed exception.
-        val perStreamSpecs: Map<String, WarmupSpec> =
-            strategies
-                .map { it.second }
-                .filterIsInstance<PerStreamWarmable>()
-                .flatMap { it.perStreamWarmup.entries }
-                .associate { it.key to it.value }
         if (perStreamSpecs.isNotEmpty()) {
-            seedHubFromHistory(strategies, pipelineCandleHub, perStreamSpecs, now)
             IndicatorWarmer(source, pipeline).warmup(perStreamSpecs, now)
         } else {
             val effectiveWarmup =
