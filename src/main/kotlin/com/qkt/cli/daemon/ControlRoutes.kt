@@ -153,9 +153,26 @@ object ControlRoutes {
         registry: StrategyRegistry,
         startedAt: Instant,
     ) {
-        val uptimeMs = Instant.now().toEpochMilli() - startedAt.toEpochMilli()
-        val count = registry.list().size
-        respond(ex, 200, """{"status":"ok","strategies":$count,"uptimeMs":$uptimeMs}""")
+        val now = Instant.now().toEpochMilli()
+        val uptimeMs = now - startedAt.toEpochMilli()
+        val handles = registry.list()
+        // Per-strategy last-event age lets an external watchdog tell a WEDGED single
+        // session (dead engine thread, growing queue, no events) from a healthy idle
+        // one — the daemon answering /health alone cannot (#397).
+        val perStrategy =
+            handles.joinToString(",", "[", "]") { h ->
+                val lastEvent = h.ring.snapshot(0, 1_000).lastOrNull()?.ts
+                val ageMs = lastEvent?.let { now - it }
+                """{"name":"${h.name}","running":${h.isRunning()},""" +
+                    """"halted":${h.live.isHalted()},""" +
+                    """"lastEventAgeMs":${ageMs ?: "null"},""" +
+                    """"inboundQueueDepth":${h.live.inboundQueueDepth()}}"""
+            }
+        respond(
+            ex,
+            200,
+            """{"status":"ok","strategies":${handles.size},"uptimeMs":$uptimeMs,"perStrategy":$perStrategy}""",
+        )
     }
 
     private fun handleList(

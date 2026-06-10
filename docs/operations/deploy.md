@@ -132,6 +132,23 @@ ssh -L 3020:127.0.0.1:3020 root@173.249.58.247
 
 VNC password lives in `MT5_VNC_PASSWORD` in Dokploy env.
 
+## Required: external deadman watchdog
+
+The daemon cannot report its own death — a host reboot or OOM on a Friday evening
+goes unnoticed until someone looks, with open leveraged positions protected only
+by venue-side stops. Run `scripts/deadman-watchdog.sh` from a SECOND machine via
+cron (every minute), pointed at the daemon's `/health` through an SSH tunnel or
+private network:
+
+```cron
+* * * * * QKT_HEALTH_URL=http://127.0.0.1:8200/health TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... /opt/qkt/deadman-watchdog.sh
+```
+
+It pages once per outage (daemon down, or any running strategy silent past 15
+minutes — the wedged-session signature) and once on recovery. A hosted dead-man
+service (healthchecks.io) works as an alternative; the point is that the checker
+does not share the trading host's fate.
+
 ## Trust boundary and host clock
 
 Two assumptions the deployment relies on — written down so a future change can't
