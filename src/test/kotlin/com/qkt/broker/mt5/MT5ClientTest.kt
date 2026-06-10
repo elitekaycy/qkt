@@ -133,6 +133,17 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `retcode success family includes done placed and partial`() {
+        // 10008 (placed) and 10010 (partial) mean the venue owns the order; treating
+        // them as rejections double-submits on the strategy's next attempt.
+        assertThat(isOrderSuccessful(10009)).isTrue
+        assertThat(isOrderSuccessful(10008)).isTrue
+        assertThat(isOrderSuccessful(10010)).isTrue
+        assertThat(isOrderSuccessful(10004)).isFalse
+        assertThat(isOrderSuccessful(-1)).isFalse
+    }
+
+    @Test
     fun `placeOrder caps an over-long comment to the MT5 wire limit`() {
         // mt5.order_send rejects comments longer than MT5_COMMENT_MAX_LENGTH with
         // `Invalid "comment" argument`. The hedge-straddle stack-tier clientOrderId
