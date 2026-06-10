@@ -129,6 +129,7 @@ class ReplayEngine(
         // symbol fails the run up front instead of silently booking contractSize=1.
         if (instruments !is NoopInstrumentRegistry) {
             for (symbol in (symbols + brokerSymbols.values.flatten()).distinct()) {
+                if (!com.qkt.instrument.QuoteCurrencyGuard.requiresContractSizeMeta(symbol)) continue
                 requireNotNull(instruments.lookup(symbol)) {
                     "InstrumentMeta unresolvable for $symbol — refusing to backtest " +
                         "(PnL would silently book contractSize=1)"

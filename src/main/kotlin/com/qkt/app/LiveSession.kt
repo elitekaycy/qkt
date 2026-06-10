@@ -513,6 +513,7 @@ class LiveSession(
         // unit-contract default for paper/crypto paths.
         if (instruments !is com.qkt.instrument.NoopInstrumentRegistry) {
             for (symbol in symbols) {
+                if (!com.qkt.instrument.QuoteCurrencyGuard.requiresContractSizeMeta(symbol)) continue
                 requireNotNull(instruments.lookup(symbol)) {
                     "InstrumentMeta unresolvable for $symbol at deploy — refusing to start " +
                         "(PnL would silently book contractSize=1)"

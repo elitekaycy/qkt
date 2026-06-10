@@ -49,4 +49,15 @@ object QuoteCurrencyGuard {
         val bare = qktSymbol.substringAfter(':').uppercase()
         return KNOWN_QUOTES.firstOrNull { bare.endsWith(it) }
     }
+
+    /**
+     * True when [qktSymbol] is a fiat-quoted FX/metal shape, where a missing
+     * `contractSize` is a 100-100,000x PnL error. Crypto (USDT/USDC-quoted) and
+     * unrecognized shapes (stocks, indices) are unit contracts by convention — a
+     * registry that cannot resolve them is not lying about their size.
+     */
+    fun requiresContractSizeMeta(qktSymbol: String): Boolean {
+        val quote = quoteOf(qktSymbol) ?: return false
+        return quote !in setOf("USDT", "USDC")
+    }
 }
