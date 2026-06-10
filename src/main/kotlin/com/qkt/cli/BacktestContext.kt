@@ -58,9 +58,17 @@ class BacktestContext private constructor(
         range: TimeRange = TimeRange(from, to),
     ): Backtest {
         val strategy = AstCompiler().compile(ast, overrides)
+        // The symbol's LIVE calendar, not hardwired crypto: session/range indicators
+        // (PreviousDayHigh, session gates) disagree by construction otherwise. The
+        // pipeline takes one calendar — resolved from the first symbol; mixed-class
+        // baskets keep that limitation (divergence catalog row A9).
+        val calendar =
+            symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
+                ?: com.qkt.common.TradingCalendar.crypto()
         return Backtest.fromStore(
             strategies = listOf(ast.name to strategy),
             haltRules = haltRules,
+            calendar = calendar,
             store = store,
             request = MarketRequest(symbols = symbols, from = range.from, to = range.to),
             candleWindow = candleWindow,
