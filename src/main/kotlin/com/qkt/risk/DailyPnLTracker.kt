@@ -86,7 +86,6 @@ class DailyPnLTracker(
             .toEpochDay()
 }
 
-
 /** Value snapshot of one UTC day's realized PnL. */
 data class DailyPnLSnapshot(
     val epochDay: Long,

@@ -781,7 +781,6 @@ private data class LegDto(
     }
 }
 
-
 @Serializable
 private data class RiskStateDto(
     val version: Int,
