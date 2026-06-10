@@ -30,6 +30,51 @@ class StrategyPnLTest {
         timestamp = 0L,
     )
 
+    private fun fillWithId(
+        clientOrderId: String,
+        strategyId: String,
+        symbol: String,
+        side: Side,
+        qty: String,
+        price: String,
+    ) = BrokerEvent.OrderFilled(
+        clientOrderId = clientOrderId,
+        brokerOrderId = "b-${seq.incrementAndGet()}",
+        symbol = symbol,
+        side = side,
+        price = Money.of(price),
+        quantity = Money.of(qty),
+        strategyId = strategyId,
+        timestamp = 0L,
+    )
+
+    @Test
+    fun `hedged net-flat legs report the locked spread as unrealized`() {
+        // A straddle that filled both ways: long 0.1 @ 2000 and short 0.1 @ 1997. The
+        // netted view is quantity zero, but both legs are open at the broker with a
+        // locked-in spread loss of (1997 - 2000) x 0.1 = -0.3. Equity and halts must
+        // see that loss at ANY mark, not zero.
+        val tracker = StrategyPositionTracker()
+        val prices = MarketPriceTracker()
+        val pnl = StrategyPnL(tracker, prices)
+
+        tracker.registerIndependentOpen("A", "c-long", "leg-long")
+        tracker.registerIndependentOpen("A", "c-short", "leg-short")
+        tracker.applyFill(fillWithId("c-long", "A", "XAUUSD", Side.BUY, "0.1", "2000"))
+        tracker.applyFill(fillWithId("c-short", "A", "XAUUSD", Side.SELL, "0.1", "1997"))
+
+        prices.update("XAUUSD", Money.of("2010"))
+        assertThat(pnl.unrealizedFor("A", "XAUUSD")).isEqualByComparingTo("-0.3")
+
+        // The locked loss is mark-independent — that's what "locked in" means.
+        prices.update("XAUUSD", Money.of("1980"))
+        assertThat(pnl.unrealizedFor("A", "XAUUSD")).isEqualByComparingTo("-0.3")
+
+        // And it flows into the totals the halt rules consume.
+        assertThat(pnl.unrealizedTotalFor("A")).isEqualByComparingTo("-0.3")
+        assertThat(pnl.totalFor("A")).isEqualByComparingTo("-0.3")
+    }
+
     @Test
     fun `realizedFor accrues only this strategy's closes`() {
         val tracker = StrategyPositionTracker()
