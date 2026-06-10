@@ -37,7 +37,9 @@ class MT5StateRecovery(
     private val log = LoggerFactory.getLogger(MT5StateRecovery::class.java)
 
     fun recover() {
-        val positions = client.getPositions(magic = profile.magic)
+        val positions =
+            client.getPositions(magic = profile.magic)
+                ?: error("MT5 ${profile.name} state recovery: gateway positions read failed")
         log.info("MT5 ${profile.name} state recovery: ${positions.size} open positions")
         val siblings = if (strategyName != null) siblingsLookup() else emptyList()
         for (p in positions) {

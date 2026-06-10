@@ -120,20 +120,27 @@ class MT5Client(
             errorMessage = message,
         )
 
-    fun getPositions(magic: Int? = null): List<MT5Position> {
+    /**
+     * Fetch the venue's open positions. Returns `null` when the read FAILED (gateway
+     * unreachable / non-2xx after retries) — callers must treat that as "unknown",
+     * never as "no positions". An outage that reads as an empty account makes the
+     * pollers synthesize a close for every open position (#359).
+     */
+    fun getPositions(magic: Int? = null): List<MT5Position>? {
         val url = if (magic != null) "$gatewayUrl/get_positions?magic=$magic" else "$gatewayUrl/get_positions"
-        val raw = getWithRetry(url) ?: return emptyList()
+        val raw = getWithRetry(url) ?: return null
         val arr = json.parseToJsonElement(raw).jsonArray
         return arr.map { parsePosition(it.jsonObject) }
     }
 
     /**
-     * Fetch the venue's working (pending) orders. Empty list if the gateway doesn't
-     * expose `/orders` (returns 404 → handled by [getWithRetry] returning null).
+     * Fetch the venue's working (pending) orders. Returns `null` when the read FAILED
+     * (gateway unreachable, non-2xx after retries, or a gateway too old to expose
+     * `/orders`) — callers must treat that as "unknown", never as "all cancelled".
      */
-    fun getPendingOrders(magic: Int? = null): List<MT5PendingOrder> {
+    fun getPendingOrders(magic: Int? = null): List<MT5PendingOrder>? {
         val url = if (magic != null) "$gatewayUrl/orders?magic=$magic" else "$gatewayUrl/orders"
-        val raw = getWithRetry(url) ?: return emptyList()
+        val raw = getWithRetry(url) ?: return null
         // The gateway's /orders shape varies by version: some return a bare
         // array, others wrap it as {"orders": [...], "total": N}. Accept both.
         val arr =

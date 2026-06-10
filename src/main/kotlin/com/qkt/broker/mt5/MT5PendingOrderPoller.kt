@@ -33,15 +33,18 @@ class MT5PendingOrderPoller(
     private val clock: Clock = SystemClock(),
     private val sessionGate: ((Instant) -> Boolean)? = null,
     private val onPendingDisappeared: ((Long) -> Unit)? = null,
+    /** See [MT5PositionPoller]'s hook of the same name. */
+    private val onGatewayUnreachable: ((Int) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PendingOrderPoller::class.java)
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
     private var lastSnapshot: Map<Long, MT5PendingOrder> = emptyMap()
+    private var consecutiveFailures: Int = 0
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
-        lastSnapshot = client.getPendingOrders(magic = profile.magic).associateBy { it.ticket }
+        lastSnapshot = client.getPendingOrders(magic = profile.magic)?.associateBy { it.ticket } ?: emptyMap()
         thread =
             Thread({
                 while (running.get()) {
@@ -76,11 +79,34 @@ class MT5PendingOrderPoller(
         if (sessionGate != null && !sessionGate(Instant.ofEpochMilli(clock.now()))) {
             return
         }
-        val current = client.getPendingOrders(magic = profile.magic).associateBy { it.ticket }
+        // A failed read means UNKNOWN, not "all cancelled" — diffing an outage snapshot
+        // would treat every tracked pending as externally cancelled and dismantle
+        // bracket/OCO protection at the venue (#359).
+        val snapshot =
+            client.getPendingOrders(magic = profile.magic) ?: run {
+                consecutiveFailures++
+                if (consecutiveFailures == GATEWAY_FAILURE_ALERT_THRESHOLD) {
+                    log.error(
+                        "MT5 pending poller for {} cannot reach the gateway ({} consecutive failures) — " +
+                            "pending diffs suspended until a clean read",
+                        profile.name,
+                        consecutiveFailures,
+                    )
+                    onGatewayUnreachable?.invoke(consecutiveFailures)
+                }
+                return
+            }
+        consecutiveFailures = 0
+        val current = snapshot.associateBy { it.ticket }
         val disappeared = lastSnapshot.keys - current.keys
         for (ticket in disappeared) {
             onPendingDisappeared?.invoke(ticket)
         }
         lastSnapshot = current
+    }
+
+    private companion object {
+        /** Consecutive failed polls before [onGatewayUnreachable] fires. */
+        const val GATEWAY_FAILURE_ALERT_THRESHOLD: Int = 3
     }
 }
