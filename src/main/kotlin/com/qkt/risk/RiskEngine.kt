@@ -36,14 +36,31 @@ class RiskEngine(
     /** Run the rules over [request] and return whether the venue should see it. */
     fun approve(request: OrderRequest): Decision {
         if (riskState.isStrategyHalted(request.strategyId)) {
-            val reason = riskState.haltReasonFor(request.strategyId) ?: "halted"
-            return Decision.Reject("halted: $reason")
+            // A halt blocks NEW exposure, not the way out: risk-REDUCING orders (closes
+            // by ticket, opposite-side orders no larger than the open position) must
+            // still pass, or a halted strategy cannot exit the situation the halt
+            // declared bad (FIA §7.3). They still run the per-request caps below.
+            if (!isRiskReducing(request)) {
+                val reason = riskState.haltReasonFor(request.strategyId) ?: "halted"
+                return Decision.Reject("halted: $reason")
+            }
+            log.info("halted but allowing risk-reducing order {} for {}", request.id, request.symbol)
         }
         for (rule in rules) {
             val decision = rule.evaluate(request, positions)
             if (decision is Decision.Reject) return decision
         }
         return Decision.Approve
+    }
+
+    private fun isRiskReducing(request: OrderRequest): Boolean {
+        if (request is OrderRequest.Market && request.closesTicket != null) return true
+        val net = positions.positionFor(request.symbol)?.quantity ?: return false
+        if (net.signum() == 0) return false
+        val opposes =
+            (net.signum() > 0 && request.side == com.qkt.common.Side.SELL) ||
+                (net.signum() < 0 && request.side == com.qkt.common.Side.BUY)
+        return opposes && request.quantity <= net.abs()
     }
 
     fun evaluateHaltRules() {
