@@ -116,6 +116,7 @@ class AstCompiler {
                 .toSet()
 
         val metaRefs = collectMetaRefs(ast, streams)
+        val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions)
 
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
         val warmupGate = WarmupGate(perStreamWarmup)
@@ -157,7 +158,56 @@ class AstCompiler {
             perStreamWarmup = perStreamWarmupSpec,
             syncGroups = ast.syncGroups,
             schedules = compiledSchedules,
+            quoteFieldStreams = quoteFieldStreams,
         )
+    }
+
+    /** Aliases whose conditions read `bid`/`ask`/`spread` — see [DslCompiledStrategy.quoteFieldStreams]. */
+    private fun collectQuoteFieldStreams(conditions: List<ExprAst>): Set<String> {
+        val out = mutableSetOf<String>()
+
+        fun walk(e: ExprAst) {
+            when (e) {
+                is com.qkt.dsl.ast.StreamFieldRef ->
+                    if (e.field in setOf("bid", "ask", "spread")) out.add(e.stream)
+                is com.qkt.dsl.ast.BinaryOp -> {
+                    walk(e.lhs)
+                    walk(e.rhs)
+                }
+                is com.qkt.dsl.ast.UnaryOp -> walk(e.arg)
+                is com.qkt.dsl.ast.CmpOp -> {
+                    walk(e.lhs)
+                    walk(e.rhs)
+                }
+                is com.qkt.dsl.ast.Crosses -> {
+                    walk(e.lhs)
+                    walk(e.rhs)
+                }
+                is com.qkt.dsl.ast.FuncCall -> e.args.forEach(::walk)
+                is com.qkt.dsl.ast.IndicatorCall -> e.args.forEach(::walk)
+                is com.qkt.dsl.ast.Aggregate -> walk(e.series)
+                is com.qkt.dsl.ast.Between -> {
+                    walk(e.v)
+                    walk(e.lo)
+                    walk(e.hi)
+                }
+                is com.qkt.dsl.ast.InList -> {
+                    walk(e.v)
+                    e.members.forEach(::walk)
+                }
+                is com.qkt.dsl.ast.CaseWhen -> {
+                    e.branches.forEach { (c, b) ->
+                        walk(c)
+                        walk(b)
+                    }
+                    walk(e.elseExpr)
+                }
+                is com.qkt.dsl.ast.IsNull -> walk(e.expr)
+                else -> Unit
+            }
+        }
+        conditions.forEach(::walk)
+        return out
     }
 
     private fun collectStackAtSymbols(
@@ -206,6 +256,7 @@ private class CompiledStrategy(
     override val perStreamWarmup: Map<String, com.qkt.strategy.WarmupSpec>,
     private val syncGroups: List<SyncGroupDecl>,
     private val schedules: List<CompiledSchedule>,
+    override val quoteFieldStreams: Set<String>,
 ) : DslCompiledStrategy,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()

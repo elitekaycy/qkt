@@ -21,8 +21,9 @@ class LiveSessionHaltTest {
 
     @Test
     fun `handle halt drives RiskState and resume reverses it on a live session`() {
-        // Pins that handle.halt/resume delegate into RiskState — order-rejection-on-halt
-        // itself is covered by RiskStateTest and RiskEngineTest.
+        // Pins that handle.halt/resume delegate into RiskState. Order-rejection-on-halt
+        // is covered by RiskEngineTest's `halt blocks new exposure but lets
+        // risk-reducing orders out`.
         val feedLatch = CountDownLatch(1)
         val source =
             object : MarketSource {

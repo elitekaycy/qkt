@@ -51,6 +51,15 @@ class DrawdownHaltRulesTest {
     }
 
     @Test
+    fun `a loss of exactly the limit does not halt — the comparison is strictly greater`() {
+        // 8% loss against an 8% limit: documented semantics are strict `>` — the halt
+        // fires on the first loss PAST the limit, not at it.
+        val (rs, _) = riskState("-800")
+        val rule = MaxDrawdown(BigDecimal("0.08"), DrawdownBasis.STATIC, BigDecimal("10000"))
+        assertThat(rule.evaluate(rs)).isEqualTo(HaltDecision.Continue)
+    }
+
+    @Test
     fun `daily drawdown halts after an intraday loss past the limit`() {
         val (rs, pnl) = riskState("0")
         val rule = MaxDailyDrawdown(BigDecimal("0.04"))

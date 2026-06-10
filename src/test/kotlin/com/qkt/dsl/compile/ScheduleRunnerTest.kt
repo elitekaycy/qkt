@@ -34,6 +34,35 @@ class ScheduleRunnerTest {
     private fun decl(trigger: ScheduleTrigger): ScheduleDecl = ScheduleDecl(triggers = listOf(trigger), action = noop)
 
     @Test
+    fun `daily NY schedule keeps its local clock time across the spring DST transition`() {
+        // 2024-03-10 is the US spring-forward: NY 09:00 is 14:00 UTC on the 9th (EST)
+        // but 13:00 UTC on the 10th (EDT). Rolling the next fire by a fixed 24h of
+        // epoch millis would fire at 14:00 UTC again — an hour late in local terms.
+        val mar9 =
+            LocalDate
+                .of(2024, 3, 9)
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli()
+        val runner = ScheduleRunner()
+        var fires = 0
+        runner.register(
+            strategyId = "s1",
+            schedule = decl(ScheduleTrigger.At(TimeOfDay(9, 0), Timezone.NY)),
+            emit = { fires++ },
+            nowMs = mar9,
+        )
+        runner.tick(mar9 + 14 * hour) // 2024-03-09T14:00Z = 09:00 EST
+        assertThat(fires).isEqualTo(1)
+
+        // Next local 09:00 is 2024-03-10T13:00Z (EDT). It must fire AT that instant.
+        runner.tick(mar9 + day + 12 * hour) // 12:00Z — 08:00 EDT, too early
+        assertThat(fires).isEqualTo(1)
+        runner.tick(mar9 + day + 13 * hour) // 13:00Z = 09:00 EDT
+        assertThat(fires).isEqualTo(2)
+    }
+
+    @Test
     fun `register tracks one entry per trigger`() {
         val runner = ScheduleRunner()
         runner.register(

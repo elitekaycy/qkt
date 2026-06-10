@@ -87,6 +87,71 @@ class StackOrchestrator(
             )
     }
 
+    /**
+     * Rebuild the engine for an ALREADY-OPEN parent after a restart, entirely from the
+     * persisted tier state (thresholds, windows, sizes, fired/abandoned flags, and the
+     * original open time) plus the restored leg's identity. Without this, tier
+     * progression for live stacks is dead after any restart — the engine only ever
+     * existed in-memory, built on the parent's fill.
+     */
+    fun restoreEngine(
+        parentLegId: String,
+        parentSymbol: String,
+        parentSide: Side,
+        parentEntryPrice: BigDecimal,
+        persisted: com.qkt.persistence.PersistedTierState,
+    ) {
+        if (parentLegId in engines) return
+        val engineEmit: (Signal) -> Unit = { sig ->
+            if (sig is Signal.Submit) {
+                val req = sig.request
+                if (req is OrderRequest.Bracket) onStackBracketEmit(req, parentLegId)
+            }
+            emit(sig)
+        }
+        val resolved =
+            persisted.tiers
+                .sortedBy { it.index }
+                .map {
+                    ResolvedStackTier(
+                        mfeThreshold = it.mfeThreshold,
+                        withinMs = it.withinMs,
+                        stackQuantity = it.stackQuantity,
+                        slDistance = it.slDistance,
+                        tpDistance = it.tpDistance,
+                    )
+                }
+        engines[parentLegId] =
+            StackEngine(
+                parentLegId = parentLegId,
+                parentSymbol = parentSymbol,
+                closeWatchIds = setOf(parentLegId, persisted.primaryClientOrderId),
+                parentSide = parentSide,
+                parentEntryPrice = parentEntryPrice,
+                tiers = resolved,
+                clock = clock,
+                emit = engineEmit,
+                strategyId = strategyId,
+                persistor = persistor,
+                primaryClientOrderId = persisted.primaryClientOrderId,
+                initialFiredTierIndices =
+                    persisted.tiers
+                        .filter { it.fired }
+                        .map { it.index }
+                        .toSet(),
+                initialFiredLegIds =
+                    persisted.tiers
+                        .mapNotNull { t -> t.firedLegId?.let { t.index to it } }
+                        .toMap(),
+                initialAbandonedTierIndices =
+                    persisted.tiers
+                        .filter { it.abandoned }
+                        .map { it.index }
+                        .toSet(),
+                initialOpenedAtMs = persisted.openedAtMs,
+            )
+    }
+
     fun onTick(
         symbol: String,
         price: BigDecimal,

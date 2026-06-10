@@ -121,4 +121,27 @@ class CandleHubTest {
         hub.register(keyEth1m, retention = 5, strategyId = "test")
         assertThat(hub.keys()).containsExactlyInAnyOrder(key1m, key1h, keyEth1m)
     }
+
+    @Test
+    fun `flushClosed finishes a quiet symbol's bar without a next tick`() {
+        val hub = CandleHub()
+        val key = HubKey("EXNESS", "XAUUSD", "1m")
+        hub.register(key, retention = 5, strategyId = "t")
+        val closed = mutableListOf<com.qkt.marketdata.Candle>()
+        hub.onClosed(key, "t") { closed.add(it) }
+
+        hub.feed(com.qkt.marketdata.Tick("EXNESS:XAUUSD", java.math.BigDecimal("2000"), 10_000L))
+        assertThat(closed).isEmpty()
+
+        // Window [0, 60s) ended; no further tick ever arrives. The heartbeat flush
+        // must close it — otherwise the last bar of a quiet session never evaluates.
+        hub.flushClosed(59_999L)
+        assertThat(closed).isEmpty()
+        hub.flushClosed(60_000L)
+        assertThat(closed).hasSize(1)
+        assertThat(closed.single().close).isEqualByComparingTo("2000")
+        // Idempotent: nothing left to flush.
+        hub.flushClosed(120_000L)
+        assertThat(closed).hasSize(1)
+    }
 }

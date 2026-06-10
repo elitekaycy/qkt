@@ -12,8 +12,9 @@ import java.math.BigDecimal
  * exact formula: `new = old + α(value − old)` with `α = 2 / (period + 1)`.
  *
  * Common use: trend filters (`ema(close, 9) > ema(close, 21)` = short-term trend
- * is up). The first reading is just the first input — no warmup pre-fill — which
- * matches what charting platforms like TradingView show.
+ * is up). Seeding: the first [period] inputs accumulate and the first reading is
+ * their simple average (the classic SMA seed); only from input [period]+1 does the
+ * exponential recurrence run. `value()` is null until the seed completes.
  */
 class EMA(
     private val period: Int,

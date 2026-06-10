@@ -328,7 +328,7 @@ Backtest two-run identity tests (Phase 4 / 7b) continue to pass: same input tick
 - **`ScaleOut` leg quantity is based on the requested basis quantity, not the actual filled quantity.** Acceptable for paper/log brokers (they fill exactly the requested amount); will need refinement for real-broker partial fills (Phase 7e).
 - **Position reconciliation against broker view is not implemented.** Engine-side `PositionTracker` is canonical via `OrderFilled` events.
 - **`RegimeSwitch` deferred.** The spec discussed this as a Tier 3 type; deferred to Phase 8 (DSL) where conditional order trees can be expressed declaratively.
-- **No commission, spread, or slippage modeling.** All fills are at the trigger price. Listed in the post-7d roadmap.
+- **No commission, spread, or slippage modeling** — true as of Phase 7d. Since superseded: v0.35.0 shipped a per-lot commission model for backtests, MT5_SIM models synthetic spread, and venue-reported costs (commission/swap/fees) net out of live realized PnL (#392).
 
 ---
 

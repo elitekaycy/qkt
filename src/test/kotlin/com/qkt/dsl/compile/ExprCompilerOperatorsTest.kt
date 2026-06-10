@@ -97,4 +97,37 @@ class ExprCompilerOperatorsTest {
                 .evaluate(ctx) as Value.Num
         assertThat(v.v).isEqualByComparingTo("-2")
     }
+
+    @Test
+    fun `TRUE OR undefined short-circuits to TRUE`() {
+        val orExpr = ExprCompiler().compile(BinaryOp(BinOp.OR, BoolLit(true), undefinedAst()))
+        val v = orExpr.evaluate(ctx)
+        assertThat(v).isEqualTo(Value.Bool(true))
+        // Symmetric: undefined OR TRUE.
+        val orExpr2 = ExprCompiler().compile(BinaryOp(BinOp.OR, undefinedAst(), BoolLit(true)))
+        assertThat(orExpr2.evaluate(ctx)).isEqualTo(Value.Bool(true))
+        // FALSE OR undefined stays undefined — the unknown side could decide it.
+        val orExpr3 = ExprCompiler().compile(BinaryOp(BinOp.OR, BoolLit(false), undefinedAst()))
+        assertThat(orExpr3.evaluate(ctx)).isEqualTo(Value.Undefined)
+    }
+
+    @Test
+    fun `FALSE AND undefined short-circuits to FALSE`() {
+        val andExpr = ExprCompiler().compile(BinaryOp(BinOp.AND, BoolLit(false), undefinedAst()))
+        assertThat(andExpr.evaluate(ctx)).isEqualTo(Value.Bool(false))
+        val andExpr2 = ExprCompiler().compile(BinaryOp(BinOp.AND, undefinedAst(), BoolLit(false)))
+        assertThat(andExpr2.evaluate(ctx)).isEqualTo(Value.Bool(false))
+        // TRUE AND undefined stays undefined.
+        val andExpr3 = ExprCompiler().compile(BinaryOp(BinOp.AND, BoolLit(true), undefinedAst()))
+        assertThat(andExpr3.evaluate(ctx)).isEqualTo(Value.Undefined)
+    }
+
+    /** A boolean-shaped expression that evaluates Undefined: comparing 1 to an unwarm value. */
+    private fun undefinedAst(): com.qkt.dsl.ast.ExprAst =
+        CmpOp(
+            Cmp.GT,
+            NumLit(BigDecimal.ONE),
+            com.qkt.dsl.ast
+                .IsNull(NumLit(BigDecimal.ONE), negated = false),
+        )
 }
