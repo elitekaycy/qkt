@@ -211,7 +211,7 @@ Both streams are evaluated on every candle close (whoever closes first triggers 
 ## Common gotchas
 
 - **Bare comparisons don't repeat-fire.** A rule with `WHEN btc.close > 50000` fires once when the condition first becomes true. To fire repeatedly, gate with position-state (`AND POSITION.btc = 0`) and act on every tick the gate is open.
-- **`null` propagates.** If any indicator in a condition isn't warm yet, the whole condition evaluates to `false`. Your rule won't fire during warmup — by design, but surprises beginners.
+- **`null` mostly propagates.** If an indicator in a condition isn't warm yet, comparisons against it are undefined and the rule won't fire. The exception is short-circuit logic: `TRUE OR <unwarm>` is `TRUE` and `FALSE AND <unwarm>` is `FALSE` — a side that can't change the outcome doesn't suppress it. e.g. `WHEN in_session OR slow_signal` fires on `in_session` even while `slow_signal`'s indicator is warming.
 - **Precedence trap.** `WHEN a AND b OR c` is `(a AND b) OR c`, which is often not what you meant. Use parentheses.
 - **`=` vs `==`.** Both work — the parser accepts either. Pick a convention for your project and stick with it.
 - **`btc.close[0]` is the current bar.** It's the same as `btc.close` (no `[]`). `btc.close[1]` is the previous bar. Don't off-by-one yourself.
