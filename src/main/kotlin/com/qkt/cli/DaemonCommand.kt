@@ -56,9 +56,6 @@ class DaemonCommand(
 
     private fun startDaemon(): Int {
         val stateDir = StateDir.resolve(args.option("state-dir"))
-        val sharedHub =
-            com.qkt.dsl.compile
-                .CandleHub()
 
         val configPathEarly =
             args.option("config")?.let {
@@ -177,7 +174,6 @@ class DaemonCommand(
                 StrategyHandle.RealFactory(
                     stateDir = stateDir,
                     marketSourceProvider = effectiveSourceFactory,
-                    candleHub = sharedHub,
                     brokerFactories = brokerFactories,
                     maxDailyLoss = cfg.maxDailyLoss,
                     perStrategyRisk = cfg.perStrategyRisk,
