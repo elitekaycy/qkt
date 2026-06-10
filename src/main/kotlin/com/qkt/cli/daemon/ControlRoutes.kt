@@ -36,6 +36,9 @@ object ControlRoutes {
                     method == "POST" && path == "/halt" -> handleHalt(ex, registry, null)
                     method == "POST" && path.startsWith("/halt/") ->
                         handleHalt(ex, registry, path.removePrefix("/halt/").trim('/').ifBlank { null })
+                    method == "POST" && path == "/kill" -> handleKill(ex, registry, null)
+                    method == "POST" && path.startsWith("/kill/") ->
+                        handleKill(ex, registry, path.removePrefix("/kill/").trim('/').ifBlank { null })
                     method == "POST" && path == "/resume" -> handleResume(ex, registry, null)
                     method == "POST" && path.startsWith("/resume/") ->
                         handleResume(ex, registry, path.removePrefix("/resume/").trim('/').ifBlank { null })
@@ -486,6 +489,27 @@ object ControlRoutes {
             return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
         respond(ex, 200, """{"state":"halted","affected":${jsonArray(result.affected)}}""")
+    }
+
+    private fun handleKill(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        name: String?,
+    ) {
+        val params = parseQuery(ex.requestURI.rawQuery)
+        val flatten =
+            when (val raw = params["flatten"]) {
+                null -> false
+                "true" -> true
+                "false" -> false
+                else -> return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
+            }
+        val target = if (name == null) Target.All else Target.Strategy(name)
+        val result = RegistryDaemonControl(registry).kill(target, flatten)
+        if (result.unknown.isNotEmpty()) {
+            return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
+        }
+        respond(ex, 200, """{"state":"killed","flatten":$flatten,"affected":${jsonArray(result.affected)}}""")
     }
 
     private fun handleResume(

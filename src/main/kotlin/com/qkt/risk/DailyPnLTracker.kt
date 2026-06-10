@@ -48,6 +48,26 @@ class DailyPnLTracker(
         return byStrategy[strategyId] ?: Money.ZERO
     }
 
+    /** The day's state for persistence: (epochDay, global, per-strategy). */
+    @Synchronized
+    fun snapshot(): DailyPnLSnapshot {
+        rolloverIfNeeded()
+        return DailyPnLSnapshot(lastResetEpochDay, globalToday, byStrategy.toMap())
+    }
+
+    /**
+     * Restore a persisted day. A snapshot from a PAST day is discarded — the new day's
+     * budget legitimately starts fresh at UTC midnight; only same-day state carries over.
+     */
+    @Synchronized
+    fun restore(snapshot: DailyPnLSnapshot) {
+        if (snapshot.epochDay != epochDay()) return
+        lastResetEpochDay = snapshot.epochDay
+        globalToday = snapshot.global
+        byStrategy.clear()
+        byStrategy.putAll(snapshot.byStrategy)
+    }
+
     @Synchronized
     private fun rolloverIfNeeded() {
         val today = epochDay()
@@ -65,3 +85,10 @@ class DailyPnLTracker(
             .toLocalDate()
             .toEpochDay()
 }
+
+/** Value snapshot of one UTC day's realized PnL. */
+data class DailyPnLSnapshot(
+    val epochDay: Long,
+    val global: BigDecimal,
+    val byStrategy: Map<String, BigDecimal>,
+)

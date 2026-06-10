@@ -43,6 +43,48 @@ class RiskEngineTest {
         }
 
     @Test
+    fun `halt blocks new exposure but lets risk-reducing orders out`() {
+        // Long 1 XAUUSD; the strategy halts. The way OUT must stay open (FIA 7.3):
+        // a close-sized SELL passes, a new BUY and an over-sized SELL (which would
+        // flip the position) are rejected.
+        val tracker = PositionTracker()
+        tracker.applyFill(
+            com.qkt.events.BrokerEvent.OrderFilled(
+                clientOrderId = "open-1",
+                brokerOrderId = "b1",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                price = Money.of("2000"),
+                quantity = Money.of("1"),
+                strategyId = "s1",
+                timestamp = 0L,
+            ),
+        )
+        val riskState = RiskState.noOp()
+        riskState.halt("daily loss")
+        val engine = RiskEngine(emptyList(), emptyList(), tracker, riskState)
+
+        assertThat(engine.approve(order(side = Side.BUY)))
+            .isInstanceOf(Decision.Reject::class.java)
+        assertThat(engine.approve(order(side = Side.SELL, qty = Money.of("1"))))
+            .isEqualTo(Decision.Approve)
+        assertThat(engine.approve(order(side = Side.SELL, qty = Money.of("2"))))
+            .isInstanceOf(Decision.Reject::class.java)
+        // Close-by-ticket is always risk-reducing.
+        val closeByTicket =
+            OrderRequest.Market(
+                id = "close-1",
+                symbol = "XAUUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                closesTicket = "42",
+            )
+        assertThat(engine.approve(closeByTicket)).isEqualTo(Decision.Approve)
+    }
+
+    @Test
     fun `empty rules list always approves`() {
         val engine = RiskEngine(rules = emptyList(), positions = positions)
         assertThat(engine.approve(order())).isEqualTo(Decision.Approve)

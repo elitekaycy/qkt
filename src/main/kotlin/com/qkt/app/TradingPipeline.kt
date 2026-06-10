@@ -106,6 +106,16 @@ class TradingPipeline(
      * Wired by [com.qkt.app.LiveSession] from the MT5 broker profile.
      */
     val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? = null,
+    /**
+     * Runaway-strategy circuit breaker (#396). Non-null in live sessions; backtests
+     * leave it null so high-frequency historical churn doesn't trip live thresholds.
+     */
+    private val runawayBreaker: com.qkt.risk.RunawayBreaker? = null,
+    /**
+     * Runtime market-data judgment (#395). Non-null in live sessions; backtests leave
+     * it null — deterministic historical replay is exactly the data it was given.
+     */
+    private val marketDataGate: com.qkt.marketdata.MarketDataGate? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
@@ -270,6 +280,7 @@ class TradingPipeline(
             strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(costs))
             tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized, e.symbol)
             riskState.onFill(e.strategyId, stratRealized.subtract(costs))
+            if (stratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
 
             val trade =
@@ -307,6 +318,7 @@ class TradingPipeline(
             strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(commission))
             riskState.onFill(e.strategyId, stratRealized)
         }
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
             strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
@@ -321,9 +333,51 @@ class TradingPipeline(
     }
 
     fun ingest(tick: Tick) {
+        // Hard floor on the most exposed input boundary the engine has: one glitched
+        // tick (zero/negative price, crossed quotes) marks every open position wrong,
+        // fires engine-held triggers, and poisons indicators for a full window. Drop
+        // it, count it, keep the last good price (#379). Identical in backtest and
+        // live so the gate itself cannot cause divergence.
+        if (!isValidTick(tick)) {
+            val n = malformedTickCount.incrementAndGet()
+            if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
+                log.error(
+                    "dropping malformed tick #{} for {}: price={} bid={} ask={}",
+                    n,
+                    tick.symbol,
+                    tick.price.toPlainString(),
+                    tick.bid?.toPlainString(),
+                    tick.ask?.toPlainString(),
+                )
+            }
+            return
+        }
+        // The judgment layer above the floor: an implausible (outlier/crossed) tick is
+        // dropped before it can poison indicators, marks, or triggers (#395).
+        if (marketDataGate?.observe(tick) == com.qkt.marketdata.MarketDataGate.Verdict.OUTLIER) return
         engine.onTick(tick)
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
+    }
+
+    private companion object {
+        /** Log cadence for malformed-tick drops — first occurrence, then every Nth. */
+        const val MALFORMED_TICK_LOG_EVERY: Long = 1000L
+    }
+
+    /** Count of ticks dropped by [ingest]'s validation floor. */
+    val malformedTickCount =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+
+    private fun isValidTick(tick: Tick): Boolean {
+        if (tick.price.signum() <= 0) return false
+        val bid = tick.bid
+        val ask = tick.ask
+        if (bid != null && bid.signum() <= 0) return false
+        if (ask != null && ask.signum() <= 0) return false
+        if (bid != null && ask != null && bid > ask) return false
+        return true
     }
 
     /**

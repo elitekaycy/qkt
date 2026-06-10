@@ -140,6 +140,24 @@ open class ControlClient(
         return readOrThrow(resp)
     }
 
+    open fun kill(
+        name: String? = null,
+        flatten: Boolean = false,
+    ): String {
+        val base = if (name == null) "${baseUrl()}/kill" else "${baseUrl()}/kill/$name"
+        val url = if (flatten) "$base?flatten=true" else base
+        val resp =
+            http
+                .newCall(
+                    Request
+                        .Builder()
+                        .url(url)
+                        .post("".toRequestBody(JSON_MEDIA))
+                        .build(),
+                ).execute()
+        return readOrThrow(resp)
+    }
+
     open fun resume(name: String? = null): String {
         val url = if (name == null) "${baseUrl()}/resume" else "${baseUrl()}/resume/$name"
         val resp =

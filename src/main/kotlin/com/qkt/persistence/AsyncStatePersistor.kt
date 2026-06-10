@@ -156,6 +156,15 @@ class AsyncStatePersistor(
 
     override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> = delegate.loadOcoLegs(strategyId)
 
+    override fun saveRiskState(
+        strategyId: String,
+        state: PersistedRiskState,
+    ) {
+        submit("saveRiskState($strategyId)") { delegate.saveRiskState(strategyId, state) }
+    }
+
+    override fun loadRiskState(strategyId: String): PersistedRiskState? = delegate.loadRiskState(strategyId)
+
     override fun clearStrategy(strategyId: String) {
         submit("clearStrategy $strategyId") { delegate.clearStrategy(strategyId) }
     }

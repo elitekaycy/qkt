@@ -51,6 +51,21 @@ class RegistryDaemonControl(
 
     override fun resume(target: Target): ControlResult = apply(target) { it.live.resume() }
 
+    /**
+     * Kill switch: halt the strategy (which also cancels its venue-resting pendings via
+     * the halt subscriber) and, when [flatten] is set, close every open position. The
+     * session stays alive managing state — kill stops the strategy from trading, it
+     * does not tear the process down.
+     */
+    fun kill(
+        target: Target,
+        flatten: Boolean,
+    ): ControlResult =
+        apply(target) {
+            it.live.halt("operator kill")
+            if (flatten) it.live.flatten()
+        }
+
     override fun status(): StatusReport =
         StatusReport(
             registry.list().map { StrategyStatus(it.name, it.live.running, it.live.isHalted()) },

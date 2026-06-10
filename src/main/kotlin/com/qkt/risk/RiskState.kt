@@ -31,6 +31,12 @@ class RiskState(
     private val bus: EventBus,
     initialBalance: BigDecimal = BigDecimal.ZERO,
     dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
+    /**
+     * Persistence sink for halt flags + daily PnL — invoked after every state change
+     * so a restart restores them ([com.qkt.persistence.StatePersistor.saveRiskState]).
+     * Null disables (backtests, tests).
+     */
+    private val persist: ((com.qkt.persistence.PersistedRiskState) -> Unit)? = null,
 ) {
     val equityTracker: EquityTracker = EquityTracker(pnl, strategyPnL, initialBalance)
     val drawdownTracker: DrawdownTracker = DrawdownTracker(equityTracker)
@@ -80,6 +86,7 @@ class RiskState(
         equityTracker.update()
         equityTracker.updateStrategy(strategyId)
         dailyPnLTracker.recordRealized(strategyId, realized)
+        persistNow()
     }
 
     @Synchronized
@@ -93,6 +100,7 @@ class RiskState(
         haltScope = scope
         haltEpochDay = epochDay()
         bus.publish(RiskEvent.Halted(reason = reason, strategyId = null, timestamp = clock.now()))
+        persistNow()
     }
 
     fun haltStrategy(
@@ -102,6 +110,7 @@ class RiskState(
     ) {
         if (haltedStrategies.putIfAbsent(strategyId, HaltInfo(reason, scope, epochDay())) != null) return
         bus.publish(RiskEvent.Halted(reason = reason, strategyId = strategyId, timestamp = clock.now()))
+        persistNow()
     }
 
     /**
@@ -130,11 +139,63 @@ class RiskState(
         halted = false
         haltReason = null
         bus.publish(RiskEvent.Resumed(strategyId = null, timestamp = clock.now()))
+        persistNow()
     }
 
     fun resumeStrategy(strategyId: String) {
         if (haltedStrategies.remove(strategyId) == null) return
         bus.publish(RiskEvent.Resumed(strategyId = strategyId, timestamp = clock.now()))
+        persistNow()
+    }
+
+    private fun persistNow() {
+        persist?.invoke(snapshot())
+    }
+
+    /** Current halt flags + daily PnL in their persisted shape. */
+    fun snapshot(): com.qkt.persistence.PersistedRiskState {
+        val daily = dailyPnLTracker.snapshot()
+        return com.qkt.persistence.PersistedRiskState(
+            epochDay = daily.epochDay,
+            realizedToday = daily.global,
+            perStrategyRealizedToday = daily.byStrategy,
+            halted = halted,
+            haltReason = haltReason,
+            haltScope = haltScope.name,
+            haltEpochDay = haltEpochDay,
+            strategyHalts =
+                haltedStrategies.map { (id, info) ->
+                    com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay)
+                },
+        )
+    }
+
+    /**
+     * Restore a persisted snapshot at boot. DAILY-scoped halts from a PAST UTC day are
+     * NOT restored — they auto-resume at midnight (#354) and a restart must not revive
+     * them; PERSISTENT halts and same-day DAILY halts come back exactly as they were.
+     * Daily PnL only carries over when the snapshot is from today. No events publish —
+     * these are pre-existing facts, not new state changes.
+     */
+    @Synchronized
+    fun restore(persisted: com.qkt.persistence.PersistedRiskState) {
+        dailyPnLTracker.restore(
+            DailyPnLSnapshot(persisted.epochDay, persisted.realizedToday, persisted.perStrategyRealizedToday),
+        )
+        val today = epochDay()
+        val scope = runCatching { HaltScope.valueOf(persisted.haltScope) }.getOrDefault(HaltScope.PERSISTENT)
+        if (persisted.halted && (scope == HaltScope.PERSISTENT || persisted.haltEpochDay >= today)) {
+            halted = true
+            haltReason = persisted.haltReason
+            haltScope = scope
+            haltEpochDay = persisted.haltEpochDay
+        }
+        for (h in persisted.strategyHalts) {
+            val hScope = runCatching { HaltScope.valueOf(h.scope) }.getOrDefault(HaltScope.PERSISTENT)
+            if (hScope == HaltScope.PERSISTENT || h.epochDay >= today) {
+                haltedStrategies[h.strategyId] = HaltInfo(h.reason, hScope, h.epochDay)
+            }
+        }
     }
 
     companion object {
