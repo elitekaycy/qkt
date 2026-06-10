@@ -366,7 +366,9 @@ class TradingPipeline(
     }
 
     /** Count of ticks dropped by [ingest]'s validation floor. */
-    val malformedTickCount = java.util.concurrent.atomic.AtomicLong(0)
+    val malformedTickCount =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
 
     private fun isValidTick(tick: Tick): Boolean {
         if (tick.price.signum() <= 0) return false

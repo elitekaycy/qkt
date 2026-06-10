@@ -148,7 +148,6 @@ data class PersistedTierState(
     val tiers: List<PersistedTier>,
 )
 
-
 /**
  * On-disk shape of [com.qkt.risk.RiskState]: the day's realized PnL (global to the
  * session plus per strategy) and every active halt with its reason, scope, and the

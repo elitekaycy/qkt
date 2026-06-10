@@ -1,7 +1,6 @@
 package com.qkt.marketdata
 
 import com.qkt.common.Clock
-import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
@@ -37,7 +36,9 @@ class MarketDataGate(
     private val bySymbol: MutableMap<String, SymbolState> = ConcurrentHashMap()
 
     /** Count of ticks rejected as outliers (crossed books included). */
-    val outlierCount = java.util.concurrent.atomic.AtomicLong(0)
+    val outlierCount =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
 
     /** Verdict for one tick: feed it through, or reject it as an outlier. */
     enum class Verdict { OK, OUTLIER }
