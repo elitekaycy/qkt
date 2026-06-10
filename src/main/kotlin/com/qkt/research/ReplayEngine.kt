@@ -53,6 +53,7 @@ import java.time.Instant
 class ReplayEngine(
     private val strategies: List<Pair<String, Strategy>>,
     rules: List<RiskRule> = emptyList(),
+    haltRules: List<com.qkt.risk.HaltRule> = emptyList(),
     private val feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
@@ -95,6 +96,7 @@ class ReplayEngine(
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
     private val rejections = mutableListOf<RiskRejectedEvent>()
+    private val halts = mutableListOf<com.qkt.events.RiskEvent.Halted>()
     private val tape = mutableListOf<TapeEvent>()
 
     init {
@@ -140,9 +142,12 @@ class ReplayEngine(
                     bus = bus,
                 )
             }
-        val riskState = RiskState(pnl, strategyPnL, clock, bus)
+        // Mirror the live RiskState construction (balance basis + halt rules) so a
+        // strategy that would halt live halts at the same point in its backtest.
+        val riskState = RiskState(pnl, strategyPnL, clock, bus, startingBalance)
         riskState.warmupComplete = true
-        val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)
+        val riskEngine = RiskEngine(rules, haltRules, positions, riskState)
+        bus.subscribe<com.qkt.events.RiskEvent.Halted> { halts.add(it) }
 
         collector =
             EquityCurveCollector(
@@ -270,6 +275,7 @@ class ReplayEngine(
         return BacktestResult(
             trades = tradeRecords.toList(),
             rejections = rejections.toList(),
+            halts = halts.toList(),
             finalPositions = positions.allPositions(),
             global = globalReport,
             perStrategy = perStrategy,

@@ -124,6 +124,50 @@ class OrderManagerTier2FallbackTest {
     }
 
     @Test
+    fun `fallback conversion preserves the parent's strategyId`() {
+        // The converted Market/Limit must carry the parent's strategyId — a blank id
+        // makes StrategyPositionTracker.applyFill skip the fill and the strategy's
+        // book silently diverges from the broker.
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, capabilities = tier1Only)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        om.submit(
+            OrderRequest.Stop(
+                id = "c1",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("1.09"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "strat-1",
+            ),
+        )
+        om.submit(
+            OrderRequest.TrailingStop(
+                id = "c2",
+                symbol = "GBPUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                trailAmount = Money.of("0.01"),
+                trailMode = com.qkt.execution.TrailMode.ABSOLUTE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "strat-2",
+            ),
+        )
+        bus.publish(TickEvent(Tick("EURUSD", Money.of("1.085"), 1L)))
+        bus.publish(TickEvent(Tick("GBPUSD", Money.of("1.30"), 2L)))
+        bus.publish(TickEvent(Tick("GBPUSD", Money.of("1.28"), 3L)))
+
+        val bySymbol = broker.submits.associateBy { it.symbol }
+        assertThat(bySymbol.getValue("EURUSD").strategyId).isEqualTo("strat-1")
+        assertThat(bySymbol.getValue("GBPUSD").strategyId).isEqualTo("strat-2")
+    }
+
+    @Test
     fun `pending Stop is removed once triggered (does not double-fire)`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)

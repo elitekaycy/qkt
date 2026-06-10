@@ -24,6 +24,8 @@ import java.math.BigDecimal
 class Backtest(
     private val strategies: List<Pair<String, Strategy>>,
     private val rules: List<RiskRule> = emptyList(),
+    /** Account-protection halts; build via [com.qkt.risk.HaltRules.standard] for live parity. */
+    private val haltRules: List<com.qkt.risk.HaltRule> = emptyList(),
     private val feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
@@ -51,6 +53,7 @@ class Backtest(
     constructor(
         strategies: List<Pair<String, Strategy>>,
         rules: List<RiskRule> = emptyList(),
+        haltRules: List<com.qkt.risk.HaltRule> = emptyList(),
         ticks: List<Tick>,
         candleWindow: TimeWindow? = null,
         initialTimestamp: Long = 0L,
@@ -62,6 +65,7 @@ class Backtest(
     ) : this(
         strategies = strategies,
         rules = rules,
+        haltRules = haltRules,
         feed = HistoricalTickFeed(ticks),
         candleWindow = candleWindow,
         initialTimestamp = initialTimestamp,
@@ -77,6 +81,7 @@ class Backtest(
             .ReplayEngine(
                 strategies = strategies,
                 rules = rules,
+                haltRules = haltRules,
                 feed = feed,
                 candleWindow = candleWindow,
                 initialTimestamp = initialTimestamp,
@@ -95,6 +100,7 @@ class Backtest(
         fun fromStore(
             strategies: List<Pair<String, Strategy>>,
             rules: List<RiskRule> = emptyList(),
+            haltRules: List<com.qkt.risk.HaltRule> = emptyList(),
             store: DataStore,
             request: MarketRequest,
             candleWindow: TimeWindow? = null,
@@ -114,6 +120,7 @@ class Backtest(
             return fromSource(
                 strategies = strategies,
                 rules = rules,
+                haltRules = haltRules,
                 source = LocalMarketSource(store, FixedClock(time = to.toEpochMilli()), barStore = barStore),
                 request = resolved,
                 candleWindow = candleWindow,
@@ -127,6 +134,7 @@ class Backtest(
         fun fromSource(
             strategies: List<Pair<String, Strategy>>,
             rules: List<RiskRule> = emptyList(),
+            haltRules: List<com.qkt.risk.HaltRule> = emptyList(),
             source: MarketSource,
             request: MarketRequest,
             candleWindow: TimeWindow? = null,
@@ -152,6 +160,7 @@ class Backtest(
             return Backtest(
                 strategies = strategies,
                 rules = rules,
+                haltRules = haltRules,
                 feed = feed,
                 candleWindow = candleWindow,
                 initialTimestamp = from.toEpochMilli(),

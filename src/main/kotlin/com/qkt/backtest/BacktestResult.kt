@@ -16,4 +16,10 @@ data class BacktestResult(
      * with `latencyEnabled = true`. Contains per-(strategyId, stage) percentile snapshots.
      */
     val latencyReport: LatencyRegistry.Report? = null,
+    /**
+     * Risk halts fired during the replay, in order. A non-empty list means the
+     * configured halt rules stopped trading partway — bars after the last halt
+     * (without a resume) produced no entries, exactly as live would behave.
+     */
+    val halts: List<com.qkt.events.RiskEvent.Halted> = emptyList(),
 )
