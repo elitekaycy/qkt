@@ -66,9 +66,14 @@ class WarmupEndToEndTest {
                 candleWindow = TimeWindow.ONE_MINUTE,
             ).run()
 
-        assertThat(resultWithWarmup.trades.size)
-            .isLessThan(resultWithoutWarmup.trades.size)
-            .isGreaterThan(0)
+        // Warmup must push the FIRST fire past the configured bar count; the
+        // unwarmed strategy trades from the first closed bar.
+        assertThat(resultWithWarmup.trades).isNotEmpty
+        assertThat(resultWithoutWarmup.trades).isNotEmpty
+        val firstWith = resultWithWarmup.trades.first().trade.timestamp
+        val firstWithout = resultWithoutWarmup.trades.first().trade.timestamp
+        assertThat(firstWithout).isLessThan(firstWith)
+        assertThat(firstWith).isGreaterThanOrEqualTo(5 * 60_000L)
     }
 
     @Test

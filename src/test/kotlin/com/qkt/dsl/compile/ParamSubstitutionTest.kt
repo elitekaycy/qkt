@@ -60,9 +60,12 @@ class ParamSubstitutionTest {
             )
         val out = ParamSubstitution.apply(a)
         val buy = (out.rules.single() as WhenThen).action as Buy
-        val frac = (buy.opts.sizing as SizePctEquity).frac
-        assertThat(frac).isEqualTo(NumLit(BigDecimal("0.01")))
-        assertThat(frac).isNotInstanceOf(Ref::class.java)
+        // Non-literal percent sizing parses to `<expr> / 100` (percent convention);
+        // the PARAM ref inside it must still substitute to its literal default.
+        val frac = (buy.opts.sizing as SizePctEquity).frac as com.qkt.dsl.ast.BinaryOp
+        assertThat(frac.lhs).isEqualTo(NumLit(BigDecimal("0.01")))
+        assertThat(frac.lhs).isNotInstanceOf(Ref::class.java)
+        assertThat(frac.rhs).isEqualTo(NumLit(BigDecimal(100)))
     }
 
     @Test
