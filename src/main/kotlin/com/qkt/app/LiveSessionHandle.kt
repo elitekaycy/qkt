@@ -25,6 +25,9 @@ interface LiveSessionHandle {
      */
     fun inboundQueueDepth(): Int = 0
 
+    /** Symbols whose market data is currently stale, with quote age in ms (#395). */
+    fun staleSymbols(): Map<String, Long> = emptyMap()
+
     /** Initiates graceful shutdown. Use [awaitTermination] to wait for completion. */
     fun stop()
 

@@ -117,6 +117,15 @@ class LiveSession(
     private val initialBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
     private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
+    /** Mandatory pre-trade caps (#393); defaults from [com.qkt.risk.rules.PreTradeControls]. */
+    private val maxOrderQty: java.math.BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+    private val maxOrderNotional: java.math.BigDecimal =
+        com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+    private val priceCollarFrac: java.math.BigDecimal =
+        com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+    /** Runaway breaker thresholds (#396); zero disables a counter. */
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
@@ -540,7 +549,28 @@ class LiveSession(
         reconcileOrPreload(strategyPositions, broker)
 
         val engine = Engine(bus, priceTracker)
-        val riskState = RiskState(pnl, strategyPnL, clock, bus, initialBalance, dailyDdBasis)
+        val riskPersistId = strategies.firstOrNull()?.first ?: "session"
+        val riskState =
+            RiskState(
+                pnl,
+                strategyPnL,
+                clock,
+                bus,
+                initialBalance,
+                dailyDdBasis,
+                persist = { snap ->
+                    runCatching { persistor.saveRiskState(riskPersistId, snap) }
+                        .onFailure { e -> log.warn("risk-state persist failed: ${e.message}") }
+                },
+            )
+        // Restore halts + the day's realized PnL: a restart must not un-halt a halted
+        // strategy or hand it a fresh daily budget the same day it exhausted one.
+        persistor.loadRiskState(riskPersistId)?.let { persisted ->
+            riskState.restore(persisted)
+            if (riskState.halted) {
+                log.warn("restored HALTED risk state for {}: {}", riskPersistId, riskState.haltReason)
+            }
+        }
 
         // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
         // The daemon creates one LiveSession per deployed strategy, so the first entry is
@@ -581,9 +611,23 @@ class LiveSession(
                 )
             }
         }
+        // Mandatory pre-trade controls are always on — they ship with defaults so "no
+        // limit configured" can never mean "no limit" (#393).
+        val preTradeRules =
+            com.qkt.risk.rules.PreTradeControls.standard(
+                prices = priceTracker,
+                instruments = instruments,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                priceCollarFrac = priceCollarFrac,
+            )
+        // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
+        // frozen data and drops implausible ticks before they poison indicators.
+        val marketDataGate = com.qkt.marketdata.MarketDataGate(clock)
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRiskRules,
+                rules + perStrategyRiskRules + preTradeRules +
+                    com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
                 haltRules + perStrategyHaltRules,
                 positions,
                 riskState,
@@ -660,6 +704,14 @@ class LiveSession(
                 source = source,
                 candleWindow = candleWindow,
                 candleHub = pipelineCandleHub,
+                marketDataGate = marketDataGate,
+                runawayBreaker =
+                    com.qkt.risk.RunawayBreaker(
+                        clock = clock,
+                        riskState = riskState,
+                        maxRoundTrips = runawayMaxRoundTrips,
+                        maxRejections = runawayMaxRejections,
+                    ),
                 onFilled = { trade, realized, strategyId ->
                     trades.add(trade)
                     dailyTracker.recordTrade(strategyId)
@@ -686,6 +738,17 @@ class LiveSession(
         val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
         bus.subscribe<RiskEvent.Halted> { ev ->
             dailyTracker.recordHalt(ev.strategyId ?: ownerStrategyId)
+        }
+        // A halt is only a kill switch if it also takes down what is RESTING at the
+        // venue: pendings (incl. STACK_AT layers) left alive keep filling into exactly
+        // the situation the halt declared bad (FIA §1.11, RTS 6). Runs on the engine
+        // thread via the bus reroute, so OrderManager state stays single-threaded.
+        bus.subscribe<RiskEvent.Halted> { ev ->
+            log.warn("halt ({}): cancelling venue-resting pendings for {} symbol(s)", ev.reason, symbols.size)
+            for (symbol in symbols) {
+                runCatching { pipeline.orderManager.cancelPendingForSymbol(symbol) }
+                    .onFailure { e -> log.error("halt pending-cancel failed for {}: {}", symbol, e.message) }
+            }
         }
 
         if (perStreamSpecs.isNotEmpty()) {
@@ -904,6 +967,8 @@ class LiveSession(
                         droppedInboundTicks.get()
 
             override fun inboundQueueDepth(): Int = control.size + tickQueue.size
+
+            override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
 
             override fun stop() {
                 running.set(false)
