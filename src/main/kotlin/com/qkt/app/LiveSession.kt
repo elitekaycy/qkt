@@ -150,6 +150,16 @@ class LiveSession(
     private companion object {
         /** Attempts to read broker positions at reconcile before refusing to start. */
         const val RECONCILE_READ_ATTEMPTS: Int = 5
+
+        /**
+         * Bound on buffered ticks awaiting the engine thread. At a heavy 100 ticks/sec
+         * this is ~100s of backlog — far past the point where shedding the oldest tick
+         * is strictly better than growing the heap.
+         */
+        const val TICK_QUEUE_CAPACITY: Int = 10_000
+
+        /** Tick-queue poll timeout — bounds the control-queue re-check latency. */
+        const val QUEUE_POLL_MS: Long = 25L
     }
 
     /** Accumulates trades/halts/equity-delta for the daily summary. */
@@ -697,7 +707,31 @@ class LiveSession(
 
         val running = AtomicBoolean(true)
         val terminated = CountDownLatch(1)
-        val inbound = java.util.concurrent.LinkedBlockingQueue<Inbound>()
+        // Control events (bus events from pollers, flatten, heartbeat, feed-end) are
+        // low-rate and must NEVER be dropped; ticks are high-rate and individually
+        // disposable — a newer tick supersedes an older one. Splitting them bounds
+        // memory under a stalled consumer: the tick queue sheds its OLDEST on overflow
+        // and the daemon can no longer OOM because one engine thread stalled. The loop
+        // drains control ahead of ticks, so a flatten or fill never waits behind a
+        // tick backlog.
+        val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
+        val tickQueue = java.util.concurrent.ArrayBlockingQueue<Inbound.FeedTick>(TICK_QUEUE_CAPACITY)
+        val droppedInboundTicks = java.util.concurrent.atomic.AtomicLong(0)
+
+        fun postTick(msg: Inbound.FeedTick) {
+            while (!tickQueue.offer(msg)) {
+                if (tickQueue.poll() != null) {
+                    val dropped = droppedInboundTicks.incrementAndGet()
+                    if (dropped == 1L) {
+                        log.warn(
+                            "inbound tick queue saturated (capacity {}) — shedding oldest ticks; " +
+                                "the engine thread is not keeping up",
+                            TICK_QUEUE_CAPACITY,
+                        )
+                    }
+                }
+            }
+        }
 
         // Flattening mutates the OrderManager and publishes closes, so it must run on the engine
         // thread — the HTTP control path enqueues [Inbound.Flatten] rather than touching engine
@@ -753,19 +787,26 @@ class LiveSession(
         val thread =
             Thread({
                 if (mdcStrategy != null) org.slf4j.MDC.put("strategy", mdcStrategy)
+
+                fun processTick(msg: Inbound.FeedTick) {
+                    try {
+                        // Drive event-time from the tick being PROCESSED (not when it was
+                        // read off the feed) so a deterministic clock stays in lockstep with
+                        // processing — preserving backtest==live. No-op for SystemClock.
+                        (clock as? com.qkt.common.MutableClock)?.advanceTo(msg.tick.timestamp)
+                        pipeline.ingest(msg.tick)
+                    } catch (e: Exception) {
+                        onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
+                    }
+                }
                 try {
                     while (running.get()) {
-                        when (val msg = inbound.take()) {
-                            is Inbound.FeedTick ->
-                                try {
-                                    // Drive event-time from the tick being PROCESSED (not when it was
-                                    // read off the feed) so a deterministic clock stays in lockstep with
-                                    // processing — preserving backtest==live. No-op for SystemClock.
-                                    (clock as? com.qkt.common.MutableClock)?.advanceTo(msg.tick.timestamp)
-                                    pipeline.ingest(msg.tick)
-                                } catch (e: Exception) {
-                                    onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
-                                }
+                        val msg: Inbound =
+                            control.poll()
+                                ?: tickQueue.poll(QUEUE_POLL_MS, TimeUnit.MILLISECONDS)
+                                ?: continue
+                        when (msg) {
+                            is Inbound.FeedTick -> processTick(msg)
                             is Inbound.BusEvent ->
                                 try {
                                     bus.publish(msg.event)
@@ -779,9 +820,12 @@ class LiveSession(
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 runCatching { doFlatten() }
                                     .onFailure { t -> onEngineFault("flatten", t) }
-                            // Feed ended (finite source drained): stop AFTER draining everything
-                            // already queued ahead of this sentinel, so no tick is dropped.
-                            Inbound.FeedEnded -> running.set(false)
+                            Inbound.FeedEnded -> {
+                                // Feed ended (finite source drained): process every tick already
+                                // queued before stopping, so no tick is dropped.
+                                while (true) processTick(tickQueue.poll() ?: break)
+                                running.set(false)
+                            }
                         }
                     }
                 } catch (e: InterruptedException) {
@@ -796,7 +840,7 @@ class LiveSession(
         thread.isDaemon = true
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
-        bus.bindEngineLoop(thread) { ev -> if (running.get()) inbound.put(Inbound.BusEvent(ev)) }
+        bus.bindEngineLoop(thread) { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
         thread.start()
 
         // Feed reader: turn the blocking tick feed into queue messages so the engine loop stays a
@@ -806,14 +850,14 @@ class LiveSession(
                 try {
                     while (running.get()) {
                         val tick = feed.next() ?: break
-                        inbound.put(Inbound.FeedTick(tick))
+                        postTick(Inbound.FeedTick(tick))
                     }
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
                 } finally {
                     runCatching { feed.close() }
                     // Non-blocking: tell the consumer the feed is done so it drains-then-stops.
-                    inbound.offer(Inbound.FeedEnded)
+                    control.offer(Inbound.FeedEnded)
                 }
             }, "qkt-live-feed")
         feedThread.isDaemon = true
@@ -828,7 +872,7 @@ class LiveSession(
                     Thread(r, "qkt-schedule-heartbeat").apply { isDaemon = true }
                 }
         scheduleHeartbeat.scheduleAtFixedRate(
-            { runCatching { inbound.put(Inbound.Heartbeat(clock.now())) } },
+            { runCatching { control.put(Inbound.Heartbeat(clock.now())) } },
             scheduleHeartbeatIntervalMs,
             scheduleHeartbeatIntervalMs,
             java.util.concurrent.TimeUnit.MILLISECONDS,
@@ -853,7 +897,11 @@ class LiveSession(
             override val running: Boolean get() = running.get()
 
             override val droppedTicks: Long
-                get() = if (feed is LiveTickFeed) feed.droppedTicks.get() else 0L
+                get() =
+                    (if (feed is LiveTickFeed) feed.droppedTicks.get() else 0L) +
+                        droppedInboundTicks.get()
+
+            override fun inboundQueueDepth(): Int = control.size + tickQueue.size
 
             override fun stop() {
                 running.set(false)
@@ -933,7 +981,7 @@ class LiveSession(
             // Run the actual flatten on the engine thread (it mutates the OrderManager and
             // publishes closes); this HTTP-pool call just posts the command onto the queue.
             override fun flatten() {
-                inbound.put(Inbound.Flatten)
+                control.put(Inbound.Flatten)
             }
         }
     }

@@ -78,6 +78,57 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `tick flood sheds oldest ticks but keeps the freshest`() {
+        // 30k ticks against an engine thread blocked on its first tick: the bounded
+        // inbound queue must shed the OLDEST ticks (a newer tick supersedes), never
+        // grow without bound, and the newest tick must survive to be processed.
+        val total = 30_000
+        val src = InMemoryMarketSource()
+        src.seedLive(
+            "X",
+            (0 until total).map { i -> Tick("X", Money.of("100"), now.toEpochMilli() + i) },
+        )
+        val firstTickGate = java.util.concurrent.CountDownLatch(1)
+        val seen = java.util.concurrent.atomic.AtomicInteger(0)
+        val lastSeenTs = java.util.concurrent.atomic.AtomicLong(0)
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    if (seen.incrementAndGet() == 1) {
+                        firstTickGate.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                    }
+                    lastSeenTs.set(tick.timestamp)
+                }
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("flood" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+            ).start()
+
+        // Wait until the flood has saturated the queue and shedding has begun.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (handle.droppedTicks == 0L && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        firstTickGate.countDown()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(20))).isTrue()
+
+        assertThat(handle.droppedTicks).isGreaterThan(0L)
+        assertThat(seen.get()).isLessThan(total)
+        // The freshest tick survived the shedding.
+        assertThat(lastSeenTs.get()).isEqualTo(now.toEpochMilli() + total - 1)
+    }
+
+    @Test
     fun `a strategy exception does not kill the engine loop and raises an alert`() {
         val src = InMemoryMarketSource()
         src.seedLive(
