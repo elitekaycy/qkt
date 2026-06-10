@@ -278,7 +278,7 @@ class ActionCompiler(
 
         val tif = TifTranslator.translate(opts.tif)
         val orderType = opts.orderType ?: Market
-        val compiledOrderType = orderTypeCompiler.compile(orderType)
+        val compiledOrderType = orderTypeCompiler.compile(orderType, targetAlias = stream)
 
         // Phase 38: compile the GTD deadline (if any) and reject GTD on Market actions.
         val gtdDeadlineExpr: CompiledExpr? =
@@ -305,7 +305,7 @@ class ActionCompiler(
             val entry = compiledOrderType.entryPrice.evaluate(ctx)
             val qty = compiledSize.evaluate(ctx, entry)
             val entryReq =
-                compiledOrderType.buildRequest.evaluate(ctx, ids.next(), side, qty, tif, "", ts)
+                compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
 
             val request: OrderRequest =
                 when {
