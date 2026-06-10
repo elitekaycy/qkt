@@ -59,6 +59,11 @@ class MT5Broker(
      * strategy mode preserves the pre-#154 behaviour). See [MT5StateRecovery]'s docstring.
      */
     private val siblingsLookup: () -> List<String> = { emptyList() },
+    /**
+     * Base backoff between venue queries while resolving an UNKNOWN send outcome
+     * (multiplied by attempt number). Tests shrink it; production keeps the default.
+     */
+    private val unknownResolveBackoffMs: Long = 500L,
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
@@ -419,7 +424,15 @@ class MT5Broker(
         resp: MT5OrderResponse,
     ) {
         if (!isOrderSuccessful(resp.result.retcode)) {
-            reject(request, resp.errorMessage ?: "retcode=${resp.result.retcode}")
+            val message = resp.errorMessage
+            // An IO error or gateway 5xx AFTER the send leaves the outcome unknown — the
+            // order may have reached MT5 and filled. Telling the strategy "rejected"
+            // makes it re-fire and double the position; resolve against venue truth first.
+            if (message != null && isAmbiguousSendFailure(message)) {
+                resolveUnknownOutcome(request, message)
+                return
+            }
+            reject(request, message ?: "retcode=${resp.result.retcode}")
             return
         }
         val brokerOrderId =
@@ -478,6 +491,105 @@ class MT5Broker(
                 ),
             )
         }
+    }
+
+    /** True for failures where the request may have reached the venue despite the error. */
+    private fun isAmbiguousSendFailure(errorMessage: String): Boolean =
+        errorMessage.startsWith("IO error") || errorMessage.startsWith("HTTP 5")
+
+    /**
+     * Resolve an UNKNOWN send outcome by querying the venue for an order carrying this
+     * request's comment (the clientOrderId goes on the wire as the comment, and state
+     * recovery already correlates on its venue-truncated prefix).
+     *
+     *   - Found as a pending → the venue owns it: register tickets, publish Accepted.
+     *   - Found as a position → it filled: register meta, publish Accepted + Filled.
+     *   - Clean read, no match → it never landed: publish Rejected (retry is now safe).
+     *   - Reads keep failing → leave the order UNRESOLVED (no event): a false "rejected"
+     *     invites a duplicate submission, which is the worse failure. Alert the operator.
+     */
+    private fun resolveUnknownOutcome(
+        request: OrderRequest,
+        cause: String,
+    ) {
+        val wireComment = request.id.take(MT5_COMMENT_MAX_LENGTH)
+        val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
+        log.warn(
+            "MT5Broker {} order {} outcome UNKNOWN ({}) — querying venue before resolving",
+            profile.name,
+            request.id,
+            cause,
+        )
+        for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
+            Thread.sleep(unknownResolveBackoffMs * attempt)
+            val pendings = client.getPendingOrders(magic = profile.magic) ?: continue
+            val positions = client.getPositions(magic = profile.magic) ?: continue
+            val pendingMatch =
+                pendings.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
+            if (pendingMatch != null) {
+                pendingTickets[request.id] = pendingMatch.ticket
+                pendingByTicket[pendingMatch.ticket] = PendingMeta(request.id, request.strategyId)
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        clientOrderId = request.id,
+                        brokerOrderId = pendingMatch.ticket.toString(),
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                log.info("MT5Broker {} order {} resolved as PENDING ticket {}", profile.name, request.id, pendingMatch.ticket)
+                return
+            }
+            val positionMatch =
+                positions.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
+            if (positionMatch != null) {
+                positionMetaByTicket[positionMatch.ticket] = PendingMeta(request.id, request.strategyId)
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        clientOrderId = request.id,
+                        brokerOrderId = positionMatch.ticket.toString(),
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                bus.publish(
+                    BrokerEvent.OrderFilled(
+                        clientOrderId = request.id,
+                        brokerOrderId = positionMatch.ticket.toString(),
+                        symbol = request.symbol,
+                        side = request.side,
+                        price = positionMatch.priceOpen,
+                        quantity = positionMatch.volume,
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                log.info("MT5Broker {} order {} resolved as FILLED ticket {}", profile.name, request.id, positionMatch.ticket)
+                return
+            }
+            reject(request, "unknown-state send resolved as not placed ($cause)")
+            return
+        }
+        log.error(
+            "MT5Broker {} order {} send outcome UNRESOLVED after {} venue queries — " +
+                "no event emitted (a false reject invites a duplicate). Check the venue manually.",
+            profile.name,
+            request.id,
+            UNKNOWN_RESOLVE_ATTEMPTS,
+        )
+        publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
+    }
+
+    /**
+     * The venue stores only a truncated prefix (~16 chars) of the submitted comment, so
+     * match in both directions: stored is a prefix of the wire comment, or vice versa.
+     */
+    private fun matchesComment(
+        stored: String?,
+        wireComment: String,
+    ): Boolean {
+        if (stored.isNullOrBlank()) return false
+        return wireComment.startsWith(stored) || stored.startsWith(wireComment)
     }
 
     private fun submitComposite(
@@ -915,5 +1027,8 @@ class MT5Broker(
          * position poller to tick at least once after the pending poller does.
          */
         private const val DISAMBIGUATION_TTL_MULTIPLIER: Long = 3L
+
+        /** Venue queries before giving up on resolving an UNKNOWN send outcome. */
+        private const val UNKNOWN_RESOLVE_ATTEMPTS: Int = 4
     }
 }

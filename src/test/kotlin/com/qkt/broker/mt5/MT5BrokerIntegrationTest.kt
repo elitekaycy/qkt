@@ -112,6 +112,121 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `ambiguous send failure resolves as filled from venue truth, not as a rejection`() {
+        // POST /order dies with a gateway 500 AFTER the order actually landed. A
+        // synthetic rejection would make the strategy re-fire and double the position;
+        // the broker must query the venue and emit the fill it finds (#378).
+        val posts = java.util.concurrent.atomic.AtomicInteger(0)
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/order") && request.method == "POST" -> {
+                            posts.incrementAndGet()
+                            MockResponse().setResponseCode(500).setBody("gateway crashed mid-send")
+                        }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") ->
+                            MockResponse().setBody(
+                                """[{"ticket":"4242","symbol":"EURUSDm","type":"0","volume":"0.10",""" +
+                                    """"price_open":"1.1003","sl":"0","tp":"0","profit":"0","magic":"10001",""" +
+                                    """"open_time":"0","comment":"ord-amb-1"}]""",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker =
+            MT5Broker(
+                profile = fastProfile,
+                bus = bus,
+                clock = FixedClock(time = 1_700_000_000_000L),
+                unknownResolveBackoffMs = 1L,
+            )
+        captured.clear()
+        fastBroker.submit(
+            OrderRequest.Market(
+                id = "ord-amb-1",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            ),
+        )
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        val fill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(fill.clientOrderId).isEqualTo("ord-amb-1")
+        assertThat(fill.price).isEqualByComparingTo("1.1003")
+        // Exactly one POST /order — the unknown state blocked any duplicate send.
+        assertThat(posts.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun `ambiguous send failure with clean venue reads and no match rejects`() {
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/order") && request.method == "POST" ->
+                            MockResponse().setResponseCode(500).setBody("gateway crashed mid-send")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker =
+            MT5Broker(
+                profile = fastProfile,
+                bus = bus,
+                clock = FixedClock(time = 1_700_000_000_000L),
+                unknownResolveBackoffMs = 1L,
+            )
+        captured.clear()
+        fastBroker.submit(
+            OrderRequest.Market(
+                id = "ord-amb-2",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            ),
+        )
+        awaitCaptured { captured.any { it is BrokerEvent.OrderRejected } }
+        fastBroker.shutdown()
+
+        val rejection = captured.filterIsInstance<BrokerEvent.OrderRejected>().single()
+        assertThat(rejection.clientOrderId).isEqualTo("ord-amb-2")
+        assertThat(rejection.reason).contains("unknown-state")
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
+    }
+
+    @Test
     fun `submit returns an optimistic ack without blocking on the venue round-trip`() {
         // The gateway response is delayed; submit must return immediately with an optimistic ack
         // (no broker order id yet) and publish events only once the delayed response lands.
