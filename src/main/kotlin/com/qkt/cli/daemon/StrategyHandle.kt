@@ -8,7 +8,6 @@ import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
-import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.source.MarketSource
@@ -61,7 +60,6 @@ class StrategyHandle(
     class RealFactory(
         private val stateDir: StateDir,
         private val marketSourceProvider: (List<String>) -> MarketSource,
-        private val candleHub: CandleHub? = null,
         private val ringSize: Int = 1000,
         private val bind: String = "127.0.0.1",
         private val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = emptyMap(),
@@ -155,7 +153,6 @@ class StrategyHandle(
                     symbols = symbols,
                     candleWindow = candleWindow,
                     mdcStrategy = name,
-                    candleHub = candleHub,
                     onTrade = { trade, realized, _ ->
                         com.qkt.cli.daemon.logging.withMdc("strategy", name) {
                             fillCount.incrementAndGet()
