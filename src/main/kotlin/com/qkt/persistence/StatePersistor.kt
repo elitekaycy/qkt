@@ -141,11 +141,19 @@ data class PersistedTier(
     val fired: Boolean,
     val firedAt: Long?,
     val firedLegId: String?,
+    /** True when this tier's MFE window elapsed unfired — it must not fire after a restart. */
+    val abandoned: Boolean = false,
 )
 
 data class PersistedTierState(
     val primaryClientOrderId: String,
     val tiers: List<PersistedTier>,
+    /**
+     * When the parent leg opened (the engine's MFE-window anchor). Restored engines
+     * keep counting their `WITHIN` windows from the ORIGINAL open, not the restart.
+     * Null in pre-restore state files; restore falls back to "now" with a warning.
+     */
+    val openedAtMs: Long? = null,
 )
 
 /**

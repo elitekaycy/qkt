@@ -551,6 +551,21 @@ class TradingPipeline(
                     )
                 },
             )
+        // Restart path: rebuild engines for parents that were open when the process
+        // died — the restored leg supplies identity, the persisted tier state supplies
+        // thresholds, windows, progress, and the original open-time anchor (#390).
+        runCatching {
+            for ((parentLegId, state) in persistor.loadPendingStacks(strategyId)) {
+                val leg = strategyPositions.legById(strategyId, parentLegId) ?: continue
+                orch.restoreEngine(
+                    parentLegId = parentLegId,
+                    parentSymbol = leg.symbol,
+                    parentSide = leg.side,
+                    parentEntryPrice = leg.entryPrice,
+                    persisted = state,
+                )
+            }
+        }.onFailure { e -> log.warn("stack tier restore failed for {}: {}", strategyId, e.message) }
         bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe

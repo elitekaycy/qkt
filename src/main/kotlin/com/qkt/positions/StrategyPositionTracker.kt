@@ -484,6 +484,15 @@ class StrategyPositionTracker(
         symbol: String,
     ): LegBook? = byStrategy[strategyId]?.get(symbol)
 
+    /** Find an open leg by id across every symbol the strategy holds. */
+    fun legById(
+        strategyId: String,
+        legId: String,
+    ): PositionLeg? =
+        byStrategy[strategyId]
+            ?.values
+            ?.firstNotNullOfOrNull { book -> book.all().firstOrNull { it.legId == legId } }
+
     /**
      * Venue ticket of the leg with [legId] for [strategyId], searching across that strategy's
      * symbols, or null if no such leg (or it has no ticket). Lets an engine-fired exit close the
