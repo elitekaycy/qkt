@@ -81,6 +81,37 @@ class MT5PollerSessionGateTest {
     }
 
     @Test
+    fun `pending poller outage does not read as all pendings cancelled`() {
+        // A tracked pending + a failed read: the diff must be skipped, not treated as
+        // "every pending cancelled" (which would dismantle OCO/bracket protection).
+        val pendingJson =
+            """[{"ticket":"9001","symbol":"XAUUSD","type":"ORDER_TYPE_BUY_LIMIT","volume":"0.1",
+            "price_open":"2000.0","sl":"0","tp":"0","magic":"12345","time_setup":"0","time_expiration":"0"}]"""
+        server.enqueue(MockResponse().setResponseCode(200).setBody(pendingJson))
+        repeat(3) { server.enqueue(MockResponse().setResponseCode(500).setBody("boom")) }
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+
+        val disappeared = mutableListOf<Long>()
+        val unreachable = mutableListOf<Int>()
+        val poller =
+            MT5PendingOrderPoller(
+                client = client,
+                profile = profile,
+                clock = FixedClock(openSundayUtc),
+                sessionGate = null,
+                onPendingDisappeared = { disappeared.add(it) },
+                onGatewayUnreachable = { unreachable.add(it) },
+            )
+        poller.tickForTesting() // sees 9001 pending
+        repeat(3) { poller.tickForTesting() } // outage
+        assertThat(disappeared).isEmpty()
+        assertThat(unreachable).containsExactly(3)
+
+        poller.tickForTesting() // clean read, genuinely gone now
+        assertThat(disappeared).containsExactly(9001L)
+    }
+
+    @Test
     fun `pending poller with null gate always calls client backward-compat`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
         val poller =

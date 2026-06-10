@@ -118,6 +118,20 @@ sealed interface BrokerEvent : Event {
     ) : BrokerEvent
 
     /**
+     * The broker's gateway has failed [consecutiveFailures] state reads in a row.
+     *
+     * Position/pending reconciliation is suspended until a clean read, so engine
+     * state may lag venue truth — the operator should check the gateway. Emitted
+     * once per outage (on crossing the failure threshold), not per failed poll.
+     */
+    data class GatewayUnreachable(
+        val broker: String,
+        val consecutiveFailures: Int,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
+
+    /**
      * Reports a position correction from the venue that doesn't match local state.
      *
      * Emitted on startup (state recovery) and on out-of-band changes (manual close on
