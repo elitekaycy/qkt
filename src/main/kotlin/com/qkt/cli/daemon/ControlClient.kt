@@ -158,6 +158,19 @@ open class ControlClient(
         return readOrThrow(resp)
     }
 
+    open fun reconcile(name: String): String {
+        val resp =
+            http
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("${baseUrl()}/reconcile/$name")
+                        .get()
+                        .build(),
+                ).execute()
+        return readOrThrow(resp)
+    }
+
     open fun resume(name: String? = null): String {
         val url = if (name == null) "${baseUrl()}/resume" else "${baseUrl()}/resume/$name"
         val resp =

@@ -127,6 +127,22 @@ class LiveSession(
     private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     /**
+     * Pre-entry margin floor in percent (#398); entries reject while the venue margin
+     * level is below it. Zero disables. Default 200 = keep 2x coverage, the
+     * practitioner norm against MT5's ~50% stop-out.
+     */
+    private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
+    /**
+     * Measured-usage window (#399): hours after start during which entries above
+     * [measuredUsageMaxQty] reject. Zero disables (the default here — the daemon path
+     * turns it on; embedded/test sessions opt in).
+     */
+    private val measuredUsageHours: Long = 0L,
+    private val measuredUsageMaxQty: java.math.BigDecimal =
+        com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
+    /** Append-only order-event journal (#400); null disables (tests, backtest replays). */
+    private val journal: com.qkt.observe.OrderJournal? = null,
+    /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
      * at this cadence so a strategy's `SCHEDULE AT 09:00 UTC THEN …` still fires
@@ -384,6 +400,71 @@ class LiveSession(
         }
     }
 
+    /** Every order-lifecycle event lands in the append-only journal, in bus order. */
+    private fun wireJournal(
+        bus: EventBus,
+        journal: com.qkt.observe.OrderJournal,
+    ) {
+        bus.subscribe<com.qkt.events.OrderEvent> { e ->
+            journal.append(
+                e.request.strategyId,
+                "submit",
+                mapOf(
+                    "id" to e.request.id,
+                    "type" to e.request::class.simpleName,
+                    "symbol" to e.request.symbol,
+                    "side" to e.request.side.name,
+                    "qty" to e.request.quantity.toPlainString(),
+                ),
+            )
+        }
+        bus.subscribe<BrokerEvent.OrderAccepted> { e ->
+            journal.append(e.strategyId, "accepted", mapOf("id" to e.clientOrderId, "broker" to e.brokerOrderId))
+        }
+        bus.subscribe<BrokerEvent.OrderRejected> { e ->
+            journal.append(
+                e.strategyId,
+                "rejected",
+                mapOf("id" to e.clientOrderId, "reason" to e.reason),
+            )
+        }
+        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            journal.append(
+                e.strategyId,
+                "filled",
+                mapOf(
+                    "id" to e.clientOrderId,
+                    "broker" to e.brokerOrderId,
+                    "symbol" to e.symbol,
+                    "side" to e.side.name,
+                    "price" to e.price.toPlainString(),
+                    "qty" to e.quantity.toPlainString(),
+                    "venueCosts" to e.venueCosts.toPlainString(),
+                ),
+            )
+        }
+        bus.subscribe<BrokerEvent.OrderCancelled> { e ->
+            journal.append(
+                e.strategyId,
+                "cancelled",
+                mapOf("id" to e.clientOrderId, "reason" to e.reason),
+            )
+        }
+        bus.subscribe<com.qkt.events.RiskRejectedEvent> { e ->
+            journal.append(
+                e.request.strategyId,
+                "risk-rejected",
+                mapOf("id" to e.request.id, "symbol" to e.request.symbol, "reason" to e.reason),
+            )
+        }
+        bus.subscribe<RiskEvent.Halted> { e ->
+            journal.append(e.strategyId.orEmpty(), "halted", mapOf("reason" to e.reason))
+        }
+        bus.subscribe<RiskEvent.Resumed> { e ->
+            journal.append(e.strategyId.orEmpty(), "resumed", emptyMap<String, String?>())
+        }
+    }
+
     /**
      * Subscribe notifier handlers for the bus-driven event kinds in [notifyEvents]. Must be
      * called after [bus] is constructed and before any publish — handlers registered after a
@@ -398,6 +479,7 @@ class LiveSession(
      * is a daemon-level concern fired by [com.qkt.cli.DaemonCommand];
      * [NotificationEvent.StrategyError] has no bus source yet.
      */
+
     private fun wireNotifierSubscriptions(
         bus: EventBus,
         orderManager: OrderManager,
@@ -631,9 +713,37 @@ class LiveSession(
         // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
         // frozen data and drops implausible ticks before they poison indicators.
         val marketDataGate = com.qkt.marketdata.MarketDataGate(clock)
+        val marginRules =
+            if (marginFloorPct.signum() > 0) {
+                listOf(
+                    com.qkt.risk.rules
+                        .MarginFloor(broker, marginFloorPct),
+                )
+            } else {
+                emptyList()
+            }
+        val measuredRules =
+            if (measuredUsageHours > 0L) {
+                log.warn(
+                    "measured-usage window active for {}h: entries above {} reject " +
+                        "(risk.measured_usage_hours: 0 opts out)",
+                    measuredUsageHours,
+                    measuredUsageMaxQty.toPlainString(),
+                )
+                listOf(
+                    com.qkt.risk.rules.MeasuredUsage(
+                        clock = clock,
+                        startedAtMs = clock.now(),
+                        windowHours = measuredUsageHours,
+                        maxQty = measuredUsageMaxQty,
+                    ),
+                )
+            } else {
+                emptyList()
+            }
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRiskRules + preTradeRules +
+                rules + perStrategyRiskRules + preTradeRules + marginRules + measuredRules +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
                 haltRules + perStrategyHaltRules,
                 positions,
@@ -732,6 +842,7 @@ class LiveSession(
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
+        journal?.let { wireJournal(bus, it) }
 
         // Register notifier handlers before the warmup phase so a warmup-time risk halt
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
@@ -975,6 +1086,33 @@ class LiveSession(
             override fun inboundQueueDepth(): Int = control.size + tickQueue.size
 
             override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
+
+            override fun reconcile(): ReconcileReport {
+                val ownerId = strategies.firstOrNull()?.first.orEmpty()
+                val brokerBySymbol =
+                    runCatching { broker.getOpenPositions() }.getOrElse { emptyMap() }
+                val symbolsToCheck =
+                    (brokerBySymbol.keys + positions.allPositions().keys).toSortedSet()
+                val deltas =
+                    symbolsToCheck.mapNotNull { symbol ->
+                        val engineQty =
+                            positions.allPositions()[symbol]?.quantity ?: java.math.BigDecimal.ZERO
+                        val brokerQty =
+                            brokerBySymbol[symbol]
+                                ?.fold(java.math.BigDecimal.ZERO) { acc, p -> acc.add(p.quantity) }
+                                ?: java.math.BigDecimal.ZERO
+                        if (engineQty.compareTo(brokerQty) == 0) {
+                            null
+                        } else {
+                            PositionDelta(symbol, engineQty, brokerQty)
+                        }
+                    }
+                return ReconcileReport(
+                    deltas = deltas,
+                    engineEquity = strategyPnL.equityFor(ownerId),
+                    brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
+                )
+            }
 
             override fun stop() {
                 running.set(false)

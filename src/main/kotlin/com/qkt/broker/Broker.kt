@@ -112,6 +112,17 @@ interface Broker {
      * (default), the engine cancels the order at the deadline on the next tick.
      */
     val supportsNativeGtd: Boolean get() = false
+
+    /**
+     * Venue margin level as a percent (equity / used margin x 100), or null when the
+     * venue doesn't report one (paper brokers, spot venues, no margin in use). Powers
+     * the pre-entry margin floor — MT5 force-closes positions around 50%, so entries
+     * should stop long before that.
+     */
+    fun marginLevel(): java.math.BigDecimal? = null
+
+    /** Venue-reported account equity, or null when the venue doesn't expose one. */
+    fun accountEquity(): java.math.BigDecimal? = null
 }
 
 /**

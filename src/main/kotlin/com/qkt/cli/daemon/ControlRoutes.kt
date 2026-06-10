@@ -47,6 +47,8 @@ object ControlRoutes {
                         handleLogs(ex, registry, stateDir, path)
                     method == "GET" && path == "/status" -> handleStatusAll(ex, registry)
                     method == "GET" && path.startsWith("/status/") -> handleStatusOne(ex, registry, path)
+                    method == "GET" && path.startsWith("/reconcile/") ->
+                        handleReconcile(ex, registry, path.removePrefix("/reconcile/").trim('/'))
                     method == "GET" && path == "/latency" -> handleLatencyAll(ex, registry)
                     method == "GET" && path == "/metrics" && prometheusMetricsEnabled ->
                         handleMetrics(ex, registry, startedAt, notifierMetrics)
@@ -153,9 +155,30 @@ object ControlRoutes {
         registry: StrategyRegistry,
         startedAt: Instant,
     ) {
-        val uptimeMs = Instant.now().toEpochMilli() - startedAt.toEpochMilli()
-        val count = registry.list().size
-        respond(ex, 200, """{"status":"ok","strategies":$count,"uptimeMs":$uptimeMs}""")
+        val now = Instant.now().toEpochMilli()
+        val uptimeMs = now - startedAt.toEpochMilli()
+        val handles = registry.list()
+        // Per-strategy last-event age lets an external watchdog tell a WEDGED single
+        // session (dead engine thread, growing queue, no events) from a healthy idle
+        // one — the daemon answering /health alone cannot (#397).
+        val perStrategy =
+            handles.joinToString(",", "[", "]") { h ->
+                val lastEvent =
+                    h.ring
+                        .snapshot(0, 1_000)
+                        .lastOrNull()
+                        ?.ts
+                val ageMs = lastEvent?.let { now - it }
+                """{"name":"${h.name}","running":${h.isRunning()},""" +
+                    """"halted":${h.live.isHalted()},""" +
+                    """"lastEventAgeMs":${ageMs ?: "null"},""" +
+                    """"inboundQueueDepth":${h.live.inboundQueueDepth()}}"""
+            }
+        respond(
+            ex,
+            200,
+            """{"status":"ok","strategies":${handles.size},"uptimeMs":$uptimeMs,"perStrategy":$perStrategy}""",
+        )
     }
 
     private fun handleList(
@@ -348,6 +371,29 @@ object ControlRoutes {
      * the strategy's [com.qkt.cli.observe.Routes.latency] handler returned (already JSON).
      * Strategies that can't be reached are omitted from the aggregate.
      */
+    private fun handleReconcile(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        name: String,
+    ) {
+        val handle = registry.get(name) ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
+        val report =
+            handle.live.reconcile()
+                ?: return respond(ex, 200, """{"strategy":"$name","supported":false}""")
+        val deltas =
+            report.deltas.joinToString(",", "[", "]") {
+                """{"symbol":"${it.symbol}","engineQty":"${it.engineQty.toPlainString()}",""" +
+                    """"brokerQty":"${it.brokerQty.toPlainString()}"}"""
+            }
+        respond(
+            ex,
+            200,
+            """{"strategy":"$name","clean":${report.clean},"deltas":$deltas,""" +
+                """"engineEquity":"${report.engineEquity.toPlainString()}",""" +
+                """"brokerEquity":${report.brokerEquity?.let { "\"${it.toPlainString()}\"" } ?: "null"}}""",
+        )
+    }
+
     private fun handleLatencyAll(
         ex: HttpExchange,
         registry: StrategyRegistry,

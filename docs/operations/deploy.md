@@ -132,6 +132,58 @@ ssh -L 3020:127.0.0.1:3020 root@173.249.58.247
 
 VNC password lives in `MT5_VNC_PASSWORD` in Dokploy env.
 
+## Required: daily reconciliation
+
+`qkt reconcile <strategy>` compares the engine's book against the broker's
+(per-symbol net positions + equity both sides) and exits non-zero on any delta.
+Run it daily from cron and page on failure — slow silent state drift is exactly
+the bug class a human only notices by accident:
+
+```cron
+0 6 * * * /usr/local/bin/qkt reconcile mystrategy --json || curl -fsS "https://api.telegram.org/bot$TOKEN/sendMessage" -d chat_id=$CHAT --data-urlencode text="qkt reconcile DELTA — check immediately"
+```
+
+Every order event is also journaled append-only under `state/journal/<strategy>/`
+(one JSONL per UTC day, fsynced) — the reconstructible audit trail for "what
+exactly happened, in order".
+
+## Margin floor and stop-out levels
+
+`risk.margin_floor_pct` (default 200) blocks NEW entries while the venue margin
+level sits below it; risk-reducing orders always pass. Set it against the broker's
+REAL stop-out level, not a guess — MT5 brokers force-close the largest losers when
+margin level hits their stop-out, the broker's choice of position, during the exact
+volatility spike that caused it:
+
+| Broker profile | Margin call | Stop-out |
+| --- | --- | --- |
+| Exness (standard) | 60% | 0% (!) — Exness liquidates at 0, but gaps can blow through |
+| ICMarkets | 100% | 50% |
+| FTMO | n/a (drawdown rules instead) | account breach rules |
+| Pepperstone | 90% | 50% |
+
+Verify the figures for YOUR account type in the broker terminal before trusting
+them; they vary by account tier and jurisdiction. A 200% floor keeps roughly 2x
+coverage — the practitioner norm. Weekend/news exposure reduction is tracked in
+#398 and not yet automated: reduce manually before weekends until it ships.
+
+## Required: external deadman watchdog
+
+The daemon cannot report its own death — a host reboot or OOM on a Friday evening
+goes unnoticed until someone looks, with open leveraged positions protected only
+by venue-side stops. Run `scripts/deadman-watchdog.sh` from a SECOND machine via
+cron (every minute), pointed at the daemon's `/health` through an SSH tunnel or
+private network:
+
+```cron
+* * * * * QKT_HEALTH_URL=http://127.0.0.1:8200/health TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... /opt/qkt/deadman-watchdog.sh
+```
+
+It pages once per outage (daemon down, or any running strategy silent past 15
+minutes — the wedged-session signature) and once on recovery. A hosted dead-man
+service (healthchecks.io) works as an alternative; the point is that the checker
+does not share the trading host's fate.
+
 ## Trust boundary and host clock
 
 Two assumptions the deployment relies on — written down so a future change can't
