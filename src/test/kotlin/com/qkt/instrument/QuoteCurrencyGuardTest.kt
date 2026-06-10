@@ -34,6 +34,16 @@ class QuoteCurrencyGuardTest {
     }
 
     @Test
+    fun `contract-size meta is required for FX and metals, not crypto or stocks`() {
+        assertThat(QuoteCurrencyGuard.requiresContractSizeMeta("EXNESS:XAUUSD")).isTrue()
+        assertThat(QuoteCurrencyGuard.requiresContractSizeMeta("EXNESS:EURUSD")).isTrue()
+        // USD-quoted crypto is a unit contract — BTCUSD must not be refused at bind.
+        assertThat(QuoteCurrencyGuard.requiresContractSizeMeta("BACKTEST:BTCUSD")).isFalse()
+        assertThat(QuoteCurrencyGuard.requiresContractSizeMeta("BYBIT_SPOT:BTCUSDT")).isFalse()
+        assertThat(QuoteCurrencyGuard.requiresContractSizeMeta("ALPACA:AAPL")).isFalse()
+    }
+
+    @Test
     fun `quote inference reads the trailing currency code`() {
         assertThat(QuoteCurrencyGuard.quoteOf("EXNESS:USDJPY")).isEqualTo("JPY")
         assertThat(QuoteCurrencyGuard.quoteOf("BYBIT_SPOT:BTCUSDT")).isEqualTo("USDT")
