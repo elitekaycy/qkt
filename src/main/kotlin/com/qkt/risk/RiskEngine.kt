@@ -53,8 +53,6 @@ class RiskEngine(
         return Decision.Approve
     }
 
-
-
     fun evaluateHaltRules() {
         if (!riskState.warmupComplete) return
         riskState.clearExpiredDailyHalts()

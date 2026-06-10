@@ -182,6 +182,8 @@ class MT5Broker(
     @Volatile
     private var marginLevelCache: Pair<Long, java.math.BigDecimal?>? = null
 
+    override fun accountEquity(): java.math.BigDecimal? = runCatching { client.getAccount()?.equity }.getOrNull()
+
     /**
      * Venue margin level, cached for [MARGIN_CACHE_TTL_MS] — the margin floor consults
      * this on every entry, and a synchronous /account round-trip per order would put

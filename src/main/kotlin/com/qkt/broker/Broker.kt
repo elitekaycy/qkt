@@ -120,6 +120,9 @@ interface Broker {
      * should stop long before that.
      */
     fun marginLevel(): java.math.BigDecimal? = null
+
+    /** Venue-reported account equity, or null when the venue doesn't expose one. */
+    fun accountEquity(): java.math.BigDecimal? = null
 }
 
 /**

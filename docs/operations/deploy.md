@@ -132,6 +132,21 @@ ssh -L 3020:127.0.0.1:3020 root@173.249.58.247
 
 VNC password lives in `MT5_VNC_PASSWORD` in Dokploy env.
 
+## Required: daily reconciliation
+
+`qkt reconcile <strategy>` compares the engine's book against the broker's
+(per-symbol net positions + equity both sides) and exits non-zero on any delta.
+Run it daily from cron and page on failure — slow silent state drift is exactly
+the bug class a human only notices by accident:
+
+```cron
+0 6 * * * /usr/local/bin/qkt reconcile mystrategy --json || curl -fsS "https://api.telegram.org/bot$TOKEN/sendMessage" -d chat_id=$CHAT --data-urlencode text="qkt reconcile DELTA — check immediately"
+```
+
+Every order event is also journaled append-only under `state/journal/<strategy>/`
+(one JSONL per UTC day, fsynced) — the reconstructible audit trail for "what
+exactly happened, in order".
+
 ## Margin floor and stop-out levels
 
 `risk.margin_floor_pct` (default 200) blocks NEW entries while the venue margin
