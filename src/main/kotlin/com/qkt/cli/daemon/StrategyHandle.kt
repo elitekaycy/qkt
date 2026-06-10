@@ -124,26 +124,13 @@ class StrategyHandle(
             val startedAt = Instant.ofEpochMilli(startMs)
 
             val haltRules: List<com.qkt.risk.HaltRule> =
-                buildList {
-                    if (maxDailyLoss.signum() > 0) {
-                        add(
-                            com.qkt.risk.rules
-                                .MaxDailyLoss(maxDailyLoss),
-                        )
-                    }
-                    maxDrawdownPct?.let {
-                        add(
-                            com.qkt.risk.rules
-                                .MaxDrawdown(it, totalDdBasis, startingBalance),
-                        )
-                    }
-                    maxDailyDrawdownPct?.let {
-                        add(
-                            com.qkt.risk.rules
-                                .MaxDailyDrawdown(it),
-                        )
-                    }
-                }
+                com.qkt.risk.HaltRules.standard(
+                    maxDailyLoss = maxDailyLoss,
+                    maxDrawdownPct = maxDrawdownPct,
+                    maxDailyDrawdownPct = maxDailyDrawdownPct,
+                    totalDdBasis = totalDdBasis,
+                    startingBalance = startingBalance,
+                )
             val perStrategyOverride = perStrategyRisk[ast.name]
             val session =
                 LiveSession(
