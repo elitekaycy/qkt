@@ -180,17 +180,15 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `macd(value, F, S, sig)` | S + sig bars |
 | `bollinger_*(value, N, k)` | N bars |
 | `vwap(stream, N)` | N ticks |
-| `highest`/`lowest(value, N)` | N bars |
+| `highest`/`lowest(value, N)` | N + 1 bars (N prior bars plus the evaluating bar) |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 
-The DSL compiler **automatically infers warmup requirements** from your indicator calls and tells the engine to discard pre-warmup signals. To declare a custom warmup window explicitly:
+The DSL compiler **automatically infers warmup requirements** from your indicator calls and tells the engine to discard pre-warmup signals. To declare a custom warmup window explicitly, use the per-stream `WARMUP N BARS` clause in `SYMBOLS` (see [streams](streams.md)):
 
 ```qkt
-STRATEGY my_strat VERSION 1
-WARMUP 200 BARS
-
-SYMBOLS ...
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m WARMUP 200 BARS
 ```
 
 Useful when you want to ensure long-period indicators (200-bar SMA) are warm even on short backtest windows.

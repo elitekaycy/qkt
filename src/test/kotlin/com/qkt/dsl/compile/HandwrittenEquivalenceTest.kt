@@ -58,11 +58,19 @@ class HandwrittenEquivalenceTest {
             ),
         )
 
+    /**
+     * Hand-written equivalent of the two DSL threshold rules. Rule actions are
+     * edge-driven, so each side keeps its own edge memory: it emits on the bar the
+     * condition turns true and stays silent while it holds.
+     */
     private class ThresholdStrategy(
         private val symbol: String,
         private val threshold: BigDecimal,
         private val qty: BigDecimal,
     ) : Strategy {
+        private var wasAbove = false
+        private var wasBelow = false
+
         override fun onTick(
             tick: Tick,
             ctx: StrategyContext,
@@ -75,8 +83,12 @@ class HandwrittenEquivalenceTest {
             emit: (Signal) -> Unit,
         ) {
             if (candle.symbol != symbol) return
-            if (candle.close > threshold) emit(Signal.Buy(symbol, qty))
-            if (candle.close < threshold) emit(Signal.Sell(symbol, qty))
+            val above = candle.close > threshold
+            val below = candle.close < threshold
+            if (above && !wasAbove) emit(Signal.Buy(symbol, qty))
+            if (below && !wasBelow) emit(Signal.Sell(symbol, qty))
+            wasAbove = above
+            wasBelow = below
         }
     }
 

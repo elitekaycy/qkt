@@ -35,7 +35,8 @@ class SizingCompiler(
                 val e = exprCompiler.compile(sizing.usd)
                 CompiledSize { ec, entry ->
                     val usd = (e.evaluate(ec) as Value.Num).v
-                    usd.divide(entry, Money.CONTEXT)
+                    val cs = contractSizeFor(ec, streamAlias)
+                    usd.divide(entry.multiply(cs, Money.CONTEXT), Money.CONTEXT)
                 }
             }
             is SizeRiskAbs -> {
@@ -45,13 +46,7 @@ class SizingCompiler(
                 val e = exprCompiler.compile(sizing.usd)
                 CompiledSize { ec, _ ->
                     val amount = (e.evaluate(ec) as Value.Num).v
-                    val qktSymbol =
-                        ec.streams[streamAlias]?.qktSymbol
-                            ?: error("Unknown stream alias: $streamAlias")
-                    val cs =
-                        ec.strategyContext.instruments
-                            .require(qktSymbol)
-                            .contractSize
+                    val cs = contractSizeFor(ec, streamAlias)
                     amount.divide(stopDistance.multiply(cs, Money.CONTEXT), Money.CONTEXT)
                 }
             }
@@ -72,7 +67,8 @@ class SizingCompiler(
                 CompiledSize { ec, entry ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val equity = ec.strategyContext.pnl.equity()
-                    equity.multiply(frac, Money.CONTEXT).divide(entry, Money.CONTEXT)
+                    val cs = contractSizeFor(ec, streamAlias)
+                    equity.multiply(frac, Money.CONTEXT).divide(entry.multiply(cs, Money.CONTEXT), Money.CONTEXT)
                 }
             }
             is SizePctBalance -> {
@@ -80,7 +76,8 @@ class SizingCompiler(
                 CompiledSize { ec, entry ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val balance = ec.strategyContext.pnl.balance()
-                    balance.multiply(frac, Money.CONTEXT).divide(entry, Money.CONTEXT)
+                    val cs = contractSizeFor(ec, streamAlias)
+                    balance.multiply(frac, Money.CONTEXT).divide(entry.multiply(cs, Money.CONTEXT), Money.CONTEXT)
                 }
             }
             is SizeRiskFrac -> {
@@ -91,17 +88,29 @@ class SizingCompiler(
                 CompiledSize { ec, _ ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val equity = ec.strategyContext.pnl.equity()
-                    val qktSymbol =
-                        ec.streams[streamAlias]?.qktSymbol
-                            ?: error("Unknown stream alias: $streamAlias")
-                    val cs =
-                        ec.strategyContext.instruments
-                            .require(qktSymbol)
-                            .contractSize
+                    val cs = contractSizeFor(ec, streamAlias)
                     equity
                         .multiply(frac, Money.CONTEXT)
                         .divide(stopDistance.multiply(cs, Money.CONTEXT), Money.CONTEXT)
                 }
             }
         }
+
+    /**
+     * The instrument contract size for the action's stream, e.g. 100 for XAUUSD
+     * (1 lot = 100 oz) or 100,000 for FX majors (1 lot = 100,000 base units).
+     * Money-amount sizing must divide through it so the result is broker lots,
+     * not base-asset units: $10,000 of XAUUSD at $2,000 is 0.05 lots, not 5.
+     */
+    private fun contractSizeFor(
+        ec: EvalContext,
+        streamAlias: String,
+    ): BigDecimal {
+        val qktSymbol =
+            ec.streams[streamAlias]?.qktSymbol
+                ?: error("Unknown stream alias: $streamAlias")
+        return ec.strategyContext.instruments
+            .require(qktSymbol)
+            .contractSize
+    }
 }

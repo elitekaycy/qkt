@@ -277,6 +277,9 @@ class ExprCompiler(
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
                     Value.Num(ctx.strategyContext.pnl.unrealizedFor(symbol))
                 }
+            // holding_duration is SECONDS — the unit every shipped example and the DSL
+            // reference assume. The clock is milliseconds internally; convert here so
+            // `holding_duration > 7200` means "open for more than 2 hours".
             StateSource.POSITION_HOLDING_DURATION ->
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
@@ -285,7 +288,7 @@ class ExprCompiler(
                             .positionFor(symbol)
                             ?.openedAt
                     val durationMs = if (openedAt == null) 0L else ctx.strategyContext.clock.now() - openedAt
-                    Value.Num(BigDecimal(durationMs))
+                    Value.Num(BigDecimal.valueOf(durationMs).divide(MS_PER_SECOND, Money.CONTEXT))
                 }
             StateSource.POSITION_MFE ->
                 CompiledExpr { ctx ->
@@ -545,6 +548,7 @@ class ExprCompiler(
             setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread")
         val META_FIELDS: Set<String> =
             setOf("tick_size", "contract_size", "volume_step", "volume_min")
+        private val MS_PER_SECOND = BigDecimal(1000)
     }
 
     private fun compileBinary(

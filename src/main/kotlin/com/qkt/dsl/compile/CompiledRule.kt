@@ -19,12 +19,22 @@ class CompiledRule(
     private val onOpenCaptures: List<Pair<String, CompiledExpr>>,
     val referencedAliases: Set<String>,
 ) {
+    // Action gating is edge-driven (reference/dsl/conditions.md): the action runs on the
+    // false->true transition of the condition, not on every bar it stays true. Without
+    // this, `WHEN close > ema THEN BUY` emits an entry on all 50 bars the close holds
+    // above the EMA. Undefined counts as false, so a condition that goes true ->
+    // Undefined -> true re-arms and fires again.
+    private var wasTrue = false
+
     fun fire(
         ec: EvalContext,
         ctx: StrategyContext,
     ): List<Signal> {
         val v = condition.evaluate(ec)
-        if (v !is Value.Bool || !v.v) return emptyList()
+        val isTrue = v is Value.Bool && v.v
+        val rising = isTrue && !wasTrue
+        wasTrue = isTrue
+        if (!rising) return emptyList()
 
         val preFireQty =
             ctx.positions.positionFor(ruleSymbol)?.quantity ?: BigDecimal.ZERO

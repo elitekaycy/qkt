@@ -158,7 +158,7 @@ POSITION.<stream>.entry_price               -- average entry price
 POSITION.<stream>.pnl                       -- strategy realized + this-symbol unrealized
 POSITION.<stream>.realized_pnl              -- strategy-level realized P&L (see note)
 POSITION.<stream>.unrealized_pnl            -- open P&L on this position
-POSITION.<stream>.holding_duration          -- ms since the position was opened
+POSITION.<stream>.holding_duration          -- seconds since the position was opened
 POSITION.<stream>.mfe                       -- max favorable excursion of the PRIMARY leg (price units)
 ```
 

@@ -257,6 +257,50 @@ class ExprCompilerStateTest {
     }
 
     @Test
+    fun `POSITION_HOLDING_DURATION is seconds since the position opened`() {
+        val pos =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String) =
+                    Position("BACKTEST:BTCUSDT", BigDecimal("1"), BigDecimal("100"), openedAt = 0L)
+
+                override fun allPositions() = emptyMap<String, Position>()
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext =
+                    testStrategyContext(
+                        clock = com.qkt.common.FixedClock(time = 7_200_000L),
+                        positions = pos,
+                    ),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_HOLDING_DURATION, "btc"))
+                .evaluate(ec) as Value.Num
+        // Open for two hours of clock time -> 7200 seconds, not 7,200,000 ms.
+        assertThat(v.v).isEqualByComparingTo("7200")
+    }
+
+    @Test
+    fun `POSITION_HOLDING_DURATION is zero when flat`() {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_HOLDING_DURATION, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("0")
+    }
+
+    @Test
     fun `POSITION_MFE reads from positions view mfeFor`() {
         val pos =
             object : StrategyPositionView {
