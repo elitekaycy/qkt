@@ -69,6 +69,26 @@ data class Config(
     val maxDailyLoss: BigDecimal
         get() = risk["max_daily_loss"]?.let(::BigDecimal) ?: DEFAULT_MAX_DAILY_LOSS
 
+    /**
+     * Per-order quantity cap (`risk.max_order_qty`), mandatory with a shipped default —
+     * the FIA §1.1 backstop a sizing bug cannot talk its way past. Always on.
+     */
+    val maxOrderQty: BigDecimal
+        get() = risk["max_order_qty"]?.let(::BigDecimal) ?: DEFAULT_MAX_ORDER_QTY
+
+    /** Per-order notional cap in account currency (`risk.max_order_notional`); always on. */
+    val maxOrderNotional: BigDecimal
+        get() = risk["max_order_notional"]?.let(::BigDecimal) ?: DEFAULT_MAX_ORDER_NOTIONAL
+
+    /**
+     * Price collar (`risk.price_collar_pct`, percent): an order's explicit price must be
+     * within this band of the last seen market price (MiFID II RTS 6). Always on.
+     */
+    val priceCollarFrac: BigDecimal
+        get() =
+            pctFraction(risk["price_collar_pct"])
+                ?: DEFAULT_PRICE_COLLAR_FRAC
+
     /** Total-drawdown halt threshold as a fraction (config `max_drawdown_pct` is a percent), or null if unset. */
     val maxDrawdownPct: BigDecimal?
         get() = pctFraction(risk["max_drawdown_pct"])
@@ -124,6 +144,18 @@ data class Config(
          * an explicit `risk.max_daily_loss` in `qkt.config.yaml`.
          */
         val DEFAULT_MAX_DAILY_LOSS: BigDecimal = BigDecimal("1000")
+
+        /** Default per-order quantity cap; see [com.qkt.risk.rules.PreTradeControls]. */
+        val DEFAULT_MAX_ORDER_QTY: BigDecimal =
+            com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY
+
+        /** Default per-order notional cap; see [com.qkt.risk.rules.PreTradeControls]. */
+        val DEFAULT_MAX_ORDER_NOTIONAL: BigDecimal =
+            com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL
+
+        /** Default price collar fraction; see [com.qkt.risk.rules.PreTradeControls]. */
+        val DEFAULT_PRICE_COLLAR_FRAC: BigDecimal =
+            com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC
 
         /**
          * Standard locations qkt commands look for `qkt.config.yaml` when no explicit

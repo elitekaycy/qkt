@@ -163,7 +163,14 @@ class ReplayEngine(
         // strategy that would halt live halts at the same point in its backtest.
         val riskState = RiskState(pnl, strategyPnL, clock, bus, startingBalance)
         riskState.warmupComplete = true
-        val riskEngine = RiskEngine(rules, haltRules, positions, riskState)
+        // The same always-on pre-trade controls live runs (#393): a backtest must show
+        // the rejection a live deploy would produce, not sail past it.
+        val preTradeRules =
+            com.qkt.risk.rules.PreTradeControls.standard(
+                prices = priceTracker,
+                instruments = instruments,
+            )
+        val riskEngine = RiskEngine(rules + preTradeRules, haltRules, positions, riskState)
         bus.subscribe<com.qkt.events.RiskEvent.Halted> { halts.add(it) }
 
         collector =
