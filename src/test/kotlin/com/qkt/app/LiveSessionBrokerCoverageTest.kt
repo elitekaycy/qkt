@@ -115,6 +115,73 @@ class LiveSessionBrokerCoverageTest {
     }
 
     @Test
+    fun `start refuses when broker positions cannot be read at reconcile`() {
+        // A transient venue error must not read as "flat" — the session retries and,
+        // without one clean read, refuses to start instead of trading on assumed state.
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
+            )
+        var reads = 0
+        val failingFactory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
+                    reads++
+                    error("gateway read failed")
+                }
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:XAUUSD"),
+                clock = FixedClock(time = 0L),
+                brokerFactories = mapOf("exness" to failingFactory),
+                reconcileReadBackoffMs = 1L,
+            )
+
+        val ex = catchThrowable { session.start() }
+        assertThat(ex).isInstanceOf(ReconcileException::class.java)
+        assertThat(ex.message).contains("refusing to start")
+        assertThat(reads).isEqualTo(5)
+    }
+
+    @Test
+    fun `reconcile read succeeds after transient failures and the session starts`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
+            )
+        var reads = 0
+        val flakyFactory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
+                    reads++
+                    if (reads < 3) error("gateway read failed")
+                    return emptyMap()
+                }
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:XAUUSD"),
+                clock = FixedClock(time = 0L),
+                brokerFactories = mapOf("exness" to flakyFactory),
+                reconcileReadBackoffMs = 1L,
+            )
+
+        val handle = session.start()
+        assertThat(reads).isEqualTo(3)
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
     fun `start does not throw when every declared prefix has a configured factory`() {
         val strategy =
             StubDslStrategy(
