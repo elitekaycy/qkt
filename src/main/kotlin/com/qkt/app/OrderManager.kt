@@ -29,9 +29,9 @@ import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.execution.withStrategyId
 import com.qkt.marketdata.MarketPriceProvider
+import com.qkt.marketdata.Tick
 import com.qkt.marketdata.buyExecPrice
 import com.qkt.marketdata.sellExecPrice
-import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 

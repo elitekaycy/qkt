@@ -716,7 +716,9 @@ class LiveSession(
         // tick backlog.
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         val tickQueue = java.util.concurrent.ArrayBlockingQueue<Inbound.FeedTick>(TICK_QUEUE_CAPACITY)
-        val droppedInboundTicks = java.util.concurrent.atomic.AtomicLong(0)
+        val droppedInboundTicks =
+            java.util.concurrent.atomic
+                .AtomicLong(0)
 
         fun postTick(msg: Inbound.FeedTick) {
             while (!tickQueue.offer(msg)) {
