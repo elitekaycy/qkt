@@ -93,6 +93,7 @@ class StrategyHandle(
             com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
         private val priceCollarFrac: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+        private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
         private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
         /**
          * Telegram alert sink shared across every strategy this daemon hosts. Default
@@ -174,6 +175,7 @@ class StrategyHandle(
                     maxOrderQty = maxOrderQty,
                     maxOrderNotional = maxOrderNotional,
                     priceCollarFrac = priceCollarFrac,
+                    marginFloorPct = marginFloorPct,
                 ).start()
 
             val server =

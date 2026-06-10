@@ -89,6 +89,10 @@ data class Config(
             pctFraction(risk["price_collar_pct"])
                 ?: DEFAULT_PRICE_COLLAR_FRAC
 
+    /** Pre-entry margin floor percent (`risk.margin_floor_pct`); 0 disables. Default 200. */
+    val marginFloorPct: BigDecimal
+        get() = risk["margin_floor_pct"]?.let(::BigDecimal) ?: BigDecimal("200")
+
     /** Total-drawdown halt threshold as a fraction (config `max_drawdown_pct` is a percent), or null if unset. */
     val maxDrawdownPct: BigDecimal?
         get() = pctFraction(risk["max_drawdown_pct"])

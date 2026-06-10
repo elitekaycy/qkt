@@ -179,6 +179,22 @@ class MT5Broker(
 
     override fun supports(symbol: String): Boolean = true
 
+    @Volatile
+    private var marginLevelCache: Pair<Long, java.math.BigDecimal?>? = null
+
+    /**
+     * Venue margin level, cached for [MARGIN_CACHE_TTL_MS] — the margin floor consults
+     * this on every entry, and a synchronous /account round-trip per order would put
+     * gateway latency on the approve path.
+     */
+    override fun marginLevel(): java.math.BigDecimal? {
+        val now = clock.now()
+        marginLevelCache?.let { (at, value) -> if (now - at < MARGIN_CACHE_TTL_MS) return value }
+        val level = runCatching { client.getAccount()?.marginLevel }.getOrNull()
+        marginLevelCache = now to level
+        return level
+    }
+
     private fun publishGatewayUnreachable(consecutiveFailures: Int) {
         bus.publish(
             BrokerEvent.GatewayUnreachable(
@@ -1049,5 +1065,8 @@ class MT5Broker(
 
         /** Venue queries before giving up on resolving an UNKNOWN send outcome. */
         private const val UNKNOWN_RESOLVE_ATTEMPTS: Int = 4
+
+        /** Margin-level cache TTL — fresh enough for a floor check, cheap on the gateway. */
+        private const val MARGIN_CACHE_TTL_MS: Long = 5_000L
     }
 }
