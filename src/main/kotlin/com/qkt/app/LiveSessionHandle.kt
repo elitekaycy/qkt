@@ -28,6 +28,14 @@ interface LiveSessionHandle {
     /** Symbols whose market data is currently stale, with quote age in ms (#395). */
     fun staleSymbols(): Map<String, Long> = emptyMap()
 
+    /**
+     * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol net position
+     * deltas plus equity on both sides. Run daily via `qkt reconcile` — slow silent
+     * state drift (the hedge-accumulation bug class) is exactly what this catches.
+     * Default null for handles without a broker view.
+     */
+    fun reconcile(): ReconcileReport? = null
+
     /** Initiates graceful shutdown. Use [awaitTermination] to wait for completion. */
     fun stop()
 
@@ -97,4 +105,20 @@ data class SessionPnl(
     companion object {
         val ZERO = SessionPnl(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
     }
+}
+
+/** One symbol where engine and broker disagree on net quantity. */
+data class PositionDelta(
+    val symbol: String,
+    val engineQty: java.math.BigDecimal,
+    val brokerQty: java.math.BigDecimal,
+)
+
+/** Result of an engine-vs-broker reconcile pass. Clean when [deltas] is empty. */
+data class ReconcileReport(
+    val deltas: List<PositionDelta>,
+    val engineEquity: java.math.BigDecimal,
+    val brokerEquity: java.math.BigDecimal?,
+) {
+    val clean: Boolean get() = deltas.isEmpty()
 }

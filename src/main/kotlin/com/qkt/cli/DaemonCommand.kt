@@ -188,6 +188,7 @@ class DaemonCommand(
                     marginFloorPct = cfg.marginFloorPct,
                     measuredUsageHours = cfg.measuredUsageHours,
                     measuredUsageMaxQty = cfg.measuredUsageMaxQty,
+                    journalRoot = stateDir.stateRoot.resolve("journal"),
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,

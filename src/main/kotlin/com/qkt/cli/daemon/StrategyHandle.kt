@@ -103,6 +103,8 @@ class StrategyHandle(
         private val measuredUsageHours: Long = 0L,
         private val measuredUsageMaxQty: java.math.BigDecimal =
             com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
+        /** Order-event journal root; null disables journaling (tests). */
+        private val journalRoot: java.nio.file.Path? = null,
         private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
         /**
          * Telegram alert sink shared across every strategy this daemon hosts. Default
@@ -187,6 +189,10 @@ class StrategyHandle(
                     marginFloorPct = marginFloorPct,
                     measuredUsageHours = measuredUsageHours,
                     measuredUsageMaxQty = measuredUsageMaxQty,
+                    journal =
+                        journalRoot?.let {
+                            com.qkt.observe.OrderJournal(it, com.qkt.common.SystemClock())
+                        },
                 ).start()
 
             val server =
