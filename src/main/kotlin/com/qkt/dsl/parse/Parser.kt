@@ -183,6 +183,7 @@ class Parser(
             }
         }
 
+        requireEof()
         if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
         return try {
             ParseResult.Success(
@@ -324,6 +325,7 @@ class Parser(
                 emptyList()
             }
 
+        requireEof()
         if (errors.isNotEmpty()) return ParseResult.Failure(errors.toList())
         return ParseResult.Success(
             StrategyAst(
@@ -337,6 +339,26 @@ class Parser(
                 rules = rules,
                 syncGroups = syncGroups,
                 schedules = schedules,
+            ),
+        )
+    }
+
+    /**
+     * Records an error unless every token has been consumed. Without this, the first
+     * unrecognized top-level token would silently end parsing — a strategy with a
+     * typo (`RULE` for `RULES`) or a misplaced block would deploy "ok" with whole
+     * sections missing.
+     */
+    private fun requireEof() {
+        if (peek().kind == TokenKind.EOF) return
+        val t = peek()
+        errors.add(
+            ParseError(
+                line = t.line,
+                col = t.col,
+                message =
+                    "unexpected '${t.lexeme}' after the last recognized block — " +
+                        "everything from here on would be silently ignored",
             ),
         )
     }
