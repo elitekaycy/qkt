@@ -654,6 +654,27 @@ class LiveSession(
             }
         }
 
+        // A strategy/indicator/handler exception must never kill this thread silently:
+        // log with full context, raise a CRITICAL alert, halt the session's trading
+        // (PERSISTENT — an operator resumes after diagnosing), and keep draining the
+        // queue so exits, halts, and flattens still work.
+        fun onEngineFault(
+            stage: String,
+            t: Throwable,
+        ) {
+            log.error("engine loop fault during {} — halting trading, loop stays alive", stage, t)
+            runCatching { riskState.halt("engine fault: $stage: ${t.message}") }
+            runCatching {
+                notifier.notify(
+                    NotificationEvent.StrategyError(
+                        strategyId = strategies.firstOrNull()?.first.orEmpty(),
+                        message = "engine loop fault during $stage: $t",
+                        timestamp = clock.now(),
+                    ),
+                )
+            }.onFailure { n -> log.warn("[notify] StrategyError alert failed", n) }
+        }
+
         // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
         // positions, and the schedule runner. The tick feed, the heartbeat, the broker pollers
         // (via the bus), and the HTTP flatten all POST onto [inbound]; this loop drains it
@@ -664,16 +685,29 @@ class LiveSession(
                 try {
                     while (running.get()) {
                         when (val msg = inbound.take()) {
-                            is Inbound.FeedTick -> {
-                                // Drive event-time from the tick being PROCESSED (not when it was
-                                // read off the feed) so a deterministic clock stays in lockstep with
-                                // processing — preserving backtest==live. No-op for SystemClock.
-                                (clock as? com.qkt.common.MutableClock)?.advanceTo(msg.tick.timestamp)
-                                pipeline.ingest(msg.tick)
-                            }
-                            is Inbound.BusEvent -> bus.publish(msg.event)
-                            is Inbound.Heartbeat -> runCatching { pipeline.scheduleHeartbeat(msg.nowMs) }
-                            Inbound.Flatten -> runCatching { doFlatten() }
+                            is Inbound.FeedTick ->
+                                try {
+                                    // Drive event-time from the tick being PROCESSED (not when it was
+                                    // read off the feed) so a deterministic clock stays in lockstep with
+                                    // processing — preserving backtest==live. No-op for SystemClock.
+                                    (clock as? com.qkt.common.MutableClock)?.advanceTo(msg.tick.timestamp)
+                                    pipeline.ingest(msg.tick)
+                                } catch (e: Exception) {
+                                    onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
+                                }
+                            is Inbound.BusEvent ->
+                                try {
+                                    bus.publish(msg.event)
+                                } catch (e: Exception) {
+                                    onEngineFault("event ${msg.event::class.simpleName}", e)
+                                }
+                            is Inbound.Heartbeat ->
+                                runCatching { pipeline.scheduleHeartbeat(msg.nowMs) }
+                                    .onFailure { t -> onEngineFault("schedule heartbeat", t) }
+                            Inbound.Flatten ->
+                                // A failed FLATTEN is the emergency path failing — the loudest case.
+                                runCatching { doFlatten() }
+                                    .onFailure { t -> onEngineFault("flatten", t) }
                             // Feed ended (finite source drained): stop AFTER draining everything
                             // already queued ahead of this sentinel, so no tick is dropped.
                             Inbound.FeedEnded -> running.set(false)
