@@ -106,6 +106,11 @@ class TradingPipeline(
      * Wired by [com.qkt.app.LiveSession] from the MT5 broker profile.
      */
     val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? = null,
+    /**
+     * Runaway-strategy circuit breaker (#396). Non-null in live sessions; backtests
+     * leave it null so high-frequency historical churn doesn't trip live thresholds.
+     */
+    private val runawayBreaker: com.qkt.risk.RunawayBreaker? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
@@ -270,6 +275,7 @@ class TradingPipeline(
             strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(costs))
             tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized, e.symbol)
             riskState.onFill(e.strategyId, stratRealized.subtract(costs))
+            if (stratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
 
             val trade =
@@ -307,6 +313,7 @@ class TradingPipeline(
             strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(commission))
             riskState.onFill(e.strategyId, stratRealized)
         }
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
             strategyPositions.forgetPending(e.strategyId, e.clientOrderId)

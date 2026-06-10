@@ -123,6 +123,9 @@ class LiveSession(
         com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
     private val priceCollarFrac: java.math.BigDecimal =
         com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+    /** Runaway breaker thresholds (#396); zero disables a counter. */
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
@@ -697,6 +700,13 @@ class LiveSession(
                 source = source,
                 candleWindow = candleWindow,
                 candleHub = pipelineCandleHub,
+                runawayBreaker =
+                    com.qkt.risk.RunawayBreaker(
+                        clock = clock,
+                        riskState = riskState,
+                        maxRoundTrips = runawayMaxRoundTrips,
+                        maxRejections = runawayMaxRejections,
+                    ),
                 onFilled = { trade, realized, strategyId ->
                     trades.add(trade)
                     dailyTracker.recordTrade(strategyId)
