@@ -78,6 +78,41 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `standalone deploy seeds the strategy starting balance from initialBalance`() {
+        // No startingBalances map (that's the portfolio path) — a standalone deploy
+        // must still give ACCOUNT.equity its configured balance, or % OF EQUITY
+        // sizing runs on zero.
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val equities = mutableListOf<java.math.BigDecimal>()
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    equities.add(ctx.pnl.equity())
+                }
+            }
+        val session =
+            LiveSession(
+                strategies = listOf("solo" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                initialBalance = Money.of("10000"),
+            )
+
+        val handle = session.start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+        assertThat(equities).isNotEmpty
+        assertThat(equities.first()).isEqualByComparingTo(Money.of("10000"))
+    }
+
+    @Test
     fun `running becomes false after stop`() {
         val src = InMemoryMarketSource()
         src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
