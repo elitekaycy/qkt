@@ -19,6 +19,7 @@ internal fun runMain(argv: Array<String>): Int {
             "stop" -> StopCommand(args).run()
             "start" -> StartCommand(args).run()
             "halt" -> HaltCommand(args).run()
+            "kill" -> KillCommand(args).run()
             "resume" -> ResumeCommand(args).run()
             "brokers" -> BrokersCommand(args).run()
             "editor" -> EditorCommand(args).run()

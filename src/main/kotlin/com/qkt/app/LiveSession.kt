@@ -724,6 +724,17 @@ class LiveSession(
         bus.subscribe<RiskEvent.Halted> { ev ->
             dailyTracker.recordHalt(ev.strategyId ?: ownerStrategyId)
         }
+        // A halt is only a kill switch if it also takes down what is RESTING at the
+        // venue: pendings (incl. STACK_AT layers) left alive keep filling into exactly
+        // the situation the halt declared bad (FIA §1.11, RTS 6). Runs on the engine
+        // thread via the bus reroute, so OrderManager state stays single-threaded.
+        bus.subscribe<RiskEvent.Halted> { ev ->
+            log.warn("halt ({}): cancelling venue-resting pendings for {} symbol(s)", ev.reason, symbols.size)
+            for (symbol in symbols) {
+                runCatching { pipeline.orderManager.cancelPendingForSymbol(symbol) }
+                    .onFailure { e -> log.error("halt pending-cancel failed for {}: {}", symbol, e.message) }
+            }
+        }
 
         if (perStreamSpecs.isNotEmpty()) {
             IndicatorWarmer(source, pipeline).warmup(perStreamSpecs, now)
