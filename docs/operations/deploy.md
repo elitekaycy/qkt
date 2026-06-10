@@ -132,6 +132,22 @@ ssh -L 3020:127.0.0.1:3020 root@173.249.58.247
 
 VNC password lives in `MT5_VNC_PASSWORD` in Dokploy env.
 
+## Trust boundary and host clock
+
+Two assumptions the deployment relies on — written down so a future change can't
+silently break them:
+
+- **Control plane and gateway are loopback-only and unauthenticated.** The daemon's
+  control HTTP (deploy/halt/kill/flatten) binds `127.0.0.1`, and the mt5-gateway HTTP
+  has no auth of its own. That is safe exactly as long as nothing rebinds them to a
+  routable interface or port-forwards them. Anyone who can reach those ports can
+  submit orders. If remote control is ever needed, put an authenticated reverse proxy
+  in front — do not just change the bind address.
+- **The host clock must be NTP-disciplined** (`chrony` on the prod host). `SCHEDULE`
+  firing and the daily-PnL UTC-midnight rollover use host time; candle boundaries use
+  broker tick time and are immune. A drifting clock fires schedules at the wrong time
+  and rolls daily loss budgets early or late.
+
 ## Disaster: full host loss
 
 1. Provision a new host (any Docker Swarm / Compose-capable Linux).

@@ -9,6 +9,21 @@ object FxCalendar : TradingCalendar {
 
     private const val SESSION_START_UTC_HOUR = 22
 
+    /**
+     * FX trades ~24h x 5 days: 5/7 of the year's minutes. Powers Sharpe
+     * annualization for FX backtests; e.g. 1m windows -> ~375,686 periods/year.
+     */
+    override fun tradingPeriodsPerYear(window: com.qkt.candles.TimeWindow): java.math.BigDecimal {
+        val minutesPerYear =
+            java.math
+                .BigDecimal("525960")
+                .multiply(java.math.BigDecimal(5))
+                .divide(java.math.BigDecimal(7), Money.CONTEXT)
+        val windowMinutes =
+            java.math.BigDecimal(window.durationMs).divide(java.math.BigDecimal("60000"), Money.CONTEXT)
+        return minutesPerYear.divide(windowMinutes, Money.CONTEXT)
+    }
+
     override fun isInSession(
         symbol: String,
         t: Instant,

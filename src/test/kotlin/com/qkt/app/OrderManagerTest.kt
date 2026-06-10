@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.LogBroker
+import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -17,6 +18,40 @@ import org.junit.jupiter.api.Test
 
 class OrderManagerTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+
+    @Test
+    fun `a late broker event cannot resurrect a terminal order`() {
+        // A FILLED order is a sink: a stale OrderAccepted replayed after the fill must
+        // not flip it back to a live state (which would re-arm triggers downstream).
+        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+        val clock = FixedClock(time = 0L)
+        val tracker = MarketPriceTracker()
+        tracker.update("EURUSD", Money.of("1.10"))
+        val broker = PaperBroker(bus, clock, tracker)
+        val om = OrderManager(broker, bus, tracker, clock)
+
+        om.submit(
+            OrderRequest.Market(
+                id = "m-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        assertThat(om.getOrder("m-1")?.state).isEqualTo(OrderState.FILLED)
+
+        // Late/duplicate accept event for the same order.
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = "m-1",
+                brokerOrderId = "b-1",
+                timestamp = 5L,
+            ),
+        )
+        assertThat(om.getOrder("m-1")?.state).isEqualTo(OrderState.FILLED)
+    }
 
     @Test
     fun `submit Market goes to broker and tracks state through accept`() {

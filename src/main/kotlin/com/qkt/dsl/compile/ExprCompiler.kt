@@ -562,8 +562,8 @@ class ExprCompiler(
             BinOp.SUB -> numericBinary(l, r) { a, b -> a.subtract(b, Money.CONTEXT) }
             BinOp.MUL -> numericBinary(l, r) { a, b -> a.multiply(b, Money.CONTEXT) }
             BinOp.DIV -> numericBinary(l, r) { a, b -> a.divide(b, Money.CONTEXT) }
-            BinOp.AND -> booleanBinary(l, r) { a, b -> a && b }
-            BinOp.OR -> booleanBinary(l, r) { a, b -> a || b }
+            BinOp.AND -> kleeneAnd(l, r)
+            BinOp.OR -> kleeneOr(l, r)
         }
     }
 
@@ -578,15 +578,38 @@ class ExprCompiler(
             if (lv !is Value.Num || rv !is Value.Num) Value.Undefined else Value.Num(op(lv.v, rv.v))
         }
 
-    private fun booleanBinary(
+    // Kleene three-valued logic: a side that is Undefined (warming indicator, missing
+    // cross-stream bar) only poisons the result when it could change it. TRUE OR x is
+    // TRUE whatever x turns out to be; FALSE AND x is FALSE. Without this, a session
+    // gate like `warm_signal OR fallback` is silently suppressed for the whole warmup.
+    private fun kleeneAnd(
         l: CompiledExpr,
         r: CompiledExpr,
-        op: (Boolean, Boolean) -> Boolean,
     ): CompiledExpr =
         CompiledExpr { ctx ->
             val lv = l.evaluate(ctx)
             val rv = r.evaluate(ctx)
-            if (lv !is Value.Bool || rv !is Value.Bool) Value.Undefined else Value.Bool(op(lv.v, rv.v))
+            when {
+                lv is Value.Bool && !lv.v -> Value.Bool(false)
+                rv is Value.Bool && !rv.v -> Value.Bool(false)
+                lv is Value.Bool && rv is Value.Bool -> Value.Bool(true)
+                else -> Value.Undefined
+            }
+        }
+
+    private fun kleeneOr(
+        l: CompiledExpr,
+        r: CompiledExpr,
+    ): CompiledExpr =
+        CompiledExpr { ctx ->
+            val lv = l.evaluate(ctx)
+            val rv = r.evaluate(ctx)
+            when {
+                lv is Value.Bool && lv.v -> Value.Bool(true)
+                rv is Value.Bool && rv.v -> Value.Bool(true)
+                lv is Value.Bool && rv is Value.Bool -> Value.Bool(false)
+                else -> Value.Undefined
+            }
         }
 
     private fun compileUnary(

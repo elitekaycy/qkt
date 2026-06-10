@@ -119,6 +119,9 @@ class TradingPipeline(
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
+    /** The primary-window aggregator (candle events on the bus); null when no window configured. */
+    private val windowAggregator: CandleAggregator?
+
     val orderManager: OrderManager =
         OrderManager(
             broker,
@@ -171,7 +174,7 @@ class TradingPipeline(
             "Strategy ID must be non-blank"
         }
 
-        if (candleWindow != null) CandleAggregator(bus, candleWindow)
+        windowAggregator = if (candleWindow != null) CandleAggregator(bus, candleWindow) else null
 
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick.symbol, e.tick.price) }
 
@@ -388,6 +391,11 @@ class TradingPipeline(
      */
     fun scheduleHeartbeat(nowMs: Long) {
         scheduleRunner.tick(nowMs)
+        // Time-driven candle close: a quiet symbol's bar must close when its window
+        // ends, not when the next tick eventually arrives (live only — the heartbeat
+        // doesn't run in backtest, where event-time is the only clock).
+        windowAggregator?.flushClosed(nowMs)
+        candleHub.flushClosed(nowMs)
     }
 
     fun ingestForWarmup(tick: Tick) {
@@ -551,6 +559,21 @@ class TradingPipeline(
                     )
                 },
             )
+        // Restart path: rebuild engines for parents that were open when the process
+        // died — the restored leg supplies identity, the persisted tier state supplies
+        // thresholds, windows, progress, and the original open-time anchor (#390).
+        runCatching {
+            for ((parentLegId, state) in persistor.loadPendingStacks(strategyId)) {
+                val leg = strategyPositions.legById(strategyId, parentLegId) ?: continue
+                orch.restoreEngine(
+                    parentLegId = parentLegId,
+                    parentSymbol = leg.symbol,
+                    parentSide = leg.side,
+                    parentEntryPrice = leg.entryPrice,
+                    persisted = state,
+                )
+            }
+        }.onFailure { e -> log.warn("stack tier restore failed for {}: {}", strategyId, e.message) }
         bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe

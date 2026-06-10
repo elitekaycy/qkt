@@ -222,6 +222,7 @@ class FileStatePersistor(
                             primaryLegId = primaryLegId,
                             primaryClientOrderId = state.primaryClientOrderId,
                             tiers = state.tiers.map { TierDto.fromDomain(it) },
+                            openedAtMs = state.openedAtMs,
                         )
                     },
             )
@@ -248,6 +249,7 @@ class FileStatePersistor(
                 PersistedTierState(
                     primaryClientOrderId = entry.primaryClientOrderId,
                     tiers = entry.tiers.map { it.toDomain() },
+                    openedAtMs = entry.openedAtMs,
                 )
         }
     }
@@ -664,6 +666,7 @@ private data class PrimaryTierStateDto(
     val primaryLegId: String,
     val primaryClientOrderId: String,
     val tiers: List<TierDto>,
+    val openedAtMs: Long? = null,
 )
 
 @Serializable
@@ -677,6 +680,7 @@ private data class TierDto(
     val fired: Boolean,
     val firedAt: Long? = null,
     val firedLegId: String? = null,
+    val abandoned: Boolean = false,
 ) {
     fun toDomain(): PersistedTier =
         PersistedTier(
@@ -689,6 +693,7 @@ private data class TierDto(
             fired = fired,
             firedAt = firedAt,
             firedLegId = firedLegId,
+            abandoned = abandoned,
         )
 
     companion object {
@@ -703,6 +708,7 @@ private data class TierDto(
                 fired = t.fired,
                 firedAt = t.firedAt,
                 firedLegId = t.firedLegId,
+                abandoned = t.abandoned,
             )
     }
 }

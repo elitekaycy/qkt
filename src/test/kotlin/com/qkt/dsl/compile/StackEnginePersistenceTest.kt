@@ -86,4 +86,109 @@ class StackEnginePersistenceTest {
         assertThat(second["leg-primary"]!!.tiers[0].fired).isTrue
         assertThat(second["leg-primary"]!!.tiers[1].fired).isTrue
     }
+
+    @Test
+    fun `restoreEngine rebuilds tier progression for an already-open parent`() {
+        // Session 1: parent opens at t=1000, tier 0 (threshold 10) fires, tier 1
+        // (threshold 30) does not. Process dies.
+        val persistor = NoopStatePersistor()
+        val clock = FixedClock(time = 1_000L)
+        val session1 =
+            StackEngine(
+                parentLegId = "leg-primary",
+                parentSymbol = "XAUUSDm",
+                parentSide = Side.BUY,
+                parentEntryPrice = BigDecimal("4700"),
+                tiers = listOf(tier("10"), tier("30", withinMs = 1_800_000L)),
+                clock = clock,
+                emit = {},
+                strategyId = "hedge",
+                persistor = persistor,
+                primaryClientOrderId = "c-primary",
+            )
+        session1.onTick(BigDecimal("4711"))
+        assertThat(session1.firedCount()).isEqualTo(1)
+
+        // Session 2 (restart 10 minutes later): the orchestrator rebuilds the engine
+        // from persisted state + the restored leg.
+        clock.time = 601_000L
+        val orch =
+            StackOrchestrator(
+                clock = clock,
+                strategyId = "hedge",
+                persistor = persistor,
+                emit = {},
+            )
+        val persisted = persistor.loadPendingStacks("hedge").getValue("leg-primary")
+        orch.restoreEngine(
+            parentLegId = "leg-primary",
+            parentSymbol = "XAUUSDm",
+            parentSide = Side.BUY,
+            parentEntryPrice = BigDecimal("4700"),
+            persisted = persisted,
+        )
+        assertThat(orch.hasEngineFor("leg-primary")).isTrue()
+
+        val fired = mutableListOf<Signal>()
+        val orch2 =
+            StackOrchestrator(
+                clock = clock,
+                strategyId = "hedge",
+                persistor = persistor,
+                emit = { fired.add(it) },
+            )
+        orch2.restoreEngine(
+            parentLegId = "leg-primary",
+            parentSymbol = "XAUUSDm",
+            parentSide = Side.BUY,
+            parentEntryPrice = BigDecimal("4700"),
+            persisted = persisted,
+        )
+        // Tier 0 already fired pre-restart: a re-cross of its threshold must NOT
+        // re-fire it. Tier 1 is still armed and its WITHIN window anchors at the
+        // ORIGINAL open (t=1000), not the restart.
+        orch2.onTick("XAUUSDm", BigDecimal("4712"))
+        assertThat(fired).isEmpty()
+        orch2.onTick("XAUUSDm", BigDecimal("4731")) // MFE 31 > 30 -> tier 1 fires
+        assertThat(fired).hasSize(1)
+    }
+
+    @Test
+    fun `restored WITHIN windows count from the original open, not the restart`() {
+        val persistor = NoopStatePersistor()
+        val clock = FixedClock(time = 1_000L)
+        StackEngine(
+            parentLegId = "leg-p2",
+            parentSymbol = "XAUUSDm",
+            parentSide = Side.BUY,
+            parentEntryPrice = BigDecimal("4700"),
+            tiers = listOf(tier("10", withinMs = 60_000L)),
+            clock = clock,
+            emit = {},
+            strategyId = "hedge",
+            persistor = persistor,
+            primaryClientOrderId = "c-p2",
+        )
+
+        // Restart 10 minutes later: the 60s window expired during downtime.
+        clock.time = 601_000L
+        val fired = mutableListOf<Signal>()
+        val orch =
+            StackOrchestrator(
+                clock = clock,
+                strategyId = "hedge",
+                persistor = persistor,
+                emit = { fired.add(it) },
+            )
+        orch.restoreEngine(
+            parentLegId = "leg-p2",
+            parentSymbol = "XAUUSDm",
+            parentSide = Side.BUY,
+            parentEntryPrice = BigDecimal("4700"),
+            persisted = persistor.loadPendingStacks("hedge").getValue("leg-p2"),
+        )
+        orch.onTick("XAUUSDm", BigDecimal("4720"))
+        // Expired window -> abandoned, never a late fire into dead context.
+        assertThat(fired).isEmpty()
+    }
 }

@@ -71,19 +71,33 @@ class StackEngine(
     private val primaryClientOrderId: String = parentLegId,
     initialFiredTierIndices: Set<Int> = emptySet(),
     initialFiredLegIds: Map<Int, String> = emptyMap(),
+    initialAbandonedTierIndices: Set<Int> = emptySet(),
+    /**
+     * The parent's ORIGINAL open time when restoring after a restart — MFE `WITHIN`
+     * windows keep counting from the real open, not from the restart. Null (fresh
+     * fill) anchors at now.
+     */
+    initialOpenedAtMs: Long? = null,
 ) {
     private val mfeTracker = MfeTracker(parentSide, parentEntryPrice)
     private val firedTierIndices: MutableSet<Int> = initialFiredTierIndices.toMutableSet()
     private val firedAtBy: MutableMap<Int, Long> = mutableMapOf()
     private val firedLegIdBy: MutableMap<Int, String> = initialFiredLegIds.toMutableMap()
-    private val abandonedTierIndices: MutableSet<Int> = mutableSetOf()
-    private val openedAt: Long = clock.now()
+    private val abandonedTierIndices: MutableSet<Int> = initialAbandonedTierIndices.toMutableSet()
+    private val openedAt: Long = initialOpenedAtMs ?: clock.now()
+
+    init {
+        // Persist the initial snapshot so a restart knows the window anchor even if no
+        // tier has fired yet. Noop persistor (backtests) makes this free.
+        if (strategyId.isNotBlank()) runCatching { persistTiers() }
+    }
 
     fun onTick(price: BigDecimal) {
         mfeTracker.onTick(price)
         val mfe = mfeTracker.value()
         val elapsed = clock.now() - openedAt
         var firedAny = false
+        var abandonedAny = false
         for ((idx, tier) in tiers.withIndex()) {
             if (idx in firedTierIndices || idx in abandonedTierIndices) continue
             when {
@@ -97,10 +111,11 @@ class StackEngine(
                 }
                 elapsed > tier.withinMs -> {
                     abandonedTierIndices += idx
+                    abandonedAny = true
                 }
             }
         }
-        if (firedAny && strategyId.isNotBlank()) {
+        if ((firedAny || abandonedAny) && strategyId.isNotBlank()) {
             runCatching { persistTiers() }
         }
     }
@@ -118,12 +133,14 @@ class StackEngine(
                     fired = idx in firedTierIndices,
                     firedAt = firedAtBy[idx],
                     firedLegId = firedLegIdBy[idx],
+                    abandoned = idx in abandonedTierIndices,
                 )
             }
         val state =
             com.qkt.persistence.PersistedTierState(
                 primaryClientOrderId = primaryClientOrderId,
                 tiers = persistedTiers,
+                openedAtMs = openedAt,
             )
         persistor.savePendingStacks(strategyId, mapOf(parentLegId to state))
     }
