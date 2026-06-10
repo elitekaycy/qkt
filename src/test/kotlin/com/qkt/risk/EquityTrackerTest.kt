@@ -107,4 +107,45 @@ class EquityTrackerTest {
         tracker.updateStrategies()
         assertThat(tracker.peakEquityFor("A")).isEqualByComparingTo(BigDecimal("2000"))
     }
+
+    @Test
+    fun `trailing drawdown measures giveback against peak equity, not peak profit`() {
+        // $10k account, $200 peak profit, $100 giveback. On a 0-based PnL series this
+        // read as a 50% drawdown; against true equity it is under 1%.
+        val pnl = FakePnL(BigDecimal("200"), Money.ZERO)
+        val tracker =
+            EquityTracker(
+                pnl,
+                StrategyPnL(StrategyPositionTracker(), MarketPriceTracker()),
+                BigDecimal("10000"),
+            )
+        tracker.update() // equity 10200, peak 10200
+        pnl.realized = BigDecimal("100")
+        tracker.update() // equity 10100
+
+        val dd = DrawdownTracker(tracker).globalDrawdown()
+        val expected =
+            BigDecimal("100")
+                .divide(BigDecimal("10200"), Money.CONTEXT)
+                .setScale(Money.SCALE, Money.ROUNDING)
+        assertThat(dd).isEqualByComparingTo(expected)
+        assertThat(dd).isLessThan(BigDecimal("0.02"))
+    }
+
+    @Test
+    fun `peak starts at the starting balance before any profit exists`() {
+        val pnl = FakePnL(Money.ZERO, Money.ZERO)
+        val tracker =
+            EquityTracker(
+                pnl,
+                StrategyPnL(StrategyPositionTracker(), MarketPriceTracker()),
+                BigDecimal("10000"),
+            )
+        tracker.update()
+        assertThat(tracker.peakEquity()).isEqualByComparingTo(BigDecimal("10000"))
+        // A small immediate loss reads as a small fraction of equity, not a degenerate ratio.
+        pnl.realized = BigDecimal("-100")
+        tracker.update()
+        assertThat(DrawdownTracker(tracker).globalDrawdown()).isEqualByComparingTo(BigDecimal("0.01"))
+    }
 }
