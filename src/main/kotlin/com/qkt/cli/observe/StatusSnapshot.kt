@@ -87,4 +87,6 @@ data class StatusSnapshot(
      * flags a stalled or slow engine thread before backlog turns into dropped ticks.
      */
     val inboundQueueDepth: Int = 0,
+    /** Symbols whose market data is currently stale (quote age past threshold). */
+    val staleSymbols: List<String> = emptyList(),
 )

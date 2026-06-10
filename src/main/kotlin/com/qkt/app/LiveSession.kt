@@ -621,9 +621,13 @@ class LiveSession(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
             )
+        // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
+        // frozen data and drops implausible ticks before they poison indicators.
+        val marketDataGate = com.qkt.marketdata.MarketDataGate(clock)
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRiskRules + preTradeRules,
+                rules + perStrategyRiskRules + preTradeRules +
+                    com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
                 haltRules + perStrategyHaltRules,
                 positions,
                 riskState,
@@ -700,6 +704,7 @@ class LiveSession(
                 source = source,
                 candleWindow = candleWindow,
                 candleHub = pipelineCandleHub,
+                marketDataGate = marketDataGate,
                 runawayBreaker =
                     com.qkt.risk.RunawayBreaker(
                         clock = clock,
@@ -962,6 +967,8 @@ class LiveSession(
                         droppedInboundTicks.get()
 
             override fun inboundQueueDepth(): Int = control.size + tickQueue.size
+
+            override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
 
             override fun stop() {
                 running.set(false)

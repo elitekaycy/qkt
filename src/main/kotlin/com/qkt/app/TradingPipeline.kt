@@ -111,6 +111,11 @@ class TradingPipeline(
      * leave it null so high-frequency historical churn doesn't trip live thresholds.
      */
     private val runawayBreaker: com.qkt.risk.RunawayBreaker? = null,
+    /**
+     * Runtime market-data judgment (#395). Non-null in live sessions; backtests leave
+     * it null — deterministic historical replay is exactly the data it was given.
+     */
+    private val marketDataGate: com.qkt.marketdata.MarketDataGate? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
@@ -347,6 +352,9 @@ class TradingPipeline(
             }
             return
         }
+        // The judgment layer above the floor: an implausible (outlier/crossed) tick is
+        // dropped before it can poison indicators, marks, or triggers (#395).
+        if (marketDataGate?.observe(tick) == com.qkt.marketdata.MarketDataGate.Verdict.OUTLIER) return
         engine.onTick(tick)
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
