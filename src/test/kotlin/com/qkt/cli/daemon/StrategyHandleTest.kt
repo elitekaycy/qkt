@@ -88,7 +88,9 @@ class StrategyHandleTest {
             assertThat(handle.port).isGreaterThan(0)
             assertThat(handle.isRunning()).isTrue
             assertThat(Files.exists(handle.logFile)).isTrue
-            assertThat(handle.logFile).isEqualTo(stateDir.logFile("alpha"))
+            // Log files are named by the DSL strategy id ("example" in valid_strategy.qkt),
+            // not the deploy alias — same key the sift discriminator writes under.
+            assertThat(handle.logFile).isEqualTo(stateDir.logFile("example"))
 
             // The observability /status endpoint reflects this strategy's name.
             val client = OkHttpClient()
