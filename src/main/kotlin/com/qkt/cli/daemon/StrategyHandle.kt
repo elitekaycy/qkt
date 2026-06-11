@@ -161,16 +161,20 @@ class StrategyHandle(
                     source = source,
                     symbols = symbols,
                     candleWindow = candleWindow,
-                    mdcStrategy = name,
+                    // The MDC carries the DSL strategy id, not the deploy name: log
+                    // attribution downstream (per-strategy files, insights) must match
+                    // the id every trading event uses, or consumers see two strategies
+                    // (e.g. deploy "hedge-straddle" vs STRATEGY hedge_straddle).
+                    mdcStrategy = ast.name,
                     onTrade = { trade, realized, _ ->
-                        com.qkt.cli.daemon.logging.withMdc("strategy", name) {
+                        com.qkt.cli.daemon.logging.withMdc("strategy", ast.name) {
                             fillCount.incrementAndGet()
                             ring.append("trade", tradeToJson(trade, realized))
                             TradeLog.emit(trade, realized)
                         }
                     },
                     onSignal = { sig ->
-                        com.qkt.cli.daemon.logging.withMdc("strategy", name) {
+                        com.qkt.cli.daemon.logging.withMdc("strategy", ast.name) {
                             ring.append("signal", signalToJson(sig))
                         }
                     },
