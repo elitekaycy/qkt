@@ -118,9 +118,12 @@ class StrategyHandleMdcRoutingTest {
                 .`as`("at least one 'order accepted' should be logged on qkt-live-engine")
                 .isNotEmpty
             assertThat(accepts).allSatisfy { e ->
+                // The MDC carries the DSL strategy id ("example" from valid_strategy.qkt),
+                // not the deploy name ("alpha") — log attribution must match the id
+                // every trading event uses.
                 assertThat(e.mdcPropertyMap["strategy"])
                     .`as`("MDC.strategy must survive the onSignal callback on qkt-live-engine")
-                    .isEqualTo("alpha")
+                    .isEqualTo("example")
             }
         } finally {
             handle.close()
