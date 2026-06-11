@@ -89,13 +89,16 @@ class LiveSessionInsightsTest {
         val handle = session.start()
         assertThat(handle.awaitTermination(Duration.ofSeconds(5))).isTrue()
 
+        // Re-entrant bus dispatch means order.submit reaches the sink AFTER the nested
+        // fill and trade, possibly in a later batch — collect until every marker landed.
+        val markers = listOf("\"type\":\"signal\"", "\"type\":\"order.submit\"", "\"type\":\"trade\"")
         val bodies = StringBuilder()
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
             val req = server.takeRequest(250, TimeUnit.MILLISECONDS) ?: continue
             assertThat(req.getHeader("Authorization")).isEqualTo("Bearer secret")
             bodies.append(req.body.readUtf8())
-            if (bodies.contains("\"type\":\"trade\"")) break
+            if (markers.all { bodies.contains(it) }) break
         }
         sink.close()
 
