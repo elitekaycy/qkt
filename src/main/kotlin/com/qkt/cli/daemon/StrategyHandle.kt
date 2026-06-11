@@ -113,6 +113,10 @@ class StrategyHandle(
          */
         private val notifier: Notifier = NoopNotifier,
         private val notifyEvents: Set<NotifyEventKind> = emptySet(),
+        /** Insights egress sink shared across every strategy this daemon hosts; null disables. */
+        private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
+        private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
+        private val insightsSnapshotIntervalMs: Long = 5_000L,
     ) : Factory {
         override fun create(
             name: String,
@@ -193,6 +197,9 @@ class StrategyHandle(
                         journalRoot?.let {
                             com.qkt.observe.OrderJournal(it, com.qkt.common.SystemClock())
                         },
+                    insightsSink = insightsSink,
+                    insightsEvents = insightsEvents,
+                    insightsSnapshotIntervalMs = insightsSnapshotIntervalMs,
                 ).start()
 
             val server =
