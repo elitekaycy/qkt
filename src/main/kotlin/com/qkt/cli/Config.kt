@@ -240,7 +240,9 @@ data class Config(
                 perStrategyRisk = parsePerStrategyRisk(map["risk"]),
                 state = parseFlat(map["state"]),
                 notify = NotifyConfig.parse(map["notify"]),
-                insights = com.qkt.observe.insights.InsightsConfig.parse(map["insights"]),
+                insights =
+                    com.qkt.observe.insights.InsightsConfig
+                        .parse(map["insights"]),
             )
         }
 
