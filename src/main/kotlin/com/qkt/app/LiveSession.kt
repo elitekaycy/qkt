@@ -911,6 +911,16 @@ class LiveSession(
                 onFilled = { trade, realized, strategyId ->
                     trades.add(trade)
                     dailyTracker.recordTrade(strategyId)
+                    // Per-close net P&L for the insights analytics: the bus TradeEvent has
+                    // no realized amount, so the close ships from the accounting hook.
+                    if (insightsSink != null &&
+                        com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents
+                    ) {
+                        insightsSink.offer(
+                            com.qkt.observe.insights.InsightsTranslate
+                                .tradeClosed(trade, realized, strategyId),
+                        )
+                    }
                     onTrade(trade, realized, strategyId)
                 },
                 gate = gate,
