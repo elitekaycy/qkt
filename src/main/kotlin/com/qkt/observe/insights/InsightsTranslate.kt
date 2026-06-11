@@ -128,6 +128,34 @@ object InsightsTranslate {
             ),
         )
 
+    /**
+     * A realized close from the engine's fill accounting (not a bus event): the
+     * per-trade net P&L the exact analytics in qkt-insights are built on.
+     * Deterministic id, so a re-sent batch dedupes at the collector.
+     */
+    fun tradeClosed(
+        trade: com.qkt.execution.Trade,
+        realized: BigDecimal,
+        strategyId: String,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "tc-${trade.orderId}-${trade.timestamp}",
+            seq = 0,
+            ts = trade.timestamp,
+            strategyId = strategyId.takeIf { it.isNotBlank() },
+            type = "trade.closed",
+            payload =
+                mapOf(
+                    "orderId" to trade.orderId,
+                    "symbol" to trade.symbol,
+                    "side" to trade.side.name,
+                    "qty" to trade.quantity,
+                    "price" to trade.price,
+                    "realized" to realized,
+                    "ts" to trade.timestamp,
+                ),
+        )
+
     fun fromRiskRejected(e: RiskRejectedEvent): InsightsEnvelope =
         envelope(
             e.sequenceId,
