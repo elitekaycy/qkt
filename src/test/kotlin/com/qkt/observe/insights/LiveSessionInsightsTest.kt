@@ -91,7 +91,13 @@ class LiveSessionInsightsTest {
 
         // Re-entrant bus dispatch means order.submit reaches the sink AFTER the nested
         // fill and trade, possibly in a later batch — collect until every marker landed.
-        val markers = listOf("\"type\":\"signal\"", "\"type\":\"order.submit\"", "\"type\":\"trade\"")
+        val markers =
+            listOf(
+                "\"type\":\"signal\"",
+                "\"type\":\"order.submit\"",
+                "\"type\":\"trade\"",
+                "\"type\":\"trade.closed\"",
+            )
         val bodies = StringBuilder()
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
@@ -107,6 +113,8 @@ class LiveSessionInsightsTest {
         assertThat(all).contains("\"type\":\"signal\"")
         assertThat(all).contains("\"type\":\"order.submit\"")
         assertThat(all).contains("\"type\":\"trade\"")
+        assertThat(all).contains("\"type\":\"trade.closed\"")
+        assertThat(all).contains("\"realized\":")
         assertThat(all).contains("\"symbol\":\"X\"")
     }
 }
