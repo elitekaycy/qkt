@@ -18,8 +18,11 @@ import org.slf4j.LoggerFactory
  * When the queue is full the oldest envelope is dropped and [dropped] increments,
  * exactly like the engine's own tick-queue shedding. A single daemon thread drains
  * the queue, batches up to [batchSize] or [flushIntervalMs] (whichever first),
- * serializes to JSON, and POSTs. If the collector is down only the drain thread
- * waits; trading is unaffected. Same philosophy as [com.qkt.observe.OrderJournal]:
+ * serializes to JSON, and POSTs. A failed POST is retried up to [maxPostAttempts]
+ * times with [failureBackoffMs] between attempts before the batch is dropped —
+ * a collector restart must not silently lose trade.closed events the exact
+ * analytics depend on. If the collector is down only the drain thread waits;
+ * trading is unaffected. Same philosophy as [com.qkt.observe.OrderJournal]:
  * an observability control, never a trading dependency.
  */
 class InsightsSink(
@@ -30,6 +33,7 @@ class InsightsSink(
     private val flushIntervalMs: Long = 250L,
     queueCapacity: Int = 10_000,
     private val failureBackoffMs: Long = 1_000L,
+    private val maxPostAttempts: Int = 3,
     private val http: OkHttpClient =
         OkHttpClient
             .Builder()
@@ -42,7 +46,7 @@ class InsightsSink(
     private val queue = ArrayBlockingQueue<InsightsEnvelope>(queueCapacity)
     private val running = AtomicBoolean(true)
 
-    /** Envelopes shed because the queue was full (collector slow or down). */
+    /** Envelopes lost: shed off a full queue, or in a batch that exhausted its POST attempts. */
     val dropped = AtomicLong(0)
 
     /** POST attempts that failed (non-2xx or I/O error). */
@@ -70,6 +74,7 @@ class InsightsSink(
 
     private fun drainLoop() {
         val batch = ArrayList<InsightsEnvelope>(batchSize)
+        var reportedDropped = 0L
         while (running.get() || queue.isNotEmpty()) {
             batch.clear()
             val first = queue.poll(flushIntervalMs, TimeUnit.MILLISECONDS) ?: continue
@@ -80,11 +85,27 @@ class InsightsSink(
                 if (remaining <= 0) break
                 batch.add(queue.poll(remaining, TimeUnit.MILLISECONDS) ?: break)
             }
-            if (!post(batch)) {
+            var delivered = false
+            var attempts = 0
+            while (!delivered) {
+                attempts++
+                delivered = post(batch)
+                if (delivered) break
                 failed.incrementAndGet()
+                // Retries stop on shutdown so close() isn't held hostage by a dead collector.
+                if (attempts >= maxPostAttempts || !running.get()) break
                 Thread.sleep(failureBackoffMs)
-            } else {
+            }
+            if (delivered) {
                 sent.addAndGet(batch.size.toLong())
+            } else {
+                dropped.addAndGet(batch.size.toLong())
+                log.warn("[insights] dropped batch of {} after {} failed POST attempts", batch.size, attempts)
+            }
+            val shed = dropped.get()
+            if (shed > reportedDropped) {
+                log.warn("[insights] {} envelopes lost so far (queue shedding or exhausted retries)", shed)
+                reportedDropped = shed
             }
         }
     }
