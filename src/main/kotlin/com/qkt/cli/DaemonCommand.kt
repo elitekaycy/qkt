@@ -94,6 +94,10 @@ class DaemonCommand(
             } else {
                 null
             }
+        if (insightsSink != null && com.qkt.observe.insights.InsightsEventFamily.LOG in cfg.insights.events) {
+            com.qkt.observe.insights.InsightsLogAppender
+                .attach(insightsSink)
+        }
         val mt5Profiles =
             try {
                 com.qkt.broker.mt5
