@@ -178,6 +178,8 @@ Items I deferred when shipping Phase 31. Documented in
 
 Ranked by leverage for FX/commodities quant research, highest first.
 
+- `tbd` — **walkforward `--json` + null-sharpe sentinel fix** — machine-readable walk-forward output for downstream tooling (qkt-forge G4); replace the `-1e18` sentinel with null/n-a. ([#417](https://github.com/elitekaycy/qkt/issues/417))
+
 - `done` — **Phase 32 — bid/ask DSL exposure**. `bid`/`ask` carried onto `Candle`,
   `<stream>.bid` / `.ask` / `.spread` exposed to the DSL and the Kotlin `StreamRef`.
   Merged `3a17386`. See [phase 32](phases/phase-32-bid-ask.md).
