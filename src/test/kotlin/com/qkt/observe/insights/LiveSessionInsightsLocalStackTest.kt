@@ -79,8 +79,12 @@ class LiveSessionInsightsLocalStackTest {
                 insightsSink = sink,
                 insightsEvents = InsightsEventFamily.entries.toSet(),
             )
+        InsightsLogAppender.attach(sink)
         val handle = session.start()
         assertThat(handle.awaitTermination(Duration.ofSeconds(5))).isTrue()
+        org.slf4j.LoggerFactory
+            .getLogger("com.qkt.e2e.LocalStack")
+            .warn("local-stack e2e log line XAUUSD")
         Thread.sleep(500)
         sink.close()
 
