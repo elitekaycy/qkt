@@ -685,13 +685,16 @@ class LiveSession(
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
         val pnl = PnLCalculator(positions, priceTracker, instruments)
-        val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
+        val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments, persistor)
         // Every deploy path needs a starting balance: portfolio deploys pass per-strategy
         // entries in [startingBalances]; standalone deploys fall back to the session-level
         // [initialBalance] so ACCOUNT.equity and % OF EQUITY sizing don't run on zero.
+        // Lifetime realized PnL restores alongside, so equity continues from where the
+        // last session ended instead of cliffing back to the starting balance.
         for ((id, _) in strategies) {
             val balance = startingBalances[id] ?: initialBalance
             if (balance.signum() > 0) strategyPnL.setStartingBalance(id, balance)
+            strategyPnL.restore(id)
         }
 
         // PnL books `contractSize` per symbol; on a real registry an unresolvable symbol

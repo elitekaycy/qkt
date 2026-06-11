@@ -12,9 +12,21 @@ class StrategyPnL(
     private val strategyPositions: StrategyPositionTracker,
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
 ) {
     private val realizedByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
     private val startingBalanceByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
+
+    /**
+     * Rehydrate the lifetime realized PnL a previous session persisted. Call once at
+     * boot, before any fills: equity then continues from where the last session ended
+     * instead of snapping back to the starting balance on every restart.
+     */
+    fun restore(strategyId: String) {
+        if (strategyId.isBlank()) return
+        val persisted = runCatching { persistor.loadPnl(strategyId) }.getOrNull() ?: return
+        realizedByStrategy[strategyId] = persisted.realized.setScale(Money.SCALE, Money.ROUNDING)
+    }
 
     fun setStartingBalance(
         strategyId: String,
@@ -32,7 +44,9 @@ class StrategyPnL(
     ) {
         if (strategyId.isBlank()) return
         val current = realizedByStrategy[strategyId] ?: Money.ZERO
-        realizedByStrategy[strategyId] = current.add(realized).setScale(Money.SCALE, Money.ROUNDING)
+        val updated = current.add(realized).setScale(Money.SCALE, Money.ROUNDING)
+        realizedByStrategy[strategyId] = updated
+        runCatching { persistor.savePnl(strategyId, com.qkt.persistence.PersistedPnl(realized = updated)) }
     }
 
     fun realizedFor(strategyId: String): BigDecimal = realizedByStrategy[strategyId] ?: Money.ZERO
