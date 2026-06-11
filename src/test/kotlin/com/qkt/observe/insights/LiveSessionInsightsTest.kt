@@ -39,18 +39,17 @@ class LiveSessionInsightsTest {
         server.shutdown()
     }
 
-    private class BuyOnce : Strategy {
-        var bought = false
+    private class BuyThenSell : Strategy {
+        private var ticks = 0
 
         override fun onTick(
             tick: Tick,
             ctx: StrategyContext,
             emit: (Signal) -> Unit,
         ) {
-            if (!bought) {
-                bought = true
-                emit(Signal.Buy(tick.symbol, Money.of("1")))
-            }
+            ticks++
+            if (ticks == 1) emit(Signal.Buy(tick.symbol, Money.of("1")))
+            if (ticks == 2) emit(Signal.Sell(tick.symbol, Money.of("1")))
         }
     }
 
@@ -76,7 +75,7 @@ class LiveSessionInsightsTest {
             )
         val session =
             LiveSession(
-                strategies = listOf("buyonce" to BuyOnce()),
+                strategies = listOf("roundtrip" to BuyThenSell()),
                 source = src,
                 symbols = listOf("X"),
                 candleWindow = TimeWindow.ONE_MINUTE,
@@ -91,7 +90,13 @@ class LiveSessionInsightsTest {
 
         // Re-entrant bus dispatch means order.submit reaches the sink AFTER the nested
         // fill and trade, possibly in a later batch — collect until every marker landed.
-        val markers = listOf("\"type\":\"signal\"", "\"type\":\"order.submit\"", "\"type\":\"trade\"")
+        val markers =
+            listOf(
+                "\"type\":\"signal\"",
+                "\"type\":\"order.submit\"",
+                "\"type\":\"trade\"",
+                "\"type\":\"trade.closed\"",
+            )
         val bodies = StringBuilder()
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
@@ -107,6 +112,8 @@ class LiveSessionInsightsTest {
         assertThat(all).contains("\"type\":\"signal\"")
         assertThat(all).contains("\"type\":\"order.submit\"")
         assertThat(all).contains("\"type\":\"trade\"")
+        assertThat(all).contains("\"type\":\"trade.closed\"")
+        assertThat(all).contains("\"realized\":")
         assertThat(all).contains("\"symbol\":\"X\"")
     }
 }

@@ -29,18 +29,17 @@ import org.junit.jupiter.api.Test
  * format matches the TypeScript contract — the assertion a captured stub can't make.
  */
 class LiveSessionInsightsLocalStackTest {
-    private class BuyOnce : Strategy {
-        var bought = false
+    private class BuyThenSell : Strategy {
+        private var ticks = 0
 
         override fun onTick(
             tick: Tick,
             ctx: StrategyContext,
             emit: (Signal) -> Unit,
         ) {
-            if (!bought) {
-                bought = true
-                emit(Signal.Buy(tick.symbol, Money.of("1")))
-            }
+            ticks++
+            if (ticks == 1) emit(Signal.Buy(tick.symbol, Money.of("1")))
+            if (ticks == 2) emit(Signal.Sell(tick.symbol, Money.of("1")))
         }
     }
 
@@ -70,7 +69,7 @@ class LiveSessionInsightsLocalStackTest {
             )
         val session =
             LiveSession(
-                strategies = listOf("buyonce" to BuyOnce()),
+                strategies = listOf("roundtrip" to BuyThenSell()),
                 source = src,
                 symbols = listOf("XAUUSD"),
                 candleWindow = TimeWindow.ONE_MINUTE,
