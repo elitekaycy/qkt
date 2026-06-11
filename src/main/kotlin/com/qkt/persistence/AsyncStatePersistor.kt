@@ -165,6 +165,15 @@ class AsyncStatePersistor(
 
     override fun loadRiskState(strategyId: String): PersistedRiskState? = delegate.loadRiskState(strategyId)
 
+    override fun savePnl(
+        strategyId: String,
+        state: PersistedPnl,
+    ) {
+        submit("savePnl($strategyId)") { delegate.savePnl(strategyId, state) }
+    }
+
+    override fun loadPnl(strategyId: String): PersistedPnl? = delegate.loadPnl(strategyId)
+
     override fun clearStrategy(strategyId: String) {
         submit("clearStrategy $strategyId") { delegate.clearStrategy(strategyId) }
     }
