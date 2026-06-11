@@ -118,4 +118,27 @@ class StrategyPnLTest {
 
         assertThat(pnl.totalFor("A")).isEqualByComparingTo(BigDecimal("2000"))
     }
+
+    @Test
+    fun `realized survives a restart via the persistor`() {
+        val persistor = com.qkt.persistence.NoopStatePersistor()
+        val first = StrategyPnL(StrategyPositionTracker(), MarketPriceTracker(), persistor = persistor)
+        first.setStartingBalance("A", Money.of("1000"))
+        first.recordRealized("A", Money.of("250.50"))
+        first.recordRealized("A", Money.of("-50.25"))
+
+        val restarted = StrategyPnL(StrategyPositionTracker(), MarketPriceTracker(), persistor = persistor)
+        restarted.setStartingBalance("A", Money.of("1000"))
+        restarted.restore("A")
+
+        assertThat(restarted.realizedFor("A")).isEqualByComparingTo(BigDecimal("200.25"))
+        assertThat(restarted.equityFor("A")).isEqualByComparingTo(BigDecimal("1200.25"))
+    }
+
+    @Test
+    fun `restore is a no-op without persisted state`() {
+        val pnl = StrategyPnL(StrategyPositionTracker(), MarketPriceTracker())
+        pnl.restore("A")
+        assertThat(pnl.realizedFor("A")).isEqualByComparingTo(Money.ZERO)
+    }
 }

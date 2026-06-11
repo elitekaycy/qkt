@@ -75,8 +75,30 @@ interface StatePersistor {
     /** The last persisted risk snapshot, or null when none exists. */
     fun loadRiskState(strategyId: String): PersistedRiskState? = null
 
+    /**
+     * Persist a strategy's lifetime realized PnL. Without this, every restart
+     * resets realized to zero and equity snaps back to the starting balance —
+     * downstream consumers (dashboards, drawdown stats) see a cliff that never
+     * happened. Default no-op keeps persistors that predate PnL persistence compiling.
+     */
+    fun savePnl(
+        strategyId: String,
+        state: PersistedPnl,
+    ) {}
+
+    /** The last persisted lifetime PnL, or null when none exists. */
+    fun loadPnl(strategyId: String): PersistedPnl? = null
+
     fun clearStrategy(strategyId: String)
 }
+
+/**
+ * On-disk shape of a strategy's lifetime PnL: the cumulative realized amount since
+ * the strategy first deployed (not the daily figure — that lives in [PersistedRiskState]).
+ */
+data class PersistedPnl(
+    val realized: BigDecimal,
+)
 
 data class PersistedLeg(
     val legId: String,

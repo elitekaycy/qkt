@@ -48,7 +48,39 @@ class FileStatePersistor(
         const val PENDING_STACKS_FILE = "pending-stacks.json"
         const val OCO_LEGS_FILE = "oco-legs.json"
         const val RISK_STATE_FILE = "risk-state.json"
+        const val PNL_FILE = "pnl.json"
         const val SCHEMA_VERSION = 1
+    }
+
+    override fun savePnl(
+        strategyId: String,
+        state: PersistedPnl,
+    ) {
+        val dto =
+            PnlDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                realized = state.realized.toPlainString(),
+            )
+        runCatching { json.encodeToString(PnlDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, PNL_FILE, it) }
+            .onFailure { e -> log.warn("savePnl encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadPnl(strategyId: String): PersistedPnl? {
+        val raw = writer.read(strategyId, PNL_FILE) ?: return null
+        val dto =
+            try {
+                json.decodeFromString(PnlDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadPnl parse failed for $strategyId: ${e.message}")
+                return null
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadPnl schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return null
+        }
+        return PersistedPnl(realized = dto.realized.toBigDecimal())
     }
 
     override fun saveRiskState(
@@ -786,6 +818,13 @@ private data class LegDto(
             )
     }
 }
+
+@Serializable
+private data class PnlDto(
+    val version: Int,
+    val strategyId: String,
+    val realized: String,
+)
 
 @Serializable
 private data class RiskStateDto(
