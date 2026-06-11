@@ -14,6 +14,7 @@ enum class InsightsEventFamily(
     RISK("risk"),
     POSITION("position"),
     SNAPSHOT("snapshot"),
+    LOG("log"),
     ;
 
     companion object {
