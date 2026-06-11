@@ -61,6 +61,12 @@ data class Config(
      * receives critical-event and daily-summary messages. Telegram is the built-in channel.
      */
     val notify: NotifyConfig = NotifyConfig.DISABLED,
+    /**
+     * Opt-in egress to a qkt-insights collector. Defaults to disabled. When enabled,
+     * the daemon constructs one [com.qkt.observe.insights.InsightsSink] and every
+     * session streams allow-listed event families to it, best-effort and non-blocking.
+     */
+    val insights: com.qkt.observe.insights.InsightsConfig = com.qkt.observe.insights.InsightsConfig.DISABLED,
 ) {
     /**
      * Effective `max_daily_loss` from [risk], or [DEFAULT_MAX_DAILY_LOSS]. Operators set

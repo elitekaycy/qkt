@@ -143,6 +143,17 @@ class LiveSession(
     /** Append-only order-event journal (#400); null disables (tests, backtest replays). */
     private val journal: com.qkt.observe.OrderJournal? = null,
     /**
+     * Best-effort egress to a qkt-insights collector; null disables (the default).
+     * The daemon constructs one shared [com.qkt.observe.insights.InsightsSink] from
+     * [com.qkt.cli.Config.insights] and passes the same instance to every session.
+     * The engine thread only enqueues; the sink's own thread does JSON + HTTP.
+     */
+    private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
+    /** Event families to stream; empty wires nothing even when a sink is present. */
+    private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
+    /** Cadence for engine-thread equity/position snapshots flowing through the sink. */
+    private val insightsSnapshotIntervalMs: Long = 5_000L,
+    /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
      * at this cadence so a strategy's `SCHEDULE AT 09:00 UTC THEN …` still fires
@@ -547,6 +558,74 @@ class LiveSession(
     }
 
     /**
+     * Streams allow-listed event families to the insights sink. Each handler only builds
+     * a small envelope and enqueues it — the sink's own thread does JSON and HTTP, so
+     * none of this touches the engine loop's latency. Mirrors [wireJournal]'s shape.
+     */
+    private fun wireInsights(
+        bus: EventBus,
+        sink: com.qkt.observe.insights.InsightsSink,
+    ) {
+        val t = com.qkt.observe.insights.InsightsTranslate
+        if (com.qkt.observe.insights.InsightsEventFamily.SIGNAL in insightsEvents) {
+            bus.subscribe<SignalEvent> { e -> t.fromSignal(e)?.let(sink::offer) }
+        }
+        if (com.qkt.observe.insights.InsightsEventFamily.ORDER in insightsEvents) {
+            bus.subscribe<com.qkt.events.OrderEvent> { e -> sink.offer(t.fromOrderSubmit(e)) }
+            bus.subscribe<BrokerEvent.OrderAccepted> { e -> sink.offer(t.fromOrderAccepted(e)) }
+            bus.subscribe<BrokerEvent.OrderFilled> { e -> sink.offer(t.fromOrderFilled(e)) }
+            bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> sink.offer(t.fromOrderPartiallyFilled(e)) }
+            bus.subscribe<BrokerEvent.OrderCancelled> { e -> sink.offer(t.fromOrderCancelled(e)) }
+            bus.subscribe<BrokerEvent.OrderRejected> { e -> sink.offer(t.fromOrderRejected(e)) }
+            bus.subscribe<BrokerEvent.OrderModified> { e -> sink.offer(t.fromOrderModified(e)) }
+        }
+        if (com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents) {
+            bus.subscribe<com.qkt.events.TradeEvent> { e -> sink.offer(t.fromTrade(e)) }
+        }
+        if (com.qkt.observe.insights.InsightsEventFamily.RISK in insightsEvents) {
+            bus.subscribe<com.qkt.events.RiskRejectedEvent> { e -> sink.offer(t.fromRiskRejected(e)) }
+            bus.subscribe<RiskEvent.Halted> { e -> sink.offer(t.fromRiskHalted(e)) }
+            bus.subscribe<RiskEvent.Resumed> { e -> sink.offer(t.fromRiskResumed(e)) }
+        }
+        if (com.qkt.observe.insights.InsightsEventFamily.POSITION in insightsEvents) {
+            bus.subscribe<BrokerEvent.PositionReconciled> { e -> sink.offer(t.fromPositionReconciled(e)) }
+            bus.subscribe<BrokerEvent.BalancesUpdated> { e -> sink.offer(t.fromBalancesUpdated(e)) }
+            bus.subscribe<BrokerEvent.GatewayUnreachable> { e -> sink.offer(t.fromGatewayUnreachable(e)) }
+        }
+    }
+
+    /**
+     * Emits per-strategy equity and position snapshots to the insights sink. Must run on
+     * the engine thread — [StrategyPnL] and [StrategyPositionTracker] are engine-thread-only.
+     * Called from the heartbeat branch of the engine loop on the configured cadence and
+     * after fills, so dashboards see fresh unrealized PnL without per-tick noise.
+     */
+    private fun emitInsightsSnapshots(
+        nowMs: Long,
+        strategyPnL: StrategyPnL,
+        strategyPositions: StrategyPositionTracker,
+    ) {
+        val sink = insightsSink ?: return
+        val t = com.qkt.observe.insights.InsightsTranslate
+        for ((strategyId, _) in strategies) {
+            sink.offer(
+                t.equitySnapshot(
+                    ts = nowMs,
+                    strategyId = strategyId,
+                    realized = strategyPnL.realizedFor(strategyId),
+                    unrealized = strategyPnL.unrealizedTotalFor(strategyId),
+                    equity = strategyPnL.equityFor(strategyId),
+                    startingBalance = strategyPnL.startingBalanceFor(strategyId),
+                ),
+            )
+            for ((symbol, _) in strategyPositions.positionsFor(strategyId)) {
+                val legs = strategyPositions.legBookFor(strategyId, symbol)?.all() ?: continue
+                sink.offer(t.positionSnapshot(ts = nowMs, strategyId = strategyId, symbol = symbol, legs = legs))
+            }
+        }
+    }
+
+    /**
      * The per-strategy daily-summary rows for this session — equity, P&L, positions, and
      * the [dailyTracker] window totals. The daemon owns one [DailySummaryScheduler] across
      * every session; its producer calls this once per fire. Reading the rows snapshots and
@@ -848,6 +927,17 @@ class LiveSession(
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
         // so any publish that happens after this line will see the new subscribers.
         wireNotifierSubscriptions(bus, pipeline.orderManager)
+        insightsSink?.let { sink ->
+            wireInsights(bus, sink)
+            // Fills change equity; snapshot right away so dashboards don't wait a full
+            // heartbeat interval. Registered after the pipeline's bookkeeping subscribers,
+            // so the PnL read here already includes the fill.
+            if (com.qkt.observe.insights.InsightsEventFamily.SNAPSHOT in insightsEvents) {
+                bus.subscribe<com.qkt.events.TradeEvent> { e ->
+                    emitInsightsSnapshots(e.timestamp, strategyPnL, strategyPositions)
+                }
+            }
+        }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
@@ -981,6 +1071,7 @@ class LiveSession(
                         onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
                     }
                 }
+                var lastInsightsSnapshotMs = 0L
                 try {
                     while (running.get()) {
                         val msg: Inbound =
@@ -995,9 +1086,19 @@ class LiveSession(
                                 } catch (e: Exception) {
                                     onEngineFault("event ${msg.event::class.simpleName}", e)
                                 }
-                            is Inbound.Heartbeat ->
+                            is Inbound.Heartbeat -> {
                                 runCatching { pipeline.scheduleHeartbeat(msg.nowMs) }
                                     .onFailure { t -> onEngineFault("schedule heartbeat", t) }
+                                if (insightsSink != null &&
+                                    com.qkt.observe.insights.InsightsEventFamily.SNAPSHOT in insightsEvents &&
+                                    msg.nowMs - lastInsightsSnapshotMs >= insightsSnapshotIntervalMs
+                                ) {
+                                    lastInsightsSnapshotMs = msg.nowMs
+                                    runCatching {
+                                        emitInsightsSnapshots(msg.nowMs, strategyPnL, strategyPositions)
+                                    }.onFailure { t -> log.warn("[insights] snapshot failed: ${t.message}") }
+                                }
+                            }
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 runCatching { doFlatten() }
