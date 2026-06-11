@@ -98,16 +98,39 @@ class InsightsSinkTest {
     }
 
     @Test
-    fun `survives collector failures and keeps sending after recovery`() {
+    fun `retries a failed batch and delivers it without loss`() {
         server.enqueue(MockResponse().setResponseCode(500))
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}"""))
         val s = sink(flushIntervalMs = 20L, failureBackoffMs = 10L)
         s.offer(envelope(1))
-        // First request fails; the batch is dropped (lossy), but the sink keeps draining.
-        assertThat(server.takeRequest(2, TimeUnit.SECONDS)).isNotNull
-        s.offer(envelope(2))
-        assertThat(server.takeRequest(2, TimeUnit.SECONDS)).isNotNull
-        assertThat(s.failed.get()).isGreaterThanOrEqualTo(1L)
+        val first = server.takeRequest(2, TimeUnit.SECONDS)
+        val second = server.takeRequest(2, TimeUnit.SECONDS)
+        assertThat(first).isNotNull
+        assertThat(second).isNotNull
+        // Same batch re-posted, not discarded.
+        assertThat(second!!.body.readUtf8()).contains("\"id\":\"e1\"")
         s.close()
+        assertThat(s.sent.get()).isEqualTo(1L)
+        assertThat(s.failed.get()).isEqualTo(1L)
+        assertThat(s.dropped.get()).isEqualTo(0L)
+    }
+
+    @Test
+    fun `drops a batch after exhausting retries and keeps draining`() {
+        repeat(3) { server.enqueue(MockResponse().setResponseCode(500)) }
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}"""))
+        val s = sink(flushIntervalMs = 20L, failureBackoffMs = 10L)
+        s.offer(envelope(1))
+        repeat(3) { assertThat(server.takeRequest(2, TimeUnit.SECONDS)).isNotNull }
+        s.offer(envelope(2))
+        val recovered = server.takeRequest(2, TimeUnit.SECONDS)
+        assertThat(recovered).isNotNull
+        val body = recovered!!.body.readUtf8()
+        assertThat(body).contains("\"id\":\"e2\"")
+        assertThat(body).doesNotContain("\"id\":\"e1\"")
+        s.close()
+        assertThat(s.failed.get()).isEqualTo(3L)
+        assertThat(s.dropped.get()).isEqualTo(1L)
+        assertThat(s.sent.get()).isEqualTo(1L)
     }
 }
