@@ -79,6 +79,21 @@ class DaemonCommand(
         val notifyEventKinds = cfg.notify.enabledEventKinds()
         val notifier: Notifier =
             CompositeNotifier(channelNotifiers.map { (ch, n) -> FilteringNotifier(ch.events, n) })
+        // One insights sink per daemon, shared by every session (mirrors the notifier).
+        // Disabled config (the default) constructs nothing: no queue, no thread.
+        val insightsSink: com.qkt.observe.insights.InsightsSink? =
+            if (cfg.insights.enabled && cfg.insights.url.isNotBlank()) {
+                com.qkt.observe.insights.InsightsSink(
+                    url = cfg.insights.url,
+                    token = cfg.insights.token,
+                    instanceId = cfg.insights.instanceId.ifBlank { "qkt" },
+                    batchSize = cfg.insights.batchSize,
+                    flushIntervalMs = cfg.insights.flushIntervalMs,
+                    queueCapacity = cfg.insights.queueCapacity,
+                )
+            } else {
+                null
+            }
         val mt5Profiles =
             try {
                 com.qkt.broker.mt5
@@ -192,6 +207,9 @@ class DaemonCommand(
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,
+                    insightsSink = insightsSink,
+                    insightsEvents = cfg.insights.events,
+                    insightsSnapshotIntervalMs = cfg.insights.snapshotIntervalMs,
                 ),
             )
         registryRef.set(registry)
@@ -218,6 +236,9 @@ class DaemonCommand(
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,
+                    insightsSink = insightsSink,
+                    insightsEvents = cfg.insights.events,
+                    insightsSnapshotIntervalMs = cfg.insights.snapshotIntervalMs,
                 )
         val plane =
             ControlPlane(
@@ -301,6 +322,7 @@ class DaemonCommand(
                     commandChannels.forEach { runCatching { it.close() } }
                     dailySummarySchedulers.forEach { it.close() }
                     notifier.close()
+                    runCatching { insightsSink?.close() }
                     stateDir.deleteControlPort()
                     println("[INFO] daemon stopped")
                 } finally {
@@ -319,6 +341,7 @@ class DaemonCommand(
             commandChannels.forEach { runCatching { it.close() } }
             runCatching { dailySummarySchedulers.forEach { it.close() } }
             runCatching { notifier.close() }
+            runCatching { insightsSink?.close() }
             runCatching { stateDir.deleteControlPort() }
             ExitCodes.SUCCESS
         } catch (_: InterruptedException) {
