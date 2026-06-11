@@ -242,7 +242,10 @@ class StrategyHandle(
 
             // Ensure log file exists (logback's SiftingAppender lazily creates it on first write,
             // but the daemon's API contract is that the file path is valid immediately).
-            val logFile = stateDir.logFile(name)
+            // Keyed by the DSL strategy id — the sift discriminator names files from the
+            // same MDC value, and the /logs route resolves through handle.logFile, so a
+            // deploy alias that differs from the id still finds its file.
+            val logFile = stateDir.logFile(ast.name)
             java.nio.file.Files
                 .createDirectories(logFile.parent)
             if (!java.nio.file.Files
