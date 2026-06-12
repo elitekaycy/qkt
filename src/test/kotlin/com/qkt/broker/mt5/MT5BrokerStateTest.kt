@@ -126,6 +126,25 @@ class MT5BrokerStateTest {
     }
 
     @Test
+    fun `deals excludes balance operations from range queries`() {
+        dealsResponse = {
+            MockResponse().setBody(
+                """[{"ticket":1,"order":0,"position_id":0,"symbol":"","type":2,"entry":0,""" +
+                    """"volume":"0","price":"0","profit":"10000","commission":"0","swap":"0",""" +
+                    """"fee":"0","magic":0,"comment":"deposit","time_msc":1700000000000},""" +
+                    """{"ticket":456,"order":789,"position_id":123,"symbol":"XAUUSDm","type":0,"entry":0,""" +
+                    """"volume":"0.01","price":"2300.5","profit":"0","commission":"-0.07","swap":"0",""" +
+                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700040000000}]""",
+            )
+        }
+        broker = newBroker()
+        val deals = broker.deals(from = 1_699_900_000_000L, to = 1_700_086_400_000L)
+        assertThat(deals).hasSize(1)
+        assertThat(deals[0].dealTicket).isEqualTo("456")
+        assertThat(deals[0].side).isEqualTo(Side.BUY)
+    }
+
+    @Test
     fun `deals returns empty when the gateway read fails`() {
         dealsResponse = { MockResponse().setResponseCode(500).setBody("boom") }
         broker = newBroker()
@@ -137,8 +156,9 @@ class MT5BrokerStateTest {
         positionsResponse = {
             MockResponse().setBody(
                 """[{"ticket":2832831596,"symbol":"XAUUSDm","type":1,"volume":"0.01",""" +
-                    """"price_open":"2300.5","sl":"0","tp":"0","profit":"-9.3","swap":"-0.12",""" +
-                    """"magic":10001,"open_time":1700000000000,"comment":"dsl-hedge_straddle"}]""",
+                    """"price_open":"2300.5","price_current":"2310.2","sl":"0","tp":"0",""" +
+                    """"profit":"-9.3","swap":"-0.12","magic":10001,"open_time":1700000000000,""" +
+                    """"comment":"dsl-hedge_straddle"}]""",
             )
         }
         broker = newBroker()
@@ -150,11 +170,23 @@ class MT5BrokerStateTest {
         assertThat(t.side).isEqualTo(Side.SELL)
         assertThat(t.qty).isEqualByComparingTo("0.01")
         assertThat(t.entryPrice).isEqualByComparingTo("2300.5")
-        assertThat(t.currentPrice).isNull()
+        assertThat(t.currentPrice!!).isEqualByComparingTo("2310.2")
         assertThat(t.profit!!).isEqualByComparingTo("-9.3")
         assertThat(t.swap!!).isEqualByComparingTo("-0.12")
         assertThat(t.openedAt).isEqualTo(1_700_000_000_000L - 2L * 3600L * 1000L)
         assertThat(t.comment).isEqualTo("dsl-hedge_straddle")
+    }
+
+    @Test
+    fun `positionTickets leaves currentPrice null when the gateway omits price_current`() {
+        positionsResponse = {
+            MockResponse().setBody(
+                """[{"ticket":1,"symbol":"XAUUSDm","type":0,"volume":"0.01","price_open":"2300.5",""" +
+                    """"sl":"0","tp":"0","profit":"1.2","magic":10001,"open_time":1700000000000}]""",
+            )
+        }
+        broker = newBroker()
+        assertThat(broker.positionTickets().single().currentPrice).isNull()
     }
 
     @Test

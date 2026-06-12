@@ -59,6 +59,8 @@ data class MT5Position(
     val comment: String? = null,
     /** Accumulated swap in account currency; null when the gateway omits the field. */
     val swap: BigDecimal? = null,
+    /** Current market price the venue values the position at; null when omitted. */
+    val priceCurrent: BigDecimal? = null,
 )
 
 /**

@@ -547,6 +547,7 @@ class MT5Client(
             openTime = rawTime - tzOffsetMs,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
             swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
+            priceCurrent = obj["price_current"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
         )
     }
 

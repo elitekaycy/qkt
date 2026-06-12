@@ -206,7 +206,9 @@ class MT5Broker(
         to: Long,
     ): List<BrokerDeal> {
         val deals = runCatching { client.getDeals(from, to) }.getOrNull() ?: return emptyList()
-        return deals.map { d ->
+        // Range queries also return balance operations (deposits/withdrawals, type 2+) with
+        // no symbol and zero volume — only trade deals (0=BUY, 1=SELL) belong in history.
+        return deals.filter { it.type == 0 || it.type == 1 }.map { d ->
             BrokerDeal(
                 broker = profile.name.uppercase(),
                 dealTicket = d.ticket.toString(),
@@ -236,7 +238,7 @@ class MT5Broker(
                 side = if (p.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL,
                 qty = p.volume,
                 entryPrice = p.priceOpen,
-                currentPrice = null,
+                currentPrice = p.priceCurrent,
                 profit = p.profit,
                 swap = p.swap,
                 openedAt = p.openTime,
