@@ -213,22 +213,4 @@ class InsightsTranslateTest {
         assertThat(json).doesNotContain("positionTicket")
         assertThat(json).doesNotContain("null")
     }
-
-    @Test
-    fun `equity snapshot carries pnl fields and a deterministic id`() {
-        val env =
-            InsightsTranslate.equitySnapshot(
-                ts = 1718000000000L,
-                strategyId = "latch",
-                realized = BigDecimal("10"),
-                unrealized = BigDecimal("-2"),
-                equity = BigDecimal("1008"),
-                startingBalance = BigDecimal("1000"),
-            )
-        assertThat(env.id).isEqualTo("eq-latch-1718000000000")
-        assertThat(env.type).isEqualTo("snapshot.equity")
-        val json = env.toJson("qkt-prod")
-        assertThat(json).contains(""""equity":1008""")
-        assertThat(json).contains(""""startingBalance":1000""")
-    }
 }

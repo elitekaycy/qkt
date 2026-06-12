@@ -151,8 +151,10 @@ class LiveSession(
     private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
     /** Event families to stream; empty wires nothing even when a sink is present. */
     private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
-    /** Cadence for engine-thread equity/position snapshots flowing through the sink. */
-    private val insightsSnapshotIntervalMs: Long = 5_000L,
+    /** Broker state poller cadence (insights `state_poll_ms`); active when the STATE family is enabled. */
+    private val insightsStatePollMs: Long = 10_000L,
+    /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
+    private val insightsDealBackfillDays: Long = 30L,
     /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
@@ -604,37 +606,6 @@ class LiveSession(
     }
 
     /**
-     * Emits per-strategy equity and position snapshots to the insights sink. Must run on
-     * the engine thread — [StrategyPnL] and [StrategyPositionTracker] are engine-thread-only.
-     * Called from the heartbeat branch of the engine loop on the configured cadence and
-     * after fills, so dashboards see fresh unrealized PnL without per-tick noise.
-     */
-    private fun emitInsightsSnapshots(
-        nowMs: Long,
-        strategyPnL: StrategyPnL,
-        strategyPositions: StrategyPositionTracker,
-    ) {
-        val sink = insightsSink ?: return
-        val t = com.qkt.observe.insights.InsightsTranslate
-        for ((strategyId, _) in strategies) {
-            sink.offer(
-                t.equitySnapshot(
-                    ts = nowMs,
-                    strategyId = strategyId,
-                    realized = strategyPnL.realizedFor(strategyId),
-                    unrealized = strategyPnL.unrealizedTotalFor(strategyId),
-                    equity = strategyPnL.equityFor(strategyId),
-                    startingBalance = strategyPnL.startingBalanceFor(strategyId),
-                ),
-            )
-            for ((symbol, _) in strategyPositions.positionsFor(strategyId)) {
-                val legs = strategyPositions.legBookFor(strategyId, symbol)?.all() ?: continue
-                sink.offer(t.positionSnapshot(ts = nowMs, strategyId = strategyId, symbol = symbol, legs = legs))
-            }
-        }
-    }
-
-    /**
      * The per-strategy daily-summary rows for this session — equity, P&L, positions, and
      * the [dailyTracker] window totals. The daemon owns one [DailySummaryScheduler] across
      * every session; its producer calls this once per fire. Reading the rows snapshots and
@@ -966,14 +937,6 @@ class LiveSession(
             bus.subscribe<BrokerEvent.OrderFilled> { e ->
                 ticketAttribution.record(e.brokerOrderId, e.strategyId)
             }
-            // Fills change equity; snapshot right away so dashboards don't wait a full
-            // heartbeat interval. Registered after the pipeline's bookkeeping subscribers,
-            // so the PnL read here already includes the fill.
-            if (com.qkt.observe.insights.InsightsEventFamily.SNAPSHOT in insightsEvents) {
-                bus.subscribe<com.qkt.events.TradeEvent> { e ->
-                    emitInsightsSnapshots(e.timestamp, strategyPnL, strategyPositions)
-                }
-            }
         }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
@@ -1108,7 +1071,6 @@ class LiveSession(
                         onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
                     }
                 }
-                var lastInsightsSnapshotMs = 0L
                 try {
                     while (running.get()) {
                         val msg: Inbound =
@@ -1123,19 +1085,9 @@ class LiveSession(
                                 } catch (e: Exception) {
                                     onEngineFault("event ${msg.event::class.simpleName}", e)
                                 }
-                            is Inbound.Heartbeat -> {
+                            is Inbound.Heartbeat ->
                                 runCatching { pipeline.scheduleHeartbeat(msg.nowMs) }
                                     .onFailure { t -> onEngineFault("schedule heartbeat", t) }
-                                if (insightsSink != null &&
-                                    com.qkt.observe.insights.InsightsEventFamily.SNAPSHOT in insightsEvents &&
-                                    msg.nowMs - lastInsightsSnapshotMs >= insightsSnapshotIntervalMs
-                                ) {
-                                    lastInsightsSnapshotMs = msg.nowMs
-                                    runCatching {
-                                        emitInsightsSnapshots(msg.nowMs, strategyPnL, strategyPositions)
-                                    }.onFailure { t -> log.warn("[insights] snapshot failed: ${t.message}") }
-                                }
-                            }
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 runCatching { doFlatten() }
@@ -1198,6 +1150,27 @@ class LiveSession(
             java.util.concurrent.TimeUnit.MILLISECONDS,
         )
 
+        // Broker truth → insights: account state, per-ticket positions, and deal history
+        // polled on the poller's own thread, off the engine loop. Replaces the retired
+        // engine-thread ledger snapshots — dashboards read state.* / broker.deal now.
+        val brokerStatePoller =
+            if (insightsSink != null &&
+                com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents &&
+                builtBrokers.isNotEmpty()
+            ) {
+                com.qkt.observe.insights
+                    .BrokerStatePoller(
+                        brokers = builtBrokers.toList(),
+                        sink = insightsSink,
+                        attribution = ticketAttribution,
+                        deployedIds = { strategies.map { it.first } },
+                        pollIntervalMs = insightsStatePollMs,
+                        backfillDays = insightsDealBackfillDays,
+                    ).also { it.start() }
+            } else {
+                null
+            }
+
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
         if (NotifyEventKind.STRATEGY_STARTED in notifyEvents) {
@@ -1256,6 +1229,7 @@ class LiveSession(
                 running.set(false)
                 thread.interrupt()
                 feedThread.interrupt()
+                runCatching { brokerStatePoller?.close() }
                 // Stop the schedule heartbeat thread so it doesn't outlive the session.
                 runCatching {
                     scheduleHeartbeat.shutdownNow()
