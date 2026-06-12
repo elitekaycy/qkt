@@ -1,5 +1,7 @@
 package com.qkt.observe.insights
 
+import com.qkt.broker.BrokerAccountState
+import com.qkt.broker.BrokerDeal
 import com.qkt.events.BrokerEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
@@ -265,6 +267,109 @@ object InsightsTranslate {
                 ),
         )
 
+    /**
+     * Live venue account snapshot ("state.account"). Last-value semantics: the collector
+     * keeps only the newest per (instance, broker), so the id just needs to be unique
+     * per poll. Null fields (a venue that reports no margin) are omitted from the JSON
+     * by [InsightsEnvelope.toJson]'s map writer — the contract wants absent, not null.
+     */
+    fun stateAccount(
+        ts: Long,
+        s: BrokerAccountState,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "acct-${s.broker}-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "state.account",
+            payload =
+                mapOf(
+                    "broker" to s.broker,
+                    "currency" to s.currency,
+                    "balance" to s.balance,
+                    "equity" to s.equity,
+                    "margin" to s.margin,
+                    "marginFree" to s.marginFree,
+                    "openProfit" to s.openProfit,
+                    "marginLevel" to s.marginLevel,
+                ),
+        )
+
+    /**
+     * Open venue positions snapshot ("state.positions"), full-replace semantics: the
+     * collector swaps its whole list for this broker, so a position closed since the
+     * last poll simply stops appearing. [StatePosition.strategyId] null marks a ticket
+     * this daemon cannot attribute (an orphan) — shown as such, never hidden.
+     */
+    fun statePositions(
+        ts: Long,
+        broker: String,
+        positions: List<StatePosition>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "posn-$broker-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "state.positions",
+            payload =
+                mapOf(
+                    "broker" to broker,
+                    "positions" to
+                        positions.map { p ->
+                            mapOf(
+                                "ticket" to p.ticket,
+                                "symbol" to p.symbol,
+                                "side" to p.side,
+                                "qty" to p.qty,
+                                "entryPrice" to p.entryPrice,
+                                "currentPrice" to p.currentPrice,
+                                "profit" to p.profit,
+                                "swap" to p.swap,
+                                "openedAt" to p.openedAt,
+                                "strategyId" to p.strategyId,
+                            )
+                        },
+                ),
+        )
+
+    /**
+     * One executed venue deal ("broker.deal"). Deterministic id from the broker plus
+     * deal ticket, so re-sending the same deal (restart re-backfill, retried batch)
+     * dedupes at the collector instead of double-counting realized P&L.
+     */
+    fun brokerDeal(
+        d: BrokerDeal,
+        strategyId: String?,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "deal-${d.broker}-${d.dealTicket}",
+            seq = 0,
+            ts = d.ts,
+            strategyId = strategyId,
+            type = "broker.deal",
+            payload =
+                mapOf(
+                    "broker" to d.broker,
+                    "dealTicket" to d.dealTicket,
+                    "positionTicket" to d.positionTicket,
+                    "orderTicket" to d.orderTicket,
+                    "symbol" to d.symbol,
+                    "side" to d.side.name,
+                    "entry" to d.entry,
+                    "qty" to d.qty,
+                    "price" to d.price,
+                    "profit" to d.profit,
+                    "commission" to d.commission,
+                    "swap" to d.swap,
+                    "magic" to d.magic,
+                    "comment" to d.comment,
+                    "ts" to d.ts,
+                    "strategyId" to strategyId,
+                ),
+        )
+
     private fun envelope(
         seq: Long,
         ts: Long,
@@ -281,3 +386,22 @@ object InsightsTranslate {
             payload = payload,
         )
 }
+
+/**
+ * One open venue position as the "state.positions" payload carries it — a
+ * [com.qkt.broker.BrokerPositionTicket] plus the strategy id the poller attributed
+ * (null when the ticket is an orphan this daemon cannot claim).
+ */
+data class StatePosition(
+    val ticket: String,
+    val symbol: String,
+    /** "BUY" or "SELL". */
+    val side: String,
+    val qty: BigDecimal,
+    val entryPrice: BigDecimal,
+    val currentPrice: BigDecimal?,
+    val profit: BigDecimal?,
+    val swap: BigDecimal?,
+    val openedAt: Long?,
+    val strategyId: String?,
+)

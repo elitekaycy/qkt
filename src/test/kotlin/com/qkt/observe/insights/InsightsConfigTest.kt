@@ -24,6 +24,8 @@ class InsightsConfigTest {
                     "batch_size" to 50,
                     "queue_capacity" to 1000,
                     "snapshot_interval_ms" to 2000,
+                    "state_poll_ms" to 4000,
+                    "deal_backfill_days" to 7,
                 ),
             )
         assertThat(cfg.enabled).isTrue()
@@ -40,6 +42,24 @@ class InsightsConfigTest {
         assertThat(cfg.batchSize).isEqualTo(50)
         assertThat(cfg.queueCapacity).isEqualTo(1000)
         assertThat(cfg.snapshotIntervalMs).isEqualTo(2000L)
+        assertThat(cfg.statePollMs).isEqualTo(4000L)
+        assertThat(cfg.dealBackfillDays).isEqualTo(7L)
+    }
+
+    @Test
+    fun `state poll and deal backfill default when absent`() {
+        val cfg = InsightsConfig.parse(mapOf("enabled" to true, "url" to "http://h/ingest"))
+        assertThat(cfg.statePollMs).isEqualTo(10_000L)
+        assertThat(cfg.dealBackfillDays).isEqualTo(30L)
+    }
+
+    @Test
+    fun `state and deal family names parse`() {
+        val cfg =
+            InsightsConfig.parse(
+                mapOf("enabled" to true, "url" to "http://h/ingest", "events" to listOf("state", "deal")),
+            )
+        assertThat(cfg.events).containsExactlyInAnyOrder(InsightsEventFamily.STATE, InsightsEventFamily.DEAL)
     }
 
     @Test
