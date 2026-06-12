@@ -123,7 +123,12 @@ class InsightsTranslateTest {
                 openedAt = null,
                 strategyId = null,
             )
-        val env = InsightsTranslate.statePositions(ts = 1718000000000L, broker = "EXNESS", positions = listOf(attributed, orphan))
+        val env =
+            InsightsTranslate.statePositions(
+                ts = 1718000000000L,
+                broker = "EXNESS",
+                positions = listOf(attributed, orphan),
+            )
         assertThat(env.id).isEqualTo("posn-EXNESS-1718000000000")
         assertThat(env.type).isEqualTo("state.positions")
         assertThat(env.strategyId).isNull()
