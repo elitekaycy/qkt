@@ -345,6 +345,13 @@ class LiveSession(
     /** Captures the broker instances built by [buildBroker] so [buildInstrumentRegistry] can wrap MT5 brokers. */
     private val builtBrokers: MutableList<Broker> = mutableListOf()
 
+    /**
+     * Broker-ticket → strategy-id mirror for the insights state poller. Written on the
+     * engine thread (fills) and at startup (recovery-seeded orphans); the poller only
+     * reads, so it never touches engine-thread-only trackers.
+     */
+    internal val ticketAttribution = com.qkt.observe.insights.TicketAttribution()
+
     private fun buildBroker(
         paperBroker: PaperBroker,
         bus: EventBus,
@@ -681,6 +688,13 @@ class LiveSession(
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
         val paperBroker = PaperBroker(bus, clock, priceTracker)
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
+        // Recovery seeding ran inside each MT5 broker's constructor; mirror the orphan
+        // ticket attributions it produced so the state poller can name their strategy.
+        for (b in builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>()) {
+            for ((ticket, strategyId) in b.ticketAttributions()) {
+                ticketAttribution.record(ticket, strategyId)
+            }
+        }
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
@@ -945,6 +959,11 @@ class LiveSession(
         wireNotifierSubscriptions(bus, pipeline.orderManager)
         insightsSink?.let { sink ->
             wireInsights(bus, sink)
+            // Every fill names its venue ticket: mirror it so the state poller can
+            // attribute that ticket's open position and deals to the strategy.
+            bus.subscribe<BrokerEvent.OrderFilled> { e ->
+                ticketAttribution.record(e.brokerOrderId, e.strategyId)
+            }
             // Fills change equity; snapshot right away so dashboards don't wait a full
             // heartbeat interval. Registered after the pipeline's bookkeeping subscribers,
             // so the PnL read here already includes the fill.
