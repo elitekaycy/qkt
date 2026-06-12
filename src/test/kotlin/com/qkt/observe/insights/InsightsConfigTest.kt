@@ -23,7 +23,6 @@ class InsightsConfigTest {
                     "flush_interval_ms" to 100,
                     "batch_size" to 50,
                     "queue_capacity" to 1000,
-                    "snapshot_interval_ms" to 2000,
                     "state_poll_ms" to 4000,
                     "deal_backfill_days" to 7,
                 ),
@@ -41,7 +40,6 @@ class InsightsConfigTest {
         assertThat(cfg.flushIntervalMs).isEqualTo(100L)
         assertThat(cfg.batchSize).isEqualTo(50)
         assertThat(cfg.queueCapacity).isEqualTo(1000)
-        assertThat(cfg.snapshotIntervalMs).isEqualTo(2000L)
         assertThat(cfg.statePollMs).isEqualTo(4000L)
         assertThat(cfg.dealBackfillDays).isEqualTo(7L)
     }

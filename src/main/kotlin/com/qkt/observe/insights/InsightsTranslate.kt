@@ -8,7 +8,6 @@ import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TradeEvent
-import com.qkt.positions.PositionLeg
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 
@@ -213,58 +212,6 @@ object InsightsTranslate {
             null,
             "gateway.unreachable",
             mapOf("detail" to "${e.broker} unreachable after ${e.consecutiveFailures} consecutive failures"),
-        )
-
-    fun equitySnapshot(
-        ts: Long,
-        strategyId: String,
-        realized: BigDecimal,
-        unrealized: BigDecimal,
-        equity: BigDecimal,
-        startingBalance: BigDecimal,
-    ): InsightsEnvelope =
-        InsightsEnvelope(
-            id = "eq-$strategyId-$ts",
-            seq = 0,
-            ts = ts,
-            strategyId = strategyId,
-            type = "snapshot.equity",
-            payload =
-                mapOf(
-                    "strategyId" to strategyId,
-                    "realized" to realized,
-                    "unrealized" to unrealized,
-                    "equity" to equity,
-                    "startingBalance" to startingBalance,
-                ),
-        )
-
-    fun positionSnapshot(
-        ts: Long,
-        strategyId: String,
-        symbol: String,
-        legs: List<PositionLeg>,
-    ): InsightsEnvelope =
-        InsightsEnvelope(
-            id = "pos-$strategyId-$symbol-$ts",
-            seq = 0,
-            ts = ts,
-            strategyId = strategyId,
-            type = "snapshot.position",
-            payload =
-                mapOf(
-                    "strategyId" to strategyId,
-                    "symbol" to symbol,
-                    "legs" to
-                        legs.map {
-                            mapOf(
-                                "side" to it.side.name,
-                                "qty" to it.quantity,
-                                "entryPrice" to it.entryPrice,
-                                "entryTs" to it.openedAt,
-                            )
-                        },
-                ),
         )
 
     /**
