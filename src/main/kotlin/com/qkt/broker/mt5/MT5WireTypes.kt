@@ -57,6 +57,8 @@ data class MT5Position(
     val magic: Int,
     val openTime: Long,
     val comment: String? = null,
+    /** Accumulated swap in account currency; null when the gateway omits the field. */
+    val swap: BigDecimal? = null,
 )
 
 /**

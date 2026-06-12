@@ -546,6 +546,7 @@ class MT5Client(
             magic = obj["magic"]!!.jsonPrimitive.content.toInt(),
             openTime = rawTime - tzOffsetMs,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
+            swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
         )
     }
 
