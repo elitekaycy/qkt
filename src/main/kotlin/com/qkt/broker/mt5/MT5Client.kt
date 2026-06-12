@@ -193,6 +193,8 @@ class MT5Client(
             marginMode = obj["margin_mode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: MARGIN_MODE_NETTING,
             marginFree = obj["margin_free"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
             marginLevel = obj["margin_level"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
+            margin = obj["margin"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
+            profit = obj["profit"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
         )
     }
 
@@ -334,6 +336,46 @@ class MT5Client(
         return MT5ClosingDeal(
             price = notional.divide(volume, com.qkt.common.Money.CONTEXT),
             costs = reported.negate(),
+        )
+    }
+
+    /**
+     * Every deal the venue booked in `[fromUtcMs, toUtcMs]` — all positions, all symbols
+     * — via `GET /history_deals_get` with a date range only (no position filter). Powers
+     * the insights deal-history backfill. Bounds are shifted to venue time on the wire;
+     * deal times come back as UTC millis. Returns `null` when the read FAILED (gateway
+     * unreachable / non-2xx after retries) — callers must treat that as "unknown",
+     * never as "no deals", or an outage silently skips a slice of history.
+     */
+    fun getDeals(
+        fromUtcMs: Long,
+        toUtcMs: Long,
+    ): List<MT5Deal>? {
+        val url = "$gatewayUrl/history_deals_get?from_date=${venueIso(fromUtcMs)}&to_date=${venueIso(toUtcMs)}"
+        val raw = getWithRetry(url) ?: return null
+        val arr = json.parseToJsonElement(raw) as? JsonArray ?: return null
+        return arr.map { parseDeal(it.jsonObject) }
+    }
+
+    /** Tolerant of missing fields like [parsePendingOrder] — one bad row must not kill a backfill. */
+    private fun parseDeal(obj: JsonObject): MT5Deal {
+        val rawTimeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        return MT5Deal(
+            ticket = obj["ticket"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            orderTicket = obj["order"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            positionTicket = obj["position_id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            symbol = obj["symbol"]?.jsonPrimitive?.contentOrNull ?: "",
+            type = obj["type"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            entry = obj["entry"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            volume = obj["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            price = obj["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            profit = obj["profit"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            commission = obj["commission"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            fee = obj["fee"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
+            timeMs = rawTimeMs - tzOffsetMs,
         )
     }
 

@@ -24,6 +24,10 @@ data class MT5AccountInfo(
      * e.g. 850 = 8.5x covered). Null when no margin is in use or the field is absent.
      */
     val marginLevel: BigDecimal? = null,
+    /** Margin currently in use, in account currency; null when the gateway omits the field. */
+    val margin: BigDecimal? = null,
+    /** Floating profit of all open positions, in account currency; null when omitted. */
+    val profit: BigDecimal? = null,
 ) {
     /**
      * True when the venue keeps a long and a short on the same symbol as two separate
@@ -53,6 +57,35 @@ data class MT5Position(
     val magic: Int,
     val openTime: Long,
     val comment: String? = null,
+)
+
+/**
+ * One executed deal from the venue's history, via `GET /history_deals_get`. A deal is
+ * one in/out leg of a position: opening a position books an IN deal, closing it books
+ * an OUT deal carrying the realized profit. Used to mirror account history into insights.
+ */
+data class MT5Deal(
+    val ticket: Long,
+    /** Ticket of the order that produced this deal. */
+    val orderTicket: Long,
+    /** Ticket of the position this deal opened, reduced, or closed. */
+    val positionTicket: Long,
+    val symbol: String,
+    /** 0 = BUY, 1 = SELL. */
+    val type: Int,
+    /** Position lifecycle leg: 0 = IN, 1 = OUT, 2 = INOUT (reversal), 3 = OUT_BY (close-by). */
+    val entry: Int,
+    val volume: BigDecimal,
+    val price: BigDecimal,
+    /** Realized profit booked by this deal, in account currency (IN deals book 0). */
+    val profit: BigDecimal,
+    val commission: BigDecimal,
+    val swap: BigDecimal,
+    val fee: BigDecimal,
+    val magic: Int,
+    val comment: String?,
+    /** Deal execution time in UTC epoch millis (the venue's `time_msc`, tz-shifted). */
+    val timeMs: Long,
 )
 
 /**
