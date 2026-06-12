@@ -350,7 +350,9 @@ class LiveSession(
      * engine thread (fills) and at startup (recovery-seeded orphans); the poller only
      * reads, so it never touches engine-thread-only trackers.
      */
-    internal val ticketAttribution = com.qkt.observe.insights.TicketAttribution()
+    internal val ticketAttribution =
+        com.qkt.observe.insights
+            .TicketAttribution()
 
     private fun buildBroker(
         paperBroker: PaperBroker,
