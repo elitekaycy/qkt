@@ -80,7 +80,6 @@ class BrokerStatePoller(
         sink.offer(InsightsTranslate.stateAccount(now, account))
 
         val tickets = broker.positionTickets()
-        attribution.retainAll(tickets.map { it.ticket }.toSet())
         val deployed = deployedIds()
         sink.offer(
             InsightsTranslate.statePositions(
@@ -113,6 +112,13 @@ class BrokerStatePoller(
             if (d.ts > newest) newest = d.ts
         }
         lastDealTs[broker] = newest
+
+        // Prune only after the deal fetch: a position that closed since the last cycle
+        // is already gone from [tickets], and its closing deal arrives in this same
+        // cycle — pruning first would drop the owner the deal needs. The venue
+        // overwrites SL/TP close comments ("[tp 4332.689]"), so the map is the only
+        // attribution source for those.
+        attribution.retainAll(tickets.map { it.ticket }.toSet())
     }
 
     /** Stops the polling thread, waiting up to two seconds for the current cycle. */
