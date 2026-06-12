@@ -190,9 +190,13 @@ class MT5BrokerStateTest {
     }
 
     @Test
-    fun `positionTickets returns empty when the gateway read fails`() {
+    fun `positionTickets throws when the gateway read fails`() {
+        // Not empty-on-failure: the state poller prunes ticket attributions to this
+        // list, so a transient outage reading as "no positions" would wipe them.
         broker = newBroker()
         positionsResponse = { MockResponse().setResponseCode(500).setBody("boom") }
-        assertThat(broker.positionTickets()).isEmpty()
+        val err = runCatching { broker.positionTickets() }.exceptionOrNull()
+        assertThat(err).isNotNull
+        assertThat(err!!.message).contains("gateway read failed")
     }
 }

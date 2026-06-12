@@ -230,7 +230,12 @@ class MT5Broker(
     }
 
     override fun positionTickets(): List<BrokerPositionTicket> {
-        val positions = runCatching { client.getPositions(magic = profile.magic) }.getOrNull() ?: return emptyList()
+        // A failed gateway read must throw, not read as "no positions": the state
+        // poller prunes its ticket attributions to this list, and an empty answer
+        // on a transient outage would wipe them.
+        val positions =
+            client.getPositions(magic = profile.magic)
+                ?: error("MT5Broker ${profile.name} positionTickets: gateway read failed")
         return positions.map { p ->
             BrokerPositionTicket(
                 ticket = p.ticket.toString(),
