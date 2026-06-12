@@ -213,7 +213,8 @@ class DaemonCommand(
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
                     insightsEvents = cfg.insights.events,
-                    insightsSnapshotIntervalMs = cfg.insights.snapshotIntervalMs,
+                    insightsStatePollMs = cfg.insights.statePollMs,
+                    insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                 ),
             )
         registryRef.set(registry)
@@ -242,7 +243,8 @@ class DaemonCommand(
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
                     insightsEvents = cfg.insights.events,
-                    insightsSnapshotIntervalMs = cfg.insights.snapshotIntervalMs,
+                    insightsStatePollMs = cfg.insights.statePollMs,
+                    insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                 )
         val plane =
             ControlPlane(

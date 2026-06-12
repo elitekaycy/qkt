@@ -116,7 +116,8 @@ class StrategyHandle(
         /** Insights egress sink shared across every strategy this daemon hosts; null disables. */
         private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
         private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
-        private val insightsSnapshotIntervalMs: Long = 5_000L,
+        private val insightsStatePollMs: Long = 10_000L,
+        private val insightsDealBackfillDays: Long = 30L,
     ) : Factory {
         override fun create(
             name: String,
@@ -203,7 +204,8 @@ class StrategyHandle(
                         },
                     insightsSink = insightsSink,
                     insightsEvents = insightsEvents,
-                    insightsSnapshotIntervalMs = insightsSnapshotIntervalMs,
+                    insightsStatePollMs = insightsStatePollMs,
+                    insightsDealBackfillDays = insightsDealBackfillDays,
                 ).start()
 
             val server =

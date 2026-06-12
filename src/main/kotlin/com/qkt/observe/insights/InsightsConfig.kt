@@ -13,8 +13,12 @@ enum class InsightsEventFamily(
     SIGNAL("signal"),
     RISK("risk"),
     POSITION("position"),
+
+    /** Retired — ledger snapshots are replaced by the STATE poller. Kept so old configs parse; wires nothing. */
     SNAPSHOT("snapshot"),
     LOG("log"),
+    STATE("state"),
+    DEAL("deal"),
     ;
 
     companion object {
@@ -32,11 +36,12 @@ enum class InsightsEventFamily(
  *   url: "http://insights-host:8420/ingest"
  *   instance_id: "qkt-prod"
  *   token: "${INGEST_TOKEN}"
- *   events: [trade, order, signal, risk, position, snapshot]
+ *   events: [trade, order, signal, risk, position, state, deal]
  *   flush_interval_ms: 250
  *   batch_size: 200
  *   queue_capacity: 10000
- *   snapshot_interval_ms: 5000
+ *   state_poll_ms: 10000
+ *   deal_backfill_days: 30
  * ```
  */
 data class InsightsConfig(
@@ -48,7 +53,10 @@ data class InsightsConfig(
     val flushIntervalMs: Long,
     val batchSize: Int,
     val queueCapacity: Int,
-    val snapshotIntervalMs: Long,
+    /** Cadence of the broker state poller (account/positions/deals), milliseconds. */
+    val statePollMs: Long,
+    /** How far back the poller backfills broker deal history on startup, in days. */
+    val dealBackfillDays: Long,
 ) {
     companion object {
         val DISABLED: InsightsConfig =
@@ -61,7 +69,8 @@ data class InsightsConfig(
                 flushIntervalMs = 250L,
                 batchSize = 200,
                 queueCapacity = 10_000,
-                snapshotIntervalMs = 5_000L,
+                statePollMs = 10_000L,
+                dealBackfillDays = 30L,
             )
 
         @Suppress("UNCHECKED_CAST")
@@ -84,8 +93,9 @@ data class InsightsConfig(
                 flushIntervalMs = map["flush_interval_ms"]?.toString()?.toLongOrNull() ?: DISABLED.flushIntervalMs,
                 batchSize = map["batch_size"]?.toString()?.toIntOrNull() ?: DISABLED.batchSize,
                 queueCapacity = map["queue_capacity"]?.toString()?.toIntOrNull() ?: DISABLED.queueCapacity,
-                snapshotIntervalMs =
-                    map["snapshot_interval_ms"]?.toString()?.toLongOrNull() ?: DISABLED.snapshotIntervalMs,
+                statePollMs = map["state_poll_ms"]?.toString()?.toLongOrNull() ?: DISABLED.statePollMs,
+                dealBackfillDays =
+                    map["deal_backfill_days"]?.toString()?.toLongOrNull() ?: DISABLED.dealBackfillDays,
             )
         }
     }
