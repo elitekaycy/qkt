@@ -465,4 +465,80 @@ class MT5ClientTest {
         assertThat(isOrderSuccessful(resp.result.retcode)).isFalse
         assertThat(resp.errorMessage).contains("not found")
     }
+
+    @Test
+    fun `getDeals fetches a range without a position filter and parses every field`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":456,"order":789,"position_id":123,"symbol":"XAUUSDm","type":0,"entry":0,""" +
+                    """"volume":"0.01","price":"2300.5","profit":"0","commission":"-0.07","swap":"0",""" +
+                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700040000000},""" +
+                    """{"ticket":457,"order":790,"position_id":123,"symbol":"XAUUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.01","price":"2310.2","profit":"9.7","commission":"-0.07","swap":"-0.12",""" +
+                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700050000000}]""",
+            ),
+        )
+        val deals = client.getDeals(fromUtcMs = 1_700_000_000_000L, toUtcMs = 1_700_086_400_000L)!!
+        assertThat(deals).hasSize(2)
+        val opened = deals[0]
+        assertThat(opened.ticket).isEqualTo(456L)
+        assertThat(opened.orderTicket).isEqualTo(789L)
+        assertThat(opened.positionTicket).isEqualTo(123L)
+        assertThat(opened.symbol).isEqualTo("XAUUSDm")
+        assertThat(opened.type).isEqualTo(0)
+        assertThat(opened.entry).isEqualTo(0)
+        assertThat(opened.volume).isEqualByComparingTo("0.01")
+        assertThat(opened.price).isEqualByComparingTo("2300.5")
+        // time_msc is venue-clock millis; the client shifts it back to UTC (tz offset 2h).
+        assertThat(opened.timeMs).isEqualTo(1_700_040_000_000L - 2L * 3600L * 1000L)
+        val closed = deals[1]
+        assertThat(closed.entry).isEqualTo(1)
+        assertThat(closed.profit).isEqualByComparingTo("9.7")
+        assertThat(closed.commission).isEqualByComparingTo("-0.07")
+        assertThat(closed.swap).isEqualByComparingTo("-0.12")
+        assertThat(closed.fee).isEqualByComparingTo("0")
+        assertThat(closed.magic).isEqualTo(10001)
+        assertThat(closed.comment).isEqualTo("dsl-hedge_straddle")
+        assertThat(closed.timeMs).isEqualTo(1_700_050_000_000L - 2L * 3600L * 1000L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.method).isEqualTo("GET")
+        // Range bounds go on the wire as venue-clock ISO instants (UTC + 2h offset).
+        assertThat(recorded.path).isEqualTo(
+            "/history_deals_get?from_date=2023-11-15T00:13:20Z&to_date=2023-11-16T00:13:20Z",
+        )
+        assertThat(recorded.path).doesNotContain("position")
+    }
+
+    @Test
+    fun `getDeals returns null on gateway failure, not empty`() {
+        // null = "could not read" — a backfill that reads an outage as "no deals"
+        // would silently skip history instead of retrying next cycle.
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertThat(client.getDeals(fromUtcMs = 0L, toUtcMs = 1L)).isNull()
+    }
+
+    @Test
+    fun `getAccount parses margin and open profit`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":7824.05,"equity":7676.54,"currency":"USD","leverage":100,"margin_mode":2,""" +
+                    """"margin":540.97,"margin_free":7135.57,"margin_level":1419.03,"profit":-147.51}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.margin).isEqualByComparingTo("540.97")
+        assertThat(acct.profit).isEqualByComparingTo("-147.51")
+    }
+
+    @Test
+    fun `getAccount leaves margin and profit null when the gateway omits them`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":1000.0,"equity":1000.0,"currency":"USD","leverage":500,"margin_mode":0}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.margin).isNull()
+        assertThat(acct.profit).isNull()
+    }
 }

@@ -60,7 +60,8 @@ class PortfolioDeployer(
     /** Insights egress sink shared across every portfolio child; null disables. */
     private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
     private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
-    private val insightsSnapshotIntervalMs: Long = 5_000L,
+    private val insightsStatePollMs: Long = 10_000L,
+    private val insightsDealBackfillDays: Long = 30L,
 ) {
     /**
      * Deploy a compiled portfolio and start its supervisor. Throws if any child
@@ -235,7 +236,8 @@ class PortfolioDeployer(
                 notifyEvents = notifyEvents,
                 insightsSink = insightsSink,
                 insightsEvents = insightsEvents,
-                insightsSnapshotIntervalMs = insightsSnapshotIntervalMs,
+                insightsStatePollMs = insightsStatePollMs,
+                insightsDealBackfillDays = insightsDealBackfillDays,
                 startingBalances =
                     allocatedCapital?.let { mapOf(compiledChild.strategyId to it) } ?: emptyMap(),
             ).start()

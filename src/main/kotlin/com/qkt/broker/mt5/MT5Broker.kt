@@ -1,6 +1,9 @@
 package com.qkt.broker.mt5
 
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerAccountState
+import com.qkt.broker.BrokerDeal
+import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.SubmitAck
@@ -183,6 +186,90 @@ class MT5Broker(
     private var marginLevelCache: Pair<Long, java.math.BigDecimal?>? = null
 
     override fun accountEquity(): java.math.BigDecimal? = runCatching { client.getAccount()?.equity }.getOrNull()
+
+    override fun accountState(): BrokerAccountState? {
+        val acct = runCatching { client.getAccount() }.getOrNull() ?: return null
+        return BrokerAccountState(
+            broker = profile.name.uppercase(),
+            currency = acct.currency,
+            balance = acct.balance,
+            equity = acct.equity,
+            margin = acct.margin,
+            marginFree = acct.marginFree,
+            openProfit = acct.profit,
+            marginLevel = acct.marginLevel,
+        )
+    }
+
+    override fun deals(
+        from: Long,
+        to: Long,
+    ): List<BrokerDeal> {
+        val deals = runCatching { client.getDeals(from, to) }.getOrNull() ?: return emptyList()
+        // Range queries also return balance operations (deposits/withdrawals, type 2+) with
+        // no symbol and zero volume — only trade deals (0=BUY, 1=SELL) belong in history.
+        return deals.filter { it.type == 0 || it.type == 1 }.map { d ->
+            BrokerDeal(
+                broker = profile.name.uppercase(),
+                dealTicket = d.ticket.toString(),
+                positionTicket = d.positionTicket.takeIf { it != 0L }?.toString(),
+                orderTicket = d.orderTicket.takeIf { it != 0L }?.toString(),
+                symbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(d.symbol)}",
+                side = if (d.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL,
+                entry = dealEntryName(d.entry),
+                qty = d.volume,
+                price = d.price,
+                profit = d.profit,
+                commission = d.commission,
+                swap = d.swap,
+                magic = d.magic,
+                comment = d.comment,
+                ts = d.timeMs,
+            )
+        }
+    }
+
+    override fun positionTickets(): List<BrokerPositionTicket> {
+        // A failed gateway read must throw, not read as "no positions": the state
+        // poller prunes its ticket attributions to this list, and an empty answer
+        // on a transient outage would wipe them.
+        val positions =
+            client.getPositions(magic = profile.magic)
+                ?: error("MT5Broker ${profile.name} positionTickets: gateway read failed")
+        return positions.map { p ->
+            BrokerPositionTicket(
+                ticket = p.ticket.toString(),
+                symbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(p.symbol)}",
+                side = if (p.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL,
+                qty = p.volume,
+                entryPrice = p.priceOpen,
+                currentPrice = p.priceCurrent,
+                profit = p.profit,
+                swap = p.swap,
+                openedAt = p.openTime,
+                comment = p.comment,
+            )
+        }
+    }
+
+    /**
+     * Ticket → strategy-id pairs this broker currently attributes — recovery-seeded
+     * orphans plus positions whose fills it has tracked. Read once at session start to
+     * seed the insights ticket-attribution mirror, e.g. an orphan ticket 2832831596
+     * recovered for hedge_straddle yields ("2832831596", "hedge_straddle").
+     */
+    fun ticketAttributions(): Map<String, String> =
+        positionMetaByTicket.entries.associate { (ticket, meta) -> ticket.toString() to meta.strategyId }
+
+    /** MT5 `DEAL_ENTRY_*` codes as names; an unrecognized code passes through as its number. */
+    private fun dealEntryName(entry: Int): String =
+        when (entry) {
+            0 -> "IN"
+            1 -> "OUT"
+            2 -> "INOUT"
+            3 -> "OUT_BY"
+            else -> entry.toString()
+        }
 
     /**
      * Venue margin level, cached for [MARGIN_CACHE_TTL_MS] — the margin floor consults

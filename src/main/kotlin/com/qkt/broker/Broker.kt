@@ -123,6 +123,29 @@ interface Broker {
 
     /** Venue-reported account equity, or null when the venue doesn't expose one. */
     fun accountEquity(): java.math.BigDecimal? = null
+
+    /**
+     * Full venue account snapshot (balance, equity, margin) for observability. Null when
+     * the venue has none to report (paper brokers) or the read failed.
+     */
+    fun accountState(): BrokerAccountState? = null
+
+    /**
+     * Deals (executed in/out legs) the venue booked in `[from, to]` (UTC epoch ms),
+     * e.g. one position closed by TP yields an IN deal and an OUT deal carrying the
+     * realized profit. Empty when the venue keeps no deal history or the read failed.
+     */
+    fun deals(
+        from: Long,
+        to: Long,
+    ): List<BrokerDeal> = emptyList()
+
+    /**
+     * Per-ticket open positions as the venue values them — unlike [getOpenPositions],
+     * which aggregates per symbol for reconciliation, this keeps each ticket with its
+     * broker-reported profit and swap. Empty when unsupported or the read failed.
+     */
+    fun positionTickets(): List<BrokerPositionTicket> = emptyList()
 }
 
 /**
