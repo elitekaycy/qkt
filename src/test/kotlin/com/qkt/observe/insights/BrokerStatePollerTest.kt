@@ -257,6 +257,35 @@ class BrokerStatePollerTest {
     }
 
     @Test
+    fun `a deal closing a just-vanished position is attributed before the prune`() {
+        // The venue overwrites SL/TP close comments ("[tp 4332.689]"), so the owner
+        // map is the only attribution source for a position that closed between
+        // cycles: it is gone from positionTickets() but its deal arrives this cycle.
+        val now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.tickets = emptyList()
+        broker.allDeals =
+            listOf(deal("77", ts = now - 500L, positionTicket = "T9", comment = "[tp 4332.689]"))
+        val attribution = TicketAttribution()
+        attribution.record("T9", "hedge_straddle")
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = attribution,
+                deployedIds = { listOf("hedge_straddle") },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        val all = collectBodies("deal-FAKE-77")
+        val dealEntry = all.substringAfter("deal-FAKE-77").substringBefore("}}")
+        assertThat(dealEntry).contains(""""strategyId":"hedge_straddle"""")
+        // Pruned after the fetch: the closed ticket no longer occupies the map.
+        assertThat(attribution.ownerOf("T9")).isNull()
+    }
+
+    @Test
     fun `close stops the polling thread`() {
         val broker = FakeBroker()
         val poller =
