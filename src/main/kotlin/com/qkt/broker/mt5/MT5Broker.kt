@@ -1,6 +1,9 @@
 package com.qkt.broker.mt5
 
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerAccountState
+import com.qkt.broker.BrokerDeal
+import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.SubmitAck
@@ -183,6 +186,74 @@ class MT5Broker(
     private var marginLevelCache: Pair<Long, java.math.BigDecimal?>? = null
 
     override fun accountEquity(): java.math.BigDecimal? = runCatching { client.getAccount()?.equity }.getOrNull()
+
+    override fun accountState(): BrokerAccountState? {
+        val acct = runCatching { client.getAccount() }.getOrNull() ?: return null
+        return BrokerAccountState(
+            broker = profile.name.uppercase(),
+            currency = acct.currency,
+            balance = acct.balance,
+            equity = acct.equity,
+            margin = acct.margin,
+            marginFree = acct.marginFree,
+            openProfit = acct.profit,
+            marginLevel = acct.marginLevel,
+        )
+    }
+
+    override fun deals(
+        from: Long,
+        to: Long,
+    ): List<BrokerDeal> {
+        val deals = runCatching { client.getDeals(from, to) }.getOrNull() ?: return emptyList()
+        return deals.map { d ->
+            BrokerDeal(
+                broker = profile.name.uppercase(),
+                dealTicket = d.ticket.toString(),
+                positionTicket = d.positionTicket.takeIf { it != 0L }?.toString(),
+                orderTicket = d.orderTicket.takeIf { it != 0L }?.toString(),
+                symbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(d.symbol)}",
+                side = if (d.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL,
+                entry = dealEntryName(d.entry),
+                qty = d.volume,
+                price = d.price,
+                profit = d.profit,
+                commission = d.commission,
+                swap = d.swap,
+                magic = d.magic,
+                comment = d.comment,
+                ts = d.timeMs,
+            )
+        }
+    }
+
+    override fun positionTickets(): List<BrokerPositionTicket> {
+        val positions = runCatching { client.getPositions(magic = profile.magic) }.getOrNull() ?: return emptyList()
+        return positions.map { p ->
+            BrokerPositionTicket(
+                ticket = p.ticket.toString(),
+                symbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(p.symbol)}",
+                side = if (p.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL,
+                qty = p.volume,
+                entryPrice = p.priceOpen,
+                currentPrice = null,
+                profit = p.profit,
+                swap = p.swap,
+                openedAt = p.openTime,
+                comment = p.comment,
+            )
+        }
+    }
+
+    /** MT5 `DEAL_ENTRY_*` codes as names; an unrecognized code passes through as its number. */
+    private fun dealEntryName(entry: Int): String =
+        when (entry) {
+            0 -> "IN"
+            1 -> "OUT"
+            2 -> "INOUT"
+            3 -> "OUT_BY"
+            else -> entry.toString()
+        }
 
     /**
      * Venue margin level, cached for [MARGIN_CACHE_TTL_MS] — the margin floor consults
