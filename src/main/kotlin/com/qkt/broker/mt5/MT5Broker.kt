@@ -247,6 +247,15 @@ class MT5Broker(
         }
     }
 
+    /**
+     * Ticket → strategy-id pairs this broker currently attributes — recovery-seeded
+     * orphans plus positions whose fills it has tracked. Read once at session start to
+     * seed the insights ticket-attribution mirror, e.g. an orphan ticket 2832831596
+     * recovered for hedge_straddle yields ("2832831596", "hedge_straddle").
+     */
+    fun ticketAttributions(): Map<String, String> =
+        positionMetaByTicket.entries.associate { (ticket, meta) -> ticket.toString() to meta.strategyId }
+
     /** MT5 `DEAL_ENTRY_*` codes as names; an unrecognized code passes through as its number. */
     private fun dealEntryName(entry: Int): String =
         when (entry) {
