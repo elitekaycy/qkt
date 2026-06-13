@@ -198,6 +198,9 @@ class MT5Broker(
             marginFree = acct.marginFree,
             openProfit = acct.profit,
             marginLevel = acct.marginLevel,
+            login = acct.login,
+            server = acct.server,
+            name = acct.name,
         )
     }
 
