@@ -44,6 +44,9 @@ class BrokerStatePollerTest {
                 marginFree = null,
                 openProfit = BigDecimal("-147.51"),
                 marginLevel = null,
+                login = 435898347L,
+                server = "Exness-MT5Trial9",
+                name = "qkt-hedge-straddle",
             )
         var tickets: List<BrokerPositionTicket> = emptyList()
         var allDeals: List<BrokerDeal> = emptyList()

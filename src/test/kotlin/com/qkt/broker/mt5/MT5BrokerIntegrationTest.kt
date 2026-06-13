@@ -133,7 +133,7 @@ class MT5BrokerIntegrationTest {
                             MockResponse().setBody(
                                 """[{"ticket":"4242","symbol":"EURUSDm","type":"0","volume":"0.10",""" +
                                     """"price_open":"1.1003","sl":"0","tp":"0","profit":"0","magic":"10001",""" +
-                                    """"open_time":"0","comment":"ord-amb-1"}]""",
+                                    """"time_msc":"0","comment":"ord-amb-1"}]""",
                             )
                         else -> MockResponse().setResponseCode(404)
                     }
@@ -418,7 +418,7 @@ class MT5BrokerIntegrationTest {
                                 MockResponse().setBody(
                                     """[{"ticket":777,"symbol":"EURUSDm","type":0,"volume":"0.1",""" +
                                         """"price_open":"1.1050","sl":"0","tp":"0","profit":"0","magic":10001,""" +
-                                        """"open_time":"1700000000","comment":"stop-26c"}]""",
+                                        """"time_msc":"1700000000","comment":"stop-26c"}]""",
                                 )
                             } else {
                                 MockResponse().setBody("[]")
@@ -637,7 +637,7 @@ class MT5BrokerIntegrationTest {
                                 MockResponse().setBody(
                                     """[{"ticket":$leg2Ticket,"symbol":"EURUSDm","type":1,"volume":"0.1",""" +
                                         """"price_open":"1.0950","sl":"0","tp":"0","profit":"0","magic":10001,""" +
-                                        """"open_time":"1700000000","comment":"oco:oco-leg-fill/sell-leg"}]""",
+                                        """"time_msc":"1700000000","comment":"oco:oco-leg-fill/sell-leg"}]""",
                                 )
                             } else {
                                 MockResponse().setBody("[]")
@@ -1039,7 +1039,7 @@ class MT5BrokerIntegrationTest {
                                 MockResponse().setBody(
                                     """[{"ticket":$ticket,"symbol":"EURUSDm","type":0,"volume":"0.10",""" +
                                         """"price_open":"1.1050","sl":"1.1020","tp":"1.1080","profit":"0",""" +
-                                        """"magic":10001,"open_time":"1700000000","comment":"br-pending"}]""",
+                                        """"magic":10001,"time_msc":"1700000000","comment":"br-pending"}]""",
                                 )
                             } else {
                                 MockResponse().setBody("[]")

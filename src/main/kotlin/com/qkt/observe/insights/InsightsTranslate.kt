@@ -240,6 +240,9 @@ object InsightsTranslate {
                     "marginFree" to s.marginFree,
                     "openProfit" to s.openProfit,
                     "marginLevel" to s.marginLevel,
+                    "login" to s.login.takeIf { it != 0L }?.toString(),
+                    "server" to s.server.takeIf { it.isNotEmpty() },
+                    "name" to s.name.takeIf { it.isNotEmpty() },
                 ),
         )
 

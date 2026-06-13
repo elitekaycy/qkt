@@ -66,7 +66,8 @@ class MT5BrokerStateTest {
         accountResponse = {
             MockResponse().setBody(
                 """{"balance":7824.05,"equity":7676.54,"currency":"USD","leverage":100,"margin_mode":2,""" +
-                    """"margin":540.97,"margin_free":7135.57,"margin_level":1419.03,"profit":-147.51}""",
+                    """"margin":540.97,"margin_free":7135.57,"margin_level":1419.03,"profit":-147.51,""" +
+                    """"login":435898347,"server":"Exness-MT5Trial9","name":"qkt-hedge-straddle"}""",
             )
         }
         broker = newBroker()
@@ -79,6 +80,9 @@ class MT5BrokerStateTest {
         assertThat(state.marginFree).isEqualByComparingTo("7135.57")
         assertThat(state.openProfit).isEqualByComparingTo("-147.51")
         assertThat(state.marginLevel).isEqualByComparingTo("1419.03")
+        assertThat(state.login).isEqualTo(435898347L)
+        assertThat(state.server).isEqualTo("Exness-MT5Trial9")
+        assertThat(state.name).isEqualTo("qkt-hedge-straddle")
     }
 
     @Test
@@ -157,7 +161,7 @@ class MT5BrokerStateTest {
             MockResponse().setBody(
                 """[{"ticket":2832831596,"symbol":"XAUUSDm","type":1,"volume":"0.01",""" +
                     """"price_open":"2300.5","price_current":"2310.2","sl":"0","tp":"0",""" +
-                    """"profit":"-9.3","swap":"-0.12","magic":10001,"open_time":1700000000000,""" +
+                    """"profit":"-9.3","swap":"-0.12","magic":10001,"time_msc":1700000000000,""" +
                     """"comment":"dsl-hedge_straddle"}]""",
             )
         }
@@ -182,7 +186,7 @@ class MT5BrokerStateTest {
         positionsResponse = {
             MockResponse().setBody(
                 """[{"ticket":1,"symbol":"XAUUSDm","type":0,"volume":"0.01","price_open":"2300.5",""" +
-                    """"sl":"0","tp":"0","profit":"1.2","magic":10001,"open_time":1700000000000}]""",
+                    """"sl":"0","tp":"0","profit":"1.2","magic":10001,"time_msc":1700000000000}]""",
             )
         }
         broker = newBroker()

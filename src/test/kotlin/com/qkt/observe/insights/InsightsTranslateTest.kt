@@ -77,6 +77,9 @@ class InsightsTranslateTest {
                 marginFree = BigDecimal("7135.57"),
                 openProfit = BigDecimal("-147.51"),
                 marginLevel = BigDecimal("1419.03"),
+                login = 435898347L,
+                server = "Exness-MT5Trial9",
+                name = "qkt-hedge-straddle",
             )
         val env = InsightsTranslate.stateAccount(ts = 1718000000000L, s = full)
         assertThat(env.id).isEqualTo("acct-EXNESS-1718000000000")
@@ -91,11 +94,25 @@ class InsightsTranslateTest {
         assertThat(json).contains(""""marginFree":7135.57""")
         assertThat(json).contains(""""openProfit":-147.51""")
         assertThat(json).contains(""""marginLevel":1419.03""")
+        assertThat(json).contains(""""login":"435898347"""")
+        assertThat(json).contains(""""server":"Exness-MT5Trial9"""")
+        assertThat(json).contains(""""name":"qkt-hedge-straddle"""")
 
-        val bare = full.copy(margin = null, marginFree = null, openProfit = null, marginLevel = null)
+        val bare =
+            full.copy(
+                margin = null,
+                marginFree = null,
+                openProfit = null,
+                marginLevel = null,
+                login = 0,
+                server = "",
+                name = "",
+            )
         val bareJson = InsightsTranslate.stateAccount(ts = 1L, s = bare).toJson("qkt-prod")
         assertThat(bareJson).doesNotContain("margin")
         assertThat(bareJson).doesNotContain("openProfit")
+        assertThat(bareJson).doesNotContain(""""login"""")
+        assertThat(bareJson).doesNotContain(""""server"""")
         assertThat(bareJson).doesNotContain("null")
     }
 

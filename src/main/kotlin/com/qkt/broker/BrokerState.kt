@@ -21,6 +21,12 @@ data class BrokerAccountState(
     val openProfit: BigDecimal?,
     /** Equity / used margin x 100 (a percent); null when no margin is in use. */
     val marginLevel: BigDecimal?,
+    /** MT5 account login number — which broker account the equity belongs to. */
+    val login: Long,
+    /** Broker trade server, e.g. "Exness-MT5Trial9". */
+    val server: String,
+    /** Account holder name as the venue records it, e.g. "qkt-hedge-straddle". */
+    val name: String,
 )
 
 /** One executed venue deal (an in/out leg in MT5 terms), used for insights history. */
