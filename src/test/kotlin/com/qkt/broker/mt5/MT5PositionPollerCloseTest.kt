@@ -62,7 +62,7 @@ class MT5PositionPollerCloseTest {
 
     private fun positionsJson(positions: List<Triple<Long, Int, String>>): String =
         positions.joinToString(prefix = "[", postfix = "]") { (ticket, type, priceOpen) ->
-            """{"ticket":"$ticket","symbol":"XAUUSD","type":"$type","volume":"0.10","price_open":"$priceOpen","sl":"0","tp":"0","profit":"0","magic":"12345","open_time":"0"}"""
+            """{"ticket":"$ticket","symbol":"XAUUSD","type":"$type","volume":"0.10","price_open":"$priceOpen","sl":"0","tp":"0","profit":"0","magic":"12345","time_msc":"0"}"""
         }
 
     @Test

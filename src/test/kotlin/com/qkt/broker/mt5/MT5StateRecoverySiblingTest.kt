@@ -49,7 +49,7 @@ class MT5StateRecoverySiblingTest {
             MockResponse().setBody(
                 """[{"ticket":42,"symbol":"XAUUSDm","type":0,"volume":"0.10","price_open":"4500.0",
                     "sl":"0","tp":"0","profit":"0","magic":10001,
-                    "open_time":"1748513200","comment":"dsl-hedge-stradd"}]""",
+                    "time_msc":"1748513200","comment":"dsl-hedge-stradd"}]""",
             ),
         )
         val seeded = mutableListOf<Triple<Long, String, String>>()
@@ -74,7 +74,7 @@ class MT5StateRecoverySiblingTest {
             MockResponse().setBody(
                 """[{"ticket":42,"symbol":"XAUUSDm","type":0,"volume":"0.10","price_open":"4500.0",
                     "sl":"0","tp":"0","profit":"0","magic":10001,
-                    "open_time":"1748513200","comment":"dsl-hedge_straddl"}]""",
+                    "time_msc":"1748513200","comment":"dsl-hedge_straddl"}]""",
             ),
         )
         val seeded = mutableListOf<Triple<Long, String, String>>()
@@ -100,7 +100,7 @@ class MT5StateRecoverySiblingTest {
             MockResponse().setBody(
                 """[{"ticket":42,"symbol":"XAUUSDm","type":0,"volume":"0.10","price_open":"4500.0",
                     "sl":"0","tp":"0","profit":"0","magic":10001,
-                    "open_time":"1748513200","comment":"dsl-hedge_straddl"}]""",
+                    "time_msc":"1748513200","comment":"dsl-hedge_straddl"}]""",
             ),
         )
         val siblings = mutableListOf<String>()
