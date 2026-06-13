@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquitySample
+import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.SampleCadence
 import java.io.ByteArrayOutputStream
@@ -84,6 +85,43 @@ class ReportPrinterTest {
         val json = render(ReportFormat.Json, BrokerKind.PAPER, commissionPaid = "5.00")
         assertThat(json).contains("\"commissionPaid\":5.00")
         assertThat(json).contains("\"executionModel\":\"paper\"")
+    }
+
+    @Test
+    fun `json report carries the monte carlo drawdown tail when available`() {
+        val mc =
+            MonteCarloSummary(
+                simulations = 1000,
+                finalEquityP5 = BigDecimal("-120.5"),
+                finalEquityP25 = BigDecimal("10"),
+                finalEquityP50 = BigDecimal("80.0"),
+                finalEquityP75 = BigDecimal("200"),
+                finalEquityP95 = BigDecimal("310.0"),
+                maxDrawdownP5 = BigDecimal("-0.22"),
+                maxDrawdownP95 = BigDecimal("-0.04"),
+                probabilityNegativeFinal = BigDecimal("0.18"),
+                equityFanByTradeIndex = emptyList(),
+            )
+        val r = report("0").copy(monteCarlo = mc)
+        val res = BacktestResult(emptyList(), emptyList(), emptyMap(), r, emptyMap(), SampleCadence.TICK)
+        val buf = ByteArrayOutputStream()
+        ReportPrinter.print(res, ReportFormat.Json, PrintStream(buf), BrokerKind.PAPER)
+        val json = buf.toString()
+        assertThat(json).contains("\"monteCarlo\":{")
+        assertThat(json).contains("\"simulations\":1000")
+        assertThat(json).contains("\"maxDrawdownP95\":-0.04")
+        assertThat(json).contains("\"maxDrawdownP5\":-0.22")
+        assertThat(json).contains("\"finalEquityP95\":310.0")
+        assertThat(json).contains("\"probabilityNegativeFinal\":0.18")
+        // the per-trade equity fan is an HTML viz detail, not serialized to json
+        assertThat(json).doesNotContain("equityFan")
+    }
+
+    @Test
+    fun `json monte carlo is null when not enough trades`() {
+        // default report has no monteCarlo (fewer than 30 trades would yield null upstream)
+        val json = render(ReportFormat.Json, BrokerKind.PAPER)
+        assertThat(json).contains("\"monteCarlo\":null")
     }
 
     @Test
