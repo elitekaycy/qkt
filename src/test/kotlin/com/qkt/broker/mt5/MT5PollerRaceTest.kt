@@ -142,7 +142,7 @@ class MT5PollerRaceTest {
         server.enqueue(MockResponse().setBody("[]"))
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":"9001","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","open_time":"0"}]""",
+                """[{"ticket":"9001","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","time_msc":"0"}]""",
             ),
         )
         broker.pendingPoller.tickForTesting()
@@ -155,7 +155,7 @@ class MT5PollerRaceTest {
         // Position-poller now ticks and sees the same ticket — must not double-fire.
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":"9001","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","open_time":"0"}]""",
+                """[{"ticket":"9001","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","time_msc":"0"}]""",
             ),
         )
         broker.poller.tick()
@@ -185,7 +185,7 @@ class MT5PollerRaceTest {
         // sees it disappear from /orders.
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":"9002","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","open_time":"0"}]""",
+                """[{"ticket":"9002","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","time_msc":"0"}]""",
             ),
         )
         broker.poller.tick()
@@ -240,7 +240,7 @@ class MT5PollerRaceTest {
             // (e.g. manual MT5 trade with the same magic).
             server.enqueue(
                 MockResponse().setBody(
-                    """[{"ticket":"7777","symbol":"EURUSDm","type":"1","volume":"0.05","price_open":"1.1234","sl":"0","tp":"0","profit":"0","magic":"10001","open_time":"0"}]""",
+                    """[{"ticket":"7777","symbol":"EURUSDm","type":"1","volume":"0.05","price_open":"1.1234","sl":"0","tp":"0","profit":"0","magic":"10001","time_msc":"0"}]""",
                 ),
             )
             broker.poller.tick()
@@ -289,7 +289,7 @@ class MT5PollerRaceTest {
             server.enqueue(MockResponse().setBody("[]"))
             server.enqueue(
                 MockResponse().setBody(
-                    """[{"ticket":"9100","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","open_time":"0"}]""",
+                    """[{"ticket":"9100","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","time_msc":"0"}]""",
                 ),
             )
             broker.pendingPoller.tickForTesting()
@@ -298,7 +298,7 @@ class MT5PollerRaceTest {
             // Position-poller now ticks; same ticket appears in its opened-delta.
             server.enqueue(
                 MockResponse().setBody(
-                    """[{"ticket":"9100","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","open_time":"0"}]""",
+                    """[{"ticket":"9100","symbol":"EURUSDm","type":"0","volume":"0.10","price_open":"1.1200","sl":"1.1150","tp":"1.1300","profit":"0","magic":"10001","time_msc":"0"}]""",
                 ),
             )
             broker.poller.tick()

@@ -195,6 +195,9 @@ class MT5Client(
             marginLevel = obj["margin_level"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
             margin = obj["margin"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
             profit = obj["profit"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
+            login = obj["login"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+            server = obj["server"]?.jsonPrimitive?.contentOrNull ?: "",
+            name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
         )
     }
 
@@ -533,7 +536,10 @@ class MT5Client(
     }
 
     private fun parsePosition(obj: JsonObject): MT5Position {
-        val rawTime = obj["open_time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        // The gateway serializes the raw MT5 position tuple, whose open time is `time_msc`
+        // (server-time epoch millis) — there is no `open_time` column. Subtracting the venue
+        // offset below lands it on UTC, the same handling parseDeal uses for deal times.
+        val rawTime = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         return MT5Position(
             ticket = obj["ticket"]!!.jsonPrimitive.content.toLong(),
             symbol = obj["symbol"]!!.jsonPrimitive.content,

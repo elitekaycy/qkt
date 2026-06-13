@@ -198,7 +198,7 @@ class MT5ClientTest {
         val expectedUtcMs = serverEpochMs - 2L * 3600L * 1000L
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"open_time":$serverEpochMs,"comment":"x"}]""",
+                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$serverEpochMs,"comment":"x"}]""",
             ),
         )
         val positions = client.getPositions(magic = 10001)!!

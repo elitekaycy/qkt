@@ -28,6 +28,12 @@ data class MT5AccountInfo(
     val margin: BigDecimal? = null,
     /** Floating profit of all open positions, in account currency; null when omitted. */
     val profit: BigDecimal? = null,
+    /** MT5 account login number — identifies which broker account this is. */
+    val login: Long = 0,
+    /** Broker trade server, e.g. "Exness-MT5Trial9". */
+    val server: String = "",
+    /** Account holder name as the venue records it, e.g. "qkt-hedge-straddle". */
+    val name: String = "",
 ) {
     /**
      * True when the venue keeps a long and a short on the same symbol as two separate
