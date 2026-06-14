@@ -28,6 +28,7 @@ internal fun runMain(argv: Array<String>): Int {
             "create" -> CreateCommand(args).run()
             "audit-ticks" -> AuditTicksCommand(args).run()
             "fetch" -> FetchCommand(args).run()
+            "data" -> DataCommand(args).run()
             "daemon" -> DaemonCommand(args).run()
             "logs" -> LogsCommand(args).run()
             "status" -> StatusCommand(args).run()
@@ -92,6 +93,7 @@ private fun printHelp() {
                                     backfill historical bars into the local store
             fetch BROKER:SYMBOL --tf <tf> --last 30d
                                     same, but for the last N days
+            data verify <symbol>    check cached tick day files for empty/corrupt/gappy data
 
         EDITOR INTEGRATIONS
             editor list             show supported editors + what's detected on this machine
