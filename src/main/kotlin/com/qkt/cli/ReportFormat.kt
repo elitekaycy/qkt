@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.MonteCarloSummary
 import java.io.PrintStream
 
 /** Output format selector for `qkt backtest` console reports. */
@@ -111,8 +112,29 @@ object ReportPrinter {
         )
         sb.append("},")
         sb.append("\"halts\":").append(r.halts.size).append(',')
-        sb.append("\"cadence\":\"").append(r.cadence.name).append('"')
+        sb.append("\"cadence\":\"").append(r.cadence.name).append("\",")
+        sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
+    }
+
+    /**
+     * The trade-bootstrap Monte-Carlo tail as a JSON object, or `null` when MC was unavailable
+     * (fewer than the minimum trades). The drawdown percentiles let a sizing consumer reserve
+     * against resampled drawdowns rather than the single realized path; the per-trade equity fan
+     * is an HTML-visualization detail and is omitted.
+     */
+    private fun monteCarloJson(mc: MonteCarloSummary?): String {
+        if (mc == null) return "null"
+        return buildString {
+            append("{\"simulations\":").append(mc.simulations)
+            append(",\"finalEquityP5\":").append(mc.finalEquityP5.toPlainString())
+            append(",\"finalEquityP50\":").append(mc.finalEquityP50.toPlainString())
+            append(",\"finalEquityP95\":").append(mc.finalEquityP95.toPlainString())
+            append(",\"maxDrawdownP5\":").append(mc.maxDrawdownP5.toPlainString())
+            append(",\"maxDrawdownP95\":").append(mc.maxDrawdownP95.toPlainString())
+            append(",\"probabilityNegativeFinal\":").append(mc.probabilityNegativeFinal.toPlainString())
+            append("}")
+        }
     }
 }
