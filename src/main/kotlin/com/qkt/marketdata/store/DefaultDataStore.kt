@@ -13,6 +13,7 @@ import java.nio.file.Path
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import org.slf4j.LoggerFactory
 
 class DefaultDataStore(
     override val root: Path,
@@ -20,6 +21,8 @@ class DefaultDataStore(
     private val clock: Clock = SystemClock(),
     private val manifestStore: ManifestStore = ManifestStore(root, clock),
 ) : DataStore {
+    private val log = LoggerFactory.getLogger(DefaultDataStore::class.java)
+
     override fun manifest(symbol: String): Manifest = manifestStore.read(symbol)
 
     override fun dayFile(
@@ -151,12 +154,45 @@ class DefaultDataStore(
             for (day in missing) {
                 val target = root.resolve("symbols").resolve(sym).resolve("$day.csv.gz")
                 f.fetch(sym, day, target)
+                warnOnLowQuality(sym, day, target)
             }
             var ranges = manifest.ranges
             for (day in missing) {
                 ranges = manifestStore.coalesce(ranges, DayRange(day.toString(), day.plusDays(1).toString()))
             }
             manifestStore.write(manifest.copy(ranges = ranges))
+        }
+    }
+
+    /**
+     * Inspect a freshly-fetched day file and warn loudly if it looks incomplete — empty, corrupt,
+     * or holding a large intra-day gap. The store keys coverage on file presence, so without this a
+     * bad fetch is concatenated into backtests as if complete. We warn rather than refetch: a
+     * genuinely quiet day (weekend/holiday) is legitimately empty, and auto-refetching would loop.
+     */
+    private fun warnOnLowQuality(
+        sym: String,
+        day: LocalDate,
+        path: Path,
+    ) {
+        if (!Files.exists(path)) {
+            log.warn("data integrity: fetch of {} {} produced no file at {}", sym, day, path)
+            return
+        }
+        val q = DayFileIntegrity.inspect(path)
+        when {
+            !q.readable ->
+                log.warn("data integrity: {} {} is unreadable/corrupt — backtests will fail or skip it", sym, day)
+            q.isEmpty ->
+                log.warn("data integrity: {} {} has 0 ticks (a no-trading day, or a truncated fetch)", sym, day)
+            q.maxGapMs >= SUSPICIOUS_GAP_MS ->
+                log.warn(
+                    "data integrity: {} {} has a {}h intra-day gap across {} ticks — possible partial data",
+                    sym,
+                    day,
+                    q.maxGapMs / 3_600_000,
+                    q.tickCount,
+                )
         }
     }
 
@@ -187,6 +223,9 @@ class DefaultDataStore(
     }
 
     companion object {
+        /** Intra-day gap (ms) above which a fetched day file is flagged as possibly partial. 6h. */
+        private const val SUSPICIOUS_GAP_MS = 6 * 60 * 60 * 1000L
+
         fun fromEnv(
             fetcher: DataFetcher? = null,
             clock: Clock = SystemClock(),
