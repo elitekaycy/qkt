@@ -156,6 +156,19 @@ class AsyncStatePersistor(
 
     override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> = delegate.loadOcoLegs(strategyId)
 
+    override fun saveTrailingStops(
+        strategyId: String,
+        stops: List<PersistedTrailingStop>,
+    ) {
+        val snapshot = stops.toList()
+        submit("saveTrailingStops $strategyId") {
+            delegate.saveTrailingStops(strategyId, snapshot)
+        }
+    }
+
+    override fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> =
+        delegate.loadTrailingStops(strategyId)
+
     override fun saveRiskState(
         strategyId: String,
         state: PersistedRiskState,
