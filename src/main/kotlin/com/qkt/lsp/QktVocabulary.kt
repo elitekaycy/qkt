@@ -23,8 +23,12 @@ object QktVocabulary {
     /** Indicator names a strategy can call, e.g. `ema`, `rsi`, `atr`. */
     val indicators: List<String> = IndicatorRegistry.names().map { it.lowercase() }.sorted()
 
-    /** Scalar functions, e.g. `abs`, `sqrt`, `min`. */
-    val functions: List<String> = FuncRegistry.names().map { it.lowercase() }.sorted()
+    /**
+     * Scalar functions, e.g. `abs`, `sqrt`, `min`. `calendar_window` is a parser-recognized
+     * boolean primitive that lives outside [FuncRegistry] (it reads the clock), so it is added
+     * explicitly here.
+     */
+    val functions: List<String> = (FuncRegistry.names().map { it.lowercase() } + "calendar_window").sorted()
 
     /** Named percentage constants, e.g. `ONE_PERCENT`, `BPS`. */
     val constants: List<String> = Constants.names().sorted()

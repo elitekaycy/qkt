@@ -7,6 +7,7 @@ import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
+import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
@@ -60,6 +61,7 @@ class ExprCompiler(
             is Ref -> compileRef(expr, ruleAlias)
             is Aggregate -> compileAggregate(expr, ruleAlias)
             is NowAccessor -> compileNow(expr)
+            is CalendarWindow -> compileCalendarWindow(expr)
             is com.qkt.dsl.ast.EntryQty ->
                 error("ENTRY_QTY is only valid inside STACK_AT SIZING; got it in a non-STACK_AT expression")
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
@@ -80,6 +82,8 @@ class ExprCompiler(
                             NowField.HOUR_UTC -> z.hour
                             NowField.MINUTE_UTC -> z.minute
                             NowField.WEEKDAY -> z.dayOfWeek.value - 1
+                            NowField.MONTH -> z.monthValue
+                            NowField.DAY -> z.dayOfMonth
                             NowField.DATE_UTC -> z.toLocalDate().toEpochDay().toInt()
                             NowField.EPOCH_MS -> error("handled above")
                         }
@@ -87,6 +91,24 @@ class ExprCompiler(
                 }
             }
         }
+
+    private fun compileCalendarWindow(win: CalendarWindow): CompiledExpr {
+        // Encode each (month, day) as MMDD so a plain integer compare orders dates within a
+        // year, e.g. Aug 15 -> 815, Oct 31 -> 1031.
+        val start = win.startMonth * 100 + win.startDay
+        val end = win.endMonth * 100 + win.endDay
+        return CompiledExpr { ctx ->
+            val z =
+                java.time.Instant
+                    .ofEpochMilli(ctx.strategyContext.clock.now())
+                    .atZone(java.time.ZoneOffset.UTC)
+            val cur = z.monthValue * 100 + z.dayOfMonth
+            // A non-wrapping window is a simple range; a wrapping one (start later than end,
+            // e.g. Dec 1 -> Jan 31) matches dates at or after the start OR at or before the end.
+            val hit = if (start <= end) cur in start..end else cur >= start || cur <= end
+            Value.Bool(hit)
+        }
+    }
 
     private fun compileAggregate(
         agg: Aggregate,

@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
@@ -99,7 +100,9 @@ internal fun collectMetaRefs(
     fun walkExpr(e: ExprAst) {
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
-            is Ref, is NowAccessor, is AccountRef, is PositionRef, is StateAccessor, StackEntryRef, EntryQty -> Unit
+            is Ref, is NowAccessor, is CalendarWindow, is AccountRef, is PositionRef, is StateAccessor,
+            StackEntryRef, EntryQty,
+            -> Unit
             is StreamFieldRef -> {
                 if (e.field in ExprCompiler.META_FIELDS) {
                     val sym = streams[e.stream]?.qktSymbol
