@@ -27,6 +27,14 @@ enum class RankMetric(
     /** Ranking score: the metric, or a sentinel that sorts strictly last when undefined. */
     fun score(result: BacktestResult): BigDecimal = valueOf(result.global) ?: NULLS_LAST
 
+    /**
+     * A ranking [score] mapped back to null when it is the undefined-ranks-last sentinel.
+     * For display: an undefined metric should read as null / "n/a", never as the huge
+     * negative sentinel that ranking uses. e.g. a fold whose Sharpe is undefined scores the
+     * sentinel for ranking, but `defined(that)` is null so the report shows "n/a", not -1E18.
+     */
+    fun defined(score: BigDecimal): BigDecimal? = score.takeIf { it.compareTo(NULLS_LAST) != 0 }
+
     companion object {
         private val NULLS_LAST: BigDecimal = BigDecimal("-1E18")
 
