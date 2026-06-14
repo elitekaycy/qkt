@@ -64,6 +64,7 @@ internal fun buildSnapshot(
     pnl: SessionPnl = SessionPnl.ZERO,
     inboundQueueDepth: Int = 0,
     staleSymbols: List<String> = emptyList(),
+    openPositions: List<com.qkt.positions.Position> = emptyList(),
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
     val last = trades.lastOrNull()
@@ -76,7 +77,10 @@ internal fun buildSnapshot(
         balance = pnl.balance,
         realized = pnl.realized,
         unrealized = pnl.unrealized,
-        positions = emptyList<PositionDto>(),
+        positions =
+            openPositions.map {
+                PositionDto(symbol = it.symbol, qty = it.quantity, avgPrice = it.avgEntryPrice)
+            },
         lastTrade =
             last?.let {
                 TradeDto(
