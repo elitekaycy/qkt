@@ -29,6 +29,11 @@ class CompositeMarketSource(
 
     override fun supports(symbol: String): Boolean = sourceFor(symbol).supports(symbol)
 
+    // Per-symbol capabilities come from the leaf that actually serves the symbol, not the union —
+    // so e.g. a volume check on an MT5-routed symbol isn't masked by a crypto leaf that has volume.
+    override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> =
+        sourceFor(symbol).capabilitiesFor(symbol)
+
     private fun sourceFor(symbol: String): MarketSource =
         routes.firstOrNull { (pat, _) -> pat.matches(symbol) }?.second ?: fallback
 

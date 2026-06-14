@@ -12,6 +12,14 @@ interface MarketSource {
 
     fun supports(symbol: String): Boolean
 
+    /**
+     * Capabilities for one [symbol]. Defaults to [capabilities]; a routing source
+     * ([CompositeMarketSource]) overrides this to return the leaf that actually serves the symbol,
+     * so a per-stream capability check (e.g. "does this feed supply volume?") is honored across a
+     * basket where different symbols route to different feeds.
+     */
+    fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> = capabilities
+
     fun liveTicks(symbols: List<String>): TickFeed =
         throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName ?: "MarketSource")
 

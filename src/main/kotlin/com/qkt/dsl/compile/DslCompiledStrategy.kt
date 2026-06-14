@@ -37,6 +37,15 @@ interface DslCompiledStrategy : Strategy {
         get() = emptySet()
 
     /**
+     * Symbols bound to a volume-weighted indicator (VWAP/OBV). The runtime verifies the data
+     * source for each declares [com.qkt.marketdata.source.MarketSourceCapability.VOLUME] before the
+     * strategy goes live — a volume indicator on a quote-only feed (MT5 FX/metals) otherwise never
+     * becomes ready and the strategy silently never fires. Empty when no such indicator is used.
+     */
+    val volumeRequiringSymbols: Set<String>
+        get() = emptySet()
+
+    /**
      * Stream aliases whose conditions read quote fields (`bid`/`ask`/`spread`). These
      * evaluate Undefined unless the data source carries real quotes — bar-synthesized
      * backtest feeds do not, so spread-aware rules silently never fire there. The
