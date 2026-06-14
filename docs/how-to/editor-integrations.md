@@ -90,8 +90,59 @@ For `vscode` this runs `code --uninstall-extension elitekaycy.qkt`. For `nvim`/`
 
 Re-running `install` for the same target overwrites the entry; the install is idempotent and works as an upgrade path when you update qkt.
 
+## Language server (diagnostics, completion, hover)
+
+The `qkt` CLI is itself the language server. It speaks the Language Server Protocol over stdin/stdout:
+
+```bash
+qkt lsp
+```
+
+Any editor with an LSP client can talk to it — point the client's command for the `qkt` filetype at `qkt lsp`. Because the server is the same binary that runs your strategies, its diagnostics match `qkt parse` / `qkt run` exactly: there is no second grammar to drift.
+
+### Neovim (automatic)
+
+`qkt editor install nvim` ships an ftplugin that autostarts the server on Neovim 0.8+ whenever you open a `.qkt` file and `qkt` is on your `PATH` — no extra config. One server is shared across all `.qkt` buffers in a project. Opt out with `let g:qkt_no_lsp = 1` (for example, if you prefer to configure qkt through nvim-lspconfig yourself).
+
+To wire it by hand instead:
+
+```lua
+vim.lsp.start({ name = "qkt", cmd = { "qkt", "lsp" }, root_dir = vim.fn.getcwd() })
+```
+
+### Helix
+
+In `~/.config/helix/languages.toml`:
+
+```toml
+[[language]]
+name = "qkt"
+scope = "source.qkt"
+file-types = ["qkt"]
+language-servers = ["qkt"]
+
+[language-server.qkt]
+command = "qkt"
+args = ["lsp"]
+```
+
+### Emacs (eglot)
+
+```elisp
+(add-to-list 'eglot-server-programs '(qkt-mode . ("qkt" "lsp")))
+```
+
+Define a `qkt-mode` (deriving from `prog-mode`, with `.qkt` added to `auto-mode-alist`) or reuse whichever major mode you open `.qkt` files in, then `M-x eglot`.
+
+### Zed
+
+Zed needs a small language extension to bind the `.qkt` file type; once bound, register a language server whose command is `qkt` with args `["lsp"]`.
+
+### VS Code
+
+The bundled extension gives you syntax highlighting and snippets today. Wiring the language client — so VS Code also gets diagnostics, completion, and hover from `qkt lsp` — ships with the marketplace extension (#85). Until then, use any LSP-capable editor above for the full feature set.
+
 ## What's not here yet
 
-- **Language server** (#84) — completion, hover, diagnostics. Tracked separately; this command will gain a `lsp` target once the LSP ships.
-- **Marketplace publish** for VSCode — install via this command for now; marketplace publication is a separate piece of work.
-- **Tree-sitter grammar** (#117) — Neovim users will get tree-sitter highlighting once it lands, supersing the hand-written syntax file shipped here.
+- **Marketplace publish** for VSCode, including the bundled language client (#85) — install the extension via this command for now.
+- **Tree-sitter grammar** (#117) — Neovim users will get tree-sitter highlighting once it lands, superseding the hand-written syntax file shipped here.
