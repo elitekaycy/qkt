@@ -58,6 +58,14 @@ class PortfolioStrategy(
             .flatMap { it.multiPositionPerSymbolSymbols }
             .toSet()
 
+    // Aggregate volume-requiring symbols across children so the feed-capability check at
+    // TradingPipeline.init covers any symbol a child binds VWAP/OBV to.
+    override val volumeRequiringSymbols: Set<String> =
+        compiled.children
+            .mapNotNull { it.compiled as? DslCompiledStrategy }
+            .flatMap { it.volumeRequiringSymbols }
+            .toSet()
+
     override val retentionByKey: Map<HubKey, Int> =
         declaredStreams.values.associateWith { 1 } +
             compiled.children

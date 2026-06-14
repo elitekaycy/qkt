@@ -26,7 +26,7 @@ class BybitMarketSourceTest {
     }
 
     @Test
-    fun `both declare LIVE_TICKS and BARS`() {
+    fun `both declare LIVE_TICKS, BARS, and VOLUME`() {
         for (src in listOf(
             BybitSpotMarketSource(wsFactory = {
                 FakeBybitWebSocket()
@@ -34,7 +34,11 @@ class BybitMarketSourceTest {
             BybitLinearMarketSource(wsFactory = { FakeBybitWebSocket() }),
         )) {
             assertThat(src.capabilities)
-                .containsExactlyInAnyOrder(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
+                .containsExactlyInAnyOrder(
+                    MarketSourceCapability.LIVE_TICKS,
+                    MarketSourceCapability.BARS,
+                    MarketSourceCapability.VOLUME,
+                )
         }
     }
 

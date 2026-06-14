@@ -29,7 +29,7 @@ abstract class BybitMarketSource(
     AutoCloseable {
     override val name: String = "Bybit:$category"
     override val capabilities: Set<MarketSourceCapability> =
-        setOf(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
+        setOf(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS, MarketSourceCapability.VOLUME)
 
     override fun supports(symbol: String): Boolean = symbol.startsWith(prefix)
 
