@@ -137,7 +137,14 @@ representation for an index that genuinely trades.
   assumption; verify against FRED's actual release calendar before trusting intraday timing.
 - **Warmup.** 20 business days of a daily series ≈ a month of calendar data — backtests need
   enough lead-in; the provisioner must fetch warmup history before the test window.
-- **`.value` vs `.close` aliasing** — pick one and keep indicators uniform.
+- **`.value` vs `.close` aliasing** — resolved: `.value` is exposed and aliases the candle close,
+  so existing indicators work unchanged.
+- **Candle-close read-lag (as implemented).** A macro value flows through the normal candle path,
+  so it becomes readable via `hub.latest` only once its daily candle *closes* — which happens when
+  the next day's value publishes. That adds ~1 business day of read-lag on top of the publication
+  lag. It is conservative (never look-ahead) and fine for daily/swing strategies, but a strategy
+  needing the value the instant it publishes would want a follow-up that exposes the forming value
+  directly rather than waiting for the candle to close.
 
 ## 9. Testing
 

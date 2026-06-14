@@ -45,6 +45,10 @@ class AstCompiler {
                 require(it is WhenThen) { "Only WHEN-THEN rules are supported" }
                 it
             }
+        // Macro series (MACRO:) are read-only — they carry a published statistic, not a tradeable
+        // price. Reject any order action targeting one at compile time (#440).
+        val macroAliases = streams.filterValues { it.broker == "MACRO" }.keys
+        whenThens.forEach { rejectMacroOrders(it.action, macroAliases) }
         val resolvedConditions: List<ExprAst> = whenThens.map { resolver.resolve(it.cond) }
         val plan = SnapshotPlan.scan(resolvedConditions)
 
@@ -236,6 +240,29 @@ class AstCompiler {
         }
         walk(action)
         return out
+    }
+
+    private fun rejectMacroOrders(
+        action: ActionAst,
+        macroAliases: Set<String>,
+    ) {
+        fun reject(stream: String) =
+            require(stream !in macroAliases) {
+                "MACRO series '$stream' is read-only — it has no tradeable price; remove the order " +
+                    "action targeting it (BUY/SELL/CLOSE/CANCEL)."
+            }
+        when (action) {
+            is Buy -> reject(action.stream)
+            is Sell -> reject(action.stream)
+            is Close -> reject(action.stream)
+            is Cancel -> reject(action.stream)
+            is OcoEntry -> {
+                rejectMacroOrders(action.leg1, macroAliases)
+                rejectMacroOrders(action.leg2, macroAliases)
+            }
+            is Block -> action.actions.forEach { rejectMacroOrders(it, macroAliases) }
+            else -> {} // CloseAll/CancelAll (global) and Log: nothing to reject
+        }
     }
 }
 
