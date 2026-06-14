@@ -13,6 +13,15 @@ class StrategyPnL(
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    /**
+     * Live account equity from the broker, or null when unavailable. When it returns a value
+     * (a live MT5 session whose gateway exposes account equity), [equityFor] uses it directly so
+     * sizing and drawdown track the *real* account — commissions, swaps, and deposits the engine
+     * didn't originate are all reflected. Default returns null, so backtest and paper keep the
+     * derived `startingBalance + realized + unrealized` and stay deterministic. Account-level, so
+     * the caller only wires it for a single-strategy session (where account == strategy).
+     */
+    private val brokerEquity: () -> BigDecimal? = { null },
 ) {
     private val realizedByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
     private val startingBalanceByStrategy: MutableMap<String, BigDecimal> = ConcurrentHashMap()
@@ -96,9 +105,10 @@ class StrategyPnL(
             .setScale(Money.SCALE, Money.ROUNDING)
 
     fun equityFor(strategyId: String): BigDecimal =
-        startingBalanceFor(strategyId)
-            .add(totalFor(strategyId))
-            .setScale(Money.SCALE, Money.ROUNDING)
+        brokerEquity()?.setScale(Money.SCALE, Money.ROUNDING)
+            ?: startingBalanceFor(strategyId)
+                .add(totalFor(strategyId))
+                .setScale(Money.SCALE, Money.ROUNDING)
 
     fun balanceFor(strategyId: String): BigDecimal =
         startingBalanceFor(strategyId)

@@ -189,6 +189,9 @@ class LiveSession(
         /** Attempts to read broker positions at reconcile before refusing to start. */
         const val RECONCILE_READ_ATTEMPTS: Int = 5
 
+        /** How often to poll the broker for live account equity, off the engine thread (#352). */
+        const val BROKER_EQUITY_POLL_MS: Long = 5_000L
+
         /**
          * Bound on buffered ticks awaiting the engine thread. At a heavy 100 ticks/sec
          * this is ~100s of backlog — far past the point where shedding the oldest tick
@@ -700,7 +703,20 @@ class LiveSession(
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
         val pnl = PnLCalculator(positions, priceTracker, instruments)
-        val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments, persistor)
+        // #352: live account equity, polled off the engine thread (a network call) into this holder
+        // and read cheaply by StrategyPnL.equityFor. Stays null for paper/backtest, so those keep
+        // the deterministic derived `startingBalance + realized + unrealized`.
+        val brokerEquity =
+            java.util.concurrent.atomic
+                .AtomicReference<java.math.BigDecimal?>(null)
+        val strategyPnL =
+            StrategyPnL(
+                strategyPositions,
+                priceTracker,
+                instruments,
+                persistor,
+                brokerEquity = { brokerEquity.get() },
+            )
         // Every deploy path needs a starting balance: portfolio deploys pass per-strategy
         // entries in [startingBalances]; standalone deploys fall back to the session-level
         // [initialBalance] so ACCOUNT.equity and % OF EQUITY sizing don't run on zero.
@@ -1178,6 +1194,28 @@ class LiveSession(
             java.util.concurrent.TimeUnit.MILLISECONDS,
         )
 
+        // #352: poll real account equity off the engine thread so sizing + drawdown track the
+        // broker's account (commissions, swaps, deposits), not just engine-derived PnL. Single-
+        // strategy only — account equity maps cleanly to one strategy. Skipped when the broker
+        // exposes no equity (paper, or a gateway without the endpoint), so paper/backtest keep the
+        // deterministic derived value. The poll is a network call; it must not run on the consumer.
+        val equityPoller: java.util.concurrent.ScheduledExecutorService? =
+            if (strategies.size == 1 && runCatching { broker.accountEquity() }.getOrNull() != null) {
+                java.util.concurrent.Executors
+                    .newSingleThreadScheduledExecutor { r ->
+                        Thread(r, "qkt-broker-equity-poller").apply { isDaemon = true }
+                    }.also { exec ->
+                        exec.scheduleAtFixedRate(
+                            { brokerEquity.set(runCatching { broker.accountEquity() }.getOrNull()) },
+                            0L,
+                            BROKER_EQUITY_POLL_MS,
+                            java.util.concurrent.TimeUnit.MILLISECONDS,
+                        )
+                    }
+            } else {
+                null
+            }
+
         // Broker truth → insights: account state, per-ticket positions, and deal history
         // polled on the poller's own thread, off the engine loop. Replaces the retired
         // engine-thread ledger snapshots — dashboards read state.* / broker.deal now.
@@ -1250,6 +1288,8 @@ class LiveSession(
                     scheduleHeartbeat.shutdownNow()
                     scheduleHeartbeat.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)
                 }
+                // Stop the broker-equity poller (#352) so it doesn't outlive the session.
+                runCatching { equityPoller?.shutdownNow() }
                 // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
                 // so a long-running daemon cycling strategies doesn't accumulate threads.
                 for (b in builtBrokers) runCatching { b.shutdown() }
