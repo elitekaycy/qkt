@@ -62,6 +62,20 @@ interface StatePersistor {
     fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg>
 
     /**
+     * Persist the engine-managed armed trailing stops for [strategyId] — their static config
+     * plus the runtime arm flag and high-water mark — so a restart resumes the trail at its
+     * prior progress instead of re-arming from the entry (a winner would otherwise come back
+     * stop-less). Default no-op keeps persistors that predate this compiling.
+     */
+    fun saveTrailingStops(
+        strategyId: String,
+        stops: List<PersistedTrailingStop>,
+    ) {}
+
+    /** Restore the engine-managed armed trailing stops for [strategyId]; empty when none persisted. */
+    fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> = emptyList()
+
+    /**
      * Persist the session's risk snapshot — halt flags and the day's realized PnL.
      * Without this, any restart un-halts a halted strategy and hands it a fresh
      * daily-loss budget the same day it exhausted one. Default no-op keeps
