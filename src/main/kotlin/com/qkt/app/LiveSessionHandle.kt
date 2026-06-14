@@ -46,6 +46,13 @@ interface LiveSessionHandle {
     fun recentTrades(): List<Trade>
 
     /**
+     * Net open positions held for [strategyId], one entry per symbol (positive qty = long,
+     * negative = short). Read by `qkt status` so an operator can see what a running strategy
+     * holds. Defaults to empty for handles that are not full live sessions.
+     */
+    fun positionsFor(strategyId: String): List<com.qkt.positions.Position> = emptyList()
+
+    /**
      * Per-strategy daily-summary rows for this session. The daemon's single
      * [com.qkt.notify.DailySummaryScheduler] aggregates these across all sessions.
      * Reading them snapshots and resets this session's daily tracker — call once per fire.

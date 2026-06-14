@@ -1278,6 +1278,9 @@ class LiveSession(
 
             override fun recentTrades(): List<Trade> = trades.toList()
 
+            override fun positionsFor(strategyId: String): List<com.qkt.positions.Position> =
+                strategyPositions.positionsFor(strategyId).values.toList()
+
             override fun dailySummaryRows(): List<StrategySummary> =
                 this@LiveSession.dailySummaryRows(strategyPnL, strategyPositions)
 
