@@ -159,6 +159,10 @@ class IndicatorBinding private constructor(
 
     class Bag {
         private val bindings: MutableList<IndicatorBinding> = mutableListOf()
+        private val volumeAliases: MutableSet<String> = mutableSetOf()
+
+        /** Stream aliases that a volume-weighted indicator (VWAP/OBV) binds to — the feed must supply volume. */
+        val volumeRequiringAliases: Set<String> get() = volumeAliases
 
         fun bind(call: IndicatorCall): IndicatorBinding {
             val spec = IndicatorRegistry.spec(call.name) ?: error("Unknown indicator: ${call.name}")
@@ -166,6 +170,7 @@ class IndicatorBinding private constructor(
                 "Indicator ${call.name} expects ${spec.arity} args, got ${call.args.size}"
             }
             val seriesArg = call.args.first()
+            if (spec.requiresVolume && seriesArg is StreamFieldRef) volumeAliases.add(seriesArg.stream)
             val constArgs =
                 call.args.drop(1).map {
                     require(it is NumLit) {

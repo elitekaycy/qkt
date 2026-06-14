@@ -46,6 +46,8 @@ data class IndicatorSpec(
     val arity: Int,
     /** Number of leading series args (1 for normal indicators, 2 for two-series like CORRELATION). */
     val seriesCount: Int = 1,
+    /** True for volume-weighted indicators (VWAP, OBV) — the bound feed must supply volume. */
+    val requiresVolume: Boolean = false,
     val factory: (List<BigDecimal>) -> IndicatorOutput,
 )
 
@@ -162,7 +164,7 @@ object IndicatorRegistry {
                 },
             // ---- volume ----
             "OBV" to
-                IndicatorSpec("OBV", IndicatorInput.CANDLE_SERIES, arity = 1) { OBV() },
+                IndicatorSpec("OBV", IndicatorInput.CANDLE_SERIES, arity = 1, requiresVolume = true) { OBV() },
             // ---- Keltner Channels (three outputs, candle) ----
             "KELTNER_UPPER" to
                 IndicatorSpec("KELTNER_UPPER", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
@@ -305,7 +307,7 @@ object IndicatorRegistry {
                 },
             // ---- Volume-weighted average price (tick-fed) ----
             "VWAP" to
-                IndicatorSpec("VWAP", IndicatorInput.TICK_SERIES, arity = 2) { args ->
+                IndicatorSpec("VWAP", IndicatorInput.TICK_SERIES, arity = 2, requiresVolume = true) { args ->
                     VWAP(period = args[0].toInt())
                 },
             // ---- Donchian rolling extremes ----
