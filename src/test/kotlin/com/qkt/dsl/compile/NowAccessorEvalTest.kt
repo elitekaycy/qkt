@@ -53,6 +53,8 @@ class NowAccessorEvalTest {
             (ec.compile(NowAccessor(NowField.MINUTE_UTC)).evaluate(ctx) as Value.Num).v,
         ).isEqualByComparingTo("45")
         assertThat((ec.compile(NowAccessor(NowField.WEEKDAY)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("0")
+        assertThat((ec.compile(NowAccessor(NowField.MONTH)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("5")
+        assertThat((ec.compile(NowAccessor(NowField.DAY)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("11")
         assertThat((ec.compile(NowAccessor(NowField.EPOCH_MS)).evaluate(ctx) as Value.Num).v)
             .isEqualByComparingTo(BigDecimal.valueOf(mondayMs))
     }

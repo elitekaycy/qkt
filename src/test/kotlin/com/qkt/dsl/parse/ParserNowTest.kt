@@ -1,6 +1,7 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.BinaryOp
+import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NowField
@@ -14,6 +15,9 @@ class ParserNowTest {
                 .parseStrategy() as ParseResult.Success
         return r.value.lets[0].expr
     }
+
+    private fun parseResult(s: String): ParseResult<*> =
+        Parser(Lexer("STRATEGY x VERSION 1\nLET v = $s").tokenize()).parseStrategy()
 
     @Test
     fun `NOW dot hour_utc parses to NowAccessor`() {
@@ -32,8 +36,47 @@ class ParserNowTest {
         assertThat((parseExprInLet("NOW.hour_utc") as NowAccessor).field).isEqualTo(NowField.HOUR_UTC)
         assertThat((parseExprInLet("NOW.minute_utc") as NowAccessor).field).isEqualTo(NowField.MINUTE_UTC)
         assertThat((parseExprInLet("NOW.weekday") as NowAccessor).field).isEqualTo(NowField.WEEKDAY)
+        assertThat((parseExprInLet("NOW.month") as NowAccessor).field).isEqualTo(NowField.MONTH)
+        assertThat((parseExprInLet("NOW.day") as NowAccessor).field).isEqualTo(NowField.DAY)
         assertThat((parseExprInLet("NOW.date_utc") as NowAccessor).field).isEqualTo(NowField.DATE_UTC)
         assertThat((parseExprInLet("NOW.epoch_ms") as NowAccessor).field).isEqualTo(NowField.EPOCH_MS)
+    }
+
+    @Test
+    fun `CALENDAR_WINDOW parses to a CalendarWindow node`() {
+        val e = parseExprInLet("calendar_window(8, 15, 10, 31)") as CalendarWindow
+        assertThat(e.startMonth).isEqualTo(8)
+        assertThat(e.startDay).isEqualTo(15)
+        assertThat(e.endMonth).isEqualTo(10)
+        assertThat(e.endDay).isEqualTo(31)
+    }
+
+    @Test
+    fun `CALENDAR_WINDOW is case-insensitive`() {
+        val e = parseExprInLet("CALENDAR_WINDOW(12, 1, 1, 31)") as CalendarWindow
+        assertThat(e.startMonth).isEqualTo(12)
+        assertThat(e.endMonth).isEqualTo(1)
+    }
+
+    @Test
+    fun `CALENDAR_WINDOW with wrong arg count fails to parse`() {
+        assertThat(parseResult("calendar_window(8, 15, 10)")).isInstanceOf(ParseResult.Failure::class.java)
+    }
+
+    @Test
+    fun `CALENDAR_WINDOW with out-of-range month fails to parse`() {
+        assertThat(parseResult("calendar_window(13, 1, 1, 31)")).isInstanceOf(ParseResult.Failure::class.java)
+    }
+
+    @Test
+    fun `CALENDAR_WINDOW with out-of-range day fails to parse`() {
+        assertThat(parseResult("calendar_window(1, 32, 2, 1)")).isInstanceOf(ParseResult.Failure::class.java)
+    }
+
+    @Test
+    fun `CALENDAR_WINDOW with a non-literal arg fails to parse`() {
+        assertThat(parseResult("calendar_window(8, 15, 10, ema(btc.close, 3))"))
+            .isInstanceOf(ParseResult.Failure::class.java)
     }
 
     @Test
