@@ -336,4 +336,84 @@ class LiveSessionBrokerCoverageTest {
         assertThat(summary).isNotEqualTo("flat")
         assertThat(summary).contains("long 0.01").contains("EXNESS:XAUUSD")
     }
+
+    @Test
+    fun `ignore-mismatches adopts unmatched broker positions as INDEPENDENT legs with venue tickets (#437)`() {
+        // The persistor holds no legs for this strategy/symbol, but the venue reports two open
+        // gold positions → reconcile returns Mismatch. With ignore-mismatches the session adopts
+        // them rather than refusing to start. The adopted legs must be INDEPENDENT and carry their
+        // venue tickets, so a later CLOSE flattens them per-leg by ticket instead of via a net
+        // opposite order — which on a hedging account would open a counter position (#437).
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
+            )
+        val persistor = NoopStatePersistor()
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                // getOpenPositions() is ticketless and drives the mismatch detection.
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:XAUUSD" to
+                            listOf(
+                                com.qkt.positions.Position("EXNESS:XAUUSD", BigDecimal("0.13"), BigDecimal("4140")),
+                                com.qkt.positions.Position("EXNESS:XAUUSD", BigDecimal("-0.13"), BigDecimal("4150")),
+                            ),
+                    )
+
+                // positionTickets() carries the venue tickets used for the attach.
+                override fun positionTickets(): List<com.qkt.broker.BrokerPositionTicket> =
+                    listOf(
+                        com.qkt.broker.BrokerPositionTicket(
+                            ticket = "9001",
+                            symbol = "EXNESS:XAUUSD",
+                            side = Side.BUY,
+                            qty = BigDecimal("0.13"),
+                            entryPrice = BigDecimal("4140"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = 1_700_000_000_000L,
+                            comment = "",
+                        ),
+                        com.qkt.broker.BrokerPositionTicket(
+                            ticket = "9002",
+                            symbol = "EXNESS:XAUUSD",
+                            side = Side.SELL,
+                            qty = BigDecimal("0.13"),
+                            entryPrice = BigDecimal("4150"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = 1_700_000_000_000L,
+                            comment = "",
+                        ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:XAUUSD"),
+                clock = FixedClock(time = 1_700_000_100_000L),
+                brokerFactories = mapOf("exness" to factory),
+                persistor = persistor,
+                ignoreMismatches = true,
+            )
+
+        val handle = session.start()
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+
+        val persisted = persistor.loadLegBook("alpha", "EXNESS:XAUUSD")
+        assertThat(persisted).isNotNull
+        assertThat(persisted!!.legs).hasSize(2)
+        // No STACK legs, no synthetic parent — every adopted leg is INDEPENDENT.
+        assertThat(persisted.legs).allMatch { it.role == LegRole.INDEPENDENT }
+        assertThat(persisted.legs.none { it.role == LegRole.STACK }).isTrue
+        // Each adopted leg carries its real venue ticket, so CLOSE can target it by ticket.
+        assertThat(persisted.legs.map { it.brokerTicket }).containsExactlyInAnyOrder("9001", "9002")
+    }
 }
