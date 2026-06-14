@@ -49,4 +49,12 @@ class RankMetricTest {
         val absent = RankMetric.SHARPE.score(resultWithSharpe(null))
         assertThat(present).isGreaterThan(absent)
     }
+
+    @Test
+    fun `defined passes a real metric through and maps the ranking sentinel back to null`() {
+        val present = RankMetric.SHARPE.score(resultWithSharpe(BigDecimal("1.5")))
+        val absent = RankMetric.SHARPE.score(resultWithSharpe(null))
+        assertThat(RankMetric.SHARPE.defined(present)).isEqualByComparingTo("1.5")
+        assertThat(RankMetric.SHARPE.defined(absent)).isNull()
+    }
 }
