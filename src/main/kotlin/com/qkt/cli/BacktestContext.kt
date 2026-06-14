@@ -211,13 +211,19 @@ class BacktestContext private constructor(
             )
         }
 
-        private fun defaultCalendars(): SymbolCalendars =
+        internal fun defaultCalendars(): SymbolCalendars =
             SymbolCalendars(
                 rules =
                     listOf(
                         SymbolCalendars.Rule("BTC*", TradingCalendar.crypto()),
                         SymbolCalendars.Rule("ETH*", TradingCalendar.crypto()),
                         SymbolCalendars.Rule("*USDT", TradingCalendar.crypto()),
+                        // US equity index CFDs trade NYSE hours. DXY trades the fx week, so it
+                        // falls through to the fxDefault default below.
+                        SymbolCalendars.Rule("SPX", TradingCalendar.nyse()),
+                        SymbolCalendars.Rule("NDX", TradingCalendar.nyse()),
+                        SymbolCalendars.Rule("DJI", TradingCalendar.nyse()),
+                        SymbolCalendars.Rule("RUT", TradingCalendar.nyse()),
                     ),
                 default = TradingCalendar.fxDefault(),
             )
