@@ -292,13 +292,14 @@ class LiveSession(
                 val outcome = reconciler.reconcile(strategyId, symbol, brokerForSymbol)
                 when (outcome) {
                     is com.qkt.persistence.LegBookReconciler.Outcome.Attached -> {
-                        for (leg in outcome.legBook.all()) {
-                            if (leg.role == com.qkt.positions.LegRole.PRIMARY) {
-                                // Primary preload uses applyFill semantics — but the engine
-                                // hasn't run yet, so we rebuild via the persistor preload path.
-                                strategyPositions.preloadFromPersistor(strategyId, symbol)
-                            }
-                        }
+                        // Rebuild the whole book from disk — the engine hasn't run yet, so use the
+                        // persistor preload path rather than applyFill. preloadFromPersistor loads
+                        // every leg regardless of role, so call it once per reconciled (strategy,
+                        // symbol). The old per-leg PRIMARY gate skipped any book with no PRIMARY leg
+                        // — every OCO/straddle book is INDEPENDENT legs — so those positions were
+                        // left out of the tracker after a restart: POSITION.<stream> read 0 and the
+                        // dsl bracket + winner-timeout were dead (#432).
+                        strategyPositions.preloadFromPersistor(strategyId, symbol)
                     }
                     is com.qkt.persistence.LegBookReconciler.Outcome.Mismatch -> {
                         if (!ignoreMismatches) {
