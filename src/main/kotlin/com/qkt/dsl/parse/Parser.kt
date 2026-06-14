@@ -69,6 +69,7 @@ import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
 import com.qkt.dsl.ast.SizeNotional
@@ -668,6 +669,8 @@ class Parser(
                             // not a pure numeric function or an indicator — it gets its own node.
                             name.equals("CALENDAR_WINDOW", ignoreCase = true) ->
                                 buildCalendarWindow(args, t)
+                            name.equals("SESSION_WINDOW", ignoreCase = true) ->
+                                buildSessionWindow(args, t)
                             // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
                             // FuncCall — pure functions on numeric values, no warmup or per-bar state.
                             // Everything else stays IndicatorCall for the indicator-binding path.
@@ -723,6 +726,36 @@ class Parser(
             errors += ParseError(at.line, at.col, "CALENDAR_WINDOW month must be 1-12 and day 1-31")
         }
         return CalendarWindow(sm, sd, em, ed)
+    }
+
+    /**
+     * Build a [SessionWindow] from a `SESSION_WINDOW(startHour, startMinute, endHour, endMinute)`
+     * call. All four arguments must be integer literals; hour must be 0-23 and minute 0-59.
+     * Violations are recorded as parse errors so the strategy fails to compile rather than
+     * silently misbehaving. [at] is the call token, used for error position.
+     */
+    private fun buildSessionWindow(
+        args: List<ExprAst>,
+        at: Token,
+    ): ExprAst {
+        val ints =
+            args.map { a ->
+                (a as? NumLit)?.value?.let { if (it.stripTrailingZeros().scale() <= 0) it.toInt() else null }
+            }
+        if (args.size != 4 || ints.any { it == null }) {
+            errors +=
+                ParseError(
+                    at.line,
+                    at.col,
+                    "SESSION_WINDOW expects 4 integer literals: startHour, startMinute, endHour, endMinute",
+                )
+            return SessionWindow(0, 0, 0, 0)
+        }
+        val (sh, sm, eh, em) = ints.map { it!! }
+        if (sh !in 0..23 || eh !in 0..23 || sm !in 0..59 || em !in 0..59) {
+            errors += ParseError(at.line, at.col, "SESSION_WINDOW hour must be 0-23 and minute 0-59")
+        }
+        return SessionWindow(sh, sm, eh, em)
     }
 
     private fun parseAggregate(): ExprAst {
