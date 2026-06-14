@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
@@ -83,7 +84,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
     fun walkExpr(e: ExprAst) {
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
-            is Ref, is NowAccessor, is AccountRef, is StateAccessor, StackEntryRef, EntryQty -> Unit
+            is Ref, is NowAccessor, is CalendarWindow, is AccountRef, is StateAccessor, StackEntryRef, EntryQty -> Unit
             is PositionRef -> out.add(e.stream)
             is StreamFieldRef -> out.add(e.stream)
             is IndicatorCall -> e.args.forEach { walkExpr(it) }
