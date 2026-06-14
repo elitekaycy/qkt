@@ -2,7 +2,7 @@ name: docker
 
 on:
   push:
-    branches: [main]
+    branches: [main, testing]
     tags: ['v*']
 
 jobs:
@@ -26,7 +26,10 @@ jobs:
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-      - uses: docker/build-push-action@v5
+      # Runtime image: `:latest` on a main push, `:vX.Y.Z` on a version tag.
+      - name: build and push runtime image
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        uses: docker/build-push-action@v5
         with:
           context: .
           target: runtime
@@ -48,6 +51,22 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/qkt:dev
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Edge image (`:edge`) — the runtime built from the `testing` branch, which is
+      # auto-fast-forwarded from `dev` and has passed the integration CI. Lets downstream
+      # automation consume integration-tested capabilities without waiting for the manual
+      # promotion to `main`. Mutable tag, rebuilt on every testing push; not on tags or main.
+      - name: build and push edge image
+        if: github.ref == 'refs/heads/testing'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/qkt:edge
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
