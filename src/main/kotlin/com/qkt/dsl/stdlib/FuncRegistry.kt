@@ -72,4 +72,7 @@ object FuncRegistry {
         }
         return spec.apply(args)
     }
+
+    /** Every registered function name (uppercase), for editor tooling (completion, hover). */
+    fun names(): Set<String> = table.keys
 }

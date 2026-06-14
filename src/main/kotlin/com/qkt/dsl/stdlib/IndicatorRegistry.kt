@@ -349,6 +349,9 @@ object IndicatorRegistry {
         override val warmupBars: Int = inner.warmupBars + 1
     }
 
+    /** Every registered indicator name (uppercase), for editor tooling (completion, hover). */
+    fun names(): Set<String> = table.keys
+
     fun has(name: String): Boolean = table.containsKey(name.uppercase())
 
     fun spec(name: String): IndicatorSpec? = table[name.uppercase()]
