@@ -171,6 +171,13 @@ object QktDocs {
             "POW" to doc("pow(base, exponent)", "base raised to exponent."),
             "MIN" to doc("min(a, b, ...)", "Smallest of two or more values."),
             "MAX" to doc("max(a, b, ...)", "Largest of two or more values."),
+            "CALENDAR_WINDOW" to
+                doc(
+                    "calendar_window(startMonth, startDay, endMonth, endDay)",
+                    "True while the current UTC date is inside the annual window, inclusive. " +
+                        "Wraps the year end when the start is later than the end, e.g. " +
+                        "`calendar_window(12, 1, 1, 31)` is Dec 1 - Jan 31.",
+                ),
         )
 
     private val KEYWORDS: Map<String, String> =

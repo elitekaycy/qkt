@@ -14,6 +14,7 @@ import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
@@ -619,7 +620,9 @@ class Parser(
                     // the lexeme — keeps `NOW.weekday` working as a field access.
                     val fieldTok =
                         when (peek().kind) {
-                            TokenKind.IDENT, TokenKind.WEEKDAY -> advance()
+                            // WEEKDAY and DAY are also SCHEDULE keywords; accept them here and read
+                            // the lexeme so `NOW.weekday` / `NOW.day` work as field accesses.
+                            TokenKind.IDENT, TokenKind.WEEKDAY, TokenKind.DAY -> advance()
                             else -> expect(TokenKind.IDENT, "expected NOW field name")
                         }
                     val field =
@@ -627,6 +630,8 @@ class Parser(
                             "HOUR_UTC" -> NowField.HOUR_UTC
                             "MINUTE_UTC" -> NowField.MINUTE_UTC
                             "WEEKDAY" -> NowField.WEEKDAY
+                            "MONTH" -> NowField.MONTH
+                            "DAY" -> NowField.DAY
                             "DATE_UTC" -> NowField.DATE_UTC
                             "EPOCH_MS" -> NowField.EPOCH_MS
                             else -> {
@@ -658,15 +663,18 @@ class Parser(
                             while (match(TokenKind.COMMA)) args.add(parseExpr())
                         }
                         expect(TokenKind.RPAREN, "expected ')' after arguments")
-                        // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
-                        // FuncCall — pure functions on numeric values, no warmup or per-bar state.
-                        // Everything else stays IndicatorCall for the indicator-binding path.
-                        if (com.qkt.dsl.stdlib.FuncRegistry
-                                .has(name.uppercase())
-                        ) {
-                            FuncCall(name.uppercase(), args)
-                        } else {
-                            IndicatorCall(name, args)
+                        when {
+                            // CALENDAR_WINDOW is a clock-reading boolean primitive (like NOW.*),
+                            // not a pure numeric function or an indicator — it gets its own node.
+                            name.equals("CALENDAR_WINDOW", ignoreCase = true) ->
+                                buildCalendarWindow(args, t)
+                            // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
+                            // FuncCall — pure functions on numeric values, no warmup or per-bar state.
+                            // Everything else stays IndicatorCall for the indicator-binding path.
+                            com.qkt.dsl.stdlib.FuncRegistry
+                                .has(name.uppercase()) ->
+                                FuncCall(name.uppercase(), args)
+                            else -> IndicatorCall(name, args)
                         }
                     }
                     match(TokenKind.DOT) -> {
@@ -685,6 +693,36 @@ class Parser(
             }
             else -> error("expected expression, got '${t.lexeme}'")
         }
+    }
+
+    /**
+     * Build a [CalendarWindow] from a `CALENDAR_WINDOW(startMonth, startDay, endMonth, endDay)`
+     * call. All four arguments must be integer literals; month must be 1-12 and day 1-31.
+     * Violations are recorded as parse errors so the strategy fails to compile rather than
+     * silently misbehaving. [at] is the call token, used for error position.
+     */
+    private fun buildCalendarWindow(
+        args: List<ExprAst>,
+        at: Token,
+    ): ExprAst {
+        val ints =
+            args.map { a ->
+                (a as? NumLit)?.value?.let { if (it.stripTrailingZeros().scale() <= 0) it.toInt() else null }
+            }
+        if (args.size != 4 || ints.any { it == null }) {
+            errors +=
+                ParseError(
+                    at.line,
+                    at.col,
+                    "CALENDAR_WINDOW expects 4 integer literals: startMonth, startDay, endMonth, endDay",
+                )
+            return CalendarWindow(1, 1, 1, 1)
+        }
+        val (sm, sd, em, ed) = ints.map { it!! }
+        if (sm !in 1..12 || em !in 1..12 || sd !in 1..31 || ed !in 1..31) {
+            errors += ParseError(at.line, at.col, "CALENDAR_WINDOW month must be 1-12 and day 1-31")
+        }
+        return CalendarWindow(sm, sd, em, ed)
     }
 
     private fun parseAggregate(): ExprAst {
