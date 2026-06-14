@@ -34,9 +34,29 @@ enum class NowField {
     HOUR_UTC,
     MINUTE_UTC,
     WEEKDAY,
+    MONTH,
+    DAY,
     DATE_UTC,
     EPOCH_MS,
 }
+
+/**
+ * True while the current UTC date falls inside an annual calendar window, inclusive of both
+ * ends. The window is expressed as a start and end (month, day-of-month) and repeats every
+ * year, so it lets a strategy gate entries/exits to a recurring seasonal range without
+ * hard-coding a year.
+ *
+ * A window may wrap the year boundary: when the start is later in the calendar than the end,
+ * the window runs from the start through year-end and on into the next year up to the end.
+ * e.g. `CALENDAR_WINDOW(8, 15, 10, 31)` is Aug 15 - Oct 31 (Diwali season);
+ * `CALENDAR_WINDOW(12, 1, 1, 31)` wraps Dec 1 - Jan 31 (Chinese New Year restocking).
+ */
+data class CalendarWindow(
+    val startMonth: Int,
+    val startDay: Int,
+    val endMonth: Int,
+    val endDay: Int,
+) : ExprAst
 
 data class IndicatorCall(
     val name: String,

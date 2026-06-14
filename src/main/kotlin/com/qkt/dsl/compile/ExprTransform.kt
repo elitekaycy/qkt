@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
@@ -105,6 +106,7 @@ class ExprTransform(
             is IsNull -> IsNull(expr(e.expr), e.negated)
             is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
             is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
+            is CalendarWindow,
             EntryQty,
             -> e
         }

@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
+import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
@@ -103,6 +104,7 @@ data class SnapshotPlan(
                 is IsNull -> walk(expr.expr, onBuy, onSell, onOpen, rolling)
                 is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
                 is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
+                is CalendarWindow,
                 EntryQty,
                 -> {}
             }
