@@ -22,6 +22,8 @@ import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.ScriptDataFetcher
 import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
 import com.qkt.marketdata.store.dukascopy.DukascopyTickFetcher
+import com.qkt.marketdata.store.macro.FredSeriesFetcher
+import com.qkt.marketdata.store.macro.MacroSeriesStore
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -176,6 +178,20 @@ class BacktestContext private constructor(
                         allowIncomplete = args.flag("allow-incomplete"),
                         calendarFor = { defaultCalendars().calendarFor(it) },
                     )
+                }
+                // Macro series (MACRO:) provisioning from FRED. Fetch enough history before the
+                // window for the strategy's warmup (90 calendar days ~ 60 business days). Skipped on
+                // --no-fetch; hasRange avoids re-fetching a window the store already brackets.
+                val macroStreams = ast.streams.filter { it.qktSymbol in symbols && it.broker == "MACRO" }
+                if (macroStreams.isNotEmpty() && !noFetch && !provisionTo.isBefore(provisionFrom)) {
+                    val macroStore = MacroSeriesStore(Paths.get(dataRoot))
+                    val fredFetcher = FredSeriesFetcher(macroStore)
+                    val macroFrom = provisionFrom.minusDays(90)
+                    for (s in macroStreams) {
+                        if (!macroStore.hasRange(s.symbol, macroFrom, provisionTo)) {
+                            fredFetcher.fetch(s.symbol, macroFrom, provisionTo)
+                        }
+                    }
                 }
             }
 
