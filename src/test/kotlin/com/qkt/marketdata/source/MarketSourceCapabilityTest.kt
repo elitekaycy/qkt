@@ -10,6 +10,7 @@ class MarketSourceCapabilityTest {
             MarketSourceCapability.LIVE_TICKS,
             MarketSourceCapability.BARS,
             MarketSourceCapability.TICKS,
+            MarketSourceCapability.VOLUME,
         )
     }
 }
