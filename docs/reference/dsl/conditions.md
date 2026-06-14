@@ -219,6 +219,7 @@ Both streams are evaluated on every candle close (whoever closes first triggers 
 ## What this composes with
 
 - [Indicators](indicators.md) — most of what goes in conditions
+- [NOW + calendar windows](now.md) — time-of-day, weekday, and seasonal `CALENDAR_WINDOW` gating
 - [Expressions](expressions.md) — arithmetic, account/position refs, the math helpers
 - [Actions](actions.md) — what fires after `THEN`
 - [LET](let-defaults.md) — name complex condition fragments for reuse
