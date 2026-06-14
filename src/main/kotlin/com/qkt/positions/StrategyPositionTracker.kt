@@ -445,6 +445,24 @@ class StrategyPositionTracker(
     }
 
     /**
+     * Attach an [LegRole.INDEPENDENT] leg directly. Used by deploy-time reconciliation to adopt a
+     * broker position that has no matching persisted leg: an INDEPENDENT leg carrying the venue
+     * [PositionLeg.brokerTicket] can be flattened per-leg by close-by-ticket, whereas a STACK leg
+     * (or any ticketless leg) only closes via a net opposite order — which on a hedging account
+     * opens a counter position instead of closing, the back-to-back hedge-accumulation failure.
+     */
+    fun addIndependentLeg(
+        strategyId: String,
+        leg: PositionLeg,
+    ) {
+        require(leg.role == LegRole.INDEPENDENT) { "addIndependentLeg requires LegRole.INDEPENDENT; got ${leg.role}" }
+        val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
+        val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
+        book.add(leg)
+        persistBook(strategyId, leg.symbol)
+    }
+
+    /**
      * Close a specific leg by id. Used when a STACK leg's own bracket fires, or when
      * external reconciliation closes a position. Returns the closed leg, or null if not found.
      */
