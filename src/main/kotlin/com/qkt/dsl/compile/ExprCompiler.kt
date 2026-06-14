@@ -190,15 +190,17 @@ class ExprCompiler(
         val branches = expr.branches.map { compile(it.first, ruleAlias) to compile(it.second, ruleAlias) }
         val elseE = compile(expr.elseExpr, ruleAlias)
         return CompiledExpr { ctx ->
-            var result: Value? = null
+            // Evaluate EVERY branch condition each bar — not just up to the first match — so a
+            // stateful operator inside a later condition (CROSSES, aggregates) sees every bar and
+            // its prev-state stays correct. Short-circuiting on the first match left those nodes a
+            // bar behind, misdetecting crossings (#390 DSL-17). The result is still the first
+            // matching branch's body (or the else).
+            var chosen: CompiledExpr? = null
             for ((cond, body) in branches) {
                 val cv = cond.evaluate(ctx)
-                if (cv is Value.Bool && cv.v) {
-                    result = body.evaluate(ctx)
-                    break
-                }
+                if (chosen == null && cv is Value.Bool && cv.v) chosen = body
             }
-            result ?: elseE.evaluate(ctx)
+            (chosen ?: elseE).evaluate(ctx)
         }
     }
 
