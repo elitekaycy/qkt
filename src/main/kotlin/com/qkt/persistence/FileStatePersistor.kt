@@ -47,6 +47,7 @@ class FileStatePersistor(
         const val PENDING_ORDERS_FILE = "pending-orders.json"
         const val PENDING_STACKS_FILE = "pending-stacks.json"
         const val OCO_LEGS_FILE = "oco-legs.json"
+        const val TRAILING_STOPS_FILE = "trailing-stops.json"
         const val RISK_STATE_FILE = "risk-state.json"
         const val PNL_FILE = "pnl.json"
         const val SCHEMA_VERSION = 1
@@ -339,6 +340,61 @@ class FileStatePersistor(
         }
     }
 
+    override fun saveTrailingStops(
+        strategyId: String,
+        stops: List<PersistedTrailingStop>,
+    ) {
+        val entries =
+            stops.mapNotNull { stop ->
+                val req = OrderRequestDto.fromDomain(stop.request)
+                if (req == null) {
+                    log.warn(
+                        "saveTrailingStops: skipping non-persistable variant ${stop.request::class.simpleName} " +
+                            "for $strategyId/${stop.clientOrderId}",
+                    )
+                    null
+                } else {
+                    TrailingStopDto(
+                        clientOrderId = stop.clientOrderId,
+                        brokerOrderId = stop.brokerOrderId,
+                        strategyId = stop.strategyId,
+                        request = req,
+                        armed = stop.armed,
+                        hwm = stop.hwm.toPlainString(),
+                    )
+                }
+            }
+        val dto = TrailingStopsDto(version = SCHEMA_VERSION, strategyId = strategyId, stops = entries)
+        runCatching { json.encodeToString(TrailingStopsDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, TRAILING_STOPS_FILE, it) }
+            .onFailure { e -> log.warn("saveTrailingStops encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> {
+        val raw = writer.read(strategyId, TRAILING_STOPS_FILE) ?: return emptyList()
+        val dto =
+            try {
+                json.decodeFromString(TrailingStopsDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadTrailingStops parse failed for $strategyId: ${e.message}")
+                return emptyList()
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadTrailingStops schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return emptyList()
+        }
+        return dto.stops.map {
+            PersistedTrailingStop(
+                clientOrderId = it.clientOrderId,
+                brokerOrderId = it.brokerOrderId,
+                strategyId = it.strategyId,
+                request = it.request.toDomain(),
+                armed = it.armed,
+                hwm = java.math.BigDecimal(it.hwm),
+            )
+        }
+    }
+
     override fun clearStrategy(strategyId: String) {
         writer.deleteStrategy(strategyId)
     }
@@ -384,6 +440,23 @@ private data class OcoLegDto(
     val strategyId: String,
     val request: OrderRequestDto,
     val siblingIds: List<String>,
+)
+
+@Serializable
+private data class TrailingStopsDto(
+    val version: Int,
+    val strategyId: String,
+    val stops: List<TrailingStopDto>,
+)
+
+@Serializable
+private data class TrailingStopDto(
+    val clientOrderId: String,
+    val brokerOrderId: String? = null,
+    val strategyId: String,
+    val request: OrderRequestDto,
+    val armed: Boolean,
+    val hwm: String,
 )
 
 @Serializable
