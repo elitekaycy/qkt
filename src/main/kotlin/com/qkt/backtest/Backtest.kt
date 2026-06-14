@@ -9,13 +9,17 @@ import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.BarTickFeed
+import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
+import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.marketdata.source.SequenceTickFeed
+import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.marketdata.store.DataStore
+import com.qkt.marketdata.store.macro.MacroSeriesStore
 import com.qkt.risk.RiskRule
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
@@ -118,12 +122,27 @@ class Backtest(
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
+            val localSource = LocalMarketSource(store, FixedClock(time = to.toEpochMilli()), barStore = barStore)
+            // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
+            // source; everything else falls through to the tick store. Non-MACRO runs are unchanged.
+            val source: MarketSource =
+                if (request.symbols.any { it.startsWith("MACRO:") }) {
+                    CompositeMarketSource(
+                        routes =
+                            listOf(
+                                SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)),
+                            ),
+                        fallback = localSource,
+                    )
+                } else {
+                    localSource
+                }
             return fromSource(
                 strategies = strategies,
                 rules = rules,
                 haltRules = haltRules,
                 calendar = calendar,
-                source = LocalMarketSource(store, FixedClock(time = to.toEpochMilli()), barStore = barStore),
+                source = source,
                 request = resolved,
                 candleWindow = candleWindow,
                 cadence = cadence,
