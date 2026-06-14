@@ -7,6 +7,7 @@ import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.FixedClock
+import com.qkt.common.Side
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.HubKey
@@ -17,9 +18,14 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.persistence.NoopStatePersistor
+import com.qkt.positions.LegBook
+import com.qkt.positions.LegRole
+import com.qkt.positions.PositionLeg
 import com.qkt.positions.PositionProvider
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.Test
@@ -254,5 +260,80 @@ class LiveSessionBrokerCoverageTest {
         val handle = session.start()
         handle.stop()
         handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
+    fun `restart re-adopts a persisted straddle of INDEPENDENT legs into the tracker (#432)`() {
+        // A hedge_straddle holds two INDEPENDENT legs (a filled long and a filled short), no
+        // PRIMARY. On restart the reconciler matches both to the broker's open positions and
+        // returns Attached, but the old code only re-loaded a leg when its role was PRIMARY —
+        // so an all-INDEPENDENT book was dropped, POSITION.<stream> read 0, and the dsl bracket
+        // plus winner-timeout were dead. The fix re-loads the whole book regardless of role.
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
+            )
+        // Seed the on-disk book the prior session would have persisted: two INDEPENDENT legs of
+        // unequal size, so the net view is non-flat (long 0.01) and adoption is observable.
+        val persistor = NoopStatePersistor()
+        val book = LegBook("EXNESS:XAUUSD")
+        book.add(
+            PositionLeg(
+                legId = "alpha-EXNESS:XAUUSD-long",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.25"),
+                entryPrice = BigDecimal("4136"),
+                openedAt = 1_700_000_000_000L,
+                role = LegRole.INDEPENDENT,
+                brokerTicket = "111",
+            ),
+        )
+        book.add(
+            PositionLeg(
+                legId = "alpha-EXNESS:XAUUSD-short",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.24"),
+                entryPrice = BigDecimal("4165"),
+                openedAt = 1_700_000_000_000L,
+                role = LegRole.INDEPENDENT,
+                brokerTicket = "222",
+            ),
+        )
+        persistor.saveLegBook("alpha", "EXNESS:XAUUSD", book)
+        // The venue reports both legs as separate positions (a hedging account is not netted),
+        // each matching a persisted leg by side, quantity, and price → reconcile returns Attached.
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:XAUUSD" to
+                            listOf(
+                                com.qkt.positions.Position("EXNESS:XAUUSD", BigDecimal("0.25"), BigDecimal("4136")),
+                                com.qkt.positions.Position("EXNESS:XAUUSD", BigDecimal("-0.24"), BigDecimal("4165")),
+                            ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:XAUUSD"),
+                clock = FixedClock(time = 1_700_000_100_000L),
+                brokerFactories = mapOf("exness" to factory),
+                persistor = persistor,
+            )
+
+        val handle = session.start()
+        val summary = handle.dailySummaryRows().single().positionsSummary
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+
+        // Adopted: the strategy tracker holds the legs, so the net view is long 0.01 — not flat.
+        assertThat(summary).isNotEqualTo("flat")
+        assertThat(summary).contains("long 0.01").contains("EXNESS:XAUUSD")
     }
 }
