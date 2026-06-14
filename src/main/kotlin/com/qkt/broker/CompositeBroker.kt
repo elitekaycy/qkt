@@ -145,6 +145,26 @@ class CompositeBroker(
         return merged
     }
 
+    override fun positionTickets(): List<BrokerPositionTicket> {
+        val merged = mutableListOf<BrokerPositionTicket>()
+        for (leaf in allLeaves()) {
+            // Same fail-loud contract as getOpenPositions: a silently-partial ticket list would
+            // let a caller adopt or reconcile against assumed state. Without this delegation the
+            // composite returns the empty default, so ticket-scoped reconcile and orphan adoption
+            // (#437) see no venue tickets through a multi-broker session.
+            val leafTickets =
+                runCatching { leaf.positionTickets() }.getOrElse {
+                    log.warn("CompositeBroker.positionTickets: leaf {} failed: {}", leaf.name, it.message)
+                    throw IllegalStateException(
+                        "CompositeBroker.positionTickets: leaf ${leaf.name} failed: ${it.message}",
+                        it,
+                    )
+                }
+            merged.addAll(leafTickets)
+        }
+        return merged
+    }
+
     override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
         val byBroker = LinkedHashMap<Broker, MutableList<com.qkt.execution.ManagedOrder>>()
         for (order in orders) {
