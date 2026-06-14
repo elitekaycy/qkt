@@ -285,6 +285,11 @@ class LiveSession(
                     "on assumed state. Last error: ${lastReadError?.message}",
             )
         }
+        // Venue tickets for adopting unmatched positions under ignore-mismatches. positionTickets()
+        // is qkt-keyed and carries the broker ticket; getOpenPositions() above is ticketless, and a
+        // leg adopted without its ticket can't be closed per-leg on a hedging account (#437).
+        val brokerTicketsBySymbol =
+            runCatching { broker.positionTickets() }.getOrElse { emptyList() }.groupBy { it.symbol }
         val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
         for ((strategyId, _) in strategies) {
             for (symbol in symbols) {
@@ -314,27 +319,49 @@ class LiveSession(
                             symbol,
                             outcome.details,
                         )
-                        // Attach broker positions as fresh PRIMARY legs.
-                        for (pos in brokerForSymbol) {
-                            val side =
-                                if (pos.quantity.signum() >= 0) {
-                                    com.qkt.common.Side.BUY
-                                } else {
-                                    com.qkt.common.Side.SELL
+                        // Adopt each unmatched broker position as an INDEPENDENT leg carrying its
+                        // venue ticket, so CLOSE / winner-timeout flattens it per-leg by ticket. A
+                        // STACK leg with a synthetic parent — or any ticketless leg — can only be
+                        // closed by a net opposite order, which on a hedging account opens a counter
+                        // position instead of closing it (#437). Prefer the ticketed view; fall back
+                        // to the ticketless positions only on venues that expose no tickets, where a
+                        // net close still flattens correctly.
+                        val tickets = brokerTicketsBySymbol[symbol].orEmpty()
+                        val attachLegs =
+                            if (tickets.isNotEmpty()) {
+                                tickets.map { t ->
+                                    com.qkt.positions.PositionLeg(
+                                        legId = "$strategyId-$symbol-reconciled-${t.ticket}",
+                                        symbol = symbol,
+                                        side = t.side,
+                                        quantity = t.qty.abs(),
+                                        entryPrice = t.entryPrice,
+                                        openedAt = clock.now(),
+                                        role = com.qkt.positions.LegRole.INDEPENDENT,
+                                        brokerTicket = t.ticket,
+                                    )
                                 }
-                            strategyPositions.addStackLeg(
-                                strategyId,
-                                com.qkt.positions.PositionLeg(
-                                    legId = "$strategyId-$symbol-reconciled-${pos.quantity}",
-                                    parentLegId = "$strategyId-$symbol-reconciled-primary",
-                                    symbol = symbol,
-                                    side = side,
-                                    quantity = pos.quantity.abs(),
-                                    entryPrice = pos.avgEntryPrice,
-                                    openedAt = clock.now(),
-                                    role = com.qkt.positions.LegRole.STACK,
-                                ),
-                            )
+                            } else {
+                                brokerForSymbol.map { pos ->
+                                    val side =
+                                        if (pos.quantity.signum() >= 0) {
+                                            com.qkt.common.Side.BUY
+                                        } else {
+                                            com.qkt.common.Side.SELL
+                                        }
+                                    com.qkt.positions.PositionLeg(
+                                        legId = "$strategyId-$symbol-reconciled-${pos.quantity}",
+                                        symbol = symbol,
+                                        side = side,
+                                        quantity = pos.quantity.abs(),
+                                        entryPrice = pos.avgEntryPrice,
+                                        openedAt = clock.now(),
+                                        role = com.qkt.positions.LegRole.INDEPENDENT,
+                                    )
+                                }
+                            }
+                        for (leg in attachLegs) {
+                            strategyPositions.addIndependentLeg(strategyId, leg)
                         }
                     }
                     com.qkt.persistence.LegBookReconciler.Outcome.NothingPersisted -> {
