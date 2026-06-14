@@ -7,6 +7,7 @@ Filetype detection, syntax highlighting, and comment-string config for [qkt](htt
 - `.qkt` files auto-detect as `filetype=qkt`.
 - Syntax highlighting that mirrors the project's TextMate grammar (sections, flow, keywords, operators, numbers, durations, strings, comments, broker prefixes).
 - Comment-string set so `gcc` (vim-commentary, mini.comment, Comment.nvim) inserts `--` line comments.
+- Live diagnostics, completion, and hover on Neovim 0.8+ via the bundled language server (autostarted from `qkt lsp` — see below).
 - No external dependencies. No tree-sitter required. Works in any Vim 7+ / Neovim.
 
 ## Install
@@ -86,9 +87,13 @@ Example override in `init.lua`:
 vim.cmd("hi! link qktBroker Identifier")
 ```
 
+## Language server
+
+On Neovim 0.8+ the bundled `ftplugin/qkt.vim` autostarts the qkt language server (`qkt lsp`) whenever you open a `.qkt` file and `qkt` is on your `PATH`, giving you live diagnostics, completion, and hover. One server is shared across all `.qkt` buffers in a project. Opt out with `let g:qkt_no_lsp = 1` (for example, if you wire qkt through nvim-lspconfig yourself). Classic Vim, which has no built-in LSP client, simply skips this and keeps the syntax highlighting. See [docs/how-to/editor-integrations.md](../../docs/how-to/editor-integrations.md) for other editors.
+
 ## Limitations
 
-- No completion, hover, go-to-definition, or live diagnostics. Those land with the language server ([#84](https://github.com/elitekaycy/qkt/issues/84)).
+- Go-to-definition, references, rename, and formatting are not implemented yet — they need source positions on the parser's AST.
 - No tree-sitter grammar yet — tracked under [#117](https://github.com/elitekaycy/qkt/issues/117). Once it ships, the tree-sitter highlight queries will supersede this hand-written syntax file.
 - Keyword highlighting is uppercase-only by design (matches the convention every `.qkt` sample uses), even though the parser is case-insensitive.
 
