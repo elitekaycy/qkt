@@ -47,6 +47,33 @@ THEN ...
 
 (Strategy fires only on candles whose closing minute is 0, 1, 2, 3, or 4 of hour 14.)
 
+For a minute-precise window — especially one that crosses an hour or midnight — use `SESSION_WINDOW(startHour, startMinute, endHour, endMinute)`. It is true while the current UTC time-of-day is inside the window, inclusive of both ends, and repeats every day:
+
+```qkt
+RULES
+    -- Asian-open burst window, 00:30-01:30 UTC
+    WHEN SESSION_WINDOW(0, 30, 1, 30)
+     AND POSITION.gold = 0
+    THEN BUY gold SIZING 0.10
+```
+
+A window may wrap midnight — when the start is later in the day than the end, it runs from the start to end-of-day and on into the next day up to the end:
+
+```qkt
+    -- 23:00-01:00 UTC
+    WHEN SESSION_WINDOW(23, 0, 1, 0) AND ...
+```
+
+Exit at the window close by negating it (`SESSION_WINDOW` is a boolean):
+
+```qkt
+    -- hard time-bound exit: no carry past 01:30 UTC
+    WHEN NOT SESSION_WINDOW(0, 30, 1, 30) AND POSITION.gold > 0
+    THEN CLOSE gold
+```
+
+All four arguments must be integer literals; hour is 0-23 and minute 0-59, validated at compile time. It reads the same `StrategyContext.clock` as `NOW`, so it is deterministic and identical in backtest and live.
+
 ## Weekday filters
 
 ```qkt
