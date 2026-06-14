@@ -22,6 +22,7 @@ import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
@@ -62,6 +63,7 @@ class ExprCompiler(
             is Aggregate -> compileAggregate(expr, ruleAlias)
             is NowAccessor -> compileNow(expr)
             is CalendarWindow -> compileCalendarWindow(expr)
+            is SessionWindow -> compileSessionWindow(expr)
             is com.qkt.dsl.ast.EntryQty ->
                 error("ENTRY_QTY is only valid inside STACK_AT SIZING; got it in a non-STACK_AT expression")
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
@@ -105,6 +107,24 @@ class ExprCompiler(
             val cur = z.monthValue * 100 + z.dayOfMonth
             // A non-wrapping window is a simple range; a wrapping one (start later than end,
             // e.g. Dec 1 -> Jan 31) matches dates at or after the start OR at or before the end.
+            val hit = if (start <= end) cur in start..end else cur >= start || cur <= end
+            Value.Bool(hit)
+        }
+    }
+
+    private fun compileSessionWindow(win: SessionWindow): CompiledExpr {
+        // Encode each (hour, minute) as minutes-since-midnight so a plain integer compare orders
+        // times of day, e.g. 00:30 -> 30, 01:30 -> 90.
+        val start = win.startHour * 60 + win.startMinute
+        val end = win.endHour * 60 + win.endMinute
+        return CompiledExpr { ctx ->
+            val z =
+                java.time.Instant
+                    .ofEpochMilli(ctx.strategyContext.clock.now())
+                    .atZone(java.time.ZoneOffset.UTC)
+            val cur = z.hour * 60 + z.minute
+            // A non-wrapping window is a simple range; a wrapping one (start later than end, e.g.
+            // 23:00 -> 01:00) matches times at or after the start OR at or before the end.
             val hit = if (start <= end) cur in start..end else cur >= start || cur <= end
             Value.Bool(hit)
         }

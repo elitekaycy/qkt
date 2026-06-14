@@ -47,6 +47,7 @@ import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
 import com.qkt.dsl.ast.SizePctEquity
@@ -100,7 +101,8 @@ internal fun collectMetaRefs(
     fun walkExpr(e: ExprAst) {
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
-            is Ref, is NowAccessor, is CalendarWindow, is AccountRef, is PositionRef, is StateAccessor,
+            is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
+            is AccountRef, is PositionRef, is StateAccessor,
             StackEntryRef, EntryQty,
             -> Unit
             is StreamFieldRef -> {

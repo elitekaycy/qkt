@@ -178,6 +178,13 @@ object QktDocs {
                         "Wraps the year end when the start is later than the end, e.g. " +
                         "`calendar_window(12, 1, 1, 31)` is Dec 1 - Jan 31.",
                 ),
+            "SESSION_WINDOW" to
+                doc(
+                    "session_window(startHour, startMinute, endHour, endMinute)",
+                    "True while the current UTC time-of-day is inside the daily window, inclusive. " +
+                        "Wraps midnight when the start is later than the end, e.g. " +
+                        "`session_window(0, 30, 1, 30)` is 00:30-01:30 UTC.",
+                ),
         )
 
     private val KEYWORDS: Map<String, String> =

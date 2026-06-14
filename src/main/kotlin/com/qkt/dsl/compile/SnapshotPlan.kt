@@ -19,6 +19,7 @@ import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SnapshotBuy
 import com.qkt.dsl.ast.SnapshotOpen
 import com.qkt.dsl.ast.SnapshotSell
@@ -105,6 +106,7 @@ data class SnapshotPlan(
                 is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
                 is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
                 is CalendarWindow,
+                is SessionWindow,
                 EntryQty,
                 -> {}
             }
