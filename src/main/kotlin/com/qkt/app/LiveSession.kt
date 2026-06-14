@@ -1200,26 +1200,13 @@ class LiveSession(
 
             override fun reconcile(): ReconcileReport {
                 val ownerId = strategies.firstOrNull()?.first.orEmpty()
-                val brokerBySymbol =
-                    runCatching { broker.getOpenPositions() }.getOrElse { emptyMap() }
-                val symbolsToCheck =
-                    (brokerBySymbol.keys + positions.allPositions().keys).toSortedSet()
-                val deltas =
-                    symbolsToCheck.mapNotNull { symbol ->
-                        val engineQty =
-                            positions.allPositions()[symbol]?.quantity ?: java.math.BigDecimal.ZERO
-                        val brokerQty =
-                            brokerBySymbol[symbol]
-                                ?.fold(java.math.BigDecimal.ZERO) { acc, p -> acc.add(p.quantity) }
-                                ?: java.math.BigDecimal.ZERO
-                        if (engineQty.compareTo(brokerQty) == 0) {
-                            null
-                        } else {
-                            PositionDelta(symbol, engineQty, brokerQty)
-                        }
-                    }
+                // positionTickets() carries the venue ticket, so the broker side can be scoped
+                // to this strategy by attribution and keyed identically to the engine tracker.
+                // getOpenPositions() is magic-global and ticketless, which made the old diff
+                // double-count (prefixed vs bare key) and cry wolf on a shared account (#413).
+                val brokerTickets = runCatching { broker.positionTickets() }.getOrElse { emptyList() }
                 return ReconcileReport(
-                    deltas = deltas,
+                    deltas = reconcileDeltas(ownerId, brokerTickets, ticketAttribution, positions.allPositions()),
                     engineEquity = strategyPnL.equityFor(ownerId),
                     brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
                 )
