@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NowField
+import com.qkt.dsl.ast.SessionWindow
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -77,6 +78,37 @@ class ParserNowTest {
     fun `CALENDAR_WINDOW with a non-literal arg fails to parse`() {
         assertThat(parseResult("calendar_window(8, 15, 10, ema(btc.close, 3))"))
             .isInstanceOf(ParseResult.Failure::class.java)
+    }
+
+    @Test
+    fun `SESSION_WINDOW parses to a SessionWindow node`() {
+        val e = parseExprInLet("session_window(0, 30, 1, 30)") as SessionWindow
+        assertThat(e.startHour).isEqualTo(0)
+        assertThat(e.startMinute).isEqualTo(30)
+        assertThat(e.endHour).isEqualTo(1)
+        assertThat(e.endMinute).isEqualTo(30)
+    }
+
+    @Test
+    fun `SESSION_WINDOW is case-insensitive and wraps midnight`() {
+        val e = parseExprInLet("SESSION_WINDOW(23, 0, 1, 0)") as SessionWindow
+        assertThat(e.startHour).isEqualTo(23)
+        assertThat(e.endHour).isEqualTo(1)
+    }
+
+    @Test
+    fun `SESSION_WINDOW with wrong arg count fails to parse`() {
+        assertThat(parseResult("session_window(0, 30, 1)")).isInstanceOf(ParseResult.Failure::class.java)
+    }
+
+    @Test
+    fun `SESSION_WINDOW with out-of-range hour fails to parse`() {
+        assertThat(parseResult("session_window(24, 0, 1, 0)")).isInstanceOf(ParseResult.Failure::class.java)
+    }
+
+    @Test
+    fun `SESSION_WINDOW with out-of-range minute fails to parse`() {
+        assertThat(parseResult("session_window(0, 60, 1, 0)")).isInstanceOf(ParseResult.Failure::class.java)
     }
 
     @Test
