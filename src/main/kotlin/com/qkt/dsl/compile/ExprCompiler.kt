@@ -512,7 +512,9 @@ class ExprCompiler(
             } else {
                 val fieldValue: BigDecimal? =
                     when (ref.field) {
-                        "close", "price" -> candle.close
+                        // `value` is the macro-series accessor (MACRO:DGS10.value); a daily series has
+                        // one number per day, which the candle path carries as the close.
+                        "close", "price", "value" -> candle.close
                         "open" -> candle.open
                         "high" -> candle.high
                         "low" -> candle.low
@@ -545,7 +547,7 @@ class ExprCompiler(
 
     companion object {
         val CANDLE_FIELDS: Set<String> =
-            setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread")
+            setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value")
         val META_FIELDS: Set<String> =
             setOf("tick_size", "contract_size", "volume_step", "volume_min")
         private val MS_PER_SECOND = BigDecimal(1000)
