@@ -25,4 +25,7 @@ object Constants {
         )
 
     fun byName(name: String): BigDecimal? = table[name]
+
+    /** Every registered constant name, for editor tooling (completion, hover). */
+    fun names(): Set<String> = table.keys
 }
