@@ -1,6 +1,6 @@
 # NOW — clock accessors
 
-`NOW` is a DSL-level reference to the strategy's clock. It returns time-of-day fields (hour, minute, weekday, date) plus the raw epoch-ms timestamp. Use it for session-window gating, time-of-day filters, and relative deadlines on pending orders.
+`NOW` is a DSL-level reference to the strategy's clock. It returns time-of-day and calendar fields (hour, minute, weekday, month, day, date) plus the raw epoch-ms timestamp. Use it for session-window gating, time-of-day filters, seasonal/calendar gating, and relative deadlines on pending orders.
 
 ## Shape
 
@@ -17,6 +17,8 @@ NOW + <duration>         -- relative deadline (epoch_ms)
 | `NOW.hour_utc` | Integer 0–23 | UTC hour |
 | `NOW.minute_utc` | Integer 0–59 | UTC minute |
 | `NOW.weekday` | Integer 0–6 | ISO weekday, Monday = 0 |
+| `NOW.month` | Integer 1–12 | UTC calendar month, January = 1 |
+| `NOW.day` | Integer 1–31 | UTC day of month |
 | `NOW.date_utc` | Integer | Days since 1970-01-01 (epoch day) |
 | `NOW.epoch_ms` | Long | Milliseconds since 1970-01-01T00:00:00Z |
 
@@ -54,6 +56,39 @@ THEN ...
 ```
 
 Useful for FX strategies that should skip Saturday/Sunday gaps.
+
+## Calendar windows (seasonal gating)
+
+`CALENDAR_WINDOW(startMonth, startDay, endMonth, endDay)` is true while the current UTC date falls inside an annual date range, inclusive of both ends. It repeats every year, so a seasonal strategy can gate entries and exits to a recurring window without hard-coding a year.
+
+```qkt
+RULES
+    -- Indian wedding/festival season into Diwali: Aug 15 - Oct 31
+    WHEN CALENDAR_WINDOW(8, 15, 10, 31)
+     AND POSITION.gold = 0
+    THEN BUY gold SIZING 0.10
+```
+
+A window may wrap the year boundary. When the start is later in the calendar than the end, the window runs from the start through year-end and into the next year up to the end:
+
+```qkt
+    -- Chinese New Year restocking: Dec 1 - Jan 31
+    WHEN CALENDAR_WINDOW(12, 1, 1, 31)
+     AND POSITION.gold = 0
+    THEN BUY gold SIZING 0.10
+```
+
+Exit at the window close by negating it — `CALENDAR_WINDOW` is a boolean, so `NOT` works:
+
+```qkt
+    WHEN NOT CALENDAR_WINDOW(8, 15, 10, 31)
+     AND POSITION.gold > 0
+    THEN CLOSE gold
+```
+
+All four arguments must be integer literals; month is 1–12 and day is 1–31, validated at compile time. The window reads the same `StrategyContext.clock` as `NOW`, so it is deterministic and identical in backtest and live.
+
+For finer control, compose the raw fields instead: `NOW.month = 12 AND NOW.day >= 20` selects the back half of December.
 
 ## Relative deadlines on pending orders
 
