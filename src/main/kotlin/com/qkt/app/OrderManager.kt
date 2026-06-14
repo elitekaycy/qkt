@@ -263,6 +263,28 @@ class OrderManager(
                     siblings[leg.clientOrderId] = leg.siblingIds
                     recovered += managed
                 }
+                for (stop in persistor.loadTrailingStops(sid)) {
+                    if (orders.containsKey(stop.clientOrderId)) continue
+                    val now = clock.now()
+                    val managed =
+                        ManagedOrder(
+                            id = stop.clientOrderId,
+                            request = stop.request,
+                            // PENDING so the per-tick monitor (evaluateTriggers) resumes trailing.
+                            // The trail is engine-managed (fires close-by-ticket), so it is NOT
+                            // handed to broker recovery — the venue holds no working order for it.
+                            state = OrderState.PENDING,
+                            brokerOrderId = stop.brokerOrderId,
+                            createdAt = now,
+                            lastUpdatedAt = now,
+                        )
+                    orders[stop.clientOrderId] = managed
+                    indexLive(managed)
+                    // Restore the trail's progress so an already-armed winner resumes at its prior
+                    // high-water mark instead of re-arming from the entry (#436).
+                    trailingHwm[stop.clientOrderId] = stop.hwm
+                    armedTrailArmed[stop.clientOrderId] = stop.armed
+                }
             }.onFailure { e -> log.warn("[restore] failed for {}: {}", sid, e.message) }
         }
         if (recovered.isNotEmpty()) {
@@ -1327,11 +1349,38 @@ class OrderManager(
                     ),
                 )
             }
-            val strategies = (pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys).toSet()
+            // Engine-managed armed trailing stops: persist the dispatched (PENDING) ones with their
+            // live arm flag + high-water mark so a restart resumes the trail instead of a winner
+            // coming back stop-less (#436).
+            val trailingStopsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.PersistedTrailingStop>> =
+                mutableMapOf()
+            for ((id, managed) in orders) {
+                val req = managed.request
+                if (req !is OrderRequest.ArmedTrailingStop) continue
+                if (managed.state != OrderState.PENDING) continue
+                val sid = req.strategyId
+                if (sid.isBlank()) continue
+                trailingStopsByStrategy.getOrPut(sid) { mutableListOf() }.add(
+                    com.qkt.persistence.PersistedTrailingStop(
+                        clientOrderId = id,
+                        brokerOrderId = managed.brokerOrderId,
+                        strategyId = sid,
+                        request = req,
+                        armed = armedTrailArmed[id] ?: false,
+                        hwm = trailingHwm[id] ?: req.entryPrice,
+                    ),
+                )
+            }
+            val strategies =
+                (
+                    pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +
+                        trailingStopsByStrategy.keys
+                ).toSet()
             for (sid in strategies) {
                 persistor.savePendingOrders(sid, pendingByStrategy[sid] ?: emptyMap())
                 persistor.saveBracketPairs(sid, pairsByStrategy[sid] ?: emptyList())
                 persistor.saveOcoLegs(sid, ocoLegsByStrategy[sid] ?: emptyList())
+                persistor.saveTrailingStops(sid, trailingStopsByStrategy[sid] ?: emptyList())
             }
         }
     }
@@ -1578,6 +1627,9 @@ class OrderManager(
                             mfe,
                             request.mfeThreshold,
                         )
+                        // Persist the one-time arm transition immediately so a crash right after
+                        // arming still resumes armed on restart, not reset to the entry (#436).
+                        persistAll()
                     }
                 }
             }
