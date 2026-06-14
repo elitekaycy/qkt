@@ -119,6 +119,10 @@ class AstCompiler {
                 .flatMap { collectStackAtSymbols(it.action, streams) }
                 .toSet()
 
+        // Symbols whose feed must supply volume because a VWAP/OBV binds to them (#301).
+        val volumeRequiringSymbols: Set<String> =
+            bindings.volumeRequiringAliases.mapNotNull { streams[it]?.qktSymbol }.toSet()
+
         val metaRefs = collectMetaRefs(ast, streams)
         val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions)
 
@@ -157,6 +161,7 @@ class AstCompiler {
             rules = rules,
             pendingStacks = pendingStacks,
             multiPositionPerSymbolSymbols = stackAtSymbols,
+            volumeRequiringSymbols = volumeRequiringSymbols,
             metaRefs = metaRefs,
             warmupGate = warmupGate,
             perStreamWarmup = perStreamWarmupSpec,
@@ -278,6 +283,7 @@ private class CompiledStrategy(
     private val rules: List<CompiledRule>,
     override val pendingStacks: PendingStacks,
     override val multiPositionPerSymbolSymbols: Set<String>,
+    override val volumeRequiringSymbols: Set<String>,
     private val metaRefs: List<MetaRef>,
     private val warmupGate: WarmupGate,
     override val perStreamWarmup: Map<String, com.qkt.strategy.WarmupSpec>,
