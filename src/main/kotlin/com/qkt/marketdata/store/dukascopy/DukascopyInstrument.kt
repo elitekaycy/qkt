@@ -21,6 +21,12 @@ data class DukascopyInstrument(
                 put("XAGUSD", 1000L)
                 listOf("EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCHF", "USDCAD").forEach { put(it, 100000L) }
                 listOf("USDJPY", "EURJPY", "GBPJPY").forEach { put(it, 1000L) }
+                // Index CFDs: the dukascopy datafeed token differs from the qkt symbol; all quoted to 3 dp.
+                put("DXY", DukascopyInstrument("DOLLARIDXUSD", 1000L))
+                put("SPX", DukascopyInstrument("USA500IDXUSD", 1000L))
+                put("NDX", DukascopyInstrument("USATECHIDXUSD", 1000L))
+                put("DJI", DukascopyInstrument("USA30IDXUSD", 1000L))
+                put("RUT", DukascopyInstrument("USSC2000IDXUSD", 1000L))
             }
 
         /** The instrument for a bare qkt symbol (no `NAME:` prefix), or null if dukascopy has no mapping. */

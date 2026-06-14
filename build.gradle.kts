@@ -196,6 +196,13 @@ tasks.register<JavaExec>("runParityDataXauusd") {
     mainClass.set("com.qkt.tools.parity.ParityDukascopyMt5XauusdKt")
 }
 
+tasks.register<JavaExec>("runVerifyDukascopyIndices") {
+    group = "verification"
+    description = "Decode one dukascopy hour per mapped index and assert the price lands in band"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.qkt.tools.parity.VerifyDukascopyIndexInstrumentsKt")
+}
+
 tasks.register<JavaExec>("runStateDemo") {
     group = "verification"
     description = "Write a sample engine-state snapshot to /tmp/qkt-demo-state and list the files"
