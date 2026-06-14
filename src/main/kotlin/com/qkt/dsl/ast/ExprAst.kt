@@ -58,6 +58,23 @@ data class CalendarWindow(
     val endDay: Int,
 ) : ExprAst
 
+/**
+ * True while the current UTC time-of-day falls inside a daily window, inclusive of both ends.
+ * The window is a start and end (hour, minute) and repeats every day, so it gates entries/exits
+ * to a recurring intraday session without referencing a date.
+ *
+ * A window may wrap midnight: when the start is later in the day than the end, it runs from the
+ * start to end-of-day and on into the next day up to the end.
+ * e.g. `SESSION_WINDOW(0, 30, 1, 30)` is 00:30-01:30 UTC (Asian open);
+ * `SESSION_WINDOW(23, 0, 1, 0)` wraps 23:00-01:00 UTC.
+ */
+data class SessionWindow(
+    val startHour: Int,
+    val startMinute: Int,
+    val endHour: Int,
+    val endMinute: Int,
+) : ExprAst
+
 data class IndicatorCall(
     val name: String,
     val args: List<ExprAst>,

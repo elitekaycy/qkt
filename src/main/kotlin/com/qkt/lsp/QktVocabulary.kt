@@ -24,11 +24,12 @@ object QktVocabulary {
     val indicators: List<String> = IndicatorRegistry.names().map { it.lowercase() }.sorted()
 
     /**
-     * Scalar functions, e.g. `abs`, `sqrt`, `min`. `calendar_window` is a parser-recognized
-     * boolean primitive that lives outside [FuncRegistry] (it reads the clock), so it is added
-     * explicitly here.
+     * Scalar functions, e.g. `abs`, `sqrt`, `min`. `calendar_window` / `session_window` are
+     * parser-recognized boolean primitives that live outside [FuncRegistry] (they read the clock),
+     * so they are added explicitly here.
      */
-    val functions: List<String> = (FuncRegistry.names().map { it.lowercase() } + "calendar_window").sorted()
+    val functions: List<String> =
+        (FuncRegistry.names().map { it.lowercase() } + "calendar_window" + "session_window").sorted()
 
     /** Named percentage constants, e.g. `ONE_PERCENT`, `BPS`. */
     val constants: List<String> = Constants.names().sorted()
