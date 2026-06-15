@@ -1,0 +1,46 @@
+# Market-neutral XAU vs antipodean basket spread.
+#
+# Gold (XAUUSD) and the equal-weight antipodean basket (AUDUSD + NZDUSD) tend to diverge
+# around a dislocation, then revert. This strategy trades the ratio z-score: when gold is
+# rich versus the basket (z >= +2) it sells gold and buys the basket; when gold is cheap
+# (z <= -2) it does the reverse. Both legs are sized to roughly equal notional so the pair
+# is broadly direction-neutral.
+#
+# `antipodean` is a BASKET pseudo-stream: `antipodean.close` reads an equal-weight
+# log-return index of its constituents, and BUY/SELL/CLOSE on it fan out to one order per
+# constituent. A basket order is plain market — brackets/TIF live on rules, not the order —
+# so the exits below are rule-driven: revert toward fair value, a hard z-score stop if the
+# spread keeps widening, and a time-stop so a stuck pair does not run indefinitely.
+# See docs/reference/dsl/basket.md.
+
+STRATEGY basketSpread VERSION 1
+
+DEFAULTS { SIZING = 0.05 }
+
+SYMBOLS
+    gold       = BACKTEST:XAUUSD EVERY 1h
+    aud        = BACKTEST:AUDUSD EVERY 1h
+    nzd        = BACKTEST:NZDUSD EVERY 1h
+    antipodean = BASKET EQUAL_WEIGHT [aud, nzd] EVERY 1h
+    SYNCHRONIZE gold antipodean
+
+RULES
+    # Gold rich versus the basket: short gold, long the basket.
+    WHEN zscore(gold.close / antipodean.close, 100) >= 2.0 AND POSITION.gold = 0
+    THEN SELL gold ; BUY antipodean SIZING 10000 USD
+
+    # Gold cheap versus the basket: long gold, short the basket.
+    WHEN zscore(gold.close / antipodean.close, 100) <= -2.0 AND POSITION.gold = 0
+    THEN BUY gold ; SELL antipodean SIZING 10000 USD
+
+    # Revert toward fair value — take the spread off once the z-score collapses.
+    WHEN POSITION.gold != 0 AND abs(zscore(gold.close / antipodean.close, 100)) <= 0.5
+    THEN CLOSE gold ; CLOSE antipodean
+
+    # Hard stop — the spread widened past the entry band; cut the pair.
+    WHEN POSITION.gold != 0 AND abs(zscore(gold.close / antipodean.close, 100)) >= 3.5
+    THEN CLOSE gold ; CLOSE antipodean
+
+    # Time-stop — never hold the pair more than eight hours (holding_duration is seconds).
+    WHEN POSITION.gold != 0 AND POSITION.gold.holding_duration > 28800
+    THEN CLOSE gold ; CLOSE antipodean
