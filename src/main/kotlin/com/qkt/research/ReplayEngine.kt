@@ -7,6 +7,7 @@ import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
 import com.qkt.backtest.ReportBuilder
+import com.qkt.backtest.ReturnAutocorrCollector
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
 import com.qkt.broker.PaperBroker
@@ -94,6 +95,7 @@ class ReplayEngine(
     private val pnl: PnLCalculator
     private val strategyPnL: StrategyPnL
     private val collector: EquityCurveCollector
+    private val autocorr: ReturnAutocorrCollector
     private val commissionBook = CommissionBook(PerLotCommission(instruments))
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
@@ -195,6 +197,8 @@ class ReplayEngine(
                 strategyIds = strategies.map { it.first },
                 startingBalance = startingBalance,
             )
+
+        autocorr = ReturnAutocorrCollector(bus)
 
         val holder = arrayOfNulls<TradingPipeline>(1)
         pipeline =
@@ -319,6 +323,7 @@ class ReplayEngine(
             perStrategy = perStrategy,
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
+            conditionalAutocorr = autocorr.snapshot(),
         )
     }
 

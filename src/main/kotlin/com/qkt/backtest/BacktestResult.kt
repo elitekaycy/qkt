@@ -22,4 +22,11 @@ data class BacktestResult(
      * (without a resume) produced no entries, exactly as live would behave.
      */
     val halts: List<com.qkt.events.RiskEvent.Halted> = emptyList(),
+    /**
+     * Lag-1 return autocorrelation by UTC hour and volatility regime, keyed per symbol
+     * (#460). A market-structure statistic computed once over the bar stream, not per
+     * strategy. Empty when the replay was tick-only (no candle window) or saw fewer than
+     * the minimum bars to populate any bucket.
+     */
+    val conditionalAutocorr: Map<String, ConditionalAutocorr> = emptyMap(),
 )
