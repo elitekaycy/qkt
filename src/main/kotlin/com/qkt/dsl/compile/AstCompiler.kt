@@ -29,8 +29,11 @@ class AstCompiler {
         overrides: Map<String, String> = emptyMap(),
     ): Strategy {
         val ast = ParamSubstitution.apply(rawAst, overrides)
+        // Real streams keep their venue identity; each basket is a synthetic stream with a
+        // `BASKET:` identity whose composite candle is written into the hub at sync time.
         val streams: Map<String, HubKey> =
-            ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) }
+            ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) } +
+                ast.baskets.associate { it.alias to HubKey("BASKET", it.alias.uppercase(), it.timeframe) }
         val resolver = LetResolver(ast.lets)
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
@@ -169,6 +172,7 @@ class AstCompiler {
             syncGroups = ast.syncGroups,
             schedules = compiledSchedules,
             quoteFieldStreams = quoteFieldStreams,
+            baskets = ast.baskets,
         )
     }
 
@@ -322,6 +326,7 @@ private class CompiledStrategy(
     private val syncGroups: List<SyncGroupDecl>,
     private val schedules: List<CompiledSchedule>,
     override val quoteFieldStreams: Set<String>,
+    private val baskets: List<com.qkt.dsl.ast.BasketDecl>,
 ) : DslCompiledStrategy,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
@@ -402,8 +407,13 @@ private class CompiledStrategy(
         // would individually fire their rules with cross-stream data from the wrong
         // window. (#45 Phase 35.)
         val syncedAliases: Set<String> = syncGroups.flatMap { it.aliases }.toSet()
+        // A basket is a synthetic stream: its candle is computed by its constituent
+        // sync-group, not delivered by a per-stream feed. Skip the per-stream close path
+        // for basket aliases — they evaluate from the composite write (see basket groups).
+        val basketAliases: Set<String> = baskets.map { it.alias }.toSet()
 
         for ((alias, key) in streams) {
+            if (alias in basketAliases) continue
             // Phase 25B: credit the gate with whatever historical bars the seed phase
             // (run by LiveSession before bindToHub) placed in the hub. Without this,
             // the gate stays cold even when lookback + indicators are already warm.
@@ -432,6 +442,27 @@ private class CompiledStrategy(
                     fireRulesForAlias(alias, bars.getValue(alias), hub, ctx, emit)
                 }
             }
+        }
+
+        bindBaskets(hub, ctx, emit)
+    }
+
+    /**
+     * Wire each basket's implicit sync group over its constituents. The constituents'
+     * same-window bars assemble here; the composite candle is computed and published from
+     * this callback. (Composite computation lands in a later task — the callback is a
+     * stub for now so a basket alias is a registered, sync-grouped stream.)
+     */
+    private fun bindBaskets(
+        hub: CandleHub,
+        ctx: StrategyContext,
+        @Suppress("UNUSED_PARAMETER") emit: (Signal) -> Unit,
+    ) {
+        for (basket in baskets) {
+            val members = basket.constituents.associateWith { streams.getValue(it) }
+            val groupKey = SyncGroupKey(members = members, timeoutMs = null)
+            hub.registerSyncGroup(groupKey, ctx.strategyId)
+            hub.onSyncClosed(groupKey, ctx.strategyId) { _ -> }
         }
     }
 
