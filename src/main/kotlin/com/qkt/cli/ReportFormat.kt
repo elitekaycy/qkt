@@ -2,7 +2,9 @@ package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.ConditionalAutocorr
 import com.qkt.backtest.MonteCarloSummary
+import com.qkt.backtest.Regime
 import java.io.PrintStream
 
 /** Output format selector for `qkt backtest` console reports. */
@@ -70,6 +72,36 @@ object ReportPrinter {
         out.println("  Win rate:   wins / decided trades; break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
+        printAutocorr(r, out)
+    }
+
+    /**
+     * Lag-1 return autocorrelation block (#460), one section per symbol. Skipped entirely when no
+     * symbol populated a bucket (e.g. a tick-only run with no candle window).
+     */
+    private fun printAutocorr(
+        r: BacktestResult,
+        out: PrintStream,
+    ) {
+        val populated = r.conditionalAutocorr.filterValues { it.perHour.isNotEmpty() || it.perRegime.isNotEmpty() }
+        if (populated.isEmpty()) return
+        out.println()
+        out.println("Lag-1 return autocorrelation")
+        out.println("  high = |return| >= median; buckets with <3 returns omitted")
+        for ((symbol, ac) in populated.entries.sortedBy { it.key }) {
+            out.println("  $symbol")
+            out.println("    by hour (UTC):")
+            for ((hour, value) in ac.perHour.entries.sortedBy { it.key }) {
+                val label = hour.toString().padStart(2, '0')
+                out.println("      $label  ${value.toPlainString()}  (n=${ac.hourCounts[hour]})")
+            }
+            out.println("    by vol regime:")
+            for (regime in Regime.entries) {
+                val value = ac.perRegime[regime] ?: continue
+                val label = regime.name.lowercase().padEnd(4)
+                out.println("      $label  ${value.toPlainString()}  (n=${ac.regimeCounts[regime]})")
+            }
+        }
     }
 
     private fun commissionNote(commissionPaid: java.math.BigDecimal): String =
@@ -113,6 +145,7 @@ object ReportPrinter {
         sb.append("},")
         sb.append("\"halts\":").append(r.halts.size).append(',')
         sb.append("\"cadence\":\"").append(r.cadence.name).append("\",")
+        sb.append("\"conditionalAutocorr\":").append(conditionalAutocorrJson(r.conditionalAutocorr)).append(',')
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
@@ -137,4 +170,50 @@ object ReportPrinter {
             append("}")
         }
     }
+
+    /**
+     * Lag-1 return autocorrelation (#460) as a JSON object keyed by symbol, e.g.
+     * `{"XAUUSD":{"perHour":{"13":-1.0},"perRegime":{"high":0.31},"hourCounts":{"13":120},
+     * "regimeCounts":{"high":600,"low":600}}}`. Empty object when no symbol populated a bucket.
+     * Keys are sorted for deterministic output, matching the `dailyPnL` convention.
+     */
+    private fun conditionalAutocorrJson(bySymbol: Map<String, ConditionalAutocorr>): String =
+        buildString {
+            append('{')
+            append(
+                bySymbol.entries
+                    .sortedBy { it.key }
+                    .joinToString(",") { (symbol, ac) -> "\"$symbol\":${autocorrObject(ac)}" },
+            )
+            append('}')
+        }
+
+    private fun autocorrObject(ac: ConditionalAutocorr): String =
+        buildString {
+            append("{\"perHour\":{")
+            append(
+                ac.perHour.entries
+                    .sortedBy { it.key }
+                    .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" },
+            )
+            append("},\"perRegime\":{")
+            append(
+                ac.perRegime.entries
+                    .sortedBy { it.key.name }
+                    .joinToString(",") { "\"${it.key.name.lowercase()}\":${it.value.toPlainString()}" },
+            )
+            append("},\"hourCounts\":{")
+            append(
+                ac.hourCounts.entries
+                    .sortedBy { it.key }
+                    .joinToString(",") { "\"${it.key}\":${it.value}" },
+            )
+            append("},\"regimeCounts\":{")
+            append(
+                ac.regimeCounts.entries
+                    .sortedBy { it.key.name }
+                    .joinToString(",") { "\"${it.key.name.lowercase()}\":${it.value}" },
+            )
+            append("}}")
+        }
 }
