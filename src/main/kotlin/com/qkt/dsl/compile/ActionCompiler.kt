@@ -24,6 +24,7 @@ import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.execution.At
@@ -40,6 +41,7 @@ class ActionCompiler(
     private val strategyLogger: Logger = LoggerFactory.getLogger("com.qkt.dsl.strategy"),
     private val ids: IdGenerator = SequentialIdGenerator(prefix = "dsl-anonymous-"),
     private val pendingStacks: PendingStacks? = null,
+    private val baskets: Map<String, List<String>> = emptyMap(),
 ) {
     private val orderTypeCompiler = OrderTypeCompiler(exprCompiler)
     private val childPriceResolver = ChildPriceResolver(exprCompiler)
@@ -113,14 +115,27 @@ class ActionCompiler(
             out
         }
 
-    private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> =
-        { ctx ->
+    private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> {
+        baskets[streamAlias]?.let { constituents ->
+            // CLOSE on a basket flattens every constituent — one basket close, N real closes.
+            return { ctx ->
+                val signals = mutableListOf<Signal>()
+                for (alias in constituents) {
+                    val symbol = ctx.streams[alias]?.qktSymbol ?: error("Unknown basket constituent alias: $alias")
+                    signals.add(Signal.CancelPendingForSymbol(symbol))
+                    signals.addAll(closeSignalsFor(ctx, symbol))
+                }
+                signals
+            }
+        }
+        return { ctx ->
             val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
             val signals = mutableListOf<Signal>()
             signals.add(Signal.CancelPendingForSymbol(symbol))
             signals.addAll(closeSignalsFor(ctx, symbol))
             signals
         }
+    }
 
     /**
      * Signals that flatten [symbol]. When the position is held as independent legs (e.g. a
@@ -231,6 +246,10 @@ class ActionCompiler(
         opts: ActionOpts,
         side: Side,
     ): (EvalContext) -> List<Signal> {
+        baskets[stream]?.let { constituents ->
+            return compileBasketFanOut(stream, constituents, opts, side)
+        }
+
         // Stack path: STACK is mutually exclusive with BRACKET/OCO on the same action.
         if (opts.stack != null) {
             // Phase 27: STACK_AT cannot combine with STACK pyramiding — the runtime
@@ -408,6 +427,62 @@ class ActionCompiler(
             }
 
             listOf(Signal.Submit(finalRequest))
+        }
+    }
+
+    /**
+     * Fan a `BUY`/`SELL` on a basket alias out to one plain-market order per constituent,
+     * each sized so its notional is `total / N` — equal economic weight, not equal lots, since
+     * one lot of two differently-priced symbols is two different exposures. The basket has no
+     * tradeable symbol of its own, so there is no single order to emit; each constituent order
+     * routes by its own `qktSymbol`. e.g. `BUY antipodean SIZING NOTIONAL 10000` over
+     * `[aud, nzd]` emits a BUY of $5,000 notional on each.
+     *
+     * Basket orders are plain market in v1: a BRACKET/OCO/TIF/STACK or a LIMIT/STOP type on a
+     * basket order is a compile error, and the sizing must be `SIZING NOTIONAL` — the only mode
+     * that yields a single economic total to split across constituents priced differently.
+     */
+    private fun compileBasketFanOut(
+        basketAlias: String,
+        constituents: List<String>,
+        opts: ActionOpts,
+        side: Side,
+    ): (EvalContext) -> List<Signal> {
+        val plain = "basket orders are plain market in v1"
+        require(opts.bracket == null) { "BASKET order on '$basketAlias' cannot carry a BRACKET ($plain)." }
+        require(opts.oco == null) { "BASKET order on '$basketAlias' cannot carry an OCO ($plain)." }
+        require(opts.stack == null && opts.stackAts.isEmpty()) {
+            "BASKET order on '$basketAlias' cannot carry STACK/STACK_AT ($plain)."
+        }
+        require(opts.tif == null) { "BASKET order on '$basketAlias' cannot carry a TIF ($plain)." }
+        require(opts.orderType == null || opts.orderType == Market) {
+            "BASKET order on '$basketAlias' must be a market order; LIMIT/STOP are not supported in v1."
+        }
+        val sizing = opts.sizing
+        require(sizing is SizeNotional) {
+            "BASKET order on '$basketAlias' requires notional sizing (SIZING <amount> USD); got " +
+                "${sizing?.let { it::class.simpleName } ?: "no SIZING"} — each constituent is sized " +
+                "to an equal share of the notional."
+        }
+        val notionalExpr = exprCompiler.compile(sizing.usd)
+        val n = BigDecimal(constituents.size)
+        return { ctx ->
+            val total = notionalExpr.evaluate(ctx)
+            require(total is Value.Num) { "BASKET SIZING NOTIONAL must be numeric, got $total" }
+            val perConstituent = total.v.divide(n, Money.CONTEXT)
+            constituents.map { alias ->
+                val key = ctx.streams[alias] ?: error("Unknown basket constituent alias: $alias")
+                val symbol = key.qktSymbol
+                val price =
+                    ctx.hub.latest(key)?.close
+                        ?: error("BASKET '$basketAlias' constituent '$alias' has no price yet")
+                val contractSize =
+                    ctx.strategyContext.instruments
+                        .require(symbol)
+                        .contractSize
+                val qty = perConstituent.divide(price.multiply(contractSize, Money.CONTEXT), Money.CONTEXT)
+                if (side == Side.BUY) Signal.Buy(symbol, qty) else Signal.Sell(symbol, qty)
+            }
         }
     }
 

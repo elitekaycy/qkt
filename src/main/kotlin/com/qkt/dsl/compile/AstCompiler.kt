@@ -29,16 +29,21 @@ class AstCompiler {
         overrides: Map<String, String> = emptyMap(),
     ): Strategy {
         val ast = ParamSubstitution.apply(rawAst, overrides)
+        // Real streams keep their venue identity; each basket is a synthetic stream with a
+        // `BASKET:` identity whose composite candle is written into the hub at sync time.
         val streams: Map<String, HubKey> =
-            ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) }
+            ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) } +
+                ast.baskets.associate { it.alias to HubKey("BASKET", it.alias.uppercase(), it.timeframe) }
+        // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
+        val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
         val resolver = LetResolver(ast.lets)
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
-        val exprCompiler = ExprCompiler(bindings, aggregates)
+        val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
         val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
         val pendingStacks = PendingStacks()
-        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids, pendingStacks)
+        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids, pendingStacks, basketConstituents)
 
         val whenThens: List<WhenThen> =
             ast.rules.map {
@@ -49,6 +54,7 @@ class AstCompiler {
         // price. Reject any order action targeting one at compile time (#440).
         val macroAliases = streams.filterValues { it.broker == "MACRO" }.keys
         whenThens.forEach { rejectMacroOrders(it.action, macroAliases) }
+        validateBaskets(ast)
         val resolvedConditions: List<ExprAst> = whenThens.map { resolver.resolve(it.cond) }
         val plan = SnapshotPlan.scan(resolvedConditions)
 
@@ -168,6 +174,7 @@ class AstCompiler {
             syncGroups = ast.syncGroups,
             schedules = compiledSchedules,
             quoteFieldStreams = quoteFieldStreams,
+            baskets = ast.baskets,
         )
     }
 
@@ -269,6 +276,37 @@ class AstCompiler {
             else -> {} // CloseAll/CancelAll (global) and Log: nothing to reject
         }
     }
+
+    /**
+     * Compile-time checks for every `BASKET` declaration: each constituent must be a
+     * declared real stream (not unbound and not itself a basket), and the basket's
+     * timeframe must match each constituent's timeframe (so their bars share a window).
+     *
+     * e.g. `antipodean = BASKET EQUAL_WEIGHT [aud, nzd] EVERY 1h` requires `aud` and
+     * `nzd` to be declared `EVERY 1h` streams.
+     */
+    private fun validateBaskets(ast: StrategyAst) {
+        if (ast.baskets.isEmpty()) return
+        val streamTimeframes = ast.streams.associate { it.alias to it.timeframe }
+        val basketAliases = ast.baskets.map { it.alias }.toSet()
+        for (basket in ast.baskets) {
+            for (constituent in basket.constituents) {
+                require(constituent !in basketAliases) {
+                    "BASKET '${basket.alias}' constituent '$constituent' is itself a basket; " +
+                        "baskets of baskets are not supported."
+                }
+                val constituentTf = streamTimeframes[constituent]
+                require(constituentTf != null) {
+                    "BASKET '${basket.alias}' constituent '$constituent' is not a declared " +
+                        "stream in SYMBOLS."
+                }
+                require(constituentTf == basket.timeframe) {
+                    "BASKET '${basket.alias}' timeframe '${basket.timeframe}' does not match " +
+                        "constituent '$constituent' timeframe '$constituentTf'."
+                }
+            }
+        }
+    }
 }
 
 private class CompiledStrategy(
@@ -290,6 +328,7 @@ private class CompiledStrategy(
     private val syncGroups: List<SyncGroupDecl>,
     private val schedules: List<CompiledSchedule>,
     override val quoteFieldStreams: Set<String>,
+    private val baskets: List<com.qkt.dsl.ast.BasketDecl>,
 ) : DslCompiledStrategy,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
@@ -370,8 +409,13 @@ private class CompiledStrategy(
         // would individually fire their rules with cross-stream data from the wrong
         // window. (#45 Phase 35.)
         val syncedAliases: Set<String> = syncGroups.flatMap { it.aliases }.toSet()
+        // A basket is a synthetic stream: its candle is computed by its constituent
+        // sync-group, not delivered by a per-stream feed. Skip the per-stream close path
+        // for basket aliases — they evaluate from the composite write (see basket groups).
+        val basketAliases: Set<String> = baskets.map { it.alias }.toSet()
 
         for ((alias, key) in streams) {
+            if (alias in basketAliases) continue
             // Phase 25B: credit the gate with whatever historical bars the seed phase
             // (run by LiveSession before bindToHub) placed in the hub. Without this,
             // the gate stays cold even when lookback + indicators are already warm.
@@ -393,12 +437,47 @@ private class CompiledStrategy(
                 // `sma(silver.close, N)` sees silver's same-window value, not the
                 // previous window's. Without this split, the alias evaluated first
                 // would fire rules against the other alias's stale indicator state.
+                // A basket alias in this group is only a timing gate — its own
+                // update-then-fire already ran in its implicit constituent group, so it is
+                // skipped here to avoid evaluating the basket twice per window.
                 for (alias in group.aliases) {
+                    if (alias in basketAliases) continue
                     updatePerAlias(alias, bars.getValue(alias), hub, ctx)
                 }
                 for (alias in group.aliases) {
+                    if (alias in basketAliases) continue
                     fireRulesForAlias(alias, bars.getValue(alias), hub, ctx, emit)
                 }
+            }
+        }
+
+        bindBaskets(hub, ctx, emit)
+    }
+
+    /**
+     * Wire each basket's implicit sync group over its constituents. When the constituents'
+     * same-window bars assemble, the compositor folds them into the composite index; the
+     * resulting candle is published into the hub under the basket key, then the basket runs
+     * its own update-then-fire (indicators, then rules) on that synthesized close — the same
+     * two-pass the explicit sync path uses. `null` (the first aligned window, baseline only)
+     * publishes nothing, so `basket.close` stays Undefined until the basket is warm.
+     */
+    private fun bindBaskets(
+        hub: CandleHub,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        for (basket in baskets) {
+            val basketKey = streams.getValue(basket.alias)
+            val compositor = BasketCompositor(basketKey.qktSymbol, basket.constituents)
+            val members = basket.constituents.associateWith { streams.getValue(it) }
+            val groupKey = SyncGroupKey(members = members, timeoutMs = null)
+            hub.registerSyncGroup(groupKey, ctx.strategyId)
+            hub.onSyncClosed(groupKey, ctx.strategyId) { bars ->
+                val composite = compositor.onAligned(bars) ?: return@onSyncClosed
+                hub.publish(basketKey, composite)
+                updatePerAlias(basket.alias, composite, hub, ctx)
+                fireRulesForAlias(basket.alias, composite, hub, ctx, emit)
             }
         }
     }

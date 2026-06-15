@@ -296,6 +296,7 @@ class Parser(
             }
         val streams = symbolsBlock.streams
         val syncGroups = symbolsBlock.syncGroups
+        val baskets = symbolsBlock.baskets
 
         val params =
             run {
@@ -341,6 +342,7 @@ class Parser(
                 rules = rules,
                 syncGroups = syncGroups,
                 schedules = schedules,
+                baskets = baskets,
             ),
         )
     }
@@ -1573,48 +1575,23 @@ class Parser(
     internal data class SymbolsBlock(
         val streams: List<StreamDecl>,
         val syncGroups: List<SyncGroupDecl>,
+        val baskets: List<com.qkt.dsl.ast.BasketDecl> = emptyList(),
     )
 
     private fun parseSymbols(): SymbolsBlock {
         val out = mutableListOf<StreamDecl>()
+        val baskets = mutableListOf<com.qkt.dsl.ast.BasketDecl>()
         expect(TokenKind.SYMBOLS, "expected SYMBOLS")
         do {
             val alias = expect(TokenKind.IDENT, "expected stream alias").lexeme
             expect(TokenKind.EQ, "expected '=' after stream alias")
-            val broker = expect(TokenKind.IDENT, "expected broker prefix").lexeme
-            expect(TokenKind.COLON, "expected ':' between broker and symbol")
-            val symbol = expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
-            expect(TokenKind.EVERY, "expected EVERY")
-            val timeframe =
-                if (peek().kind == TokenKind.DURATION) {
-                    advance().lexeme
-                } else {
-                    val tfNum = expect(TokenKind.NUMBER, "expected timeframe count").lexeme
-                    val tfUnit = expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
-                    "$tfNum$tfUnit"
-                }
-            val warmupBars: Int? =
-                if (peek().kind == TokenKind.WARMUP) {
-                    advance()
-                    val numToken = expect(TokenKind.NUMBER, "expected integer bar count after WARMUP")
-                    val n =
-                        numToken.lexeme.toIntOrNull()
-                            ?: error("WARMUP count must be a positive integer, got '${numToken.lexeme}'")
-                    if (n <= 0) error("WARMUP count must be > 0, got $n")
-                    expect(TokenKind.BARS, "expected BARS after WARMUP count")
-                    n
-                } else {
-                    null
-                }
-            out.add(
-                StreamDecl(
-                    alias = alias,
-                    broker = broker,
-                    symbol = symbol,
-                    timeframe = timeframe,
-                    warmupBars = warmupBars,
-                ),
-            )
+            // The token after '=' disambiguates a basket (`BASKET ...`) from a real stream
+            // (`<broker>:<symbol> ...`). A basket combines already-declared streams.
+            if (peek().kind == TokenKind.BASKET) {
+                baskets.add(parseBasket(alias))
+            } else {
+                out.add(parseStream(alias))
+            }
         } while (
             match(TokenKind.COMMA) ||
             // Comma between stream decls is optional: continue if the next two tokens
@@ -1626,7 +1603,9 @@ class Parser(
         // #45 — SYNCHRONIZE clauses at the end of the SYMBOLS block. Each clause:
         // `SYNCHRONIZE <ident> <ident> [<ident> …] [WITHIN <duration>]`.
         val groups = mutableListOf<SyncGroupDecl>()
-        val declaredAliases = out.map { it.alias }.toSet()
+        // A basket alias is a valid sync member too: a strategy may synchronize a real
+        // stream with a basket so a cross-stream condition reads same-window bars.
+        val declaredAliases = (out.map { it.alias } + baskets.map { it.alias }).toSet()
         val claimed = mutableMapOf<String, Int>()
         while (peek().kind == TokenKind.SYNCHRONIZE) {
             advance()
@@ -1660,8 +1639,85 @@ class Parser(
             groups.add(SyncGroupDecl(aliases = aliases.toList(), timeoutMs = timeoutMs))
         }
 
-        return SymbolsBlock(streams = out, syncGroups = groups)
+        return SymbolsBlock(streams = out, syncGroups = groups, baskets = baskets)
     }
+
+    /** Parse the stream body after `<alias> =`: `<broker>:<symbol> EVERY <tf> [WARMUP <n> BARS]`. */
+    private fun parseStream(alias: String): StreamDecl {
+        val broker = expect(TokenKind.IDENT, "expected broker prefix").lexeme
+        expect(TokenKind.COLON, "expected ':' between broker and symbol")
+        val symbol = expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
+        expect(TokenKind.EVERY, "expected EVERY")
+        val timeframe = parseTimeframe()
+        val warmupBars: Int? =
+            if (peek().kind == TokenKind.WARMUP) {
+                advance()
+                val numToken = expect(TokenKind.NUMBER, "expected integer bar count after WARMUP")
+                val n =
+                    numToken.lexeme.toIntOrNull()
+                        ?: error("WARMUP count must be a positive integer, got '${numToken.lexeme}'")
+                if (n <= 0) error("WARMUP count must be > 0, got $n")
+                expect(TokenKind.BARS, "expected BARS after WARMUP count")
+                n
+            } else {
+                null
+            }
+        return StreamDecl(
+            alias = alias,
+            broker = broker,
+            symbol = symbol,
+            timeframe = timeframe,
+            warmupBars = warmupBars,
+        )
+    }
+
+    /**
+     * Parse the basket body after `<alias> =`:
+     * `BASKET EQUAL_WEIGHT '[' <ident> (',' <ident>)+ ']' EVERY <tf>`.
+     *
+     * e.g. `antipodean = BASKET EQUAL_WEIGHT [aud, nzd] EVERY 1h`.
+     */
+    private fun parseBasket(alias: String): com.qkt.dsl.ast.BasketDecl {
+        expect(TokenKind.BASKET, "expected BASKET")
+        val weighting =
+            when (peek().kind) {
+                TokenKind.EQUAL_WEIGHT -> {
+                    advance()
+                    com.qkt.dsl.ast.BasketWeighting.EqualWeight
+                }
+                else -> error("expected basket weighting EQUAL_WEIGHT, got '${peek().lexeme}'")
+            }
+        expect(TokenKind.LBRACKET, "expected '[' to open basket constituents")
+        val constituents = mutableListOf<String>()
+        if (peek().kind != TokenKind.RBRACKET) {
+            constituents.add(expect(TokenKind.IDENT, "expected constituent alias").lexeme)
+            while (match(TokenKind.COMMA)) {
+                constituents.add(expect(TokenKind.IDENT, "expected constituent alias after ','").lexeme)
+            }
+        }
+        expect(TokenKind.RBRACKET, "expected ']' to close basket constituents")
+        if (constituents.size < 2) {
+            error("BASKET '$alias' needs at least 2 constituents, got ${constituents.size}")
+        }
+        expect(TokenKind.EVERY, "expected EVERY after basket constituents")
+        val timeframe = parseTimeframe()
+        return com.qkt.dsl.ast.BasketDecl(
+            alias = alias,
+            weighting = weighting,
+            constituents = constituents.toList(),
+            timeframe = timeframe,
+        )
+    }
+
+    /** Parse an `EVERY` timeframe value: a `DURATION` token (`1h`) or a `<number><unit>` pair. */
+    private fun parseTimeframe(): String =
+        if (peek().kind == TokenKind.DURATION) {
+            advance().lexeme
+        } else {
+            val tfNum = expect(TokenKind.NUMBER, "expected timeframe count").lexeme
+            val tfUnit = expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
+            "$tfNum$tfUnit"
+        }
 
     /**
      * Parse one `SCHEDULE` block (#77). Each clause is one of:

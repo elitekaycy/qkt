@@ -130,6 +130,42 @@ THEN CLOSE btc
 
 **`highest(close, N)` excludes the current bar.** It looks at the last N **prior** closes. This matters for breakout strategies — otherwise `close > highest(close, N)` could never fire (the current bar can't exceed itself).
 
+### Statistical
+
+```qkt
+zscore(<series>, <period>)    -- rolling z-score over the last <period> values
+```
+
+`zscore` answers "how far is the latest value from its recent average, in standard deviations." It is `(latest − mean) / stddev` over the last `<period>` values, using the **sample (n−1)** standard deviation. A z of `+2` means the newest value sits two standard deviations above its window mean — the canonical mean-reversion / pairs-spread entry.
+
+```qkt
+WHEN zscore(btc.close, 100) >= 2.0     -- 100-bar return spike, two sigma high
+THEN SELL btc SIZING 0.1
+```
+
+Warmup is `<period>` bars. While warming up `zscore` returns `null`, and it also returns `null` when the window is flat (zero standard deviation — the z-score is undefined). As everywhere, `null` makes the comparison `false`, so the rule simply doesn't fire.
+
+**The series can be any arithmetic expression that references at least one stream** (expression-fed binding, #174) — not just a bare `stream.close`. This is what makes `zscore` a pairs-trading primitive: feed it a ratio or spread of two streams.
+
+```qkt
+-- Pairs spread: trade gold against silver when their ratio reaches an extreme.
+WHEN zscore(gold.close / silver.close, 100) >= 2.0 AND POSITION.gold = 0
+THEN SELL gold
+WHEN zscore(gold.close / silver.close, 100) <= -2.0 AND POSITION.gold = 0
+THEN BUY gold
+```
+
+A cross-stream series like `gold.close / silver.close` mixes two streams. The binding gates updates on the **primary alias** — the first stream the expression references (here `gold`) — and reads the other stream's latest closed bar. For that read to be the **same-window** value rather than the previous window's, put the two streams in a shared `SYNCHRONIZE` group so their bars are delivered together:
+
+```qkt
+SYMBOLS
+    gold   = EXNESS:XAUUSD EVERY 1h
+    silver = EXNESS:XAGUSD EVERY 1h
+    SYNCHRONIZE gold silver
+```
+
+Without the `SYNCHRONIZE`, the spread is still computed, but `silver.close` may lag `gold.close` by one bar — the same cross-stream alignment caveat that applies to `sma(silver.close, …)` inside a gold-anchored rule.
+
 ## Math helpers
 
 Available alongside indicators:
@@ -181,6 +217,7 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `bollinger_*(value, N, k)` | N bars |
 | `vwap(stream, N)` | N ticks |
 | `highest`/`lowest(value, N)` | N + 1 bars (N prior bars plus the evaluating bar) |
+| `zscore(series, N)` | N bars |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 

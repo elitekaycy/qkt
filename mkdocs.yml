@@ -175,6 +175,7 @@ nav:
           - LATCH: reference/dsl/latch.md
           - FOR EACH: reference/dsl/foreach.md
           - PORTFOLIO files: reference/dsl/portfolio.md
+          - BASKET (synthetic instruments): reference/dsl/basket.md
       - DSL grammar (cheat sheet): reference/dsl-grammar.md
       - CLI commands: reference/cli-commands.md
       - Config schema: reference/config-schema.md
