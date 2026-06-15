@@ -435,10 +435,15 @@ private class CompiledStrategy(
                 // `sma(silver.close, N)` sees silver's same-window value, not the
                 // previous window's. Without this split, the alias evaluated first
                 // would fire rules against the other alias's stale indicator state.
+                // A basket alias in this group is only a timing gate — its own
+                // update-then-fire already ran in its implicit constituent group, so it is
+                // skipped here to avoid evaluating the basket twice per window.
                 for (alias in group.aliases) {
+                    if (alias in basketAliases) continue
                     updatePerAlias(alias, bars.getValue(alias), hub, ctx)
                 }
                 for (alias in group.aliases) {
+                    if (alias in basketAliases) continue
                     fireRulesForAlias(alias, bars.getValue(alias), hub, ctx, emit)
                 }
             }
