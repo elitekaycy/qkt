@@ -115,14 +115,27 @@ class ActionCompiler(
             out
         }
 
-    private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> =
-        { ctx ->
+    private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> {
+        baskets[streamAlias]?.let { constituents ->
+            // CLOSE on a basket flattens every constituent — one basket close, N real closes.
+            return { ctx ->
+                val signals = mutableListOf<Signal>()
+                for (alias in constituents) {
+                    val symbol = ctx.streams[alias]?.qktSymbol ?: error("Unknown basket constituent alias: $alias")
+                    signals.add(Signal.CancelPendingForSymbol(symbol))
+                    signals.addAll(closeSignalsFor(ctx, symbol))
+                }
+                signals
+            }
+        }
+        return { ctx ->
             val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
             val signals = mutableListOf<Signal>()
             signals.add(Signal.CancelPendingForSymbol(symbol))
             signals.addAll(closeSignalsFor(ctx, symbol))
             signals
         }
+    }
 
     /**
      * Signals that flatten [symbol]. When the position is held as independent legs (e.g. a
