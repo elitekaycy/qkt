@@ -34,6 +34,8 @@ class AstCompiler {
         val streams: Map<String, HubKey> =
             ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) } +
                 ast.baskets.associate { it.alias to HubKey("BASKET", it.alias.uppercase(), it.timeframe) }
+        // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
+        val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
         val resolver = LetResolver(ast.lets)
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
@@ -41,7 +43,7 @@ class AstCompiler {
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
         val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
         val pendingStacks = PendingStacks()
-        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids, pendingStacks)
+        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids, pendingStacks, basketConstituents)
 
         val whenThens: List<WhenThen> =
             ast.rules.map {
