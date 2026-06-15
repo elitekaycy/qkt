@@ -6,6 +6,8 @@ enum class TokenKind {
     DEFAULTS,
     SYMBOLS,
     SYNCHRONIZE,
+    BASKET,
+    EQUAL_WEIGHT,
     SCHEDULE,
     LET,
     PARAM,

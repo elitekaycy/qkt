@@ -130,6 +130,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: PORTFOLIO](portfolio.md)
 
+- :material-basket-outline:{ .lg .middle } **BASKET synthetic instruments**
+
+    ---
+
+    Bind several streams into one tradeable pseudo-stream. An equal-weight log-return index you can read, and BUY/SELL/CLOSE that fan out to one equal-notional order per constituent.
+
+    [:octicons-arrow-right-24: BASKET](basket.md)
+
 </div>
 
 ## How qkt parses your strategy
