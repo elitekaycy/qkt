@@ -448,21 +448,30 @@ private class CompiledStrategy(
     }
 
     /**
-     * Wire each basket's implicit sync group over its constituents. The constituents'
-     * same-window bars assemble here; the composite candle is computed and published from
-     * this callback. (Composite computation lands in a later task — the callback is a
-     * stub for now so a basket alias is a registered, sync-grouped stream.)
+     * Wire each basket's implicit sync group over its constituents. When the constituents'
+     * same-window bars assemble, the compositor folds them into the composite index; the
+     * resulting candle is published into the hub under the basket key, then the basket runs
+     * its own update-then-fire (indicators, then rules) on that synthesized close — the same
+     * two-pass the explicit sync path uses. `null` (the first aligned window, baseline only)
+     * publishes nothing, so `basket.close` stays Undefined until the basket is warm.
      */
     private fun bindBaskets(
         hub: CandleHub,
         ctx: StrategyContext,
-        @Suppress("UNUSED_PARAMETER") emit: (Signal) -> Unit,
+        emit: (Signal) -> Unit,
     ) {
         for (basket in baskets) {
+            val basketKey = streams.getValue(basket.alias)
+            val compositor = BasketCompositor(basketKey.qktSymbol, basket.constituents)
             val members = basket.constituents.associateWith { streams.getValue(it) }
             val groupKey = SyncGroupKey(members = members, timeoutMs = null)
             hub.registerSyncGroup(groupKey, ctx.strategyId)
-            hub.onSyncClosed(groupKey, ctx.strategyId) { _ -> }
+            hub.onSyncClosed(groupKey, ctx.strategyId) { bars ->
+                val composite = compositor.onAligned(bars) ?: return@onSyncClosed
+                hub.publish(basketKey, composite)
+                updatePerAlias(basket.alias, composite, hub, ctx)
+                fireRulesForAlias(basket.alias, composite, hub, ctx, emit)
+            }
         }
     }
 

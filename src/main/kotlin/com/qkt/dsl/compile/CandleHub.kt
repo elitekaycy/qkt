@@ -163,6 +163,24 @@ class CandleHub {
         while (slot.ring.size > slot.retention) slot.ring.removeFirst()
     }
 
+    /**
+     * Append a synthetic [candle] to [key]'s ring, trimmed to the slot's retention. Unlike
+     * the aggregator path this fires no `onClosed` listeners — it is for a derived stream
+     * (e.g. a BASKET composite) whose rules are driven separately by the producer that
+     * computes the candle. Throws if [key] was never registered via [register].
+     *
+     * e.g. a basket compositor builds the composite bar for a window and calls
+     * `hub.publish(basketKey, composite)` so `basket.close` reads it like any stream.
+     */
+    fun publish(
+        key: HubKey,
+        candle: Candle,
+    ) {
+        val slot = slots[key] ?: error("CandleHub.publish: unknown key $key")
+        slot.ring.addLast(candle)
+        while (slot.ring.size > slot.retention) slot.ring.removeFirst()
+    }
+
     fun latest(key: HubKey): Candle? = slots[key]?.ring?.lastOrNull()
 
     fun history(
