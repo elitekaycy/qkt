@@ -13,6 +13,7 @@ data class StrategyAst(
     val rules: List<RuleAst>,
     val syncGroups: List<SyncGroupDecl> = emptyList(),
     val schedules: List<ScheduleDecl> = emptyList(),
+    val baskets: List<BasketDecl> = emptyList(),
 ) {
     init {
         require(name.isNotBlank()) { "StrategyAst.name must not be blank" }
