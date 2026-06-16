@@ -47,7 +47,10 @@ class ManifestStore(
         val symDir = root.resolve("symbols").resolve(manifest.symbol)
         Files.createDirectories(symDir)
         val target = symDir.resolve("manifest.json")
-        val tmp = symDir.resolve("manifest.json.tmp")
+        // Unique temp per write so a concurrent writer to the same symbol can't clobber our scratch
+        // file out from under the atomic move. The OS-supplied name is scaffolding for the atomic
+        // write, not engine output, so it does not affect backtest determinism.
+        val tmp = Files.createTempFile(symDir, "manifest", ".json.tmp")
         val updated = manifest.copy(lastUpdated = Instant.ofEpochMilli(clock.now()).toString())
         Files.writeString(tmp, json.encodeToString(updated))
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)

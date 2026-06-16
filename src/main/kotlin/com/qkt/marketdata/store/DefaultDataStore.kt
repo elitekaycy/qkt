@@ -22,6 +22,7 @@ class DefaultDataStore(
     private val manifestStore: ManifestStore = ManifestStore(root, clock),
 ) : DataStore {
     private val log = LoggerFactory.getLogger(DefaultDataStore::class.java)
+    private val lock = ManifestLock(root)
 
     override fun manifest(symbol: String): Manifest = manifestStore.read(symbol)
 
@@ -64,50 +65,65 @@ class DefaultDataStore(
         materializeMissing(request.symbols, fromMs, toMs)
     }
 
-    override fun rebuildManifests() {
-        val symbolsDir = root.resolve("symbols")
-        if (!Files.exists(symbolsDir)) return
-        Files.list(symbolsDir).use { stream ->
-            for (symDir in stream) {
-                if (!Files.isDirectory(symDir)) continue
-                val sym = symDir.fileName.toString()
-                val days =
-                    Files.list(symDir).use { fs ->
-                        fs
-                            .map { it.fileName.toString() }
-                            .filter { it.endsWith(".csv") || it.endsWith(".csv.gz") }
-                            .map { it.removeSuffix(".gz").removeSuffix(".csv") }
-                            .distinct()
-                            .sorted()
-                            .toList()
+    override fun rebuildManifests() =
+        lock.withLock {
+            val symbolsDir = root.resolve("symbols")
+            if (!Files.exists(symbolsDir)) return@withLock
+            Files.list(symbolsDir).use { stream ->
+                for (symDir in stream) {
+                    if (!Files.isDirectory(symDir)) continue
+                    val sym = symDir.fileName.toString()
+                    val days =
+                        Files.list(symDir).use { fs ->
+                            fs
+                                .map { it.fileName.toString() }
+                                .filter { it.endsWith(".csv") || it.endsWith(".csv.gz") }
+                                .map { it.removeSuffix(".gz").removeSuffix(".csv") }
+                                .distinct()
+                                .sorted()
+                                .toList()
+                        }
+                    if (days.isEmpty()) {
+                        // No day files left (e.g. every day was deleted for a refetch). Clear the
+                        // manifest so a later prefetch re-materializes it; leaving the old ranges would
+                        // make the store claim coverage it no longer has and skip the refetch.
+                        manifestStore.write(Manifest(symbol = sym, ranges = emptyList()))
+                        continue
                     }
-                if (days.isEmpty()) {
-                    // No day files left (e.g. every day was deleted for a refetch). Clear the
-                    // manifest so a later prefetch re-materializes it; leaving the old ranges would
-                    // make the store claim coverage it no longer has and skip the refetch.
-                    manifestStore.write(Manifest(symbol = sym, ranges = emptyList()))
-                    continue
-                }
-                val ranges = mutableListOf<DayRange>()
-                var rangeStart: String? = null
-                var rangeEnd: String? = null
-                for (day in days) {
-                    val date = LocalDate.parse(day)
-                    if (rangeStart == null) {
-                        rangeStart = day
-                        rangeEnd = date.plusDays(1).toString()
-                    } else if (rangeEnd == day) {
-                        rangeEnd = date.plusDays(1).toString()
-                    } else {
-                        ranges.add(DayRange(rangeStart, rangeEnd!!))
-                        rangeStart = day
-                        rangeEnd = date.plusDays(1).toString()
+                    val ranges = mutableListOf<DayRange>()
+                    var rangeStart: String? = null
+                    var rangeEnd: String? = null
+                    for (day in days) {
+                        val date = LocalDate.parse(day)
+                        if (rangeStart == null) {
+                            rangeStart = day
+                            rangeEnd = date.plusDays(1).toString()
+                        } else if (rangeEnd == day) {
+                            rangeEnd = date.plusDays(1).toString()
+                        } else {
+                            ranges.add(DayRange(rangeStart, rangeEnd!!))
+                            rangeStart = day
+                            rangeEnd = date.plusDays(1).toString()
+                        }
                     }
+                    if (rangeStart != null) ranges.add(DayRange(rangeStart, rangeEnd!!))
+                    manifestStore.write(Manifest(symbol = sym, ranges = ranges))
                 }
-                if (rangeStart != null) ranges.add(DayRange(rangeStart, rangeEnd!!))
-                manifestStore.write(Manifest(symbol = sym, ranges = ranges))
             }
         }
+
+    /**
+     * Delete a cached day-file and reconcile the manifest to what is left on disk, as one atomic
+     * step against other writers. Used to repair a partial day: drop it, then a later prefetch
+     * re-materializes it. e.g. `dropDay("XAUUSD", 2026-06-10)` removes that day and rebuilds the
+     * manifest without it.
+     */
+    fun dropDay(
+        symbol: String,
+        day: LocalDate,
+    ) = lock.withLock {
+        dayFile(symbol, day)?.let { Files.deleteIfExists(it) }
+        if (manifestStore.read(symbol).ranges.isNotEmpty()) rebuildManifests()
     }
 
     private fun resolveRangeMs(request: MarketRequest): Pair<Long, Long> {
@@ -156,11 +172,16 @@ class DefaultDataStore(
                 f.fetch(sym, day, target)
                 warnOnLowQuality(sym, day, target)
             }
-            var ranges = manifest.ranges
-            for (day in missing) {
-                ranges = manifestStore.coalesce(ranges, DayRange(day.toString(), day.plusDays(1).toString()))
+            // Commit the freshly fetched days under the lock, coalescing onto a re-read of the
+            // committed manifest (not the pre-fetch snapshot) so a concurrent writer's days survive.
+            lock.withLock {
+                val current = manifestStore.read(sym)
+                var ranges = current.ranges
+                for (day in missing) {
+                    ranges = manifestStore.coalesce(ranges, DayRange(day.toString(), day.plusDays(1).toString()))
+                }
+                manifestStore.write(current.copy(ranges = ranges))
             }
-            manifestStore.write(manifest.copy(ranges = ranges))
         }
     }
 
