@@ -118,6 +118,7 @@ class Parser(
     private var pos = 0
     private val errors = mutableListOf<ParseError>()
     private var inStackLayerAt: Boolean = false
+    private var inOtoChildPrice: Boolean = false
 
     fun parseFile(): ParseResult<ParsedFile> =
         when (peek().kind) {
@@ -653,7 +654,7 @@ class Parser(
             // bind to the math function — the action parser is only reached from action
             // position, so this overlap is unambiguous.
             TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE, TokenKind.LOG -> {
-                if (inStackLayerAt && t.kind == TokenKind.IDENT && t.lexeme == "entry") {
+                if ((inStackLayerAt || inOtoChildPrice) && t.kind == TokenKind.IDENT && t.lexeme == "entry") {
                     advance()
                     return StackEntryRef
                 }
@@ -1189,6 +1190,7 @@ class Parser(
         var oco: OcoAst? = null
         var stack: StackAst? = null
         var stackAts: List<StackAtClause> = emptyList()
+        var onFill: List<ActionAst> = emptyList()
         loop@ while (true) {
             when (peek().kind) {
                 TokenKind.SIZING -> {
@@ -1219,6 +1221,10 @@ class Parser(
                 TokenKind.STACK_AT -> {
                     stackAts += parseStackAtClause()
                 }
+                TokenKind.ON_FILL -> {
+                    advance()
+                    onFill = parseOnFill()
+                }
                 else -> break@loop
             }
         }
@@ -1230,7 +1236,33 @@ class Parser(
         }
         // orderType stays null here so DEFAULTS ORDER_TYPE can fill it during the
         // defaults merge; ActionCompiler applies the Market fallback after the merge.
-        return ActionOpts(sizing, orderType, tif, bracket, oco, finalStack, stackAts)
+        return ActionOpts(sizing, orderType, tif, bracket, oco, finalStack, stackAts, onFill)
+    }
+
+    /**
+     * Parse an OTO child block: `ON_FILL { <BUY|SELL …> [; <BUY|SELL …>]* }`.
+     *
+     * Each child is a normal BUY/SELL action, so it reuses the full action grammar (sizing,
+     * order type). Inside the block, `entry` resolves to the parent fill price, letting a child
+     * price itself relative to where the parent filled (e.g. `LIMIT AT entry - 10`).
+     */
+    private fun parseOnFill(): List<ActionAst> {
+        expect(TokenKind.LBRACE, "expected '{' to open ON_FILL block")
+        val children = mutableListOf<ActionAst>()
+        val prev = inOtoChildPrice
+        inOtoChildPrice = true
+        try {
+            children.add(parseAction())
+            while (peek().kind == TokenKind.SEMICOLON) {
+                advance()
+                if (peek().kind == TokenKind.RBRACE) break
+                children.add(parseAction())
+            }
+        } finally {
+            inOtoChildPrice = prev
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close ON_FILL block")
+        return children
     }
 
     /**

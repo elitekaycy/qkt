@@ -13,6 +13,13 @@ data class ActionOpts(
      * independent of each other and of the parent's own bracket.
      */
     val stackAts: List<StackAtClause> = emptyList(),
+    /**
+     * OTO (one-triggers-other): child BUY/SELL actions placed only once this action's order
+     * fills (`ON_FILL { ... }`). Each child may target a different stream, take the opposite
+     * side, and price itself relative to the parent fill via the `entry` keyword. Empty for
+     * the common case. Children are themselves [ActionAst] (BUY/SELL only), validated at compile.
+     */
+    val onFill: List<ActionAst> = emptyList(),
 )
 
 /**
