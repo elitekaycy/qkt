@@ -5,9 +5,9 @@ import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
-import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.DataStore
 import com.qkt.marketdata.store.LocalBarStore
 import java.math.BigDecimal
@@ -52,7 +52,7 @@ class LocalMarketSource(
             val days = daysCovering(range)
             for (day in days) {
                 val path = store.dayFile(storeKey, day) ?: continue
-                CsvTickFeed(path).use { feed ->
+                openDayFeed(path).use { feed ->
                     while (true) {
                         val t = feed.next() ?: break
                         if (t.timestamp < range.from.toEpochMilli()) continue

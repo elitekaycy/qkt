@@ -2,12 +2,11 @@ package com.qkt.marketdata.store
 
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
-import com.qkt.marketdata.BinaryTickFeed
 import com.qkt.marketdata.ConcatenatedTickFeed
-import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.RangeClippedTickFeed
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.source.MarketRequest
 import java.nio.file.Files
 import java.nio.file.Path
@@ -51,15 +50,7 @@ class DefaultDataStore(
             request.symbols.map { sym ->
                 val days = daysCovering(fromMs, toMs)
                 val factories: List<() -> TickFeed> =
-                    days.mapNotNull { dayFile(sym, it) }.map { path ->
-                        {
-                            if (path.fileName.toString().endsWith(".bin")) {
-                                BinaryTickFeed(path)
-                            } else {
-                                CsvTickFeed(path)
-                            }
-                        }
-                    }
+                    days.mapNotNull { dayFile(sym, it) }.map { path -> { openDayFeed(path) } }
                 ConcatenatedTickFeed(factories)
             }
         val merged: TickFeed = if (perSymbol.size == 1) perSymbol[0] else MergingTickFeed(perSymbol)

@@ -4,6 +4,8 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.TimeRange
+import com.qkt.marketdata.BinaryTickWriter
+import com.qkt.marketdata.TickAssembler
 import com.qkt.marketdata.store.DayRange
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.Manifest
@@ -104,5 +106,42 @@ class LocalMarketSourceTest {
     fun `supports any symbol because the store is content-addressable`() {
         val src = sourceAt("2024-01-16T00:00:00Z")
         assertThat(src.supports("anything")).isTrue()
+    }
+
+    @Test
+    fun `ticks reads a binary day-file through the store`() {
+        val symDir = dir.resolve("symbols").resolve("B")
+        Files.createDirectories(symDir)
+        val ticks =
+            listOf(
+                TickAssembler.assemble(
+                    "B",
+                    day15 + 1000L,
+                    Money.of("100"),
+                    Money.of("1"),
+                    null,
+                    null,
+                    null,
+                    null,
+                    "t:1",
+                ),
+                TickAssembler.assemble(
+                    "B",
+                    day15 + 31_000L,
+                    Money.of("101"),
+                    Money.of("1"),
+                    null,
+                    null,
+                    null,
+                    null,
+                    "t:2",
+                ),
+            )
+        BinaryTickWriter().write(symDir.resolve("2024-01-15.bin"), "B", ticks)
+        val clock = FixedClock(time = Instant.parse("2024-01-16T00:00:00Z").toEpochMilli())
+        val src = LocalMarketSource(DefaultDataStore(root = dir, clock = clock), clock)
+        val range = TimeRange(Instant.parse("2024-01-15T00:00:00Z"), Instant.parse("2024-01-16T00:00:00Z"))
+        val ts = src.ticks("B", range).toList().map { it.timestamp }
+        assertThat(ts).containsExactly(day15 + 1000L, day15 + 31_000L)
     }
 }
