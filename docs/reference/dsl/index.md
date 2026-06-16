@@ -108,6 +108,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: STACK_AT](stack-at.md)
 
+- :material-call-split:{ .lg .middle } **OTO one-triggers-other**
+
+    ---
+
+    Place child orders only when a parent fills (`ON_FILL`). Children can be a different symbol, the opposite side, and priced relative to the parent fill via `entry` — legged hedges, scale-ins, reversals.
+
+    [:octicons-arrow-right-24: OTO](oto.md)
+
 </div>
 
 ## Looping and composition

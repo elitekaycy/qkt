@@ -211,6 +211,20 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
             walkSizing(clause.sizing)
             walkBracket(clause.bracket)
         }
+        // OTO (ON_FILL) children: collect their target streams and the streams their prices read.
+        opts.onFill.forEach { child ->
+            when (child) {
+                is Buy -> {
+                    out.add(child.stream)
+                    walkOpts(child.opts)
+                }
+                is Sell -> {
+                    out.add(child.stream)
+                    walkOpts(child.opts)
+                }
+                else -> Unit
+            }
+        }
     }
 
     fun walkAction(a: ActionAst) {

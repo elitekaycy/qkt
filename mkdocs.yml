@@ -172,6 +172,7 @@ nav:
           - SIZING: reference/dsl/sizing.md
           - BRACKET: reference/dsl/bracket.md
           - STACK (pyramiding): reference/dsl/stack.md
+          - OTO (one-triggers-other): reference/dsl/oto.md
           - LATCH: reference/dsl/latch.md
           - FOR EACH: reference/dsl/foreach.md
           - PORTFOLIO files: reference/dsl/portfolio.md

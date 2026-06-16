@@ -102,6 +102,7 @@ enum class TokenKind {
     ORDER_TYPE,
     STOP_LOSS,
     TAKE_PROFIT,
+    ON_FILL,
 
     EVERY,
     CROSSES,

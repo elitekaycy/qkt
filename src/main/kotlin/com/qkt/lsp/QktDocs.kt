@@ -76,6 +76,12 @@ object QktDocs {
                 ),
             "BETA" to
                 doc("beta(value, benchmark, period)", "Beta of the series against a benchmark series over the window."),
+            "RESID" to
+                doc(
+                    "resid(dependent, regressor1, …, period)",
+                    "Latest residual of a rolling OLS fit of the dependent series on its regressors — the part " +
+                        "of the dependent the regressors don't explain. Compose with zscore to fade idiosyncratic moves.",
+                ),
             "WILLIAMS_R" to
                 doc("williams_r(stream, period)", "Williams %R momentum oscillator, bounded -100 to 0. Candle-fed."),
             "CCI" to
@@ -208,6 +214,9 @@ object QktDocs {
             "SIZING" to "Position size for an entry: `SIZING <units>`, `SIZING RISK $ <amount>`, or `SIZING <pct>`.",
             "RISK" to "Risk-based sizing: `SIZING RISK $ <amount>` sizes so the stop loses that amount.",
             "BRACKET" to "Attaches a stop loss and/or take profit to an entry.",
+            "ON_FILL" to
+                "OTO: child BUY/SELL orders placed only when the parent fills: " +
+                "`BUY x SIZING 1 ON_FILL { SELL y SIZING 1 }`. Children may use `entry` for the parent fill price.",
             "CROSSES" to "Crossover condition: `<a> CROSSES ABOVE <b>` / `CROSSES BELOW <b>`.",
             "ABOVE" to "Direction for `CROSSES`: the left side rises through the right side.",
             "BELOW" to "Direction for `CROSSES`: the left side falls through the right side.",
