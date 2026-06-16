@@ -135,6 +135,9 @@ object WarmupRequirements {
             tier.bracket.stopLoss?.let { walkChildPrice(it, out) }
             tier.bracket.takeProfit?.let { walkChildPrice(it, out) }
         }
+        // OTO (ON_FILL) children warm the gate too — an indicator in a child's price computes
+        // garbage on a half-warm window exactly like one in the parent.
+        opts.onFill.forEach { walkAction(it, out) }
     }
 
     private fun walkSizing(

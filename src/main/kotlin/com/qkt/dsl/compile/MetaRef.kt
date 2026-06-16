@@ -234,6 +234,14 @@ internal fun collectMetaRefs(
             walkSizing(clause.sizing)
             walkBracket(clause.bracket)
         }
+        // OTO (ON_FILL) children carry their own expressions (sizing, prices).
+        opts.onFill.forEach { child ->
+            when (child) {
+                is Buy -> walkOpts(child.opts)
+                is Sell -> walkOpts(child.opts)
+                else -> Unit
+            }
+        }
     }
 
     fun walkAction(a: ActionAst) {
