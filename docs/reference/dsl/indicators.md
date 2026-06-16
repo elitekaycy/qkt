@@ -166,6 +166,58 @@ SYMBOLS
 
 Without the `SYNCHRONIZE`, the spread is still computed, but `silver.close` may lag `gold.close` by one bar — the same cross-stream alignment caveat that applies to `sma(silver.close, …)` inside a gold-anchored rule.
 
+### Cross-series (two-stream)
+
+Two indicators take **two** series and measure how a pair of streams move together over a rolling window. They follow the same primary-alias / `SYNCHRONIZE` alignment rules as a cross-stream `zscore` — put the two streams in a shared `SYNCHRONIZE` group so each bar reads the same-window value from both.
+
+```qkt
+correlation(<a>, <b>, <period>)   -- rolling Pearson correlation, in [-1, +1]
+beta(<a>, <b>, <period>)          -- rolling OLS slope of <a> on <b> (hedge ratio)
+```
+
+`correlation` is the Pearson correlation coefficient of the two series over the last `<period>` bars: `+1` means they move in lockstep, `0` unrelated, `-1` opposite. Use it to gate on a correlation regime — for example, only act once two normally-coupled pairs **decouple**, betting they re-couple.
+
+```qkt
+-- Fade a EUR/GBP decoupling: realized correlation has collapsed below its baseline
+-- AND the ratio is extended, so bet on re-coupling.
+WHEN correlation(eur.close, gbp.close, 48) < 0.40
+ AND abs(zscore(eur.close / gbp.close, 48)) > 2.0
+THEN SELL eur
+```
+
+`beta` is the slope of an ordinary-least-squares fit of `<a>` on `<b>` over the window — how many units `<a>` moves per unit move in `<b>`. It is the classic hedge ratio: to be market-neutral against `<b>`, hold `beta` units of `<b>` per unit of `<a>`. e.g. `beta(stock.close, index.close, 60)` over closes that move 2-for-1 → ~2.
+
+```qkt
+LET hedgeRatio = beta(stock.close, index.close, 60)
+```
+
+Both warm up over `<period>` bars, returning `null` until the window is full (and when a series has zero variance, where the statistic is undefined). Either `<a>` or `<b>` may be any arithmetic expression that references a stream, exactly like `zscore`.
+
+### Regression residual
+
+```qkt
+resid(<dependent>, <regressor1>, …, <period>)   -- rolling multi-regressor OLS residual
+```
+
+`resid` fits an ordinary-least-squares regression of the **dependent** series on one or more **regressor** series over the last `<period>` bars and reports the latest bar's residual — the part of the dependent series the regressors do not explain. The first argument is the dependent series, every argument before the trailing integer is a regressor, and the last argument is the lookback. At least one regressor is required, and `<period>` must exceed the number of regressors plus one (you need more observations than coefficients to fit).
+
+It generalizes the pairs spread: regressing one instrument on the others it co-moves with leaves a residual that is the instrument's idiosyncratic move — usually a flow shock that reverts, not new information. A residual far from zero means the dependent moved on its own.
+
+```qkt
+-- Trade GBP's idiosyncratic move: the part not explained by the broad-dollar factor
+-- (EUR + AUD). z-score the residual and fade the extremes.
+SYMBOLS
+    gbp = EXNESS:GBPUSD EVERY 15m WARMUP 200 BARS
+    eur = EXNESS:EURUSD EVERY 15m
+    aud = EXNESS:AUDUSD EVERY 15m
+    SYNCHRONIZE gbp eur aud
+RULES
+    WHEN zscore(resid(gbp.close, eur.close, aud.close, 96), 96) > 2.0 AND POSITION.gbp = 0
+    THEN SELL gbp
+```
+
+Each series may be any arithmetic expression that references a stream, exactly like `zscore`. `resid` returns `null` until the window is full and when the regressors are collinear or constant (the fit is undefined). Because `zscore(resid(...))` chains two rolling windows, set an explicit `WARMUP` covering both (the residual period plus the z-score period) — the compiler infers only the outer window for chained indicators.
+
 ## Math helpers
 
 Available alongside indicators:
@@ -218,6 +270,8 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `vwap(stream, N)` | N ticks |
 | `highest`/`lowest(value, N)` | N + 1 bars (N prior bars plus the evaluating bar) |
 | `zscore(series, N)` | N bars |
+| `correlation(a, b, N)` | N bars |
+| `beta(a, b, N)` | N bars |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 

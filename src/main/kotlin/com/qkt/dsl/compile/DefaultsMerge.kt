@@ -56,6 +56,8 @@ private fun mergeOpts(
         // DEFAULTS has no stack surface — carry the action's own stacks through untouched.
         stack = opts.stack,
         stackAts = opts.stackAts,
+        // OTO children specify their own sizing/order type; defaults are not merged into them.
+        onFill = opts.onFill,
     )
 }
 

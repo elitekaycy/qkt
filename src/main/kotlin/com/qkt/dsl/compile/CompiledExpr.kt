@@ -28,7 +28,16 @@ class EvalContext(
     val snapshotStore: SnapshotStore = SnapshotStore(emptyMap()),
     val hub: CandleHub = CandleHub(),
     val currentAlias: String? = null,
-)
+    /**
+     * The parent fill/entry price, set only while evaluating an OTO (`ON_FILL`) child order so
+     * its prices can reference the parent via the `entry` keyword. Null in every other context.
+     */
+    val entryPrice: BigDecimal? = null,
+) {
+    /** A copy of this context with [entryPrice] bound — used when building OTO child orders. */
+    fun withEntryPrice(entryPrice: BigDecimal): EvalContext =
+        EvalContext(candle, streams, lets, strategyContext, snapshotStore, hub, currentAlias, entryPrice)
+}
 
 fun interface CompiledExpr {
     fun evaluate(ctx: EvalContext): Value

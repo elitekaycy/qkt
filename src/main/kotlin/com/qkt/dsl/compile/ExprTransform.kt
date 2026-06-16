@@ -174,6 +174,7 @@ class ExprTransform(
             oco = o.oco?.let(::oco),
             stack = o.stack?.let(::stack),
             stackAts = o.stackAts.map(::stackAt),
+            onFill = o.onFill.map(::action),
         )
 
     fun action(a: ActionAst): ActionAst =

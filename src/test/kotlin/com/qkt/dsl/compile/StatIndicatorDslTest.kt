@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import org.assertj.core.api.Assertions.assertThatCode
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 /**
@@ -80,5 +81,66 @@ class StatIndicatorDslTest {
               WHEN beta(a.close, m.close, 60) > 1 THEN FLATTEN
             """.trimIndent()
         assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `multi-regressor resid compiles`() {
+        val src =
+            """
+            STRATEGY resid VERSION 1
+            SYMBOLS
+              gbp = X:GBP EVERY 1h
+              eur = X:EUR EVERY 1h
+              aud = X:AUD EVERY 1h
+            RULES
+              WHEN resid(gbp.close, eur.close, aud.close, 96) > 0 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `zscore over a resid composes`() {
+        val src =
+            """
+            STRATEGY residz VERSION 1
+            SYMBOLS
+              gbp = X:GBP EVERY 1h WARMUP 200 BARS
+              eur = X:EUR EVERY 1h
+              aud = X:AUD EVERY 1h
+            RULES
+              WHEN zscore(resid(gbp.close, eur.close, aud.close, 96), 96) > 2 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `resid rejects a non-integer period`() {
+        val src =
+            """
+            STRATEGY bad VERSION 1
+            SYMBOLS
+              gbp = X:GBP EVERY 1h
+              eur = X:EUR EVERY 1h
+            RULES
+              WHEN resid(gbp.close, eur.close, 1.5) > 0 THEN FLATTEN
+            """.trimIndent()
+        assertThatThrownBy { AstCompiler().compile(parse(src).value) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `resid rejects too few series for the window`() {
+        // period must exceed regressors + 1: one regressor needs period > 2.
+        val src =
+            """
+            STRATEGY bad VERSION 1
+            SYMBOLS
+              gbp = X:GBP EVERY 1h
+              eur = X:EUR EVERY 1h
+            RULES
+              WHEN resid(gbp.close, eur.close, 2) > 0 THEN FLATTEN
+            """.trimIndent()
+        assertThatThrownBy { AstCompiler().compile(parse(src).value) }
+            .isInstanceOf(IllegalArgumentException::class.java)
     }
 }
