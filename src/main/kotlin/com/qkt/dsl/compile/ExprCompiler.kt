@@ -31,6 +31,7 @@ import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.stdlib.FuncRegistry
+import com.qkt.indicators.catalog.OlsResidual
 import java.math.BigDecimal
 
 class ExprCompiler(
@@ -67,6 +68,11 @@ class ExprCompiler(
             is SessionWindow -> compileSessionWindow(expr)
             is com.qkt.dsl.ast.EntryQty ->
                 error("ENTRY_QTY is only valid inside STACK_AT SIZING; got it in a non-STACK_AT expression")
+            is com.qkt.dsl.ast.StackEntryRef ->
+                CompiledExpr { ctx ->
+                    ctx.entryPrice?.let { Value.Num(it) }
+                        ?: error("'entry' is only valid in an ON_FILL child price; it refers to the parent fill price")
+                }
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
 
@@ -482,6 +488,7 @@ class ExprCompiler(
     }
 
     private fun compileIndicator(call: IndicatorCall): CompiledExpr {
+        if (call.name.equals("RESID", ignoreCase = true)) return compileResidual(call)
         val spec =
             com.qkt.dsl.stdlib.IndicatorRegistry
                 .spec(call.name)
@@ -495,7 +502,20 @@ class ExprCompiler(
                 bindings.bindPair(call, compile(call.args[0], null), compile(call.args[1], null), primaryAlias)
             } else {
                 when (val seriesArg = call.args.firstOrNull()) {
-                    is StreamFieldRef, is IndicatorCall, null -> bindings.bind(call)
+                    is StreamFieldRef, null -> bindings.bind(call)
+                    // A registry indicator nested inside another (e.g. zscore(ema(...), N)) chains
+                    // through the registry. RESID lives outside the registry, so feed the outer
+                    // indicator its value each bar via the expression-fed path instead — this is what
+                    // makes zscore(resid(...), N), the residual z-score, compose.
+                    is IndicatorCall ->
+                        if (seriesArg.name.equals("RESID", ignoreCase = true)) {
+                            val primaryAlias =
+                                streamAliasesIn(seriesArg).firstOrNull()
+                                    ?: error("Indicator ${call.name} series must reference a stream")
+                            bindings.bindExpression(call, compile(seriesArg, null), primaryAlias)
+                        } else {
+                            bindings.bind(call)
+                        }
                     else -> {
                         // #174 expression-fed: compile the series expression and bind via
                         // primary alias. Gate on the first StreamFieldRef the expression
@@ -510,6 +530,43 @@ class ExprCompiler(
                     }
                 }
             }
+        return CompiledExpr {
+            val v = binding.indicator.value()
+            if (v == null || !binding.indicator.isReady) Value.Undefined else Value.Num(v)
+        }
+    }
+
+    /**
+     * Compile a multi-regressor OLS residual: `resid(dependent, regressor1, …, period)` (#474).
+     *
+     * The trailing argument is an integer lookback; the first series is the dependent and the
+     * rest are regressors (at least one). Each series may be any cross-stream expression, exactly
+     * like a `zscore` series, so `resid` composes with `zscore` to z-score the residual. Gated on
+     * the dependent series' primary stream, like other expression-fed indicators.
+     *
+     * e.g. `zscore(resid(gbp.close, eur.close, aud.close, 96), 96)` — z-score of the part of GBP
+     * the EUR/AUD factors do not explain.
+     */
+    private fun compileResidual(call: IndicatorCall): CompiledExpr {
+        require(call.args.size >= 3) {
+            "resid needs a dependent series, at least one regressor, and a period: resid(dep, reg, N)"
+        }
+        val periodArg = call.args.last()
+        require(periodArg is NumLit && periodArg.value.stripTrailingZeros().scale() <= 0) {
+            "resid period (last argument) must be an integer literal: resid(dep, reg, N)"
+        }
+        val period = periodArg.value.toInt()
+        val seriesArgs = call.args.dropLast(1)
+        val regressorCount = seriesArgs.size - 1
+        require(period > regressorCount + 1) {
+            "resid period ($period) must exceed the number of regressors plus one ($regressorCount + 1)"
+        }
+        val primaryAlias =
+            streamAliasesIn(seriesArgs.first()).firstOrNull()
+                ?: error("resid dependent series must reference a stream (e.g. resid(gbp.close, eur.close, 96))")
+        val indicator = OlsResidual(period = period, regressorCount = regressorCount)
+        val seriesExprs = seriesArgs.map { compile(it, null) }
+        val binding = bindings.bindMulti(call, indicator, seriesExprs, primaryAlias)
         return CompiledExpr {
             val v = binding.indicator.value()
             if (v == null || !binding.indicator.isReady) Value.Undefined else Value.Num(v)

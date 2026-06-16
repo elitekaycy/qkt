@@ -9,6 +9,7 @@ import com.qkt.dsl.stdlib.IndicatorSpec
 import com.qkt.indicators.BiIndicator
 import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
+import com.qkt.indicators.MultiIndicator
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
@@ -22,6 +23,7 @@ class IndicatorBinding private constructor(
     private val source: IndicatorBinding?,
     private val seriesExpr: CompiledExpr?,
     private val seriesExprB: CompiledExpr? = null,
+    private val seriesExprsMulti: List<CompiledExpr>? = null,
 ) {
     val rootAlias: String? get() = streamAlias ?: source?.rootAlias
 
@@ -42,6 +44,18 @@ class IndicatorBinding private constructor(
             val a = (seriesExpr!!.evaluate(ctx) as? Value.Num)?.v ?: return
             val b = (seriesExprB.evaluate(ctx) as? Value.Num)?.v ?: return
             (indicator as BiIndicator).update(a, b)
+            return
+        }
+        // k-series bindings (#474): feed the aligned tuple of all series values (dependent first,
+        // then regressors). If any series is undefined this bar, skip the update — the indicator
+        // only advances on complete tuples, like the two-series path.
+        if (seriesExprsMulti != null) {
+            val values = ArrayList<BigDecimal>(seriesExprsMulti.size)
+            for (e in seriesExprsMulti) {
+                val v = (e.evaluate(ctx) as? Value.Num)?.v ?: return
+                values.add(v)
+            }
+            (indicator as MultiIndicator).update(values)
             return
         }
         // Expression-fed bindings (#174): evaluate the compiled series expression in
@@ -155,6 +169,23 @@ class IndicatorBinding private constructor(
                 seriesExpr = seriesExprA,
                 seriesExprB = seriesExprB,
             )
+
+        internal fun seriesFedMulti(
+            call: IndicatorCall,
+            indicator: IndicatorOutput,
+            primaryAlias: String,
+            seriesExprs: List<CompiledExpr>,
+        ): IndicatorBinding =
+            IndicatorBinding(
+                call,
+                indicator,
+                streamAlias = primaryAlias,
+                field = null,
+                inputKind = IndicatorInput.NUMERIC_SERIES,
+                source = null,
+                seriesExpr = null,
+                seriesExprsMulti = seriesExprs,
+            )
     }
 
     class Bag {
@@ -218,6 +249,23 @@ class IndicatorBinding private constructor(
                 }
             val ind = IndicatorRegistry.create(call.name, constArgs)
             val binding = seriesFedPair(call, ind, primaryAlias, seriesExprA, seriesExprB)
+            bindings.add(binding)
+            return binding
+        }
+
+        /**
+         * Bind a k-series indicator (e.g. a multi-regressor OLS residual) whose series are all
+         * arbitrary numeric expressions. The [indicator] is built by the caller — these indicators
+         * have a variable series count and live outside [IndicatorRegistry] — and each bar is fed
+         * the aligned tuple of evaluated series values, gated on [primaryAlias]'s bar close.
+         */
+        fun bindMulti(
+            call: IndicatorCall,
+            indicator: IndicatorOutput,
+            seriesExprs: List<CompiledExpr>,
+            primaryAlias: String,
+        ): IndicatorBinding {
+            val binding = seriesFedMulti(call, indicator, primaryAlias, seriesExprs)
             bindings.add(binding)
             return binding
         }
