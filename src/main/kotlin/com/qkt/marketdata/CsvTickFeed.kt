@@ -57,48 +57,16 @@ class CsvTickFeed(
         val ts =
             cols[0].toLongOrNull()
                 ?: error("$path:$lineNumber: invalid timestamp: '${cols[0]}'")
-        val symbol = cols[1]
-        check(symbol.isNotEmpty()) { "$path:$lineNumber: empty symbol: $line" }
-        val price = parseOpt(cols[2], "price")
-        val volume = parseOpt(cols[3], "volume")
-        val bid = parseOpt(cols[4], "bid")
-        val ask = parseOpt(cols[5], "ask")
-        val bidVol = parseOpt(cols[6], "bidVolume")
-        val askVol = parseOpt(cols[7], "askVolume")
-
-        check(price != null || (bid != null && ask != null)) {
-            "$path:$lineNumber: row needs price OR (bid AND ask): $line"
-        }
-        if (bid != null && ask != null) {
-            check(bid <= ask) { "$path:$lineNumber: bid > ask: bid=$bid, ask=$ask" }
-        }
-        listOf(
-            "price" to price,
-            "bid" to bid,
-            "ask" to ask,
-            "volume" to volume,
-            "bidVolume" to bidVol,
-            "askVolume" to askVol,
-        ).forEach { (name, v) ->
-            if (v != null && v.signum() < 0) error("$path:$lineNumber: negative $name: $v")
-        }
-
-        val finalPrice =
-            price
-                ?: bid!!
-                    .add(ask!!, Money.CONTEXT)
-                    .divide(BigDecimal(2), Money.CONTEXT)
-                    .setScale(Money.SCALE, Money.ROUNDING)
-
-        return Tick(
-            symbol = symbol,
-            price = finalPrice,
+        return TickAssembler.assemble(
+            symbol = cols[1],
             timestamp = ts,
-            volume = volume,
-            bid = bid,
-            ask = ask,
-            bidVolume = bidVol,
-            askVolume = askVol,
+            price = parseOpt(cols[2], "price"),
+            volume = parseOpt(cols[3], "volume"),
+            bid = parseOpt(cols[4], "bid"),
+            ask = parseOpt(cols[5], "ask"),
+            bidVolume = parseOpt(cols[6], "bidVolume"),
+            askVolume = parseOpt(cols[7], "askVolume"),
+            location = "$path:$lineNumber",
         )
     }
 
