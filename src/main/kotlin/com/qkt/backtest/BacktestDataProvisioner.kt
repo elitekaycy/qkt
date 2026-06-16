@@ -5,7 +5,6 @@ import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.store.DayCompleteness
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.TickCompletenessValidator
-import java.nio.file.Files
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -49,7 +48,7 @@ class BacktestDataProvisioner(
 
             if (report.hasHoles && fetchEnabled) {
                 // A prior interrupted fetch can leave a day partial. Delete + refetch those once.
-                for (hole in report.holes) deleteDay(s.bareSymbol, hole.day)
+                for (hole in report.holes) store.dropDay(s.bareSymbol, hole.day)
                 store.prefetch(request)
                 report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
             }
@@ -63,16 +62,6 @@ class BacktestDataProvisioner(
                 )
             }
         }
-    }
-
-    private fun deleteDay(
-        symbol: String,
-        day: LocalDate,
-    ) {
-        store.dayFile(symbol, day)?.let { Files.deleteIfExists(it) }
-        // Drop the day from the manifest so prefetch re-materializes it.
-        val manifest = store.manifest(symbol)
-        if (manifest.ranges.isNotEmpty()) store.rebuildManifests()
     }
 
     private fun describe(
