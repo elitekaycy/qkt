@@ -1,7 +1,7 @@
 package com.qkt.marketdata.store
 
 import com.qkt.common.TradingCalendar
-import com.qkt.marketdata.CsvTickFeed
+import com.qkt.marketdata.openDayFeed
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -99,7 +99,7 @@ object TickCompletenessValidator {
         val path = store.dayFile(symbol, day) ?: return emptySet()
         val dayStart = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val hours = mutableSetOf<Int>()
-        CsvTickFeed(path).use { feed ->
+        openDayFeed(path).use { feed ->
             while (true) {
                 val t = feed.next() ?: break
                 hours += ((t.timestamp - dayStart) / 3_600_000L).toInt()
