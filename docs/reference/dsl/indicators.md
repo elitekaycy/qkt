@@ -193,6 +193,31 @@ LET hedgeRatio = beta(stock.close, index.close, 60)
 
 Both warm up over `<period>` bars, returning `null` until the window is full (and when a series has zero variance, where the statistic is undefined). Either `<a>` or `<b>` may be any arithmetic expression that references a stream, exactly like `zscore`.
 
+### Regression residual
+
+```qkt
+resid(<dependent>, <regressor1>, …, <period>)   -- rolling multi-regressor OLS residual
+```
+
+`resid` fits an ordinary-least-squares regression of the **dependent** series on one or more **regressor** series over the last `<period>` bars and reports the latest bar's residual — the part of the dependent series the regressors do not explain. The first argument is the dependent series, every argument before the trailing integer is a regressor, and the last argument is the lookback. At least one regressor is required, and `<period>` must exceed the number of regressors plus one (you need more observations than coefficients to fit).
+
+It generalizes the pairs spread: regressing one instrument on the others it co-moves with leaves a residual that is the instrument's idiosyncratic move — usually a flow shock that reverts, not new information. A residual far from zero means the dependent moved on its own.
+
+```qkt
+-- Trade GBP's idiosyncratic move: the part not explained by the broad-dollar factor
+-- (EUR + AUD). z-score the residual and fade the extremes.
+SYMBOLS
+    gbp = EXNESS:GBPUSD EVERY 15m WARMUP 200 BARS
+    eur = EXNESS:EURUSD EVERY 15m
+    aud = EXNESS:AUDUSD EVERY 15m
+    SYNCHRONIZE gbp eur aud
+RULES
+    WHEN zscore(resid(gbp.close, eur.close, aud.close, 96), 96) > 2.0 AND POSITION.gbp = 0
+    THEN SELL gbp
+```
+
+Each series may be any arithmetic expression that references a stream, exactly like `zscore`. `resid` returns `null` until the window is full and when the regressors are collinear or constant (the fit is undefined). Because `zscore(resid(...))` chains two rolling windows, set an explicit `WARMUP` covering both (the residual period plus the z-score period) — the compiler infers only the outer window for chained indicators.
+
 ## Math helpers
 
 Available alongside indicators:

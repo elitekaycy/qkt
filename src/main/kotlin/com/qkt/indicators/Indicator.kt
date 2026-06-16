@@ -47,3 +47,15 @@ interface BiIndicator : IndicatorOutput {
         b: BigDecimal,
     )
 }
+
+/**
+ * Write side for indicators that consume **k** aligned numeric series at once — e.g. a
+ * multi-regressor regression residual. The binding layer feeds one aligned tuple per bar,
+ * the latest values of every series in a fixed order. Read side is the shared [IndicatorOutput].
+ * e.g. `RESID(gbp.close, eur.close, aud.close, 96)` → `update([gbp, eur, aud])` once per bar,
+ * the dependent value first.
+ */
+interface MultiIndicator : IndicatorOutput {
+    /** Feed one aligned tuple of series values (dependent first, then regressors). */
+    fun update(values: List<BigDecimal>)
+}
