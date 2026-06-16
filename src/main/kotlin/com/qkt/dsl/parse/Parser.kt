@@ -1127,15 +1127,16 @@ class Parser(
         var stopLoss: DirRel? = null
         var takeProfit: DirRel? = null
         do {
-            when (peek().kind) {
-                TokenKind.STOP -> {
+            // Accept both `STOP LOSS` / `TAKE PROFIT` and the single-token `STOP_LOSS` / `TAKE_PROFIT`.
+            when (val tok = peek().kind) {
+                TokenKind.STOP, TokenKind.STOP_LOSS -> {
                     advance()
-                    expect(TokenKind.LOSS, "expected LOSS after STOP")
+                    if (tok == TokenKind.STOP) expect(TokenKind.LOSS, "expected LOSS after STOP")
                     stopLoss = parseDirRel()
                 }
-                TokenKind.TAKE -> {
+                TokenKind.TAKE, TokenKind.TAKE_PROFIT -> {
                     advance()
-                    expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
+                    if (tok == TokenKind.TAKE) expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
                     takeProfit = parseDirRel()
                 }
                 else -> error("expected STOP LOSS or TAKE PROFIT in BRACKET, got '${peek().lexeme}'")
@@ -1456,15 +1457,17 @@ class Parser(
         var stopLoss: ChildPriceAst? = null
         var takeProfit: ChildPriceAst? = null
         do {
-            when (peek().kind) {
-                TokenKind.STOP -> {
+            // Accept both the two-word `STOP LOSS` / `TAKE PROFIT` and the single-token
+            // `STOP_LOSS` / `TAKE_PROFIT` spellings (the latter is what DEFAULTS uses).
+            when (val tok = peek().kind) {
+                TokenKind.STOP, TokenKind.STOP_LOSS -> {
                     advance()
-                    expect(TokenKind.LOSS, "expected LOSS after STOP")
+                    if (tok == TokenKind.STOP) expect(TokenKind.LOSS, "expected LOSS after STOP")
                     stopLoss = parseChildPrice()
                 }
-                TokenKind.TAKE -> {
+                TokenKind.TAKE, TokenKind.TAKE_PROFIT -> {
                     advance()
-                    expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
+                    if (tok == TokenKind.TAKE) expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
                     if (peek().kind == TokenKind.TRAILING) {
                         error(
                             "TAKE PROFIT TRAILING is not supported — TRAILING is stop-only " +
