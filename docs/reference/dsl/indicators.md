@@ -166,6 +166,33 @@ SYMBOLS
 
 Without the `SYNCHRONIZE`, the spread is still computed, but `silver.close` may lag `gold.close` by one bar — the same cross-stream alignment caveat that applies to `sma(silver.close, …)` inside a gold-anchored rule.
 
+### Cross-series (two-stream)
+
+Two indicators take **two** series and measure how a pair of streams move together over a rolling window. They follow the same primary-alias / `SYNCHRONIZE` alignment rules as a cross-stream `zscore` — put the two streams in a shared `SYNCHRONIZE` group so each bar reads the same-window value from both.
+
+```qkt
+correlation(<a>, <b>, <period>)   -- rolling Pearson correlation, in [-1, +1]
+beta(<a>, <b>, <period>)          -- rolling OLS slope of <a> on <b> (hedge ratio)
+```
+
+`correlation` is the Pearson correlation coefficient of the two series over the last `<period>` bars: `+1` means they move in lockstep, `0` unrelated, `-1` opposite. Use it to gate on a correlation regime — for example, only act once two normally-coupled pairs **decouple**, betting they re-couple.
+
+```qkt
+-- Fade a EUR/GBP decoupling: realized correlation has collapsed below its baseline
+-- AND the ratio is extended, so bet on re-coupling.
+WHEN correlation(eur.close, gbp.close, 48) < 0.40
+ AND abs(zscore(eur.close / gbp.close, 48)) > 2.0
+THEN SELL eur
+```
+
+`beta` is the slope of an ordinary-least-squares fit of `<a>` on `<b>` over the window — how many units `<a>` moves per unit move in `<b>`. It is the classic hedge ratio: to be market-neutral against `<b>`, hold `beta` units of `<b>` per unit of `<a>`. e.g. `beta(stock.close, index.close, 60)` over closes that move 2-for-1 → ~2.
+
+```qkt
+LET hedgeRatio = beta(stock.close, index.close, 60)
+```
+
+Both warm up over `<period>` bars, returning `null` until the window is full (and when a series has zero variance, where the statistic is undefined). Either `<a>` or `<b>` may be any arithmetic expression that references a stream, exactly like `zscore`.
+
 ## Math helpers
 
 Available alongside indicators:
@@ -218,6 +245,8 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `vwap(stream, N)` | N ticks |
 | `highest`/`lowest(value, N)` | N + 1 bars (N prior bars plus the evaluating bar) |
 | `zscore(series, N)` | N bars |
+| `correlation(a, b, N)` | N bars |
+| `beta(a, b, N)` | N bars |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 
