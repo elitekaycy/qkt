@@ -2,6 +2,7 @@ package com.qkt.marketdata.store
 
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
+import com.qkt.marketdata.BinaryTickFeed
 import com.qkt.marketdata.ConcatenatedTickFeed
 import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.MergingTickFeed
@@ -31,9 +32,11 @@ class DefaultDataStore(
         day: LocalDate,
     ): Path? {
         val symDir = root.resolve("symbols").resolve(symbol)
+        val bin = symDir.resolve("$day.bin")
         val gz = symDir.resolve("$day.csv.gz")
         val flat = symDir.resolve("$day.csv")
         return when {
+            Files.exists(bin) -> bin
             Files.exists(gz) -> gz
             Files.exists(flat) -> flat
             else -> null
@@ -48,7 +51,15 @@ class DefaultDataStore(
             request.symbols.map { sym ->
                 val days = daysCovering(fromMs, toMs)
                 val factories: List<() -> TickFeed> =
-                    days.mapNotNull { dayFile(sym, it) }.map { path -> { CsvTickFeed(path) } }
+                    days.mapNotNull { dayFile(sym, it) }.map { path ->
+                        {
+                            if (path.fileName.toString().endsWith(".bin")) {
+                                BinaryTickFeed(path)
+                            } else {
+                                CsvTickFeed(path)
+                            }
+                        }
+                    }
                 ConcatenatedTickFeed(factories)
             }
         val merged: TickFeed = if (perSymbol.size == 1) perSymbol[0] else MergingTickFeed(perSymbol)
@@ -77,8 +88,8 @@ class DefaultDataStore(
                         Files.list(symDir).use { fs ->
                             fs
                                 .map { it.fileName.toString() }
-                                .filter { it.endsWith(".csv") || it.endsWith(".csv.gz") }
-                                .map { it.removeSuffix(".gz").removeSuffix(".csv") }
+                                .filter { it.endsWith(".csv") || it.endsWith(".csv.gz") || it.endsWith(".bin") }
+                                .map { it.removeSuffix(".gz").removeSuffix(".csv").removeSuffix(".bin") }
                                 .distinct()
                                 .sorted()
                                 .toList()
