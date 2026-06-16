@@ -5,6 +5,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import java.time.LocalDate
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPOutputStream
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -260,6 +263,73 @@ class DefaultDataStoreTest {
         Files.createDirectories(dir.resolve("symbols").resolve("X"))
         val store = DefaultDataStore(root = dir)
         store.rebuildManifests()
+        assertThat(store.manifest("X").ranges).isEmpty()
+    }
+
+    @Test
+    fun `concurrent provisioning of distinct days keeps every committed day`() {
+        // Two store instances model two processes provisioning the same symbol at once. The manifest
+        // update is a read-modify-write; without serializing + re-reading inside the lock, the second
+        // writer would coalesce onto its stale pre-fetch snapshot and drop the first writer's day.
+        val fetcher =
+            object : DataFetcher {
+                override fun fetch(
+                    symbol: String,
+                    day: LocalDate,
+                    target: Path,
+                ) {
+                    Files.createDirectories(target.parent)
+                    val ts = day.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+                    GZIPOutputStream(Files.newOutputStream(target)).use {
+                        it.write("$header\n$ts,$symbol,100,1,,,,".toByteArray())
+                    }
+                }
+            }
+        val a = DefaultDataStore(root = dir, fetcher = fetcher)
+        val b = DefaultDataStore(root = dir, fetcher = fetcher)
+        val barrier = CyclicBarrier(2)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val fa =
+                pool.submit {
+                    barrier.await()
+                    a.prefetch(
+                        MarketRequest(
+                            symbols = listOf("X"),
+                            from = Instant.parse("2024-01-15T00:00:00Z"),
+                            to = Instant.parse("2024-01-16T00:00:00Z"),
+                        ),
+                    )
+                }
+            val fb =
+                pool.submit {
+                    barrier.await()
+                    b.prefetch(
+                        MarketRequest(
+                            symbols = listOf("X"),
+                            from = Instant.parse("2024-01-16T00:00:00Z"),
+                            to = Instant.parse("2024-01-17T00:00:00Z"),
+                        ),
+                    )
+                }
+            fa.get(30, TimeUnit.SECONDS)
+            fb.get(30, TimeUnit.SECONDS)
+        } finally {
+            pool.shutdownNow()
+        }
+        val ranges = DefaultDataStore(root = dir).manifest("X").ranges
+        assertThat(ranges).hasSize(1)
+        assertThat(ranges[0].from).isEqualTo("2024-01-15")
+        assertThat(ranges[0].to).isEqualTo("2024-01-17")
+    }
+
+    @Test
+    fun `dropDay deletes the day file and removes its manifest range`() {
+        writeDay("X", "2024-01-15", listOf(day15 + 1L to "100"))
+        writeManifest("X", listOf("2024-01-15" to "2024-01-16"))
+        val store = DefaultDataStore(root = dir)
+        store.dropDay("X", LocalDate.parse("2024-01-15"))
+        assertThat(store.dayFile("X", LocalDate.parse("2024-01-15"))).isNull()
         assertThat(store.manifest("X").ranges).isEmpty()
     }
 }
