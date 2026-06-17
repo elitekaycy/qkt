@@ -101,6 +101,43 @@ class BacktestContext private constructor(
         return sharedFeed to engineFor
     }
 
+    /**
+     * Build ONE backtest that runs every combo as its own strategy over a single shared feed, so the
+     * market data is decoded and aggregated once for the whole grid instead of once per combo. Each
+     * combo's result is read from the per-strategy reports, keyed by its label in [labeledOverrides].
+     * Correct only when combos do not couple through shared account state — callers gate on
+     * [hasAccountHalts] and fall back to a per-combo fan-out when account halts are configured.
+     */
+    fun multiStrategyBacktest(
+        labeledOverrides: List<Pair<String, Map<String, String>>>,
+        range: TimeRange = TimeRange(from, to),
+    ): Backtest {
+        val strategies = labeledOverrides.map { (label, overrides) -> label to AstCompiler().compile(ast, overrides) }
+        val calendar =
+            symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
+                ?: com.qkt.common.TradingCalendar
+                    .crypto()
+        return Backtest.fromStore(
+            strategies = strategies,
+            haltRules = haltRules,
+            calendar = calendar,
+            store = store,
+            request = MarketRequest(symbols = symbols, from = range.from, to = range.to),
+            candleWindow = candleWindow,
+            startingBalance = startingBalance,
+            instruments = instruments,
+            barStore = barStore,
+            brokerKind = brokerKind,
+        )
+    }
+
+    /**
+     * True when account-protection halts are configured. Such halts read account-wide state, so
+     * running combos together in one account would let one combo's drawdown halt the others — a
+     * multi-strategy sweep is not isolated then, and the caller must fan out per-combo instead.
+     */
+    val hasAccountHalts: Boolean get() = haltRules.isNotEmpty()
+
     companion object {
         /** User-facing setup error; commands catch it and print `e.message`. */
         class SetupError(

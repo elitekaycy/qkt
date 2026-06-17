@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.backtest.sweep.MultiStrategySweep
 import com.qkt.backtest.sweep.SweepReplay
 import com.qkt.backtest.sweep.SweepRun
 import com.qkt.dsl.parse.Dsl
@@ -56,15 +57,30 @@ class SweepCommand(
 
         System.err.println("qkt: sweeping ${combos.size} parameter combination(s), ranked by ${rank.flag}")
 
-        val (sharedFeed, engineFor) = ctx.sweepEngines()
         val ranked: List<SweepRun<ParamGrid.Combo>> =
             try {
-                SweepReplay(
-                    configs = combos.map { it.label to it },
-                    sharedFeed = sharedFeed,
-                    engineFor = { _, combo -> engineFor(combo.overrides) },
-                    parallelism = parallelism,
-                ).run().rankedBy { rank.score(it) }
+                val swept =
+                    if (ctx.hasAccountHalts) {
+                        // Account halts read account-wide state, so combos sharing one account would
+                        // halt each other. Fan out per-combo: each engine keeps its own isolated
+                        // account/halt state; only the tick decode is shared.
+                        val (sharedFeed, engineFor) = ctx.sweepEngines()
+                        SweepReplay(
+                            configs = combos.map { it.label to it },
+                            sharedFeed = sharedFeed,
+                            engineFor = { _, combo -> engineFor(combo.overrides) },
+                            parallelism = parallelism,
+                        ).run()
+                    } else {
+                        // No account coupling: run the whole grid as one multi-strategy backtest so the
+                        // decode + candle aggregation + price tracking run once for all combos.
+                        MultiStrategySweep(
+                            combos = combos.map { it.label to it },
+                            overridesOf = { it.overrides },
+                            backtestFor = { labeled -> ctx.multiStrategyBacktest(labeled) },
+                        ).run()
+                    }
+                swept.rankedBy { rank.score(it) }
             } catch (e: IllegalArgumentException) {
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR
