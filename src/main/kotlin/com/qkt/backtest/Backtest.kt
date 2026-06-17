@@ -80,25 +80,35 @@ class Backtest(
         latencyEnabled = latencyEnabled,
     )
 
-    fun run(): BacktestResult =
-        com.qkt.research
-            .ReplayEngine(
-                strategies = strategies,
-                rules = rules,
-                haltRules = haltRules,
-                feed = feed,
-                candleWindow = candleWindow,
-                initialTimestamp = initialTimestamp,
-                source = source,
-                calendar = calendar,
-                warmupSpec = warmupSpec,
-                symbols = symbols,
-                cadence = cadence,
-                startingBalance = startingBalance,
-                instruments = instruments,
-                brokerKind = brokerKind,
-                latencyEnabled = latencyEnabled,
-            ).runToEnd()
+    /**
+     * Build the replay engine for this backtest, optionally driven by an external [feedOverride]
+     * (defaults to this backtest's own feed). A fan-out sweep builds one engine per combo with an
+     * empty feed and pushes a single shared decoded feed into all of them via [ReplayEngine.ingest],
+     * so the market data is decoded once instead of once per combo.
+     */
+    fun toEngine(feedOverride: TickFeed = feed): com.qkt.research.ReplayEngine =
+        com.qkt.research.ReplayEngine(
+            strategies = strategies,
+            rules = rules,
+            haltRules = haltRules,
+            feed = feedOverride,
+            candleWindow = candleWindow,
+            initialTimestamp = initialTimestamp,
+            source = source,
+            calendar = calendar,
+            warmupSpec = warmupSpec,
+            symbols = symbols,
+            cadence = cadence,
+            startingBalance = startingBalance,
+            instruments = instruments,
+            brokerKind = brokerKind,
+            latencyEnabled = latencyEnabled,
+        )
+
+    fun run(): BacktestResult = toEngine().runToEnd()
+
+    /** This backtest's market feed, so a fan-out sweep can share one decode across many engines. */
+    internal fun detachFeed(): TickFeed = feed
 
     companion object {
         fun fromStore(
