@@ -50,18 +50,7 @@ class MultiStrategySweepParityTest {
                 backtestFactory = { _, bt -> solo(bt) },
             ).run().runs.associateBy { it.label }
 
-        val multi =
-            MultiStrategySweep(
-                combos = combos,
-                overridesOf = { mapOf("bt" to it.toString()) },
-                backtestFor = { labeled ->
-                    Backtest(
-                        strategies = labeled.map { (label, ov) -> label to buyAtThenSell(ov.getValue("bt").toInt()) },
-                        ticks = ticks(),
-                        candleWindow = TimeWindow.ONE_MINUTE,
-                    )
-                },
-            ).run().runs.associateBy { it.label }
+        val multi = multiRuns(1)
 
         val distinctPnls =
             perCombo.values
@@ -80,4 +69,32 @@ class MultiStrategySweepParityTest {
             assertThat(b.maxDrawdown).isEqualByComparingTo(a.maxDrawdown)
         }
     }
+
+    @Test
+    fun `parallel grouping matches sequential`() {
+        val seq = multiRuns(1)
+        val par = multiRuns(3)
+        assertThat(par.keys).isEqualTo(seq.keys)
+        for (label in seq.keys) {
+            val s = seq.getValue(label).result.global
+            val p = par.getValue(label).result.global
+            assertThat(p.tradeCount).isEqualTo(s.tradeCount)
+            assertThat(p.totalPnL).isEqualByComparingTo(s.totalPnL)
+            assertThat(p.sharpeRatio).isEqualTo(s.sharpeRatio)
+        }
+    }
+
+    private fun multiRuns(parallelism: Int) =
+        MultiStrategySweep(
+            combos = combos,
+            overridesOf = { mapOf("bt" to it.toString()) },
+            backtestFor = { labeled ->
+                Backtest(
+                    strategies = labeled.map { (label, ov) -> label to buyAtThenSell(ov.getValue("bt").toInt()) },
+                    ticks = ticks(),
+                    candleWindow = TimeWindow.ONE_MINUTE,
+                )
+            },
+            parallelism = parallelism,
+        ).run().runs.associateBy { it.label }
 }
