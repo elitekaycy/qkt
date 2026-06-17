@@ -76,7 +76,14 @@ class SweepReplayParityTest {
 
         assertThat(fan.map { it.label }).isEqualTo(legacy.map { it.label }) // input order preserved
         // The combos must genuinely differ, or the parity assertion proves nothing.
-        assertThat(legacy.map { it.result.global.totalPnL.toPlainString() }.distinct().size).isGreaterThan(1)
+        assertThat(
+            legacy
+                .map {
+                    it.result.global.totalPnL
+                        .toPlainString()
+                }.distinct()
+                .size,
+        ).isGreaterThan(1)
         for ((a, b) in legacy.zip(fan)) {
             assertThat(b.config).isEqualTo(a.config)
             assertThat(b.result.global.tradeCount).isEqualTo(a.result.global.tradeCount)
@@ -92,8 +99,15 @@ class SweepReplayParityTest {
         val par = fanned(2).runs.associateBy { it.label }
         assertThat(par.keys).isEqualTo(seq.keys)
         for (label in seq.keys) {
-            assertThat(par.getValue(label).result.global.totalPnL)
-                .isEqualByComparingTo(seq.getValue(label).result.global.totalPnL)
+            assertThat(
+                par
+                    .getValue(label)
+                    .result.global.totalPnL,
+            ).isEqualByComparingTo(
+                seq
+                    .getValue(label)
+                    .result.global.totalPnL,
+            )
             assertThat(par.getValue(label).result.trades).isEqualTo(seq.getValue(label).result.trades)
         }
     }
