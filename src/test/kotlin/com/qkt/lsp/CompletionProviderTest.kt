@@ -1,6 +1,8 @@
 package com.qkt.lsp
 
 import org.assertj.core.api.Assertions.assertThat
+import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.InsertTextFormat
 import org.junit.jupiter.api.Test
 
 class CompletionProviderTest {
@@ -51,5 +53,20 @@ class CompletionProviderTest {
     fun `member access after an unknown owner offers nothing`() {
         val labels = CompletionProvider.complete("x = unknown.", 0, 12, astOf(doc)).map { it.label }
         assertThat(labels).isEmpty()
+    }
+
+    @Test
+    fun `general position offers strategy templates as expandable snippets`() {
+        val items = CompletionProvider.complete("", 0, 0, null)
+        val strategy = items.first { it.label == "strategy" && it.kind == CompletionItemKind.Snippet }
+        assertThat(strategy.insertTextFormat).isEqualTo(InsertTextFormat.Snippet)
+        assertThat(strategy.insertText).contains("STRATEGY", "DEFAULTS", "SYMBOLS", "RULES")
+        assertThat(items.map { it.label }).contains("stratfull", "strat-ema", "rule", "buy")
+    }
+
+    @Test
+    fun `member access does not offer snippets`() {
+        val kinds = CompletionProvider.complete(doc, 8, 13, astOf(doc)).map { it.kind }
+        assertThat(kinds).doesNotContain(CompletionItemKind.Snippet)
     }
 }
