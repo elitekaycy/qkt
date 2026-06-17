@@ -32,21 +32,40 @@ EXPOSE 40000-50000
 ENTRYPOINT ["qkt", "daemon", "--load-dir", "/strategies"]
 
 # ── Developer image ─────────────────────────────────────────────────────────
-# The runtime plus an editor and a shell, for authoring and testing strategies
-# inside a container — `qkt` and `vim`/`nano` on PATH, a writable `/work`, and a
-# bash default so you can `docker run -dit` it and `docker exec` in. Published as
-# the `:dev` tag. Kept separate from the runtime so the production trading image
-# stays minimal and editor-free; do not deploy `:dev` to prod.
+# The runtime plus Neovim and a shell, for authoring and testing strategies
+# inside a container. Neovim has a built-in LSP client, so `.qkt` files get live
+# diagnostics, completion, and snippet expansion from `qkt lsp` out of the box —
+# the bundled plugin autostarts the server. `vim`/`vi` alias to `nvim`, `/work`
+# is writable, and bash is the default so you can `docker run -dit` it and
+# `docker exec` in. Published as the `:dev` tag. Kept separate from the runtime
+# so the production trading image stays minimal and editor-free; do not deploy
+# `:dev` to prod.
 FROM runtime AS dev
 USER root
-# $QKT_HOME points `qkt editor install` at the bundled syntax files.
+# $QKT_HOME points `qkt editor install` at the bundled plugin + syntax files.
 ENV QKT_HOME=/opt/qkt
+# Debian's Neovim predates the 0.11 built-in completion API, so fetch the
+# upstream static build. `stable` always resolves; override to pin a release.
+ARG NVIM_VERSION=stable
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends vim nano less ca-certificates \
+    && apt-get install -y --no-install-recommends nano less ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-# Pre-install .qkt syntax highlighting for vim. Best-effort: a distribution built
-# without the editor bundle must not fail the image build.
-RUN qkt editor install vim --yes || echo "qkt: skipped baking vim syntax (editor bundle absent)"
+RUN curl -fsSL -o /tmp/nvim.tar.gz \
+        "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz" \
+    && tar -xzf /tmp/nvim.tar.gz -C /opt \
+    && rm /tmp/nvim.tar.gz \
+    && ln -s /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/nvim \
+    && ln -s /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/vim \
+    && ln -s /opt/nvim-linux-x86_64/bin/nvim /usr/local/bin/vi
+# Install the qkt Neovim plugin (ftdetect/ftplugin/syntax); the ftplugin
+# autostarts `qkt lsp`. Best-effort: a build without the editor bundle must not
+# fail the image build.
+RUN qkt editor install nvim --yes \
+    || echo "qkt: skipped baking nvim plugin (editor bundle absent)"
+# Layer the curated dev completion/snippet config on top of the autostart.
+RUN mkdir -p /root/.config/nvim/plugin \
+    && cp /opt/qkt/share/editor/nvim/dev-init.lua /root/.config/nvim/plugin/qkt-dev.lua \
+    || echo "qkt: skipped dev nvim config (editor bundle absent)"
 RUN mkdir -p /work && chmod 0777 /work
 WORKDIR /work
 # Reset the daemon entrypoint — the dev image is a shell you live in, not a

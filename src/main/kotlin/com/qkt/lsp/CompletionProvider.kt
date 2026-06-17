@@ -3,6 +3,7 @@ package com.qkt.lsp
 import com.qkt.dsl.parse.ParsedFile
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.InsertTextFormat
 
 /**
  * Computes completion candidates for a cursor in a `.qkt` document.
@@ -50,8 +51,19 @@ object CompletionProvider {
         QktVocabulary.functions.forEach { items += item(it, CompletionItemKind.Function) }
         QktVocabulary.constants.forEach { items += item(it, CompletionItemKind.Constant) }
         documentSymbols(ast).forEach { items += item(it, CompletionItemKind.Variable) }
+        QktSnippets.all.forEach { items += snippetItem(it) }
         return items
     }
+
+    /** A strategy template offered as an inline snippet: the editor expands [Snippet.body]'s tab stops. */
+    private fun snippetItem(snippet: QktSnippets.Snippet): CompletionItem =
+        CompletionItem(snippet.prefix).apply {
+            kind = CompletionItemKind.Snippet
+            insertText = snippet.body.joinToString("\n")
+            insertTextFormat = InsertTextFormat.Snippet
+            detail = snippet.title
+            setDocumentation(snippet.description)
+        }
 
     private fun streamAliases(ast: ParsedFile?): Set<String> =
         when (ast) {

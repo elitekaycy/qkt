@@ -17,9 +17,58 @@
       "  THEN ${10:action}",
       "$0"
     ],
-    "description": "Full STRATEGY skeleton with DEFAULTS, SYMBOLS, and one RULES entry."
+    "description": "STRATEGY skeleton with DEFAULTS, SYMBOLS, and one RULES entry."
   },
-
+  "STRATEGY skeleton (full)": {
+    "prefix": "stratfull",
+    "body": [
+      "STRATEGY ${1:name} VERSION ${2:1}",
+      "",
+      "DEFAULTS {",
+      "  SIZING = ${3:0.1}",
+      "  TIF = ${4|GTC,IOC,FOK,DAY|}",
+      "}",
+      "",
+      "SYMBOLS",
+      "  ${5:btc} = ${6|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${7:BTCUSDT} EVERY ${8|1h,15m,5m,1m,1d|}",
+      "",
+      "PARAM ${9:fast} = ${10:9}",
+      "PARAM ${11:slow} = ${12:21}",
+      "",
+      "LET ${13:fast_ema} = ema($5.close, ${10:9})",
+      "",
+      "RULES",
+      "  WHEN ema($5.close, ${10:9}) CROSSES ABOVE ema($5.close, ${12:21})",
+      "  THEN BUY $5",
+      "",
+      "  WHEN ema($5.close, ${10:9}) CROSSES BELOW ema($5.close, ${12:21})",
+      "  THEN CLOSE $5",
+      "$0"
+    ],
+    "description": "Full STRATEGY skeleton: DEFAULTS, SYMBOLS, PARAM, LET, and a crossover entry/exit."
+  },
+  "EMA crossover strategy (complete)": {
+    "prefix": "strat-ema",
+    "body": [
+      "STRATEGY ema_cross VERSION 1",
+      "",
+      "DEFAULTS {",
+      "  SIZING = ${1:0.1}",
+      "}",
+      "",
+      "SYMBOLS",
+      "  ${2:btc} = ${3|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${4:BTCUSDT} EVERY ${5|1h,15m,5m,1m,1d|}",
+      "",
+      "RULES",
+      "  WHEN ema($2.close, ${6:9}) CROSSES ABOVE ema($2.close, ${7:21})",
+      "  THEN BUY $2",
+      "",
+      "  WHEN ema($2.close, ${6:9}) CROSSES BELOW ema($2.close, ${7:21})",
+      "  THEN CLOSE $2",
+      "$0"
+    ],
+    "description": "A complete, runnable EMA fast/slow crossover strategy to edit."
+  },
   "SYMBOLS line": {
     "prefix": "sym",
     "body": [
@@ -27,7 +76,6 @@
     ],
     "description": "Stream declaration with optional WARMUP."
   },
-
   "WHEN/THEN rule": {
     "prefix": "rule",
     "body": [
@@ -36,7 +84,6 @@
     ],
     "description": "Basic WHEN/THEN rule."
   },
-
   "BUY action": {
     "prefix": "buy",
     "body": [
@@ -44,7 +91,6 @@
     ],
     "description": "BUY action with explicit sizing."
   },
-
   "BUY with bracket": {
     "prefix": "buybr",
     "body": [
@@ -56,15 +102,13 @@
     ],
     "description": "BUY with ATR-sized stop and take-profit."
   },
-
   "SIZING N PCT RISK": {
     "prefix": "pctrisk",
     "body": [
       "SIZING ${1:0.5} PCT RISK"
     ],
-    "description": "Risk-percent sizing (phase 24)."
+    "description": "Risk-percent sizing."
   },
-
   "EMA crossover": {
     "prefix": "cross",
     "body": [
@@ -72,7 +116,6 @@
     ],
     "description": "EMA fast/slow crossover condition."
   },
-
   "LET binding": {
     "prefix": "let",
     "body": [
@@ -80,7 +123,6 @@
     ],
     "description": "LET expression binding."
   },
-
   "DEFAULTS block": {
     "prefix": "def",
     "body": [
@@ -91,7 +133,6 @@
     ],
     "description": "DEFAULTS block."
   },
-
   "FOR EACH over streams": {
     "prefix": "foreach",
     "body": [
@@ -101,20 +142,18 @@
     ],
     "description": "Iterate a rule over multiple streams."
   },
-
   "Session-end FLATTEN": {
     "prefix": "flatten",
     "body": [
       "WHEN NOW.hour_utc = ${1:21} THEN FLATTEN"
     ],
-    "description": "Close every open position at a fixed UTC hour (phase 24)."
+    "description": "Close every open position at a fixed UTC hour."
   },
-
   "IS NOT NULL guard": {
     "prefix": "notnull",
     "body": [
       "${1:expression} IS NOT NULL"
     ],
-    "description": "Guard expression against Value.Undefined (phase 24)."
+    "description": "Guard expression against Value.Undefined."
   }
 }
