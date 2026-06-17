@@ -1,7 +1,17 @@
 # Sweep single-pass fan-out — Design
 
 Date: 2026-06-17
-Status: approved, pre-implementation
+Status: approved — spike GO (2026-06-17), implementing (baseline variant)
+
+## Spike outcome (measured 2026-06-17, bot2, Jan 2023, startup ≈12s)
+
+| shape | basket | decode+aggregate (shareable) | per-combo execution | projected 16-combo / 3-worker speedup |
+|---|---|---|---|---|
+| coarse multi-ccy | NZD+AUD+XAU+XAG @ 30m | ~29s | ~7s | ~2.6× |
+| mixed timeframe | EUR@1m + XAU@5m | ~13s | ~11s | ~1.7× |
+| fine all-1m | EUR+XAU @ 1m | ~16s | ~18s | ~1.6× |
+
+Per-symbol decode is ~constant (≈7–8s) regardless of timeframe → **aggregation is negligible; the shared cost is almost pure tick decode.** Therefore the **baseline** variant (share decode; each engine keeps its own cheap candle aggregation) captures the win — the deeper variant (hoisting `candleHub`) is unnecessary. Coarse-timeframe multi-symbol grids (the common shape) gain most; the win compounds across G2 (grid), G4 (one sweep per fold), and G5 (one sweep per slice). GO confirmed; building Tasks 2–4.
 Scope of this spec: make `qkt sweep` decode and replay the shared market stream once per worker instead of once per grid combo, by fanning each tick out to N isolated per-combo engines. A measurement spike gates the build. No change to the live path, the fill model, or per-combo computation — backtest=live parity is preserved by construction.
 
 ---
