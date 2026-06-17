@@ -23,6 +23,7 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
@@ -251,6 +252,19 @@ class ReplayEngine(
         }
     }
 
+    /**
+     * Apply one already-decoded tick to this engine's pipeline. The fan-out sweep driver pulls each
+     * tick once from a single shared feed and pushes it into every per-combo engine via this method,
+     * so the decode happens once instead of once per combo. The internal feed loop calls it too, so
+     * pushed and pulled ticks take an identical path.
+     */
+    fun ingest(tick: Tick) {
+        currentTimestamp = tick.timestamp
+        ticksIngested++
+        clock.time = tick.timestamp
+        pipeline.ingest(tick)
+    }
+
     /** Pull and ingest ticks until [stop] returns true after a tick, or the feed drains. */
     fun advanceUntil(stop: () -> Boolean) {
         if (exhausted) return
@@ -261,10 +275,7 @@ class ReplayEngine(
                 feed.close()
                 break
             }
-            currentTimestamp = tick.timestamp
-            ticksIngested++
-            clock.time = tick.timestamp
-            pipeline.ingest(tick)
+            ingest(tick)
             if (stop()) break
         }
     }
