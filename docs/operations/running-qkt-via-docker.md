@@ -39,18 +39,26 @@ Step inside whenever you want to work:
 docker exec -it qkt-dev bash
 ```
 
-You're now in the workbench. `qkt`, `vim`, and `nano` are all here, and the `/work` folder is
-your `~/qkt-lab` from the outside. A typical first session looks like this:
+You're now in the workbench. `qkt` and `nano` are here, and `vim`/`vi` open Neovim with the qkt
+language server already wired up — so editing a `.qkt` file gives you live error squiggles,
+as-you-type completion, hover help, and snippet templates, not just highlighting. The `/work`
+folder is your `~/qkt-lab` from the outside. A typical first session looks like this:
 
 ```bash
 qkt --help                                        # see what qkt can do
 qkt create template mystrat.qkt --kind minimal    # start from a ready-made example
-vim mystrat.qkt                                    # edit it (qkt highlights .qkt files for you)
+vim mystrat.qkt                                    # edit it (live errors + completion for .qkt)
 qkt parse mystrat.qkt                              # check it's valid
 qkt backtest mystrat.qkt --from 2024-03-01 --to 2024-03-05
 ```
 
 That's the whole loop: scaffold, edit, check, backtest — repeat.
+
+Inside the editor, you don't have to remember the syntax. Type a short trigger and press Enter to
+drop in a template, then Tab through the blanks: `strategy` (a skeleton), `stratfull` (a full one
+with params and rules), `strat-ema` (a complete, runnable EMA crossover to edit), or smaller
+pieces like `rule`, `buy`, and `cross`. The same templates show up in VS Code if you install the
+qkt extension.
 
 ---
 
