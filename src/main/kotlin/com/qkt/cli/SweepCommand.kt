@@ -1,6 +1,6 @@
 package com.qkt.cli
 
-import com.qkt.backtest.sweep.BacktestSweep
+import com.qkt.backtest.sweep.SweepReplay
 import com.qkt.backtest.sweep.SweepRun
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
@@ -56,11 +56,13 @@ class SweepCommand(
 
         System.err.println("qkt: sweeping ${combos.size} parameter combination(s), ranked by ${rank.flag}")
 
+        val (sharedFeed, engineFor) = ctx.sweepEngines()
         val ranked: List<SweepRun<ParamGrid.Combo>> =
             try {
-                BacktestSweep(
+                SweepReplay(
                     configs = combos.map { it.label to it },
-                    backtestFactory = { _, combo -> ctx.backtest(combo.overrides) },
+                    sharedFeed = sharedFeed,
+                    engineFor = { _, combo -> engineFor(combo.overrides) },
                     parallelism = parallelism,
                 ).run().rankedBy { rank.score(it) }
             } catch (e: IllegalArgumentException) {

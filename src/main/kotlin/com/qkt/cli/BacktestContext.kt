@@ -14,7 +14,9 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
+import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketRequest
+import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.DataFetcher
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DefaultDataStore
@@ -24,6 +26,7 @@ import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
 import com.qkt.marketdata.store.dukascopy.DukascopyTickFetcher
 import com.qkt.marketdata.store.macro.FredSeriesFetcher
 import com.qkt.marketdata.store.macro.MacroSeriesStore
+import com.qkt.research.ReplayEngine
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -80,6 +83,22 @@ class BacktestContext private constructor(
             barStore = barStore,
             brokerKind = brokerKind,
         )
+    }
+
+    /**
+     * For a fan-out sweep: a builder of one shared decoded feed plus a per-combo engine factory.
+     * The sweep driver pulls the shared feed once and pushes each tick into every engine via
+     * `ReplayEngine.ingest`, so the basket is decoded once per worker instead of once per combo.
+     * The shared feed is built from default params because the market data is independent of
+     * strategy params; each engine is built with an empty feed (it is driven externally) but its
+     * own compiled strategy and isolated broker/P&L/risk state.
+     */
+    fun sweepEngines(): Pair<() -> TickFeed, (Map<String, String>) -> ReplayEngine> {
+        val sharedFeed = { backtest(emptyMap()).detachFeed() }
+        val engineFor = { overrides: Map<String, String> ->
+            backtest(overrides).toEngine(SequenceTickFeed(emptySequence()))
+        }
+        return sharedFeed to engineFor
     }
 
     companion object {
