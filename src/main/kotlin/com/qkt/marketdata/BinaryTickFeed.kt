@@ -18,7 +18,10 @@ class BinaryTickFeed(
 ) : TickFeed {
     private val header: BinaryTickFormat.Header
     private val timestamps: LongArray
-    private val columns: Map<Int, LongArray>
+
+    // Indexed by column id (0 until COL_COUNT); null = column absent. An array, not a Map<Int,_>,
+    // so decode() does a plain array read instead of a boxed-Integer HashMap lookup six times a tick.
+    private val columns: Array<LongArray?>
     private var index: Int = 0
     private var lastTimestamp: Long = Long.MIN_VALUE
 
@@ -28,7 +31,7 @@ class BinaryTickFeed(
         header = BinaryTickFormat.readHeader(buf)
         val n = header.tickCount
         timestamps = LongArray(n) { buf.long }
-        val cols = mutableMapOf<Int, LongArray>()
+        val cols = arrayOfNulls<LongArray>(BinaryTickFormat.COL_COUNT)
         for (col in 0 until BinaryTickFormat.COL_COUNT) {
             if (BinaryTickFormat.isPresent(header.presenceFlags, col)) {
                 cols[col] = LongArray(n) { buf.long }
