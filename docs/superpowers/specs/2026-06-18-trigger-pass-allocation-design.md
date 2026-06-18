@@ -29,8 +29,21 @@ tick. This is a throughput/GC change, not a live-latency change.
 
 ## Goal
 
-Remove all per-tick heap allocation from `evaluateTriggers`, with byte-identical
-output to the current implementation.
+Eliminate the per-tick collection materializations in `evaluateTriggers` — the
+`ArrayList`s produced by `.map` / `.filter` / `.toList` — with byte-identical
+output to the current implementation. These are the allocations a JFR profile
+surfaces.
+
+### Residual allocation (deliberately kept)
+
+The fill passes still iterate `liveBySymbol[sym]` / `liveOrderIds` (`LinkedHashSet`)
+and `timeExits.values` / the stack view (`Map.values`). Each `for`-loop over those
+allocates a small iterator. Index loops over the scratch `ArrayList`s do not (the
+Kotlin compiler lowers `for (i in list.indices)` to a counting loop, no `IntRange`
+object). Removing the residual iterators would require replacing the live-index
+data structures with array-backed ones — disproportionate scope for an object far
+smaller than the lists we are removing. Out of scope. Net effect: ~6 `ArrayList`s
+per tick eliminated, ~3–4 small iterators kept.
 
 ## Non-goals
 
