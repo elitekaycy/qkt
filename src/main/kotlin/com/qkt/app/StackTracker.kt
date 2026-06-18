@@ -38,6 +38,14 @@ internal class StackTracker {
 
     fun all(): Collection<ActiveStack> = active.values.toList()
 
+    /**
+     * Live, non-copying view of active stacks for read-only iteration. Unlike [all], this does
+     * not allocate a snapshot — callers must not mutate the tracker while iterating it. The
+     * per-tick stack-deadline sweep reads this to collect expired stacks, then mutates in a
+     * separate pass. e.g. `for (s in tracker.activeView()) { ... }` iterates without copying.
+     */
+    fun activeView(): Collection<ActiveStack> = active.values
+
     fun addPending(
         stackId: String,
         layerOrderId: String,
