@@ -57,7 +57,7 @@ class BinaryTickFeed(
             ask = decode(BinaryTickFormat.COL_ASK, i),
             bidVolume = decode(BinaryTickFormat.COL_BID_VOLUME, i),
             askVolume = decode(BinaryTickFormat.COL_ASK_VOLUME, i),
-            location = "$path:${i + 1}",
+            location = { "$path:${i + 1}" },
         )
     }
 

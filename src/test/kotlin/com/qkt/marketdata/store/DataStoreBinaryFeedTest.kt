@@ -31,7 +31,7 @@ class DataStoreBinaryFeedTest {
                     bd("1712.00200000"),
                     null,
                     null,
-                    "t:1",
+                    { "t:1" },
                 ),
             )
         BinaryTickWriter().write(symDir.resolve("2024-04-02.bin"), "XAUUSD", ticks)
