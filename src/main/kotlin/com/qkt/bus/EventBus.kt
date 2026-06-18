@@ -12,7 +12,6 @@ import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
-import kotlin.reflect.KClass
 import org.slf4j.LoggerFactory
 
 /**
@@ -35,7 +34,7 @@ class EventBus(
     private val log = LoggerFactory.getLogger(EventBus::class.java)
 
     @PublishedApi
-    internal val subscribers = mutableMapOf<KClass<out Event>, MutableList<(Event) -> Unit>>()
+    internal val subscribers = mutableMapOf<Class<out Event>, MutableList<(Event) -> Unit>>()
 
     /**
      * Live-mode binding: the single engine-loop thread and a sink that hands an event to that
@@ -83,7 +82,7 @@ class EventBus(
     inline fun <reified T : Event> subscribe(noinline handler: (T) -> Unit) {
         @Suppress("UNCHECKED_CAST")
         subscribers
-            .getOrPut(T::class) { mutableListOf() }
+            .getOrPut(T::class.java) { mutableListOf() }
             .add { event -> handler(event as T) }
     }
 
@@ -98,7 +97,7 @@ class EventBus(
     inline fun <reified T : Event> subscribeFirst(noinline handler: (T) -> Unit) {
         @Suppress("UNCHECKED_CAST")
         subscribers
-            .getOrPut(T::class) { mutableListOf() }
+            .getOrPut(T::class.java) { mutableListOf() }
             .add(0) { event -> handler(event as T) }
     }
 
@@ -132,7 +131,7 @@ class EventBus(
         // never reached the book-applier leaves the engine permanently diverged. Every
         // subscriber runs; the first failure then rethrows so the caller's fault
         // handling (engine-loop halt + alert in live, loud failure in backtest) still fires.
-        val handlers = subscribers[stamped::class] ?: return
+        val handlers = subscribers[stamped.javaClass] ?: return
         var firstFailure: Exception? = null
         for (i in handlers.indices) {
             try {
