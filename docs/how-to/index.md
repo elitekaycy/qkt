@@ -52,13 +52,13 @@ Task-oriented walkthroughs. Each page is one problem and one copy-paste-able sol
 
     [:octicons-arrow-right-24: Install for your editor](editor-integrations.md)
 
-- :material-database-arrow-down:{ .lg .middle } **Backfill historical bars**
+- :material-database-arrow-down:{ .lg .middle } **Get & store backtest data**
 
     ---
 
-    `qkt fetch BROKER:SYMBOL --tf 5m --from … --to …` pulls bars into the local store.
+    Auto-fetch ticks, pull broker bars with `qkt fetch`, drop in your own CSVs, convert to binary — and where each lands.
 
-    [:octicons-arrow-right-24: Run qkt fetch](fetch-data.md)
+    [:octicons-arrow-right-24: Backtest data guide](backtest-data.md)
 
 </div>
 

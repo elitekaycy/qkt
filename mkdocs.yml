@@ -136,7 +136,6 @@ nav:
       - EMA crossover strategy: how-to/ema-crossover.md
       - Add a stop-loss: how-to/add-stop-loss.md
       - Run a parameter sweep: how-to/parameter-sweep.md
-      - Backfill historical data: how-to/fetch-data.md
       - Debug a strategy that isn't firing: how-to/debug-not-firing.md
       - Iterate in the research REPL: how-to/research-repl.md
       - Deploy live on Exness (MT5): how-to/deploy-exness.md
@@ -149,7 +148,7 @@ nav:
       - Why qkt vs alternatives: concepts/why-qkt.md
   - Backtesting:
       - How a backtest runs: concepts/backtest-model.md
-      - How backtest data works: operations/backtest-data.md
+      - Getting & storing data: how-to/backtest-data.md
       - Trust & parity overview: parity/README.md
       - Backtest vs live execution: parity/backtest-vs-live.md
       - Data source — dukascopy vs MT5: parity/parity-dukascopy-vs-mt5-xauusd.md
