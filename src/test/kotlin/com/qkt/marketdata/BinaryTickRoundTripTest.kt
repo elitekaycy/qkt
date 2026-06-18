@@ -39,7 +39,7 @@ class BinaryTickRoundTripTest {
                     bd("1712.00200000"),
                     bd("0.00012000"),
                     bd("0.00018000"),
-                    "t:1",
+                    { "t:1" },
                 ),
                 TickAssembler.assemble(
                     "XAUUSD",
@@ -50,7 +50,7 @@ class BinaryTickRoundTripTest {
                     bd("1712.00600000"),
                     bd("0.00018000"),
                     bd("0.00012000"),
-                    "t:2",
+                    { "t:2" },
                 ),
             )
         val file = dir.resolve("2024-01-04.bin")
@@ -75,8 +75,8 @@ class BinaryTickRoundTripTest {
         val file = dir.resolve("2024-01-05.bin")
         val ticks =
             listOf(
-                TickAssembler.assemble("X", 100L, bd("1.0"), null, null, null, null, null, "t:1"),
-                TickAssembler.assemble("X", 50L, bd("1.0"), null, null, null, null, null, "t:2"),
+                TickAssembler.assemble("X", 100L, bd("1.0"), null, null, null, null, null, { "t:1" }),
+                TickAssembler.assemble("X", 50L, bd("1.0"), null, null, null, null, null, { "t:2" }),
             )
         BinaryTickWriter().write(file, "X", ticks)
         val feed = BinaryTickFeed(file)
