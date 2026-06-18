@@ -36,6 +36,16 @@ class CandleHub {
 
     private val slots: MutableMap<HubKey, Slot> = java.util.concurrent.ConcurrentHashMap()
 
+    // Per-tick [feed] reads only the slots for the tick's symbol via this index instead of walking the
+    // whole `slots` map and comparing qktSymbol on each. Derived from `slots`; rebuilt on
+    // register/unregister (rare) and read on the hot path, so it is published through @Volatile.
+    @Volatile
+    private var slotsByQktSymbol: Map<String, List<Slot>> = emptyMap()
+
+    private fun rebuildSymbolIndex() {
+        slotsByQktSymbol = slots.entries.groupBy({ it.key.qktSymbol }, { it.value })
+    }
+
     private data class OwnedSyncListener(
         val strategyId: String,
         val callback: (Map<String, Candle>) -> Unit,
@@ -77,13 +87,13 @@ class CandleHub {
                 routeToSyncSlots(key, closed)
             }
         slots[key] = Slot(agg, ring, retention, listeners, mutableSetOf(strategyId))
+        rebuildSymbolIndex()
     }
 
     fun feed(tick: Tick) {
-        for ((key, slot) in slots) {
-            if (key.qktSymbol == tick.symbol) slot.aggregator.onTick(tick)
-        }
-        sweepSyncTimeouts(tick.timestamp)
+        val matching = slotsByQktSymbol[tick.symbol]
+        if (matching != null) for (i in matching.indices) matching[i].aggregator.onTick(tick)
+        if (syncSlots.isNotEmpty()) sweepSyncTimeouts(tick.timestamp)
     }
 
     /**
@@ -220,6 +230,7 @@ class CandleHub {
             if (slot.owners.isEmpty()) toDrop.add(key)
         }
         for (k in toDrop) slots.remove(k)
+        if (toDrop.isNotEmpty()) rebuildSymbolIndex()
 
         val syncToDrop = mutableListOf<SyncGroupKey>()
         for ((key, slot) in syncSlots) {

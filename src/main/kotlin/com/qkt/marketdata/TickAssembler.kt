@@ -13,7 +13,8 @@ import java.math.BigDecimal
  * e.g. assemble("XAUUSD", ts, price=null, bid=1711.504, ask=1712.002, ...) ->
  *      Tick(price = mid = 1711.753, bid = 1711.504, ask = 1712.002, ...)
  *
- * [location] is a human-readable origin (e.g. "file.csv:42") used only in error messages.
+ * [location] is a lazy supplier of a human-readable origin (e.g. "file.csv:42"), invoked only when a
+ * validation check fails — so the hot path never builds the string for the valid-data case.
  */
 object TickAssembler {
     fun assemble(
@@ -25,24 +26,24 @@ object TickAssembler {
         ask: BigDecimal?,
         bidVolume: BigDecimal?,
         askVolume: BigDecimal?,
-        location: String,
+        location: () -> String,
     ): Tick {
-        check(symbol.isNotEmpty()) { "$location: empty symbol" }
+        check(symbol.isNotEmpty()) { "${location()}: empty symbol" }
         check(price != null || (bid != null && ask != null)) {
-            "$location: row needs price OR (bid AND ask)"
+            "${location()}: row needs price OR (bid AND ask)"
         }
         if (bid != null && ask != null) {
-            check(bid <= ask) { "$location: bid > ask: bid=$bid, ask=$ask" }
+            check(bid <= ask) { "${location()}: bid > ask: bid=$bid, ask=$ask" }
         }
         // Inline per-field sign checks. The previous `listOf("name" to v, ...).forEach` allocated six
         // Pairs and a list on every tick purely to name the field in an error that only fires on
         // negative data — pure hot-path waste. Same checks, same messages.
-        if (price != null && price.signum() < 0) error("$location: negative price: $price")
-        if (bid != null && bid.signum() < 0) error("$location: negative bid: $bid")
-        if (ask != null && ask.signum() < 0) error("$location: negative ask: $ask")
-        if (volume != null && volume.signum() < 0) error("$location: negative volume: $volume")
-        if (bidVolume != null && bidVolume.signum() < 0) error("$location: negative bidVolume: $bidVolume")
-        if (askVolume != null && askVolume.signum() < 0) error("$location: negative askVolume: $askVolume")
+        if (price != null && price.signum() < 0) error("${location()}: negative price: $price")
+        if (bid != null && bid.signum() < 0) error("${location()}: negative bid: $bid")
+        if (ask != null && ask.signum() < 0) error("${location()}: negative ask: $ask")
+        if (volume != null && volume.signum() < 0) error("${location()}: negative volume: $volume")
+        if (bidVolume != null && bidVolume.signum() < 0) error("${location()}: negative bidVolume: $bidVolume")
+        if (askVolume != null && askVolume.signum() < 0) error("${location()}: negative askVolume: $askVolume")
         val finalPrice =
             price
                 ?: bid!!
