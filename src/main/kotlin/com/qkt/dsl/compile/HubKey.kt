@@ -18,5 +18,8 @@ data class HubKey(
         require(timeframe.isNotBlank()) { "HubKey.timeframe must not be blank" }
     }
 
-    val qktSymbol: String get() = "$broker:$symbol"
+    // Computed once per key, not per access: CandleHub.feed compares this against every tick's
+    // symbol for every slot, so a per-access getter would rebuild "$broker:$symbol" on the hot
+    // path millions of times.
+    val qktSymbol: String = "$broker:$symbol"
 }
