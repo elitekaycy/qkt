@@ -129,10 +129,18 @@ kept unchanged for any external caller that genuinely needs an owned snapshot.
 These must hold or output diverges from the current implementation:
 
 1. **Phase order is unchanged.** Trailing-HWM → GTD sweep → time-exit sweep →
-   stack sweep → trigger collect-then-fire. In particular, trigger *collection*
-   stays **after** the time-exit and stack sweeps: those sweeps can cancel a
-   pending order, and collecting earlier would fire a trigger on an order that was
-   just swept terminal. This is why the loops are not merged.
+   stack sweep → trigger collect-then-fire. Trigger *firing* must stay **after** the
+   time-exit and stack sweeps. The mechanism: both `symbolLive` (today) and
+   `symbolLiveScratch` (after) hold `ManagedOrder` references captured at top-of-tick,
+   and `ManagedOrder` is immutable, so the `state == PENDING` filter reads stale state
+   either way — that is *not* what protects a swept order. The real guard is the
+   terminal-state-sink check in `update()` (`OrderManager.kt:1267`): `fireFallbackTrigger`
+   calls `update(id){ copy(state = SUBMITTED) }`, and `update` re-reads the *live* map.
+   If a same-tick sweep already cancelled the order, the SUBMITTED transition is
+   rejected. So firing after the sweep → `update` sees CANCELLED → blocked; firing
+   before the sweep → `update` sees PENDING → the order submits to the broker. The two
+   orderings produce different broker traffic, which is why phase order is preserved and
+   the loops are not merged.
 2. **`orders[id]` lookup count per tick is unchanged.** `symbolLiveScratch` is
    retained (rather than re-iterating the id-set in both phases 1 and 5) precisely
    so the symbol's orders are looked up once, not twice — HashMap lookups were the
