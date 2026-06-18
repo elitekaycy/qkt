@@ -78,6 +78,7 @@ class SweepCommand(
                             combos = combos.map { it.label to it },
                             overridesOf = { it.overrides },
                             backtestFor = { labeled -> ctx.multiStrategyBacktest(labeled) },
+                            parallelism = parallelism,
                         ).run()
                     }
                 swept.rankedBy { rank.score(it) }
