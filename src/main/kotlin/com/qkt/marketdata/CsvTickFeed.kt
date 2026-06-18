@@ -66,7 +66,7 @@ class CsvTickFeed(
             ask = parseOpt(cols[5], "ask"),
             bidVolume = parseOpt(cols[6], "bidVolume"),
             askVolume = parseOpt(cols[7], "askVolume"),
-            location = "$path:$lineNumber",
+            location = { "$path:$lineNumber" },
         )
     }
 

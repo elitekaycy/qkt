@@ -123,7 +123,7 @@ class LocalMarketSourceTest {
                     null,
                     null,
                     null,
-                    "t:1",
+                    { "t:1" },
                 ),
                 TickAssembler.assemble(
                     "B",
@@ -134,7 +134,7 @@ class LocalMarketSourceTest {
                     null,
                     null,
                     null,
-                    "t:2",
+                    { "t:2" },
                 ),
             )
         BinaryTickWriter().write(symDir.resolve("2024-01-15.bin"), "B", ticks)

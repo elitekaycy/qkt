@@ -21,7 +21,7 @@ class TickAssemblerTest {
                 ask = bd("1712.00200000"),
                 bidVolume = bd("0.00012000"),
                 askVolume = bd("0.00018000"),
-                location = "test:1",
+                location = { "test:1" },
             )
         assertEquals(bd("1711.75300000"), tick.price)
         assertEquals(bd("1711.50400000"), tick.bid)
@@ -40,7 +40,7 @@ class TickAssemblerTest {
                 ask = bd("1.11000000"),
                 bidVolume = null,
                 askVolume = null,
-                location = "test:1",
+                location = { "test:1" },
             )
         assertEquals(bd("1.10000000"), tick.price)
     }
@@ -48,14 +48,14 @@ class TickAssemblerTest {
     @Test
     fun `rejects row with neither price nor bid-ask`() {
         assertThrows(IllegalStateException::class.java) {
-            TickAssembler.assemble("X", 1L, null, null, null, null, null, null, "test:1")
+            TickAssembler.assemble("X", 1L, null, null, null, null, null, null, { "test:1" })
         }
     }
 
     @Test
     fun `rejects bid greater than ask`() {
         assertThrows(IllegalStateException::class.java) {
-            TickAssembler.assemble("X", 1L, null, null, bd("2.0"), bd("1.0"), null, null, "test:1")
+            TickAssembler.assemble("X", 1L, null, null, bd("2.0"), bd("1.0"), null, null, { "test:1" })
         }
     }
 }
