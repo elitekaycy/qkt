@@ -90,6 +90,16 @@ class OrderManager(
      */
     private val gcQueue: ArrayDeque<String> = ArrayDeque()
 
+    // Reusable per-tick scratch buffers for [evaluateTriggers]. Each is cleared and refilled every
+    // tick; ArrayList.clear() retains capacity, so steady-state per-tick list allocation is zero.
+    // Shareable only because evaluateTriggers runs on the single engine thread and is not reentrant
+    // (its sole caller is the TickEvent subscription, and TickEvent is feed-sourced).
+    private val symbolLiveScratch = ArrayList<ManagedOrder>()
+    private val triggeredScratch = ArrayList<ManagedOrder>()
+    private val expiredExitsScratch = ArrayList<OrderRequest.TimeExit>()
+    private val gtdSweepScratch = ArrayList<ManagedOrder>()
+    private val expiredStacksScratch = ArrayList<StackTracker.ActiveStack>()
+
     private val trailingHwm: MutableMap<String, BigDecimal> = mutableMapOf()
 
     /**
@@ -1512,10 +1522,14 @@ class OrderManager(
         // Only this symbol's live orders drive trailing + trigger evaluation — O(this symbol),
         // not O(all live). An id in the index with no entry in [orders] is an invariant violation,
         // not an expected absence, so surface it.
-        val symbolLive =
-            liveBySymbol[tick.symbol]?.map { orders[it] ?: error("live order index desync: $it") }
-                ?: emptyList()
-        for (managed in symbolLive) {
+        symbolLiveScratch.clear()
+        liveBySymbol[tick.symbol]?.let { ids ->
+            for (id in ids) {
+                symbolLiveScratch.add(orders[id] ?: error("live order index desync: $id"))
+            }
+        }
+        for (i in symbolLiveScratch.indices) {
+            val managed = symbolLiveScratch[i]
             if (managed.state != OrderState.PENDING) continue
             updateTrailingHwm(managed, tick.price)
         }
@@ -1526,8 +1540,12 @@ class OrderManager(
         // LogBroker fall through here.
         if (!broker.supportsNativeGtd) {
             val nowMs = clock.now()
-            val allLive = liveOrderIds.map { orders[it] ?: error("live order index desync: $it") }
-            for (managed in allLive) {
+            gtdSweepScratch.clear()
+            for (id in liveOrderIds) {
+                gtdSweepScratch.add(orders[id] ?: error("live order index desync: $id"))
+            }
+            for (i in gtdSweepScratch.indices) {
+                val managed = gtdSweepScratch[i]
                 if (managed.state.isTerminal) continue
                 if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
                 val deadline = managed.request.expiresAt ?: continue
@@ -1536,29 +1554,38 @@ class OrderManager(
         }
 
         val now = clock.now()
-        val expired =
-            timeExits.values
-                .filter { now >= it.deadline.toEpochMilli() }
-                .toList()
-        for (te in expired) {
+        expiredExitsScratch.clear()
+        for (te in timeExits.values) {
+            if (now >= te.deadline.toEpochMilli()) expiredExitsScratch.add(te)
+        }
+        for (i in expiredExitsScratch.indices) {
+            val te = expiredExitsScratch[i]
             timeExits.remove(te.id)
             handleTimeExitExpiry(te)
         }
 
         val nowEpoch = clock.now()
-        for (state in stacks.all()) {
+        expiredStacksScratch.clear()
+        for (state in stacks.activeView()) {
             val deadline = state.deadlineEpochMs ?: continue
             if (nowEpoch < deadline) continue
+            expiredStacksScratch.add(state)
+        }
+        for (i in expiredStacksScratch.indices) {
+            val state = expiredStacksScratch[i]
             cancelStackPending(state.id)
             stacks.terminate(state.id)
         }
 
-        val triggered: List<ManagedOrder> =
-            symbolLive
-                .filter { it.state == OrderState.PENDING }
-                .filter { triggerHit(it, tick) }
-        for (managed in triggered) {
-            fireFallbackTrigger(managed, tick.price)
+        triggeredScratch.clear()
+        for (i in symbolLiveScratch.indices) {
+            val managed = symbolLiveScratch[i]
+            if (managed.state == OrderState.PENDING && triggerHit(managed, tick)) {
+                triggeredScratch.add(managed)
+            }
+        }
+        for (i in triggeredScratch.indices) {
+            fireFallbackTrigger(triggeredScratch[i], tick.price)
         }
 
         runGc()
