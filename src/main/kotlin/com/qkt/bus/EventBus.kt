@@ -119,7 +119,12 @@ class EventBus(
             return
         }
         val stamped = stamp(event)
-        log.trace("publish {} seq={} ts={}", stamped::class.simpleName, stamped.sequenceId, stamped.timestamp)
+        // Guarded: publish is the engine's hottest line. Unguarded, the two Long args box and a
+        // vararg Object[] allocates on every publish even when trace is off; the guard skips all of
+        // that. Output is unchanged when trace is enabled.
+        if (log.isTraceEnabled) {
+            log.trace("publish {} seq={} ts={}", stamped::class.simpleName, stamped.sequenceId, stamped.timestamp)
+        }
         // Index loop over the handler list (the single most-traversed line in the engine) avoids
         // allocating an Iterator per published event.
         // Per-subscriber isolation: one handler's exception must not silently skip the

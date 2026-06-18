@@ -34,16 +34,15 @@ object TickAssembler {
         if (bid != null && ask != null) {
             check(bid <= ask) { "$location: bid > ask: bid=$bid, ask=$ask" }
         }
-        listOf(
-            "price" to price,
-            "bid" to bid,
-            "ask" to ask,
-            "volume" to volume,
-            "bidVolume" to bidVolume,
-            "askVolume" to askVolume,
-        ).forEach { (name, v) ->
-            if (v != null && v.signum() < 0) error("$location: negative $name: $v")
-        }
+        // Inline per-field sign checks. The previous `listOf("name" to v, ...).forEach` allocated six
+        // Pairs and a list on every tick purely to name the field in an error that only fires on
+        // negative data — pure hot-path waste. Same checks, same messages.
+        if (price != null && price.signum() < 0) error("$location: negative price: $price")
+        if (bid != null && bid.signum() < 0) error("$location: negative bid: $bid")
+        if (ask != null && ask.signum() < 0) error("$location: negative ask: $ask")
+        if (volume != null && volume.signum() < 0) error("$location: negative volume: $volume")
+        if (bidVolume != null && bidVolume.signum() < 0) error("$location: negative bidVolume: $bidVolume")
+        if (askVolume != null && askVolume.signum() < 0) error("$location: negative askVolume: $askVolume")
         val finalPrice =
             price
                 ?: bid!!
