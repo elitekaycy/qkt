@@ -133,6 +133,7 @@ class Backtest(
              */
             barStore: com.qkt.marketdata.store.LocalBarStore? = null,
             brokerKind: BrokerKind = BrokerKind.PAPER,
+            bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -163,6 +164,7 @@ class Backtest(
                 startingBalance = startingBalance,
                 instruments = instruments,
                 brokerKind = brokerKind,
+                bookRiskConfig = bookRiskConfig,
             )
         }
 
@@ -179,6 +181,7 @@ class Backtest(
             startingBalance: BigDecimal = BigDecimal.ZERO,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
             brokerKind: BrokerKind = BrokerKind.PAPER,
+            bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -208,6 +211,7 @@ class Backtest(
                 startingBalance = startingBalance,
                 instruments = instruments,
                 brokerKind = brokerKind,
+                bookRiskConfig = bookRiskConfig,
             )
         }
 
