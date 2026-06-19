@@ -264,6 +264,7 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                bookDeRiskFactor = { bookRiskController?.state()?.deRiskFactor ?: BigDecimal.ONE },
                 mode = Mode.BACKTEST,
                 calendar = calendar,
                 source = source,

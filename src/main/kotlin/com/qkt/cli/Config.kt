@@ -358,9 +358,27 @@ data class Config(
                         maxSymbolConcentration = it["max_symbol_concentration"]?.toString()?.let(::BigDecimal),
                     )
                 }
+            val deRisk =
+                (m["de_risk"] as? Map<String, Any?>)?.let { dr ->
+                    val rungs =
+                        (dr["ladder"] as? List<Any?>).orEmpty().mapNotNull { rung ->
+                            val rm = rung as? Map<String, Any?> ?: return@mapNotNull null
+                            val dd = rm["drawdown"]?.toString()?.let(::BigDecimal) ?: return@mapNotNull null
+                            val f = rm["factor"]?.toString()?.let(::BigDecimal) ?: return@mapNotNull null
+                            com.qkt.risk.book
+                                .Rung(dd, f, rm["cooldown_bars"]?.toString()?.toIntOrNull())
+                        }
+                    if (rungs.isEmpty()) {
+                        null
+                    } else {
+                        com.qkt.risk.book
+                            .DeRisk(rungs)
+                    }
+                }
             return com.qkt.risk.book.BookRiskConfig(
                 capital = m["capital"]?.toString()?.let(::BigDecimal),
                 limits = limits,
+                deRisk = deRisk,
             )
         }
 
