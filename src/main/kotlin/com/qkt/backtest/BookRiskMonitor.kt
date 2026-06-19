@@ -23,6 +23,7 @@ class BookRiskMonitor(
     private val source: BookStateSource,
     private val strategyCount: Int,
     private val startingBalance: BigDecimal,
+    private val controller: com.qkt.risk.book.BookRiskController? = null,
     curveCap: Int = EquityCurveCollector.DEFAULT_CURVE_CAP,
 ) {
     private val series = DecimatedSeries<BookRiskSample>(curveCap)
@@ -44,6 +45,7 @@ class BookRiskMonitor(
     private fun sample(timestampMs: Long) {
         if (strategyCount < 2 || startingBalance.signum() <= 0) return
         val snap = source.sample(timestampMs)
+        controller?.onSample(snap)
         series.accept(BookRiskSample(timestampMs, snap.exposure.gross, snap.exposure.net, snap.bookEquity))
         if (snap.exposure.gross > maxGross) maxGross = snap.exposure.gross
         if (snap.exposure.net > maxNet) maxNet = snap.exposure.net
