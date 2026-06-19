@@ -4,33 +4,35 @@ import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.SampleCadence
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.math.BigDecimal
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
 
 class ReportFormatPerStrategyTest {
-    private fun report(pnl: String, trades: Int) =
-        PerformanceReport(
-            realizedTotal = BigDecimal(pnl),
-            unrealizedTotal = BigDecimal.ZERO,
-            totalPnL = BigDecimal(pnl),
-            tradeCount = trades,
-            winRate = BigDecimal("0.50"),
-            maxDrawdown = BigDecimal("0.10"),
-            profitFactor = BigDecimal("1.5"),
-            avgWin = BigDecimal("10"),
-            avgLoss = BigDecimal("-5"),
-            largestWin = BigDecimal("20"),
-            largestLoss = BigDecimal("-8"),
-            maxConsecutiveLosses = 2,
-            sharpeRatio = BigDecimal("1.1"),
-            calmarRatio = BigDecimal("0.8"),
-            equityCurve = emptyList(),
-            sortinoRatio = BigDecimal("1.4"),
-            turnover = BigDecimal("3.0"),
-        )
+    private fun report(
+        pnl: String,
+        trades: Int,
+    ) = PerformanceReport(
+        realizedTotal = BigDecimal(pnl),
+        unrealizedTotal = BigDecimal.ZERO,
+        totalPnL = BigDecimal(pnl),
+        tradeCount = trades,
+        winRate = BigDecimal("0.50"),
+        maxDrawdown = BigDecimal("0.10"),
+        profitFactor = BigDecimal("1.5"),
+        avgWin = BigDecimal("10"),
+        avgLoss = BigDecimal("-5"),
+        largestWin = BigDecimal("20"),
+        largestLoss = BigDecimal("-8"),
+        maxConsecutiveLosses = 2,
+        sharpeRatio = BigDecimal("1.1"),
+        calmarRatio = BigDecimal("0.8"),
+        equityCurve = emptyList(),
+        sortinoRatio = BigDecimal("1.4"),
+        turnover = BigDecimal("3.0"),
+    )
 
     private fun result() =
         BacktestResult(

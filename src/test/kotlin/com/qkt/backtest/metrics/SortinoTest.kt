@@ -1,8 +1,8 @@
 package com.qkt.backtest.metrics
 
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 
 class SortinoTest {
     private val daily = BigDecimal("252")

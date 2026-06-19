@@ -194,6 +194,20 @@ object ReportPrinter {
      * against resampled drawdowns rather than the single realized path; the per-trade equity fan
      * is an HTML-visualization detail and is omitted.
      */
+    private fun monteCarloJson(mc: MonteCarloSummary?): String {
+        if (mc == null) return "null"
+        return buildString {
+            append("{\"simulations\":").append(mc.simulations)
+            append(",\"finalEquityP5\":").append(mc.finalEquityP5.toPlainString())
+            append(",\"finalEquityP50\":").append(mc.finalEquityP50.toPlainString())
+            append(",\"finalEquityP95\":").append(mc.finalEquityP95.toPlainString())
+            append(",\"maxDrawdownP5\":").append(mc.maxDrawdownP5.toPlainString())
+            append(",\"maxDrawdownP95\":").append(mc.maxDrawdownP95.toPlainString())
+            append(",\"probabilityNegativeFinal\":").append(mc.probabilityNegativeFinal.toPlainString())
+            append("}")
+        }
+    }
+
     /** Compact per-strategy attribution object for `--json` — the full report is in `--report`. */
     private fun strategyJson(s: PerformanceReport): String =
         buildString {
@@ -211,20 +225,6 @@ object ReportPrinter {
             append(",\"commissionPaid\":").append(s.commissionPaid.toPlainString())
             append("}")
         }
-
-    private fun monteCarloJson(mc: MonteCarloSummary?): String {
-        if (mc == null) return "null"
-        return buildString {
-            append("{\"simulations\":").append(mc.simulations)
-            append(",\"finalEquityP5\":").append(mc.finalEquityP5.toPlainString())
-            append(",\"finalEquityP50\":").append(mc.finalEquityP50.toPlainString())
-            append(",\"finalEquityP95\":").append(mc.finalEquityP95.toPlainString())
-            append(",\"maxDrawdownP5\":").append(mc.maxDrawdownP5.toPlainString())
-            append(",\"maxDrawdownP95\":").append(mc.maxDrawdownP95.toPlainString())
-            append(",\"probabilityNegativeFinal\":").append(mc.probabilityNegativeFinal.toPlainString())
-            append("}")
-        }
-    }
 
     /**
      * Lag-1 return autocorrelation (#460) as a JSON object keyed by symbol, e.g.
