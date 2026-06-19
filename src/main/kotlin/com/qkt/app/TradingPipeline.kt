@@ -119,21 +119,22 @@ class TradingPipeline(
      */
     private val marketDataGate: com.qkt.marketdata.MarketDataGate? = null,
     /**
-     * Book de-risk factor supplier (0..1) for new risk-increasing orders — the book-risk ladder's
-     * current scale. Default 1.0 (no de-risk, so behavior and parity are unchanged). Wired by
+     * Per-strategy book scale supplier for new risk-increasing orders: de-risk factor x allocation
+     * weight. Default 1.0 (no book risk, so behavior and parity are unchanged). Wired by
      * [com.qkt.research.ReplayEngine] from the shared book-risk controller.
      */
-    private val bookDeRiskFactor: () -> BigDecimal = { BigDecimal.ONE },
+    private val bookScaleFor: (String) -> BigDecimal = { BigDecimal.ONE },
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
     /**
-     * Apply the book de-risk factor to a new order: risk-reducing orders and factor >= 1 pass
-     * unchanged; factor 0 suppresses the order (returns null); 0 < factor < 1 scales every quantity.
+     * Apply the book scale to a new order: a scale of exactly 1.0 and risk-reducing orders pass
+     * unchanged; a scale of 0 suppresses the order (returns null); any other scale multiplies every
+     * quantity (down to de-risk, up to a vol/allocation target).
      */
     private fun applyBookScale(req: com.qkt.execution.OrderRequest): com.qkt.execution.OrderRequest? {
-        val f = bookDeRiskFactor()
-        if (f.compareTo(BigDecimal.ONE) >= 0) return req
+        val f = bookScaleFor(req.strategyId)
+        if (f.compareTo(BigDecimal.ONE) == 0) return req
         if (com.qkt.risk.isRiskReducing(req, positions)) return req
         if (f.signum() <= 0) return null
         return req.scaleQuantity(f)

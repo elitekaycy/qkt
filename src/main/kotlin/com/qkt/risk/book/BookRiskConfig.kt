@@ -11,6 +11,24 @@ data class BookRiskConfig(
     val capital: BigDecimal? = null,
     val limits: BookLimits? = null,
     val deRisk: DeRisk? = null,
+    val allocation: Allocation? = null,
+)
+
+/** How the book splits risk across strategies. */
+enum class AllocationMethod { FIXED, INVERSE_VOL, ERC }
+
+/**
+ * Dynamic capital allocation across strategies, recomputed every [rebalanceEveryBars] samples from
+ * the rolling cross-strategy covariance. [method] picks the weighting; weights are expressed as a
+ * tilt around 1.0 (FIXED = all 1.0, leaving today's static CAPITAL x WEIGHT untouched). When
+ * [targetVol] is set, the whole weight vector is scaled to hit that annualized vol, capped at
+ * [maxLeverage] gross.
+ */
+data class Allocation(
+    val method: AllocationMethod = AllocationMethod.FIXED,
+    val targetVol: BigDecimal? = null,
+    val rebalanceEveryBars: Int = 0,
+    val maxLeverage: BigDecimal = BigDecimal("4"),
 )
 
 /** Book exposure caps, each expressed as a multiple of book capital (e.g. 3.0 = 3x capital). */

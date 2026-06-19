@@ -15,7 +15,12 @@ data class BookRiskState(
     val perSymbolNet: Map<String, BigDecimal>,
     val limits: BookLimits?,
     val deRiskFactor: BigDecimal = BigDecimal.ONE,
+    val allocationWeights: Map<String, BigDecimal> = emptyMap(),
 ) {
+    /** Combined per-strategy order scale: de-risk factor x allocation weight (default 1.0). */
+    fun scaleFor(strategyId: String): BigDecimal =
+        deRiskFactor.multiply(allocationWeights[strategyId] ?: BigDecimal.ONE)
+
     fun limitBreach(
         symbol: String,
         signedNotional: BigDecimal,
