@@ -19,7 +19,9 @@ Win rate:               0.583
 Avg win:                18.40
 Avg loss:               -11.20
 Sharpe (daily):         1.34
+Sortino (daily):        1.61
 Calmar:                 2.18
+Turnover (x cap):       3.20
 Profit factor:          1.95
 Max drawdown:           -185.25          (-3.7% peak-to-trough)
 DD duration:            9 trading days
@@ -29,6 +31,26 @@ Report: ./reports/momentum-20240501-103245.html
 ```
 
 Each row corresponds to something defined below. The HTML report unpacks every metric into a chart or table — equity curve, drawdown periods, Monte Carlo fan, per-trade risk table.
+
+Two of the headline ratios beyond Sharpe and Calmar:
+
+- **Sortino** — like Sharpe, but only *downside* moves count as risk (a return below zero). A strategy with smooth gains and rare, shallow losses scores higher on Sortino than on Sharpe.
+- **Turnover** — gross traded notional as a multiple of starting capital, e.g. `3.20` means the run traded 3.2x its capital. Not annualized; compare runs of equal length.
+
+## Per-strategy attribution
+
+A portfolio backtest (two or more strategies) prints a per-strategy block under the global summary, and the same breakdown lands in `--json` (a `perStrategy` object) and the `--report` bundle (`result.json`, plus an `equity_<id>.csv` per strategy). Each strategy carries its own full report — P&L, trades, Sharpe, Sortino, max drawdown, win rate, turnover, commission — computed from only that strategy's fills. A single-strategy run omits the block: the global summary already *is* that strategy.
+
+## Book analytics
+
+For a portfolio, the report adds the cross-strategy figures the per-strategy reports can't show on their own (null on single-strategy runs). All are computed online over the run's return samples:
+
+- **Contribution to return** — each strategy's share of book total P&L. Sums to 1; a strategy can read negative or above 1 when strategies offset each other.
+- **Risk contribution (PCTR)** — each strategy's percent contribution to book *return variance*. Sums to ~1. A strategy with a small return share but a large risk share is eating the book's risk budget — the first thing to check when sizing a book.
+- **Return correlation** — pairwise correlation of the strategies' return series. e.g. two trend strategies at +0.9 are nearly the same bet, so the book is less diversified than it looks.
+- **Drawdown contribution** — each strategy's share of the book's worst peak-to-trough drawdown.
+
+Returns are measured on a constant capital base — each strategy's P&L change over the run's starting balance — so the book return is exactly the sum of strategy returns and the risk decomposition adds to one. A run with no capital basis (`--starting-balance 0`) reports no book analytics.
 
 
 ## Fills
