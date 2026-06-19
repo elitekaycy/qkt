@@ -23,7 +23,16 @@ object ReportBuilder {
         commissionPaid: BigDecimal = BigDecimal.ZERO,
         tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport =
-        build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid, tradedNotional)
+        build(
+            trades,
+            equityCurve,
+            finalRealized,
+            finalUnrealized,
+            annualizationFactor,
+            metrics,
+            commissionPaid,
+            tradedNotional,
+        )
 
     fun buildPerStrategy(
         strategyId: String,
@@ -37,7 +46,16 @@ object ReportBuilder {
         tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
-        return build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid, tradedNotional)
+        return build(
+            trades,
+            equityCurve,
+            finalRealized,
+            finalUnrealized,
+            annualizationFactor,
+            metrics,
+            commissionPaid,
+            tradedNotional,
+        )
     }
 
     /**
@@ -72,7 +90,8 @@ object ReportBuilder {
         val wl = winLossStats(realizeds)
         val drawdown = metrics?.maxDrawdown() ?: DrawdownTracker.fromCurve(equityCurve.map { it.equity })
         val sharpeR = metrics?.sharpe(annualizationFactor) ?: sharpe(equityCurve.map { it.equity }, annualizationFactor)
-        val sortinoR = metrics?.sortino(annualizationFactor) ?: sortino(equityCurve.map { it.equity }, annualizationFactor)
+        val sortinoR =
+            metrics?.sortino(annualizationFactor) ?: sortino(equityCurve.map { it.equity }, annualizationFactor)
         val drawdownPeriods =
             metrics?.drawdownPeriods() ?: DrawdownAnalyzer.analyze(equityCurve, DRAWDOWN_PERIOD_THRESHOLD)
         val startingEquity =

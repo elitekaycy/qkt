@@ -353,7 +353,11 @@ class ReplayEngine(
     private fun tradedNotional(trades: List<TradeRecord>): BigDecimal =
         trades.fold(Money.ZERO) { acc, r ->
             val cs = instruments.lookup(r.trade.symbol)?.contractSize ?: BigDecimal.ONE
-            acc.add(r.trade.price.multiply(r.trade.quantity.abs(), Money.CONTEXT).multiply(cs, Money.CONTEXT))
+            acc.add(
+                r.trade.price
+                    .multiply(r.trade.quantity.abs(), Money.CONTEXT)
+                    .multiply(cs, Money.CONTEXT),
+            )
         }
 
     private fun annualizationFactorFor(metrics: EquityMetrics): BigDecimal {

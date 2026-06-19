@@ -2,17 +2,20 @@ package com.qkt.backtest
 
 import com.qkt.common.Side
 import com.qkt.execution.Trade
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 
 class ReportBuilderTurnoverTest {
-    private fun tr(price: String, qty: String, realized: String) =
-        TradeRecord(
-            trade = Trade("o1", "BTCUSDT", BigDecimal(price), BigDecimal(qty), Side.BUY, 0L),
-            realized = BigDecimal(realized),
-            strategyId = "s",
-        )
+    private fun tr(
+        price: String,
+        qty: String,
+        realized: String,
+    ) = TradeRecord(
+        trade = Trade("o1", "BTCUSDT", BigDecimal(price), BigDecimal(qty), Side.BUY, 0L),
+        realized = BigDecimal(realized),
+        strategyId = "s",
+    )
 
     @Test
     fun `turnover is traded notional over starting equity`() {
