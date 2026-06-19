@@ -68,6 +68,7 @@ class ReplayEngine(
     cadence: SampleCadence? = null,
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     brokerKind: BrokerKind = BrokerKind.PAPER,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
 ) : AutoCloseable {
@@ -190,7 +191,19 @@ class ReplayEngine(
                 prices = priceTracker,
                 instruments = instruments,
             )
-        val riskEngine = RiskEngine(rules + preTradeRules, haltRules, positions, riskState)
+        val bookRiskController =
+            bookRiskConfig?.let {
+                com.qkt.risk.book
+                    .BookRiskController(it, it.capital ?: startingBalance)
+            }
+        val bookRules =
+            bookRiskController?.let {
+                listOf(
+                    com.qkt.risk.rules
+                        .BookExposureLimit(it, priceTracker, instruments),
+                )
+            } ?: emptyList()
+        val riskEngine = RiskEngine(rules + preTradeRules + bookRules, haltRules, positions, riskState)
         bus.subscribe<com.qkt.events.RiskEvent.Halted> { halts.add(it) }
 
         collector =
@@ -231,6 +244,7 @@ class ReplayEngine(
                     ),
                 strategyCount = strategies.size,
                 startingBalance = startingBalance,
+                controller = bookRiskController,
             )
 
         val holder = arrayOfNulls<TradingPipeline>(1)

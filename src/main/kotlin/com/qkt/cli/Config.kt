@@ -67,6 +67,8 @@ data class Config(
      * session streams allow-listed event families to it, best-effort and non-blocking.
      */
     val insights: com.qkt.observe.insights.InsightsConfig = com.qkt.observe.insights.InsightsConfig.DISABLED,
+    /** Book-risk controls for a portfolio (limits, de-risk, allocation); null disables the layer. */
+    val bookRisk: com.qkt.risk.book.BookRiskConfig? = null,
 ) {
     /**
      * Effective `max_daily_loss` from [risk], or [DEFAULT_MAX_DAILY_LOSS]. Operators set
@@ -243,6 +245,7 @@ data class Config(
                 insights =
                     com.qkt.observe.insights.InsightsConfig
                         .parse(map["insights"]),
+                bookRisk = parseBookRisk(map["book_risk"]),
             )
         }
 
@@ -342,6 +345,23 @@ data class Config(
                     maxDailyDrawdownPct = pctFraction(m["max_daily_drawdown_pct"]?.toString()),
                 )
             }
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun parseBookRisk(raw: Any?): com.qkt.risk.book.BookRiskConfig? {
+            val m = raw as? Map<String, Any?> ?: return null
+            val limits =
+                (m["limits"] as? Map<String, Any?>)?.let {
+                    com.qkt.risk.book.BookLimits(
+                        maxGrossExposure = it["max_gross_exposure"]?.toString()?.let(::BigDecimal),
+                        maxNetExposure = it["max_net_exposure"]?.toString()?.let(::BigDecimal),
+                        maxSymbolConcentration = it["max_symbol_concentration"]?.toString()?.let(::BigDecimal),
+                    )
+                }
+            return com.qkt.risk.book.BookRiskConfig(
+                capital = m["capital"]?.toString()?.let(::BigDecimal),
+                limits = limits,
+            )
         }
 
         /** Parse a percent string (e.g. "8") into a fraction (0.08), validated to `(0, 100]`. Null passes through. */

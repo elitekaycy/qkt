@@ -40,6 +40,7 @@ class Backtest(
     cadence: SampleCadence? = null,
     private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     private val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+    private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val brokerKind: BrokerKind = BrokerKind.PAPER,
     /** See [com.qkt.app.TradingPipeline.latencyEnabled]; defaults to the env-var read. */
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
@@ -64,6 +65,7 @@ class Backtest(
         cadence: SampleCadence? = null,
         startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
         instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+        bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
         brokerKind: BrokerKind = BrokerKind.PAPER,
         latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     ) : this(
@@ -76,6 +78,7 @@ class Backtest(
         cadence = cadence,
         startingBalance = startingBalance,
         instruments = instruments,
+        bookRiskConfig = bookRiskConfig,
         brokerKind = brokerKind,
         latencyEnabled = latencyEnabled,
     )
@@ -101,6 +104,7 @@ class Backtest(
             cadence = cadence,
             startingBalance = startingBalance,
             instruments = instruments,
+            bookRiskConfig = bookRiskConfig,
             brokerKind = brokerKind,
             latencyEnabled = latencyEnabled,
         )
