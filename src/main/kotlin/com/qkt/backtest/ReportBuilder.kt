@@ -6,6 +6,7 @@ import com.qkt.backtest.metrics.MonteCarlo
 import com.qkt.backtest.metrics.calmar
 import com.qkt.backtest.metrics.profitFactor
 import com.qkt.backtest.metrics.sharpe
+import com.qkt.backtest.metrics.sortino
 import com.qkt.backtest.metrics.winLossStats
 import com.qkt.common.Money
 import com.qkt.risk.DrawdownTracker
@@ -20,8 +21,9 @@ object ReportBuilder {
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics? = null,
         commissionPaid: BigDecimal = BigDecimal.ZERO,
+        tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport =
-        build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid)
+        build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid, tradedNotional)
 
     fun buildPerStrategy(
         strategyId: String,
@@ -32,9 +34,10 @@ object ReportBuilder {
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics? = null,
         commissionPaid: BigDecimal = BigDecimal.ZERO,
+        tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
-        return build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid)
+        return build(trades, equityCurve, finalRealized, finalUnrealized, annualizationFactor, metrics, commissionPaid, tradedNotional)
     }
 
     /**
@@ -51,6 +54,7 @@ object ReportBuilder {
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics?,
         commissionPaid: BigDecimal,
+        tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
         val realizeds = trades.map { it.realized }
         val closing = realizeds.filter { it.signum() != 0 }
@@ -68,10 +72,17 @@ object ReportBuilder {
         val wl = winLossStats(realizeds)
         val drawdown = metrics?.maxDrawdown() ?: DrawdownTracker.fromCurve(equityCurve.map { it.equity })
         val sharpeR = metrics?.sharpe(annualizationFactor) ?: sharpe(equityCurve.map { it.equity }, annualizationFactor)
+        val sortinoR = metrics?.sortino(annualizationFactor) ?: sortino(equityCurve.map { it.equity }, annualizationFactor)
         val drawdownPeriods =
             metrics?.drawdownPeriods() ?: DrawdownAnalyzer.analyze(equityCurve, DRAWDOWN_PERIOD_THRESHOLD)
         val startingEquity =
             metrics?.startingEquity() ?: equityCurve.firstOrNull()?.equity ?: BigDecimal.ZERO
+        val turnover =
+            if (startingEquity.signum() > 0) {
+                tradedNotional.divide(startingEquity, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+            } else {
+                Money.ZERO
+            }
         // Calmar must be unitless: total return as a FRACTION of starting capital over the
         // drawdown fraction. Dollars over a fraction (the old shape) compares to nothing.
         // Null when there is no capital basis — an unanchored curve has no return fraction.
@@ -127,6 +138,8 @@ object ReportBuilder {
             commissionPaid = commissionPaid.setScale(Money.SCALE, Money.ROUNDING),
             dailyPnL = dailyPnL,
             maxDailyDrawdown = maxDailyDd,
+            sortinoRatio = sortinoR,
+            turnover = turnover,
         )
     }
 }

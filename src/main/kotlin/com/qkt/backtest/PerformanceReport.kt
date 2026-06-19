@@ -53,4 +53,15 @@ data class PerformanceReport(
      * fell intraday. Distinct from [maxDrawdown], which is the peak-to-trough over the whole run.
      */
     val maxDailyDrawdown: BigDecimal = BigDecimal.ZERO,
+    /**
+     * Annualized Sortino ratio — the downside-deviation analogue of Sharpe (only losing moves count
+     * toward risk). Null when undefined: fewer than two equity samples, or no downside at all.
+     */
+    val sortinoRatio: BigDecimal? = null,
+    /**
+     * Gross traded notional over the run as a multiple of starting equity — e.g. 3.2 means the run
+     * traded 3.2x its capital. NOT annualized; compare across runs of equal length. Zero when there
+     * is no capital basis. Notional uses the instrument contract size.
+     */
+    val turnover: BigDecimal = BigDecimal.ZERO,
 )
