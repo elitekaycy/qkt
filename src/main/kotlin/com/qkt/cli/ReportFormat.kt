@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
+import com.qkt.backtest.BookAnalytics
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ConditionalAutocorr
 import com.qkt.backtest.MonteCarloSummary
@@ -76,7 +77,35 @@ object ReportPrinter {
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
         printPerStrategy(r, out)
+        printBookAnalytics(r, out)
         printAutocorr(r, out)
+    }
+
+    /**
+     * Cross-strategy relationships for a portfolio backtest: each strategy's share of book return and
+     * of book risk, plus pairwise return correlation. Skipped on single-strategy runs (no book).
+     */
+    private fun printBookAnalytics(
+        r: BacktestResult,
+        out: PrintStream,
+    ) {
+        val ba = r.bookAnalytics ?: return
+        out.println()
+        out.println("Book analytics")
+        out.println("  contribution to return:")
+        for ((id, v) in ba.contributionToReturn.entries.sortedBy { it.key }) {
+            out.println("    ${id.padEnd(20)} ${v.toPlainString()}")
+        }
+        out.println("  risk contribution (PCTR):")
+        for ((id, v) in ba.riskContribution.entries.sortedBy { it.key }) {
+            out.println("    ${id.padEnd(20)} ${v.toPlainString()}")
+        }
+        if (ba.returnCorrelation.isNotEmpty()) {
+            out.println("  return correlation:")
+            for (p in ba.returnCorrelation) {
+                out.println("    ${p.a} ~ ${p.b}: ${p.correlation.toPlainString()}")
+            }
+        }
     }
 
     /**
@@ -183,6 +212,7 @@ object ReportPrinter {
                 .joinToString(",") { (id, s) -> "\"$id\":${strategyJson(s)}" },
         )
         sb.append("},")
+        sb.append("\"bookAnalytics\":").append(bookAnalyticsJson(r.bookAnalytics)).append(',')
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
@@ -223,6 +253,34 @@ object ReportPrinter {
             append(",\"maxDailyDrawdown\":").append(s.maxDailyDrawdown.toPlainString())
             append(",\"turnover\":").append(s.turnover.toPlainString())
             append(",\"commissionPaid\":").append(s.commissionPaid.toPlainString())
+            append("}")
+        }
+
+    /** Cross-strategy book analytics as a JSON object, or null on a single-strategy run. */
+    private fun bookAnalyticsJson(ba: BookAnalytics?): String {
+        if (ba == null) return "null"
+        return buildString {
+            append("{\"contributionToReturn\":").append(mapNumberJson(ba.contributionToReturn))
+            append(",\"riskContribution\":").append(mapNumberJson(ba.riskContribution))
+            append(",\"drawdownContribution\":").append(mapNumberJson(ba.drawdownContribution))
+            append(",\"returnCorrelation\":[")
+            append(
+                ba.returnCorrelation.joinToString(",") {
+                    "{\"a\":\"${it.a}\",\"b\":\"${it.b}\",\"correlation\":${it.correlation.toPlainString()}}"
+                },
+            )
+            append("]}")
+        }
+    }
+
+    private fun mapNumberJson(m: Map<String, java.math.BigDecimal>): String =
+        buildString {
+            append("{")
+            append(
+                m.entries
+                    .sortedBy { it.key }
+                    .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" },
+            )
             append("}")
         }
 

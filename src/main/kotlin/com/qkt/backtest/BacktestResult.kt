@@ -29,4 +29,9 @@ data class BacktestResult(
      * the minimum bars to populate any bucket.
      */
     val conditionalAutocorr: Map<String, ConditionalAutocorr> = emptyMap(),
+    /**
+     * Cross-strategy book analytics (return correlation, contribution to return / risk / drawdown).
+     * Null on single-strategy runs, where the per-strategy report already says everything.
+     */
+    val bookAnalytics: BookAnalytics? = null,
 )
