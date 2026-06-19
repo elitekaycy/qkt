@@ -375,10 +375,26 @@ data class Config(
                             .DeRisk(rungs)
                     }
                 }
+            val allocation =
+                (m["allocation"] as? Map<String, Any?>)?.let { al ->
+                    val method =
+                        when ((al["method"] as? String)?.uppercase()) {
+                            "INVERSE_VOL" -> com.qkt.risk.book.AllocationMethod.INVERSE_VOL
+                            "ERC" -> com.qkt.risk.book.AllocationMethod.ERC
+                            else -> com.qkt.risk.book.AllocationMethod.FIXED
+                        }
+                    com.qkt.risk.book.Allocation(
+                        method = method,
+                        targetVol = al["target_vol"]?.toString()?.let(::BigDecimal),
+                        rebalanceEveryBars = al["rebalance_every_bars"]?.toString()?.toIntOrNull() ?: 0,
+                        maxLeverage = al["max_leverage"]?.toString()?.let(::BigDecimal) ?: BigDecimal("4"),
+                    )
+                }
             return com.qkt.risk.book.BookRiskConfig(
                 capital = m["capital"]?.toString()?.let(::BigDecimal),
                 limits = limits,
                 deRisk = deRisk,
+                allocation = allocation,
             )
         }
 

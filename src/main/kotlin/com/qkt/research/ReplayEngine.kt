@@ -191,10 +191,12 @@ class ReplayEngine(
                 prices = priceTracker,
                 instruments = instruments,
             )
+        val bookAnnualization =
+            if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")
         val bookRiskController =
             bookRiskConfig?.let {
                 com.qkt.risk.book
-                    .BookRiskController(it, it.capital ?: startingBalance)
+                    .BookRiskController(it, it.capital ?: startingBalance, bookAnnualization)
             }
         val bookRules =
             bookRiskController?.let {
@@ -264,7 +266,7 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
-                bookDeRiskFactor = { bookRiskController?.state()?.deRiskFactor ?: BigDecimal.ONE },
+                bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: BigDecimal.ONE },
                 mode = Mode.BACKTEST,
                 calendar = calendar,
                 source = source,
