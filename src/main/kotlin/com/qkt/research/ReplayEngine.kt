@@ -4,6 +4,7 @@ import com.qkt.app.IndicatorWarmer
 import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BookReturnCollector
+import com.qkt.backtest.BookRiskMonitor
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
@@ -99,6 +100,7 @@ class ReplayEngine(
     private val collector: EquityCurveCollector
     private val autocorr: ReturnAutocorrCollector
     private val bookReturns: BookReturnCollector
+    private val bookRiskMonitor: BookRiskMonitor
     private val commissionBook = CommissionBook(PerLotCommission(instruments))
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
@@ -210,6 +212,24 @@ class ReplayEngine(
                 pnl = pnl,
                 strategyPnL = strategyPnL,
                 strategyIds = strategies.map { it.first },
+                startingBalance = startingBalance,
+            )
+
+        bookRiskMonitor =
+            BookRiskMonitor(
+                cadence = this.cadence,
+                bus = bus,
+                source =
+                    com.qkt.risk.book.EngineBookStateSource(
+                        strategyIds = strategies.map { it.first },
+                        pnl = pnl,
+                        strategyPnL = strategyPnL,
+                        positions = strategyPositions,
+                        prices = priceTracker,
+                        instruments = instruments,
+                        startingBalance = startingBalance,
+                    ),
+                strategyCount = strategies.size,
                 startingBalance = startingBalance,
             )
 
@@ -350,6 +370,7 @@ class ReplayEngine(
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = autocorr.snapshot(),
             bookAnalytics = bookReturns.result(),
+            bookRisk = bookRiskMonitor.result(annualizationFactor),
         )
     }
 
