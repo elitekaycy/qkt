@@ -41,6 +41,7 @@ class BacktestReportWriter(
         }
         Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
         Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
+        result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), renderBookRiskCsv(it)) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
     }
 
@@ -121,6 +122,7 @@ class BacktestReportWriter(
             sb.append("}")
         }
         sb.append(",\n  \"bookAnalytics\": ").append(renderBookAnalytics(result.bookAnalytics))
+        sb.append(",\n  \"bookRisk\": ").append(renderBookRiskJson(result.bookRisk))
         sb.append("\n}")
         return sb.toString()
     }
@@ -150,6 +152,34 @@ class BacktestReportWriter(
                 },
             )
             append("]}")
+        }
+    }
+
+    private fun renderBookRiskCsv(br: com.qkt.backtest.BookRiskReport): String {
+        val sb = StringBuilder("timestamp,grossExposure,netExposure,bookEquity\n")
+        for (s in br.series) {
+            sb
+                .append(s.timestampMs)
+                .append(',')
+                .append(s.grossExposure.toPlainString())
+                .append(',')
+                .append(s.netExposure.toPlainString())
+                .append(',')
+                .append(s.bookEquity.toPlainString())
+                .append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun renderBookRiskJson(br: com.qkt.backtest.BookRiskReport?): String {
+        if (br == null) return "null"
+        return buildString {
+            append("{\"bookVol\": ").append(ReportSerializer.jsonNullableBigDecimal(br.bookVol))
+            append(", \"maxGrossExposure\": ").append(ReportSerializer.jsonBigDecimal(br.maxGrossExposure))
+            append(", \"maxNetExposure\": ").append(ReportSerializer.jsonBigDecimal(br.maxNetExposure))
+            append(", \"samples\": ").append(br.series.size)
+            append(", \"events\": ").append(br.events.size)
+            append("}")
         }
     }
 
