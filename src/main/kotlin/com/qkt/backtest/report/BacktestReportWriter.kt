@@ -159,6 +159,8 @@ class BacktestReportWriter(
         field("maxConsecutiveLosses", r.maxConsecutiveLosses.toString())
         field("sharpeRatio", ReportSerializer.jsonNullableBigDecimal(r.sharpeRatio))
         field("calmarRatio", ReportSerializer.jsonNullableBigDecimal(r.calmarRatio))
+        field("sortinoRatio", ReportSerializer.jsonNullableBigDecimal(r.sortinoRatio))
+        field("turnover", ReportSerializer.jsonBigDecimal(r.turnover))
         sb.append(",\n").append(pad).append("  \"equityCurve\": [")
         if (r.equityCurve.isNotEmpty()) {
             sb.append('\n')
