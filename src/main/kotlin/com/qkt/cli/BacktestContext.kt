@@ -114,7 +114,10 @@ class BacktestContext private constructor(
         ): BacktestContext {
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
-            val dataRoot = args.option("data-root") ?: "./data"
+            // Default to the shared store (~/.qkt/data) so `qkt backtest` reads the same place
+            // `qkt fetch` / `qkt data convert` write — otherwise the tick store and the bar store
+            // (which already resolves via DataRoot) would diverge and cached ticks would be missed.
+            val dataRoot = args.option("data-root") ?: DataRoot.resolve().toString()
             val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
 
             val declaredSymbols = ast.streams.map { it.qktSymbol }.distinct()
