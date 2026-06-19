@@ -3,6 +3,7 @@ package com.qkt.research
 import com.qkt.app.IndicatorWarmer
 import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
+import com.qkt.backtest.BookReturnCollector
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
@@ -97,6 +98,7 @@ class ReplayEngine(
     private val strategyPnL: StrategyPnL
     private val collector: EquityCurveCollector
     private val autocorr: ReturnAutocorrCollector
+    private val bookReturns: BookReturnCollector
     private val commissionBook = CommissionBook(PerLotCommission(instruments))
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
@@ -200,6 +202,16 @@ class ReplayEngine(
             )
 
         autocorr = ReturnAutocorrCollector(bus)
+
+        bookReturns =
+            BookReturnCollector(
+                cadence = this.cadence,
+                bus = bus,
+                pnl = pnl,
+                strategyPnL = strategyPnL,
+                strategyIds = strategies.map { it.first },
+                startingBalance = startingBalance,
+            )
 
         val holder = arrayOfNulls<TradingPipeline>(1)
         pipeline =
@@ -337,6 +349,7 @@ class ReplayEngine(
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = autocorr.snapshot(),
+            bookAnalytics = bookReturns.result(),
         )
     }
 
