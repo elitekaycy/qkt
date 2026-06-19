@@ -14,6 +14,7 @@ data class BookRiskState(
     val grossExposure: BigDecimal,
     val perSymbolNet: Map<String, BigDecimal>,
     val limits: BookLimits?,
+    val deRiskFactor: BigDecimal = BigDecimal.ONE,
 ) {
     fun limitBreach(
         symbol: String,

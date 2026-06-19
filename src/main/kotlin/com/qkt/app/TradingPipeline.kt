@@ -18,6 +18,7 @@ import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
+import com.qkt.execution.scaleQuantity
 import com.qkt.execution.toOrderRequest
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MarketPriceTracker
@@ -117,8 +118,26 @@ class TradingPipeline(
      * it null — deterministic historical replay is exactly the data it was given.
      */
     private val marketDataGate: com.qkt.marketdata.MarketDataGate? = null,
+    /**
+     * Book de-risk factor supplier (0..1) for new risk-increasing orders — the book-risk ladder's
+     * current scale. Default 1.0 (no de-risk, so behavior and parity are unchanged). Wired by
+     * [com.qkt.research.ReplayEngine] from the shared book-risk controller.
+     */
+    private val bookDeRiskFactor: () -> BigDecimal = { BigDecimal.ONE },
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
+
+    /**
+     * Apply the book de-risk factor to a new order: risk-reducing orders and factor >= 1 pass
+     * unchanged; factor 0 suppresses the order (returns null); 0 < factor < 1 scales every quantity.
+     */
+    private fun applyBookScale(req: com.qkt.execution.OrderRequest): com.qkt.execution.OrderRequest? {
+        val f = bookDeRiskFactor()
+        if (f.compareTo(BigDecimal.ONE) >= 0) return req
+        if (com.qkt.risk.isRiskReducing(req, positions)) return req
+        if (f.signum() <= 0) return null
+        return req.scaleQuantity(f)
+    }
 
     /** The primary-window aggregator (candle events on the bus); null when no window configured. */
     private val windowAggregator: CandleAggregator?
@@ -141,11 +160,16 @@ class TradingPipeline(
         )
     val latchManager: LatchManager =
         LatchManager(
-            emit = { req ->
-                when (val decision = riskEngine.approve(req)) {
-                    is com.qkt.risk.Decision.Approve -> bus.publish(com.qkt.events.OrderEvent(req))
-                    is com.qkt.risk.Decision.Reject ->
-                        bus.publish(com.qkt.events.RiskRejectedEvent(req, decision.reason))
+            emit = { req0 ->
+                val req = applyBookScale(req0)
+                if (req == null) {
+                    bus.publish(com.qkt.events.RiskRejectedEvent(req0, "book de-risk: new risk suppressed"))
+                } else {
+                    when (val decision = riskEngine.approve(req)) {
+                        is com.qkt.risk.Decision.Approve -> bus.publish(com.qkt.events.OrderEvent(req))
+                        is com.qkt.risk.Decision.Reject ->
+                            bus.publish(com.qkt.events.RiskRejectedEvent(req, decision.reason))
+                    }
                 }
             },
             clock = clock,
@@ -201,16 +225,21 @@ class TradingPipeline(
                 } else if (sig is com.qkt.strategy.Signal.ArmLatch) {
                     latchManager.arm(sig.compiled, sig.ec)
                 } else {
-                    val request = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
-                    if (request != null) {
-                        logSubmitContext(request)
-                        when (val decision = riskEngine.approve(request)) {
-                            is Decision.Approve -> {
-                                registerOcoEntryLegs(strategyId, request)
-                                registerLegClose(strategyId, request)
-                                bus.publish(OrderEvent(request))
+                    val built = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
+                    if (built != null) {
+                        val request = applyBookScale(built)
+                        if (request == null) {
+                            bus.publish(RiskRejectedEvent(built, "book de-risk: new risk suppressed"))
+                        } else {
+                            logSubmitContext(request)
+                            when (val decision = riskEngine.approve(request)) {
+                                is Decision.Approve -> {
+                                    registerOcoEntryLegs(strategyId, request)
+                                    registerLegClose(strategyId, request)
+                                    bus.publish(OrderEvent(request))
+                                }
+                                is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
                             }
-                            is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
                         }
                     }
                 }
