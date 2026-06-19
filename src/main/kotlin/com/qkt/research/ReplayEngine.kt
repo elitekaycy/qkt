@@ -65,7 +65,7 @@ class ReplayEngine(
     symbols: List<String> = emptyList(),
     cadence: SampleCadence? = null,
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
-    instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     brokerKind: BrokerKind = BrokerKind.PAPER,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
 ) : AutoCloseable {
@@ -310,6 +310,7 @@ class ReplayEngine(
                 annualizationFactor = annualizationFactor,
                 metrics = collector.globalMetrics(),
                 commissionPaid = commissionBook.total(),
+                tradedNotional = tradedNotional(tradeRecords),
             )
         val perStrategy =
             strategies.associate { (id, _) ->
@@ -323,6 +324,7 @@ class ReplayEngine(
                         annualizationFactor = annualizationFactor,
                         metrics = collector.metricsFor(id),
                         commissionPaid = commissionBook.totalFor(id),
+                        tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }),
                     )
             }
         return BacktestResult(
@@ -346,6 +348,13 @@ class ReplayEngine(
     }
 
     override fun close() = feed.close()
+
+    /** Gross traded notional (price x |qty| x contractSize) across [trades], for turnover. */
+    private fun tradedNotional(trades: List<TradeRecord>): BigDecimal =
+        trades.fold(Money.ZERO) { acc, r ->
+            val cs = instruments.lookup(r.trade.symbol)?.contractSize ?: BigDecimal.ONE
+            acc.add(r.trade.price.multiply(r.trade.quantity.abs(), Money.CONTEXT).multiply(cs, Money.CONTEXT))
+        }
 
     private fun annualizationFactorFor(metrics: EquityMetrics): BigDecimal {
         if (cadence == SampleCadence.CANDLE_CLOSE && candleWindow != null) {
