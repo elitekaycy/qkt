@@ -53,6 +53,8 @@ class BacktestContext private constructor(
     private val startingBalance: BigDecimal,
     private val haltRules: List<com.qkt.risk.HaltRule>,
     private val provisioner: () -> Unit,
+    private val strategiesOverride: ((Map<String, String>) -> List<Pair<String, com.qkt.strategy.Strategy>>)? = null,
+    private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -62,7 +64,9 @@ class BacktestContext private constructor(
         overrides: Map<String, String>,
         range: TimeRange = TimeRange(from, to),
     ): Backtest {
-        val strategy = AstCompiler().compile(ast, overrides)
+        val strats =
+            strategiesOverride?.invoke(overrides)
+                ?: listOf(ast.name to AstCompiler().compile(ast, overrides))
         // The symbol's LIVE calendar, not hardwired crypto: session/range indicators
         // (PreviousDayHigh, session gates) disagree by construction otherwise. The
         // pipeline takes one calendar — resolved from the first symbol; mixed-class
@@ -72,7 +76,7 @@ class BacktestContext private constructor(
                 ?: com.qkt.common.TradingCalendar
                     .crypto()
         return Backtest.fromStore(
-            strategies = listOf(ast.name to strategy),
+            strategies = strats,
             haltRules = haltRules,
             calendar = calendar,
             store = store,
@@ -82,6 +86,7 @@ class BacktestContext private constructor(
             instruments = instruments,
             barStore = barStore,
             brokerKind = brokerKind,
+            bookRiskConfig = bookRiskConfig,
         )
     }
 
@@ -246,6 +251,110 @@ class BacktestContext private constructor(
                 startingBalance = startingBalance,
                 haltRules = haltRules,
                 provisioner = provisioner,
+                bookRiskConfig = cfg.bookRisk,
+            )
+        }
+
+        /**
+         * Backtest a PORTFOLIO file: its children run as N attributed strategies on one engine
+         * (strategyId `<portfolio>:<alias>`) sharing one account, with the book-risk layer from
+         * config. Regime WHEN..RUN gates are not yet applied in backtest — children run always-on.
+         */
+        fun buildPortfolio(
+            args: Args,
+            compiled: com.qkt.dsl.portfolio.PortfolioCompiled,
+            fetcherOverride: DataFetcher? = null,
+        ): BacktestContext {
+            val from = parseInstant(args.requireOption("from"))
+            val to = parseInstant(args.requireOption("to"))
+            val dataRoot = args.option("data-root") ?: DataRoot.resolve().toString()
+            val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
+
+            val streams = compiled.children.flatMap { it.ast.streams }
+            val symbols = streams.map { it.qktSymbol }.distinct()
+
+            val legacyFetcher: DataFetcher? =
+                when (val name = args.option("fetcher")) {
+                    null -> null
+                    "dukascopy" -> ScriptDataFetcher.dukascopy(Paths.get(args.requireOption("fetcher-script")))
+                    else -> throw SetupError("unsupported --fetcher '$name' (supported: dukascopy)")
+                }
+            val noFetch = args.flag("no-fetch")
+            val fetcher: DataFetcher? =
+                when {
+                    noFetch -> null
+                    fetcherOverride != null -> fetcherOverride
+                    legacyFetcher != null -> legacyFetcher
+                    else -> DukascopyTickFetcher()
+                }
+            val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
+            val candleWindow = streams.firstOrNull()?.timeframe?.let { TimeWindow.parse(it) }
+
+            val instrumentsPath: Path =
+                args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
+            val instruments: InstrumentRegistry =
+                if (Files.exists(instrumentsPath)) {
+                    LayeredInstrumentRegistry(
+                        listOf(YamlInstrumentRegistry.load(instrumentsPath), StandardInstrumentRegistry),
+                    )
+                } else {
+                    if (args.option("instruments") != null) {
+                        throw SetupError("--instruments file not found: $instrumentsPath")
+                    }
+                    StandardInstrumentRegistry
+                }
+
+            val brokerKind =
+                when (val raw = args.option("broker")) {
+                    null, "paper" -> BrokerKind.PAPER
+                    "mt5-sim" -> BrokerKind.MT5_SIM
+                    else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
+                }
+
+            val provisioner: () -> Unit = {
+                val provisionStreams =
+                    streams
+                        .filter { it.qktSymbol in symbols && DukascopyInstrument.ofOrNull(it.symbol) != null }
+                        .map { ProvisionStream(broker = it.broker, bareSymbol = it.symbol) }
+                val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
+                val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
+                if (!provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                    BacktestDataProvisioner(store).ensure(
+                        streams = provisionStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = !noFetch,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { defaultCalendars().calendarFor(it) },
+                    )
+                }
+            }
+
+            val cfg = Config.load(Paths.get(args.option("config") ?: "./qkt.config.yaml"))
+            val haltRules =
+                com.qkt.risk.HaltRules.standard(
+                    maxDailyLoss = cfg.maxDailyLoss,
+                    maxDrawdownPct = cfg.maxDrawdownPct,
+                    maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
+                    totalDdBasis = cfg.totalDdBasis,
+                    startingBalance = startingBalance,
+                )
+
+            return BacktestContext(
+                ast = compiled.children.first().ast,
+                from = from,
+                to = to,
+                brokerKind = brokerKind,
+                symbols = symbols,
+                store = store,
+                instruments = instruments,
+                barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
+                candleWindow = candleWindow,
+                startingBalance = startingBalance,
+                haltRules = haltRules,
+                provisioner = provisioner,
+                strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
+                bookRiskConfig = cfg.bookRisk,
             )
         }
 
