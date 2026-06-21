@@ -55,6 +55,16 @@ class CandleIndicatorRegistryTest {
     }
 
     @Test
+    fun `session vwap wrappers feed candles via the candle cast`() {
+        for (name in listOf("VWAP_SESSION", "VWAP_SESSION_STDEV")) {
+            val ind = create(name, listOf(0))
+            ind.update(candle("11", "9", "10", vol = "10"))
+            ind.update(candle("21", "19", "20", vol = "10"))
+            assertThat(ind.value()).withFailMessage("$name should report a value").isNotNull()
+        }
+    }
+
+    @Test
     fun `keltner and adx multi-output wrappers feed candles and report values`() {
         for (name in listOf("KELTNER_UPPER", "KELTNER_MIDDLE", "KELTNER_LOWER")) {
             val ind = create(name, listOf(5, 2))

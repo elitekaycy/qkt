@@ -20,6 +20,7 @@ import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
+import com.qkt.indicators.catalog.SessionVwap
 import com.qkt.indicators.catalog.Stddev
 import com.qkt.indicators.catalog.Stochastic
 import com.qkt.indicators.catalog.TEMA
@@ -314,6 +315,28 @@ object IndicatorRegistry {
             "VWAP" to
                 IndicatorSpec("VWAP", IndicatorInput.TICK_SERIES, arity = 2, requiresVolume = true) { args ->
                     VWAP(period = args[0].toInt())
+                },
+            // ---- Session-anchored VWAP + bands (candle-fed, reset each day at anchorHour UTC) ----
+            "VWAP_SESSION" to
+                IndicatorSpec("VWAP_SESSION", IndicatorInput.CANDLE_SERIES, arity = 2, requiresVolume = true) { args ->
+                    SessionVwap(anchorHour = args[0].toInt())
+                },
+            "VWAP_SESSION_STDEV" to
+                IndicatorSpec(
+                    "VWAP_SESSION_STDEV",
+                    IndicatorInput.CANDLE_SERIES,
+                    arity = 2,
+                    requiresVolume = true,
+                ) { args ->
+                    val s = SessionVwap(anchorHour = args[0].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = s.update(input)
+
+                        override fun value(): BigDecimal? = s.bands()?.stdev
+
+                        override val isReady: Boolean get() = s.isReady
+                        override val warmupBars: Int = s.warmupBars
+                    }
                 },
             // ---- Donchian rolling extremes ----
             // Rules evaluate after the closing bar has already been pushed into every
