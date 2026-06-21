@@ -14,7 +14,7 @@ class RegistryNamesTest {
     @Test
     fun `indicator names are non-empty and consistent with has and spec`() {
         val names = IndicatorRegistry.names()
-        assertThat(names).contains("EMA", "RSI", "ATR", "MACD", "ADX", "BOLLINGER_UPPER", "VWAP")
+        assertThat(names).contains("EMA", "RSI", "ATR", "MACD", "ADX", "BOLLINGER_UPPER", "VWAP", "PERCENTILE_RANK")
         names.forEach {
             assertThat(IndicatorRegistry.has(it)).`as`("has(%s)", it).isTrue()
             assertThat(IndicatorRegistry.spec(it)).`as`("spec(%s)", it).isNotNull()

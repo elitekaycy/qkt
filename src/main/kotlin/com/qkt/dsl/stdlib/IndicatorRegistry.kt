@@ -14,6 +14,7 @@ import com.qkt.indicators.catalog.HMA
 import com.qkt.indicators.catalog.KeltnerChannels
 import com.qkt.indicators.catalog.MACD
 import com.qkt.indicators.catalog.OBV
+import com.qkt.indicators.catalog.PercentileRank
 import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
@@ -119,6 +120,10 @@ object IndicatorRegistry {
             "REGRESSION_SLOPE" to
                 IndicatorSpec("REGRESSION_SLOPE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     RegressionSlope(period = args[0].toInt())
+                },
+            "PERCENTILE_RANK" to
+                IndicatorSpec("PERCENTILE_RANK", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    PercentileRank(period = args[0].toInt())
                 },
             // ---- cross-series (two-input) ----
             "CORRELATION" to
