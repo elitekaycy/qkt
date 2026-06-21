@@ -31,6 +31,7 @@ import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.stdlib.FuncRegistry
+import com.qkt.indicators.catalog.ConfirmRatio
 import com.qkt.indicators.catalog.OlsResidual
 import java.math.BigDecimal
 
@@ -489,6 +490,7 @@ class ExprCompiler(
 
     private fun compileIndicator(call: IndicatorCall): CompiledExpr {
         if (call.name.equals("RESID", ignoreCase = true)) return compileResidual(call)
+        if (call.name.equals("CONFIRM_RATIO", ignoreCase = true)) return compileConfirmRatio(call)
         val spec =
             com.qkt.dsl.stdlib.IndicatorRegistry
                 .spec(call.name)
@@ -565,6 +567,39 @@ class ExprCompiler(
             streamAliasesIn(seriesArgs.first()).firstOrNull()
                 ?: error("resid dependent series must reference a stream (e.g. resid(gbp.close, eur.close, 96))")
         val indicator = OlsResidual(period = period, regressorCount = regressorCount)
+        val seriesExprs = seriesArgs.map { compile(it, null) }
+        val binding = bindings.bindMulti(call, indicator, seriesExprs, primaryAlias)
+        return CompiledExpr {
+            val v = binding.indicator.value()
+            if (v == null || !binding.indicator.isReady) Value.Undefined else Value.Num(v)
+        }
+    }
+
+    /**
+     * Compile a cross-symbol confirmation ratio: `confirm_ratio(signal, peer1, …, N)` (#479).
+     *
+     * The trailing argument is an integer lookback; the first series is the signal and the rest
+     * are peers (at least one). Each series may be any cross-stream expression — fold polarity for
+     * inverse pairs into the peer expression, e.g. `confirm_ratio(eur.close, gbp.close, -chf.close, 4)`.
+     * Gated on the signal series' primary stream, like other expression-fed indicators.
+     */
+    private fun compileConfirmRatio(call: IndicatorCall): CompiledExpr {
+        require(call.args.size >= 3) {
+            "confirm_ratio needs a signal series, at least one peer, and a lookback: confirm_ratio(signal, peer, N)"
+        }
+        val periodArg = call.args.last()
+        require(periodArg is NumLit && periodArg.value.stripTrailingZeros().scale() <= 0) {
+            "confirm_ratio lookback (last argument) must be an integer literal: confirm_ratio(signal, peer, N)"
+        }
+        val period = periodArg.value.toInt()
+        val seriesArgs = call.args.dropLast(1)
+        val peerCount = seriesArgs.size - 1
+        val primaryAlias =
+            streamAliasesIn(seriesArgs.first()).firstOrNull()
+                ?: error(
+                    "confirm_ratio signal series must reference a stream (e.g. confirm_ratio(eur.close, gbp.close, 4))",
+                )
+        val indicator = ConfirmRatio(period = period, peerCount = peerCount)
         val seriesExprs = seriesArgs.map { compile(it, null) }
         val binding = bindings.bindMulti(call, indicator, seriesExprs, primaryAlias)
         return CompiledExpr {
