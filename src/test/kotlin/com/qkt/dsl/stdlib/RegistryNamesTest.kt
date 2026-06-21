@@ -24,7 +24,7 @@ class RegistryNamesTest {
     @Test
     fun `function names cover the registry and agree with has`() {
         val names = FuncRegistry.names()
-        assertThat(names).contains("ABS", "SQRT", "LOG", "EXP", "POW", "MIN", "MAX")
+        assertThat(names).contains("ABS", "SQRT", "LOG", "EXP", "POW", "MIN", "MAX", "MOD", "FLOOR", "CEIL", "ROUND")
         names.forEach { assertThat(FuncRegistry.has(it)).`as`("has(%s)", it).isTrue() }
     }
 

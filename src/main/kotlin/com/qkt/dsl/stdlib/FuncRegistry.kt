@@ -2,6 +2,7 @@ package com.qkt.dsl.stdlib
 
 import com.qkt.common.Money
 import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.pow
@@ -50,6 +51,21 @@ object FuncRegistry {
                     val r = args[0].toDouble().pow(args[1].toDouble())
                     if (r.isInfinite() || r.isNaN()) null else BigDecimal(r).round(Money.CONTEXT)
                 },
+            "MOD" to
+                FuncSpec("MOD", Arity.BINARY) { args ->
+                    // Floored modulo: a - b*floor(a/b). Result carries the divisor's sign, so for a
+                    // positive grid step it lands in [0, b) — the distance past the nearest figure.
+                    // e.g. MOD(1.2034, 0.0050) = 0.0034. Division by zero is a domain error (null).
+                    if (args[1].signum() == 0) {
+                        null
+                    } else {
+                        val q = args[0].divide(args[1], 0, RoundingMode.FLOOR)
+                        args[0].subtract(args[1].multiply(q))
+                    }
+                },
+            "FLOOR" to FuncSpec("FLOOR", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.FLOOR) },
+            "CEIL" to FuncSpec("CEIL", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.CEILING) },
+            "ROUND" to FuncSpec("ROUND", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.HALF_UP) },
             "MIN" to FuncSpec("MIN", Arity.VARIADIC2) { args -> args.reduce { a, b -> a.min(b) } },
             "MAX" to FuncSpec("MAX", Arity.VARIADIC2) { args -> args.reduce { a, b -> a.max(b) } },
         )
