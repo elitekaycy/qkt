@@ -3,6 +3,7 @@ package com.qkt.research
 import com.qkt.app.IndicatorWarmer
 import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
+import com.qkt.backtest.BookReturnCollector
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
@@ -65,7 +66,7 @@ class ReplayEngine(
     symbols: List<String> = emptyList(),
     cadence: SampleCadence? = null,
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
-    instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     brokerKind: BrokerKind = BrokerKind.PAPER,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
 ) : AutoCloseable {
@@ -97,6 +98,7 @@ class ReplayEngine(
     private val strategyPnL: StrategyPnL
     private val collector: EquityCurveCollector
     private val autocorr: ReturnAutocorrCollector
+    private val bookReturns: BookReturnCollector
     private val commissionBook = CommissionBook(PerLotCommission(instruments))
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
@@ -200,6 +202,16 @@ class ReplayEngine(
             )
 
         autocorr = ReturnAutocorrCollector(bus)
+
+        bookReturns =
+            BookReturnCollector(
+                cadence = this.cadence,
+                bus = bus,
+                pnl = pnl,
+                strategyPnL = strategyPnL,
+                strategyIds = strategies.map { it.first },
+                startingBalance = startingBalance,
+            )
 
         val holder = arrayOfNulls<TradingPipeline>(1)
         pipeline =
@@ -310,6 +322,7 @@ class ReplayEngine(
                 annualizationFactor = annualizationFactor,
                 metrics = collector.globalMetrics(),
                 commissionPaid = commissionBook.total(),
+                tradedNotional = tradedNotional(tradeRecords),
             )
         val perStrategy =
             strategies.associate { (id, _) ->
@@ -323,6 +336,7 @@ class ReplayEngine(
                         annualizationFactor = annualizationFactor,
                         metrics = collector.metricsFor(id),
                         commissionPaid = commissionBook.totalFor(id),
+                        tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }),
                     )
             }
         return BacktestResult(
@@ -335,6 +349,7 @@ class ReplayEngine(
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = autocorr.snapshot(),
+            bookAnalytics = bookReturns.result(),
         )
     }
 
@@ -346,6 +361,17 @@ class ReplayEngine(
     }
 
     override fun close() = feed.close()
+
+    /** Gross traded notional (price x |qty| x contractSize) across [trades], for turnover. */
+    private fun tradedNotional(trades: List<TradeRecord>): BigDecimal =
+        trades.fold(Money.ZERO) { acc, r ->
+            val cs = instruments.lookup(r.trade.symbol)?.contractSize ?: BigDecimal.ONE
+            acc.add(
+                r.trade.price
+                    .multiply(r.trade.quantity.abs(), Money.CONTEXT)
+                    .multiply(cs, Money.CONTEXT),
+            )
+        }
 
     private fun annualizationFactorFor(metrics: EquityMetrics): BigDecimal {
         if (cadence == SampleCadence.CANDLE_CLOSE && candleWindow != null) {
