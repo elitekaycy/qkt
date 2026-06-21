@@ -65,7 +65,7 @@ object FuncRegistry {
                 },
             "FLOOR" to FuncSpec("FLOOR", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.FLOOR) },
             "CEIL" to FuncSpec("CEIL", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.CEILING) },
-            "ROUND" to FuncSpec("ROUND", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.HALF_UP) },
+            "ROUND" to FuncSpec("ROUND", Arity.UNARY) { args -> args[0].setScale(0, Money.ROUNDING) },
             "MIN" to FuncSpec("MIN", Arity.VARIADIC2) { args -> args.reduce { a, b -> a.min(b) } },
             "MAX" to FuncSpec("MAX", Arity.VARIADIC2) { args -> args.reduce { a, b -> a.max(b) } },
         )

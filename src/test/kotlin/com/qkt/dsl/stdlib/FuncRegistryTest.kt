@@ -108,10 +108,11 @@ class FuncRegistryTest {
     }
 
     @Test
-    fun `ROUND rounds half away from zero`() {
-        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("2.5")))).isEqualByComparingTo("3")
+    fun `ROUND rounds half to even (Money convention)`() {
         assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("2.4")))).isEqualByComparingTo("2")
-        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("-2.5")))).isEqualByComparingTo("-3")
+        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("2.6")))).isEqualByComparingTo("3")
+        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("2.5")))).isEqualByComparingTo("2")
+        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("3.5")))).isEqualByComparingTo("4")
     }
 
     @Test
