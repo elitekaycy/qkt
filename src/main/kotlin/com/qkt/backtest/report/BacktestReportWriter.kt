@@ -120,8 +120,37 @@ class BacktestReportWriter(
         } else {
             sb.append("}")
         }
+        sb.append(",\n  \"bookAnalytics\": ").append(renderBookAnalytics(result.bookAnalytics))
         sb.append("\n}")
         return sb.toString()
+    }
+
+    private fun renderBookAnalytics(ba: com.qkt.backtest.BookAnalytics?): String {
+        if (ba == null) return "null"
+
+        fun mapJson(m: Map<String, java.math.BigDecimal>): String =
+            buildString {
+                append("{")
+                append(
+                    m.entries.sortedBy { it.key }.joinToString(",") {
+                        "${ReportSerializer.jsonString(it.key)}:${ReportSerializer.jsonBigDecimal(it.value)}"
+                    },
+                )
+                append("}")
+            }
+        return buildString {
+            append("{\"contributionToReturn\":").append(mapJson(ba.contributionToReturn))
+            append(",\"riskContribution\":").append(mapJson(ba.riskContribution))
+            append(",\"drawdownContribution\":").append(mapJson(ba.drawdownContribution))
+            append(",\"returnCorrelation\":[")
+            append(
+                ba.returnCorrelation.joinToString(",") { p ->
+                    "{\"a\":${ReportSerializer.jsonString(p.a)},\"b\":${ReportSerializer.jsonString(p.b)}," +
+                        "\"correlation\":${ReportSerializer.jsonBigDecimal(p.correlation)}}"
+                },
+            )
+            append("]}")
+        }
     }
 
     private fun renderReport(
@@ -159,6 +188,8 @@ class BacktestReportWriter(
         field("maxConsecutiveLosses", r.maxConsecutiveLosses.toString())
         field("sharpeRatio", ReportSerializer.jsonNullableBigDecimal(r.sharpeRatio))
         field("calmarRatio", ReportSerializer.jsonNullableBigDecimal(r.calmarRatio))
+        field("sortinoRatio", ReportSerializer.jsonNullableBigDecimal(r.sortinoRatio))
+        field("turnover", ReportSerializer.jsonBigDecimal(r.turnover))
         sb.append(",\n").append(pad).append("  \"equityCurve\": [")
         if (r.equityCurve.isNotEmpty()) {
             sb.append('\n')

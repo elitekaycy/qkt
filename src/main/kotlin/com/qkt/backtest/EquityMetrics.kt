@@ -3,6 +3,7 @@ package com.qkt.backtest
 import com.qkt.backtest.metrics.DRAWDOWN_PERIOD_THRESHOLD
 import com.qkt.backtest.metrics.DrawdownEpisodeAccumulator
 import com.qkt.backtest.metrics.SharpeAccumulator
+import com.qkt.backtest.metrics.SortinoAccumulator
 import com.qkt.risk.MaxDrawdownAccumulator
 import java.math.BigDecimal
 
@@ -25,6 +26,7 @@ class EquityMetrics(
 ) {
     private val maxDrawdown = MaxDrawdownAccumulator()
     private val sharpe = SharpeAccumulator()
+    private val sortino = SortinoAccumulator()
     private val episodes = DrawdownEpisodeAccumulator(drawdownThreshold)
     private val dailyDrawdown = DailyDrawdownAccumulator()
 
@@ -48,6 +50,7 @@ class EquityMetrics(
         count++
         maxDrawdown.accept(equity)
         sharpe.accept(equity)
+        sortino.accept(equity)
         episodes.accept(timestamp, equity)
         dailyDrawdown.accept(timestamp, equity)
     }
@@ -58,6 +61,8 @@ class EquityMetrics(
     fun maxDailyDrawdown(): BigDecimal = dailyDrawdown.maxDailyDrawdown()
 
     fun sharpe(annualizationFactor: BigDecimal): BigDecimal? = sharpe.value(annualizationFactor)
+
+    fun sortino(annualizationFactor: BigDecimal): BigDecimal? = sortino.value(annualizationFactor)
 
     fun drawdownPeriods(): List<DrawdownPeriod> = episodes.result()
 
