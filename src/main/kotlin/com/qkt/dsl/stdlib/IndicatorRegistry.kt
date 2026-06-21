@@ -20,6 +20,7 @@ import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
+import com.qkt.indicators.catalog.SessionRange
 import com.qkt.indicators.catalog.SessionVwap
 import com.qkt.indicators.catalog.Stddev
 import com.qkt.indicators.catalog.Stochastic
@@ -336,6 +337,34 @@ object IndicatorRegistry {
 
                         override val isReady: Boolean get() = s.isReady
                         override val warmupBars: Int = s.warmupBars
+                    }
+                },
+            // ---- Session-anchored range (candle-fed; latches a prior UTC window's high/low) ----
+            "SESSION_RANGE_HIGH" to
+                IndicatorSpec("SESSION_RANGE_HIGH", IndicatorInput.CANDLE_SERIES, arity = 5) { args ->
+                    SessionRange(
+                        startHour = args[0].toInt(),
+                        startMinute = args[1].toInt(),
+                        endHour = args[2].toInt(),
+                        endMinute = args[3].toInt(),
+                    )
+                },
+            "SESSION_RANGE_LOW" to
+                IndicatorSpec("SESSION_RANGE_LOW", IndicatorInput.CANDLE_SERIES, arity = 5) { args ->
+                    val r =
+                        SessionRange(
+                            startHour = args[0].toInt(),
+                            startMinute = args[1].toInt(),
+                            endHour = args[2].toInt(),
+                            endMinute = args[3].toInt(),
+                        )
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = r.update(input)
+
+                        override fun value(): BigDecimal? = r.range()?.low
+
+                        override val isReady: Boolean get() = r.isReady
+                        override val warmupBars: Int = r.warmupBars
                     }
                 },
             // ---- Donchian rolling extremes ----
