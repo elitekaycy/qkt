@@ -55,6 +55,39 @@ class CandleIndicatorRegistryTest {
     }
 
     @Test
+    fun `session vwap wrappers feed candles via the candle cast`() {
+        for (name in listOf("VWAP_SESSION", "VWAP_SESSION_STDEV")) {
+            val ind = create(name, listOf(0))
+            ind.update(candle("11", "9", "10", vol = "10"))
+            ind.update(candle("21", "19", "20", vol = "10"))
+            assertThat(ind.value()).withFailMessage("$name should report a value").isNotNull()
+        }
+    }
+
+    @Test
+    fun `session range wrappers feed candles via the candle cast`() {
+        val inWindow =
+            Candle("X", Money.of("10"), Money.of("11"), Money.of("9"), Money.of("10"), Money.of("1"), 0L, 60_000L)
+        val outWindow =
+            Candle(
+                "X",
+                Money.of("10"),
+                Money.of("11"),
+                Money.of("9"),
+                Money.of("10"),
+                Money.of("1"),
+                8 * 3_600_000L,
+                8 * 3_600_000L + 60_000L,
+            )
+        for (name in listOf("SESSION_RANGE_HIGH", "SESSION_RANGE_LOW")) {
+            val ind = create(name, listOf(0, 0, 7, 0))
+            ind.update(inWindow)
+            ind.update(outWindow) // out of the 00:00-07:00 window → latch
+            assertThat(ind.value()).withFailMessage("$name should report a value").isNotNull()
+        }
+    }
+
+    @Test
     fun `keltner and adx multi-output wrappers feed candles and report values`() {
         for (name in listOf("KELTNER_UPPER", "KELTNER_MIDDLE", "KELTNER_LOWER")) {
             val ind = create(name, listOf(5, 2))

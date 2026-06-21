@@ -77,6 +77,57 @@ class FuncRegistryTest {
     }
 
     @Test
+    fun `MOD returns floored modulo with the sign of the divisor`() {
+        assertThat(FuncRegistry.invoke("MOD", listOf(BigDecimal("7"), BigDecimal("3"))))
+            .isEqualByComparingTo("1")
+        // Grid distance: how far past the nearest 0.0050 figure.
+        assertThat(FuncRegistry.invoke("MOD", listOf(BigDecimal("1.2034"), BigDecimal("0.0050"))))
+            .isEqualByComparingTo("0.0034")
+        // Floored modulo: result carries the divisor's sign, not the dividend's.
+        assertThat(FuncRegistry.invoke("MOD", listOf(BigDecimal("-7"), BigDecimal("3"))))
+            .isEqualByComparingTo("2")
+        assertThat(FuncRegistry.invoke("MOD", listOf(BigDecimal("7"), BigDecimal("-3"))))
+            .isEqualByComparingTo("-2")
+    }
+
+    @Test
+    fun `MOD by zero returns null (domain error)`() {
+        assertThat(FuncRegistry.invoke("MOD", listOf(BigDecimal("7"), BigDecimal.ZERO))).isNull()
+    }
+
+    @Test
+    fun `FLOOR rounds toward negative infinity`() {
+        assertThat(FuncRegistry.invoke("FLOOR", listOf(BigDecimal("3.7")))).isEqualByComparingTo("3")
+        assertThat(FuncRegistry.invoke("FLOOR", listOf(BigDecimal("-1.2")))).isEqualByComparingTo("-2")
+    }
+
+    @Test
+    fun `CEIL rounds toward positive infinity`() {
+        assertThat(FuncRegistry.invoke("CEIL", listOf(BigDecimal("3.2")))).isEqualByComparingTo("4")
+        assertThat(FuncRegistry.invoke("CEIL", listOf(BigDecimal("-1.2")))).isEqualByComparingTo("-1")
+    }
+
+    @Test
+    fun `ROUND rounds half to even (Money convention)`() {
+        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("2.4")))).isEqualByComparingTo("2")
+        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("2.6")))).isEqualByComparingTo("3")
+        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("2.5")))).isEqualByComparingTo("2")
+        assertThat(FuncRegistry.invoke("ROUND", listOf(BigDecimal("3.5")))).isEqualByComparingTo("4")
+    }
+
+    @Test
+    fun `MOD rejects wrong arity`() {
+        assertThatThrownBy { FuncRegistry.invoke("MOD", listOf(BigDecimal.ONE)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `ROUND rejects wrong arity`() {
+        assertThatThrownBy { FuncRegistry.invoke("ROUND", listOf(BigDecimal.ONE, BigDecimal.TWO)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `ABS rejects wrong arity`() {
         assertThatThrownBy { FuncRegistry.invoke("ABS", emptyList()) }
             .isInstanceOf(IllegalArgumentException::class.java)

@@ -14,11 +14,14 @@ import com.qkt.indicators.catalog.HMA
 import com.qkt.indicators.catalog.KeltnerChannels
 import com.qkt.indicators.catalog.MACD
 import com.qkt.indicators.catalog.OBV
+import com.qkt.indicators.catalog.PercentileRank
 import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
+import com.qkt.indicators.catalog.SessionRange
+import com.qkt.indicators.catalog.SessionVwap
 import com.qkt.indicators.catalog.Stddev
 import com.qkt.indicators.catalog.Stochastic
 import com.qkt.indicators.catalog.TEMA
@@ -119,6 +122,10 @@ object IndicatorRegistry {
             "REGRESSION_SLOPE" to
                 IndicatorSpec("REGRESSION_SLOPE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     RegressionSlope(period = args[0].toInt())
+                },
+            "PERCENTILE_RANK" to
+                IndicatorSpec("PERCENTILE_RANK", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    PercentileRank(period = args[0].toInt())
                 },
             // ---- cross-series (two-input) ----
             "CORRELATION" to
@@ -309,6 +316,56 @@ object IndicatorRegistry {
             "VWAP" to
                 IndicatorSpec("VWAP", IndicatorInput.TICK_SERIES, arity = 2, requiresVolume = true) { args ->
                     VWAP(period = args[0].toInt())
+                },
+            // ---- Session-anchored VWAP + bands (candle-fed, reset each day at anchorHour UTC) ----
+            "VWAP_SESSION" to
+                IndicatorSpec("VWAP_SESSION", IndicatorInput.CANDLE_SERIES, arity = 2, requiresVolume = true) { args ->
+                    SessionVwap(anchorHour = args[0].toInt())
+                },
+            "VWAP_SESSION_STDEV" to
+                IndicatorSpec(
+                    "VWAP_SESSION_STDEV",
+                    IndicatorInput.CANDLE_SERIES,
+                    arity = 2,
+                    requiresVolume = true,
+                ) { args ->
+                    val s = SessionVwap(anchorHour = args[0].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = s.update(input)
+
+                        override fun value(): BigDecimal? = s.bands()?.stdev
+
+                        override val isReady: Boolean get() = s.isReady
+                        override val warmupBars: Int = s.warmupBars
+                    }
+                },
+            // ---- Session-anchored range (candle-fed; latches a prior UTC window's high/low) ----
+            "SESSION_RANGE_HIGH" to
+                IndicatorSpec("SESSION_RANGE_HIGH", IndicatorInput.CANDLE_SERIES, arity = 5) { args ->
+                    SessionRange(
+                        startHour = args[0].toInt(),
+                        startMinute = args[1].toInt(),
+                        endHour = args[2].toInt(),
+                        endMinute = args[3].toInt(),
+                    )
+                },
+            "SESSION_RANGE_LOW" to
+                IndicatorSpec("SESSION_RANGE_LOW", IndicatorInput.CANDLE_SERIES, arity = 5) { args ->
+                    val r =
+                        SessionRange(
+                            startHour = args[0].toInt(),
+                            startMinute = args[1].toInt(),
+                            endHour = args[2].toInt(),
+                            endMinute = args[3].toInt(),
+                        )
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = r.update(input)
+
+                        override fun value(): BigDecimal? = r.range()?.low
+
+                        override val isReady: Boolean get() = r.isReady
+                        override val warmupBars: Int = r.warmupBars
+                    }
                 },
             // ---- Donchian rolling extremes ----
             // Rules evaluate after the closing bar has already been pushed into every

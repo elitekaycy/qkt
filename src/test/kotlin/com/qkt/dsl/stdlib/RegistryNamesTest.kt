@@ -14,7 +14,20 @@ class RegistryNamesTest {
     @Test
     fun `indicator names are non-empty and consistent with has and spec`() {
         val names = IndicatorRegistry.names()
-        assertThat(names).contains("EMA", "RSI", "ATR", "MACD", "ADX", "BOLLINGER_UPPER", "VWAP")
+        assertThat(names).contains(
+            "EMA",
+            "RSI",
+            "ATR",
+            "MACD",
+            "ADX",
+            "BOLLINGER_UPPER",
+            "VWAP",
+            "PERCENTILE_RANK",
+            "VWAP_SESSION",
+            "VWAP_SESSION_STDEV",
+            "SESSION_RANGE_HIGH",
+            "SESSION_RANGE_LOW",
+        )
         names.forEach {
             assertThat(IndicatorRegistry.has(it)).`as`("has(%s)", it).isTrue()
             assertThat(IndicatorRegistry.spec(it)).`as`("spec(%s)", it).isNotNull()
@@ -24,7 +37,7 @@ class RegistryNamesTest {
     @Test
     fun `function names cover the registry and agree with has`() {
         val names = FuncRegistry.names()
-        assertThat(names).contains("ABS", "SQRT", "LOG", "EXP", "POW", "MIN", "MAX")
+        assertThat(names).contains("ABS", "SQRT", "LOG", "EXP", "POW", "MIN", "MAX", "MOD", "FLOOR", "CEIL", "ROUND")
         names.forEach { assertThat(FuncRegistry.has(it)).`as`("has(%s)", it).isTrue() }
     }
 
