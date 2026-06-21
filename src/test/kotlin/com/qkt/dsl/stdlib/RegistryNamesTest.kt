@@ -25,6 +25,8 @@ class RegistryNamesTest {
             "PERCENTILE_RANK",
             "VWAP_SESSION",
             "VWAP_SESSION_STDEV",
+            "SESSION_RANGE_HIGH",
+            "SESSION_RANGE_LOW",
         )
         names.forEach {
             assertThat(IndicatorRegistry.has(it)).`as`("has(%s)", it).isTrue()
