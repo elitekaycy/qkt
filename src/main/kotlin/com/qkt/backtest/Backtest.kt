@@ -40,6 +40,7 @@ class Backtest(
     cadence: SampleCadence? = null,
     private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     private val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+    private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val brokerKind: BrokerKind = BrokerKind.PAPER,
     /** See [com.qkt.app.TradingPipeline.latencyEnabled]; defaults to the env-var read. */
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
@@ -64,6 +65,7 @@ class Backtest(
         cadence: SampleCadence? = null,
         startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
         instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+        bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
         brokerKind: BrokerKind = BrokerKind.PAPER,
         latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     ) : this(
@@ -76,6 +78,7 @@ class Backtest(
         cadence = cadence,
         startingBalance = startingBalance,
         instruments = instruments,
+        bookRiskConfig = bookRiskConfig,
         brokerKind = brokerKind,
         latencyEnabled = latencyEnabled,
     )
@@ -101,6 +104,7 @@ class Backtest(
             cadence = cadence,
             startingBalance = startingBalance,
             instruments = instruments,
+            bookRiskConfig = bookRiskConfig,
             brokerKind = brokerKind,
             latencyEnabled = latencyEnabled,
         )
@@ -129,6 +133,7 @@ class Backtest(
              */
             barStore: com.qkt.marketdata.store.LocalBarStore? = null,
             brokerKind: BrokerKind = BrokerKind.PAPER,
+            bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -159,6 +164,7 @@ class Backtest(
                 startingBalance = startingBalance,
                 instruments = instruments,
                 brokerKind = brokerKind,
+                bookRiskConfig = bookRiskConfig,
             )
         }
 
@@ -175,6 +181,7 @@ class Backtest(
             startingBalance: BigDecimal = BigDecimal.ZERO,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
             brokerKind: BrokerKind = BrokerKind.PAPER,
+            bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -204,6 +211,7 @@ class Backtest(
                 startingBalance = startingBalance,
                 instruments = instruments,
                 brokerKind = brokerKind,
+                bookRiskConfig = bookRiskConfig,
             )
         }
 

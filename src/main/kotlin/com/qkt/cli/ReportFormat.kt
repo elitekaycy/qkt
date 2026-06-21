@@ -78,7 +78,22 @@ object ReportPrinter {
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
         printPerStrategy(r, out)
         printBookAnalytics(r, out)
+        printBookRisk(r, out)
         printAutocorr(r, out)
+    }
+
+    /** Book-risk summary (exposure peaks + book vol) for a portfolio run. Skipped when absent. */
+    private fun printBookRisk(
+        r: BacktestResult,
+        out: PrintStream,
+    ) {
+        val br = r.bookRisk ?: return
+        out.println()
+        out.println("Book risk")
+        out.println("  book vol (annual):  ${br.bookVol?.toPlainString() ?: "n/a"}")
+        out.println("  max gross exposure: ${br.maxGrossExposure.toPlainString()}")
+        out.println("  max net exposure:   ${br.maxNetExposure.toPlainString()}")
+        if (br.events.isNotEmpty()) out.println("  events:             ${br.events.size}")
     }
 
     /**
@@ -213,6 +228,7 @@ object ReportPrinter {
         )
         sb.append("},")
         sb.append("\"bookAnalytics\":").append(bookAnalyticsJson(r.bookAnalytics)).append(',')
+        sb.append("\"bookRisk\":").append(bookRiskJson(r.bookRisk)).append(',')
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
@@ -234,6 +250,19 @@ object ReportPrinter {
             append(",\"maxDrawdownP5\":").append(mc.maxDrawdownP5.toPlainString())
             append(",\"maxDrawdownP95\":").append(mc.maxDrawdownP95.toPlainString())
             append(",\"probabilityNegativeFinal\":").append(mc.probabilityNegativeFinal.toPlainString())
+            append("}")
+        }
+    }
+
+    /** Book-risk summary object for `--json` (full series is in the `--report` book_risk.csv). */
+    private fun bookRiskJson(br: com.qkt.backtest.BookRiskReport?): String {
+        if (br == null) return "null"
+        return buildString {
+            append("{\"bookVol\":").append(br.bookVol?.toPlainString() ?: "null")
+            append(",\"maxGrossExposure\":").append(br.maxGrossExposure.toPlainString())
+            append(",\"maxNetExposure\":").append(br.maxNetExposure.toPlainString())
+            append(",\"samples\":").append(br.series.size)
+            append(",\"events\":").append(br.events.size)
             append("}")
         }
     }

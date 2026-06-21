@@ -34,4 +34,9 @@ data class BacktestResult(
      * Null on single-strategy runs, where the per-strategy report already says everything.
      */
     val bookAnalytics: BookAnalytics? = null,
+    /**
+     * Book-risk measurement series + events (exposure, vol, limits, de-risk, rebalances). Null on
+     * single-strategy runs. The dataset for seeing how the book behaved.
+     */
+    val bookRisk: BookRiskReport? = null,
 )
