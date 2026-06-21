@@ -4,6 +4,7 @@ import com.qkt.app.IndicatorWarmer
 import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BookReturnCollector
+import com.qkt.backtest.BookRiskMonitor
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
@@ -67,6 +68,7 @@ class ReplayEngine(
     cadence: SampleCadence? = null,
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     brokerKind: BrokerKind = BrokerKind.PAPER,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
 ) : AutoCloseable {
@@ -99,6 +101,7 @@ class ReplayEngine(
     private val collector: EquityCurveCollector
     private val autocorr: ReturnAutocorrCollector
     private val bookReturns: BookReturnCollector
+    private val bookRiskMonitor: BookRiskMonitor
     private val commissionBook = CommissionBook(PerLotCommission(instruments))
     private val pipeline: TradingPipeline
     private val tradeRecords = mutableListOf<TradeRecord>()
@@ -188,7 +191,21 @@ class ReplayEngine(
                 prices = priceTracker,
                 instruments = instruments,
             )
-        val riskEngine = RiskEngine(rules + preTradeRules, haltRules, positions, riskState)
+        val bookAnnualization =
+            if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")
+        val bookRiskController =
+            bookRiskConfig?.let {
+                com.qkt.risk.book
+                    .BookRiskController(it, it.capital ?: startingBalance, bookAnnualization)
+            }
+        val bookRules =
+            bookRiskController?.let {
+                listOf(
+                    com.qkt.risk.rules
+                        .BookExposureLimit(it, priceTracker, instruments),
+                )
+            } ?: emptyList()
+        val riskEngine = RiskEngine(rules + preTradeRules + bookRules, haltRules, positions, riskState)
         bus.subscribe<com.qkt.events.RiskEvent.Halted> { halts.add(it) }
 
         collector =
@@ -213,6 +230,25 @@ class ReplayEngine(
                 startingBalance = startingBalance,
             )
 
+        bookRiskMonitor =
+            BookRiskMonitor(
+                cadence = this.cadence,
+                bus = bus,
+                source =
+                    com.qkt.risk.book.EngineBookStateSource(
+                        strategyIds = strategies.map { it.first },
+                        pnl = pnl,
+                        strategyPnL = strategyPnL,
+                        positions = strategyPositions,
+                        prices = priceTracker,
+                        instruments = instruments,
+                        startingBalance = startingBalance,
+                    ),
+                strategyCount = strategies.size,
+                startingBalance = startingBalance,
+                controller = bookRiskController,
+            )
+
         val holder = arrayOfNulls<TradingPipeline>(1)
         pipeline =
             TradingPipeline(
@@ -230,6 +266,7 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: BigDecimal.ONE },
                 mode = Mode.BACKTEST,
                 calendar = calendar,
                 source = source,
@@ -350,6 +387,7 @@ class ReplayEngine(
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = autocorr.snapshot(),
             bookAnalytics = bookReturns.result(),
+            bookRisk = bookRiskMonitor.result(annualizationFactor),
         )
     }
 

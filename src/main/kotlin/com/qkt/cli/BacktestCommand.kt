@@ -19,8 +19,8 @@ class BacktestCommand(
             System.err.println("qkt: error: file not found: $file")
             return ExitCodes.USER_ERROR
         }
-        val ast =
-            when (val parsed = Dsl.parseFile(path)) {
+        val parsedFile =
+            when (val parsed = Dsl.parseFileAny(path)) {
                 is ParseResult.Success -> parsed.value
                 is ParseResult.Failure -> {
                     for (e in parsed.errors) System.err.println("$file:${e.line}:${e.col} — ${e.message}")
@@ -51,8 +51,24 @@ class BacktestCommand(
 
         val ctx =
             try {
-                BacktestContext.build(args, ast, fetcherOverride)
+                when (parsedFile) {
+                    is com.qkt.dsl.parse.ParsedFile.StrategyFile ->
+                        BacktestContext.build(args, parsedFile.ast, fetcherOverride)
+                    is com.qkt.dsl.parse.ParsedFile.PortfolioFile ->
+                        BacktestContext.buildPortfolio(
+                            args,
+                            com.qkt.dsl.portfolio.PortfolioLoader
+                                .load(path),
+                            fetcherOverride,
+                        )
+                }
             } catch (e: BacktestContext.Companion.SetupError) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            } catch (e: IllegalArgumentException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            } catch (e: IllegalStateException) {
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR
             }
