@@ -218,22 +218,111 @@ RULES
 
 Each series may be any arithmetic expression that references a stream, exactly like `zscore`. `resid` returns `null` until the window is full and when the regressors are collinear or constant (the fit is undefined). Because `zscore(resid(...))` chains two rolling windows, set an explicit `WARMUP` covering both (the residual period plus the z-score period) — the compiler infers only the outer window for chained indicators.
 
+### Confirmation ratio (cross-symbol)
+
+```qkt
+confirm_ratio(<signal>, <peer1>, …, <lookback>)   -- fraction of peers confirming, in [0, 1]
+```
+
+`confirm_ratio` measures how much a basket agrees with a move in the signal series. It returns the fraction of peer series whose return over the last `<lookback>` bars is the **same sign** as the signal's return over the same window. A low ratio means the signal moved while the peers did not — an idiosyncratic move to fade; a high ratio means the whole basket moved together (a broad factor move). The first argument is the signal, every argument before the trailing integer is a peer, and the last argument is the lookback.
+
+To flip polarity for an inverse pair, **negate the peer** rather than passing a polarity list: `-usdchf.close` rises exactly when the dollar weakens, so it confirms a EURUSD rally.
+
+```qkt
+-- Fade an unconfirmed EURUSD spike: the dollar basket did not follow, so it is EUR noise.
+WHEN zscore(eur.close, 48) > 2.0
+ AND confirm_ratio(eur.close, gbp.close, aud.close, -chf.close, 4) < 0.5
+ AND POSITION.eur = 0
+THEN SELL eur
+```
+
+Like `resid`, `confirm_ratio` is bound through the multi-series path and reads the peers' latest closed bars; put the streams in a `SYNCHRONIZE` group for same-window alignment. It returns `null` until `<lookback> + 1` bars are seen.
+
+## Session-anchored indicators
+
+These reset on a fixed UTC clock boundary rather than sliding over a fixed bar count.
+
+### Session VWAP
+
+```qkt
+vwap_session(<stream>, <anchorHour>)        -- volume-weighted average since anchorHour UTC
+vwap_session_stdev(<stream>, <anchorHour>)  -- volume-weighted stddev around that VWAP
+```
+
+`vwap_session` is the volume-weighted average of typical price `(high+low+close)/3`, accumulated since the most recent `<anchorHour>:00` UTC and reset each day at that hour — `anchorHour = 0` is the classic session-open VWAP, `anchorHour = 12` anchors at the London/NY overlap. Pass the **stream** (it needs volume). `vwap_session_stdev` is the volume-weighted standard deviation of price around that running VWAP, so a strategy bands the VWAP and fades touches of the bands back toward it.
+
+```qkt
+-- Fade the upper 2-sigma band of the overlap-anchored session VWAP back to VWAP.
+LET vwap = vwap_session(gold, 12)
+LET band = vwap + 2 * vwap_session_stdev(gold, 12)
+WHEN gold.close >= band AND POSITION.gold = 0 THEN SELL gold
+```
+
+Volume-less candles contribute nothing, like `vwap`. Both return `null` until a volume-bearing candle is seen in the current session. (Note: a broker that does not report volume — e.g. the MT5 gateway on FX/metals — leaves these inert live; they are backtest-faithful where the data carries volume.)
+
+### Session range
+
+```qkt
+session_range_high(<stream>, <sh>, <sm>, <eh>, <em>)   -- high of the prior completed UTC window
+session_range_low(<stream>, <sh>, <sm>, <eh>, <em>)    -- low of the prior completed UTC window
+```
+
+These latch the high and low of the most recent **completed** instance of the daily UTC window `[sh:sm, eh:em)` and hold them as constant price levels until the next instance completes. Unlike `highest`/`lowest`, which slide forward every bar, this freezes a prior session's boundaries — e.g. the overnight Asian range stays fixed through the London morning. The window wraps midnight when the start is after the end. Mid and width compose: mid = `(high + low) / 2`, width = `high - low`.
+
+```qkt
+-- Fade a poke above the 00:00-07:00 UTC Asian range during the 07:00-11:30 London window.
+LET asianHigh = session_range_high(gold, 0, 0, 7, 0)
+WHEN session_window(7, 0, 11, 30) AND gold.close > asianHigh AND POSITION.gold = 0
+THEN SELL gold
+```
+
+The level is `null` until the first window completes (a warmup delay, not a bug).
+
+### Percentile rank
+
+```qkt
+percentile_rank(<value>, <lookback>)   -- fraction of the trailing window below the current value
+```
+
+`percentile_rank` returns the fraction of the trailing `<lookback>` window strictly below the current value, in `[0, 1)`. It is distribution-free, so it separates a **bimodal** series where `zscore` cannot — on a realized-vol series that splits into a calm cluster and a hot cluster, the mean sits in the empty trough between them, but the rank still puts the calm bars below 0.5.
+
+```qkt
+-- Trade the mean-reversion band only in the calm half of the realized-vol regime.
+WHEN percentile_rank(stddev(xag.close, 30), 200) < 0.5
+ AND xag.close <= keltner_lower(xag, 20, 2.0)
+THEN BUY xag
+```
+
+Warmup is `<lookback>` bars.
+
 ## Math helpers
 
 Available alongside indicators:
 
 ```qkt
 abs(<expr>)             -- absolute value
-max(<a>, <b>)           -- maximum of two values
-min(<a>, <b>)           -- minimum
 sqrt(<expr>)            -- square root
 log(<expr>)             -- natural log
 exp(<expr>)             -- e^x
-floor(<expr>)           -- floor
-ceil(<expr>)            -- ceiling
-round(<expr>)           -- round half-even
 pow(<base>, <exp>)      -- exponentiation
+floor(<expr>)           -- round down to the nearest integer
+ceil(<expr>)            -- round up to the nearest integer
+round(<expr>)           -- round to the nearest integer (half to even)
+mod(<a>, <b>)           -- floored modulo; for a positive step, distance past the grid below
 ```
+
+`mod` is the round-number / big-figure primitive: `mod(price, step)` is how far price sits
+past the nearest multiple of `step` below it, and the nearest grid level is
+`round(price / step) * step`.
+
+```qkt
+WHEN mod(gold.close, 10) < 1        -- price within $1 of a round $10 figure
+THEN LOG INFO "near a big figure"
+```
+
+`max` and `min` are **windowed aggregates** (see Aggregates), not scalar two-argument
+functions. For the larger or smaller of two values, use a `CASE` expression — e.g. the
+upper wick of a bar is `high - (CASE WHEN open > close THEN open ELSE close END)`.
 
 ```qkt
 LET vol = sqrt(252 * sum(pow(btc.close / btc.close[1] - 1, 2), 20))
@@ -272,6 +361,10 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `zscore(series, N)` | N bars |
 | `correlation(a, b, N)` | N bars |
 | `beta(a, b, N)` | N bars |
+| `percentile_rank(value, N)` | N bars |
+| `confirm_ratio(signal, …, N)` | N+1 bars |
+| `vwap_session(stream, h)` | resets daily at hour h |
+| `session_range_*(stream, …)` | until the first window completes |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 

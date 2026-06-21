@@ -166,6 +166,42 @@ object QktDocs {
                     "lowest(value, period)",
                     "Lowest value over the `period` bars BEFORE the current one (excludes the evaluating bar).",
                 ),
+            "PERCENTILE_RANK" to
+                doc(
+                    "percentile_rank(value, lookback)",
+                    "Fraction of the trailing `lookback` window strictly below the current value, in [0,1). " +
+                        "Distribution-free regime gate — separates a bimodal series where zscore cannot.",
+                ),
+            "VWAP_SESSION" to
+                doc(
+                    "vwap_session(stream, anchorHour)",
+                    "Session-anchored volume-weighted average price, reset each day at `anchorHour` UTC. " +
+                        "Pass the stream — it needs volume.",
+                ),
+            "VWAP_SESSION_STDEV" to
+                doc(
+                    "vwap_session_stdev(stream, anchorHour)",
+                    "Volume-weighted standard deviation of price around the session VWAP — build bands as " +
+                        "`vwap_session(s, h) ± k * vwap_session_stdev(s, h)`.",
+                ),
+            "SESSION_RANGE_HIGH" to
+                doc(
+                    "session_range_high(stream, startHour, startMinute, endHour, endMinute)",
+                    "High of the most recent completed instance of the daily UTC window, held as a constant " +
+                        "level until the next instance completes. Wraps midnight when start is after end.",
+                ),
+            "SESSION_RANGE_LOW" to
+                doc(
+                    "session_range_low(stream, startHour, startMinute, endHour, endMinute)",
+                    "Low of the most recent completed instance of the daily UTC window, held as a constant " +
+                        "level until the next instance completes. Wraps midnight when start is after end.",
+                ),
+            "CONFIRM_RATIO" to
+                doc(
+                    "confirm_ratio(signal, peer1, …, lookback)",
+                    "Fraction of peer series whose return over `lookback` bars matches the signal's direction, " +
+                        "in [0,1]. Negate a peer (`-usdchf.close`) to flip polarity for inverse pairs.",
+                ),
         )
 
     private val FUNCTIONS: Map<String, String> =
@@ -177,6 +213,14 @@ object QktDocs {
             "POW" to doc("pow(base, exponent)", "base raised to exponent."),
             "MIN" to doc("min(a, b, ...)", "Smallest of two or more values."),
             "MAX" to doc("max(a, b, ...)", "Largest of two or more values."),
+            "MOD" to
+                doc(
+                    "mod(a, b)",
+                    "Floored modulo `a - b*floor(a/b)`; for a positive step it lands in [0, b). Null when b is 0.",
+                ),
+            "FLOOR" to doc("floor(x)", "Largest integer not greater than x."),
+            "CEIL" to doc("ceil(x)", "Smallest integer not less than x."),
+            "ROUND" to doc("round(x)", "Nearest integer, halves rounded away from zero."),
             "CALENDAR_WINDOW" to
                 doc(
                     "calendar_window(startMonth, startDay, endMonth, endDay)",
