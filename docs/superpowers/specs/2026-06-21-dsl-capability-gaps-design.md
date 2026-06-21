@@ -27,9 +27,11 @@ gaps into "already expressible" (close + teach forge) and "real" (build).
   NR7 = `(g.high-g.low) < LOWEST(g.high-g.low, 6)`; inside-bar =
   `g.high < HIGHEST(g.high, 1) AND g.low > LOWEST(g.low, 1)`; the narrow day's
   high/low as breakout levels = `HIGHEST(g.high,1)` / `LOWEST(g.low,1)` on the next bar.
-- **#505 rejection-wick half.** `.open/.high/.low/.close` + `MAX`/`MIN` express wick
-  anatomy directly: upper wick = `g.high - MAX(g.open, g.close)`, lower wick =
-  `MIN(g.open, g.close) - g.low`. (#505's *modulo* half is a real gap — see #501.)
+- **#505 rejection-wick half.** `.open/.high/.low/.close` are exposed, so wick anatomy is
+  expressible: upper wick = `g.high - max(open, close)`. `MAX`/`MIN` are *windowed-aggregate*
+  keywords (not scalar), so the body-extreme is a `CASE`: upper wick =
+  `g.high - (CASE WHEN g.open > g.close THEN g.open ELSE g.close END)`. (#505's *modulo* half
+  is a real gap — see #501.)
 
 ### Real gaps — build
 
