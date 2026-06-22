@@ -71,6 +71,12 @@ class ReplayEngine(
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     brokerKind: BrokerKind = BrokerKind.PAPER,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
+    /**
+     * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
+     * rather than the synthetic bar extreme the triggering tick carries. See
+     * [com.qkt.broker.PaperBroker.fillAtTriggerPrice]. Off (and unused) on the tick path.
+     */
+    private val barFills: Boolean = false,
 ) : AutoCloseable {
     private val log = org.slf4j.LoggerFactory.getLogger(ReplayEngine::class.java)
 
@@ -163,7 +169,7 @@ class ReplayEngine(
         }
         val brokerFactory: () -> com.qkt.broker.Broker =
             when (brokerKind) {
-                BrokerKind.PAPER -> { -> PaperBroker(bus, clock, priceTracker) }
+                BrokerKind.PAPER -> { -> PaperBroker(bus, clock, priceTracker, fillAtTriggerPrice = barFills) }
                 BrokerKind.MT5_SIM ->
                     { -> com.qkt.broker.MT5BrokerSimulator(bus, clock, priceTracker, instruments) }
             }

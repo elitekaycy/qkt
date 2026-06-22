@@ -177,6 +177,86 @@ class PaperBrokerTest {
     }
 
     @Test
+    fun `bar-mode fills a triggered Stop at the stop price, not the overshooting tick`() {
+        // A bar's synthetic low overshoots the stop; bar mode fills at the stop level
+        // (no slippage), not at the bar low the tick carries.
+        val tracker = MarketPriceTracker()
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        val b = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = true)
+
+        b.submit(
+            OrderRequest.Stop(
+                id = "sl",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("1.09"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        b.onTick(tick("EURUSD", "1.085"))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1.09"))
+    }
+
+    @Test
+    fun `bar-mode fills a triggered Limit at the limit price, not the overshooting tick`() {
+        // A long take-profit is a SELL limit above; the bar's synthetic high overshoots
+        // it. Bar mode books the limit level, not the bar high.
+        val tracker = MarketPriceTracker()
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        val b = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = true)
+
+        b.submit(
+            OrderRequest.Limit(
+                id = "tp",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("1.11"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        b.onTick(tick("EURUSD", "1.115"))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1.11"))
+    }
+
+    @Test
+    fun `default tick mode still fills a triggered Stop at the printing tick`() {
+        // Guard: the live/tick path is unchanged — fills at the crossing tick price.
+        val tracker = MarketPriceTracker()
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        val b = PaperBroker(bus, FixedClock(0L), tracker)
+
+        b.submit(
+            OrderRequest.Stop(
+                id = "sl",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("1.09"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        b.onTick(tick("EURUSD", "1.085"))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1.085"))
+    }
+
+    @Test
     fun `cancel removes a working Limit before fill`() {
         val tracker = MarketPriceTracker()
         val bus = newBus()
