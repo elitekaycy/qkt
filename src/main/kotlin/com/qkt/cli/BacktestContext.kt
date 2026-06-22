@@ -115,17 +115,24 @@ class BacktestContext private constructor(
     }
 
     /**
-     * For a fan-out sweep: a builder of one shared decoded feed plus a per-combo engine factory.
+     * For a fan-out sweep: a builder of one shared decoded feed plus a per-scenario engine factory.
      * The sweep driver pulls the shared feed once and pushes each tick into every engine via
-     * `ReplayEngine.ingest`, so the basket is decoded once per worker instead of once per combo.
-     * The shared feed is built from default params because the market data is independent of
-     * strategy params; each engine is built with an empty feed (it is driven externally) but its
-     * own compiled strategy and isolated broker/P&L/risk state.
+     * `ReplayEngine.ingest`, so the basket is decoded once per worker instead of once per scenario.
+     * The shared feed is built from default params because the market data is independent of the
+     * per-scenario knobs (params, strategy variant, broker, instruments, balance); each engine is
+     * built with an empty feed (it is driven externally) but its own compiled strategy and isolated
+     * broker/P&L/risk state. A scenario may not change the symbol set — it keys the shared feed.
      */
-    fun sweepEngines(): Pair<() -> TickFeed, (Map<String, String>) -> ReplayEngine> {
+    fun scenarioEngines(): Pair<() -> TickFeed, (ScenarioSpec) -> ReplayEngine> {
         val sharedFeed = { backtest(emptyMap()).detachFeed() }
-        val engineFor = { overrides: Map<String, String> ->
-            backtest(overrides).toEngine(SequenceTickFeed(emptySequence()))
+        val engineFor = { s: ScenarioSpec ->
+            backtest(
+                overrides = s.params,
+                ast = s.ast ?: this.ast,
+                brokerKind = s.brokerKind ?: this.brokerKind,
+                instruments = s.instruments ?: this.instruments,
+                startingBalance = s.startingBalance ?: this.startingBalance,
+            ).toEngine(SequenceTickFeed(emptySequence()))
         }
         return sharedFeed to engineFor
     }

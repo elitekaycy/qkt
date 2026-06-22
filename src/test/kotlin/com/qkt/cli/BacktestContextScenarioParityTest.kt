@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.sweep.SweepReplay
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import java.nio.file.Files
@@ -91,5 +92,36 @@ class BacktestContextScenarioParityTest {
                 ).run()
         assertThat(explicit.global.totalPnL).isEqualByComparingTo(implicit.global.totalPnL)
         assertThat(explicit.trades).isEqualTo(implicit.trades)
+    }
+
+    @Test
+    fun `scenario sweep fan-out is bit-identical to standalone backtests`(
+        @TempDir dir: Path,
+    ) {
+        val ctx = buildCtx(dir)
+        val scenarios =
+            listOf(
+                ScenarioSpec(label = "fast2", params = mapOf("fast" to "2")),
+                ScenarioSpec(label = "fast5", params = mapOf("fast" to "5")),
+                ScenarioSpec(label = "fast2-sim", params = mapOf("fast" to "2"), brokerKind = BrokerKind.MT5_SIM),
+            )
+        val (sharedFeed, engineFor) = ctx.scenarioEngines()
+        val fan =
+            SweepReplay(
+                configs = scenarios.map { it.label to it },
+                sharedFeed = sharedFeed,
+                engineFor = { _, s -> engineFor(s) },
+                parallelism = 1,
+            ).run().runs
+
+        for (s in scenarios) {
+            val standalone = ctx.backtest(s.params, brokerKind = s.brokerKind ?: ctx.brokerKind).run()
+            val combo = fan.first { it.label == s.label }.result
+            assertThat(combo.global.totalPnL).isEqualByComparingTo(standalone.global.totalPnL)
+            assertThat(combo.global.maxDailyDrawdown).isEqualByComparingTo(standalone.global.maxDailyDrawdown)
+            assertThat(combo.trades).isEqualTo(standalone.trades)
+        }
+        // Non-vacuous: the scenarios genuinely differ (the broker axis guarantees two distinct values).
+        assertThat(fan.map { it.result.global.totalPnL.toPlainString() }.distinct().size).isGreaterThan(1)
     }
 }
