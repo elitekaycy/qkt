@@ -3,47 +3,63 @@ package com.qkt.marketdata
 import java.math.BigDecimal
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.file.Files
+import java.nio.channels.FileChannel
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 
 /**
- * Streams [Tick]s from a binary day-file ([BinaryTickFormat]). Reconstructs each value with
- * `BigDecimal.valueOf(stored, scale)` (no string parsing) and routes through [TickAssembler], so it
- * yields the exact same `Tick` sequence as [CsvTickFeed] over the same data. Reads the whole file
- * into memory (a day is a few MB) and emits ticks in order; enforces the same monotonic-timestamp
- * contract and fails loud on a corrupt/truncated file.
+ * Streams [Tick]s from a binary day-file ([BinaryTickFormat]) by memory-mapping the file and reading
+ * each value's `long` straight from the mapped buffer with `BigDecimal.valueOf(stored, scale)` (no
+ * string parsing, no intermediate `byte[]`/`long[]` copy), routed through [TickAssembler] — so it
+ * yields the exact same `Tick` sequence as [CsvTickFeed] over the same data. Mapping the file lets
+ * several processes (e.g. concurrent backtests) share the same OS page-cache pages; only the per-tick
+ * `BigDecimal` is allocated here. Enforces the monotonic-timestamp contract and fails loud on a
+ * corrupt/truncated file.
  */
 class BinaryTickFeed(
     private val path: Path,
 ) : TickFeed {
     private val header: BinaryTickFormat.Header
-    private val timestamps: LongArray
 
-    // Indexed by column id (0 until COL_COUNT); null = column absent. An array, not a Map<Int,_>,
-    // so decode() does a plain array read instead of a boxed-Integer HashMap lookup six times a tick.
-    private val columns: Array<LongArray?>
+    // Byte offset of the timestamps int64 block (just past the header).
+    private val tsBase: Int
+
+    // Byte offset of each column's int64 block, indexed by column id; -1 = column absent.
+    private val colBase: IntArray
+    private var buf: ByteBuffer?
     private var index: Int = 0
     private var lastTimestamp: Long = Long.MIN_VALUE
 
     init {
-        val bytes = Files.readAllBytes(path)
-        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        header = BinaryTickFormat.readHeader(buf)
+        val mapped =
+            FileChannel.open(path, StandardOpenOption.READ).use { ch ->
+                ch.map(FileChannel.MapMode.READ_ONLY, 0, ch.size())
+            }
+        // MappedByteBuffer defaults to BIG_ENDIAN; the format is little-endian. Setting it wrong
+        // silently byte-swaps every value, so this must match BinaryTickWriter.
+        mapped.order(ByteOrder.LITTLE_ENDIAN)
+        header = BinaryTickFormat.readHeader(mapped)
         val n = header.tickCount
-        timestamps = LongArray(n) { buf.long }
-        val cols = arrayOfNulls<LongArray>(BinaryTickFormat.COL_COUNT)
+        // readHeader consumes the header with relative gets, leaving the position at the timestamps
+        // block; the body is the timestamps block then each present column in ascending id order.
+        tsBase = mapped.position()
+        val bases = IntArray(BinaryTickFormat.COL_COUNT) { -1 }
+        var slot = 0
         for (col in 0 until BinaryTickFormat.COL_COUNT) {
             if (BinaryTickFormat.isPresent(header.presenceFlags, col)) {
-                cols[col] = LongArray(n) { buf.long }
+                bases[col] = tsBase + (1 + slot) * n * Long.SIZE_BYTES
+                slot++
             }
         }
-        columns = cols
+        colBase = bases
+        buf = mapped
     }
 
     override fun next(): Tick? {
+        val b = buf ?: return null
         if (index >= header.tickCount) return null
         val i = index++
-        val ts = timestamps[i]
+        val ts = b.getLong(tsBase + i * Long.SIZE_BYTES)
         check(ts >= lastTimestamp) {
             "$path:${i + 1}: non-decreasing timestamps required (got $ts, last $lastTimestamp)"
         }
@@ -51,22 +67,30 @@ class BinaryTickFeed(
         return TickAssembler.assemble(
             symbol = header.symbol,
             timestamp = ts,
-            price = decode(BinaryTickFormat.COL_PRICE, i),
-            volume = decode(BinaryTickFormat.COL_VOLUME, i),
-            bid = decode(BinaryTickFormat.COL_BID, i),
-            ask = decode(BinaryTickFormat.COL_ASK, i),
-            bidVolume = decode(BinaryTickFormat.COL_BID_VOLUME, i),
-            askVolume = decode(BinaryTickFormat.COL_ASK_VOLUME, i),
+            price = decode(b, BinaryTickFormat.COL_PRICE, i),
+            volume = decode(b, BinaryTickFormat.COL_VOLUME, i),
+            bid = decode(b, BinaryTickFormat.COL_BID, i),
+            ask = decode(b, BinaryTickFormat.COL_ASK, i),
+            bidVolume = decode(b, BinaryTickFormat.COL_BID_VOLUME, i),
+            askVolume = decode(b, BinaryTickFormat.COL_ASK_VOLUME, i),
             location = { "$path:${i + 1}" },
         )
     }
 
+    override fun close() {
+        // Drop the mapping reference so the OS can reclaim the pages; the FileChannel was already
+        // closed after map(). Under sweep fan-out many day-feeds open and close, so release promptly.
+        buf = null
+    }
+
     private fun decode(
+        b: ByteBuffer,
         col: Int,
         i: Int,
     ): BigDecimal? {
-        val arr = columns[col] ?: return null
-        val v = arr[i]
+        val base = colBase[col]
+        if (base < 0) return null
+        val v = b.getLong(base + i * Long.SIZE_BYTES)
         return if (v == BinaryTickFormat.NULL_SENTINEL) null else BigDecimal.valueOf(v, header.scale)
     }
 }
