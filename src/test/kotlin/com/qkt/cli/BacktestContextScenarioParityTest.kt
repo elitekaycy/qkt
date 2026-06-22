@@ -122,6 +122,13 @@ class BacktestContextScenarioParityTest {
             assertThat(combo.trades).isEqualTo(standalone.trades)
         }
         // Non-vacuous: the scenarios genuinely differ (the broker axis guarantees two distinct values).
-        assertThat(fan.map { it.result.global.totalPnL.toPlainString() }.distinct().size).isGreaterThan(1)
+        assertThat(
+            fan
+                .map {
+                    it.result.global.totalPnL
+                        .toPlainString()
+                }.distinct()
+                .size,
+        ).isGreaterThan(1)
     }
 }

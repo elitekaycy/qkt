@@ -80,7 +80,12 @@ class BacktestContext private constructor(
         instruments: InstrumentRegistry = this.instruments,
         startingBalance: BigDecimal = this.startingBalance,
     ): Backtest {
-        require(ast.streams.map { it.qktSymbol }.distinct().toSet() == symbols.toSet()) {
+        require(
+            ast.streams
+                .map { it.qktSymbol }
+                .distinct()
+                .toSet() == symbols.toSet(),
+        ) {
             "scenario streams ${ast.streams.map { it.qktSymbol }.distinct()} must match context symbols $symbols"
         }
         val strategy = AstCompiler().compile(ast, overrides)

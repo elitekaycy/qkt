@@ -54,10 +54,17 @@ class SweepCommand(
             return ExitCodes.USER_ERROR
         }
 
-        System.err.println("qkt: sweeping ${combos.size} parameter combination(s), ranked by ${rank.flag}")
-
         val (sharedFeed, engineFor) = ctx.scenarioEngines()
-        val scenarios = combos.map { ScenarioSpec(label = it.label, params = it.overrides) }
+        val scenarios: List<ScenarioSpec> =
+            try {
+                args.option("scenarios")?.let { ScenarioFile.load(Path.of(it)) }
+                    ?: combos.map { ScenarioSpec(label = it.label, params = it.overrides) }
+            } catch (e: IllegalStateException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
+        System.err.println("qkt: sweeping ${scenarios.size} scenario(s), ranked by ${rank.flag}")
+
         val ranked: List<SweepRun<ScenarioSpec>> =
             try {
                 SweepReplay(
@@ -108,11 +115,16 @@ class SweepCommand(
                 val params =
                     run.config.params.entries
                         .joinToString(",") { "\"${it.key}\":\"${it.value}\"" }
+                val daily =
+                    r.dailyPnL.entries
+                        .sortedBy { it.key }
+                        .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" }
                 """{"label":"${run.label}","params":{$params},"rank":"${rank.flag}",""" +
                     """"trades":${r.tradeCount},"totalPnL":${r.totalPnL.toPlainString()},""" +
                     """"sharpe":${r.sharpeRatio?.toPlainString() ?: "null"},""" +
                     """"calmar":${r.calmarRatio?.toPlainString() ?: "null"},""" +
-                    """"maxDrawdown":${r.maxDrawdown.toPlainString()},"winRate":${r.winRate.toPlainString()}}"""
+                    """"maxDrawdown":${r.maxDrawdown.toPlainString()},"winRate":${r.winRate.toPlainString()},""" +
+                    """"maxDailyDrawdown":${r.maxDailyDrawdown.toPlainString()},"dailyPnL":{$daily}}"""
             }
         println("[$rows]")
     }
