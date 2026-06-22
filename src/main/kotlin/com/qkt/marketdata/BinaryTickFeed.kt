@@ -78,9 +78,12 @@ class BinaryTickFeed(
     }
 
     override fun close() {
-        // Drop the mapping reference so the OS can reclaim the pages; the FileChannel was already
-        // closed after map(). Under sweep fan-out many day-feeds open and close, so release promptly.
+        val b = buf ?: return
         buf = null
+        // A MappedByteBuffer keeps its OS file mapping until GC; on Windows that holds a lock that
+        // blocks deleting the file (e.g. a test temp dir). Release it deterministically here. The
+        // FileChannel was already closed after map(); after close() next() returns null.
+        runCatching { CLEANER?.invoke(b) }
     }
 
     private fun decode(
@@ -92,5 +95,19 @@ class BinaryTickFeed(
         if (base < 0) return null
         val v = b.getLong(base + i * Long.SIZE_BYTES)
         return if (v == BinaryTickFormat.NULL_SENTINEL) null else BigDecimal.valueOf(v, header.scale)
+    }
+
+    private companion object {
+        // sun.misc.Unsafe.invokeCleaner releases a mapped buffer's native mapping on demand. Resolved
+        // once; null on a JVM where it is unavailable, in which case the mapping frees on GC instead.
+        private val CLEANER: ((ByteBuffer) -> Unit)? =
+            runCatching {
+                val unsafeClass = Class.forName("sun.misc.Unsafe")
+                val unsafe =
+                    unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null)
+                val invoke = unsafeClass.getMethod("invokeCleaner", ByteBuffer::class.java)
+                val fn: (ByteBuffer) -> Unit = { buffer -> invoke.invoke(unsafe, buffer) }
+                fn
+            }.getOrNull()
     }
 }
