@@ -1,9 +1,11 @@
 package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
+import com.qkt.backtest.BookAnalytics
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ConditionalAutocorr
 import com.qkt.backtest.MonteCarloSummary
+import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
 import java.io.PrintStream
 
@@ -55,7 +57,9 @@ object ReportPrinter {
         out.println("Commission paid:  ${g.commissionPaid.toPlainString()}")
         out.println("Win rate:         ${g.winRate.toPlainString()}")
         out.println("Sharpe (annual):  ${g.sharpeRatio?.toPlainString() ?: "n/a"}")
+        out.println("Sortino (annual): ${g.sortinoRatio?.toPlainString() ?: "n/a"}")
         out.println("Calmar:           ${g.calmarRatio?.toPlainString() ?: "n/a"}")
+        out.println("Turnover (x cap): ${g.turnover.toPlainString()}")
         out.println("Max drawdown:     ${g.maxDrawdown.toPlainString()}")
         out.println("Max daily DD:     ${g.maxDailyDrawdown.toPlainString()}")
         if (r.halts.isNotEmpty()) {
@@ -72,7 +76,75 @@ object ReportPrinter {
         out.println("  Win rate:   wins / decided trades; break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
+        printPerStrategy(r, out)
+        printBookAnalytics(r, out)
+        printBookRisk(r, out)
         printAutocorr(r, out)
+    }
+
+    /** Book-risk summary (exposure peaks + book vol) for a portfolio run. Skipped when absent. */
+    private fun printBookRisk(
+        r: BacktestResult,
+        out: PrintStream,
+    ) {
+        val br = r.bookRisk ?: return
+        out.println()
+        out.println("Book risk")
+        out.println("  book vol (annual):  ${br.bookVol?.toPlainString() ?: "n/a"}")
+        out.println("  max gross exposure: ${br.maxGrossExposure.toPlainString()}")
+        out.println("  max net exposure:   ${br.maxNetExposure.toPlainString()}")
+        if (br.events.isNotEmpty()) out.println("  events:             ${br.events.size}")
+    }
+
+    /**
+     * Cross-strategy relationships for a portfolio backtest: each strategy's share of book return and
+     * of book risk, plus pairwise return correlation. Skipped on single-strategy runs (no book).
+     */
+    private fun printBookAnalytics(
+        r: BacktestResult,
+        out: PrintStream,
+    ) {
+        val ba = r.bookAnalytics ?: return
+        out.println()
+        out.println("Book analytics")
+        out.println("  contribution to return:")
+        for ((id, v) in ba.contributionToReturn.entries.sortedBy { it.key }) {
+            out.println("    ${id.padEnd(20)} ${v.toPlainString()}")
+        }
+        out.println("  risk contribution (PCTR):")
+        for ((id, v) in ba.riskContribution.entries.sortedBy { it.key }) {
+            out.println("    ${id.padEnd(20)} ${v.toPlainString()}")
+        }
+        if (ba.returnCorrelation.isNotEmpty()) {
+            out.println("  return correlation:")
+            for (p in ba.returnCorrelation) {
+                out.println("    ${p.a} ~ ${p.b}: ${p.correlation.toPlainString()}")
+            }
+        }
+    }
+
+    /**
+     * One line per child strategy of a portfolio backtest — the attribution the global block can't
+     * show. Skipped on a single-strategy run, where the global block already says everything.
+     */
+    private fun printPerStrategy(
+        r: BacktestResult,
+        out: PrintStream,
+    ) {
+        if (r.perStrategy.size < 2) return
+        out.println()
+        out.println("Per-strategy")
+        for ((id, s) in r.perStrategy.entries.sortedBy { it.key }) {
+            out.println(
+                "  ${id.padEnd(20)} " +
+                    "PnL ${s.totalPnL.toPlainString().padStart(12)}  " +
+                    "trades ${s.tradeCount.toString().padStart(5)}  " +
+                    "Sharpe ${(s.sharpeRatio?.toPlainString() ?: "n/a").padStart(7)}  " +
+                    "Sortino ${(s.sortinoRatio?.toPlainString() ?: "n/a").padStart(7)}  " +
+                    "MaxDD ${s.maxDrawdown.toPlainString().padStart(7)}  " +
+                    "win ${s.winRate.toPlainString()}",
+            )
+        }
     }
 
     /**
@@ -134,6 +206,8 @@ object ReportPrinter {
         sb.append("\"maxConsecutiveLosses\":").append(g.maxConsecutiveLosses).append(',')
         sb.append("\"sharpeRatio\":").append(g.sharpeRatio?.toPlainString() ?: "null").append(',')
         sb.append("\"calmarRatio\":").append(g.calmarRatio?.toPlainString() ?: "null").append(',')
+        sb.append("\"sortinoRatio\":").append(g.sortinoRatio?.toPlainString() ?: "null").append(',')
+        sb.append("\"turnover\":").append(g.turnover.toPlainString()).append(',')
         sb.append("\"executionModel\":\"").append(brokerKind.name.lowercase()).append("\",")
         sb.append("\"maxDailyDrawdown\":").append(g.maxDailyDrawdown.toPlainString()).append(',')
         sb.append("\"dailyPnL\":{")
@@ -146,6 +220,15 @@ object ReportPrinter {
         sb.append("\"halts\":").append(r.halts.size).append(',')
         sb.append("\"cadence\":\"").append(r.cadence.name).append("\",")
         sb.append("\"conditionalAutocorr\":").append(conditionalAutocorrJson(r.conditionalAutocorr)).append(',')
+        sb.append("\"perStrategy\":{")
+        sb.append(
+            r.perStrategy.entries
+                .sortedBy { it.key }
+                .joinToString(",") { (id, s) -> "\"$id\":${strategyJson(s)}" },
+        )
+        sb.append("},")
+        sb.append("\"bookAnalytics\":").append(bookAnalyticsJson(r.bookAnalytics)).append(',')
+        sb.append("\"bookRisk\":").append(bookRiskJson(r.bookRisk)).append(',')
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
@@ -170,6 +253,65 @@ object ReportPrinter {
             append("}")
         }
     }
+
+    /** Book-risk summary object for `--json` (full series is in the `--report` book_risk.csv). */
+    private fun bookRiskJson(br: com.qkt.backtest.BookRiskReport?): String {
+        if (br == null) return "null"
+        return buildString {
+            append("{\"bookVol\":").append(br.bookVol?.toPlainString() ?: "null")
+            append(",\"maxGrossExposure\":").append(br.maxGrossExposure.toPlainString())
+            append(",\"maxNetExposure\":").append(br.maxNetExposure.toPlainString())
+            append(",\"samples\":").append(br.series.size)
+            append(",\"events\":").append(br.events.size)
+            append("}")
+        }
+    }
+
+    /** Compact per-strategy attribution object for `--json` — the full report is in `--report`. */
+    private fun strategyJson(s: PerformanceReport): String =
+        buildString {
+            append("{\"totalPnL\":").append(s.totalPnL.toPlainString())
+            append(",\"realized\":").append(s.realizedTotal.toPlainString())
+            append(",\"unrealized\":").append(s.unrealizedTotal.toPlainString())
+            append(",\"trades\":").append(s.tradeCount)
+            append(",\"winRate\":").append(s.winRate.toPlainString())
+            append(",\"sharpeRatio\":").append(s.sharpeRatio?.toPlainString() ?: "null")
+            append(",\"sortinoRatio\":").append(s.sortinoRatio?.toPlainString() ?: "null")
+            append(",\"calmarRatio\":").append(s.calmarRatio?.toPlainString() ?: "null")
+            append(",\"maxDrawdown\":").append(s.maxDrawdown.toPlainString())
+            append(",\"maxDailyDrawdown\":").append(s.maxDailyDrawdown.toPlainString())
+            append(",\"turnover\":").append(s.turnover.toPlainString())
+            append(",\"commissionPaid\":").append(s.commissionPaid.toPlainString())
+            append("}")
+        }
+
+    /** Cross-strategy book analytics as a JSON object, or null on a single-strategy run. */
+    private fun bookAnalyticsJson(ba: BookAnalytics?): String {
+        if (ba == null) return "null"
+        return buildString {
+            append("{\"contributionToReturn\":").append(mapNumberJson(ba.contributionToReturn))
+            append(",\"riskContribution\":").append(mapNumberJson(ba.riskContribution))
+            append(",\"drawdownContribution\":").append(mapNumberJson(ba.drawdownContribution))
+            append(",\"returnCorrelation\":[")
+            append(
+                ba.returnCorrelation.joinToString(",") {
+                    "{\"a\":\"${it.a}\",\"b\":\"${it.b}\",\"correlation\":${it.correlation.toPlainString()}}"
+                },
+            )
+            append("]}")
+        }
+    }
+
+    private fun mapNumberJson(m: Map<String, java.math.BigDecimal>): String =
+        buildString {
+            append("{")
+            append(
+                m.entries
+                    .sortedBy { it.key }
+                    .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" },
+            )
+            append("}")
+        }
 
     /**
      * Lag-1 return autocorrelation (#460) as a JSON object keyed by symbol, e.g.

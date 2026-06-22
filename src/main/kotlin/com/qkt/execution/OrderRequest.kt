@@ -485,3 +485,37 @@ fun OrderRequest.withExpiresAt(expiresAt: Long?): OrderRequest =
         is OrderRequest.ScaleOut ->
             copy(expiresAt = expiresAt, basis = basis.withExpiresAt(expiresAt))
     }
+
+/**
+ * Returns a copy with every quantity in the order tree multiplied by [factor] — a uniform shrink of
+ * the position size. Composite shapes ([OrderRequest.Bracket], [OrderRequest.StandaloneOCO],
+ * [OrderRequest.OTO], [OrderRequest.ScaleOut], [OrderRequest.TimeExit]) recurse into their nested
+ * sub-requests so the leg sizes stay consistent with the parent. Used by the book-risk de-risk ladder
+ * to scale down new risk-increasing orders; `factor == 1` returns the same instance (no-op).
+ */
+fun OrderRequest.scaleQuantity(factor: BigDecimal): OrderRequest {
+    if (factor.compareTo(BigDecimal.ONE) == 0) return this
+    val q = quantity.multiply(factor)
+    return when (this) {
+        is OrderRequest.Market -> copy(quantity = q)
+        is OrderRequest.Limit -> copy(quantity = q)
+        is OrderRequest.Stop -> copy(quantity = q)
+        is OrderRequest.StopLimit -> copy(quantity = q)
+        is OrderRequest.IfTouched -> copy(quantity = q)
+        is OrderRequest.TrailingStop -> copy(quantity = q)
+        is OrderRequest.TrailingStopLimit -> copy(quantity = q)
+        is OrderRequest.ArmedTrailingStop -> copy(quantity = q)
+        is OrderRequest.StandaloneOCO ->
+            copy(quantity = q, leg1 = leg1.scaleQuantity(factor), leg2 = leg2.scaleQuantity(factor))
+        is OrderRequest.OTO ->
+            copy(
+                quantity = q,
+                parent = parent.scaleQuantity(factor),
+                children = children.map { it.scaleQuantity(factor) },
+            )
+        is OrderRequest.Bracket -> copy(quantity = q, entry = entry.scaleQuantity(factor))
+        is OrderRequest.ScaleOut -> copy(quantity = q, basis = basis.scaleQuantity(factor))
+        is OrderRequest.TimeExit -> copy(quantity = q, target = target.scaleQuantity(factor))
+        is OrderRequest.Stack -> copy(quantity = q)
+    }
+}
