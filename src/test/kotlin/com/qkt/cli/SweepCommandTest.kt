@@ -1,5 +1,7 @@
 package com.qkt.cli
 
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -74,5 +76,73 @@ class SweepCommandTest {
             )
         val code = SweepCommand(args, fetcherOverride = FakeXauFetcher).run()
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
+    fun `sweep with a scenarios file runs each scenario`(
+        @TempDir dir: Path,
+    ) {
+        val scenarios = dir.resolve("scenarios.yaml")
+        Files.writeString(
+            scenarios,
+            """
+            - label: fast2
+              params: { fast: "2" }
+            - label: fast3-sim
+              params: { fast: "3" }
+              broker: mt5-sim
+            """.trimIndent(),
+        )
+        val args =
+            Args(
+                arrayOf(
+                    "sweep",
+                    strategy(dir).toString(),
+                    "--from",
+                    "2026-06-04",
+                    "--to",
+                    "2026-06-05",
+                    "--data-root",
+                    dir.resolve("data").toString(),
+                    "--scenarios",
+                    scenarios.toString(),
+                    "--json",
+                ),
+            )
+        val code = SweepCommand(args, fetcherOverride = FakeXauFetcher).run()
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+    }
+
+    @Test
+    fun `sweep json carries dailyPnL and maxDailyDrawdown per combo`(
+        @TempDir dir: Path,
+    ) {
+        val args =
+            Args(
+                arrayOf(
+                    "sweep",
+                    strategy(dir).toString(),
+                    "--from",
+                    "2026-06-04",
+                    "--to",
+                    "2026-06-05",
+                    "--data-root",
+                    dir.resolve("data").toString(),
+                    "--param",
+                    "fast=3",
+                    "--json",
+                ),
+            )
+        val out = ByteArrayOutputStream()
+        val original = System.out
+        try {
+            System.setOut(PrintStream(out))
+            SweepCommand(args, fetcherOverride = FakeXauFetcher).run()
+        } finally {
+            System.setOut(original)
+        }
+        val json = out.toString()
+        assertThat(json).contains("\"dailyPnL\":")
+        assertThat(json).contains("\"maxDailyDrawdown\":")
     }
 }
