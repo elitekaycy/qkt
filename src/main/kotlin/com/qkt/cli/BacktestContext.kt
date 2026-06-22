@@ -35,6 +35,14 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
+/** Inputs the risk halt rules are built from; the account-balance basis is supplied per backtest. */
+internal data class HaltConfig(
+    val maxDailyLoss: BigDecimal,
+    val maxDrawdownPct: BigDecimal?,
+    val maxDailyDrawdownPct: BigDecimal?,
+    val totalDdBasis: com.qkt.risk.DrawdownBasis,
+)
+
 /**
  * Shared backtest wiring used by `backtest`, `sweep`, `walkforward`, and (store/instruments only)
  * `research`. Centralizes data store, dukascopy auto-fetch, completeness provisioning, instrument
@@ -51,7 +59,7 @@ class BacktestContext private constructor(
     val barStore: LocalBarStore,
     private val candleWindow: TimeWindow?,
     private val startingBalance: BigDecimal,
-    private val haltRules: List<com.qkt.risk.HaltRule>,
+    private val haltConfig: HaltConfig,
     private val provisioner: () -> Unit,
     private val strategiesOverride: ((Map<String, String>) -> List<Pair<String, com.qkt.strategy.Strategy>>)? = null,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
@@ -59,11 +67,29 @@ class BacktestContext private constructor(
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
 
-    /** Build a backtest for [overrides] over [range] (defaults to the full configured window). */
+    /**
+     * Build a backtest for [overrides] over [range] (defaults to the full configured window).
+     * For a fan-out scenario, [ast], [brokerKind], [instruments], and [startingBalance] may each
+     * differ from the context default; the halt rules are re-derived from the effective balance so
+     * the result is byte-identical to a standalone backtest built with those same values. A scenario
+     * may NOT change the symbol set — the shared decoded feed is keyed to it (enforced below).
+     */
     fun backtest(
         overrides: Map<String, String>,
         range: TimeRange = TimeRange(from, to),
+        ast: StrategyAst = this.ast,
+        brokerKind: BrokerKind = this.brokerKind,
+        instruments: InstrumentRegistry = this.instruments,
+        startingBalance: BigDecimal = this.startingBalance,
     ): Backtest {
+        require(
+            ast.streams.map { it.qktSymbol }.toSet() ==
+                this.ast.streams
+                    .map { it.qktSymbol }
+                    .toSet(),
+        ) {
+            "scenario strategy must declare the same streams as the base; the shared feed is keyed to them"
+        }
         val strats =
             strategiesOverride?.invoke(overrides)
                 ?: listOf(ast.name to AstCompiler().compile(ast, overrides))
@@ -75,6 +101,14 @@ class BacktestContext private constructor(
             symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
                 ?: com.qkt.common.TradingCalendar
                     .crypto()
+        val haltRules =
+            com.qkt.risk.HaltRules.standard(
+                maxDailyLoss = haltConfig.maxDailyLoss,
+                maxDrawdownPct = haltConfig.maxDrawdownPct,
+                maxDailyDrawdownPct = haltConfig.maxDailyDrawdownPct,
+                totalDdBasis = haltConfig.totalDdBasis,
+                startingBalance = startingBalance,
+            )
         return Backtest.fromStore(
             strategies = strats,
             haltRules = haltRules,
@@ -91,17 +125,24 @@ class BacktestContext private constructor(
     }
 
     /**
-     * For a fan-out sweep: a builder of one shared decoded feed plus a per-combo engine factory.
+     * For a fan-out sweep: a builder of one shared decoded feed plus a per-scenario engine factory.
      * The sweep driver pulls the shared feed once and pushes each tick into every engine via
-     * `ReplayEngine.ingest`, so the basket is decoded once per worker instead of once per combo.
-     * The shared feed is built from default params because the market data is independent of
-     * strategy params; each engine is built with an empty feed (it is driven externally) but its
-     * own compiled strategy and isolated broker/P&L/risk state.
+     * `ReplayEngine.ingest`, so the basket is decoded once per worker instead of once per scenario.
+     * The shared feed is built from default params because the market data is independent of the
+     * per-scenario knobs (params, strategy variant, broker, instruments, balance); each engine is
+     * built with an empty feed (it is driven externally) but its own compiled strategy and isolated
+     * broker/P&L/risk state. A scenario may not change the symbol set — it keys the shared feed.
      */
-    fun sweepEngines(): Pair<() -> TickFeed, (Map<String, String>) -> ReplayEngine> {
+    fun scenarioEngines(): Pair<() -> TickFeed, (ScenarioSpec) -> ReplayEngine> {
         val sharedFeed = { backtest(emptyMap()).detachFeed() }
-        val engineFor = { overrides: Map<String, String> ->
-            backtest(overrides).toEngine(SequenceTickFeed(emptySequence()))
+        val engineFor = { s: ScenarioSpec ->
+            backtest(
+                overrides = s.params,
+                ast = s.ast ?: this.ast,
+                brokerKind = s.brokerKind ?: this.brokerKind,
+                instruments = s.instruments ?: this.instruments,
+                startingBalance = s.startingBalance ?: this.startingBalance,
+            ).toEngine(SequenceTickFeed(emptySequence()))
         }
         return sharedFeed to engineFor
     }
@@ -229,13 +270,12 @@ class BacktestContext private constructor(
                 Config.load(
                     Paths.get(args.option("config") ?: "./qkt.config.yaml"),
                 )
-            val haltRules =
-                com.qkt.risk.HaltRules.standard(
+            val haltConfig =
+                HaltConfig(
                     maxDailyLoss = cfg.maxDailyLoss,
                     maxDrawdownPct = cfg.maxDrawdownPct,
                     maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
                     totalDdBasis = cfg.totalDdBasis,
-                    startingBalance = startingBalance,
                 )
 
             return BacktestContext(
@@ -249,7 +289,7 @@ class BacktestContext private constructor(
                 barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
-                haltRules = haltRules,
+                haltConfig = haltConfig,
                 provisioner = provisioner,
                 bookRiskConfig = cfg.bookRisk,
             )
@@ -331,13 +371,12 @@ class BacktestContext private constructor(
             }
 
             val cfg = Config.load(Paths.get(args.option("config") ?: "./qkt.config.yaml"))
-            val haltRules =
-                com.qkt.risk.HaltRules.standard(
+            val haltConfig =
+                HaltConfig(
                     maxDailyLoss = cfg.maxDailyLoss,
                     maxDrawdownPct = cfg.maxDrawdownPct,
                     maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
                     totalDdBasis = cfg.totalDdBasis,
-                    startingBalance = startingBalance,
                 )
 
             return BacktestContext(
@@ -351,7 +390,7 @@ class BacktestContext private constructor(
                 barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
-                haltRules = haltRules,
+                haltConfig = haltConfig,
                 provisioner = provisioner,
                 strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
                 bookRiskConfig = cfg.bookRisk,

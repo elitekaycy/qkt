@@ -59,6 +59,30 @@ class BinaryTickRoundTripTest {
     }
 
     @Test
+    fun `all columns and nulls round-trip exactly across many ticks`(
+        @TempDir dir: Path,
+    ) {
+        fun digits8(n: Int) = "1." + (10_000_000 + n % 80_000_000).toString()
+        val ticks =
+            (0 until 5000).map { i ->
+                TickAssembler.assemble(
+                    "EURUSD",
+                    1_712_000_000_000L + i,
+                    if (i % 7 == 0) null else bd(digits8(i)),
+                    if (i % 5 == 0) null else bd("${i % 50}.00000000"),
+                    bd(digits8(i + 1)),
+                    bd(digits8(i + 2)),
+                    if (i % 3 == 0) null else bd("0.000${10_000 + i % 80_000}"),
+                    if (i % 4 == 0) null else bd("0.000${20_000 + i % 70_000}"),
+                    { "t:$i" },
+                )
+            }
+        val file = dir.resolve("2024-02-01.bin")
+        BinaryTickWriter().write(file, "EURUSD", ticks)
+        assertEquals(ticks, drain(BinaryTickFeed(file)))
+    }
+
+    @Test
     fun `empty tick list writes a readable empty file`(
         @TempDir dir: Path,
     ) {
