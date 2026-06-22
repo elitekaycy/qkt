@@ -17,6 +17,7 @@ import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.SequenceTickFeed
+import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataFetcher
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DefaultDataStore
@@ -63,6 +64,9 @@ class BacktestContext private constructor(
     private val provisioner: () -> Unit,
     private val strategiesOverride: ((Map<String, String>) -> List<Pair<String, com.qkt.strategy.Strategy>>)? = null,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
+    private val forceBars: Boolean = false,
+    private val barWindows: Map<String, TimeWindow> = emptyMap(),
+    private val binaryBarStore: BinaryBarStore? = null,
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -121,6 +125,9 @@ class BacktestContext private constructor(
             barStore = barStore,
             brokerKind = brokerKind,
             bookRiskConfig = bookRiskConfig,
+            forceBars = forceBars,
+            barWindows = barWindows,
+            binaryBarStore = binaryBarStore,
         )
     }
 
@@ -278,6 +285,41 @@ class BacktestContext private constructor(
                     totalDdBasis = cfg.totalDdBasis,
                 )
 
+            // --bars research tier: replay pre-built binary bars at each symbol's finest declared
+            // timeframe (CandleHub aggregates up to coarser declared tfs). Fail loud if a symbol has
+            // no bars built, naming the build-bars command — never silently fall back to slow ticks.
+            val forceBars = args.flag("bars")
+            val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
+            val barWindows: Map<String, TimeWindow> =
+                ast.streams
+                    .filter { it.qktSymbol in symbols }
+                    .groupBy { it.qktSymbol }
+                    .mapNotNull { (sym, streams) ->
+                        streams
+                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
+                            .minByOrNull { w -> w.durationMs }
+                            ?.let { sym to it }
+                    }.toMap()
+            if (forceBars) {
+                val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
+                val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
+                val days = generateSequence(fromDay) { it.plusDays(1) }.takeWhile { !it.isAfter(toDay) }.toList()
+                for (sym in symbols) {
+                    val tf = barWindows[sym] ?: candleWindow ?: continue
+                    val parts = sym.split(":", limit = 2)
+                    val broker = if (parts.size == 2) parts[0] else "BACKTEST"
+                    val bare = parts.last()
+                    if (days.none { binaryBarStore.hasDay(broker, bare, tf, it) }) {
+                        val spec = tf.canonicalSpec()
+                        throw SetupError(
+                            "--bars: no bars for $sym at $spec; " +
+                                "run: qkt data build-bars $bare --tf $spec --from $fromDay --to ${toDay.plusDays(1)}",
+                        )
+                    }
+                }
+                System.err.println("qkt: --bars research tier — bar-approximated intrabar fills; not for grading")
+            }
+
             return BacktestContext(
                 ast = ast,
                 from = from,
@@ -292,6 +334,9 @@ class BacktestContext private constructor(
                 haltConfig = haltConfig,
                 provisioner = provisioner,
                 bookRiskConfig = cfg.bookRisk,
+                forceBars = forceBars,
+                barWindows = barWindows,
+                binaryBarStore = binaryBarStore,
             )
         }
 
