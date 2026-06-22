@@ -35,6 +35,14 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
+/** Inputs the risk halt rules are built from; the account-balance basis is supplied per backtest. */
+internal data class HaltConfig(
+    val maxDailyLoss: BigDecimal,
+    val maxDrawdownPct: BigDecimal?,
+    val maxDailyDrawdownPct: BigDecimal?,
+    val totalDdBasis: com.qkt.risk.DrawdownBasis,
+)
+
 /**
  * Shared backtest wiring used by `backtest`, `sweep`, `walkforward`, and (store/instruments only)
  * `research`. Centralizes data store, dukascopy auto-fetch, completeness provisioning, instrument
@@ -51,17 +59,30 @@ class BacktestContext private constructor(
     val barStore: LocalBarStore,
     private val candleWindow: TimeWindow?,
     private val startingBalance: BigDecimal,
-    private val haltRules: List<com.qkt.risk.HaltRule>,
+    private val haltConfig: HaltConfig,
     private val provisioner: () -> Unit,
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
 
-    /** Build a backtest for [overrides] over [range] (defaults to the full configured window). */
+    /**
+     * Build a backtest for [overrides] over [range] (defaults to the full configured window).
+     * For a fan-out scenario, [ast], [brokerKind], [instruments], and [startingBalance] may each
+     * differ from the context default; the halt rules are re-derived from the effective balance so
+     * the result is byte-identical to a standalone backtest built with those same values. A scenario
+     * may NOT change the symbol set — the shared decoded feed is keyed to it (enforced below).
+     */
     fun backtest(
         overrides: Map<String, String>,
         range: TimeRange = TimeRange(from, to),
+        ast: StrategyAst = this.ast,
+        brokerKind: BrokerKind = this.brokerKind,
+        instruments: InstrumentRegistry = this.instruments,
+        startingBalance: BigDecimal = this.startingBalance,
     ): Backtest {
+        require(ast.streams.map { it.qktSymbol }.distinct().toSet() == symbols.toSet()) {
+            "scenario streams ${ast.streams.map { it.qktSymbol }.distinct()} must match context symbols $symbols"
+        }
         val strategy = AstCompiler().compile(ast, overrides)
         // The symbol's LIVE calendar, not hardwired crypto: session/range indicators
         // (PreviousDayHigh, session gates) disagree by construction otherwise. The
@@ -71,6 +92,14 @@ class BacktestContext private constructor(
             symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
                 ?: com.qkt.common.TradingCalendar
                     .crypto()
+        val haltRules =
+            com.qkt.risk.HaltRules.standard(
+                maxDailyLoss = haltConfig.maxDailyLoss,
+                maxDrawdownPct = haltConfig.maxDrawdownPct,
+                maxDailyDrawdownPct = haltConfig.maxDailyDrawdownPct,
+                totalDdBasis = haltConfig.totalDdBasis,
+                startingBalance = startingBalance,
+            )
         return Backtest.fromStore(
             strategies = listOf(ast.name to strategy),
             haltRules = haltRules,
@@ -224,13 +253,12 @@ class BacktestContext private constructor(
                 Config.load(
                     Paths.get(args.option("config") ?: "./qkt.config.yaml"),
                 )
-            val haltRules =
-                com.qkt.risk.HaltRules.standard(
+            val haltConfig =
+                HaltConfig(
                     maxDailyLoss = cfg.maxDailyLoss,
                     maxDrawdownPct = cfg.maxDrawdownPct,
                     maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
                     totalDdBasis = cfg.totalDdBasis,
-                    startingBalance = startingBalance,
                 )
 
             return BacktestContext(
@@ -244,7 +272,7 @@ class BacktestContext private constructor(
                 barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
-                haltRules = haltRules,
+                haltConfig = haltConfig,
                 provisioner = provisioner,
             )
         }
