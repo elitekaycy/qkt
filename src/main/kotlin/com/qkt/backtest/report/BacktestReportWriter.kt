@@ -41,6 +41,7 @@ class BacktestReportWriter(
         }
         Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
         Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
+        result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), renderBookRiskCsv(it)) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
     }
 
@@ -120,8 +121,66 @@ class BacktestReportWriter(
         } else {
             sb.append("}")
         }
+        sb.append(",\n  \"bookAnalytics\": ").append(renderBookAnalytics(result.bookAnalytics))
+        sb.append(",\n  \"bookRisk\": ").append(renderBookRiskJson(result.bookRisk))
         sb.append("\n}")
         return sb.toString()
+    }
+
+    private fun renderBookAnalytics(ba: com.qkt.backtest.BookAnalytics?): String {
+        if (ba == null) return "null"
+
+        fun mapJson(m: Map<String, java.math.BigDecimal>): String =
+            buildString {
+                append("{")
+                append(
+                    m.entries.sortedBy { it.key }.joinToString(",") {
+                        "${ReportSerializer.jsonString(it.key)}:${ReportSerializer.jsonBigDecimal(it.value)}"
+                    },
+                )
+                append("}")
+            }
+        return buildString {
+            append("{\"contributionToReturn\":").append(mapJson(ba.contributionToReturn))
+            append(",\"riskContribution\":").append(mapJson(ba.riskContribution))
+            append(",\"drawdownContribution\":").append(mapJson(ba.drawdownContribution))
+            append(",\"returnCorrelation\":[")
+            append(
+                ba.returnCorrelation.joinToString(",") { p ->
+                    "{\"a\":${ReportSerializer.jsonString(p.a)},\"b\":${ReportSerializer.jsonString(p.b)}," +
+                        "\"correlation\":${ReportSerializer.jsonBigDecimal(p.correlation)}}"
+                },
+            )
+            append("]}")
+        }
+    }
+
+    private fun renderBookRiskCsv(br: com.qkt.backtest.BookRiskReport): String {
+        val sb = StringBuilder("timestamp,grossExposure,netExposure,bookEquity\n")
+        for (s in br.series) {
+            sb
+                .append(s.timestampMs)
+                .append(',')
+                .append(s.grossExposure.toPlainString())
+                .append(',')
+                .append(s.netExposure.toPlainString())
+                .append(',')
+                .append(s.bookEquity.toPlainString())
+                .append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun renderBookRiskJson(br: com.qkt.backtest.BookRiskReport?): String {
+        if (br == null) return "null"
+        return buildString {
+            append("{\"bookVol\": ").append(ReportSerializer.jsonNullableBigDecimal(br.bookVol))
+            append(", \"maxGrossExposure\": ").append(ReportSerializer.jsonBigDecimal(br.maxGrossExposure))
+            append(", \"maxNetExposure\": ").append(ReportSerializer.jsonBigDecimal(br.maxNetExposure))
+            append(", \"samples\": ").append(br.series.size)
+            append(", \"events\": ").append(br.events.size)
+            append("}")
+        }
     }
 
     private fun renderReport(
@@ -159,6 +218,8 @@ class BacktestReportWriter(
         field("maxConsecutiveLosses", r.maxConsecutiveLosses.toString())
         field("sharpeRatio", ReportSerializer.jsonNullableBigDecimal(r.sharpeRatio))
         field("calmarRatio", ReportSerializer.jsonNullableBigDecimal(r.calmarRatio))
+        field("sortinoRatio", ReportSerializer.jsonNullableBigDecimal(r.sortinoRatio))
+        field("turnover", ReportSerializer.jsonBigDecimal(r.turnover))
         sb.append(",\n").append(pad).append("  \"equityCurve\": [")
         if (r.equityCurve.isNotEmpty()) {
             sb.append('\n')
