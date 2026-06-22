@@ -134,10 +134,21 @@ class Backtest(
             barStore: com.qkt.marketdata.store.LocalBarStore? = null,
             brokerKind: BrokerKind = BrokerKind.PAPER,
             bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
+            forceBars: Boolean = false,
+            barWindows: Map<String, TimeWindow> = emptyMap(),
+            binaryBarStore: com.qkt.marketdata.store.BinaryBarStore? = null,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
-            val localSource = LocalMarketSource(store, FixedClock(time = to.toEpochMilli()), barStore = barStore)
+            val localSource =
+                LocalMarketSource(
+                    store,
+                    FixedClock(time = to.toEpochMilli()),
+                    barStore = barStore,
+                    // Only the `--bars` research tier reads the binary bar store; normal runs use
+                    // ticks (or the fetched CSV bar store for bars-only venues), unchanged.
+                    binaryBarStore = if (forceBars) binaryBarStore else null,
+                )
             // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
             // source; everything else falls through to the tick store. Non-MACRO runs are unchanged.
             val source: MarketSource =
@@ -165,6 +176,8 @@ class Backtest(
                 instruments = instruments,
                 brokerKind = brokerKind,
                 bookRiskConfig = bookRiskConfig,
+                forceBars = forceBars,
+                barWindows = barWindows,
             )
         }
 
@@ -182,6 +195,8 @@ class Backtest(
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
             brokerKind: BrokerKind = BrokerKind.PAPER,
             bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
+            forceBars: Boolean = false,
+            barWindows: Map<String, TimeWindow> = emptyMap(),
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -193,7 +208,9 @@ class Backtest(
             val to = request.to ?: error("Backtest.fromSource requires explicit MarketRequest.to")
             val range = TimeRange(from, to)
             val perSymbolFeeds: List<TickFeed> =
-                request.symbols.map { sym -> replayFeed(source, sym, range, candleWindow) }
+                request.symbols.map { sym ->
+                    replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars)
+                }
             val feed: TickFeed =
                 if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
             return Backtest(
@@ -226,23 +243,28 @@ class Backtest(
             symbol: String,
             range: TimeRange,
             window: TimeWindow?,
+            forceBars: Boolean,
         ): TickFeed {
             val caps = source.capabilities
             val ticksAvailable = MarketSourceCapability.TICKS in caps
-            if (ticksAvailable) {
+            // The `--bars` research tier forces synthesis from bars; otherwise prefer real ticks,
+            // which keeps tick-sourced backtests byte-for-byte unchanged.
+            if (!forceBars && ticksAvailable) {
                 val iter = source.ticks(symbol, range).iterator()
                 if (iter.hasNext()) {
                     val first = iter.next()
                     return SequenceTickFeed(sequenceOf(first) + iter.asSequence())
                 }
             }
-            // No recorded ticks for this symbol/range. Synthesize from OHLC bars when we can.
+            // Synthesize O->L->H->C ticks from OHLC bars (the forced research tier, or the bars-only
+            // fallback for venues like crypto).
             if (MarketSourceCapability.BARS in caps && window != null) {
                 return BarTickFeed(source.bars(symbol, window, range))
             }
-            // Can't synthesize. A tick-capable source with an empty range is a legitimate gap
-            // (e.g. a market-closed day) — yield nothing. A bars-only source reaching here means
-            // no candle window was supplied, which is a real misconfiguration.
+            if (forceBars) {
+                error("--bars: cannot replay bars for $symbol (source has no BARS capability or no candle window)")
+            }
+            // A tick-capable source with an empty range is a legitimate gap (e.g. a market-closed day).
             require(ticksAvailable) {
                 "bar-based backtest for $symbol needs a candle window (timeframe) — pass candleWindow"
             }

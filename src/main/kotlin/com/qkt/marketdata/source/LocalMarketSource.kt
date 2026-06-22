@@ -8,6 +8,7 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.openDayFeed
+import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
 import com.qkt.marketdata.store.LocalBarStore
 import java.math.BigDecimal
@@ -25,6 +26,11 @@ class LocalMarketSource(
      * to tick aggregation, so the two stores can coexist safely.
      */
     private val barStore: LocalBarStore? = null,
+    /**
+     * The `--bars` research tier's pre-built binary bar store. When injected, [bars] reads from it
+     * exclusively (no slow tick-aggregation fallback) — set only for `--bars` runs.
+     */
+    private val binaryBarStore: BinaryBarStore? = null,
 ) : MarketSource {
     override val name: String = "Local"
     override val capabilities: Set<MarketSourceCapability> =
@@ -69,6 +75,27 @@ class LocalMarketSource(
         window: TimeWindow,
         range: TimeRange,
     ): Sequence<Candle> {
+        val bin = binaryBarStore
+        if (bin != null) {
+            // --bars research tier: read pre-built binary bars per day (gaps tolerated, like ticks);
+            // no slow tick-aggregation fallback. The store stamps the prefixed qktSymbol on read.
+            val parts = symbol.split(":", limit = 2)
+            val broker = if (parts.size == 2) parts[0] else "BACKTEST"
+            val sym = parts.last()
+            val days = daysCovering(range)
+            val rangeFromMs = range.from.toEpochMilli()
+            val rangeToMs = range.to.toEpochMilli()
+            return sequence {
+                for (day in days) {
+                    if (!bin.hasDay(broker, sym, window, day)) continue
+                    for (candle in bin.readDay(broker, sym, window, day)) {
+                        if (candle.startTime < rangeFromMs) continue
+                        if (candle.endTime > rangeToMs) continue
+                        yield(candle)
+                    }
+                }
+            }
+        }
         val bs = barStore
         if (bs != null) {
             val parts = symbol.split(":", limit = 2)
