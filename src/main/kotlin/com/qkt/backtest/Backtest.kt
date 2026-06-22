@@ -44,6 +44,11 @@ class Backtest(
     private val brokerKind: BrokerKind = BrokerKind.PAPER,
     /** See [com.qkt.app.TradingPipeline.latencyEnabled]; defaults to the env-var read. */
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
+    /**
+     * `--bars` research tier: fill triggered Stop/Limit exits at their trigger level, not
+     * the synthetic bar extreme. See [com.qkt.broker.PaperBroker.fillAtTriggerPrice].
+     */
+    private val barFills: Boolean = false,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -107,6 +112,7 @@ class Backtest(
             bookRiskConfig = bookRiskConfig,
             brokerKind = brokerKind,
             latencyEnabled = latencyEnabled,
+            barFills = barFills,
         )
 
     fun run(): BacktestResult = toEngine().runToEnd()
@@ -229,6 +235,7 @@ class Backtest(
                 instruments = instruments,
                 brokerKind = brokerKind,
                 bookRiskConfig = bookRiskConfig,
+                barFills = forceBars,
             )
         }
 

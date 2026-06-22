@@ -30,6 +30,19 @@ class PaperBroker(
     private val bus: EventBus,
     private val clock: Clock,
     private val priceProvider: MarketPriceProvider,
+    /**
+     * Bar-research mode: fill a triggered Stop/Limit (or if-touched-market) at its own
+     * price level instead of the price of the tick that triggered it.
+     *
+     * On real ticks the triggering print sits right at the level (dense ticks), so the
+     * two agree and this stays off. But when a backtest replays bars, the only intrabar
+     * prints are the synthetic O->L->H->C extremes: a long stop triggers on the bar's
+     * low and a long take-profit on the bar's high, so filling "at the tick" books the
+     * bar extreme — a phantom slippage that grows with bar range and contradicts this
+     * broker's no-slippage design. e.g. stop 1.09, a bar dips to low 1.085: off -> fills
+     * 1.085 (inflated loss); on -> fills 1.09. Wired on only for the `--bars` tier.
+     */
+    private val fillAtTriggerPrice: Boolean = false,
 ) : Broker {
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
@@ -124,12 +137,14 @@ class PaperBroker(
     ) {
         val (fillPrice, side, qty) =
             when (req) {
-                is OrderRequest.Limit -> Triple(tickPrice, req.side, req.quantity)
-                is OrderRequest.Stop -> Triple(tickPrice, req.side, req.quantity)
+                is OrderRequest.Limit ->
+                    Triple(if (fillAtTriggerPrice) req.limitPrice else tickPrice, req.side, req.quantity)
+                is OrderRequest.Stop ->
+                    Triple(if (fillAtTriggerPrice) req.stopPrice else tickPrice, req.side, req.quantity)
                 is OrderRequest.StopLimit -> Triple(req.limitPrice, req.side, req.quantity)
                 is OrderRequest.IfTouched ->
                     if (req.onTrigger == TriggerType.MARKET) {
-                        Triple(tickPrice, req.side, req.quantity)
+                        Triple(if (fillAtTriggerPrice) req.triggerPrice else tickPrice, req.side, req.quantity)
                     } else {
                         Triple(req.limitPrice!!, req.side, req.quantity)
                     }
