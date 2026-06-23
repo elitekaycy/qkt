@@ -213,6 +213,14 @@ object QktDocs {
             "POW" to doc("pow(base, exponent)", "base raised to exponent."),
             "MIN" to doc("min(a, b, ...)", "Smallest of two or more values."),
             "MAX" to doc("max(a, b, ...)", "Largest of two or more values."),
+            "RANK_OF" to
+                doc(
+                    "rank_of(self, other, ...)",
+                    "Cross-sectional rank of the first value among all the values (1 = highest). " +
+                        "List one expression per stream to rank a cross-section, e.g. " +
+                        "`rank_of(a.mom, b.mom, c.mom) == 1` is true on the strongest stream and " +
+                        "`<= 2` selects the top two. Ties share the top rank.",
+                ),
             "MOD" to
                 doc(
                     "mod(a, b)",
