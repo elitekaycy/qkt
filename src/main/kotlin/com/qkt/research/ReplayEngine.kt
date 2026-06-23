@@ -12,6 +12,8 @@ import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.ReturnAutocorrCollector
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
+import com.qkt.broker.InstrumentSlippage
+import com.qkt.broker.MT5BrokerSimulator
 import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
@@ -167,12 +169,13 @@ class ReplayEngine(
                 }
             }
         }
-        val brokerFactory: () -> com.qkt.broker.Broker =
+        val brokerFactory: () -> com.qkt.broker.Broker = {
             when (brokerKind) {
-                BrokerKind.PAPER -> { -> PaperBroker(bus, clock, priceTracker, fillAtTriggerPrice = barFills) }
+                BrokerKind.PAPER -> PaperBroker(bus, clock, priceTracker, fillAtTriggerPrice = barFills)
                 BrokerKind.MT5_SIM ->
-                    { -> com.qkt.broker.MT5BrokerSimulator(bus, clock, priceTracker, instruments) }
+                    MT5BrokerSimulator(bus, clock, priceTracker, instruments, slippage = InstrumentSlippage)
             }
+        }
         val broker: com.qkt.broker.Broker =
             if (brokerSymbols.isEmpty()) {
                 brokerFactory()
