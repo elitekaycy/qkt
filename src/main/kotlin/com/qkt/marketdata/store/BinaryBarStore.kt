@@ -54,4 +54,23 @@ class BinaryBarStore(
         tf: TimeWindow,
         date: LocalDate,
     ): List<Candle> = BinaryBarFeed(dayFile(broker, symbol, tf, date)).candles()
+
+    /**
+     * Timeframes that have a bar directory for this symbol, e.g. with `bars/BACKTEST/EURUSD/1m`
+     * and `.../30m` present this returns `[1m, 30m]` (in unspecified order). Empty if the symbol
+     * has no bars. Lets the `--bars` resolver pick the coarsest built tf that divides a strategy's
+     * declared tf, so a 30m strategy can replay off 1m bars without pre-building every tf.
+     */
+    fun builtTimeframes(
+        broker: String,
+        symbol: String,
+    ): List<TimeWindow> {
+        val dir = root.resolve("bars").resolve(broker).resolve(symbol)
+        if (!Files.isDirectory(dir)) return emptyList()
+        return Files.newDirectoryStream(dir).use { entries ->
+            entries
+                .filter { Files.isDirectory(it) }
+                .mapNotNull { runCatching { TimeWindow.parse(it.fileName.toString()) }.getOrNull() }
+        }
+    }
 }
