@@ -56,10 +56,7 @@ class FixedPointsSlippage(
         fillPrice: BigDecimal,
         side: Side,
         meta: InstrumentMeta,
-    ): BigDecimal {
-        val delta = meta.pointSize.multiply(BigDecimal(points))
-        return if (side == Side.BUY) fillPrice.add(delta) else fillPrice.subtract(delta)
-    }
+    ): BigDecimal = adversePoints(fillPrice, side, points, meta.pointSize)
 }
 
 /**
@@ -82,8 +79,35 @@ class UniformRandomSlippage(
         meta: InstrumentMeta,
     ): BigDecimal {
         if (maxPoints == 0) return fillPrice
-        val drawn = rng.nextInt(0, maxPoints + 1)
-        val delta = meta.pointSize.multiply(BigDecimal(drawn))
-        return if (side == Side.BUY) fillPrice.add(delta) else fillPrice.subtract(delta)
+        return adversePoints(fillPrice, side, rng.nextInt(0, maxPoints + 1), meta.pointSize)
     }
+}
+
+/**
+ * Per-instrument slippage: shifts the fill adverse to the side by the traded instrument's own
+ * [InstrumentMeta.slippagePoints] (in venue points, each [InstrumentMeta.pointSize] wide). Lets
+ * each symbol carry its realistic execution slip in `instruments.yaml`, the same way
+ * [InstrumentMeta.commissionPerLot] carries its commission — a symbol left at zero points fills
+ * with no slippage, so this model is a no-op until values are set.
+ *
+ * e.g. slippagePoints=5 on a 0.001-pointSize symbol: a BUY filling at 2000.000 fills at 2000.005.
+ */
+object InstrumentSlippage : SlippageModel {
+    override fun adjust(
+        fillPrice: BigDecimal,
+        side: Side,
+        meta: InstrumentMeta,
+    ): BigDecimal = adversePoints(fillPrice, side, meta.slippagePoints, meta.pointSize)
+}
+
+/** Shift [fillPrice] adverse to [side] by [points] venue points, each [pointSize] wide. */
+private fun adversePoints(
+    fillPrice: BigDecimal,
+    side: Side,
+    points: Int,
+    pointSize: BigDecimal,
+): BigDecimal {
+    if (points <= 0) return fillPrice
+    val delta = pointSize.multiply(BigDecimal(points))
+    return if (side == Side.BUY) fillPrice.add(delta) else fillPrice.subtract(delta)
 }

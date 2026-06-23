@@ -15,6 +15,11 @@ import java.math.BigDecimal
  * the live venue bills. Left at zero, fills are commission-free (the pre-cost-model
  * behavior). Live runs leave it zero: the real broker already deducts commission from the
  * account, so the engine must not simulate it on top.
+ *
+ * [slippagePoints] is adverse execution slip in venue points (each [pointSize] wide), applied by
+ * the mt5-sim broker on every fill — e.g. 5 on a 0.001-pointSize symbol slips a fill by 0.005
+ * against you. Left at zero, fills have no slippage (the optimistic default); live runs leave it
+ * zero because the real venue slips for real.
  */
 data class InstrumentMeta(
     val qktSymbol: String,
@@ -26,6 +31,7 @@ data class InstrumentMeta(
     val digits: Int,
     val tradeStopsLevelPoints: Int,
     val commissionPerLot: BigDecimal = BigDecimal.ZERO,
+    val slippagePoints: Int = 0,
 ) {
     init {
         require(qktSymbol.isNotBlank()) { "InstrumentMeta.qktSymbol must not be blank" }
@@ -39,6 +45,9 @@ data class InstrumentMeta(
         }
         require(commissionPerLot.signum() >= 0) {
             "InstrumentMeta.commissionPerLot must be >= 0: $commissionPerLot"
+        }
+        require(slippagePoints >= 0) {
+            "InstrumentMeta.slippagePoints must be >= 0: $slippagePoints"
         }
     }
 }
