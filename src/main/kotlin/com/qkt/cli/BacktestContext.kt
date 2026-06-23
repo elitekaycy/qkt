@@ -250,7 +250,10 @@ class BacktestContext private constructor(
                         .map { ProvisionStream(broker = it.broker, bareSymbol = it.symbol) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                if (!provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
+                // completeness validation: it would otherwise scan the tick store and warn on holiday
+                // holes the bar run doesn't care about (pure waste + log noise every gate run).
+                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
                         streams = provisionStreams,
                         from = provisionFrom,
@@ -422,7 +425,8 @@ class BacktestContext private constructor(
                         .map { ProvisionStream(broker = it.broker, bareSymbol = it.symbol) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                if (!provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                // --bars never reads ticks; skip tick fetch + completeness validation (see build()).
+                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
                         streams = provisionStreams,
                         from = provisionFrom,
