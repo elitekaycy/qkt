@@ -160,6 +160,12 @@ class BacktestContext private constructor(
             message: String,
         ) : RuntimeException(message)
 
+        /** Split a qktSymbol into (broker, bare): "MT5:EURUSD" -> ("MT5","EURUSD"), "EURUSD" -> ("BACKTEST","EURUSD"). */
+        private fun brokerAndBare(qktSymbol: String): Pair<String, String> {
+            val parts = qktSymbol.split(":", limit = 2)
+            return if (parts.size == 2) parts[0] to parts[1] else "BACKTEST" to qktSymbol
+        }
+
         fun build(
             args: Args,
             ast: StrategyAst,
@@ -285,12 +291,14 @@ class BacktestContext private constructor(
                     totalDdBasis = cfg.totalDdBasis,
                 )
 
-            // --bars research tier: replay pre-built binary bars at each symbol's finest declared
-            // timeframe (CandleHub aggregates up to coarser declared tfs). Fail loud if a symbol has
-            // no bars built, naming the build-bars command — never silently fall back to slow ticks.
+            // --bars research tier: feed each symbol at the COARSEST built tf that divides its finest
+            // declared tf, and let CandleHub aggregate up to every declared tf (rollup is exact). So a
+            // 30m strategy can replay off 1m bars and a 1h strategy off 30m bars — building 1m + 30m
+            // covers the whole standard ladder, no need to pre-build every tf. Fail loud if nothing
+            // usable is built, naming the build-bars command — never silently fall back to slow ticks.
             val forceBars = args.flag("bars")
             val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
-            val barWindows: Map<String, TimeWindow> =
+            val finestDeclared: Map<String, TimeWindow> =
                 ast.streams
                     .filter { it.qktSymbol in symbols }
                     .groupBy { it.qktSymbol }
@@ -300,20 +308,31 @@ class BacktestContext private constructor(
                             .minByOrNull { w -> w.durationMs }
                             ?.let { sym to it }
                     }.toMap()
+            val barWindows: Map<String, TimeWindow> =
+                if (!forceBars) {
+                    finestDeclared
+                } else {
+                    finestDeclared.mapValues { (sym, declared) ->
+                        val (broker, bare) = brokerAndBare(sym)
+                        binaryBarStore
+                            .builtTimeframes(broker, bare)
+                            .filter { declared.durationMs % it.durationMs == 0L }
+                            .maxByOrNull { it.durationMs }
+                            ?: declared // no usable built tf — let the guardrail below report it
+                    }
+                }
             if (forceBars) {
                 val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 val days = generateSequence(fromDay) { it.plusDays(1) }.takeWhile { !it.isAfter(toDay) }.toList()
                 for (sym in symbols) {
                     val tf = barWindows[sym] ?: candleWindow ?: continue
-                    val parts = sym.split(":", limit = 2)
-                    val broker = if (parts.size == 2) parts[0] else "BACKTEST"
-                    val bare = parts.last()
+                    val (broker, bare) = brokerAndBare(sym)
                     if (days.none { binaryBarStore.hasDay(broker, bare, tf, it) }) {
-                        val spec = tf.canonicalSpec()
                         throw SetupError(
-                            "--bars: no bars for $sym at $spec; " +
-                                "run: qkt data build-bars $bare --tf $spec --from $fromDay --to ${toDay.plusDays(1)}",
+                            "--bars: no built bars usable for $sym (need a built tf that divides " +
+                                "${tf.canonicalSpec()}); run: qkt data build-bars $bare --tf 1m " +
+                                "--from $fromDay --to ${toDay.plusDays(1)}",
                         )
                     }
                 }
