@@ -43,4 +43,25 @@ class BinaryBarStoreTest {
         assertThat(store.readDay("BACKTEST", "XAUUSD", tf, day))
             .isEqualTo(bars.map { it.copy(symbol = "BACKTEST:XAUUSD") })
     }
+
+    @Test
+    fun `builtTimeframes lists the tfs with bars for a symbol`(
+        @TempDir dir: Path,
+    ) {
+        val store = BinaryBarStore(dir)
+        val day = LocalDate.parse("2024-01-04")
+        val base = 1_712_000_000_000L
+
+        fun bar(tf: TimeWindow) =
+            listOf(Candle("EURUSD", bd("1.1"), bd("1.2"), bd("1.0"), bd("1.15"), bd("3"), base, base + tf.durationMs))
+
+        assertThat(store.builtTimeframes("BACKTEST", "EURUSD")).isEmpty()
+        store.writeDay("BACKTEST", "EURUSD", TimeWindow.parse("1m"), day, bar(TimeWindow.parse("1m")))
+        store.writeDay("BACKTEST", "EURUSD", TimeWindow.parse("30m"), day, bar(TimeWindow.parse("30m")))
+        // Another symbol's tf must not leak in.
+        store.writeDay("BACKTEST", "GBPUSD", TimeWindow.parse("1h"), day, bar(TimeWindow.parse("1h")))
+
+        assertThat(store.builtTimeframes("BACKTEST", "EURUSD"))
+            .containsExactlyInAnyOrder(TimeWindow.parse("1m"), TimeWindow.parse("30m"))
+    }
 }

@@ -146,6 +146,88 @@ class BarsReplayTest {
     }
 
     @Test
+    fun `a 15m strategy replays off 1m bars identically to direct 15m bars`(
+        @TempDir dir: Path,
+    ) {
+        val from = "2024-01-02"
+        val to = "2024-01-05"
+
+        fun build(
+            dataRoot: Path,
+            tf: String,
+        ) {
+            seedTicks(dataRoot, days = 3)
+            val code =
+                DataCommand(
+                    Args(
+                        arrayOf(
+                            "data",
+                            "build-bars",
+                            "XAUUSD",
+                            "--tf",
+                            tf,
+                            "--from",
+                            from,
+                            "--to",
+                            to,
+                            "--data-root",
+                            dataRoot.toString(),
+                        ),
+                    ),
+                ).run()
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        }
+
+        fun runBars(dataRoot: Path): String {
+            val out = ByteArrayOutputStream()
+            val orig = System.out
+            val code =
+                try {
+                    System.setOut(PrintStream(out))
+                    BacktestCommand(
+                        Args(
+                            arrayOf(
+                                "backtest",
+                                strategyFile(dir).toString(),
+                                "--from",
+                                from,
+                                "--to",
+                                to,
+                                "--data-root",
+                                dataRoot.toString(),
+                                "--no-fetch",
+                                "--allow-incomplete",
+                                "--bars",
+                                "--json",
+                            ),
+                        ),
+                    ).run()
+                } finally {
+                    System.setOut(orig)
+                }
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+            return out.toString()
+        }
+
+        fun field(
+            json: String,
+            key: String,
+        ): String = Regex("\"$key\":\\s*(-?[0-9.]+)").find(json)?.groupValues?.get(1) ?: error("no $key in $json")
+
+        val rootFine = dir.resolve("fine")
+        val rootDirect = dir.resolve("direct")
+        // Only 1m built: resolver must feed 1m and let CandleHub aggregate up to the strategy's 15m.
+        build(rootFine, "1m")
+        // 15m built: resolver feeds 15m directly (the trivial case).
+        build(rootDirect, "15m")
+        val jsonFine = runBars(rootFine)
+        val jsonDirect = runBars(rootDirect)
+        // On-the-fly aggregation from 1m must reproduce the direct-15m run exactly.
+        assertThat(field(jsonFine, "trades")).isEqualTo(field(jsonDirect, "trades"))
+        assertThat(field(jsonFine, "totalPnL")).isEqualTo(field(jsonDirect, "totalPnL"))
+    }
+
+    @Test
     fun `backtest --bars errors when bars are not built`(
         @TempDir dir: Path,
     ) {
