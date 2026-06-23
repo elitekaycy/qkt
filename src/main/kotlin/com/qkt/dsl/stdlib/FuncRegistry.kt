@@ -68,6 +68,15 @@ object FuncRegistry {
             "ROUND" to FuncSpec("ROUND", Arity.UNARY) { args -> args[0].setScale(0, Money.ROUNDING) },
             "MIN" to FuncSpec("MIN", Arity.VARIADIC2) { args -> args.reduce { a, b -> a.min(b) } },
             "MAX" to FuncSpec("MAX", Arity.VARIADIC2) { args -> args.reduce { a, b -> a.max(b) } },
+            // Cross-sectional rank of the FIRST value among all the values, 1 = highest. List one
+            // expression per stream to rank a cross-section, e.g. in stream a's rule
+            // `rank_of(a.mom, b.mom, c.mom, d.mom) <= 2` is true when a is in the top 2 by momentum.
+            // Competition ranking: ties share the top rank (1 + count strictly greater).
+            "RANK_OF" to
+                FuncSpec("RANK_OF", Arity.VARIADIC2) { args ->
+                    val self = args[0]
+                    BigDecimal(1 + args.count { it > self })
+                },
         )
 
     fun has(name: String): Boolean = table.containsKey(name)
