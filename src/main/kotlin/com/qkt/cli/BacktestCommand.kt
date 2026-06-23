@@ -86,7 +86,8 @@ class BacktestCommand(
             if (ctx.brokerKind == BrokerKind.PAPER) {
                 System.err.println(
                     "qkt: note: paper broker fills at mid with no spread/slippage — results are optimistic. " +
-                        "Use --broker mt5-sim and set commissionPerLot in instruments.yaml for cost-realistic backtests.",
+                        "Use --broker mt5-sim and set commissionPerLot + slippagePoints in instruments.yaml " +
+                        "for cost-realistic backtests.",
                 )
             }
             ExitCodes.SUCCESS

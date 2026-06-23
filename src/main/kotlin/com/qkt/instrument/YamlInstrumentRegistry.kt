@@ -23,6 +23,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *     digits: 3
  *     tradeStopsLevelPoints: 0
  *     commissionPerLot: 3.50   # optional, default 0 — backtest cost per lot per side
+ *     slippagePoints: 5        # optional, default 0 — adverse execution slip in points (mt5-sim)
  * ```
  *
  * Duplicate `qktSymbol` entries fail loudly at [load] — fail-fast keeps a YAML edit
@@ -67,6 +68,8 @@ class YamlInstrumentRegistry private constructor(
 
             fun int(key: String): Int = (req(key) as Number).toInt()
 
+            fun intOpt(key: String): Int? = (entry[key] as? Number)?.toInt()
+
             return InstrumentMeta(
                 qktSymbol = req("qktSymbol").toString(),
                 contractSize = bd("contractSize"),
@@ -77,6 +80,7 @@ class YamlInstrumentRegistry private constructor(
                 digits = int("digits"),
                 tradeStopsLevelPoints = int("tradeStopsLevelPoints"),
                 commissionPerLot = bdOpt("commissionPerLot") ?: BigDecimal.ZERO,
+                slippagePoints = intOpt("slippagePoints") ?: 0,
             )
         }
     }

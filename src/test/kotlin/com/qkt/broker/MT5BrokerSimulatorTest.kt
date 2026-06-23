@@ -272,6 +272,59 @@ class MT5BrokerSimulatorTest {
     }
 
     @Test
+    fun `InstrumentSlippage shifts fill by the instrument's slippagePoints`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val tracker = MarketPriceTracker()
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                FixedClock(0L),
+                tracker,
+                registry(xauusd().copy(slippagePoints = 5)),
+                slippage = InstrumentSlippage,
+                syntheticSpreadPoints = 0,
+            )
+        val tick = Tick(symbol = "EXNESS:XAUUSD", price = Money.of("2000.000"), timestamp = 0L)
+        bus.publish(TickEvent(tick))
+        tracker.update("EXNESS:XAUUSD", tick.price)
+
+        sim.submit(marketBuy("EXNESS:XAUUSD", "0.01"))
+
+        assertThat(fills).hasSize(1)
+        // BUY shifted UP by 5 * pointSize (0.001) = +0.005.
+        assertThat(fills.single().price.setScale(3, java.math.RoundingMode.HALF_EVEN))
+            .isEqualByComparingTo(Money.of("2000.005"))
+    }
+
+    @Test
+    fun `InstrumentSlippage is a no-op when slippagePoints is zero`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val tracker = MarketPriceTracker()
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                FixedClock(0L),
+                tracker,
+                registry(xauusd()),
+                slippage = InstrumentSlippage,
+                syntheticSpreadPoints = 0,
+            )
+        val tick = Tick(symbol = "EXNESS:XAUUSD", price = Money.of("2000.000"), timestamp = 0L)
+        bus.publish(TickEvent(tick))
+        tracker.update("EXNESS:XAUUSD", tick.price)
+
+        sim.submit(marketBuy("EXNESS:XAUUSD", "0.01"))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price.setScale(3, java.math.RoundingMode.HALF_EVEN))
+            .isEqualByComparingTo(Money.of("2000.000"))
+    }
+
+    @Test
     fun `cancel removes a working order and publishes OrderCancelled`() {
         val bus = newBus()
         val cancels = mutableListOf<BrokerEvent.OrderCancelled>()

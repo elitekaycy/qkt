@@ -32,6 +32,35 @@ class YamlInstrumentRegistryTest {
     }
 
     @Test
+    fun `slippagePoints defaults to zero when absent`() {
+        val r = YamlInstrumentRegistry.load(fixture)
+        assertThat(r.require("EXNESS:XAUUSD").slippagePoints).isEqualTo(0)
+    }
+
+    @Test
+    fun `parses slippagePoints when present`(
+        @TempDir tmp: Path,
+    ) {
+        val f = tmp.resolve("instruments-slip.yaml")
+        Files.writeString(
+            f,
+            """
+            instruments:
+              - qktSymbol: X
+                contractSize: 1
+                volumeStep: 0.01
+                volumeMin: 0.01
+                pointSize: 0.01
+                digits: 2
+                tradeStopsLevelPoints: 0
+                slippagePoints: 7
+            """.trimIndent(),
+        )
+        val r = YamlInstrumentRegistry.load(f)
+        assertThat(r.require("X").slippagePoints).isEqualTo(7)
+    }
+
+    @Test
     fun `require throws with a helpful message for unknown symbol`() {
         val r = YamlInstrumentRegistry.load(fixture)
         val e = assertThrows<IllegalStateException> { r.require("BYBIT:DOGE") }
