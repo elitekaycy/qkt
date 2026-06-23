@@ -43,6 +43,19 @@ class ExprCompilerFuncCallTest {
     }
 
     @Test
+    fun `RANK_OF evaluates the cross-sectional rank of the first arg`() {
+        val v =
+            ExprCompiler()
+                .compile(
+                    FuncCall(
+                        "RANK_OF",
+                        listOf(NumLit(BigDecimal("3")), NumLit(BigDecimal("5")), NumLit(BigDecimal("1"))),
+                    ),
+                ).evaluate(ctx) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("2") // 3 is 2nd-highest of {3, 5, 1}
+    }
+
+    @Test
     fun `SQRT evaluates`() {
         val v =
             ExprCompiler()

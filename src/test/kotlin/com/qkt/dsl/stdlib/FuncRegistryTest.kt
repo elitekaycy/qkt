@@ -77,6 +77,30 @@ class FuncRegistryTest {
     }
 
     @Test
+    fun `RANK_OF returns the 1-based cross-sectional rank of the first arg, 1 = highest`() {
+        assertThat(FuncRegistry.invoke("RANK_OF", listOf(BigDecimal("5"), BigDecimal("3"), BigDecimal("1"))))
+            .isEqualByComparingTo("1") // first is the highest
+        assertThat(FuncRegistry.invoke("RANK_OF", listOf(BigDecimal("3"), BigDecimal("5"), BigDecimal("1"))))
+            .isEqualByComparingTo("2") // one value above it
+        assertThat(FuncRegistry.invoke("RANK_OF", listOf(BigDecimal("1"), BigDecimal("5"), BigDecimal("3"))))
+            .isEqualByComparingTo("3") // two values above it
+    }
+
+    @Test
+    fun `RANK_OF ties share the top rank (competition ranking)`() {
+        assertThat(FuncRegistry.invoke("RANK_OF", listOf(BigDecimal("5"), BigDecimal("5"), BigDecimal("1"))))
+            .isEqualByComparingTo("1") // tied for highest -> rank 1
+        assertThat(FuncRegistry.invoke("RANK_OF", listOf(BigDecimal("1"), BigDecimal("5"), BigDecimal("5"))))
+            .isEqualByComparingTo("3") // two strictly above -> rank 3
+    }
+
+    @Test
+    fun `RANK_OF rejects single arg`() {
+        assertThatThrownBy { FuncRegistry.invoke("RANK_OF", listOf(BigDecimal.ONE)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `MOD returns floored modulo with the sign of the divisor`() {
         assertThat(FuncRegistry.invoke("MOD", listOf(BigDecimal("7"), BigDecimal("3"))))
             .isEqualByComparingTo("1")
