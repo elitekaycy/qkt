@@ -228,6 +228,54 @@ class BarsReplayTest {
     }
 
     @Test
+    fun `backtest --bars ignores tick-store holes without --allow-incomplete`(
+        @TempDir dir: Path,
+    ) {
+        val dataRoot = dir.resolve("data")
+        seedTicks(dataRoot, days = 3)
+        DataCommand(
+            Args(
+                arrayOf(
+                    "data",
+                    "build-bars",
+                    "XAUUSD",
+                    "--tf",
+                    "15m",
+                    "--from",
+                    "2024-01-02",
+                    "--to",
+                    "2024-01-05",
+                    "--data-root",
+                    dataRoot.toString(),
+                ),
+            ),
+        ).run()
+        // Punch a hole in the TICK store after the bars are built: a --bars run must not care.
+        Files.delete(dataRoot.resolve("symbols").resolve("XAUUSD").resolve("2024-01-03.bin"))
+        // No --allow-incomplete: the tick hole would throw IncompleteDataException if --bars still
+        // validated the tick store. It must not, because --bars only reads the bar store.
+        val code =
+            BacktestCommand(
+                Args(
+                    arrayOf(
+                        "backtest",
+                        strategyFile(dir).toString(),
+                        "--from",
+                        "2024-01-02",
+                        "--to",
+                        "2024-01-05",
+                        "--data-root",
+                        dataRoot.toString(),
+                        "--no-fetch",
+                        "--bars",
+                        "--json",
+                    ),
+                ),
+            ).run()
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+    }
+
+    @Test
     fun `backtest --bars errors when bars are not built`(
         @TempDir dir: Path,
     ) {
