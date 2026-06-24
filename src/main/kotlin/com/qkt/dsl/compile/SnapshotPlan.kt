@@ -15,6 +15,7 @@ import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.IsNull
+import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
@@ -107,6 +108,7 @@ data class SnapshotPlan(
                 is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
                 is CalendarWindow,
                 is SessionWindow,
+                LastTradingDayOfMonth,
                 EntryQty,
                 -> {}
             }
