@@ -172,6 +172,19 @@ object QktDocs {
                     "Fraction of the trailing `lookback` window strictly below the current value, in [0,1). " +
                         "Distribution-free regime gate — separates a bimodal series where zscore cannot.",
                 ),
+            "SKEW" to
+                doc(
+                    "skew(value, period)",
+                    "Rolling realized skewness of bar-to-bar returns over the last `period` returns — the third " +
+                        "standardized moment. Negative means crash-prone (sharp drops); positive means lottery-like " +
+                        "(sharp jumps up). Measures asymmetry that stddev cannot.",
+                ),
+            "ER" to
+                doc(
+                    "er(value, period)",
+                    "Kaufman Efficiency Ratio over `period` bars, in [0,1]: net move divided by total path length. " +
+                        "Near 1 is a clean trend, near 0 is chop. Gate momentum on high ER, stand down on low.",
+                ),
             "VWAP_SESSION" to
                 doc(
                     "vwap_session(stream, anchorHour)",
