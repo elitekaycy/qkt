@@ -117,6 +117,21 @@ All four arguments must be integer literals; month is 1–12 and day is 1–31, 
 
 For finer control, compose the raw fields instead: `NOW.month = 12 AND NOW.day >= 20` selects the back half of December.
 
+## Month-end gating
+
+`LAST_TRADING_DAY_OF_MONTH()` is true on the last trading day of the current UTC month — the last weekday (Monday–Friday). It isolates month-end flow (for example the fiduciary fix-rebalancing that concentrates on the final session of the month) without hard-coding dates, which shift between the 28th and 31st and slide off weekends.
+
+```qkt
+RULES
+    -- Month-end fix-rebalancing breakout: only on the final trading day.
+    WHEN LAST_TRADING_DAY_OF_MONTH()
+     AND SESSION_WINDOW(8, 0, 16, 0)
+     AND gbp.close > session_range_high(gbp, 7, 0, 11, 0)
+    THEN BUY gbp
+```
+
+It takes no arguments. "Trading day" means a weekday: the predicate does not consult an exchange holiday calendar, so a public holiday landing on the last weekday is still treated as the last trading day. This is the faithful approximation for 24/5 FX, which trades every weekday. e.g. if a month ends on Saturday the 31st, the last trading day is Friday the 30th; if it ends on Sunday, it is the preceding Friday. Like the windows above it reads `StrategyContext.clock`, so it is deterministic and identical in backtest and live.
+
 ## Relative deadlines on pending orders
 
 `NOW + <duration>` evaluates to the epoch-ms timestamp `<duration>` from now. Pair it with `TIF GTD UNTIL` to auto-expire pending orders:

@@ -44,6 +44,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.IsNull
+import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
 import com.qkt.dsl.ast.LatchEntry
@@ -674,6 +675,8 @@ class Parser(
                                 buildCalendarWindow(args, t)
                             name.equals("SESSION_WINDOW", ignoreCase = true) ->
                                 buildSessionWindow(args, t)
+                            name.equals("LAST_TRADING_DAY_OF_MONTH", ignoreCase = true) ->
+                                buildLastTradingDayOfMonth(args, t)
                             // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
                             // FuncCall — pure functions on numeric values, no warmup or per-bar state.
                             // Everything else stays IndicatorCall for the indicator-binding path.
@@ -759,6 +762,20 @@ class Parser(
             errors += ParseError(at.line, at.col, "SESSION_WINDOW hour must be 0-23 and minute 0-59")
         }
         return SessionWindow(sh, sm, eh, em)
+    }
+
+    /**
+     * Build a [LastTradingDayOfMonth] from a `LAST_TRADING_DAY_OF_MONTH()` call. The predicate
+     * takes no arguments; any argument is a parse error. [at] is the call token, for error position.
+     */
+    private fun buildLastTradingDayOfMonth(
+        args: List<ExprAst>,
+        at: Token,
+    ): ExprAst {
+        if (args.isNotEmpty()) {
+            errors += ParseError(at.line, at.col, "LAST_TRADING_DAY_OF_MONTH takes no arguments")
+        }
+        return LastTradingDayOfMonth
     }
 
     private fun parseAggregate(): ExprAst {

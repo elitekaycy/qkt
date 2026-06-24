@@ -36,6 +36,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.IsNull
+import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
@@ -109,6 +110,7 @@ class ExprTransform(
             is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
             is CalendarWindow,
             is SessionWindow,
+            LastTradingDayOfMonth,
             EntryQty,
             -> e
         }

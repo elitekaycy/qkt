@@ -35,6 +35,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.IsNull
+import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.Market
@@ -87,6 +88,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
             is AccountRef, is StateAccessor, StackEntryRef, EntryQty,
+            LastTradingDayOfMonth,
             -> Unit
             is PositionRef -> out.add(e.stream)
             is StreamFieldRef -> out.add(e.stream)
