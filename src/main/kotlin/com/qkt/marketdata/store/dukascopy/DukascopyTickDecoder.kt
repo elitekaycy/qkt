@@ -52,7 +52,10 @@ object DukascopyTickDecoder {
                             .divide(BigDecimal(2), Money.CONTEXT)
                             .setScale(Money.SCALE, Money.ROUNDING),
                     timestamp = hourStartMs + msOffset,
-                    volume = null,
+                    // Dukascopy carries no separate trade-volume field — only the two side volumes
+                    // (in millions of units). Their sum is the conventional per-tick volume used to
+                    // weight VWAP, so populate it rather than discarding the data already decoded.
+                    volume = BigDecimal(bidVol.toDouble() + askVol.toDouble()).setScale(Money.SCALE, Money.ROUNDING),
                     bid = bid,
                     ask = ask,
                     bidVolume = BigDecimal(bidVol.toDouble()).setScale(Money.SCALE, Money.ROUNDING),
