@@ -143,4 +143,58 @@ class StatIndicatorDslTest {
         assertThatThrownBy { AstCompiler().compile(parse(src).value) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
+
+    @Test
+    fun `skew of a stream close compiles`() {
+        val src =
+            """
+            STRATEGY sk VERSION 1
+            SYMBOLS
+              s = X:Y EVERY 1d
+            RULES
+              WHEN skew(s.close, 20) < 0 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `percentile_rank of skew composes for a decile gate`() {
+        // The #522 single-name skew-premium gate: skew in its most-negative decile.
+        val src =
+            """
+            STRATEGY skewdecile VERSION 1
+            SYMBOLS
+              aud = X:AUD EVERY 1d
+            RULES
+              WHEN percentile_rank(skew(aud.close, 20), 250) < 0.1 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `skew rejects a period below three`() {
+        val src =
+            """
+            STRATEGY bad VERSION 1
+            SYMBOLS
+              s = X:Y EVERY 1d
+            RULES
+              WHEN skew(s.close, 2) < 0 THEN FLATTEN
+            """.trimIndent()
+        assertThatThrownBy { AstCompiler().compile(parse(src).value) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `er of a stream close compiles`() {
+        val src =
+            """
+            STRATEGY eff VERSION 1
+            SYMBOLS
+              s = X:Y EVERY 1h
+            RULES
+              WHEN er(s.close, 10) > 0.6 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode { AstCompiler().compile(parse(src).value) }.doesNotThrowAnyException()
+    }
 }
