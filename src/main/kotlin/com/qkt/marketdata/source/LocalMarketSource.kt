@@ -38,6 +38,39 @@ class LocalMarketSource(
 
     override fun supports(symbol: String): Boolean = true
 
+    private val volumeBySymbol: MutableMap<String, Boolean> = mutableMapOf()
+
+    /**
+     * Per-symbol capabilities: the base set, plus VOLUME when this symbol's stored ticks actually
+     * carry volume. A volume-weighted indicator (VWAP/OBV) bound to a volume-less feed would never
+     * become ready, so the deploy-time check in `TradingPipeline` needs the truth per symbol — one
+     * symbol's feed may have volume while another's does not. Detected by peeking the first stored
+     * tick once and caching; only consulted for strategies that use a volume indicator, so it adds
+     * no cost to runs that don't.
+     */
+    override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> =
+        if (storeSuppliesVolume(symbol)) capabilities + MarketSourceCapability.VOLUME else capabilities
+
+    private fun storeSuppliesVolume(symbol: String): Boolean =
+        volumeBySymbol.getOrPut(symbol) { firstStoredTick(symbol.substringAfter(':'))?.volume != null }
+
+    /** First tick of the earliest non-empty day file for [storeKey], or null if the store is empty. */
+    private fun firstStoredTick(storeKey: String): Tick? {
+        for (range in store.manifest(storeKey).ranges) {
+            var day = LocalDate.parse(range.from)
+            val end = LocalDate.parse(range.to)
+            while (!day.isAfter(end)) {
+                val path = store.dayFile(storeKey, day)
+                if (path != null) {
+                    val tick = openDayFeed(path).use { it.next() }
+                    if (tick != null) return tick
+                }
+                day = day.plusDays(1)
+            }
+        }
+        return null
+    }
+
     override fun liveTicks(symbols: List<String>): TickFeed =
         throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName!!)
 
