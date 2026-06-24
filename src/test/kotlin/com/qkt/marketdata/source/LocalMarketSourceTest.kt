@@ -60,6 +60,34 @@ class LocalMarketSourceTest {
     }
 
     @Test
+    fun `capabilitiesFor advertises VOLUME when the stored ticks carry it`() {
+        // seed() writes a volume column of 1 per row.
+        val src = sourceAt("2024-01-16T00:00:00Z")
+        assertThat(src.capabilitiesFor("X")).contains(MarketSourceCapability.VOLUME)
+    }
+
+    @Test
+    fun `capabilitiesFor omits VOLUME when the stored ticks have no volume`() {
+        val symDir = dir.resolve("symbols").resolve("Z")
+        Files.createDirectories(symDir)
+        // Same 8-column schema, but the volume column is empty.
+        val rows =
+            listOf(
+                header,
+                listOf("${day15 + 1000L}", "Z", "100", "", "", "", "", "").joinToString(","),
+                listOf("${day15 + 31_000L}", "Z", "101", "", "", "", "", "").joinToString(","),
+            ).joinToString("\n")
+        Files.writeString(symDir.resolve("2024-01-15.csv"), rows)
+        val clock = FixedClock(time = Instant.parse("2024-01-16T00:00:00Z").toEpochMilli())
+        ManifestStore(dir, clock).write(
+            Manifest(symbol = "Z", ranges = listOf(DayRange("2024-01-15", "2024-01-16"))),
+        )
+        val src = LocalMarketSource(DefaultDataStore(root = dir, clock = clock), clock)
+        assertThat(src.capabilitiesFor("Z")).doesNotContain(MarketSourceCapability.VOLUME)
+        assertThat(src.capabilitiesFor("Z")).contains(MarketSourceCapability.TICKS)
+    }
+
+    @Test
     fun `liveTicks throws UnsupportedDataException`() {
         val src = sourceAt("2024-01-16T00:00:00Z")
         assertThatThrownBy { src.liveTicks(listOf("X")) }
