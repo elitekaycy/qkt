@@ -17,6 +17,7 @@ import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.IsNull
+import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
@@ -67,6 +68,7 @@ class ExprCompiler(
             is NowAccessor -> compileNow(expr)
             is CalendarWindow -> compileCalendarWindow(expr)
             is SessionWindow -> compileSessionWindow(expr)
+            is LastTradingDayOfMonth -> compileLastTradingDayOfMonth()
             is com.qkt.dsl.ast.EntryQty ->
                 error("ENTRY_QTY is only valid inside STACK_AT SIZING; got it in a non-STACK_AT expression")
             is com.qkt.dsl.ast.StackEntryRef ->
@@ -137,6 +139,24 @@ class ExprCompiler(
             Value.Bool(hit)
         }
     }
+
+    private fun compileLastTradingDayOfMonth(): CompiledExpr =
+        CompiledExpr { ctx ->
+            val date =
+                java.time.Instant
+                    .ofEpochMilli(ctx.strategyContext.clock.now())
+                    .atZone(java.time.ZoneOffset.UTC)
+                    .toLocalDate()
+            // The last weekday of the month: roll the calendar last day back off any weekend.
+            val lastDay = date.withDayOfMonth(date.lengthOfMonth())
+            val lastTradingDay =
+                when (lastDay.dayOfWeek) {
+                    java.time.DayOfWeek.SATURDAY -> lastDay.minusDays(1)
+                    java.time.DayOfWeek.SUNDAY -> lastDay.minusDays(2)
+                    else -> lastDay
+                }
+            Value.Bool(date == lastTradingDay)
+        }
 
     private fun compileAggregate(
         agg: Aggregate,

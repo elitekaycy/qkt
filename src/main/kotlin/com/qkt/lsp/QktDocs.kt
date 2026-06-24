@@ -256,6 +256,13 @@ object QktDocs {
                         "Wraps midnight when the start is later than the end, e.g. " +
                         "`session_window(0, 30, 1, 30)` is 00:30-01:30 UTC.",
                 ),
+            "LAST_TRADING_DAY_OF_MONTH" to
+                doc(
+                    "last_trading_day_of_month()",
+                    "True on the last trading day of the current UTC month — the last weekday " +
+                        "(Mon-Fri). Isolates month-end flow without hard-coding dates. Takes no arguments; " +
+                        "does not consult an exchange holiday calendar.",
+                ),
         )
 
     private val KEYWORDS: Map<String, String> =
