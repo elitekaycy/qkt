@@ -10,6 +10,7 @@ import com.qkt.indicators.catalog.CCI
 import com.qkt.indicators.catalog.Correlation
 import com.qkt.indicators.catalog.DEMA
 import com.qkt.indicators.catalog.EMA
+import com.qkt.indicators.catalog.EfficiencyRatio
 import com.qkt.indicators.catalog.HMA
 import com.qkt.indicators.catalog.KeltnerChannels
 import com.qkt.indicators.catalog.MACD
@@ -22,6 +23,7 @@ import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
 import com.qkt.indicators.catalog.SessionRange
 import com.qkt.indicators.catalog.SessionVwap
+import com.qkt.indicators.catalog.Skew
 import com.qkt.indicators.catalog.Stddev
 import com.qkt.indicators.catalog.Stochastic
 import com.qkt.indicators.catalog.TEMA
@@ -126,6 +128,14 @@ object IndicatorRegistry {
             "PERCENTILE_RANK" to
                 IndicatorSpec("PERCENTILE_RANK", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     PercentileRank(period = args[0].toInt())
+                },
+            "SKEW" to
+                IndicatorSpec("SKEW", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    Skew(period = args[0].toInt())
+                },
+            "ER" to
+                IndicatorSpec("ER", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    EfficiencyRatio(period = args[0].toInt())
                 },
             // ---- cross-series (two-input) ----
             "CORRELATION" to
