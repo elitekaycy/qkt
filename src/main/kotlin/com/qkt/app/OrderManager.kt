@@ -85,6 +85,15 @@ class OrderManager(
     private val liveBySymbol: MutableMap<String, LinkedHashSet<String>> = mutableMapOf()
 
     /**
+     * Live orders carrying a GTD deadline, id -> deadline epoch ms, in [liveOrderIds] insertion
+     * order. The per-tick expiry sweep (PaperBroker path) walks this instead of resolving every
+     * live order each tick: most orders are GTC, so resolving the whole live set just to read an
+     * absent deadline was the dominant cost of a bar-replay backtest. Insertion order matches
+     * [liveOrderIds], so expired orders cancel in the same order as a full scan would.
+     */
+    private val gtdLive: LinkedHashMap<String, Long> = LinkedHashMap()
+
+    /**
      * Ids awaiting reclamation. An order is enqueued when it goes terminal in [update]; [runGc]
      * drains it once per pass, reclaiming it if nothing references it and re-queuing it otherwise.
      */
@@ -97,7 +106,7 @@ class OrderManager(
     private val symbolLiveScratch = ArrayList<ManagedOrder>()
     private val triggeredScratch = ArrayList<ManagedOrder>()
     private val expiredExitsScratch = ArrayList<OrderRequest.TimeExit>()
-    private val gtdSweepScratch = ArrayList<ManagedOrder>()
+    private val gtdExpiredScratch = ArrayList<String>()
     private val expiredStacksScratch = ArrayList<StackTracker.ActiveStack>()
 
     private val trailingHwm: MutableMap<String, BigDecimal> = mutableMapOf()
@@ -931,6 +940,7 @@ class OrderManager(
         orders.remove(req.id)
         liveOrderIds.remove(req.id)
         liveBySymbol[req.symbol]?.remove(req.id)
+        gtdLive.remove(req.id)
         return submit(oto)
     }
 
@@ -1203,15 +1213,23 @@ class OrderManager(
         )
     }
 
-    /** Keep [liveOrderIds] + [liveBySymbol] in sync: a non-terminal order is live, a terminal one is not. */
+    /**
+     * Keep the live-order indexes in sync: a non-terminal order is live, a terminal one is not.
+     * Alongside [liveOrderIds]/[liveBySymbol] this maintains [gtdLive] (orders with a deadline) so
+     * the per-tick expiry sweep walks only deadline-bearing orders. `expiresAt` is fixed at
+     * creation, so re-indexing an order whose state changed keeps the subset correct.
+     */
     private fun indexLive(managed: ManagedOrder) {
         val symbol = managed.request.symbol
+        val id = managed.id
         if (managed.state.isTerminal) {
-            liveOrderIds.remove(managed.id)
-            liveBySymbol[symbol]?.remove(managed.id)
+            liveOrderIds.remove(id)
+            liveBySymbol[symbol]?.remove(id)
+            gtdLive.remove(id)
         } else {
-            liveOrderIds.add(managed.id)
-            liveBySymbol.getOrPut(symbol) { LinkedHashSet() }.add(managed.id)
+            liveOrderIds.add(id)
+            liveBySymbol.getOrPut(symbol) { LinkedHashSet() }.add(id)
+            managed.request.expiresAt?.let { gtdLive[id] = it }
         }
     }
 
@@ -1237,6 +1255,7 @@ class OrderManager(
         orders.remove(id)
         liveOrderIds.remove(id)
         if (symbol != null) liveBySymbol[symbol]?.remove(id)
+        gtdLive.remove(id)
         trailingHwm.remove(id)
         armedTrailArmed.remove(id)
         siblings.remove(id)
@@ -1535,21 +1554,21 @@ class OrderManager(
         }
 
         // Phase 38: sweep pending GTD orders past their deadline when the broker doesn't
-        // self-cancel. This is the one all-symbols pass, but it only runs when the venue can't
-        // self-expire — MT5 returns supportsNativeGtd=true and skips it; PaperBroker, Bybit, and
-        // LogBroker fall through here.
-        if (!broker.supportsNativeGtd) {
+        // self-cancel. Only runs when the venue can't self-expire — MT5 returns
+        // supportsNativeGtd=true and skips it; PaperBroker, Bybit, and LogBroker fall through here.
+        // Walks [gtdLive] (deadline-bearing orders only) and compares longs; the live order is
+        // resolved only for the few that actually expired, in the same order a full scan would cancel.
+        if (!broker.supportsNativeGtd && gtdLive.isNotEmpty()) {
             val nowMs = clock.now()
-            gtdSweepScratch.clear()
-            for (id in liveOrderIds) {
-                gtdSweepScratch.add(orders[id] ?: error("live order index desync: $id"))
+            gtdExpiredScratch.clear()
+            for ((id, deadline) in gtdLive) {
+                if (nowMs > deadline) gtdExpiredScratch.add(id)
             }
-            for (i in gtdSweepScratch.indices) {
-                val managed = gtdSweepScratch[i]
+            for (i in gtdExpiredScratch.indices) {
+                val managed = orders[gtdExpiredScratch[i]] ?: continue
                 if (managed.state.isTerminal) continue
                 if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
-                val deadline = managed.request.expiresAt ?: continue
-                if (nowMs > deadline) cancel(managed.id)
+                cancel(managed.id)
             }
         }
 
