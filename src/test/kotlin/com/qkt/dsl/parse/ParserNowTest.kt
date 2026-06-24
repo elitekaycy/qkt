@@ -3,6 +3,7 @@ package com.qkt.dsl.parse
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.SessionWindow
@@ -109,6 +110,21 @@ class ParserNowTest {
     @Test
     fun `SESSION_WINDOW with out-of-range minute fails to parse`() {
         assertThat(parseResult("session_window(0, 60, 1, 0)")).isInstanceOf(ParseResult.Failure::class.java)
+    }
+
+    @Test
+    fun `LAST_TRADING_DAY_OF_MONTH parses to its node`() {
+        assertThat(parseExprInLet("last_trading_day_of_month()")).isEqualTo(LastTradingDayOfMonth)
+    }
+
+    @Test
+    fun `LAST_TRADING_DAY_OF_MONTH is case-insensitive`() {
+        assertThat(parseExprInLet("LAST_TRADING_DAY_OF_MONTH()")).isEqualTo(LastTradingDayOfMonth)
+    }
+
+    @Test
+    fun `LAST_TRADING_DAY_OF_MONTH with arguments fails to parse`() {
+        assertThat(parseResult("last_trading_day_of_month(1)")).isInstanceOf(ParseResult.Failure::class.java)
     }
 
     @Test

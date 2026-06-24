@@ -75,6 +75,20 @@ data class SessionWindow(
     val endMinute: Int,
 ) : ExprAst
 
+/**
+ * True on the last trading day of the current UTC month — the last weekday (Monday-Friday)
+ * of the month. A clock-reading boolean primitive like [CalendarWindow]; takes no arguments.
+ *
+ * It isolates month-end flow (e.g. the fiduciary fix-rebalancing that concentrates on the
+ * final session of the month) without hard-coding dates, which shift 28-31 and slide off
+ * weekends. e.g. if a month ends on Saturday the 31st, the last trading day is Friday the 30th.
+ *
+ * "Trading day" here means a weekday; it does not consult an exchange holiday calendar, so a
+ * public holiday landing on the last weekday is still treated as the last trading day. This is
+ * the faithful approximation for 24/5 FX, which trades every weekday.
+ */
+data object LastTradingDayOfMonth : ExprAst
+
 data class IndicatorCall(
     val name: String,
     val args: List<ExprAst>,
