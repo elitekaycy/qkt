@@ -40,6 +40,18 @@ class DukascopyTickDecoderTest {
     }
 
     @Test
+    fun `tick volume is the sum of bid and ask side volumes`() {
+        val bytes = record(0, 2_345_670, 2_345_650, 1.5f, 2.0f) + record(1500, 2_345_680, 2_345_660, 0.5f, 0.25f)
+
+        val ticks = DukascopyTickDecoder.decodeRecords(bytes, 0L, divisor = 1000L, symbol = "XAUUSD")
+
+        assertThat(ticks[0].bidVolume).isEqualByComparingTo("2.0")
+        assertThat(ticks[0].askVolume).isEqualByComparingTo("1.5")
+        assertThat(ticks[0].volume).isEqualByComparingTo("3.5")
+        assertThat(ticks[1].volume).isEqualByComparingTo("0.75")
+    }
+
+    @Test
     fun `empty input yields no ticks`() {
         assertThat(DukascopyTickDecoder.decodeRecords(ByteArray(0), 0L, 1000L, "XAUUSD")).isEmpty()
     }
