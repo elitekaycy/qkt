@@ -295,6 +295,40 @@ THEN BUY xag
 
 Warmup is `<lookback>` bars.
 
+### Skew
+
+```qkt
+skew(<value>, <period>)   -- rolling realized skewness of bar-to-bar returns
+```
+
+`skew` is the third standardized moment of the last `<period>` bar-to-bar returns — it measures whether the recent surprises are mostly up or mostly down. Negative skew is crash-prone (many small gains, occasional sharp drop); positive skew is lottery-like (many small losses, occasional sharp jump). Standard deviation only measures spread and cannot tell the two apart. Returns are simple `(p - p_prev) / p_prev`, and the moments use the population divisor, so it is the textbook `g1 = mean((r - mean)^3) / sigma^3`.
+
+```qkt
+-- Single-name skew-premium gate: enter only when skew sits in its most-negative decile.
+WHEN percentile_rank(skew(aud.close, 20), 250) < 0.1
+ AND percentile_rank(skew(nzd.close, 20), 250) < 0.1
+THEN BUY aud
+```
+
+Warmup is `<period> + 1` bars (one extra price is needed to form the first return). A flat window with no return dispersion reports 0.
+
+### Efficiency ratio
+
+```qkt
+er(<value>, <period>)   -- Kaufman efficiency ratio, net move / path length, in [0, 1]
+```
+
+`er` is Kaufman's Efficiency Ratio: the net directional move over `<period>` bars divided by the total path length (the sum of every bar-to-bar step). A clean one-way trend covers ground efficiently so `er` is near 1; choppy back-and-forth travel covers little net distance per step so `er` is near 0. It separates trend from noise where dispersion cannot — two windows can share a standard deviation yet have opposite efficiency.
+
+```qkt
+-- Take the momentum signal only in a clean, low-noise trend; stand down in chop.
+WHEN er(gold.close, 10) > 0.6
+ AND ema(gold.close, 20) > ema(gold.close, 50)
+THEN BUY gold
+```
+
+Warmup is `<period> + 1` bars. A perfectly flat window reports 0.
+
 ## Math helpers
 
 Available alongside indicators:
@@ -362,6 +396,8 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `correlation(a, b, N)` | N bars |
 | `beta(a, b, N)` | N bars |
 | `percentile_rank(value, N)` | N bars |
+| `skew(value, N)` | N + 1 bars (N returns need N+1 prices) |
+| `er(value, N)` | N + 1 bars |
 | `confirm_ratio(signal, …, N)` | N+1 bars |
 | `vwap_session(stream, h)` | resets daily at hour h |
 | `session_range_*(stream, …)` | until the first window completes |
