@@ -130,6 +130,12 @@ private fun subst(
                 sensor = subst(action.sensor, v, alias),
                 entries = action.entries.map { subst(it, v, alias) },
             )
+        is com.qkt.dsl.ast.Resize ->
+            action.copy(
+                stream = if (action.stream == v) alias else action.stream,
+                target = subst(action.target, v, alias),
+                minStep = action.minStep?.let { subst(it, v, alias) },
+            )
         else -> action
     }
 
