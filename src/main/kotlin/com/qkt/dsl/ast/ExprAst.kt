@@ -36,6 +36,7 @@ enum class NowField {
     WEEKDAY,
     MONTH,
     DAY,
+    DAYS_IN_MONTH,
     DATE_UTC,
     EPOCH_MS,
 }

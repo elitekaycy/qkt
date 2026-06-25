@@ -637,6 +637,7 @@ class Parser(
                             "WEEKDAY" -> NowField.WEEKDAY
                             "MONTH" -> NowField.MONTH
                             "DAY" -> NowField.DAY
+                            "DAYS_IN_MONTH" -> NowField.DAYS_IN_MONTH
                             "DATE_UTC" -> NowField.DATE_UTC
                             "EPOCH_MS" -> NowField.EPOCH_MS
                             else -> {
@@ -688,7 +689,7 @@ class Parser(
                     }
                     match(TokenKind.DOT) -> {
                         val field = expectFieldName().lexeme
-                        StreamFieldRef(name, field)
+                        barOffset(StreamFieldRef(name, field))
                     }
                     match(TokenKind.AT_SIGN) -> Ref(name, parseSnapshotKind())
                     else -> Ref(name)
@@ -813,6 +814,25 @@ class Parser(
             }
             else -> error("expected OPEN or T-N for window, got '${t.lexeme}'")
         }
+    }
+
+    /**
+     * Optional `[n]` bar-offset suffix on a stream field, e.g. `btc.close[20]` is the close
+     * 20 bars ago. `[0]` is the current bar (the bare field); `[n>0]` compiles to the `lag`
+     * indicator, so it carries lag's `n + 1` bar warmup. A non-integer or negative offset is a
+     * parse error.
+     */
+    private fun barOffset(base: ExprAst): ExprAst {
+        if (peek().kind != TokenKind.LBRACKET) return base
+        val open = advance()
+        val nTok = expect(TokenKind.NUMBER, "expected an integer bar offset inside [ ]")
+        expect(TokenKind.RBRACKET, "expected ']' to close the bar offset")
+        val n = nTok.lexeme.toIntOrNull()
+        if (n == null || n < 0) {
+            errors += ParseError(open.line, open.col, "bar offset must be a non-negative integer: ${nTok.lexeme}")
+            return base
+        }
+        return if (n == 0) base else IndicatorCall("LAG", listOf(base, NumLit(java.math.BigDecimal(n))))
     }
 
     private fun parseSnapshotKind(): SnapshotKind {

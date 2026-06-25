@@ -96,6 +96,7 @@ class ExprCompiler(
                             NowField.WEEKDAY -> z.dayOfWeek.value - 1
                             NowField.MONTH -> z.monthValue
                             NowField.DAY -> z.dayOfMonth
+                            NowField.DAYS_IN_MONTH -> z.toLocalDate().lengthOfMonth()
                             NowField.DATE_UTC -> z.toLocalDate().toEpochDay().toInt()
                             NowField.EPOCH_MS -> error("handled above")
                         }

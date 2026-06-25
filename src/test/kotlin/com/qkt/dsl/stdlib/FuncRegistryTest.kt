@@ -140,6 +140,21 @@ class FuncRegistryTest {
     }
 
     @Test
+    fun `ROUND_TO snaps to the nearest multiple of step`() {
+        assertThat(FuncRegistry.invoke("ROUND_TO", listOf(BigDecimal("2347"), BigDecimal("25"))))
+            .isEqualByComparingTo("2350")
+        assertThat(FuncRegistry.invoke("ROUND_TO", listOf(BigDecimal("31.27"), BigDecimal("0.5"))))
+            .isEqualByComparingTo("31.5")
+        assertThat(FuncRegistry.invoke("ROUND_TO", listOf(BigDecimal("13"), BigDecimal("5"))))
+            .isEqualByComparingTo("15")
+    }
+
+    @Test
+    fun `ROUND_TO by zero step returns null (domain error)`() {
+        assertThat(FuncRegistry.invoke("ROUND_TO", listOf(BigDecimal("10"), BigDecimal.ZERO))).isNull()
+    }
+
+    @Test
     fun `MOD rejects wrong arity`() {
         assertThatThrownBy { FuncRegistry.invoke("MOD", listOf(BigDecimal.ONE)) }
             .isInstanceOf(IllegalArgumentException::class.java)

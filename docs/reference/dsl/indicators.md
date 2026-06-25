@@ -278,6 +278,56 @@ THEN SELL gold
 
 The level is `null` until the first window completes (a warmup delay, not a bug).
 
+### Floor-trader pivots
+
+```qkt
+pivot_p(<stream>)    -- central pivot (H + L + C) / 3 of the prior UTC day
+pivot_r1(<stream>)   -- first resistance 2*P - prior_day_low
+pivot_s1(<stream>)   -- first support 2*P - prior_day_high
+```
+
+The classic floor-trader pivots, computed from the **prior completed UTC day's** high/low/close and held constant through the current day. Because every desk computes them identically, resting take-profit and limit orders cluster at the central pivot, so it acts as an intraday mean-reversion magnet and the bands act as soft barriers. Fade an excursion back toward `pivot_p` with a protective stop just beyond the next band.
+
+```qkt
+-- Fade a stretch above the central pivot back toward it; stop just beyond R1.
+WHEN gold.close > pivot_p(gold) + atr(gold.candle, 14) AND POSITION.gold = 0
+THEN SELL gold BRACKET STOP LOSS AT pivot_r1(gold) TAKE PROFIT AT pivot_p(gold)
+```
+
+The levels are `null` until the first full UTC day completes.
+
+### Seasonal range (hour-of-day volatility)
+
+```qkt
+seasonal_range(<stream>, <window>)   -- trailing mean range of bars sharing this bar's UTC hour
+```
+
+`seasonal_range` is the mean realized range (`high - low`) of the last `<window>` bars that share the **current bar's UTC hour-of-day** — a per-hour volatility baseline. Volatility is sharply seasonal (an overlap bar is wider than an Asian bar just because the session is open), so a plain rolling range can't tell "the clock turned on" from "real news hit". Dividing the bar's range by `seasonal_range` gives an excess-vol ratio that is large only when a bar is wide *for its own hour*.
+
+```qkt
+-- Arm a breakout only on a bar that is wide for its hour (an information shock, not the clock).
+WHEN (gold.candle.high - gold.candle.low) > 2 * seasonal_range(gold, 20)
+THEN BUY gold
+```
+
+It is `null` for a given hour until `<window>` earlier bars of that hour have been seen.
+
+### Session momentum
+
+```qkt
+session_momentum(<stream>, <startHour>, <endHour>, <nDays>)   -- in-window drift over nDays
+```
+
+`session_momentum` sums each day's within-window simple return — `(last in-window close / first in-window open) - 1` over `[startHour, endHour)` UTC — across the last `<nDays>` **completed** days. It isolates the drift of an informative session (e.g. the 12:00-14:00 overlap) from the off-hours noise that dilutes an all-bar momentum estimate. The forming day is excluded, so the value is stable to read at the window open.
+
+```qkt
+-- At the overlap open, enter in the direction of the trailing 3-day overlap-segment drift.
+WHEN session_window(12, 0, 12, 1) AND session_momentum(eur, 12, 14, 3) > 0
+THEN BUY eur
+```
+
+It is `null` until `<nDays>` in-window days have completed.
+
 ### Percentile rank
 
 ```qkt
@@ -329,6 +379,38 @@ THEN BUY gold
 
 Warmup is `<period> + 1` bars. A perfectly flat window reports 0.
 
+### Variance ratio
+
+```qkt
+variance_ratio(<value>, <k>, <lookback>)   -- Lo-MacKinlay variance ratio, regime statistic
+```
+
+`variance_ratio` separates mean-reversion from trending on the series' own path. If returns were an unpredictable random walk, the variance of a `<k>`-bar move would be exactly `k` times the variance of a 1-bar move; the ratio of the actual `k`-bar variance to `k` times the 1-bar variance is therefore `~1` for a random walk, `< 1` when the series mean-reverts (overshoots retrace, so `k`-bar moves under-diffuse), and `> 1` when it trends (moves compound). It is computed on simple returns over the last `<lookback>` bars, using overlapping `k`-bar return sums and population variances.
+
+```qkt
+-- Fade only while the series is statistically mean-reverting; stand down when it trends.
+WHEN variance_ratio(aud.close, 5, 100) < 1 AND zscore(aud.close, 20) >= 2
+THEN SELL aud
+```
+
+Like `zscore`, the series can be any expression referencing a stream — `variance_ratio(gold.close / silver.close, 5, 120)` gates a pairs spread on its own stationarity. Warmup is `<lookback> + 1` bars; it returns `null` until then, and also when the 1-bar variance is zero (a flat window, where the ratio is undefined).
+
+### Lag (series offset)
+
+```qkt
+lag(<value>, <n>)   -- the value of the series n bars ago
+```
+
+`lag` reports the series exactly `<n>` bars in the past — the missing piece for any "skip the recent window" construction. A classic example is intermediate-horizon momentum that deliberately excludes the latest month: the durable trend is the sign of `lag(close, 21) - lag(close, 252)`, a return that ends 21 bars back and starts 252 bars back, so the noisy most-recent month is left out.
+
+```qkt
+-- Skip-month trend: trade the 12-month move that excludes the last ~month.
+WHEN lag(gold.close, 21) - lag(gold.close, 252) > 0 AND POSITION.gold = 0
+THEN BUY gold
+```
+
+The reported value is the buffered input verbatim, so it is exact. Warmup is `<n> + 1` bars.
+
 ## Math helpers
 
 Available alongside indicators:
@@ -343,11 +425,13 @@ floor(<expr>)           -- round down to the nearest integer
 ceil(<expr>)            -- round up to the nearest integer
 round(<expr>)           -- round to the nearest integer (half to even)
 mod(<a>, <b>)           -- floored modulo; for a positive step, distance past the grid below
+round_to(<x>, <step>)   -- round x to the nearest multiple of step (a price grid)
 ```
 
-`mod` is the round-number / big-figure primitive: `mod(price, step)` is how far price sits
-past the nearest multiple of `step` below it, and the nearest grid level is
-`round(price / step) * step`.
+`mod` and `round_to` are the round-number / big-figure primitives: `mod(price, step)` is how
+far price sits past the nearest multiple of `step` below it, and `round_to(price, step)` is the
+nearest grid level itself — e.g. `round_to(2347, 25)` is `2350`. Fade an approach to a round
+figure by gating on `mod` and anchoring a `LIMIT` at `round_to`.
 
 ```qkt
 WHEN mod(gold.close, 10) < 1        -- price within $1 of a round $10 figure
@@ -359,7 +443,7 @@ functions. For the larger or smaller of two values, use a `CASE` expression — 
 upper wick of a bar is `high - (CASE WHEN open > close THEN open ELSE close END)`.
 
 ```qkt
-LET vol = sqrt(252 * sum(pow(btc.close / btc.close[1] - 1, 2), 20))
+LET vol = sqrt(252 * sum(pow(btc.close / lag(btc.close, 1) - 1, 2), 20))
 ```
 
 Annualized 20-bar realized volatility from log returns. Composes the helpers and a 20-bar `sum` aggregate.
@@ -373,7 +457,7 @@ count(<predicate>, <period>)   -- rolling count of bars where predicate is true
 ```
 
 ```qkt
-LET upDays = count(btc.close > btc.close[1], 20)
+LET upDays = count(btc.close > lag(btc.close, 1), 20)
 WHEN upDays >= 15 THEN LOG INFO "trend confirmed: 15 of last 20 bars were up"
 ```
 
@@ -398,9 +482,14 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `percentile_rank(value, N)` | N bars |
 | `skew(value, N)` | N + 1 bars (N returns need N+1 prices) |
 | `er(value, N)` | N + 1 bars |
+| `variance_ratio(value, k, N)` | N + 1 bars (and null when 1-bar variance is zero) |
+| `lag(value, n)` | n + 1 bars |
 | `confirm_ratio(signal, …, N)` | N+1 bars |
 | `vwap_session(stream, h)` | resets daily at hour h |
 | `session_range_*(stream, …)` | until the first window completes |
+| `pivot_p`/`pivot_r1`/`pivot_s1(stream)` | until the first UTC day completes |
+| `seasonal_range(stream, N)` | N bars of the current bar's UTC hour |
+| `session_momentum(stream, sh, eh, N)` | until N in-window days complete |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 
