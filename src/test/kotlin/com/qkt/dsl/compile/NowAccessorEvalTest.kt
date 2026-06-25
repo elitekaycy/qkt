@@ -55,6 +55,10 @@ class NowAccessorEvalTest {
         assertThat((ec.compile(NowAccessor(NowField.WEEKDAY)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("0")
         assertThat((ec.compile(NowAccessor(NowField.MONTH)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("5")
         assertThat((ec.compile(NowAccessor(NowField.DAY)).evaluate(ctx) as Value.Num).v).isEqualByComparingTo("11")
+        // May has 31 days; turn-of-month is then DAY >= DAYS_IN_MONTH - 1 OR DAY == 1.
+        assertThat(
+            (ec.compile(NowAccessor(NowField.DAYS_IN_MONTH)).evaluate(ctx) as Value.Num).v,
+        ).isEqualByComparingTo("31")
         assertThat((ec.compile(NowAccessor(NowField.EPOCH_MS)).evaluate(ctx) as Value.Num).v)
             .isEqualByComparingTo(BigDecimal.valueOf(mondayMs))
     }

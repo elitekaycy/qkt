@@ -13,14 +13,18 @@ import com.qkt.indicators.catalog.EMA
 import com.qkt.indicators.catalog.EfficiencyRatio
 import com.qkt.indicators.catalog.HMA
 import com.qkt.indicators.catalog.KeltnerChannels
+import com.qkt.indicators.catalog.Lag
 import com.qkt.indicators.catalog.MACD
 import com.qkt.indicators.catalog.OBV
 import com.qkt.indicators.catalog.PercentileRank
+import com.qkt.indicators.catalog.PivotPoints
 import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.SMA
+import com.qkt.indicators.catalog.SeasonalRange
+import com.qkt.indicators.catalog.SessionMomentum
 import com.qkt.indicators.catalog.SessionRange
 import com.qkt.indicators.catalog.SessionVwap
 import com.qkt.indicators.catalog.Skew
@@ -29,6 +33,7 @@ import com.qkt.indicators.catalog.Stochastic
 import com.qkt.indicators.catalog.TEMA
 import com.qkt.indicators.catalog.VWAP
 import com.qkt.indicators.catalog.Variance
+import com.qkt.indicators.catalog.VarianceRatio
 import com.qkt.indicators.catalog.WMA
 import com.qkt.indicators.catalog.WilliamsR
 import com.qkt.indicators.catalog.ZScore
@@ -116,6 +121,10 @@ object IndicatorRegistry {
                 IndicatorSpec("VARIANCE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     Variance(period = args[0].toInt())
                 },
+            "VARIANCE_RATIO" to
+                IndicatorSpec("VARIANCE_RATIO", IndicatorInput.NUMERIC_SERIES, arity = 3) { args ->
+                    VarianceRatio(k = args[0].toInt(), lookback = args[1].toInt())
+                },
             // ---- statistical ----
             "ZSCORE" to
                 IndicatorSpec("ZSCORE", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
@@ -136,6 +145,11 @@ object IndicatorRegistry {
             "ER" to
                 IndicatorSpec("ER", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     EfficiencyRatio(period = args[0].toInt())
+                },
+            // ---- series offset ----
+            "LAG" to
+                IndicatorSpec("LAG", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
+                    Lag(n = args[0].toInt())
                 },
             // ---- cross-series (two-input) ----
             "CORRELATION" to
@@ -376,6 +390,47 @@ object IndicatorRegistry {
                         override val isReady: Boolean get() = r.isReady
                         override val warmupBars: Int = r.warmupBars
                     }
+                },
+            // ---- Floor-trader pivots (three outputs, candle; prior UTC-day OHLC) ----
+            "PIVOT_P" to
+                IndicatorSpec("PIVOT_P", IndicatorInput.CANDLE_SERIES, arity = 1) { PivotPoints() },
+            "PIVOT_R1" to
+                IndicatorSpec("PIVOT_R1", IndicatorInput.CANDLE_SERIES, arity = 1) {
+                    val pp = PivotPoints()
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = pp.update(input)
+
+                        override fun value(): BigDecimal? = pp.levels()?.r1
+
+                        override val isReady: Boolean get() = pp.isReady
+                        override val warmupBars: Int = pp.warmupBars
+                    }
+                },
+            "PIVOT_S1" to
+                IndicatorSpec("PIVOT_S1", IndicatorInput.CANDLE_SERIES, arity = 1) {
+                    val pp = PivotPoints()
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = pp.update(input)
+
+                        override fun value(): BigDecimal? = pp.levels()?.s1
+
+                        override val isReady: Boolean get() = pp.isReady
+                        override val warmupBars: Int = pp.warmupBars
+                    }
+                },
+            // ---- Hour-of-day volatility seasonality (candle; mean range per UTC hour) ----
+            "SEASONAL_RANGE" to
+                IndicatorSpec("SEASONAL_RANGE", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    SeasonalRange(window = args[0].toInt())
+                },
+            // ---- Session-restricted momentum (candle; in-window drift over nDays) ----
+            "SESSION_MOMENTUM" to
+                IndicatorSpec("SESSION_MOMENTUM", IndicatorInput.CANDLE_SERIES, arity = 4) { args ->
+                    SessionMomentum(
+                        startHour = args[0].toInt(),
+                        endHour = args[1].toInt(),
+                        nDays = args[2].toInt(),
+                    )
                 },
             // ---- Donchian rolling extremes ----
             // Rules evaluate after the closing bar has already been pushed into every
