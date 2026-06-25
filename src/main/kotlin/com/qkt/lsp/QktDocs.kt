@@ -185,6 +185,20 @@ object QktDocs {
                     "Kaufman Efficiency Ratio over `period` bars, in [0,1]: net move divided by total path length. " +
                         "Near 1 is a clean trend, near 0 is chop. Gate momentum on high ER, stand down on low.",
                 ),
+            "LAG" to
+                doc(
+                    "lag(value, n)",
+                    "The value of the series n bars ago — a pure time offset. Build a skip-window return like " +
+                        "`lag(close, 21) - lag(close, 252)` to measure a trend that ends 21 bars in the past. " +
+                        "Null until n+1 bars seen.",
+                ),
+            "VARIANCE_RATIO" to
+                doc(
+                    "variance_ratio(value, k, lookback)",
+                    "Lo-MacKinlay variance ratio over `lookback` bars: variance of overlapping k-bar return sums " +
+                        "divided by k times the 1-bar return variance. ~1 random walk, <1 mean-reverting, " +
+                        ">1 trending. Null until lookback+1 bars seen or when the 1-bar variance is zero.",
+                ),
             "VWAP_SESSION" to
                 doc(
                     "vwap_session(stream, anchorHour)",
@@ -209,6 +223,38 @@ object QktDocs {
                     "Low of the most recent completed instance of the daily UTC window, held as a constant " +
                         "level until the next instance completes. Wraps midnight when start is after end.",
                 ),
+            "PIVOT_P" to
+                doc(
+                    "pivot_p(stream)",
+                    "Central floor-trader pivot `(high + low + close) / 3` of the prior completed UTC day, held " +
+                        "through the current day. The most-watched intraday mean-reversion magnet.",
+                ),
+            "PIVOT_R1" to
+                doc(
+                    "pivot_r1(stream)",
+                    "First resistance pivot `2 * pivot_p - prior_day_low`, from the prior completed UTC day. " +
+                        "A protective stop above a pivot fade sits just beyond this level.",
+                ),
+            "PIVOT_S1" to
+                doc(
+                    "pivot_s1(stream)",
+                    "First support pivot `2 * pivot_p - prior_day_high`, from the prior completed UTC day. " +
+                        "A protective stop below a pivot fade sits just beyond this level.",
+                ),
+            "SEASONAL_RANGE" to
+                doc(
+                    "seasonal_range(stream, window)",
+                    "Trailing mean realized range (high - low) of the last `window` bars sharing the current " +
+                        "bar's UTC hour — a per-hour vol baseline. Divide the bar's range by it for an excess-vol " +
+                        "ratio that flags shock vol, not clock vol. Null until `window` bars of that hour are seen.",
+                ),
+            "SESSION_MOMENTUM" to
+                doc(
+                    "session_momentum(stream, startHour, endHour, nDays)",
+                    "Cumulative within-window simple return summed over the last `nDays` completed days, using " +
+                        "only bars inside `[startHour, endHour)` UTC. Isolates the informative session's drift from " +
+                        "off-hours noise. Null until `nDays` in-window days complete.",
+                ),
             "CONFIRM_RATIO" to
                 doc(
                     "confirm_ratio(signal, peer1, …, lookback)",
@@ -220,6 +266,12 @@ object QktDocs {
     private val FUNCTIONS: Map<String, String> =
         mapOf(
             "ABS" to doc("abs(x)", "Absolute value of x."),
+            "ROUND_TO" to
+                doc(
+                    "round_to(x, step)",
+                    "Round x to the nearest multiple of step (a price grid). e.g. round_to(2347, 25) = 2350. " +
+                        "Pair with mod(x, step) for distance to the nearest round figure.",
+                ),
             "SQRT" to doc("sqrt(x)", "Square root of x. Null when x is negative."),
             "LOG" to doc("log(x)", "Natural logarithm of x. Null when x is zero or negative."),
             "EXP" to doc("exp(x)", "e raised to the power x."),
