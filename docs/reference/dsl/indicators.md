@@ -263,15 +263,15 @@ Volume-less candles contribute nothing, like `vwap`. Both return `null` until a 
 ### Session range
 
 ```qkt
-session_range_high(<stream>, <sh>, <sm>, <eh>, <em>)   -- high of the prior completed UTC window
-session_range_low(<stream>, <sh>, <sm>, <eh>, <em>)    -- low of the prior completed UTC window
+session_range_high(<stream>.candle, <sh>, <sm>, <eh>, <em>)   -- high of the prior completed UTC window
+session_range_low(<stream>.candle, <sh>, <sm>, <eh>, <em>)    -- low of the prior completed UTC window
 ```
 
 These latch the high and low of the most recent **completed** instance of the daily UTC window `[sh:sm, eh:em)` and hold them as constant price levels until the next instance completes. Unlike `highest`/`lowest`, which slide forward every bar, this freezes a prior session's boundaries — e.g. the overnight Asian range stays fixed through the London morning. The window wraps midnight when the start is after the end. Mid and width compose: mid = `(high + low) / 2`, width = `high - low`.
 
 ```qkt
 -- Fade a poke above the 00:00-07:00 UTC Asian range during the 07:00-11:30 London window.
-LET asianHigh = session_range_high(gold, 0, 0, 7, 0)
+LET asianHigh = session_range_high(gold.candle, 0, 0, 7, 0)
 WHEN session_window(7, 0, 11, 30) AND gold.close > asianHigh AND POSITION.gold = 0
 THEN SELL gold
 ```
@@ -281,17 +281,17 @@ The level is `null` until the first window completes (a warmup delay, not a bug)
 ### Floor-trader pivots
 
 ```qkt
-pivot_p(<stream>)    -- central pivot (H + L + C) / 3 of the prior UTC day
-pivot_r1(<stream>)   -- first resistance 2*P - prior_day_low
-pivot_s1(<stream>)   -- first support 2*P - prior_day_high
+pivot_p(<stream>.candle)    -- central pivot (H + L + C) / 3 of the prior UTC day
+pivot_r1(<stream>.candle)   -- first resistance 2*P - prior_day_low
+pivot_s1(<stream>.candle)   -- first support 2*P - prior_day_high
 ```
 
 The classic floor-trader pivots, computed from the **prior completed UTC day's** high/low/close and held constant through the current day. Because every desk computes them identically, resting take-profit and limit orders cluster at the central pivot, so it acts as an intraday mean-reversion magnet and the bands act as soft barriers. Fade an excursion back toward `pivot_p` with a protective stop just beyond the next band.
 
 ```qkt
 -- Fade a stretch above the central pivot back toward it; stop just beyond R1.
-WHEN gold.close > pivot_p(gold) + atr(gold.candle, 14) AND POSITION.gold = 0
-THEN SELL gold BRACKET STOP LOSS AT pivot_r1(gold) TAKE PROFIT AT pivot_p(gold)
+WHEN gold.close > pivot_p(gold.candle) + atr(gold.candle, 14) AND POSITION.gold = 0
+THEN SELL gold BRACKET STOP LOSS AT pivot_r1(gold.candle) TAKE PROFIT AT pivot_p(gold.candle)
 ```
 
 The levels are `null` until the first full UTC day completes.
@@ -299,14 +299,14 @@ The levels are `null` until the first full UTC day completes.
 ### Seasonal range (hour-of-day volatility)
 
 ```qkt
-seasonal_range(<stream>, <window>)   -- trailing mean range of bars sharing this bar's UTC hour
+seasonal_range(<stream>.candle, <window>)   -- trailing mean range of bars sharing this bar's UTC hour
 ```
 
 `seasonal_range` is the mean realized range (`high - low`) of the last `<window>` bars that share the **current bar's UTC hour-of-day** — a per-hour volatility baseline. Volatility is sharply seasonal (an overlap bar is wider than an Asian bar just because the session is open), so a plain rolling range can't tell "the clock turned on" from "real news hit". Dividing the bar's range by `seasonal_range` gives an excess-vol ratio that is large only when a bar is wide *for its own hour*.
 
 ```qkt
 -- Arm a breakout only on a bar that is wide for its hour (an information shock, not the clock).
-WHEN (gold.candle.high - gold.candle.low) > 2 * seasonal_range(gold, 20)
+WHEN (gold.high - gold.low) > 2 * seasonal_range(gold.candle, 20)
 THEN BUY gold
 ```
 
@@ -315,14 +315,14 @@ It is `null` for a given hour until `<window>` earlier bars of that hour have be
 ### Session momentum
 
 ```qkt
-session_momentum(<stream>, <startHour>, <endHour>, <nDays>)   -- in-window drift over nDays
+session_momentum(<stream>.candle, <startHour>, <endHour>, <nDays>)   -- in-window drift over nDays
 ```
 
 `session_momentum` sums each day's within-window simple return — `(last in-window close / first in-window open) - 1` over `[startHour, endHour)` UTC — across the last `<nDays>` **completed** days. It isolates the drift of an informative session (e.g. the 12:00-14:00 overlap) from the off-hours noise that dilutes an all-bar momentum estimate. The forming day is excluded, so the value is stable to read at the window open.
 
 ```qkt
 -- At the overlap open, enter in the direction of the trailing 3-day overlap-segment drift.
-WHEN session_window(12, 0, 12, 1) AND session_momentum(eur, 12, 14, 3) > 0
+WHEN session_window(12, 0, 12, 1) AND session_momentum(eur.candle, 12, 14, 3) > 0
 THEN BUY eur
 ```
 
@@ -487,9 +487,9 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `confirm_ratio(signal, …, N)` | N+1 bars |
 | `vwap_session(stream, h)` | resets daily at hour h |
 | `session_range_*(stream, …)` | until the first window completes |
-| `pivot_p`/`pivot_r1`/`pivot_s1(stream)` | until the first UTC day completes |
-| `seasonal_range(stream, N)` | N bars of the current bar's UTC hour |
-| `session_momentum(stream, sh, eh, N)` | until N in-window days complete |
+| `pivot_p`/`pivot_r1`/`pivot_s1(stream.candle)` | until the first UTC day completes |
+| `seasonal_range(stream.candle, N)` | N bars of the current bar's UTC hour |
+| `session_momentum(stream.candle, sh, eh, N)` | until N in-window days complete |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 
