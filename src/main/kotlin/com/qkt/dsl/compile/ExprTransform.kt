@@ -187,6 +187,7 @@ class ExprTransform(
             is OcoEntry -> OcoEntry(action(a.leg1), action(a.leg2))
             is Log -> a.copy(fields = a.fields.mapValues { expr(it.value) })
             is Close, is Cancel, CloseAll, CancelAll -> a
+            is com.qkt.dsl.ast.Resize -> a.copy(target = sizing(a.target), minStep = a.minStep?.let(::expr))
             is com.qkt.dsl.ast.Latch -> latch(a)
         }
 

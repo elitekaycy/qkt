@@ -248,6 +248,11 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
                 walkAction(a.leg1)
                 walkAction(a.leg2)
             }
+            is com.qkt.dsl.ast.Resize -> {
+                out.add(a.stream)
+                walkSizing(a.target)
+                a.minStep?.let { walkExpr(it) }
+            }
             is com.qkt.dsl.ast.Latch -> out.add(a.stream)
         }
     }

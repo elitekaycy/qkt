@@ -102,6 +102,10 @@ object WarmupRequirements {
                 walkAction(action.leg1, out)
                 walkAction(action.leg2, out)
             }
+            is com.qkt.dsl.ast.Resize -> {
+                walkSizing(action.target, out)
+                action.minStep?.let { walkExpr(it, out) }
+            }
             else -> Unit
         }
     }

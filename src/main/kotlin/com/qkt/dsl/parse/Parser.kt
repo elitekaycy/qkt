@@ -66,6 +66,7 @@ import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.ParamDecl
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
@@ -994,6 +995,7 @@ class Parser(
             k == TokenKind.CLOSE ||
             k == TokenKind.CLOSE_ALL ||
             k == TokenKind.FLATTEN ||
+            k == TokenKind.RESIZE ||
             k == TokenKind.CANCEL ||
             k == TokenKind.CANCEL_ALL ||
             k == TokenKind.LOG ||
@@ -1043,6 +1045,14 @@ class Parser(
             TokenKind.FLATTEN -> {
                 advance()
                 CloseAll
+            }
+            TokenKind.RESIZE -> {
+                advance()
+                val stream = expect(TokenKind.IDENT, "expected stream alias after RESIZE").lexeme
+                expect(TokenKind.TO, "expected TO after RESIZE stream")
+                val target = parseSizing()
+                val minStep = if (match(TokenKind.MIN_STEP)) parseExpr() else null
+                Resize(stream, target, minStep)
             }
             TokenKind.CANCEL -> {
                 advance()

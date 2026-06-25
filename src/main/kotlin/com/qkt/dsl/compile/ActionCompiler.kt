@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoEntry
+import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizeQty
@@ -48,6 +49,9 @@ class ActionCompiler(
     private val sizingCompiler = SizingCompiler(exprCompiler)
     private val latchCompiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
 
+    /** Default resize deadband: skip a resize whose `|target - current|` is under 5% of target. */
+    private val defaultMinStepFraction = BigDecimal("0.05")
+
     fun compile(action: ActionAst): (EvalContext) -> List<Signal> =
         when (action) {
             is Buy -> compileBuySell(action.stream, action.opts, Side.BUY)
@@ -62,8 +66,46 @@ class ActionCompiler(
             is Latch -> { ec ->
                 listOf(Signal.ArmLatch(latchCompiler.compile(action, ec.strategyContext.strategyId), ec))
             }
+            is Resize -> compileResize(action)
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
+
+    /**
+     * Set the symbol's PRIMARY leg to a per-bar target magnitude, trimming or adding to reach it.
+     * Reuses the SIZING grammar for the target (no stop distance, so RISK sizing self-rejects).
+     * Grows with a same-side market add (averages into the primary); shrinks with a partial
+     * close-by-ticket of the primary (`TO 0` closes it fully). A no-op when there is no primary
+     * or when `|target - current|` is below the [Resize.minStep] deadband (default 5% of target).
+     */
+    private fun compileResize(action: Resize): (EvalContext) -> List<Signal> {
+        val compiledTarget = sizingCompiler.compile(action.target, stopDistance = null, streamAlias = action.stream)
+        val compiledMinStep = action.minStep?.let { exprCompiler.compile(it) }
+        return resize@{ ctx ->
+            val symbol =
+                ctx.streams[action.stream]?.qktSymbol
+                    ?: error("Unknown stream alias: ${action.stream}")
+            val primary =
+                ctx.strategyContext.positions
+                    .legsFor(symbol)
+                    .firstOrNull { it.role == com.qkt.positions.LegRole.PRIMARY }
+                    ?: return@resize emptyList()
+            val refPrice = ctx.candle.close
+            val rawTarget = compiledTarget.evaluate(ctx, refPrice)
+            val target = if (rawTarget.signum() < 0) BigDecimal.ZERO else rawTarget
+            val cur = primary.quantity.abs()
+            val delta = target.subtract(cur, Money.CONTEXT)
+            val minStep =
+                compiledMinStep?.let { (it.evaluate(ctx) as? Value.Num)?.v }
+                    ?: target.multiply(defaultMinStepFraction, Money.CONTEXT)
+            if (delta.signum() == 0 || delta.abs() < minStep) return@resize emptyList()
+            // Grow with a same-side add (the tracker averages it into the primary); shrink/flatten
+            // with an opposite-side trade (the tracker's netting path reduces the primary, keeping
+            // its entry price). Both fill at the bar price, so backtest == live.
+            val grow = delta.signum() > 0
+            val side = if (grow == (primary.side == Side.BUY)) Side.BUY else Side.SELL
+            listOf(if (side == Side.BUY) Signal.Buy(symbol, delta.abs()) else Signal.Sell(symbol, delta.abs()))
+        }
+    }
 
     private fun compileOcoEntry(action: OcoEntry): (EvalContext) -> List<Signal> {
         val leg1Compiled = compile(action.leg1)

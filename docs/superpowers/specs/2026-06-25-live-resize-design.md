@@ -60,32 +60,35 @@ flips are out of scope**: the theses flatten on a direction flip (`RESIZE … TO
   1. resolve the symbol's PRIMARY leg via `positions`; if none → `emptyList()`.
   2. evaluate `target` (clamped ≥ 0) and `minStep`.
   3. compute `delta`; apply the deadband.
-  4. emit the trim/add/close signal(s) — all market orders:
-     - grow → `Signal.Submit(OrderRequest.Market(side = primary.side, qty = delta))`.
-     - shrink → `Signal.Submit(OrderRequest.Market(side = opposite, qty = |delta|,
-       closesLegId = primary.legId, closesTicket = primary.brokerTicket))`.
-     - to-zero → the existing full-close signal.
+  4. emit the trim/add signal:
+     - grow → same-side `Signal.Buy`/`Signal.Sell` for `delta` — the tracker averages it into the primary.
+     - shrink / to-zero → opposite-side `Signal.Buy`/`Signal.Sell` for `|delta|` — the tracker's
+       netting path reduces (or closes) the primary.
 
-### 3. Partial leg reduction (`positions/StrategyPositionTracker.kt`)
-- A reducing fill (a market order carrying `closesLegId` for `|delta|` < leg qty) replaces the
-  PRIMARY with a `(qty − |delta|)` leg at the **same `entryPrice` and `openedAt`**, realizing
-  P&L only on the closed portion. This mirrors the existing same-direction averaging path,
-  inverted. Full-qty reducing fills close the leg (unchanged behaviour).
+### 3. Partial leg reduction (`positions/StrategyPositionTracker.kt`) — no new code
+- A resize-down is a plain opposite-direction net trade, which the tracker's existing
+  opposite-direction path already handles: it realizes P&L on the closed portion and replaces the
+  PRIMARY with a `(qty − |delta|)` leg at the **same `entryPrice` and `openedAt`** (or closes it
+  when `|delta| = qty`). No change needed.
 
-### 4. Protective-order quantity sync (`app/OrderManager.kt`)
-- After a resize fill changes the PRIMARY quantity, sync the leg's protective orders: for the
-  stop (and TP, if any) keyed to the primary entry, **cancel and re-submit at the same price
-  with the new quantity**. The price never re-anchors. If the leg has no bracket, nothing to
-  sync.
+### 4. Risk on a resized position — the `CLOSE`-rule idiom
+- A `CLOSE`/`CLOSE_ALL` action always flattens the **current** position quantity, so a stop
+  written as a rule — `WHEN <stop condition> THEN CLOSE <stream>` — is inherently sized to the
+  resized position. No bracket and no OrderManager change are needed.
+- **A `BRACKET` is incompatible with `RESIZE`** and must not be combined with it: in qkt's
+  truthful position model with a multi-position broker, a bracketed entry is an INDEPENDENT
+  ticketed leg that is invisible to the net `POSITION.<sym>` view and to `RESIZE` (which targets
+  the netting PRIMARY). Use the `CLOSE`-rule stop instead. A bracket-aware resize (operating on
+  independent ticketed legs) is a future enhancement, out of scope here.
 
 ## Backtest = live parity
 
-- Trim/add are market orders filled at the current bar price (`PaperBroker.fillMarket` →
-  `priceProvider.lastPrice`), byte-identical to a `BUY`/`SELL` at that bar.
-- Stop-sync is cancel + re-submit at the **same** stop price → deterministic, no re-anchor.
+- Trim/add are net `BUY`/`SELL` market trades filled at the current bar price
+  (`PaperBroker.fillMarket` → `priceProvider.lastPrice`), byte-identical to a hand-written
+  `BUY`/`SELL` at that bar.
 - The deadband is a deterministic `BigDecimal` comparison.
-- `RESIZE` is a new opt-in action: existing strategies are byte-identical (no `RESIZE`, no
-  new code path taken).
+- `RESIZE` is a new opt-in action with **no engine/execution change** — existing strategies are
+  byte-identical.
 
 ## Error handling
 
@@ -100,14 +103,14 @@ flips are out of scope**: the theses flatten on a direction flip (`RESIZE … TO
   expected signal set.
 - **Position tracker:** partial reduction preserves `entryPrice`/`openedAt` and realizes the
   correct partial P&L; a full reduction closes the leg.
-- **Stop sync:** the protective order's quantity tracks the position across a grow and a
-  shrink; its price is unchanged.
+- **CLOSE-rule stop:** after a resize grows the position, a `CLOSE` rule closes the full resized
+  quantity (the synced-stop idiom).
 - **DSL compile:** `RESIZE aud TO 0.01 / atr(aud.candle, 14) MIN_STEP 0.001` parses + compiles.
-- **End-to-end backtest:** a vol-target strategy (`WHEN true THEN RESIZE aud TO k/atr`) resizes
-  deterministically over real bars; a paper backtest is byte-identical on re-run.
+- **End-to-end backtest:** a strategy resizes (grow / shrink / flatten) deterministically over a
+  tick sequence; the net position ends flat.
 
 ## Out of scope (documented follow-ups)
 
 - One-step sign flips (cross-zero rebalance) — flatten + re-enter instead.
-- Resize of `STACK`/`INDEPENDENT` legs.
-- Re-anchoring the stop price on resize (deliberately avoided — parity landmine).
+- Resize of `STACK`/`INDEPENDENT` legs, and a **bracket-aware resize** (resizing an independent
+  ticketed bracketed position) — needs design; use a `CLOSE`-rule stop for now.
