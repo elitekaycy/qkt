@@ -225,32 +225,32 @@ object QktDocs {
                 ),
             "PIVOT_P" to
                 doc(
-                    "pivot_p(stream)",
+                    "pivot_p(stream.candle)",
                     "Central floor-trader pivot `(high + low + close) / 3` of the prior completed UTC day, held " +
                         "through the current day. The most-watched intraday mean-reversion magnet.",
                 ),
             "PIVOT_R1" to
                 doc(
-                    "pivot_r1(stream)",
+                    "pivot_r1(stream.candle)",
                     "First resistance pivot `2 * pivot_p - prior_day_low`, from the prior completed UTC day. " +
                         "A protective stop above a pivot fade sits just beyond this level.",
                 ),
             "PIVOT_S1" to
                 doc(
-                    "pivot_s1(stream)",
+                    "pivot_s1(stream.candle)",
                     "First support pivot `2 * pivot_p - prior_day_high`, from the prior completed UTC day. " +
                         "A protective stop below a pivot fade sits just beyond this level.",
                 ),
             "SEASONAL_RANGE" to
                 doc(
-                    "seasonal_range(stream, window)",
+                    "seasonal_range(stream.candle, window)",
                     "Trailing mean realized range (high - low) of the last `window` bars sharing the current " +
                         "bar's UTC hour — a per-hour vol baseline. Divide the bar's range by it for an excess-vol " +
                         "ratio that flags shock vol, not clock vol. Null until `window` bars of that hour are seen.",
                 ),
             "SESSION_MOMENTUM" to
                 doc(
-                    "session_momentum(stream, startHour, endHour, nDays)",
+                    "session_momentum(stream.candle, startHour, endHour, nDays)",
                     "Cumulative within-window simple return summed over the last `nDays` completed days, using " +
                         "only bars inside `[startHour, endHour)` UTC. Isolates the informative session's drift from " +
                         "off-hours noise. Null until `nDays` in-window days complete.",
