@@ -11,6 +11,7 @@ The verbs that go after `THEN`. Each action is a complete imperative — "do thi
 | `CLOSE <stream>` | Flatten the position on this stream |
 | `CLOSE_ALL` | Flatten every open position |
 | `FLATTEN` | Alias for `CLOSE_ALL` — reads better in session-end / risk-off rules |
+| `RESIZE <stream> TO <sizing>` | Trim or add to set the position to a per-bar target size, without close+reopen |
 | `CANCEL <stream>` | Cancel any pending orders on this stream |
 | `CANCEL_ALL` | Cancel every pending order |
 | `OCO_ENTRY { leg1, leg2 }` | Two pending entries linked one-cancels-other; whichever fills, the other auto-cancels |
@@ -91,6 +92,45 @@ THEN CLOSE btc
 ```
 
 `CLOSE_ALL` does the same for every open position across all symbols. Use sparingly — usually you want to be precise.
+
+## `RESIZE <stream> TO <sizing>`
+
+Set an open position to a target size each bar, trimming or adding to reach it without
+close+reopen. This is the volatility-targeting / rebalancing primitive: a position whose
+exposure should scale inversely to realized volatility, or to a target portfolio weight.
+
+```qkt
+-- Scale gold exposure inversely to its volatility, re-sized every bar.
+WHEN POSITION.gold != 0
+THEN RESIZE gold TO 0.01 / atr(gold.candle, 14)
+```
+
+- `<sizing>` reuses the SIZING grammar, so the target can be a quantity expression, `PCT OF
+  EQUITY` (rebalance to a target weight), `NOTIONAL`, etc. It evaluates to a **target
+  magnitude** for the symbol's primary position. (`RISK`-based sizing needs a stop distance and
+  is not available here.)
+- It resizes the existing primary to that magnitude, **same side**. `TO 0` flattens it. With no
+  open position it is a no-op — open with `BUY`/`SELL` first.
+- A grow is a same-side market add (averaged into the position); a shrink is a partial close at
+  market (entry price preserved, P&L realized on the closed portion). Both fill at the bar price,
+  so backtest equals live.
+- `MIN_STEP <expr>` sets an anti-churn deadband — the smallest `|target − current|` worth acting
+  on (default 5% of the target). Skips the micro-orders a continuous target would otherwise emit.
+
+```qkt
+RESIZE aud TO 0.02 / atr(aud.candle, 20) MIN_STEP 0.002
+```
+
+For risk on a resized position, use a `CLOSE` rule — it always flattens the **current** position
+size, so it tracks the resize for free:
+
+```qkt
+WHEN gold.close < gold.close[1] - 3 * atr(gold.candle, 14) THEN CLOSE gold
+```
+
+Do **not** combine `RESIZE` with a `BRACKET` on the same entry: a bracketed position is held as a
+separate, ticketed leg that the net-position resize cannot see. Resize works on the net position
+that plain `BUY`/`SELL` opens; pair it with the `CLOSE`-rule stop above.
 
 ```qkt
 WHEN ACCOUNT.equity < 5000

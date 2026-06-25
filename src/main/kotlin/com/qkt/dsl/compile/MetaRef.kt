@@ -258,6 +258,10 @@ internal fun collectMetaRefs(
                 walkAction(a.leg1)
                 walkAction(a.leg2)
             }
+            is com.qkt.dsl.ast.Resize -> {
+                walkSizing(a.target)
+                a.minStep?.let { walkExpr(it) }
+            }
             is com.qkt.dsl.ast.Latch -> Unit
         }
     }
