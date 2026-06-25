@@ -19,6 +19,7 @@ NOW + <duration>         -- relative deadline (epoch_ms)
 | `NOW.weekday` | Integer 0–6 | ISO weekday, Monday = 0 |
 | `NOW.month` | Integer 1–12 | UTC calendar month, January = 1 |
 | `NOW.day` | Integer 1–31 | UTC day of month |
+| `NOW.days_in_month` | Integer 28–31 | Number of days in the current UTC month |
 | `NOW.date_utc` | Integer | Days since 1970-01-01 (epoch day) |
 | `NOW.epoch_ms` | Long | Milliseconds since 1970-01-01T00:00:00Z |
 

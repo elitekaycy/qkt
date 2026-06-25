@@ -127,7 +127,6 @@ Limitations:
 
 - Engine restart resets the live `WarmupGate` counter — but the next deploy re-runs auto-warmup, so this is transparent to operators.
 - Nested indicators (`EMA(EMA(close, 9), 21)`) report only the outer period; set explicit `WARMUP` to override.
-- Lookback `btc.close[N]` not yet derived; set explicit `WARMUP N+1 BARS`.
 - `N` must be a positive integer.
 
 ## Stream field access

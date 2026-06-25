@@ -63,6 +63,19 @@ object FuncRegistry {
                         args[0].subtract(args[1].multiply(q))
                     }
                 },
+            "ROUND_TO" to
+                FuncSpec("ROUND_TO", Arity.BINARY) { args ->
+                    // Round x to the nearest multiple of step — the round-number price grid the figure
+                    // sits on. e.g. ROUND_TO(2347, 25) = 2350, ROUND_TO(31.27, 0.5) = 31.5. Pair with
+                    // MOD (distance past the figure) to fade approaches to a level. Zero step is a domain
+                    // error (null).
+                    if (args[1].signum() == 0) {
+                        null
+                    } else {
+                        val q = args[0].divide(args[1], 0, Money.ROUNDING)
+                        q.multiply(args[1])
+                    }
+                },
             "FLOOR" to FuncSpec("FLOOR", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.FLOOR) },
             "CEIL" to FuncSpec("CEIL", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.CEILING) },
             "ROUND" to FuncSpec("ROUND", Arity.UNARY) { args -> args[0].setScale(0, Money.ROUNDING) },
