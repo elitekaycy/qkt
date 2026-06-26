@@ -62,9 +62,17 @@ class BacktestReportWriter(
         val sb =
             StringBuilder(
                 "timestamp,strategy,symbol,side,quantity,price,realized,nativeRealized,nativeCurrency," +
-                    "accountRealized,accountCurrency,fxRate,fxRateTimestamp,fxSource,riskUsd,brokerOrderId\n",
+                    "accountRealized,accountCurrency,fxRate,fxRateTimestamp,fxSource,riskUsd,brokerOrderId," +
+                    "accountPositionQtyBefore,accountPositionAvgEntryBefore,accountPositionQtyAfter," +
+                    "accountPositionAvgEntryAfter,strategyPositionQtyBefore,strategyPositionAvgEntryBefore," +
+                    "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional\n",
             )
         for (r in trades) {
+            val contractSize = r.contractSize ?: java.math.BigDecimal.ONE
+            val fillNotional =
+                r.trade.price
+                    .multiply(r.trade.quantity.abs())
+                    .multiply(contractSize)
             sb
                 .append(r.trade.timestamp)
                 .append(',')
@@ -97,6 +105,26 @@ class BacktestReportWriter(
                 .append(r.riskUsd?.toPlainString() ?: "")
                 .append(',')
                 .append(r.trade.orderId)
+                .append(',')
+                .append(r.accountPositionBefore?.quantity?.toPlainString() ?: "")
+                .append(',')
+                .append(r.accountPositionBefore?.avgEntryPrice?.toPlainString() ?: "")
+                .append(',')
+                .append(r.accountPositionAfter?.quantity?.toPlainString() ?: "")
+                .append(',')
+                .append(r.accountPositionAfter?.avgEntryPrice?.toPlainString() ?: "")
+                .append(',')
+                .append(r.strategyPositionBefore?.quantity?.toPlainString() ?: "")
+                .append(',')
+                .append(r.strategyPositionBefore?.avgEntryPrice?.toPlainString() ?: "")
+                .append(',')
+                .append(r.strategyPositionAfter?.quantity?.toPlainString() ?: "")
+                .append(',')
+                .append(r.strategyPositionAfter?.avgEntryPrice?.toPlainString() ?: "")
+                .append(',')
+                .append(r.contractSize?.toPlainString() ?: "")
+                .append(',')
+                .append(fillNotional.toPlainString())
                 .append('\n')
         }
         return sb.toString()

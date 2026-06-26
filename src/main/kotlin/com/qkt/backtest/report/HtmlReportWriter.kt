@@ -279,9 +279,15 @@ class HtmlReportWriter(
             append("<table><thead><tr>")
             append("<th>Timestamp</th><th>Strategy</th><th>Symbol</th><th>Side</th>")
             append("<th>Qty</th><th>Price</th><th>riskUsd</th><th>Realized</th>")
-            append("<th>Native</th><th>Account</th><th>FX</th>")
+            append("<th>Native</th><th>Account</th><th>FX</th><th>Pos Before</th><th>Pos After</th>")
+            append("<th>Strat Before</th><th>Strat After</th><th>Contract</th><th>Notional</th>")
             append("</tr></thead><tbody>")
             for (r in sample) {
+                val contractSize = r.contractSize ?: java.math.BigDecimal.ONE
+                val fillNotional =
+                    r.trade.price
+                        .multiply(r.trade.quantity.abs())
+                        .multiply(contractSize)
                 append("<tr>")
                 append("<td>${r.trade.timestamp}</td>")
                 append("<td>${r.strategyId}</td>")
@@ -300,6 +306,24 @@ class HtmlReportWriter(
                         "${r.accountCurrency?.let { " $it" } ?: ""}</td>",
                 )
                 append("<td>${r.fxRate?.toPlainString() ?: "identity"}</td>")
+                append(
+                    "<td>${r.accountPositionBefore?.quantity?.toPlainString() ?: "n/a"} " +
+                        "@${r.accountPositionBefore?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
+                )
+                append(
+                    "<td>${r.accountPositionAfter?.quantity?.toPlainString() ?: "n/a"} " +
+                        "@${r.accountPositionAfter?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
+                )
+                append(
+                    "<td>${r.strategyPositionBefore?.quantity?.toPlainString() ?: "n/a"} " +
+                        "@${r.strategyPositionBefore?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
+                )
+                append(
+                    "<td>${r.strategyPositionAfter?.quantity?.toPlainString() ?: "n/a"} " +
+                        "@${r.strategyPositionAfter?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
+                )
+                append("<td>${r.contractSize?.toPlainString() ?: "1"}</td>")
+                append("<td>${fillNotional.toPlainString()}</td>")
                 append("</tr>")
             }
             append("</tbody></table>")

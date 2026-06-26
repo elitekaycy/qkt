@@ -73,7 +73,7 @@ class TradingPipeline(
         com.qkt.dsl.compile
             .CandleHub(),
     val onFilled: (Trade, BigDecimal, String) -> Unit = { _, _, _ -> },
-    val onAccountedFill: (Trade, ConvertedMoney, String) -> Unit = { _, _, _ -> },
+    val onAccountedFill: (Trade, ConvertedMoney, String, com.qkt.backtest.FillState) -> Unit = { _, _, _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
     val gate: () -> Boolean = { true },
@@ -301,7 +301,10 @@ class TradingPipeline(
             // the instrument's contractSize here so dollar amounts match what the venue
             // reports. Default 1 preserves pre-Phase-30 behavior for symbols not in the
             // registry.
-            val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            val accountBefore = positions.positionFor(e.symbol)
+            val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
+            val contractSize = instruments.lookup(e.symbol)?.contractSize
+            val cs = contractSize ?: BigDecimal.ONE
             // Commission is a per-fill cash charge (#335). Net it out of the realized PnL the
             // accumulators see, so equity/drawdown/Sharpe go net; trade-level stats below stay
             // gross, and the report's commissionPaid bridges the two. Zero unless a backtest
@@ -352,7 +355,18 @@ class TradingPipeline(
                 )
             bus.publish(TradeEvent(trade))
             onFilled(trade, accountRealized, e.strategyId)
-            onAccountedFill(trade, convertedRealized, e.strategyId)
+            onAccountedFill(
+                trade,
+                convertedRealized,
+                e.strategyId,
+                com.qkt.backtest.FillState(
+                    accountPositionBefore = accountBefore,
+                    accountPositionAfter = positions.positionFor(e.symbol),
+                    strategyPositionBefore = strategyBefore,
+                    strategyPositionAfter = strategyPositions.positionFor(e.strategyId, e.symbol),
+                    contractSize = contractSize,
+                ),
+            )
         }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
             val asFill =

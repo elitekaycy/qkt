@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.report.BacktestReportWriter
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -95,6 +96,11 @@ class BacktestCommand(
                     ctx.executionConfig,
                     ctx.datasetEvidence,
                 )
+            args.option("report-dir")?.let { reportDir ->
+                val dir = Path.of(reportDir)
+                Files.createDirectories(dir)
+                BacktestReportWriter(dir).write(result)
+            }
             ReportPrinter.print(result, format, System.out, ctx.brokerKind)
             if (ctx.brokerKind == BrokerKind.PAPER) {
                 System.err.println(
