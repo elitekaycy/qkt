@@ -157,6 +157,33 @@ class BacktestCommandTest {
     }
 
     @Test
+    fun `backtest can write a detailed report bundle`(
+        @TempDir tmp: Path,
+    ) {
+        val reportDir = tmp.resolve("report")
+        val (code, stdout, stderr) =
+            runBacktest(
+                "backtest",
+                "src/test/resources/cli/valid_strategy.qkt",
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                "src/test/resources/cli/data",
+                "--report-dir",
+                reportDir.toString(),
+                "--json",
+            )
+        assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
+        assertThat(reportDir.resolve("result.json")).exists()
+        assertThat(reportDir.resolve("trades.csv")).exists()
+        val tradesCsv = Files.readString(reportDir.resolve("trades.csv"))
+        assertThat(tradesCsv.lines().first()).contains("accountPositionQtyBefore")
+        assertThat(tradesCsv.lines().first()).contains("fillNotional")
+    }
+
+    @Test
     fun `json report carries selected execution preset evidence`() {
         val (code, stdout, stderr) =
             runBacktest(

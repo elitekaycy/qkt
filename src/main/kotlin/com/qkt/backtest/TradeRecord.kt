@@ -1,6 +1,7 @@
 package com.qkt.backtest
 
 import com.qkt.execution.Trade
+import com.qkt.positions.Position
 import java.math.BigDecimal
 
 data class TradeRecord(
@@ -15,4 +16,9 @@ data class TradeRecord(
     val fxRate: BigDecimal? = null,
     val fxRateTimestamp: Long? = null,
     val fxSource: String? = null,
+    val accountPositionBefore: Position? = null,
+    val accountPositionAfter: Position? = null,
+    val strategyPositionBefore: Position? = null,
+    val strategyPositionAfter: Position? = null,
+    val contractSize: BigDecimal? = null,
 )
