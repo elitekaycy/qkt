@@ -130,7 +130,7 @@ THEN CLOSE btc
 
 **`highest(close, N)` excludes the current bar.** It looks at the last N **prior** closes. This matters for breakout strategies — otherwise `close > highest(close, N)` could never fire (the current bar can't exceed itself).
 
-### Statistical
+### Statistical {#zscore}
 
 ```qkt
 zscore(<series>, <period>)    -- rolling z-score over the last <period> values
