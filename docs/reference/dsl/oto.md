@@ -50,7 +50,7 @@ THEN BUY eur SIZING 1
 
 The engine ([OrderManager][om]) places the parent, holds the children until the parent fills, then submits them. If the parent is cancelled or expires unfilled, the children are discarded — there is never an orphan child working at the venue without its parent having filled.
 
-[om]: ../../architecture.md
+[om]: ../../concepts/architecture.md
 
 ## Limitations (v1)
 
