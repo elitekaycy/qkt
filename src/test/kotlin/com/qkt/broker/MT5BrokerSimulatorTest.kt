@@ -30,6 +30,7 @@ class MT5BrokerSimulatorTest {
         volumeStep: String = "0.01",
         volumeMin: String = "0.01",
         digits: Int = 3,
+        tradeStopsLevelPoints: Int = 0,
     ) = InstrumentMeta(
         qktSymbol = "EXNESS:XAUUSD",
         contractSize = BigDecimal("100"),
@@ -38,7 +39,7 @@ class MT5BrokerSimulatorTest {
         volumeMax = null,
         pointSize = BigDecimal("0.001"),
         digits = digits,
-        tradeStopsLevelPoints = 0,
+        tradeStopsLevelPoints = tradeStopsLevelPoints,
     )
 
     private fun marketBuy(
@@ -205,6 +206,166 @@ class MT5BrokerSimulatorTest {
         // BUY at mid+halfSpread = 2000.000 + 0.002 = 2000.002, rounded to digits=3.
         assertThat(fills.single().price.setScale(3, java.math.RoundingMode.HALF_EVEN))
             .isEqualByComparingTo(Money.of("2000.002"))
+    }
+
+    @Test
+    fun `fixed event-time latency fills market order from a later tick`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val tracker = MarketPriceTracker()
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                tracker,
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                latencyMs = 1_000L,
+            )
+
+        clock.advanceTo(0L)
+        val first = Tick(symbol = "EXNESS:XAUUSD", price = Money.of("2000.000"), timestamp = 0L)
+        tracker.update(first.symbol, first.price)
+        bus.publish(TickEvent(first))
+        sim.submit(marketBuy("EXNESS:XAUUSD", "0.01"))
+        assertThat(fills).isEmpty()
+
+        clock.advanceTo(500L)
+        val early = Tick(symbol = "EXNESS:XAUUSD", price = Money.of("2001.000"), timestamp = 500L)
+        tracker.update(early.symbol, early.price)
+        bus.publish(TickEvent(early))
+        assertThat(fills).isEmpty()
+
+        clock.advanceTo(1_000L)
+        val due = Tick(symbol = "EXNESS:XAUUSD", price = Money.of("2002.000"), timestamp = 1_000L)
+        tracker.update(due.symbol, due.price)
+        bus.publish(TickEvent(due))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("2002.000"))
+    }
+
+    @Test
+    fun `trade stops level rejects pending order too close to current price`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val rejects = mutableListOf<BrokerEvent.OrderRejected>()
+        bus.subscribe<BrokerEvent.OrderRejected> { rejects.add(it) }
+        val tracker = MarketPriceTracker()
+        tracker.update("EXNESS:XAUUSD", Money.of("2000.000"))
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                tracker,
+                registry(xauusd(tradeStopsLevelPoints = 100)),
+                syntheticSpreadPoints = 0,
+                enforceStopsLevel = true,
+            )
+
+        val ack =
+            sim.submit(
+                OrderRequest.Stop(
+                    id = "too-close",
+                    symbol = "EXNESS:XAUUSD",
+                    side = Side.BUY,
+                    quantity = Money.of("0.01"),
+                    stopPrice = Money.of("2000.050"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(rejects).hasSize(1)
+        assertThat(rejects.single().reason).contains("tradeStopsLevel")
+    }
+
+    @Test
+    fun `stop gap-through fills at the adverse printed price`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val tracker = MarketPriceTracker()
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                tracker,
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+            )
+        sim.submit(
+            OrderRequest.Stop(
+                id = "gap-stop",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.SELL,
+                quantity = Money.of("0.01"),
+                stopPrice = Money.of("1999.000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        clock.advanceTo(1_000L)
+        val gap = Tick(symbol = "EXNESS:XAUUSD", price = Money.of("1995.000"), timestamp = 1_000L)
+        tracker.update(gap.symbol, gap.price)
+        bus.publish(TickEvent(gap))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1995.000"))
+    }
+
+    @Test
+    fun `deterministic rejection model rejects configured order ordinal`() {
+        val bus = newBus()
+        val rejects = mutableListOf<BrokerEvent.OrderRejected>()
+        bus.subscribe<BrokerEvent.OrderRejected> { rejects.add(it) }
+        val tracker = MarketPriceTracker().apply { update("EXNESS:XAUUSD", Money.of("2000.000")) }
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                FixedClock(0L),
+                tracker,
+                registry(xauusd()),
+                rejectionModel = RejectEveryNthOrder(1),
+            )
+
+        val ack = sim.submit(marketBuy("EXNESS:XAUUSD", "0.01"))
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(rejects).hasSize(1)
+        assertThat(rejects.single().reason).contains("simulated deterministic rejection")
+    }
+
+    @Test
+    fun `fractional partial fill emits a partial slice and final remainder`() {
+        val bus = newBus()
+        val partials = mutableListOf<BrokerEvent.OrderPartiallyFilled>()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { partials.add(it) }
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val tracker = MarketPriceTracker().apply { update("EXNESS:XAUUSD", Money.of("2000.000")) }
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                FixedClock(0L),
+                tracker,
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                partialFillModel = FractionalPartialFill(BigDecimal("0.50")),
+            )
+
+        sim.submit(marketBuy("EXNESS:XAUUSD", "0.10"))
+
+        assertThat(partials).hasSize(1)
+        assertThat(partials.single().quantity).isEqualByComparingTo(Money.of("0.05"))
+        assertThat(partials.single().cumulativeFilled).isEqualByComparingTo(Money.of("0.05"))
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().quantity).isEqualByComparingTo(Money.of("0.05"))
     }
 
     @Test

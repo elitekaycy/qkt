@@ -150,6 +150,8 @@ A few examples of what people use qkt for:
 
     Run a parameter sweep across hundreds of combinations to find what worked, then walk-forward test to make sure it's not overfit to one period of data.
 
+    [:octicons-arrow-right-24: Research workflow](research/index.md)
+
 - :material-bridge:{ .lg .middle } **Connect to your broker**
 
     ---

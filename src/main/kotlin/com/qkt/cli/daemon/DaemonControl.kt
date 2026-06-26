@@ -46,10 +46,19 @@ interface DaemonControl {
 /** [DaemonControl] backed by the live [StrategyRegistry]. */
 class RegistryDaemonControl(
     private val registry: StrategyRegistry,
+    private val operatorJournal: OperatorJournal? = null,
 ) : DaemonControl {
-    override fun halt(target: Target): ControlResult = apply(target) { it.live.halt("operator") }
+    override fun halt(target: Target): ControlResult {
+        val result = apply(target) { it.live.halt("operator") }
+        operatorJournal?.record("halt", target, result)
+        return result
+    }
 
-    override fun resume(target: Target): ControlResult = apply(target) { it.live.resume() }
+    override fun resume(target: Target): ControlResult {
+        val result = apply(target) { it.live.resume() }
+        operatorJournal?.record("resume", target, result)
+        return result
+    }
 
     /**
      * Kill switch: halt the strategy (which also cancels its venue-resting pendings via
@@ -60,11 +69,15 @@ class RegistryDaemonControl(
     fun kill(
         target: Target,
         flatten: Boolean,
-    ): ControlResult =
-        apply(target) {
-            it.live.halt("operator kill")
-            if (flatten) it.live.flatten()
-        }
+    ): ControlResult {
+        val result =
+            apply(target) {
+                it.live.halt("operator kill")
+                if (flatten) it.live.flatten()
+            }
+        operatorJournal?.record("kill", target, result, mapOf("flatten" to flatten.toString()))
+        return result
+    }
 
     override fun status(): StatusReport =
         StatusReport(

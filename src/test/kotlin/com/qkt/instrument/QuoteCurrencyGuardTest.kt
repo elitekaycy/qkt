@@ -26,6 +26,14 @@ class QuoteCurrencyGuardTest {
     }
 
     @Test
+    fun `configured conversion allows a non-account quoted symbol`() {
+        QuoteCurrencyGuard.assertAccountQuoted(
+            listOf("EXNESS:USDJPY"),
+            canConvert = { symbol, quote -> symbol == "EXNESS:USDJPY" && quote == "JPY" },
+        )
+    }
+
+    @Test
     fun `CHF CAD and cross-quoted symbols are rejected`() {
         for (sym in listOf("EXNESS:USDCHF", "EXNESS:USDCAD", "EXNESS:EURGBP", "EXNESS:EURJPY")) {
             assertThatThrownBy { QuoteCurrencyGuard.assertAccountQuoted(listOf(sym)) }

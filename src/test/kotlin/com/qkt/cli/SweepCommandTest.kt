@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.LocalDate
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -26,6 +27,36 @@ class SweepCommandTest {
             """.trimIndent(),
         )
         return strat
+    }
+
+    private fun snapshot(root: Path): Path {
+        val dataRoot = root.resolve("data")
+        FakeXauFetcher.fetch(
+            "XAUUSD",
+            LocalDate.parse("2026-06-04"),
+            dataRoot.resolve("symbols").resolve("XAUUSD").resolve("2026-06-04.csv.gz"),
+        )
+        val out = root.resolve("xau-snapshot.json")
+        val code =
+            DataCommand(
+                Args(
+                    arrayOf(
+                        "data",
+                        "snapshot",
+                        "XAUUSD",
+                        "--from",
+                        "2026-06-04",
+                        "--to",
+                        "2026-06-05",
+                        "--data-root",
+                        dataRoot.toString(),
+                        "--out",
+                        out.toString(),
+                    ),
+                ),
+            ).run()
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        return out
     }
 
     @Test
@@ -130,6 +161,8 @@ class SweepCommandTest {
                     dir.resolve("data").toString(),
                     "--param",
                     "fast=3",
+                    "--large-search-threshold",
+                    "0",
                     "--json",
                 ),
             )
@@ -141,8 +174,54 @@ class SweepCommandTest {
         } finally {
             System.setOut(original)
         }
-        val json = out.toString()
+        val json = out.toString().lines().lastOrNull { it.trimStart().startsWith("[") } ?: ""
+        assertThat(json).startsWith("[")
+        assertThat(json).contains("\"trialCount\":1")
+        assertThat(json).contains("\"metricProvenance\":{\"selectedMetric\":\"sharpe\",\"source\":\"sweep\"")
+        assertThat(json).contains("\"selectionWarnings\":")
         assertThat(json).contains("\"dailyPnL\":")
         assertThat(json).contains("\"maxDailyDrawdown\":")
+    }
+
+    @Test
+    fun `sweep json preserves pinned dataset identity per combo`(
+        @TempDir dir: Path,
+    ) {
+        val dataset = snapshot(dir)
+        val args =
+            Args(
+                arrayOf(
+                    "sweep",
+                    strategy(dir).toString(),
+                    "--from",
+                    "2026-06-04",
+                    "--to",
+                    "2026-06-05",
+                    "--data-root",
+                    dir.resolve("data").toString(),
+                    "--dataset",
+                    dataset.toString(),
+                    "--param",
+                    "fast=2,3",
+                    "--json",
+                ),
+            )
+        val out = ByteArrayOutputStream()
+        val original = System.out
+        try {
+            System.setOut(PrintStream(out))
+            assertThat(SweepCommand(args, fetcherOverride = FakeXauFetcher).run()).isEqualTo(ExitCodes.SUCCESS)
+        } finally {
+            System.setOut(original)
+        }
+
+        val json = out.toString().lines().lastOrNull { it.trimStart().startsWith("[") }
+        assertThat(json).isNotNull()
+        assertThat(json!!)
+            .startsWith("[")
+            .contains("\"dataset\":{")
+            .contains("\"id\":\"qkt-ds-xauusd-2026-06-04_2026-06-05-")
+            .contains("\"hash\":\"sha256:")
+            .contains("\"mutableStore\":false")
     }
 }

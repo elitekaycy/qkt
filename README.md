@@ -154,6 +154,8 @@ Read the per-phase design specs in [`docs/superpowers/specs/`](docs/superpowers/
 ## Documentation
 
 - **[Documentation site](https://elitekaycy.github.io/qkt/)** — quickstart, DSL grammar, CLI reference, deployment guides, architecture diagrams, and the Dokka API reference.
+- [`docs/research/index.md`](docs/research/index.md) — end-to-end research workflow from strategy idea to governed promotion.
+- [`docs/reference/config-schema.md`](docs/reference/config-schema.md) — complete `qkt.config.yaml` reference with examples for research, paper, production, qkt-forge, and portfolio workflows.
 - [`docs/phases/`](docs/phases/) — per-phase changelogs, the authoritative "what's in qkt today" reference.
 - [`QUICKSTART.md`](QUICKSTART.md) — a 5-minute getting-started.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`SECURITY.md`](SECURITY.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)

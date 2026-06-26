@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
+import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
@@ -65,6 +66,18 @@ class DaemonCommand(
                 ?: java.nio.file.Path
                     .of("./qkt.config.yaml")
         val cfg = Config.load(configPathEarly)
+        if (cfg.runtimeMode.production) {
+            val preflight =
+                ProductionPreflight.evaluate(
+                    configPath = configPathEarly,
+                    stateDir = stateDir,
+                )
+            val failures = preflight.filter { it.status == PreflightStatus.FAIL }
+            if (failures.isNotEmpty()) {
+                failures.forEach { System.err.println("FAIL ${it.name}: ${it.detail}") }
+                return ExitCodes.USER_ERROR
+            }
+        }
         val channelRegistry = ChannelRegistry.DEFAULT
         val channelNotifiers: List<Pair<ChannelConfig, Notifier>> =
             cfg.notify.enabledChannels().mapNotNull { ch ->
@@ -218,7 +231,11 @@ class DaemonCommand(
                 ),
             )
         registryRef.set(registry)
-        val daemonControl = RegistryDaemonControl(registry)
+        val daemonControl =
+            RegistryDaemonControl(
+                registry,
+                OperatorJournal(stateDir, "command-channel"),
+            )
         val commandChannels: List<CommandChannel> =
             cfg.notify
                 .enabledChannels()
@@ -256,6 +273,7 @@ class DaemonCommand(
                 stateDir = stateDir,
                 portfolioDeployer = portfolioDeployer,
                 notifierMetrics = notifier.metrics,
+                promotionGates = cfg.promotionGateConfig,
             )
         plane.start()
         stateDir.writeControlPort(plane.boundPort)
@@ -316,20 +334,24 @@ class DaemonCommand(
                     }
             }
 
+        fun cleanup() {
+            runCatching { registry.stopAll() }
+            runCatching { bybitClient?.close() }
+            runCatching { plane.close() }
+            commandChannels.forEach { runCatching { it.close() } }
+            runCatching { dailySummarySchedulers.forEach { it.close() } }
+            runCatching { notifier.close() }
+            runCatching { insightsSink?.close() }
+            runCatching { stateDir.deleteControlPort() }
+        }
+
         val shutdown =
             Thread {
                 try {
                     println("[INFO] stopping daemon")
                     val n = registry.list().size
                     if (n > 0) println("[INFO] gracefully stopping $n strateg${if (n == 1) "y" else "ies"}")
-                    registry.stopAll()
-                    runCatching { bybitClient?.close() }
-                    plane.close()
-                    commandChannels.forEach { runCatching { it.close() } }
-                    dailySummarySchedulers.forEach { it.close() }
-                    notifier.close()
-                    runCatching { insightsSink?.close() }
-                    stateDir.deleteControlPort()
+                    cleanup()
                     println("[INFO] daemon stopped")
                 } finally {
                     stopLatch.countDown()
@@ -341,16 +363,10 @@ class DaemonCommand(
             stopLatch.await()
             // If the latch was tripped programmatically (POST /shutdown), do the cleanup ourselves.
             runCatching { Runtime.getRuntime().removeShutdownHook(shutdown) }
-            runCatching { registry.stopAll() }
-            runCatching { bybitClient?.close() }
-            runCatching { plane.close() }
-            commandChannels.forEach { runCatching { it.close() } }
-            runCatching { dailySummarySchedulers.forEach { it.close() } }
-            runCatching { notifier.close() }
-            runCatching { insightsSink?.close() }
-            runCatching { stateDir.deleteControlPort() }
+            cleanup()
             ExitCodes.SUCCESS
         } catch (_: InterruptedException) {
+            cleanup()
             Thread.currentThread().interrupt()
             ExitCodes.SUCCESS
         }

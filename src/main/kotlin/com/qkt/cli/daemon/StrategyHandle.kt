@@ -15,6 +15,7 @@ import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import java.nio.file.Path
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 
@@ -26,6 +27,7 @@ class StrategyHandle(
     val ring: EventRing,
     val logFile: Path,
     val startedAt: Instant,
+    val sourceFile: Path? = null,
     val childMeta: ChildMeta? = null,
     private val fillCount: AtomicLong = AtomicLong(0),
 ) : AutoCloseable {
@@ -46,7 +48,15 @@ class StrategyHandle(
 
     override fun close() {
         live.stop()
-        observability.close()
+        var interrupted = false
+        try {
+            live.awaitTermination(Duration.ofSeconds(5))
+        } catch (_: InterruptedException) {
+            interrupted = true
+        } finally {
+            observability.close()
+            if (interrupted) Thread.currentThread().interrupt()
+        }
     }
 
     fun interface Factory {
@@ -266,6 +276,7 @@ class StrategyHandle(
                 ring = ring,
                 logFile = logFile,
                 startedAt = startedAt,
+                sourceFile = file.toAbsolutePath().normalize(),
                 fillCount = fillCount,
             )
         }

@@ -13,6 +13,7 @@ internal fun runMain(argv: Array<String>): Int {
             "backtest" -> BacktestCommand(args).run()
             "sweep" -> SweepCommand(args).run()
             "walkforward" -> WalkForwardCommand(args).run()
+            "experiment" -> ExperimentCommand(args).run()
             "research" -> ResearchCommand(args).run()
             "run" -> RunCommand(args).run()
             "deploy" -> DeployCommand(args).run()
@@ -29,6 +30,9 @@ internal fun runMain(argv: Array<String>): Int {
             "audit-ticks" -> AuditTicksCommand(args).run()
             "fetch" -> FetchCommand(args).run()
             "data" -> DataCommand(args).run()
+            "preflight" -> PreflightCommand(args).run()
+            "promotion" -> PromotionCommand(args).run()
+            "incident" -> IncidentCommand(args).run()
             "daemon" -> DaemonCommand(args).run()
             "logs" -> LogsCommand(args).run()
             "status" -> StatusCommand(args).run()
@@ -69,6 +73,8 @@ private fun printHelp() {
             backtest <file> ...     run a one-shot backtest (--param fast=12 overrides a value)
             sweep <file> ...        grid-search params (--param fast=5,10,15 --rank sharpe)
             walkforward <file> ...  rolling in-sample/out-of-sample validation
+            experiment run --plan <yaml>
+                                    governed train/validation/test research run
             research <file> ...     interactive playback REPL over historical data
             run <file> ...          run a strategy in foreground (paper-trading)
 
@@ -94,6 +100,9 @@ private fun printHelp() {
             fetch BROKER:SYMBOL --tf <tf> --last 30d
                                     same, but for the last N days
             data verify <symbol>    check cached tick day files for empty/corrupt/gappy data
+            preflight <file>        validate production readiness (--production to fail closed)
+            promotion ...           record/query promotion states, approvals, waivers, gates
+            incident collect        build an incident zip with journal/log/state evidence
 
         EDITOR INTEGRATIONS
             editor list             show supported editors + what's detected on this machine
