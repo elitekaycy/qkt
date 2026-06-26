@@ -1,5 +1,6 @@
 package com.qkt.events
 
+import com.qkt.accounting.VenueCost
 import com.qkt.common.Side
 import java.math.BigDecimal
 
@@ -65,6 +66,12 @@ sealed interface BrokerEvent : Event {
          * of realized PnL so equity and halt inputs see cost-true numbers.
          */
         val venueCosts: BigDecimal = BigDecimal.ZERO,
+        /**
+         * Optional typed cost breakdown. When present, the pipeline converts and sums this
+         * list instead of [venueCosts]; the aggregate field remains for compatibility with
+         * broker adapters and logs that cannot provide a breakdown yet.
+         */
+        val typedVenueCosts: List<VenueCost> = emptyList(),
     ) : OrderEvent
 
     /**

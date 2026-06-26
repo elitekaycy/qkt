@@ -1,5 +1,8 @@
 package com.qkt.cli
 
+import com.qkt.accounting.AccountCurrency
+import com.qkt.accounting.AccountingConfig
+import com.qkt.accounting.FxMissingPolicy
 import com.qkt.notify.NotifyConfig
 import java.math.BigDecimal
 import java.nio.file.Files
@@ -18,6 +21,23 @@ data class Config(
     val dataRoot: String = "./data",
     val startingBalance: BigDecimal = BigDecimal.ZERO,
     val logLevel: String = "info",
+    /**
+     * Runtime safety mode. Defaults to dev so existing local workflows keep their historical
+     * behavior; production mode is fail-closed by daemon/preflight code.
+     */
+    val runtime: Map<String, String> = emptyMap(),
+    /** Explicit runtime waivers keyed by control name, e.g. `runtime.waivers.alerts.reason`. */
+    val runtimeWaivers: Map<String, String> = emptyMap(),
+    /** Account-currency accounting settings, currently `account.currency`. */
+    val account: Map<String, String> = emptyMap(),
+    /** Flat FX conversion settings, currently `source` and `missing_policy`. */
+    val fxConversion: Map<String, String> = emptyMap(),
+    /** `fx_conversion.symbols` pair-to-qkt-symbol map, e.g. `USDJPY: BACKTEST:USDJPY`. */
+    val fxConversionSymbols: Map<String, String> = emptyMap(),
+    /** Backtest execution-simulation settings, e.g. `preset`, `seed`, `latency`, `slippage`. */
+    val execution: Map<String, String> = emptyMap(),
+    /** Promotion-gate settings for production deploy governance. */
+    val promotion: Map<String, String> = emptyMap(),
     val tv: Map<String, String> = emptyMap(),
     val fetchers: Map<String, Map<String, String>> = emptyMap(),
     val brokers: Map<String, Map<String, String>> = emptyMap(),
@@ -70,6 +90,30 @@ data class Config(
     /** Book-risk controls for a portfolio (limits, de-risk, allocation); null disables the layer. */
     val bookRisk: com.qkt.risk.book.BookRiskConfig? = null,
 ) {
+    val runtimeMode: RuntimeMode
+        get() = RuntimeMode.fromConfig(runtime["mode"])
+
+    val accountCurrency: String
+        get() = account["currency"]?.takeIf { it.isNotBlank() }?.uppercase() ?: "USD"
+
+    val accountingConfig: AccountingConfig
+        get() =
+            AccountingConfig(
+                accountCurrency = AccountCurrency(accountCurrency),
+                missingPolicy =
+                    FxMissingPolicy.fromConfig(
+                        fxConversion["missing_policy"]
+                            ?: if (runtimeMode == RuntimeMode.PRODUCTION) "fail" else null,
+                    ),
+                source = fxConversion["source"]?.takeIf { it.isNotBlank() } ?: "market",
+                symbols = fxConversionSymbols,
+            )
+
+    fun runtimeWaiver(control: String): String? = runtimeWaivers[control]?.takeIf { it.isNotBlank() }
+
+    val promotionGateConfig: PromotionGateConfig
+        get() = PromotionGateConfig.fromConfig(promotion, runtimeMode)
+
     /**
      * Effective `max_daily_loss` from [risk], or [DEFAULT_MAX_DAILY_LOSS]. Operators set
      * `risk.max_daily_loss: 0` to disable the halt rule entirely.
@@ -231,6 +275,13 @@ data class Config(
                 startingBalance =
                     (map["starting_balance"]?.toString() ?: "0").let(::BigDecimal),
                 logLevel = (map["log_level"] as? String) ?: "info",
+                runtime = parseFlat(map["runtime"]).filterKeys { it != "waivers" },
+                runtimeWaivers = parseRuntimeWaivers(map["runtime"]),
+                account = parseFlat(map["account"]),
+                fxConversion = parseFlat(map["fx_conversion"]).filterKeys { it != "symbols" },
+                fxConversionSymbols = parseNestedStringMap(map["fx_conversion"], "symbols"),
+                execution = parseFlat(map["execution"]),
+                promotion = parseFlat(map["promotion"]),
                 tv = parseFlat(map["tv"]),
                 fetchers = parseNested(map["fetchers"]),
                 brokers = parseNested(map["brokers"]),
@@ -263,12 +314,32 @@ data class Config(
         }
 
         @Suppress("UNCHECKED_CAST")
+        private fun parseRuntimeWaivers(raw: Any?): Map<String, String> {
+            val runtime = raw as? Map<String, Any?> ?: return emptyMap()
+            val waivers = runtime["waivers"] as? Map<String, Any?> ?: return emptyMap()
+            return waivers.mapValues { (_, rawValue) ->
+                val block = rawValue as? Map<String, Any?>
+                block?.get("reason")?.toString() ?: rawValue?.toString().orEmpty()
+            }
+        }
+
+        @Suppress("UNCHECKED_CAST")
         private fun parseNested(raw: Any?): Map<String, Map<String, String>> {
             val outer = raw as? Map<String, Any?> ?: return emptyMap()
             return outer.mapValues { (_, v) ->
                 (v as? Map<String, Any?> ?: emptyMap())
                     .mapValues { (_, vv) -> vv?.toString() ?: "" }
             }
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun parseNestedStringMap(
+            raw: Any?,
+            key: String,
+        ): Map<String, String> {
+            val outer = raw as? Map<String, Any?> ?: return emptyMap()
+            val nested = outer[key] as? Map<String, Any?> ?: return emptyMap()
+            return nested.mapValues { (_, value) -> value?.toString() ?: "" }
         }
 
         /**
@@ -411,6 +482,25 @@ data class Config(
                 val name = m.groupValues[1]
                 val default = m.groups[2]?.value
                 System.getenv(name) ?: System.getProperty(name) ?: default ?: m.value
+            }
+    }
+}
+
+enum class RuntimeMode {
+    DEV,
+    PAPER,
+    PRODUCTION,
+    ;
+
+    val production: Boolean get() = this == PRODUCTION
+
+    companion object {
+        fun fromConfig(raw: String?): RuntimeMode =
+            when (raw?.trim()?.lowercase()) {
+                null, "", "dev" -> DEV
+                "paper" -> PAPER
+                "production" -> PRODUCTION
+                else -> error("runtime.mode must be one of: dev, paper, production (got '$raw')")
             }
     }
 }

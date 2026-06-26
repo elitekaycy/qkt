@@ -1,6 +1,12 @@
 package com.qkt.cli.daemon
 
 import com.qkt.app.LiveSessionHandle
+import com.qkt.cli.PromotionApproval
+import com.qkt.cli.PromotionGateConfig
+import com.qkt.cli.PromotionGateEvaluator
+import com.qkt.cli.PromotionRecord
+import com.qkt.cli.PromotionState
+import com.qkt.cli.PromotionStore
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PositionDto
@@ -103,9 +109,11 @@ class DeployCommandTest {
     private fun newPlane(
         @TempDir tmp: Path? = null,
         stateDir: StateDir,
+        promotionGates: PromotionGateConfig = PromotionGateConfig.DISABLED,
     ): ControlPlane {
         val registry = StrategyRegistry(stubFactory(stateDir))
-        val plane = ControlPlane(registry, port = 0)
+        val routeStateDir = if (promotionGates == PromotionGateConfig.DISABLED) null else stateDir
+        val plane = ControlPlane(registry, port = 0, stateDir = routeStateDir, promotionGates = promotionGates)
         plane.start()
         opened.add(plane)
         stateDir.writeControlPort(plane.boundPort)
@@ -236,5 +244,154 @@ class DeployCommandTest {
         assertThat(
             runCatching { client.health() }.exceptionOrNull(),
         ).isInstanceOf(ControlClient.NoDaemonRunningException::class.java)
+    }
+
+    @Test
+    fun `production deploy blocks an unpromoted strategy`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val plane = newPlane(stateDir = stateDir, promotionGates = PromotionGateConfig(enforce = true))
+        val client = OkHttpClient()
+        val file = tmp.resolve("alpha.qkt").also { Files.writeString(it, "STRATEGY alpha VERSION 1") }
+        val resp = postDeploy(client, plane, file, "alpha")
+
+        assertThat(resp.code).isEqualTo(409)
+        val body = resp.body!!.string()
+        assertThat(body).contains("\"kind\":\"promotion-gate\"")
+        assertThat(body).contains("promotion_record")
+    }
+
+    @Test
+    fun `production deploy accepts a promoted matching strategy hash`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val plane = newPlane(stateDir = stateDir, promotionGates = PromotionGateConfig(enforce = true))
+        val client = OkHttpClient()
+        val file = tmp.resolve("alpha.qkt").also { Files.writeString(it, "STRATEGY alpha VERSION 1") }
+        appendApprovedPromotion(stateDir, "alpha", file)
+
+        val resp = postDeploy(client, plane, file, "alpha")
+
+        assertThat(resp.code).isEqualTo(200)
+        val body = resp.body!!.string()
+        assertThat(body).contains("\"eligibleForProduction\":true")
+        assertThat(body).contains("\"state\":\"production\"")
+        waitForJournalAction(stateDir, "deploy")
+    }
+
+    @Test
+    fun `production deploy rejects a promoted name when the strategy file hash changed`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val plane = newPlane(stateDir = stateDir, promotionGates = PromotionGateConfig(enforce = true))
+        val client = OkHttpClient()
+        val file = tmp.resolve("alpha.qkt").also { Files.writeString(it, "STRATEGY alpha VERSION 1") }
+        appendApprovedPromotion(stateDir, "alpha", file)
+        Files.writeString(file, "STRATEGY alpha VERSION 2")
+
+        val resp = postDeploy(client, plane, file, "alpha")
+
+        assertThat(resp.code).isEqualTo(409)
+        assertThat(resp.body!!.string()).contains("strategy_hash")
+    }
+
+    @Test
+    fun `production deploy accepts waiver with reason and journals it`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val plane = newPlane(stateDir = stateDir, promotionGates = PromotionGateConfig(enforce = true))
+        val client = OkHttpClient()
+        val file = tmp.resolve("alpha.qkt").also { Files.writeString(it, "STRATEGY alpha VERSION 1") }
+        val resp = postDeploy(client, plane, file, "alpha", query = "waive=all&reason=emergency+cutover")
+
+        assertThat(resp.code).isEqualTo(200)
+        val record = PromotionStore(stateDir.stateRoot.resolve("promotion")).latest("alpha")
+        assertThat(record?.waivers?.single()?.reason).isEqualTo("emergency cutover")
+        val journalText = StringBuilder()
+        Files.walk(stateDir.stateRoot.resolve("journal")).use { paths ->
+            paths
+                .filter { Files.isRegularFile(it) }
+                .forEach { journalText.append(Files.readString(it)) }
+        }
+        assertThat(journalText.toString()).contains("promotion.waive")
+        assertThat(journalText.toString()).contains("emergency cutover")
+        waitForJournalAction(stateDir, "deploy")
+    }
+
+    private fun appendApprovedPromotion(
+        stateDir: StateDir,
+        name: String,
+        file: Path,
+    ) {
+        val now = Instant.now()
+        PromotionStore(stateDir.stateRoot.resolve("promotion"))
+            .append(
+                PromotionRecord.create(
+                    strategy = name,
+                    strategyHash = PromotionGateEvaluator.strategyHash(file),
+                    state = PromotionState.PRODUCTION,
+                    rationale = "approved for production",
+                    now = now,
+                    approvals =
+                        listOf(
+                            PromotionApproval(
+                                state = PromotionState.PRODUCTION,
+                                actor = "test",
+                                reason = "approved",
+                                approvedAt = now.toString(),
+                            ),
+                        ),
+                ),
+            )
+    }
+
+    private fun postDeploy(
+        client: OkHttpClient,
+        plane: ControlPlane,
+        file: Path,
+        name: String,
+        query: String = "",
+    ): okhttp3.Response {
+        val body =
+            """{"file":"${file.toAbsolutePath()}","name":"$name"}"""
+                .toRequestBody("application/json".toMediaType())
+        val suffix = query.takeIf { it.isNotBlank() }?.let { "?$it" } ?: ""
+        return client
+            .newCall(
+                Request
+                    .Builder()
+                    .url("http://127.0.0.1:${plane.boundPort}/deploy$suffix")
+                    .post(body)
+                    .build(),
+            ).execute()
+    }
+
+    private fun waitForJournalAction(
+        stateDir: StateDir,
+        action: String,
+    ) {
+        val deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos()
+        while (System.nanoTime() < deadline) {
+            val text = journalText(stateDir)
+            if (text.contains(""""action":"$action"""")) return
+            Thread.sleep(20)
+        }
+        assertThat(journalText(stateDir)).contains(""""action":"$action"""")
+    }
+
+    private fun journalText(stateDir: StateDir): String {
+        val root = stateDir.stateRoot.resolve("journal")
+        if (!Files.exists(root)) return ""
+        val out = StringBuilder()
+        Files.walk(root).use { paths ->
+            paths
+                .filter { Files.isRegularFile(it) }
+                .forEach { out.append(Files.readString(it)) }
+        }
+        return out.toString()
     }
 }

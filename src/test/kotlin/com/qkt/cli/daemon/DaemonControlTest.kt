@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.WhenThen
 import com.qkt.execution.Trade
 import java.math.BigDecimal
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
@@ -144,6 +145,32 @@ class DaemonControlTest {
         assertThat(result.affected).containsExactly("alpha")
         assertThat(handles.getValue("alpha").halts).hasSize(1)
         assertThat(handles.getValue("beta").halts).isEmpty()
+    }
+
+    @Test
+    fun `operator halt and resume are journaled`(
+        @TempDir tmp: Path,
+    ) {
+        val (registry, _) = registryWith(tmp, listOf("alpha"))
+        val stateDir = StateDir.resolve(tmp.resolve("qkt-state").toString())
+        val control = RegistryDaemonControl(registry, OperatorJournal(stateDir, "test"))
+
+        control.halt(Target.Strategy("alpha"))
+        control.resume(Target.Strategy("alpha"))
+
+        val journal =
+            Files
+                .walk(stateDir.stateRoot.resolve("journal/alpha"))
+                .filter { Files.isRegularFile(it) }
+                .findFirst()
+                .orElseThrow()
+                .let(Files::readString)
+        assertThat(journal).contains("\"kind\":\"operator_action\"")
+        assertThat(journal).contains("\"action\":\"halt\"")
+        assertThat(journal).contains("\"action\":\"resume\"")
+        assertThat(journal).contains("\"target\":\"alpha\"")
+        assertThat(journal).contains("\"source\":\"test\"")
+        assertThat(journal).contains("\"outcome\":\"accepted\"")
     }
 
     @Test

@@ -28,6 +28,7 @@ object QuoteCurrencyGuard {
     fun assertAccountQuoted(
         qktSymbols: Collection<String>,
         accountCurrency: String = "USD",
+        canConvert: (qktSymbol: String, quoteCurrency: String) -> Boolean = { _, _ -> false },
     ) {
         val offending =
             qktSymbols.mapNotNull { qktSymbol ->
@@ -35,11 +36,11 @@ object QuoteCurrencyGuard {
                 val compatible =
                     quote.equals(accountCurrency, ignoreCase = true) ||
                         (accountCurrency.uppercase() in DOLLAR_FAMILY && quote in DOLLAR_FAMILY)
-                if (compatible) null else qktSymbol to quote
+                if (compatible || canConvert(qktSymbol, quote)) null else qktSymbol to quote
             }
         require(offending.isEmpty()) {
             val detail = offending.joinToString(", ") { (sym, quote) -> "$sym (quoted in $quote)" }
-            "PnL conversion for non-$accountCurrency quotes is not implemented; refusing to trade: $detail. " +
+            "PnL conversion for non-$accountCurrency quotes is not configured; refusing to trade: $detail. " +
                 "These symbols would book quote-currency PnL as $accountCurrency at the wrong magnitude."
         }
     }

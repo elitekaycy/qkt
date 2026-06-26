@@ -47,6 +47,18 @@ class BookExposureLimitTest {
             timestamp = 1L,
         )
 
+    private fun buy(
+        symbol: String,
+        qty: String,
+    ) = OrderRequest.Market(
+        id = "o1",
+        symbol = symbol,
+        side = Side.BUY,
+        quantity = BigDecimal(qty),
+        timeInForce = TimeInForce.GTC,
+        timestamp = 1L,
+    )
+
     @Test
     fun `rejects a risk-increasing order that breaches the book gross cap`() {
         val rule = BookExposureLimit(controllerWithGross("29000"), prices, NoopInstrumentRegistry)
@@ -59,5 +71,17 @@ class BookExposureLimitTest {
     fun `approves an order under the cap`() {
         val rule = BookExposureLimit(controllerWithGross("29000"), prices, NoopInstrumentRegistry)
         assertThat(rule.evaluate(buy("5"), positions)).isEqualTo(Decision.Approve) // 29500 <= 30000
+    }
+
+    @Test
+    fun `uses account-currency exposure when checking FX book caps`() {
+        val fxPrices = MarketPriceTracker().apply { update("BACKTEST:USDJPY", BigDecimal("150")) }
+        val rule = BookExposureLimit(controllerWithGross("29000"), fxPrices, NoopInstrumentRegistry)
+
+        assertThat(rule.evaluate(buy("BACKTEST:USDJPY", "500"), positions)).isEqualTo(Decision.Approve)
+        val decision = rule.evaluate(buy("BACKTEST:USDJPY", "1500"), positions)
+
+        assertThat(decision).isInstanceOf(Decision.Reject::class.java)
+        assertThat((decision as Decision.Reject).reason).contains("book gross")
     }
 }

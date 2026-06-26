@@ -1,15 +1,23 @@
 package com.qkt.cli
 
+import com.qkt.accounting.AccountCurrency
+import com.qkt.accounting.AccountingConfig
+import com.qkt.accounting.FxMissingPolicy
 import com.qkt.backtest.Backtest
 import com.qkt.backtest.BacktestDataProvisioner
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.ExecutionPreset
+import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.ProvisionStream
+import com.qkt.backtest.SlippageSpec
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
+import com.qkt.evidence.DatasetEvidence
+import com.qkt.evidence.EvidenceHasher
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.StandardInstrumentRegistry
@@ -20,6 +28,8 @@ import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataFetcher
 import com.qkt.marketdata.store.DataRoot
+import com.qkt.marketdata.store.DatasetSnapshot
+import com.qkt.marketdata.store.DatasetSnapshots
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.ScriptDataFetcher
@@ -54,14 +64,18 @@ class BacktestContext private constructor(
     val from: Instant,
     val to: Instant,
     val brokerKind: BrokerKind,
+    val executionConfig: ExecutionSimulationConfig,
     val symbols: List<String>,
     val store: DefaultDataStore,
     val instruments: InstrumentRegistry,
     val barStore: LocalBarStore,
+    val datasetEvidence: DatasetEvidence,
+    val accountingConfig: AccountingConfig,
     private val candleWindow: TimeWindow?,
     private val startingBalance: BigDecimal,
     private val haltConfig: HaltConfig,
     private val provisioner: () -> Unit,
+    private val replaySymbols: List<String> = symbols,
     private val strategiesOverride: ((Map<String, String>) -> List<Pair<String, com.qkt.strategy.Strategy>>)? = null,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val forceBars: Boolean = false,
@@ -83,6 +97,7 @@ class BacktestContext private constructor(
         range: TimeRange = TimeRange(from, to),
         ast: StrategyAst = this.ast,
         brokerKind: BrokerKind = this.brokerKind,
+        executionConfig: ExecutionSimulationConfig = this.executionConfig,
         instruments: InstrumentRegistry = this.instruments,
         startingBalance: BigDecimal = this.startingBalance,
     ): Backtest {
@@ -97,6 +112,12 @@ class BacktestContext private constructor(
         val strats =
             strategiesOverride?.invoke(overrides)
                 ?: listOf(ast.name to AstCompiler().compile(ast, overrides))
+        val effectiveExecution =
+            if (executionConfig == this.executionConfig && brokerKind != this.brokerKind) {
+                ExecutionSimulationConfig.forBrokerKind(brokerKind)
+            } else {
+                executionConfig
+            }
         // The symbol's LIVE calendar, not hardwired crypto: session/range indicators
         // (PreviousDayHigh, session gates) disagree by construction otherwise. The
         // pipeline takes one calendar — resolved from the first symbol; mixed-class
@@ -118,12 +139,15 @@ class BacktestContext private constructor(
             haltRules = haltRules,
             calendar = calendar,
             store = store,
-            request = MarketRequest(symbols = symbols, from = range.from, to = range.to),
+            request = MarketRequest(symbols = replaySymbols, from = range.from, to = range.to),
             candleWindow = candleWindow,
             startingBalance = startingBalance,
             instruments = instruments,
+            accountingConfig = accountingConfig,
+            tradedSymbols = symbols,
             barStore = barStore,
-            brokerKind = brokerKind,
+            brokerKind = effectiveExecution.brokerKind,
+            executionConfig = effectiveExecution,
             bookRiskConfig = bookRiskConfig,
             forceBars = forceBars,
             barWindows = barWindows,
@@ -147,6 +171,7 @@ class BacktestContext private constructor(
                 overrides = s.params,
                 ast = s.ast ?: this.ast,
                 brokerKind = s.brokerKind ?: this.brokerKind,
+                executionConfig = executionConfig,
                 instruments = s.instruments ?: this.instruments,
                 startingBalance = s.startingBalance ?: this.startingBalance,
             ).toEngine(SequenceTickFeed(emptySequence()))
@@ -173,10 +198,6 @@ class BacktestContext private constructor(
         ): BacktestContext {
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
-            // Default to the shared store (~/.qkt/data) so `qkt backtest` reads the same place
-            // `qkt fetch` / `qkt data convert` write — otherwise the tick store and the bar store
-            // (which already resolves via DataRoot) would diverge and cached ticks would be missed.
-            val dataRoot = args.option("data-root") ?: DataRoot.resolve().toString()
             val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
 
             val declaredSymbols = ast.streams.map { it.qktSymbol }.distinct()
@@ -198,6 +219,11 @@ class BacktestContext private constructor(
                 } else {
                     declaredSymbols
                 }
+            val datasetContext = datasetContext(args, listOf(ast), symbols, from, to)
+            // Default to the shared store (~/.qkt/data) so `qkt backtest` reads the same place
+            // `qkt fetch` / `qkt data convert` write. A pinned dataset carries its own root unless
+            // the caller explicitly overrides it with --data-root for relocated snapshots.
+            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: DataRoot.resolve().toString()
 
             // Legacy `--fetcher dukascopy --fetcher-script <path>` still wins when set.
             val legacyFetcher: DataFetcher? =
@@ -242,12 +268,24 @@ class BacktestContext private constructor(
                     "mt5-sim" -> BrokerKind.MT5_SIM
                     else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
                 }
+            // Same config-driven halt/accounting construction the live daemon uses, so a strategy
+            // that would halt live halts at the same point in its backtest. The basis balance is
+            // the backtest's own starting balance.
+            val cfg =
+                Config.load(
+                    Paths.get(args.option("config") ?: "./qkt.config.yaml"),
+                )
+            val executionConfig = executionConfig(args, cfg, brokerKind)
+            val accountingConfig = accountingConfig(args, cfg)
+            val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
                 val provisionStreams =
-                    ast.streams
-                        .filter { it.qktSymbol in symbols && DukascopyInstrument.ofOrNull(it.symbol) != null }
-                        .map { ProvisionStream(broker = it.broker, bareSymbol = it.symbol) }
+                    replaySymbols
+                        .map { brokerAndBare(it) }
+                        .filter { (_, bare) -> DukascopyInstrument.ofOrNull(bare) != null }
+                        .distinct()
+                        .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
@@ -279,13 +317,6 @@ class BacktestContext private constructor(
                 }
             }
 
-            // Same config-driven halt construction the live daemon uses, so a strategy
-            // that would halt live halts at the same point in its backtest. The basis
-            // balance is the backtest's own starting balance.
-            val cfg =
-                Config.load(
-                    Paths.get(args.option("config") ?: "./qkt.config.yaml"),
-                )
             val haltConfig =
                 HaltConfig(
                     maxDailyLoss = cfg.maxDailyLoss,
@@ -346,15 +377,19 @@ class BacktestContext private constructor(
                 ast = ast,
                 from = from,
                 to = to,
-                brokerKind = brokerKind,
+                brokerKind = executionConfig.brokerKind,
+                executionConfig = executionConfig,
                 symbols = symbols,
                 store = store,
                 instruments = instruments,
-                barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
+                barStore = LocalBarStore(root = Paths.get(dataRoot)),
+                datasetEvidence = datasetContext.evidence,
+                accountingConfig = accountingConfig,
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
                 haltConfig = haltConfig,
                 provisioner = provisioner,
+                replaySymbols = replaySymbols,
                 bookRiskConfig = cfg.bookRisk,
                 forceBars = forceBars,
                 barWindows = barWindows,
@@ -374,11 +409,19 @@ class BacktestContext private constructor(
         ): BacktestContext {
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
-            val dataRoot = args.option("data-root") ?: DataRoot.resolve().toString()
             val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
 
             val streams = compiled.children.flatMap { it.ast.streams }
             val symbols = streams.map { it.qktSymbol }.distinct()
+            val datasetContext =
+                datasetContext(
+                    args,
+                    compiled.children.map { it.ast },
+                    symbols,
+                    from,
+                    to,
+                )
+            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: DataRoot.resolve().toString()
 
             val legacyFetcher: DataFetcher? =
                 when (val name = args.option("fetcher")) {
@@ -417,12 +460,18 @@ class BacktestContext private constructor(
                     "mt5-sim" -> BrokerKind.MT5_SIM
                     else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
                 }
+            val cfg = Config.load(Paths.get(args.option("config") ?: "./qkt.config.yaml"))
+            val executionConfig = executionConfig(args, cfg, brokerKind)
+            val accountingConfig = accountingConfig(args, cfg)
+            val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
                 val provisionStreams =
-                    streams
-                        .filter { it.qktSymbol in symbols && DukascopyInstrument.ofOrNull(it.symbol) != null }
-                        .map { ProvisionStream(broker = it.broker, bareSymbol = it.symbol) }
+                    replaySymbols
+                        .map { brokerAndBare(it) }
+                        .filter { (_, bare) -> DukascopyInstrument.ofOrNull(bare) != null }
+                        .distinct()
+                        .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 // --bars never reads ticks; skip tick fetch + completeness validation (see build()).
@@ -438,7 +487,6 @@ class BacktestContext private constructor(
                 }
             }
 
-            val cfg = Config.load(Paths.get(args.option("config") ?: "./qkt.config.yaml"))
             val haltConfig =
                 HaltConfig(
                     maxDailyLoss = cfg.maxDailyLoss,
@@ -451,19 +499,236 @@ class BacktestContext private constructor(
                 ast = compiled.children.first().ast,
                 from = from,
                 to = to,
-                brokerKind = brokerKind,
+                brokerKind = executionConfig.brokerKind,
+                executionConfig = executionConfig,
                 symbols = symbols,
                 store = store,
                 instruments = instruments,
-                barStore = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root"))),
+                barStore = LocalBarStore(root = Paths.get(dataRoot)),
+                datasetEvidence = datasetContext.evidence,
+                accountingConfig = accountingConfig,
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
                 haltConfig = haltConfig,
                 provisioner = provisioner,
+                replaySymbols = replaySymbols,
                 strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
                 bookRiskConfig = cfg.bookRisk,
             )
         }
+
+        private fun accountingConfig(
+            args: Args,
+            cfg: Config,
+        ): AccountingConfig {
+            val cliSymbols =
+                args.options("fx-symbol").associate { token ->
+                    val eq = token.indexOf('=')
+                    if (eq <= 0 || eq == token.lastIndex) {
+                        throw SetupError("bad --fx-symbol '$token'; expected PAIR=QKT_SYMBOL")
+                    }
+                    token.substring(0, eq).trim() to token.substring(eq + 1).trim()
+                }
+            return AccountingConfig(
+                accountCurrency =
+                    AccountCurrency(
+                        args.option("account-currency")
+                            ?: cfg.accountCurrency,
+                    ),
+                missingPolicy =
+                    FxMissingPolicy.fromConfig(
+                        args.option("fx-missing-policy")
+                            ?: cfg.accountingConfig.missingPolicy.name
+                                .lowercase(),
+                    ),
+                source =
+                    args.option("fx-source")
+                        ?: cfg.accountingConfig.source,
+                symbols = cfg.accountingConfig.symbols + cliSymbols,
+            )
+        }
+
+        private fun executionConfig(
+            args: Args,
+            cfg: Config,
+            brokerKind: BrokerKind,
+        ): ExecutionSimulationConfig {
+            val seed = args.option("seed")?.toLongOrNull() ?: cfg.execution["seed"]?.toLongOrNull()
+            val preset =
+                (args.option("execution") ?: cfg.execution["preset"])
+                    ?.let(ExecutionPreset::fromConfig)
+            var result =
+                if (preset != null) {
+                    ExecutionSimulationConfig.defaultsFor(preset, seed)
+                } else {
+                    ExecutionSimulationConfig.forBrokerKind(brokerKind).copy(seed = seed)
+                }
+            (args.option("execution-latency") ?: cfg.execution["latency"])?.let {
+                result = result.copy(latencyMs = parseLatencyMs(it))
+            }
+            (args.option("slippage") ?: cfg.execution["slippage"])?.let {
+                val (spec, points) = parseSlippage(it)
+                result = result.copy(slippage = spec, slippagePoints = points)
+            }
+            (args.option("reject-every") ?: cfg.execution["reject_every"])?.let {
+                result = result.copy(rejectEvery = it.toIntOrNull() ?: throw SetupError("bad reject_every '$it'"))
+            }
+            (args.option("partial-fill") ?: cfg.execution["partial_fill"])?.let {
+                result = result.copy(partialFillFraction = BigDecimal(it))
+            }
+            return result
+        }
+
+        private fun parseLatencyMs(raw: String): Long {
+            val trimmed = raw.trim().lowercase().removePrefix("fixed:")
+            val millis =
+                when {
+                    trimmed.endsWith("ms") -> trimmed.removeSuffix("ms")
+                    trimmed.endsWith("s") ->
+                        return (trimmed.removeSuffix("s").toBigDecimal() * BigDecimal("1000")).toLong()
+                    else -> trimmed
+                }
+            return millis.toLongOrNull() ?: throw SetupError("bad execution latency '$raw'")
+        }
+
+        private fun parseSlippage(raw: String): Pair<SlippageSpec, Int> {
+            val trimmed = raw.trim().lowercase()
+            return when {
+                trimmed == "zero" || trimmed == "none" -> SlippageSpec.ZERO to 0
+                trimmed == "instrument" || trimmed == "instrument:slippagepoints" -> SlippageSpec.INSTRUMENT to 0
+                trimmed.startsWith("fixed-points:") ->
+                    SlippageSpec.FIXED_POINTS to parsePoints(raw, trimmed.substringAfter(':'))
+                trimmed.startsWith("fixed:") ->
+                    SlippageSpec.FIXED_POINTS to parsePoints(raw, trimmed.substringAfter(':'))
+                trimmed.startsWith("uniform-random:") ->
+                    SlippageSpec.UNIFORM_RANDOM to parsePoints(raw, trimmed.substringAfter(':'))
+                trimmed.startsWith("uniform:") ->
+                    SlippageSpec.UNIFORM_RANDOM to parsePoints(raw, trimmed.substringAfter(':'))
+                else -> throw SetupError("bad slippage '$raw' (valid: zero, instrument, fixed-points:N, uniform:N)")
+            }
+        }
+
+        private fun parsePoints(
+            raw: String,
+            points: String,
+        ): Int =
+            points.toIntOrNull()
+                ?: throw SetupError("bad slippage '$raw': points must be an integer")
+
+        private data class DatasetContext(
+            val evidence: DatasetEvidence,
+            val dataRoot: String?,
+        )
+
+        private fun datasetContext(
+            args: Args,
+            strategyAsts: List<StrategyAst>,
+            symbols: List<String>,
+            from: Instant,
+            to: Instant,
+        ): DatasetContext {
+            val raw = args.option("dataset") ?: return DatasetContext(mutableDatasetEvidence(args), dataRoot = null)
+            val path = Path.of(raw)
+            val snapshot =
+                try {
+                    DatasetSnapshots.read(path)
+                } catch (e: Exception) {
+                    throw SetupError("cannot read --dataset $path: ${e.message}")
+                }
+            validateDatasetSnapshot(path, snapshot, symbols, from, to, args.option("data-root")?.let(Path::of))
+            validateDatasetFieldRequirements(path, snapshot, strategyAsts)
+            return DatasetContext(
+                evidence =
+                    DatasetEvidence(
+                        id = snapshot.id,
+                        hash = EvidenceHasher.sha256(path),
+                        qualityPolicy = snapshot.qualityPolicy.mode,
+                        mutableStore = false,
+                    ),
+                dataRoot = snapshot.dataRoot,
+            )
+        }
+
+        private fun validateDatasetFieldRequirements(
+            path: Path,
+            snapshot: DatasetSnapshot,
+            strategyAsts: List<StrategyAst>,
+        ) {
+            val failures = mutableListOf<String>()
+            val totalTicks = snapshot.files.sumOf { it.tickCount }
+            val bidAskTicks = snapshot.files.sumOf { it.bidAskTicks }
+            val volumeTicks = snapshot.files.sumOf { it.volumeTicks }
+            val hasBidAsk = snapshot.files.all { it.tickCount == 0 || it.bidAskTicks == it.tickCount }
+            val hasVolume = snapshot.files.all { it.tickCount == 0 || it.volumeTicks == it.tickCount }
+            for (ast in strategyAsts) {
+                val aliasToSymbol = ast.streams.associate { it.alias to it.symbol }
+                val requirements = StrategyDataRequirementScanner.scan(ast)
+                val missingQuotes =
+                    requirements.quoteAliases
+                        .filter { aliasToSymbol[it] == snapshot.symbol }
+                        .sorted()
+                if (missingQuotes.isNotEmpty() && !hasBidAsk) {
+                    failures.add(
+                        "strategy reads bid/ask/spread on ${missingQuotes.joinToString()} but --dataset $path " +
+                            "has bid/ask on $bidAskTicks/$totalTicks ticks",
+                    )
+                }
+                val missingVolume =
+                    requirements.volumeAliases
+                        .filter { aliasToSymbol[it] == snapshot.symbol }
+                        .sorted()
+                if (missingVolume.isNotEmpty() && !hasVolume) {
+                    failures.add(
+                        "strategy reads volume on ${missingVolume.joinToString()} but --dataset $path " +
+                            "has volume on $volumeTicks/$totalTicks ticks",
+                    )
+                }
+            }
+            if (failures.isNotEmpty()) {
+                throw SetupError("dataset field capability check failed:\n  ${failures.joinToString("\n  ")}")
+            }
+        }
+
+        private fun validateDatasetSnapshot(
+            path: Path,
+            snapshot: DatasetSnapshot,
+            symbols: List<String>,
+            from: Instant,
+            to: Instant,
+            dataRootOverride: Path?,
+        ) {
+            val bareSymbols = symbols.map { it.substringAfter(':') }.distinct()
+            if (bareSymbols != listOf(snapshot.symbol)) {
+                throw SetupError("--dataset $path covers ${snapshot.symbol}, but run symbols are $bareSymbols")
+            }
+            val runFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
+            val runToExclusive = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC).plusDays(1)
+            val snapshotFrom = LocalDate.parse(snapshot.from)
+            val snapshotTo = LocalDate.parse(snapshot.to)
+            if (runFrom.isBefore(snapshotFrom) || runToExclusive.isAfter(snapshotTo)) {
+                throw SetupError(
+                    "--dataset $path covers $snapshotFrom..$snapshotTo, but run needs $runFrom..$runToExclusive",
+                )
+            }
+            val verification = DatasetSnapshots.verify(snapshot, dataRootOverride = dataRootOverride, strict = true)
+            if (!verification.ok) {
+                throw SetupError(
+                    "dataset snapshot verification failed:\n  ${verification.failures.joinToString("\n  ")}",
+                )
+            }
+        }
+
+        private fun mutableDatasetEvidence(args: Args): DatasetEvidence =
+            DatasetEvidence(
+                qualityPolicy =
+                    if (args.flag("allow-incomplete")) {
+                        "allow-incomplete"
+                    } else {
+                        "default-completeness-check"
+                    },
+                mutableStore = true,
+                warning = "Dataset is a mutable local store, not an immutable snapshot.",
+            )
 
         internal fun defaultCalendars(): SymbolCalendars =
             SymbolCalendars(

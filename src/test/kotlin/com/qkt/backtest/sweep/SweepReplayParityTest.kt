@@ -11,6 +11,7 @@ import com.qkt.research.ReplayEngine
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
+import java.util.concurrent.atomic.AtomicInteger
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -110,5 +111,29 @@ class SweepReplayParityTest {
             )
             assertThat(par.getValue(label).result.trades).isEqualTo(seq.getValue(label).result.trades)
         }
+    }
+
+    @Test
+    fun `fan-out decodes the shared feed once per worker not once per combo`() {
+        val feeds = AtomicInteger(0)
+
+        SweepReplay(
+            configs = listOf("b2" to 2, "b3" to 3, "b4" to 4, "b5" to 5),
+            sharedFeed = {
+                feeds.incrementAndGet()
+                HistoricalTickFeed(ticks())
+            },
+            engineFor = { _, buyTick ->
+                ReplayEngine(
+                    strategies = listOf("s" to buyAtThenSell(buyTick)),
+                    feed = SequenceTickFeed(emptySequence()),
+                    candleWindow = TimeWindow.ONE_MINUTE,
+                    cadence = SampleCadence.CANDLE_CLOSE,
+                )
+            },
+            parallelism = 2,
+        ).run()
+
+        assertThat(feeds.get()).isEqualTo(2)
     }
 }

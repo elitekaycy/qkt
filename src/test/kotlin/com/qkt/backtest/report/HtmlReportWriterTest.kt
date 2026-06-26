@@ -9,6 +9,11 @@ import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
 import com.qkt.common.Side
+import com.qkt.evidence.DatasetEvidence
+import com.qkt.evidence.EvidenceEnvelope
+import com.qkt.evidence.ExecutionEvidence
+import com.qkt.evidence.ExperimentEvidence
+import com.qkt.evidence.PromotionEvidence
 import com.qkt.execution.Trade
 import java.math.BigDecimal
 import java.nio.file.Files
@@ -33,6 +38,12 @@ class HtmlReportWriterTest {
         assertThat(html).contains("Monte Carlo")
         assertThat(html).contains("Trades")
         assertThat(html).contains("riskUsd")
+        assertThat(html).contains("Run evidence")
+        assertThat(html).contains("sha256:strategy")
+        assertThat(html).contains("paper-fast")
+        assertThat(html).contains("split.train")
+        assertThat(html).contains("2026-06-04T00:00:00Z/2026-06-04T04:00:00Z")
+        assertThat(html).contains("promotion rationale")
         assertThat(html).doesNotContain("<script")
     }
 
@@ -113,5 +124,30 @@ class HtmlReportWriterTest {
             global = report,
             perStrategy = mapOf("test" to report),
             cadence = SampleCadence.TICK,
+            evidence =
+                EvidenceEnvelope(
+                    qktVersion = "test",
+                    gitSha = "abc123",
+                    buildTimestamp = "2026-06-25T00:00:00Z",
+                    command = listOf("backtest", "s.qkt"),
+                    strategyHash = "sha256:strategy",
+                    dataset = DatasetEvidence(mutableStore = true),
+                    execution = ExecutionEvidence(preset = "paper-fast", broker = "paper"),
+                    experiment =
+                        ExperimentEvidence(
+                            id = "exp-1",
+                            trialCount = 2,
+                            primaryMetric = "totalPnL",
+                            splits =
+                                mapOf(
+                                    "train" to "2026-06-04T00:00:00Z/2026-06-04T04:00:00Z",
+                                    "validation" to "2026-06-04T04:00:00Z/2026-06-04T08:00:00Z",
+                                    "test" to "2026-06-04T08:00:00Z/2026-06-04T12:00:00Z",
+                                ),
+                            selectedLabel = "fast=3",
+                            selectedParams = mapOf("fast" to "3"),
+                        ),
+                    promotion = PromotionEvidence(state = "candidate", rationale = "ready for paper"),
+                ),
         )
 }

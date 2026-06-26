@@ -19,6 +19,7 @@ import com.qkt.marketdata.Tick
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 
 class OrderManagerGcTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
@@ -62,6 +63,17 @@ class OrderManagerGcTest {
         )
 
     private fun tick(price: String): TickEvent = TickEvent(Tick("EURUSD", Money.of(price), 1L))
+
+    private fun <T> withQuietOrderManagerLogs(block: () -> T): T {
+        val logger = LoggerFactory.getLogger(OrderManager::class.java) as ch.qos.logback.classic.Logger
+        val previous = logger.level
+        logger.level = ch.qos.logback.classic.Level.WARN
+        return try {
+            block()
+        } finally {
+            logger.level = previous
+        }
+    }
 
     @Test
     fun `a finished unreferenced order is reclaimed after a tick`() {
@@ -130,12 +142,16 @@ class OrderManagerGcTest {
     fun `repeated fills do not accumulate orders`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
-        val om = OrderManager(LogBroker(bus, clock), bus, MarketPriceTracker(), clock)
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
 
-        repeat(5_000) { i ->
-            om.submit(market("c$i"))
-            bus.publish(fill("c$i", "1.10"))
-            bus.publish(tick("1.11")) // each tick drains the GC
+        withQuietOrderManagerLogs {
+            repeat(5_000) { i ->
+                val request = market("c$i")
+                om.submit(request)
+                broker.emitFill(request, Money.of("1.10"))
+                bus.publish(tick("1.11")) // each tick drains the GC
+            }
         }
 
         // Every order filled and was unreferenced, so all should be reclaimed.

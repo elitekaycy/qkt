@@ -1,5 +1,6 @@
 package com.qkt.pnl
 
+import com.qkt.accounting.AccountingEngine
 import com.qkt.common.Money
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -30,6 +31,8 @@ class PnLCalculator(
     private val positions: PositionProvider,
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val accounting: AccountingEngine = AccountingEngine(),
+    private val markTimestamp: () -> Long = { 0L },
 ) : PnLProvider {
     private var realizedTotal: BigDecimal = Money.ZERO
 
@@ -43,11 +46,19 @@ class PnLCalculator(
         val pos = positions.positionFor(symbol) ?: return Money.ZERO
         val price = prices.lastPrice(symbol) ?: return Money.ZERO
         val cs = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
-        return price
-            .subtract(pos.avgEntryPrice)
-            .multiply(pos.quantity)
-            .multiply(cs)
-            .setScale(Money.SCALE, Money.ROUNDING)
+        val native =
+            price
+                .subtract(pos.avgEntryPrice)
+                .multiply(pos.quantity)
+                .multiply(cs)
+                .setScale(Money.SCALE, Money.ROUNDING)
+        return accounting
+            .convertPnl(
+                symbol = symbol,
+                nativeAmount = native,
+                timestamp = markTimestamp(),
+                referencePrice = price,
+            ).account.amount
     }
 
     override fun unrealizedTotal(): BigDecimal =

@@ -24,6 +24,19 @@ class PreTradeControlsTest {
             timestamp = 0L,
         )
 
+    private fun market(
+        symbol: String,
+        qty: String,
+        timestamp: Long = 0L,
+    ) = OrderRequest.Market(
+        id = "m1",
+        symbol = symbol,
+        side = Side.BUY,
+        quantity = Money.of(qty),
+        timeInForce = TimeInForce.GTC,
+        timestamp = timestamp,
+    )
+
     private fun limit(
         qty: String,
         price: String,
@@ -56,6 +69,29 @@ class PreTradeControlsTest {
         assertThat((decision as Decision.Reject).reason).contains("exceeds cap")
         // 40 x 2000 = 80,000 passes.
         assertThat(rule.evaluate(market("40"), positions)).isEqualTo(Decision.Approve)
+    }
+
+    @Test
+    fun `notional cap compares account-currency notional for FX symbols`() {
+        val prices = MarketPriceTracker().apply { update("BACKTEST:USDJPY", Money.of("150")) }
+        val rule = MaxOrderNotional(BigDecimal("100000"), prices)
+
+        assertThat(rule.evaluate(market("BACKTEST:USDJPY", "100000"), positions)).isEqualTo(Decision.Approve)
+        val decision = rule.evaluate(market("BACKTEST:USDJPY", "100001"), positions)
+
+        assertThat(decision).isInstanceOf(Decision.Reject::class.java)
+        assertThat((decision as Decision.Reject).reason).contains("currency=USD")
+    }
+
+    @Test
+    fun `notional cap rejects recognized non-account symbols without conversion`() {
+        val prices = MarketPriceTracker().apply { update("BACKTEST:EURJPY", Money.of("160")) }
+        val rule = MaxOrderNotional(BigDecimal("100000"), prices)
+
+        val decision = rule.evaluate(market("BACKTEST:EURJPY", "1000"), positions)
+
+        assertThat(decision).isInstanceOf(Decision.Reject::class.java)
+        assertThat((decision as Decision.Reject).reason).contains("missing FX conversion JPY->USD")
     }
 
     @Test

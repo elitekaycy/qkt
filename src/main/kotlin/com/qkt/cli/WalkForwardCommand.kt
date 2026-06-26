@@ -7,6 +7,7 @@ import com.qkt.common.Money
 import com.qkt.common.TimeRange
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.evidence.DatasetEvidence
 import com.qkt.marketdata.store.DataFetcher
 import java.math.BigDecimal
 import java.nio.file.Files
@@ -38,7 +39,7 @@ class WalkForwardCommand(
         val combos: List<ParamGrid.Combo>
         try {
             rank = RankMetric.fromFlag(args.option("rank"))
-            combos = ParamGrid.parse(args.options("param"))
+            combos = ParamGrid.expand(ParamGrid.parseAxes(args.options("param")))
         } catch (e: IllegalArgumentException) {
             System.err.println("qkt: error: ${e.message}")
             return ExitCodes.USER_ERROR
@@ -86,7 +87,20 @@ class WalkForwardCommand(
         // poison it; here one uncomputable fold simply doesn't count.
         val meanIs = meanOf(result.folds.mapNotNull { rank.defined(it.trainScore) })
         val meanOos = meanOf(result.folds.mapNotNull { rank.valueOf(it.testResult.global) })
-        if (args.flag("json")) printJson(result, rank, meanIs, meanOos) else printText(result, rank, meanIs, meanOos)
+        val trialCount = combos.size * result.folds.size
+        val largeSearchThreshold =
+            args.option("large-search-threshold")?.toIntOrNull()
+                ?: ResearchGovernance.DEFAULT_LARGE_SEARCH_THRESHOLD
+        val warnings =
+            ResearchGovernance.largeSearchWarnings(
+                trialCount = combos.size,
+                threshold = largeSearchThreshold,
+            )
+        if (args.flag("json")) {
+            printJson(result, rank, meanIs, meanOos, ctx.datasetEvidence, trialCount, warnings)
+        } else {
+            printText(result, rank, meanIs, meanOos, trialCount, warnings)
+        }
         return ExitCodes.SUCCESS
     }
 
@@ -104,7 +118,14 @@ class WalkForwardCommand(
         rank: RankMetric,
         meanIs: BigDecimal?,
         meanOos: BigDecimal?,
+        trialCount: Int,
+        warnings: List<String>,
     ) {
+        println(
+            "trials: $trialCount   selected metric: ${rank.flag}   " +
+                "provenance: walkforward.fold-rank(desc)",
+        )
+        for (warning in warnings) println("warning: $warning")
         println(
             "folds: ${result.folds.size}   mean IS ${rank.flag}: ${meanIs?.toPlainString() ?: "n/a"}   " +
                 "mean OOS ${rank.flag}: ${meanOos?.toPlainString() ?: "n/a"}",
@@ -134,10 +155,16 @@ class WalkForwardCommand(
         rank: RankMetric,
         meanIs: BigDecimal?,
         meanOos: BigDecimal?,
+        dataset: DatasetEvidence,
+        trialCount: Int,
+        warnings: List<String>,
     ) {
         fun num(v: BigDecimal?): String = v?.toPlainString() ?: "null"
 
         fun esc(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
+        val datasetField = CliEvidenceJson.pinnedDataset(dataset)?.let { """"dataset":$it,""" } ?: ""
+        val provenanceJson = ResearchGovernance.metricProvenanceJson("walkforward", rank, trialCount)
+        val warningsJson = ResearchGovernance.warningListJson(warnings)
         val stability = result.winnerCounts.entries.joinToString(",") { "\"${esc(it.key)}\":${it.value}" }
         val folds =
             result.folds.joinToString(",") { f ->
@@ -148,7 +175,9 @@ class WalkForwardCommand(
                     """"outOfSample":${num(rank.valueOf(f.testResult.global))}}"""
             }
         println(
-            """{"rank":"${rank.flag}","folds":${result.folds.size},""" +
+            """{"rank":"${rank.flag}",$datasetField"trialCount":$trialCount,""" +
+                """"metricProvenance":$provenanceJson,"selectionWarnings":$warningsJson,""" +
+                """"folds":${result.folds.size},""" +
                 """"meanInSample":${num(meanIs)},"meanOutOfSample":${num(meanOos)},""" +
                 """"winnerStability":{$stability},"foldDetail":[$folds]}""",
         )

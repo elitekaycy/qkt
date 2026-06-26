@@ -1,12 +1,24 @@
 package com.qkt.cli.daemon
 
+import com.qkt.cli.PromotionGateConfig
+import com.qkt.cli.PromotionGateEvaluator
+import com.qkt.cli.PromotionGateResult
+import com.qkt.cli.PromotionJson
+import com.qkt.cli.PromotionRecord
+import com.qkt.cli.PromotionState
+import com.qkt.cli.PromotionStore
+import com.qkt.cli.PromotionWaiver
+import com.qkt.cli.UserDirs
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -22,6 +34,7 @@ object ControlRoutes {
         shutdown: () -> Unit,
         notifierMetrics: com.qkt.notify.NotifierMetrics? = null,
         prometheusMetricsEnabled: Boolean = true,
+        promotionGates: PromotionGateConfig = PromotionGateConfig.DISABLED,
     ): HttpHandler =
         HttpHandler { ex ->
             val path = ex.requestURI.path
@@ -29,20 +42,21 @@ object ControlRoutes {
             try {
                 when {
                     method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
-                    method == "POST" && path == "/deploy" -> handleDeploy(ex, registry, portfolioDeployer)
-                    method == "GET" && path == "/list" -> handleList(ex, registry)
-                    method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, path)
-                    method == "POST" && path.startsWith("/start/") -> handleStart(ex, registry, path)
-                    method == "POST" && path == "/halt" -> handleHalt(ex, registry, null)
+                    method == "POST" && path == "/deploy" ->
+                        handleDeploy(ex, registry, stateDir, portfolioDeployer, promotionGates)
+                    method == "GET" && path == "/list" -> handleList(ex, registry, stateDir, promotionGates)
+                    method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, stateDir, path)
+                    method == "POST" && path.startsWith("/start/") -> handleStart(ex, registry, stateDir, path)
+                    method == "POST" && path == "/halt" -> handleHalt(ex, registry, stateDir, null)
                     method == "POST" && path.startsWith("/halt/") ->
-                        handleHalt(ex, registry, path.removePrefix("/halt/").trim('/').ifBlank { null })
-                    method == "POST" && path == "/kill" -> handleKill(ex, registry, null)
+                        handleHalt(ex, registry, stateDir, path.removePrefix("/halt/").trim('/').ifBlank { null })
+                    method == "POST" && path == "/kill" -> handleKill(ex, registry, stateDir, null)
                     method == "POST" && path.startsWith("/kill/") ->
-                        handleKill(ex, registry, path.removePrefix("/kill/").trim('/').ifBlank { null })
-                    method == "POST" && path == "/resume" -> handleResume(ex, registry, null)
+                        handleKill(ex, registry, stateDir, path.removePrefix("/kill/").trim('/').ifBlank { null })
+                    method == "POST" && path == "/resume" -> handleResume(ex, registry, stateDir, null)
                     method == "POST" && path.startsWith("/resume/") ->
-                        handleResume(ex, registry, path.removePrefix("/resume/").trim('/').ifBlank { null })
-                    method == "POST" && path == "/shutdown" -> handleShutdown(ex, shutdown)
+                        handleResume(ex, registry, stateDir, path.removePrefix("/resume/").trim('/').ifBlank { null })
+                    method == "POST" && path == "/shutdown" -> handleShutdown(ex, stateDir, shutdown)
                     method == "GET" && path.startsWith("/logs/") ->
                         handleLogs(ex, registry, stateDir, path)
                     method == "GET" && path == "/status" -> handleStatusAll(ex, registry)
@@ -184,23 +198,40 @@ object ControlRoutes {
     private fun handleList(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        stateDir: StateDir?,
+        promotionGates: PromotionGateConfig,
     ) {
         val now = Instant.now().toEpochMilli()
         val rows = mutableListOf<String>()
+        val promotionStore = promotionStore(stateDir, promotionGates)
         for (record in registry.listPortfolios()) {
             val uptime = now - record.startedAt.toEpochMilli()
             val state = if (record.supervisor.running) "running" else "stopped"
             val aliases = record.children.mapNotNull { it.childMeta?.alias }
             val aliasJson = aliases.joinToString(",", "[", "]") { "\"$it\"" }
+            val promotionJson =
+                renderPromotionFields(
+                    name = record.name,
+                    sourceFile = null,
+                    store = promotionStore,
+                    gates = promotionGates,
+                )
             rows.add(
                 """{"name":"${record.name}","kind":"portfolio","childAliases":$aliasJson,""" +
-                    """"uptimeMs":$uptime,"state":"$state"}""",
+                    """"uptimeMs":$uptime,"state":"$state"$promotionJson}""",
             )
         }
         for (h in registry.list()) {
             val uptime = now - h.startedAt.toEpochMilli()
             val state = if (h.isRunning()) "running" else "stopped"
             val streamBrokersJson = renderStreamBrokers(h.live.streamBrokers())
+            val promotionJson =
+                renderPromotionFields(
+                    name = h.name,
+                    sourceFile = h.sourceFile,
+                    store = promotionStore,
+                    gates = promotionGates,
+                )
             val meta = h.childMeta
             if (meta != null) {
                 val gateState =
@@ -213,17 +244,38 @@ object ControlRoutes {
                     """{"name":"${h.name}","kind":"child","parent":"${meta.parent}",""" +
                         """"port":${h.port},"trades":${h.tradeCount},""" +
                         """"uptimeMs":$uptime,"state":"$state","gateState":"$gateState",""" +
-                        """"streamBrokers":$streamBrokersJson}""",
+                        """"streamBrokers":$streamBrokersJson$promotionJson}""",
                 )
             } else {
                 rows.add(
                     """{"name":"${h.name}","kind":"strategy","port":${h.port},""" +
                         """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state",""" +
-                        """"streamBrokers":$streamBrokersJson}""",
+                        """"streamBrokers":$streamBrokersJson$promotionJson}""",
                 )
             }
         }
         respond(ex, 200, rows.joinToString(",", "[", "]"))
+    }
+
+    private fun renderPromotionFields(
+        name: String,
+        sourceFile: Path?,
+        store: PromotionStore,
+        gates: PromotionGateConfig,
+    ): String {
+        val result =
+            PromotionGateEvaluator(gates)
+                .evaluate(
+                    strategy = name,
+                    strategyPath = sourceFile?.takeIf { Files.exists(it) },
+                    store = store,
+                )
+        if (!gates.enforce && result.recordId == null) return ""
+        return ""","promotionEnforced":${result.enforced},""" +
+            """"promotionState":${jsonStringOrNull(result.state)},""" +
+            """"promotionEligible":${result.eligibleForProduction},""" +
+            """"promotionMissingGates":${jsonArray(result.missingGates)},""" +
+            """"strategyHash":${jsonStringOrNull(result.strategyHash)}"""
     }
 
     private fun renderStreamBrokers(map: Map<String, String>): String {
@@ -507,9 +559,13 @@ object ControlRoutes {
 
     private fun handleShutdown(
         ex: HttpExchange,
+        stateDir: StateDir?,
         shutdown: () -> Unit,
     ) {
         respond(ex, 202, """{"status":"accepted"}""")
+        OperatorJournal
+            .from(stateDir, "http")
+            ?.record("shutdown", target = "_daemon", affected = emptyList())
         // Trigger asynchronously so the response can flush before the server closes.
         Thread {
             try {
@@ -527,10 +583,11 @@ object ControlRoutes {
     private fun handleHalt(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        stateDir: StateDir?,
         name: String?,
     ) {
         val target = if (name == null) Target.All else Target.Strategy(name)
-        val result = RegistryDaemonControl(registry).halt(target)
+        val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).halt(target)
         if (result.unknown.isNotEmpty()) {
             return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
@@ -540,6 +597,7 @@ object ControlRoutes {
     private fun handleKill(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        stateDir: StateDir?,
         name: String?,
     ) {
         val params = parseQuery(ex.requestURI.rawQuery)
@@ -551,7 +609,7 @@ object ControlRoutes {
                 else -> return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
             }
         val target = if (name == null) Target.All else Target.Strategy(name)
-        val result = RegistryDaemonControl(registry).kill(target, flatten)
+        val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).kill(target, flatten)
         if (result.unknown.isNotEmpty()) {
             return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
@@ -561,21 +619,38 @@ object ControlRoutes {
     private fun handleResume(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        stateDir: StateDir?,
         name: String?,
     ) {
         val target = if (name == null) Target.All else Target.Strategy(name)
-        val result = RegistryDaemonControl(registry).resume(target)
+        val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).resume(target)
         if (result.unknown.isNotEmpty()) {
             return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
         respond(ex, 200, """{"state":"resumed","affected":${jsonArray(result.affected)}}""")
     }
 
-    private fun jsonArray(items: List<String>): String = items.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
+    private fun promotionStore(
+        stateDir: StateDir?,
+        gates: PromotionGateConfig,
+    ): PromotionStore =
+        PromotionStore(
+            gates.registryDir
+                ?: stateDir?.stateRoot?.resolve("promotion")
+                ?: UserDirs().stateHome().resolve("state").resolve("promotion"),
+        )
+
+    private fun jsonArray(items: List<String>): String =
+        items.joinToString(prefix = "[", postfix = "]") { jsonString(it) }
+
+    private fun jsonStringOrNull(value: String?): String = value?.let(::jsonString) ?: "null"
+
+    private fun jsonString(value: String): String = JsonPrimitive(value).toString()
 
     private fun handleStop(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        stateDir: StateDir?,
         path: String,
     ) {
         val name = path.removePrefix("/stop/").trim('/').ifBlank { null }
@@ -610,6 +685,14 @@ object ControlRoutes {
             }
             registry.removePortfolio(name)
             for (child in record.children) runCatching { child.close() }
+            OperatorJournal
+                .from(stateDir, "http")
+                ?.record(
+                    action = "stop",
+                    target = name,
+                    affected = listOf(name) + record.children.map { it.name },
+                    details = mapOf("flatten" to (flattenOverride?.toString() ?: "default")),
+                )
             return respond(ex, 200, """{"name":"$name","state":"stopped","trades":$totalTrades}""")
         }
 
@@ -622,6 +705,14 @@ object ControlRoutes {
             meta.gateActive.set(false)
             val shouldFlatten = flattenOverride ?: !meta.hold
             if (shouldFlatten) runCatching { handle.live.flatten() }
+            OperatorJournal
+                .from(stateDir, "http")
+                ?.record(
+                    action = "stop",
+                    target = name,
+                    affected = listOf(name),
+                    details = mapOf("flatten" to shouldFlatten.toString(), "state" to "operator_stopped"),
+                )
             return respond(
                 ex,
                 200,
@@ -631,6 +722,14 @@ object ControlRoutes {
         val trades = handle.tradeCount
         if (flattenOverride == true) runCatching { handle.live.flatten() }
         registry.stop(name)
+        OperatorJournal
+            .from(stateDir, "http")
+            ?.record(
+                action = "stop",
+                target = name,
+                affected = listOf(name),
+                details = mapOf("flatten" to (flattenOverride?.toString() ?: "false")),
+            )
         respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades}""")
     }
 
@@ -641,14 +740,18 @@ object ControlRoutes {
             .mapNotNull { part ->
                 val i = part.indexOf('=')
                 if (i < 0) return@mapNotNull null
-                part.substring(0, i) to part.substring(i + 1)
+                urlDecode(part.substring(0, i)) to urlDecode(part.substring(i + 1))
             }.toMap()
     }
+
+    private fun urlDecode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8)
 
     private fun handleDeploy(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        stateDir: StateDir?,
         portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer?,
+        promotionGates: PromotionGateConfig,
     ) {
         val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
         val obj =
@@ -672,6 +775,23 @@ object ControlRoutes {
         }
         val params = parseQuery(ex.requestURI.rawQuery)
         val ignoreMismatches = params["reconcile"] == "ignore-mismatches"
+        val promotionResult =
+            evaluateDeployPromotion(
+                ex = ex,
+                name = name,
+                path = path,
+                stateDir = stateDir,
+                gates = promotionGates,
+                params = params,
+            ) ?: return
+        if (promotionResult.blocked) {
+            return respond(
+                ex,
+                409,
+                """{"error":"production deploy blocked","kind":"promotion-gate",""" +
+                    """"promotion":${PromotionJson.encode(promotionResult)}}""",
+            )
+        }
 
         val parsed =
             when (
@@ -708,8 +828,23 @@ object ControlRoutes {
                     ex,
                     200,
                     """{"name":"${handle.name}","kind":"strategy","port":${handle.port},""" +
-                        """"state":"running","startedAt":"${handle.startedAt}"}""",
+                        """"state":"running","startedAt":"${handle.startedAt}",""" +
+                        """"promotion":${PromotionJson.encode(promotionResult)}}""",
                 )
+                OperatorJournal
+                    .from(stateDir, "http")
+                    ?.record(
+                        "deploy",
+                        target = name,
+                        affected = listOf(handle.name),
+                        details =
+                            mapOf(
+                                "kind" to "strategy",
+                                "promotionState" to promotionResult.state,
+                                "promotionEligible" to promotionResult.eligibleForProduction.toString(),
+                                "promotionWaived" to promotionResult.waivedGates.joinToString(","),
+                            ),
+                    )
             }
             is com.qkt.dsl.parse.ParsedFile.PortfolioFile -> {
                 if (portfolioDeployer == null) {
@@ -741,15 +876,108 @@ object ControlRoutes {
                     ex,
                     200,
                     """{"name":"${record.name}","kind":"portfolio","state":"running",""" +
-                        """"startedAt":"${record.startedAt}","children":$childrenJson}""",
+                        """"startedAt":"${record.startedAt}","children":$childrenJson,""" +
+                        """"promotion":${PromotionJson.encode(promotionResult)}}""",
                 )
+                OperatorJournal
+                    .from(stateDir, "http")
+                    ?.record(
+                        action = "deploy",
+                        target = name,
+                        affected = listOf(record.name) + record.children.map { it.name },
+                        details =
+                            mapOf(
+                                "kind" to "portfolio",
+                                "promotionState" to promotionResult.state,
+                                "promotionEligible" to promotionResult.eligibleForProduction.toString(),
+                                "promotionWaived" to promotionResult.waivedGates.joinToString(","),
+                            ),
+                    )
             }
         }
+    }
+
+    private fun evaluateDeployPromotion(
+        ex: HttpExchange,
+        name: String,
+        path: Path,
+        stateDir: StateDir?,
+        gates: PromotionGateConfig,
+        params: Map<String, String>,
+    ): PromotionGateResult? {
+        val store = promotionStore(stateDir, gates)
+        val now = Instant.now()
+        val waiver = deployWaiver(params, now)
+        if (params.containsKey("waive") && waiver == null) {
+            respond(ex, 400, """{"error":"--waive requires a non-empty reason"}""")
+            return null
+        }
+        if (waiver != null) {
+            val strategyHash = PromotionGateEvaluator.strategyHash(path)
+            val existing = store.latest(name, strategyHash)
+            val record =
+                existing
+                    ?.update(now = now, waivers = existing.waivers + waiver)
+                    ?: PromotionRecord.create(
+                        strategy = name,
+                        strategyHash = strategyHash,
+                        state = PromotionState.DRAFT,
+                        rationale = "deploy waiver without prior promotion record",
+                        now = now,
+                        waivers = listOf(waiver),
+                    )
+            store.append(record)
+            OperatorJournal
+                .from(stateDir, "http")
+                ?.record(
+                    action = "promotion.waive",
+                    target = name,
+                    affected = listOf(name),
+                    details =
+                        mapOf(
+                            "gates" to waiver.gates.joinToString(","),
+                            "reason" to waiver.reason,
+                            "strategyHash" to strategyHash,
+                            "expiresAt" to waiver.expiresAt,
+                        ),
+                )
+        }
+        return PromotionGateEvaluator(gates)
+            .evaluate(
+                strategy = name,
+                strategyPath = path,
+                store = store,
+                now = now,
+            )
+    }
+
+    private fun deployWaiver(
+        params: Map<String, String>,
+        now: Instant,
+    ): PromotionWaiver? {
+        val raw = params["waive"] ?: return null
+        val reason = params["reason"]?.takeIf { it.isNotBlank() } ?: return null
+        val gates =
+            raw
+                .split(',')
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .ifEmpty { listOf("all") }
+        val expiresAt = params["expires"]?.takeIf { it.isNotBlank() }
+        if (expiresAt != null && runCatching { Instant.parse(expiresAt) }.isFailure) return null
+        return PromotionWaiver(
+            gates = gates,
+            reason = reason,
+            actor = params["actor"]?.takeIf { it.isNotBlank() } ?: "deploy",
+            createdAt = now.toString(),
+            expiresAt = expiresAt,
+        )
     }
 
     private fun handleStart(
         ex: HttpExchange,
         registry: StrategyRegistry,
+        stateDir: StateDir?,
         path: String,
     ) {
         val name =
@@ -758,6 +986,9 @@ object ControlRoutes {
         val handle = registry.get(name)
         if (handle != null && handle.childMeta != null) {
             handle.childMeta.operatorStop.set(false)
+            OperatorJournal
+                .from(stateDir, "http")
+                ?.record("start", target = name, affected = listOf(name), details = mapOf("state" to "resumed"))
             return respond(ex, 200, """{"name":"$name","state":"resumed"}""")
         }
         if (handle != null) {

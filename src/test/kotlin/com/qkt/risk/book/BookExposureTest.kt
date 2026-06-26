@@ -33,4 +33,12 @@ class BookExposureTest {
         val e = bookExposure(listOf(leg("a", "XAU", "1", "2000", "100")))
         assertThat(e.gross).isEqualByComparingTo("200000")
     }
+
+    @Test
+    fun `FX book exposure is aggregated in account currency`() {
+        val e = bookExposure(listOf(leg("a", "BACKTEST:USDJPY", "100000", "150")))
+        assertThat(e.gross).isEqualByComparingTo("100000")
+        assertThat(e.net).isEqualByComparingTo("100000")
+        assertThat(e.perSymbolNet.getValue("BACKTEST:USDJPY")).isEqualByComparingTo("100000")
+    }
 }

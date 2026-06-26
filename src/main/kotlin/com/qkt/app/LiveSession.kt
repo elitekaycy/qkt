@@ -458,17 +458,21 @@ class LiveSession(
         bus: EventBus,
         journal: com.qkt.observe.OrderJournal,
     ) {
+        fun orderFields(request: com.qkt.execution.OrderRequest): Map<String, String?> =
+            mapOf(
+                "id" to request.id,
+                "type" to request::class.simpleName,
+                "symbol" to request.symbol,
+                "side" to request.side.name,
+                "qty" to request.quantity.toPlainString(),
+            )
+
         bus.subscribe<com.qkt.events.OrderEvent> { e ->
+            journal.append(e.request.strategyId, "risk-approved", orderFields(e.request))
             journal.append(
                 e.request.strategyId,
                 "submit",
-                mapOf(
-                    "id" to e.request.id,
-                    "type" to e.request::class.simpleName,
-                    "symbol" to e.request.symbol,
-                    "side" to e.request.side.name,
-                    "qty" to e.request.quantity.toPlainString(),
-                ),
+                orderFields(e.request),
             )
         }
         bus.subscribe<BrokerEvent.OrderAccepted> { e ->
@@ -540,13 +544,13 @@ class LiveSession(
         if (NotifyEventKind.HALTED in notifyEvents) {
             bus.subscribe<RiskEvent.Halted> { ev ->
                 runCatching { notifier.notify(EventTranslator.fromRiskHalted(ev)) }
-                    .onFailure { t -> log.warn("[notify] handler failed for Halted", t) }
+                    .onFailure { t -> recordNotificationFailure(ev.strategyId, "Halted", t) }
             }
         }
         if (NotifyEventKind.RESUMED in notifyEvents) {
             bus.subscribe<RiskEvent.Resumed> { ev ->
                 runCatching { notifier.notify(EventTranslator.fromRiskResumed(ev)) }
-                    .onFailure { t -> log.warn("[notify] handler failed for Resumed", t) }
+                    .onFailure { t -> recordNotificationFailure(ev.strategyId, "Resumed", t) }
             }
         }
         if (NotifyEventKind.POSITION_RECONCILED in notifyEvents) {
@@ -559,7 +563,7 @@ class LiveSession(
                     notifier.notify(
                         EventTranslator.fromPositionReconciled(event = ev, strategyId = ownerStrategyId),
                     )
-                }.onFailure { t -> log.warn("[notify] handler failed for PositionReconciled", t) }
+                }.onFailure { t -> recordNotificationFailure(ownerStrategyId, "PositionReconciled", t) }
             }
         }
         if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
@@ -575,7 +579,7 @@ class LiveSession(
                             timestamp = ev.timestamp,
                         ),
                     )
-                }.onFailure { t -> log.warn("[notify] handler failed for GatewayUnreachable", t) }
+                }.onFailure { t -> recordNotificationFailure(ownerForError, "GatewayUnreachable", t) }
             }
         }
         if (NotifyEventKind.ORDER_REJECTED in notifyEvents) {
@@ -594,9 +598,25 @@ class LiveSession(
                     } else {
                         log.warn("[notify] OrderRejected for unknown order {} — skipping alert", ev.clientOrderId)
                     }
-                }.onFailure { t -> log.warn("[notify] handler failed for OrderRejected", t) }
+                }.onFailure { t -> recordNotificationFailure(ev.strategyId, "OrderRejected", t) }
             }
         }
+    }
+
+    private fun recordNotificationFailure(
+        strategyId: String?,
+        handler: String,
+        t: Throwable,
+    ) {
+        log.warn("[notify] handler failed for {}", handler, t)
+        journal?.append(
+            strategyId.orEmpty(),
+            "notification_failed",
+            mapOf(
+                "handler" to handler,
+                "reason" to (t.message ?: t::class.java.simpleName),
+            ),
+        )
     }
 
     /**
@@ -1093,7 +1113,9 @@ class LiveSession(
                         timestamp = clock.now(),
                     ),
                 )
-            }.onFailure { n -> log.warn("[notify] StrategyError alert failed", n) }
+            }.onFailure { n ->
+                recordNotificationFailure(strategies.firstOrNull()?.first.orEmpty(), "StrategyError", n)
+            }
         }
 
         // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
@@ -1248,7 +1270,7 @@ class LiveSession(
                             timestamp = clock.now(),
                         ),
                     )
-                }.onFailure { t -> log.warn("[notify] StrategyStarted fire failed", t) }
+                }.onFailure { t -> recordNotificationFailure(strategyId, "StrategyStarted", t) }
             }
         }
 
@@ -1308,7 +1330,7 @@ class LiveSession(
                                     timestamp = clock.now(),
                                 ),
                             )
-                        }.onFailure { t -> log.warn("[notify] StrategyStopped fire failed", t) }
+                        }.onFailure { t -> recordNotificationFailure(strategyId, "StrategyStopped", t) }
                     }
                 }
             }

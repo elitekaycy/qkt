@@ -7,6 +7,7 @@ import com.qkt.backtest.ConditionalAutocorr
 import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
+import com.qkt.evidence.EvidenceJson
 import java.io.PrintStream
 
 /** Output format selector for `qkt backtest` console reports. */
@@ -76,10 +77,72 @@ object ReportPrinter {
         out.println("  Win rate:   wins / decided trades; break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
+        printEvidence(r, out)
         printPerStrategy(r, out)
         printBookAnalytics(r, out)
         printBookRisk(r, out)
         printAutocorr(r, out)
+    }
+
+    private fun printEvidence(
+        r: BacktestResult,
+        out: PrintStream,
+    ) {
+        val e = r.evidence ?: return
+        out.println()
+        out.println("Run evidence")
+        out.println("  qkt:       ${e.qktVersion} (${e.gitSha})")
+        out.println("  strategy:  ${e.strategyHash}")
+        e.configHash?.let { out.println("  config:    $it") }
+        e.dataset?.let {
+            val label = it.id ?: if (it.mutableStore) "mutable local store" else "not specified"
+            out.println("  dataset:   $label")
+            it.warning?.let { warning -> out.println("  warning:   $warning") }
+        }
+        e.execution?.let {
+            out.println("  execution: ${it.preset} (${it.broker})")
+            it.fillPriceSource?.let { v -> out.println("  fills:     $v") }
+            it.latencyModel?.let { v -> out.println("  latency:   $v") }
+            it.slippageModel?.let { v -> out.println("  slippage:  $v") }
+            it.rejectionModel?.let { v -> out.println("  rejects:   $v") }
+            it.partialFillModel?.let { v -> out.println("  partials:  $v") }
+            it.venueRules?.let { v -> out.println("  venue:     $v") }
+            it.commissionModel?.let { v -> out.println("  costs:     $v") }
+            it.ocoMode?.let { v -> out.println("  oco:       $v") }
+            it.warning?.let { warning -> out.println("  warning:   $warning") }
+        }
+        e.accounting?.let {
+            it.accountCurrency?.let { ccy -> out.println("  account:   $ccy") }
+            it.missingPolicy?.let { policy -> out.println("  fx policy: $policy") }
+            it.source?.let { source -> out.println("  fx source: $source") }
+            if (it.configuredFxSymbols.isNotEmpty()) {
+                out.println("  fx symbols:${it.configuredFxSymbols}")
+            }
+            for ((pair, detail) in it.conversions.entries.sortedBy { entry -> entry.key }) {
+                out.println("  fx $pair: $detail")
+            }
+            for (warning in it.warnings) out.println("  warning:   $warning")
+            it.warning?.let { warning -> out.println("  warning:   $warning") }
+        }
+        e.experiment?.let {
+            out.println("  experiment:${it.id ?: "unspecified"}")
+            it.trialCount?.let { n -> out.println("  trials:    $n") }
+            it.primaryMetric?.let { metric -> out.println("  metric:    $metric") }
+            if (it.splits.isNotEmpty()) {
+                for ((name, window) in it.splits.entries) {
+                    out.println("  split.$name: $window")
+                }
+            }
+            it.selectedLabel?.let { label -> out.println("  selected:  $label ${it.selectedParams}") }
+            for (warning in it.warnings) out.println("  warning:   $warning")
+            it.warning?.let { warning -> out.println("  warning:   $warning") }
+        }
+        e.promotion?.let {
+            it.state?.let { state -> out.println("  promotion: $state") }
+            it.rationale?.let { rationale -> out.println("  rationale: $rationale") }
+            it.warning?.let { warning -> out.println("  warning:   $warning") }
+        }
+        for (warning in e.warnings) out.println("  warning:   $warning")
     }
 
     /** Book-risk summary (exposure peaks + book vol) for a portfolio run. Skipped when absent. */
@@ -229,6 +292,7 @@ object ReportPrinter {
         sb.append("},")
         sb.append("\"bookAnalytics\":").append(bookAnalyticsJson(r.bookAnalytics)).append(',')
         sb.append("\"bookRisk\":").append(bookRiskJson(r.bookRisk)).append(',')
+        sb.append("\"evidence\":").append(r.evidence?.let(EvidenceJson::render) ?: "null").append(',')
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())

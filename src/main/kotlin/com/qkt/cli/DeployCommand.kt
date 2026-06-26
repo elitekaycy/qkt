@@ -25,9 +25,27 @@ class DeployCommand(
         val stateDir = StateDir.resolve(args.option("state-dir"))
         val client = clientFactory(stateDir)
         val ignoreMismatches = args.option("reconcile") == "ignore-mismatches"
+        val rawWaiver = args.option("waive")
+        val waiver =
+            when {
+                !args.flag("waive") -> null
+                rawWaiver == null || rawWaiver.startsWith("--") -> "all"
+                else -> rawWaiver
+            }
+        val waiverReason = args.option("reason")
+        if (waiver != null && waiverReason.isNullOrBlank()) {
+            System.err.println("qkt: error: --waive requires --reason")
+            return ExitCodes.ARG_ERROR
+        }
         val body =
             try {
-                client.deploy(name, path, ignoreMismatches)
+                client.deploy(
+                    name = name,
+                    file = path,
+                    ignoreMismatches = ignoreMismatches,
+                    waiver = waiver,
+                    waiverReason = waiverReason,
+                )
             } catch (e: ControlClient.NoDaemonRunningException) {
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR

@@ -39,6 +39,17 @@ class HtmlReportWriter(
         sb.append(headlineCards(result.global))
         sb.append("</section>")
 
+        result.evidence?.let {
+            sb.append("<section class=\"evidence\"><h2>Run evidence</h2>")
+            sb.append(evidenceSection(it))
+            sb.append("</section>")
+        }
+        result.accounting?.let {
+            sb.append("<section class=\"accounting\"><h2>Accounting</h2>")
+            sb.append(accountingSection(it))
+            sb.append("</section>")
+        }
+
         sb.append("<section class=\"equity\"><h2>Equity</h2>")
         sb.append(
             SvgChart.lineChartWithUnderwater(
@@ -115,6 +126,120 @@ class HtmlReportWriter(
         }
     }
 
+    private fun evidenceSection(e: com.qkt.evidence.EvidenceEnvelope): String =
+        buildString {
+            append("<table><tbody>")
+            append("<tr><td>qkt version</td><td>${html(e.qktVersion)}</td></tr>")
+            append("<tr><td>git SHA</td><td>${html(e.gitSha)}</td></tr>")
+            append("<tr><td>strategy hash</td><td>${html(e.strategyHash)}</td></tr>")
+            e.configHash?.let { append("<tr><td>config hash</td><td>${html(it)}</td></tr>") }
+            e.dataset?.let {
+                val label =
+                    if (it.id != null) {
+                        it.id
+                    } else if (it.mutableStore) {
+                        "mutable local store"
+                    } else {
+                        "not specified"
+                    }
+                append("<tr><td>dataset</td><td>${html(label)}</td></tr>")
+                it.warning?.let { warning -> append("<tr><td>dataset warning</td><td>${html(warning)}</td></tr>") }
+            }
+            e.execution?.let {
+                append("<tr><td>execution</td><td>${html(it.preset)} (${html(it.broker)})</td></tr>")
+                it.fillPriceSource?.let { v -> append("<tr><td>fill price source</td><td>${html(v)}</td></tr>") }
+                it.latencyModel?.let { v -> append("<tr><td>latency model</td><td>${html(v)}</td></tr>") }
+                it.slippageModel?.let { v -> append("<tr><td>slippage model</td><td>${html(v)}</td></tr>") }
+                it.rejectionModel?.let { v -> append("<tr><td>rejection model</td><td>${html(v)}</td></tr>") }
+                it.partialFillModel?.let { v -> append("<tr><td>partial-fill model</td><td>${html(v)}</td></tr>") }
+                it.venueRules?.let { v -> append("<tr><td>venue rules</td><td>${html(v)}</td></tr>") }
+                it.commissionModel?.let { v -> append("<tr><td>cost model</td><td>${html(v)}</td></tr>") }
+                it.ocoMode?.let { v -> append("<tr><td>OCO mode</td><td>${html(v)}</td></tr>") }
+                it.warning?.let { warning -> append("<tr><td>execution warning</td><td>${html(warning)}</td></tr>") }
+            }
+            e.accounting?.let {
+                it.accountCurrency?.let { ccy -> append("<tr><td>account currency</td><td>${html(ccy)}</td></tr>") }
+                it.missingPolicy?.let { policy ->
+                    append("<tr><td>FX missing policy</td><td>${html(policy)}</td></tr>")
+                }
+                it.source?.let { source -> append("<tr><td>FX source</td><td>${html(source)}</td></tr>") }
+                if (it.configuredFxSymbols.isNotEmpty()) {
+                    append("<tr><td>FX symbols</td><td>${html(it.configuredFxSymbols.toString())}</td></tr>")
+                }
+                if (it.conversions.isNotEmpty()) {
+                    append("<tr><td>FX conversions</td><td>${html(it.conversions.toString())}</td></tr>")
+                }
+                if (it.warnings.isNotEmpty()) {
+                    append("<tr><td>accounting warnings</td><td>${html(it.warnings.joinToString("; "))}</td></tr>")
+                }
+                it.warning?.let { warning -> append("<tr><td>accounting warning</td><td>${html(warning)}</td></tr>") }
+            }
+            e.experiment?.let {
+                append("<tr><td>experiment</td><td>${html(it.id ?: "unspecified")}</td></tr>")
+                it.trialCount?.let { n -> append("<tr><td>trial count</td><td>$n</td></tr>") }
+                it.primaryMetric?.let { metric -> append("<tr><td>primary metric</td><td>${html(metric)}</td></tr>") }
+                for ((name, window) in it.splits.entries) {
+                    append("<tr><td>split.${html(name)}</td><td>${html(window)}</td></tr>")
+                }
+                it.selectedLabel?.let { label ->
+                    append("<tr><td>selected candidate</td><td>")
+                    append(html(label))
+                    append(" ")
+                    append(html(it.selectedParams.toString()))
+                    append("</td></tr>")
+                }
+                if (it.warnings.isNotEmpty()) {
+                    append("<tr><td>experiment warnings</td><td>${html(it.warnings.joinToString("; "))}</td></tr>")
+                }
+                it.warning?.let { warning -> append("<tr><td>experiment warning</td><td>${html(warning)}</td></tr>") }
+            }
+            e.promotion?.let {
+                it.state?.let { state -> append("<tr><td>promotion state</td><td>${html(state)}</td></tr>") }
+                it.rationale?.let { rationale ->
+                    append("<tr><td>promotion rationale</td><td>${html(rationale)}</td></tr>")
+                }
+                it.warning?.let { warning -> append("<tr><td>promotion warning</td><td>${html(warning)}</td></tr>") }
+            }
+            if (e.warnings.isNotEmpty()) {
+                append("<tr><td>warnings</td><td>${html(e.warnings.joinToString("; "))}</td></tr>")
+            }
+            append("</tbody></table>")
+        }
+
+    private fun accountingSection(snapshot: com.qkt.accounting.AccountingSnapshot): String =
+        buildString {
+            append("<table><tbody>")
+            append("<tr><td>account currency</td><td>${html(snapshot.accountCurrency)}</td></tr>")
+            append("<tr><td>FX missing policy</td><td>${html(snapshot.missingPolicy)}</td></tr>")
+            append("<tr><td>FX source</td><td>${html(snapshot.source)}</td></tr>")
+            if (snapshot.configuredSymbols.isNotEmpty()) {
+                append("<tr><td>configured FX symbols</td><td>${html(snapshot.configuredSymbols.toString())}</td></tr>")
+            }
+            if (snapshot.conversions.isNotEmpty()) {
+                append("<tr><td>observed conversions</td><td>")
+                append(
+                    html(
+                        snapshot.conversions.joinToString("; ") {
+                            "${it.from}->${it.to} rate=${it.rate.toPlainString()} timestamp=${it.timestamp} source=${it.source}"
+                        },
+                    ),
+                )
+                append("</td></tr>")
+            }
+            if (snapshot.warnings.isNotEmpty()) {
+                append("<tr><td>warnings</td><td>${html(snapshot.warnings.joinToString("; "))}</td></tr>")
+            }
+            append("<tr><td>cost kinds</td><td>${html(snapshot.supportedCostKinds.joinToString(", "))}</td></tr>")
+            append("</tbody></table>")
+        }
+
+    private fun html(s: String): String =
+        s
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+
     private fun drawdownTable(periods: List<DrawdownPeriod>): String {
         if (periods.isEmpty()) return "<p>No drawdowns above threshold.</p>"
         return buildString {
@@ -154,6 +279,7 @@ class HtmlReportWriter(
             append("<table><thead><tr>")
             append("<th>Timestamp</th><th>Strategy</th><th>Symbol</th><th>Side</th>")
             append("<th>Qty</th><th>Price</th><th>riskUsd</th><th>Realized</th>")
+            append("<th>Native</th><th>Account</th><th>FX</th>")
             append("</tr></thead><tbody>")
             for (r in sample) {
                 append("<tr>")
@@ -165,6 +291,15 @@ class HtmlReportWriter(
                 append("<td>${r.trade.price.toPlainString()}</td>")
                 append("<td>${r.riskUsd?.toPlainString() ?: "n/a"}</td>")
                 append("<td>${r.realized.toPlainString()}</td>")
+                append(
+                    "<td>${r.nativeRealized?.toPlainString() ?: "n/a"}" +
+                        "${r.nativeCurrency?.let { " $it" } ?: ""}</td>",
+                )
+                append(
+                    "<td>${r.accountRealized?.toPlainString() ?: "n/a"}" +
+                        "${r.accountCurrency?.let { " $it" } ?: ""}</td>",
+                )
+                append("<td>${r.fxRate?.toPlainString() ?: "identity"}</td>")
                 append("</tr>")
             }
             append("</tbody></table>")
