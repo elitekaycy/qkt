@@ -311,7 +311,7 @@ class ReplayEngine(
                 source = source,
                 candleWindow = candleWindow,
                 candleHub = candleHub,
-                onAccountedFill = { trade, converted, strategyId ->
+                onAccountedFill = { trade, converted, strategyId, fillState ->
                     val risk = holder[0]?.orderManager?.riskUsdFor(trade.orderId)
                     tradeRecords.add(
                         TradeRecord(
@@ -326,6 +326,11 @@ class ReplayEngine(
                             fxRate = converted.conversion?.rate,
                             fxRateTimestamp = converted.conversion?.timestamp,
                             fxSource = converted.conversion?.source,
+                            accountPositionBefore = fillState.accountPositionBefore,
+                            accountPositionAfter = fillState.accountPositionAfter,
+                            strategyPositionBefore = fillState.strategyPositionBefore,
+                            strategyPositionAfter = fillState.strategyPositionAfter,
+                            contractSize = fillState.contractSize,
                         ),
                     )
                     tape.add(TapeEvent.Filled(currentTimestamp, trade, converted.account.amount, strategyId))
