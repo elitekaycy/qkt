@@ -7,6 +7,7 @@ local.properties
 .DS_Store
 out/
 tt.txt
+dockerpwd.txt
 strategy.txt
 telegram.txt
 help.txt
@@ -19,3 +20,4 @@ site/
 .venv-docs/
 *.egg-info/
 __pycache__/
+qkt-insight/

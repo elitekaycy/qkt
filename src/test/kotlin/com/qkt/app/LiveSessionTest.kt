@@ -7,15 +7,19 @@ import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
+import com.qkt.observe.OrderJournal
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class LiveSessionTest {
     private val now = Instant.parse("2024-01-15T15:00:00Z")
@@ -186,6 +190,50 @@ class LiveSessionTest {
         assertThat(
             alerts.filterIsInstance<com.qkt.notify.NotificationEvent.StrategyError>(),
         ).isNotEmpty
+    }
+
+    @Test
+    fun `notification failure during engine fault is journaled durably`(
+        @TempDir tmp: Path,
+    ) {
+        val src = InMemoryMarketSource()
+        src.seedLive(
+            "X",
+            listOf(Tick("X", Money.of("100"), now.toEpochMilli())),
+        )
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) = throw IllegalStateException("boom")
+            }
+        val throwingNotifier =
+            object : com.qkt.notify.Notifier {
+                override fun notify(event: com.qkt.notify.NotificationEvent) {
+                    error("telegram down")
+                }
+
+                override fun close() {}
+            }
+        val clock = FixedClock(time = now.toEpochMilli())
+        val handle =
+            LiveSession(
+                strategies = listOf("boom" to strategy),
+                source = src,
+                symbols = listOf("X"),
+                clock = clock,
+                calendar = TradingCalendar.crypto(),
+                notifier = throwingNotifier,
+                journal = OrderJournal(tmp.resolve("journal"), clock),
+            ).start()
+
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+        val journal = Files.readString(tmp.resolve("journal/boom/journal-2024-01-15.jsonl"))
+        assertThat(journal).contains("\"kind\":\"notification_failed\"")
+        assertThat(journal).contains("\"handler\":\"StrategyError\"")
+        assertThat(journal).contains("\"reason\":\"telegram down\"")
     }
 
     @Test
@@ -451,5 +499,39 @@ class LiveSessionTest {
         handle.awaitTermination(Duration.ofSeconds(2))
 
         assertThat(handle.recentTrades().size).isEqualTo(2)
+    }
+
+    @Test
+    fun `approved risk decision is journaled before broker submit`(
+        @TempDir tmp: Path,
+    ) {
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("X", Money.of("1")))
+                }
+            }
+        val clock = FixedClock(time = now.toEpochMilli())
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                rules = emptyList(),
+                source = src,
+                symbols = listOf("X"),
+                clock = clock,
+                calendar = TradingCalendar.crypto(),
+                journal = OrderJournal(tmp.resolve("journal"), clock),
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        val journal = Files.readString(tmp.resolve("journal/test/journal-2024-01-15.jsonl"))
+        assertThat(journal).contains("\"kind\":\"risk-approved\"")
+        assertThat(journal.indexOf("\"kind\":\"risk-approved\"")).isLessThan(journal.indexOf("\"kind\":\"submit\""))
     }
 }

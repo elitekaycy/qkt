@@ -1,5 +1,6 @@
 package com.qkt.risk.book
 
+import com.qkt.accounting.AccountingEngine
 import com.qkt.common.Money
 import java.math.BigDecimal
 
@@ -25,14 +26,27 @@ data class Exposure(
 )
 
 /**
- * Aggregate [legs] into book exposure. Notional = signedQty x price x contractSize.
+ * Aggregate [legs] into book exposure. Native notional = signedQty x price x contractSize, then
+ * converted to the account currency by [accounting].
  * e.g. strat A long 1 X @100 and strat B short 1 X @100 → gross 200, net 0 (a hedged book).
  */
-fun bookExposure(legs: List<Leg>): Exposure {
+fun bookExposure(
+    legs: List<Leg>,
+    accounting: AccountingEngine = AccountingEngine(),
+    timestampMs: Long = 0L,
+): Exposure {
     var gross = Money.ZERO
     val perSymbol = HashMap<String, BigDecimal>()
     for (l in legs) {
-        val notional = l.signedQty.multiply(l.price, Money.CONTEXT).multiply(l.contractSize, Money.CONTEXT)
+        val nativeNotional = l.signedQty.multiply(l.price, Money.CONTEXT).multiply(l.contractSize, Money.CONTEXT)
+        val notional =
+            accounting
+                .convertNotional(
+                    symbol = l.symbol,
+                    nativeNotional = nativeNotional,
+                    timestamp = timestampMs,
+                    referencePrice = l.price,
+                ).account.amount
         gross = gross.add(notional.abs())
         perSymbol[l.symbol] = (perSymbol[l.symbol] ?: Money.ZERO).add(notional)
     }

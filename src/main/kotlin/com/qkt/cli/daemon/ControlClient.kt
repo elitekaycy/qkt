@@ -1,5 +1,7 @@
 package com.qkt.cli.daemon
 
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -189,11 +191,19 @@ open class ControlClient(
         name: String,
         file: Path,
         ignoreMismatches: Boolean = false,
+        waiver: String? = null,
+        waiverReason: String? = null,
     ): String {
         val body =
             """{"file":"${file.toAbsolutePath()}","name":"$name"}"""
                 .toRequestBody(JSON_MEDIA)
-        val q = if (ignoreMismatches) "?reconcile=ignore-mismatches" else ""
+        val q =
+            buildList {
+                if (ignoreMismatches) add("reconcile" to "ignore-mismatches")
+                if (!waiver.isNullOrBlank()) add("waive" to waiver)
+                if (!waiverReason.isNullOrBlank()) add("reason" to waiverReason)
+            }.joinToString("&") { (k, v) -> "${urlEncode(k)}=${urlEncode(v)}" }
+                .let { if (it.isEmpty()) "" else "?$it" }
         val resp =
             http
                 .newCall(
@@ -205,6 +215,8 @@ open class ControlClient(
                 ).execute()
         return readOrThrow(resp)
     }
+
+    private fun urlEncode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8)
 
     private fun readOrThrow(resp: Response): String {
         val body = resp.body?.string().orEmpty()

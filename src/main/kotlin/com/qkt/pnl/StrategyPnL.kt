@@ -1,5 +1,6 @@
 package com.qkt.pnl
 
+import com.qkt.accounting.AccountingEngine
 import com.qkt.common.Money
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -13,6 +14,8 @@ class StrategyPnL(
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    private val accounting: AccountingEngine = AccountingEngine(),
+    private val markTimestamp: () -> Long = { 0L },
     /**
      * Live account equity from the broker, or null when unavailable. When it returns a value
      * (a live MT5 session whose gateway exposes account equity), [equityFor] uses it directly so
@@ -75,20 +78,29 @@ class StrategyPnL(
         val price = prices.lastPrice(symbol) ?: return Money.ZERO
         val cs = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
         val legs = strategyPositions.legBookFor(strategyId, symbol)?.all().orEmpty()
-        if (legs.isEmpty()) {
-            val pos = strategyPositions.positionFor(strategyId, symbol) ?: return Money.ZERO
-            return price
-                .subtract(pos.avgEntryPrice)
-                .multiply(pos.quantity)
-                .multiply(cs)
-                .setScale(Money.SCALE, Money.ROUNDING)
-        }
-        var sum = Money.ZERO
-        for (leg in legs) {
-            val signedQty = if (leg.side == com.qkt.common.Side.BUY) leg.quantity else leg.quantity.negate()
-            sum = sum.add(price.subtract(leg.entryPrice).multiply(signedQty).multiply(cs))
-        }
-        return sum.setScale(Money.SCALE, Money.ROUNDING)
+        val native =
+            if (legs.isEmpty()) {
+                val pos = strategyPositions.positionFor(strategyId, symbol) ?: return Money.ZERO
+                price
+                    .subtract(pos.avgEntryPrice)
+                    .multiply(pos.quantity)
+                    .multiply(cs)
+                    .setScale(Money.SCALE, Money.ROUNDING)
+            } else {
+                var sum = Money.ZERO
+                for (leg in legs) {
+                    val signedQty = if (leg.side == com.qkt.common.Side.BUY) leg.quantity else leg.quantity.negate()
+                    sum = sum.add(price.subtract(leg.entryPrice).multiply(signedQty).multiply(cs))
+                }
+                sum.setScale(Money.SCALE, Money.ROUNDING)
+            }
+        return accounting
+            .convertPnl(
+                symbol = symbol,
+                nativeAmount = native,
+                timestamp = markTimestamp(),
+                referencePrice = price,
+            ).account.amount
     }
 
     fun unrealizedTotalFor(strategyId: String): BigDecimal =

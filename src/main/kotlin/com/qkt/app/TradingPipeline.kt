@@ -1,11 +1,14 @@
 package com.qkt.app
 
+import com.qkt.accounting.AccountingEngine
+import com.qkt.accounting.ConvertedMoney
 import com.qkt.broker.Broker
 import com.qkt.bus.EventBus
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
+import com.qkt.common.Money
 import com.qkt.common.SequenceGenerator
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
@@ -70,6 +73,7 @@ class TradingPipeline(
         com.qkt.dsl.compile
             .CandleHub(),
     val onFilled: (Trade, BigDecimal, String) -> Unit = { _, _, _ -> },
+    val onAccountedFill: (Trade, ConvertedMoney, String) -> Unit = { _, _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
     val gate: () -> Boolean = { true },
@@ -87,6 +91,7 @@ class TradingPipeline(
      * Default charges nothing — live runs leave it so, since the real broker already bills.
      */
     val commissionBook: CommissionBook = CommissionBook(),
+    val accounting: AccountingEngine = AccountingEngine(),
     /**
      * Phase 25-followup ([#132](https://github.com/elitekaycy/qkt/issues/132)):
      * per-strategy trade history (last fill, last P&L, win/loss streaks). Default
@@ -305,17 +310,35 @@ class TradingPipeline(
             // Venue-reported costs (MT5 deal commission/swap, Bybit execFee) net out the
             // same way the modeled commission does — equity and halt inputs must be
             // cost-true, or a strategy bleeding costs looks healthier than it is.
-            val costs = commission.add(e.venueCosts)
+            val venueCosts = typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)
+            val costs = commission.add(if (e.typedVenueCosts.isEmpty()) e.venueCosts else venueCosts)
             val rawRealized = positions.applyFill(e)
             val realized = rawRealized.multiply(cs)
-            pnl.recordRealized(realized.subtract(costs))
+            val convertedRealized =
+                accounting
+                    .convertPnl(
+                        symbol = e.symbol,
+                        nativeAmount = realized,
+                        timestamp = e.timestamp,
+                        referencePrice = e.price,
+                    )
+            val accountRealized = convertedRealized.account.amount
+            pnl.recordRealized(accountRealized.subtract(costs))
 
             val rawStratRealized = strategyPositions.applyFill(e)
             val stratRealized = rawStratRealized.multiply(cs)
-            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(costs))
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, stratRealized, e.symbol)
-            riskState.onFill(e.strategyId, stratRealized.subtract(costs))
-            if (stratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
+            val accountStratRealized =
+                accounting
+                    .convertPnl(
+                        symbol = e.symbol,
+                        nativeAmount = stratRealized,
+                        timestamp = e.timestamp,
+                        referencePrice = e.price,
+                    ).account.amount
+            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(costs))
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, accountStratRealized, e.symbol)
+            riskState.onFill(e.strategyId, accountStratRealized.subtract(costs))
+            if (accountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
 
             val trade =
@@ -328,7 +351,8 @@ class TradingPipeline(
                     timestamp = e.timestamp,
                 )
             bus.publish(TradeEvent(trade))
-            onFilled(trade, realized, e.strategyId)
+            onFilled(trade, accountRealized, e.strategyId)
+            onAccountedFill(trade, convertedRealized, e.strategyId)
         }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
             val asFill =
@@ -346,12 +370,28 @@ class TradingPipeline(
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             val rawRealized = positions.applyFill(asFill)
             val realized = rawRealized.multiply(cs)
-            pnl.recordRealized(realized.subtract(commission))
+            val accountRealized =
+                accounting
+                    .convertPnl(
+                        symbol = e.symbol,
+                        nativeAmount = realized,
+                        timestamp = e.timestamp,
+                        referencePrice = e.price,
+                    ).account.amount
+            pnl.recordRealized(accountRealized.subtract(commission))
 
             val rawStratRealized = strategyPositions.applyFill(asFill)
             val stratRealized = rawStratRealized.multiply(cs)
-            strategyPnL.recordRealized(e.strategyId, stratRealized.subtract(commission))
-            riskState.onFill(e.strategyId, stratRealized)
+            val accountStratRealized =
+                accounting
+                    .convertPnl(
+                        symbol = e.symbol,
+                        nativeAmount = stratRealized,
+                        timestamp = e.timestamp,
+                        referencePrice = e.price,
+                    ).account.amount
+            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(commission))
+            riskState.onFill(e.strategyId, accountStratRealized.subtract(commission))
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
@@ -432,6 +472,24 @@ class TradingPipeline(
 
     fun ingestForWarmup(tick: Tick) {
         bus.publish(WarmupTickEvent(tick))
+    }
+
+    private fun typedVenueCostAmount(
+        costs: List<com.qkt.accounting.VenueCost>,
+        symbol: String,
+        timestamp: Long,
+        referencePrice: BigDecimal,
+    ): BigDecimal {
+        if (costs.isEmpty()) return Money.ZERO
+        return costs
+            .fold(Money.ZERO) { acc, cost ->
+                val stamped = if (cost.timestamp == 0L) cost.copy(timestamp = timestamp) else cost
+                acc.add(
+                    accounting
+                        .convertCost(stamped, contextSymbol = symbol, referencePrice = referencePrice)
+                        .account.amount,
+                )
+            }.setScale(Money.SCALE, Money.ROUNDING)
     }
 
     /**

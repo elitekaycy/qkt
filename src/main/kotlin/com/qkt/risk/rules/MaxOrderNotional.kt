@@ -1,5 +1,7 @@
 package com.qkt.risk.rules
 
+import com.qkt.accounting.AccountingEngine
+import com.qkt.accounting.MissingFxRateException
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -20,6 +22,7 @@ class MaxOrderNotional(
     private val maxNotional: BigDecimal,
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val accounting: AccountingEngine = AccountingEngine(),
 ) : RiskRule {
     init {
         require(maxNotional.signum() > 0) { "maxNotional must be > 0: $maxNotional" }
@@ -35,11 +38,32 @@ class MaxOrderNotional(
                     "cannot compute notional for ${request.symbol}: no price reference",
                 )
         val cs = instruments.lookup(request.symbol)?.contractSize ?: BigDecimal.ONE
-        val notional = request.quantity.multiply(reference).multiply(cs)
+        val nativeNotional = request.quantity.multiply(reference).multiply(cs)
+        val converted =
+            try {
+                accounting.convertNotional(
+                    symbol = request.symbol,
+                    nativeNotional = nativeNotional,
+                    timestamp = request.timestamp,
+                    referencePrice = reference,
+                )
+            } catch (e: MissingFxRateException) {
+                return Decision.Reject("cannot compute account-currency notional for ${request.symbol}: ${e.message}")
+            }
+        if (converted.conversion == null &&
+            converted.native.normalizedCurrency != converted.account.normalizedCurrency
+        ) {
+            return Decision.Reject(
+                "cannot compute account-currency notional for ${request.symbol}: missing FX conversion " +
+                    "${converted.native.normalizedCurrency}->${converted.account.normalizedCurrency}",
+            )
+        }
+        val notional = converted.account.amount
         return if (notional > maxNotional) {
             Decision.Reject(
                 "order notional ${notional.toPlainString()} exceeds cap ${maxNotional.toPlainString()} " +
-                    "(qty=${request.quantity.toPlainString()} ref=${reference.toPlainString()} contractSize=$cs)",
+                    "(qty=${request.quantity.toPlainString()} ref=${reference.toPlainString()} contractSize=$cs " +
+                    "currency=${converted.account.normalizedCurrency})",
             )
         } else {
             Decision.Approve

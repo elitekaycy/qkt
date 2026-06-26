@@ -5,6 +5,7 @@ import com.qkt.backtest.EquitySample
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.TradeRecord
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.evidence.EvidenceJson
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -58,7 +59,11 @@ class BacktestReportWriter(
     }
 
     private fun renderTradesCsv(trades: List<TradeRecord>): String {
-        val sb = StringBuilder("timestamp,strategy,symbol,side,quantity,price,realized,riskUsd,brokerOrderId\n")
+        val sb =
+            StringBuilder(
+                "timestamp,strategy,symbol,side,quantity,price,realized,nativeRealized,nativeCurrency," +
+                    "accountRealized,accountCurrency,fxRate,fxRateTimestamp,fxSource,riskUsd,brokerOrderId\n",
+            )
         for (r in trades) {
             sb
                 .append(r.trade.timestamp)
@@ -74,6 +79,20 @@ class BacktestReportWriter(
                 .append(r.trade.price.toPlainString())
                 .append(',')
                 .append(r.realized.toPlainString())
+                .append(',')
+                .append(r.nativeRealized?.toPlainString() ?: "")
+                .append(',')
+                .append(r.nativeCurrency ?: "")
+                .append(',')
+                .append(r.accountRealized?.toPlainString() ?: "")
+                .append(',')
+                .append(r.accountCurrency ?: "")
+                .append(',')
+                .append(r.fxRate?.toPlainString() ?: "")
+                .append(',')
+                .append(r.fxRateTimestamp?.toString() ?: "")
+                .append(',')
+                .append(r.fxSource ?: "")
                 .append(',')
                 .append(r.riskUsd?.toPlainString() ?: "")
                 .append(',')
@@ -103,6 +122,8 @@ class BacktestReportWriter(
         val sb = StringBuilder()
         sb.append("{\n")
         sb.append("  \"cadence\": ").append(ReportSerializer.jsonString(result.cadence.name)).append(",\n")
+        sb.append("  \"evidence\": ").append(result.evidence?.let(EvidenceJson::render) ?: "null").append(",\n")
+        sb.append("  \"accounting\": ").append(renderAccounting(result.accounting)).append(",\n")
         sb.append("  \"global\": ").append(renderReport(result.global, indent = 2)).append(",\n")
         sb.append("  \"perStrategy\": {")
         if (result.perStrategy.isNotEmpty()) {
@@ -180,6 +201,39 @@ class BacktestReportWriter(
             append(", \"samples\": ").append(br.series.size)
             append(", \"events\": ").append(br.events.size)
             append("}")
+        }
+    }
+
+    private fun renderAccounting(snapshot: com.qkt.accounting.AccountingSnapshot?): String {
+        if (snapshot == null) return "null"
+        return buildString {
+            append("{\"accountCurrency\": ")
+                .append(ReportSerializer.jsonString(snapshot.accountCurrency))
+            append(", \"missingPolicy\": ")
+                .append(ReportSerializer.jsonString(snapshot.missingPolicy))
+            append(", \"source\": ")
+                .append(ReportSerializer.jsonString(snapshot.source))
+            append(", \"configuredSymbols\": {")
+            append(
+                snapshot.configuredSymbols.entries.sortedBy { it.key }.joinToString(",") {
+                    "${ReportSerializer.jsonString(it.key)}: ${ReportSerializer.jsonString(it.value)}"
+                },
+            )
+            append("}, \"conversions\": [")
+            append(
+                snapshot.conversions.joinToString(",") {
+                    "{\"from\": ${ReportSerializer.jsonString(it.from)}, " +
+                        "\"to\": ${ReportSerializer.jsonString(it.to)}, " +
+                        "\"rate\": ${ReportSerializer.jsonBigDecimal(it.rate)}, " +
+                        "\"timestamp\": ${it.timestamp}, " +
+                        "\"source\": ${ReportSerializer.jsonString(it.source)}}"
+                },
+            )
+            append("], \"warnings\": [")
+            append(snapshot.warnings.joinToString(",") { ReportSerializer.jsonString(it) })
+            append("], \"costKinds\": [")
+            append(snapshot.supportedCostKinds.joinToString(",") { ReportSerializer.jsonString(it) })
+            append("]}")
         }
     }
 

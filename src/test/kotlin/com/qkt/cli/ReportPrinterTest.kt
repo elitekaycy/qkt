@@ -8,6 +8,12 @@ import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
 import com.qkt.backtest.SampleCadence
+import com.qkt.evidence.AccountingEvidence
+import com.qkt.evidence.DatasetEvidence
+import com.qkt.evidence.EvidenceEnvelope
+import com.qkt.evidence.ExecutionEvidence
+import com.qkt.evidence.ExperimentEvidence
+import com.qkt.evidence.PromotionEvidence
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.math.BigDecimal
@@ -87,6 +93,34 @@ class ReportPrinterTest {
         val json = render(ReportFormat.Json, BrokerKind.PAPER, commissionPaid = "5.00")
         assertThat(json).contains("\"commissionPaid\":5.00")
         assertThat(json).contains("\"executionModel\":\"paper\"")
+        assertThat(json).contains("\"evidence\":null")
+    }
+
+    @Test
+    fun `json and text reports carry run evidence when present`() {
+        val res = result().copy(evidence = evidence())
+
+        val json = ByteArrayOutputStream()
+        ReportPrinter.print(res, ReportFormat.Json, PrintStream(json), BrokerKind.PAPER)
+        assertThat(json.toString()).contains("\"evidence\":{\"qktVersion\":\"test\"")
+        assertThat(json.toString()).contains("\"strategyHash\":\"sha256:strategy\"")
+        assertThat(json.toString()).contains("\"preset\":\"paper-fast\"")
+        assertThat(json.toString()).contains("\"experiment\":{\"id\":\"exp-1\"")
+        assertThat(json.toString()).contains("\"accounting\":{\"accountCurrency\":\"USD\"")
+        assertThat(json.toString()).contains("\"conversions\":{\"JPY->USD@context:USDJPY\":\"rate=0.006622516556291391")
+        assertThat(json.toString()).contains("\"selectedParams\":{\"fast\":\"3\"}")
+        assertThat(json.toString()).contains("\"rationale\":\"ready for paper\"")
+
+        val text = ByteArrayOutputStream()
+        ReportPrinter.print(res, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER)
+        assertThat(text.toString()).contains("Run evidence")
+        assertThat(text.toString()).contains("sha256:strategy")
+        assertThat(text.toString()).contains("mutable local store")
+        assertThat(text.toString()).contains("account:   USD")
+        assertThat(text.toString()).contains("fx JPY->USD@context:USDJPY")
+        assertThat(text.toString()).contains("split.train: 2026-06-04T00:00:00Z/2026-06-04T04:00:00Z")
+        assertThat(text.toString()).contains("promotion: candidate")
+        assertThat(text.toString()).contains("rationale: ready for paper")
     }
 
     @Test
@@ -208,4 +242,43 @@ class ReportPrinterTest {
         val text = render(ReportFormat.Text, BrokerKind.PAPER)
         assertThat(text).doesNotContain("Lag-1 return autocorrelation")
     }
+
+    private fun evidence(): EvidenceEnvelope =
+        EvidenceEnvelope(
+            qktVersion = "test",
+            gitSha = "abc123",
+            buildTimestamp = "2026-06-25T00:00:00Z",
+            command = listOf("backtest", "s.qkt"),
+            strategyHash = "sha256:strategy",
+            dataset = DatasetEvidence(mutableStore = true),
+            execution = ExecutionEvidence(preset = "paper-fast", broker = "paper"),
+            accounting =
+                AccountingEvidence(
+                    accountCurrency = "USD",
+                    missingPolicy = "fail",
+                    source = "market",
+                    configuredFxSymbols = mapOf("USDJPY" to "BACKTEST:USDJPY"),
+                    conversions =
+                        mapOf(
+                            "JPY->USD@context:USDJPY" to "rate=0.006622516556291391 timestamp=2000",
+                        ),
+                    costKinds = listOf("COMMISSION", "SWAP", "FUNDING"),
+                ),
+            experiment =
+                ExperimentEvidence(
+                    id = "exp-1",
+                    trialCount = 2,
+                    primaryMetric = "totalPnL",
+                    splits =
+                        mapOf(
+                            "train" to "2026-06-04T00:00:00Z/2026-06-04T04:00:00Z",
+                            "validation" to "2026-06-04T04:00:00Z/2026-06-04T08:00:00Z",
+                            "test" to "2026-06-04T08:00:00Z/2026-06-04T12:00:00Z",
+                        ),
+                    selectedLabel = "fast=3",
+                    selectedParams = mapOf("fast" to "3"),
+                    warnings = listOf("large search"),
+                ),
+            promotion = PromotionEvidence(state = "candidate", rationale = "ready for paper"),
+        )
 }

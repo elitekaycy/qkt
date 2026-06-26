@@ -54,17 +54,24 @@ class MT5BrokerSimulator(
     private val instruments: InstrumentRegistry,
     private val slippage: SlippageModel = ZeroSlippage,
     private val syntheticSpreadPoints: Int = 2,
+    private val latencyMs: Long = 0L,
+    private val enforceStopsLevel: Boolean = false,
+    private val rejectionModel: RejectionModel = NoBrokerRejections,
+    private val partialFillModel: PartialFillModel = FullFill,
 ) : Broker {
     init {
         require(syntheticSpreadPoints >= 0) {
             "syntheticSpreadPoints must be >= 0: $syntheticSpreadPoints"
         }
+        require(latencyMs >= 0L) { "latencyMs must be >= 0: $latencyMs" }
     }
 
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
+    private val delayedSubmissions: MutableList<DelayedSubmission> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = HashMap()
+    private var submittedOrdinal: Int = 0
 
     init {
         bus.subscribe<TickEvent> { e -> onTick(e.tick) }
@@ -83,6 +90,25 @@ class MT5BrokerSimulator(
         )
 
     override fun submit(request: OrderRequest): SubmitAck {
+        submittedOrdinal += 1
+        val ordinal = submittedOrdinal
+        if (latencyMs > 0L) {
+            delayedSubmissions.add(
+                DelayedSubmission(
+                    request = request,
+                    ordinal = ordinal,
+                    releaseAt = clock.now() + latencyMs,
+                ),
+            )
+            return SubmitAck(request.id, request.id, accepted = true)
+        }
+        return receive(request, ordinal)
+    }
+
+    private fun receive(
+        request: OrderRequest,
+        ordinal: Int,
+    ): SubmitAck {
         val meta = instruments.lookup(request.symbol)
         if (meta == null) {
             reject(request, "no InstrumentMeta for symbol ${request.symbol}")
@@ -97,6 +123,14 @@ class MT5BrokerSimulator(
             return SubmitAck(request.id, request.id, accepted = false)
         }
         val sized = request.withQuantity(quantized)
+        validateStopsLevel(sized, meta)?.let {
+            reject(sized, it)
+            return SubmitAck(sized.id, sized.id, accepted = false, rejectReason = it)
+        }
+        rejectionModel.rejectionReason(sized, ordinal)?.let {
+            reject(sized, it)
+            return SubmitAck(sized.id, sized.id, accepted = false, rejectReason = it)
+        }
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = sized.id,
@@ -133,6 +167,7 @@ class MT5BrokerSimulator(
 
     fun onTick(tick: Tick) {
         lastTickBySymbol[tick.symbol] = tick
+        drainDelayedSubmissions(clock.now())
         if (working.isEmpty()) return
         val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
         for (wo in toFill) {
@@ -237,6 +272,40 @@ class MT5BrokerSimulator(
         meta: InstrumentMeta,
     ) {
         val rounded = price.setScale(meta.digits, RoundingMode.HALF_EVEN).setScale(Money.SCALE, Money.ROUNDING)
+        val slices = partialFillModel.slices(qty, meta).filter { it.signum() > 0 }
+        if (slices.size > 1) {
+            var cumulative = BigDecimal.ZERO
+            for (slice in slices.dropLast(1)) {
+                cumulative = cumulative.add(slice)
+                bus.publish(
+                    BrokerEvent.OrderPartiallyFilled(
+                        clientOrderId = clientOrderId,
+                        brokerOrderId = clientOrderId,
+                        symbol = symbol,
+                        side = side,
+                        price = rounded,
+                        quantity = slice,
+                        cumulativeFilled = cumulative,
+                        strategyId = strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+            }
+            val finalSlice = slices.last()
+            bus.publish(
+                BrokerEvent.OrderFilled(
+                    clientOrderId = clientOrderId,
+                    brokerOrderId = clientOrderId,
+                    symbol = symbol,
+                    side = side,
+                    price = rounded,
+                    quantity = finalSlice,
+                    strategyId = strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+            return
+        }
         bus.publish(
             BrokerEvent.OrderFilled(
                 clientOrderId = clientOrderId,
@@ -249,6 +318,14 @@ class MT5BrokerSimulator(
                 timestamp = clock.now(),
             ),
         )
+    }
+
+    private fun drainDelayedSubmissions(now: Long) {
+        if (delayedSubmissions.isEmpty()) return
+        val due = delayedSubmissions.filter { it.releaseAt <= now }
+        if (due.isEmpty()) return
+        delayedSubmissions.removeAll(due.toSet())
+        due.sortedBy { it.ordinal }.forEach { receive(it.request, it.ordinal) }
     }
 
     private fun reject(
@@ -271,6 +348,44 @@ class MT5BrokerSimulator(
         qty: BigDecimal,
         meta: InstrumentMeta,
     ): BigDecimal = qty.divide(meta.volumeStep, 0, RoundingMode.DOWN).multiply(meta.volumeStep)
+
+    private fun validateStopsLevel(
+        request: OrderRequest,
+        meta: InstrumentMeta,
+    ): String? {
+        if (!enforceStopsLevel || meta.tradeStopsLevelPoints == 0) return null
+        val ref =
+            sidedFillPrice(
+                request.side,
+                lastTickBySymbol[request.symbol],
+                fallback = priceProvider.lastPrice(request.symbol),
+                meta = meta,
+            ) ?: return null
+        val minDistance = meta.pointSize.multiply(BigDecimal(meta.tradeStopsLevelPoints))
+        for ((label, price) in protectedPrices(request)) {
+            val distance = price.subtract(ref).abs()
+            if (distance < minDistance) {
+                return "$label ${price.toPlainString()} is inside tradeStopsLevel " +
+                    "${minDistance.toPlainString()} from current ${ref.toPlainString()} " +
+                    "(tradeStopsLevel=${meta.tradeStopsLevelPoints}, pointSize=${meta.pointSize.toPlainString()})"
+            }
+        }
+        return null
+    }
+
+    private fun protectedPrices(request: OrderRequest): List<Pair<String, BigDecimal>> =
+        when (request) {
+            is OrderRequest.Limit -> listOf("limitPrice" to request.limitPrice)
+            is OrderRequest.Stop -> listOf("stopPrice" to request.stopPrice)
+            is OrderRequest.StopLimit -> listOf("stopPrice" to request.stopPrice, "limitPrice" to request.limitPrice)
+            is OrderRequest.IfTouched ->
+                listOfNotNull(
+                    "triggerPrice" to request.triggerPrice,
+                    request.limitPrice?.let { "limitPrice" to it },
+                )
+            is OrderRequest.Market -> emptyList()
+            else -> emptyList()
+        }
 
     // Side-aware like MT5 itself: BUY_STOP fires on the ask, SELL_STOP on the bid.
     // See com.qkt.marketdata.buyExecPrice.
@@ -307,4 +422,10 @@ class MT5BrokerSimulator(
             is OrderRequest.IfTouched -> copy(quantity = newQuantity)
             else -> error("MT5BrokerSimulator.withQuantity: unhandled order type ${this::class.simpleName}")
         }
+
+    private data class DelayedSubmission(
+        val request: OrderRequest,
+        val ordinal: Int,
+        val releaseAt: Long,
+    )
 }

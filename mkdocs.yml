@@ -155,6 +155,7 @@ nav:
       - Vendor check — bars (TV vs MT5): parity/parity-bars-xauusd-m5.md
       - Vendor check — ticks (TV vs MT5): parity/parity-ticks-xauusd.md
   - Research:
+      - Research workflow: research/index.md
       - DSL quant-completeness & data structures: research/2026-06-08-dsl-quant-completeness-and-dsa.md
       - MT5 as the universal provider: research/2026-06-08-mt5-universal-provider.md
   - Reference:
@@ -178,7 +179,7 @@ nav:
           - BASKET (synthetic instruments): reference/dsl/basket.md
       - DSL grammar (cheat sheet): reference/dsl-grammar.md
       - CLI commands: reference/cli-commands.md
-      - Config schema: reference/config-schema.md
+      - Config reference: reference/config-schema.md
   - Operations:
       - operations/index.md
       - Use qkt with Docker (qkt:dev): operations/running-qkt-via-docker.md

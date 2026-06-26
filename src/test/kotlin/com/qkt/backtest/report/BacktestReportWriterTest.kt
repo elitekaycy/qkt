@@ -4,6 +4,9 @@ import com.qkt.backtest.Backtest
 import com.qkt.backtest.SampleCadence
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
+import com.qkt.evidence.DatasetEvidence
+import com.qkt.evidence.EvidenceEnvelope
+import com.qkt.evidence.ExecutionEvidence
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
@@ -36,7 +39,7 @@ class BacktestReportWriterTest {
                 candleWindow = TimeWindow.ONE_MINUTE,
                 cadence = SampleCadence.CANDLE_CLOSE,
             )
-        val result = backtest.run()
+        val result = backtest.run().copy(evidence = evidence())
 
         BacktestReportWriter(dir).write(result)
 
@@ -48,11 +51,18 @@ class BacktestReportWriterTest {
 
         val json = Files.readString(dir.resolve("result.json"))
         assertThat(json).contains("\"cadence\": \"CANDLE_CLOSE\"")
+        assertThat(json).contains("\"evidence\": {\"qktVersion\":\"test\"")
+        assertThat(json).contains("\"strategyHash\":\"sha256:strategy\"")
+        assertThat(json).contains("\"mutableStore\":true")
+        assertThat(json).contains("\"accounting\": {\"accountCurrency\": \"USD\"")
         assertThat(json).contains("\"global\":")
         assertThat(json).contains("\"perStrategy\":")
 
         val eqCsv = Files.readString(dir.resolve("equity_global.csv"))
         assertThat(eqCsv.lines().first()).isEqualTo("timestamp,equity")
+        val tradesCsv = Files.readString(dir.resolve("trades.csv"))
+        assertThat(tradesCsv.lines().first())
+            .contains("nativeRealized,nativeCurrency,accountRealized,accountCurrency,fxRate")
     }
 
     @Test
@@ -80,4 +90,15 @@ class BacktestReportWriterTest {
         }
         assertThat(Files.list(dir).count()).isEqualTo(0L)
     }
+
+    private fun evidence(): EvidenceEnvelope =
+        EvidenceEnvelope(
+            qktVersion = "test",
+            gitSha = "abc123",
+            buildTimestamp = "2026-06-25T00:00:00Z",
+            command = listOf("backtest", "s.qkt"),
+            strategyHash = "sha256:strategy",
+            dataset = DatasetEvidence(mutableStore = true),
+            execution = ExecutionEvidence(preset = "paper-fast", broker = "paper"),
+        )
 }
