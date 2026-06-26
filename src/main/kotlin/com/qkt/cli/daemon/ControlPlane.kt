@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon
 
+import com.qkt.cli.PromotionGateConfig
 import com.qkt.cli.daemon.portfolio.PortfolioDeployer
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
@@ -15,6 +16,7 @@ class ControlPlane(
     private val stateDir: StateDir? = null,
     private val portfolioDeployer: PortfolioDeployer? = null,
     private val notifierMetrics: com.qkt.notify.NotifierMetrics? = null,
+    private val promotionGates: PromotionGateConfig = PromotionGateConfig.DISABLED,
     /**
      * Kill switch for the built-in Prometheus `/metrics` endpoint. Default reads
      * `QKT_METRICS_PROMETHEUS`; "false" / "0" / "off" / "no" disables registration,
@@ -42,6 +44,7 @@ class ControlPlane(
                 shutdown = { shutdownHook() },
                 notifierMetrics = notifierMetrics,
                 prometheusMetricsEnabled = prometheusMetricsEnabled,
+                promotionGates = promotionGates,
             ),
         )
         server.executor = Executors.newFixedThreadPool(8)

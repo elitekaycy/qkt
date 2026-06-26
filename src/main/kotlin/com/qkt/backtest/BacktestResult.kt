@@ -1,6 +1,7 @@
 package com.qkt.backtest
 
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.evidence.EvidenceEnvelope
 import com.qkt.observability.LatencyRegistry
 import com.qkt.positions.Position
 
@@ -39,4 +40,14 @@ data class BacktestResult(
      * single-strategy runs. The dataset for seeing how the book behaved.
      */
     val bookRisk: BookRiskReport? = null,
+    /**
+     * Institutional-readiness provenance and assumptions. Null on internal/unit-test results or older
+     * call sites; CLI commands attach it before printing/report writing.
+     */
+    val evidence: EvidenceEnvelope? = null,
+    /**
+     * Account-currency conversion and cost-model disclosure for this run. Present for replay/backtest
+     * results that use the shared engine; older/unit-test results may leave it null.
+     */
+    val accounting: com.qkt.accounting.AccountingSnapshot? = null,
 )

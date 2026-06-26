@@ -155,7 +155,7 @@ THEN CANCEL btc      -- abandon unfilled stack layers
      CLOSE btc       -- close the already-filled portion
 ```
 
-## `OCO_ENTRY { leg1, leg2 }`
+## `OCO_ENTRY { leg1, leg2 }` {#oco_entry}
 
 Submits two pending entry orders linked one-cancels-other. When either leg fills, the broker auto-cancels the other. Use for breakout straddles where you don't know which direction will resolve first.
 

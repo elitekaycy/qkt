@@ -9,6 +9,9 @@ package com.qkt.cli
 class Args(
     argv: Array<String>,
 ) {
+    /** Original argv tokens in order, used for provenance records. */
+    val tokens: List<String> = argv.toList()
+
     /** First argv token. Defaults to `"help"` when argv is empty. */
     val subcommand: String = argv.getOrNull(0) ?: "help"
     private val rest: List<String> = argv.drop(1)

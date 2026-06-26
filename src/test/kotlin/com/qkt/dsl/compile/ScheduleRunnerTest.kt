@@ -1,5 +1,9 @@
 package com.qkt.dsl.compile
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.ScheduleDecl
@@ -10,6 +14,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 
 /**
  * #77 — Phase 40 Tasks 6+7. Registration, heartbeat fire, skip-on-miss, and
@@ -151,6 +156,38 @@ class ScheduleRunnerTest {
         // Skip-on-miss: 4 are dropped, 1 emits at the current time.
         runner.tick(mondayMidnightUtc + 5 * hour)
         assertThat(fires).isEqualTo(1)
+    }
+
+    @Test
+    fun `missed fire logging is aggregated to one warning per heartbeat`() {
+        val logger = LoggerFactory.getLogger(ScheduleRunner::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        try {
+            val runner = ScheduleRunner()
+            var fires = 0
+            runner.register(
+                "sched",
+                decl(ScheduleTrigger.EveryHour(minuteOffset = 0)),
+                emit = { fires++ },
+                nowMs = mondayMidnightUtc,
+            )
+
+            runner.tick(mondayMidnightUtc + 1_000 * hour)
+
+            assertThat(fires).isEqualTo(1)
+            val warnings =
+                appender.list
+                    .filter { it.level == Level.WARN }
+                    .map { it.formattedMessage }
+                    .filter { it.contains("missed") }
+            assertThat(warnings).hasSize(1)
+            assertThat(warnings.single()).contains("missed 1000 fire(s)")
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
+        }
     }
 
     @Test

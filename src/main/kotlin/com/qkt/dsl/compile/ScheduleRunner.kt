@@ -126,19 +126,29 @@ class ScheduleRunner(
         for (reg in regs) {
             if (nowMs < reg.nextFireMs) continue
             var fired = false
+            var missed = 0
+            var firstMissed: Long? = null
+            var lastMissed: Long? = null
             while (reg.nextFireMs <= nowMs) {
                 val thisFire = reg.nextFireMs
                 val next = computeNextFire(reg.trigger, thisFire + 1, reg.strategyId)
                 if (fired) {
-                    log.warn(
-                        "schedule for strategy={} missed fire at {} ({}ms behind heartbeat)",
-                        reg.strategyId,
-                        Instant.ofEpochMilli(thisFire),
-                        nowMs - thisFire,
-                    )
+                    missed++
+                    if (firstMissed == null) firstMissed = thisFire
+                    lastMissed = thisFire
                 }
                 reg.nextFireMs = next
                 if (!fired) fired = true
+            }
+            if (missed > 0) {
+                log.warn(
+                    "schedule for strategy={} missed {} fire(s) from {} to {} (last {}ms behind heartbeat)",
+                    reg.strategyId,
+                    missed,
+                    Instant.ofEpochMilli(firstMissed!!),
+                    Instant.ofEpochMilli(lastMissed!!),
+                    nowMs - lastMissed,
+                )
             }
             if (fired) reg.emit()
         }

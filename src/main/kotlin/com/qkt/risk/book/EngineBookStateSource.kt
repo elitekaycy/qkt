@@ -1,5 +1,6 @@
 package com.qkt.risk.book
 
+import com.qkt.accounting.AccountingEngine
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.pnl.PnLProvider
@@ -20,6 +21,7 @@ class EngineBookStateSource(
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry,
     private val startingBalance: BigDecimal,
+    private val accounting: AccountingEngine = AccountingEngine(),
 ) : BookStateSource {
     override fun sample(timestampMs: Long): BookSnapshot {
         val legs = ArrayList<Leg>()
@@ -33,6 +35,6 @@ class EngineBookStateSource(
         }
         val bookEquity = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         val perStrategyPnl = strategyIds.associateWith { strategyPnL.totalFor(it) }
-        return BookSnapshot(timestampMs, bookEquity, bookExposure(legs), perStrategyPnl)
+        return BookSnapshot(timestampMs, bookEquity, bookExposure(legs, accounting, timestampMs), perStrategyPnl)
     }
 }

@@ -165,6 +165,32 @@ class StatusCommandDeepTest {
     }
 
     @Test
+    fun `deep reports enforced promotion gates as unhealthy`(
+        @TempDir tmp: java.nio.file.Path,
+    ) {
+        val client =
+            fakeClient(
+                tmp,
+                healthBody = """{"status":"ok","strategies":1,"uptimeMs":300000}""",
+                listBody =
+                    """[
+                        {"name":"alpha","kind":"strategy","port":47001,"trades":1,
+                         "uptimeMs":300000,"state":"running",
+                         "promotionEnforced":true,
+                         "promotionState":"candidate",
+                         "promotionEligible":false,
+                         "promotionMissingGates":["state:production","operator_approval"]}
+                    ]""",
+            )
+        val (code, stdout, stderr) = invoke(arrayOf("status", "--deep"), client)
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(stdout).contains("promotion: candidate eligible=no")
+        assertThat(stdout).contains("missing=state:production,operator_approval")
+        assertThat(stderr).contains("promotion gates missing: state:production,operator_approval")
+    }
+
+    @Test
     fun `deep returns 1 when list call throws after health succeeded`(
         @TempDir tmp: java.nio.file.Path,
     ) {

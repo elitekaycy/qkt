@@ -20,13 +20,13 @@ Lookup material for day-to-day strategy authoring and configuration.
 
     [:octicons-arrow-right-24: CLI commands](cli-commands.md)
 
-- :material-cog:{ .lg .middle } **Config schema**
+- :material-cog:{ .lg .middle } **Config reference**
 
     ---
 
-    `qkt.config.yaml` fields, defaults, and env var overrides.
+    `qkt.config.yaml` sections, defaults, production requirements, and examples.
 
-    [:octicons-arrow-right-24: Config schema](config-schema.md)
+    [:octicons-arrow-right-24: Config reference](config-schema.md)
 
 - :material-code-braces:{ .lg .middle } **API reference**
 

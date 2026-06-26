@@ -6,6 +6,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -149,6 +150,14 @@ class StatusCommand(
             val uptimeMs = obj["uptimeMs"]?.jsonPrimitive?.longOrNull ?: 0L
             val kind = obj["kind"]?.jsonPrimitive?.contentOrNull ?: "strategy"
             val gateState = obj["gateState"]?.jsonPrimitive?.contentOrNull
+            val promotionEnforced = obj["promotionEnforced"]?.jsonPrimitive?.booleanOrNull ?: false
+            val promotionState = obj["promotionState"]?.jsonPrimitive?.contentOrNull
+            val promotionEligible = obj["promotionEligible"]?.jsonPrimitive?.booleanOrNull
+            val promotionMissing =
+                obj["promotionMissingGates"]
+                    ?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    .orEmpty()
             val tag =
                 buildString {
                     if (kind == "child") append("[child]")
@@ -168,11 +177,29 @@ class StatusCommand(
                     }
                 sb.append("\n    streams: ").append(pairs)
             }
+            if (promotionEnforced || promotionState != null || promotionMissing.isNotEmpty()) {
+                sb.append("\n    promotion: ")
+                sb.append(promotionState ?: "none")
+                sb.append(" eligible=")
+                sb.append(
+                    when (promotionEligible) {
+                        true -> "yes"
+                        false -> "no"
+                        null -> "unknown"
+                    },
+                )
+                if (promotionMissing.isNotEmpty()) {
+                    sb.append(" missing=").append(promotionMissing.joinToString(","))
+                }
+            }
             if (state != "running") {
                 unhealthy.add("strategy '$name' state=$state")
             }
             if (gateState == "operator_stopped") {
                 unhealthy.add("strategy '$name' is operator-stopped")
+            }
+            if (promotionEnforced && promotionEligible == false) {
+                unhealthy.add("strategy '$name' promotion gates missing: ${promotionMissing.joinToString(",")}")
             }
         }
         return sb.toString()

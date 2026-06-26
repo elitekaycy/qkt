@@ -8,7 +8,9 @@ import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.BinaryBarStore
+import com.qkt.marketdata.store.DataQualityPolicy
 import com.qkt.marketdata.store.DataRoot
+import com.qkt.marketdata.store.DatasetSnapshots
 import com.qkt.marketdata.store.DayFileIntegrity
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,19 +30,26 @@ class DataCommand(
     fun run(): Int =
         when (val action = args.positional(0)) {
             "verify" -> verify()
+            "snapshot" -> snapshot()
             "convert" -> convert()
             "build-bars" -> buildBars()
             else -> {
-                System.err.println("qkt: unknown data action '${action ?: ""}' (expected: verify, convert, build-bars)")
-                System.err.println("usage: qkt data <verify|convert|build-bars> <symbol> [--data-root <dir>]")
+                System.err.println(
+                    "qkt: unknown data action '${action ?: ""}' (expected: verify, snapshot, convert, build-bars)",
+                )
+                System.err.println("usage: qkt data <verify|snapshot|convert|build-bars> <symbol> [--data-root <dir>]")
                 ExitCodes.ARG_ERROR
             }
         }
 
     private fun verify(): Int {
+        args.option("snapshot")?.let { return verifySnapshot(Path.of(it)) }
         val symbol =
             args.positional(1) ?: run {
-                System.err.println("qkt: missing symbol. usage: qkt data verify <symbol> [--data-root <dir>]")
+                System.err.println(
+                    "qkt: missing symbol. usage: qkt data verify <symbol> [--data-root <dir>] or " +
+                        "qkt data verify --snapshot <file> [--strict]",
+                )
                 return ExitCodes.ARG_ERROR
             }
         val root = DataRoot.forDataRoot(args.option("data-root"))
@@ -85,6 +94,83 @@ class DataCommand(
         println("qkt data verify: done — ${dayFiles.size} days, $totalTicks ticks, $flagged flagged")
         return if (flagged > 0) ExitCodes.USER_ERROR else ExitCodes.SUCCESS
     }
+
+    private fun snapshot(): Int {
+        val symbol =
+            args.positional(1) ?: run {
+                System.err.println(
+                    "qkt: missing symbol. usage: qkt data snapshot <symbol> --from <date> --to <date> --out <file>",
+                )
+                return ExitCodes.ARG_ERROR
+            }
+        val from = args.option("from")?.let(LocalDate::parse)
+        val to = args.option("to")?.let(LocalDate::parse)
+        val out = args.option("out")?.let(Path::of)
+        if (from == null || to == null || out == null) {
+            System.err.println("qkt: data snapshot requires --from, --to, and --out")
+            return ExitCodes.ARG_ERROR
+        }
+        val root = DataRoot.forDataRoot(args.option("data-root"))
+        val vendor = args.option("vendor") ?: "local"
+        val policy = qualityPolicy()
+        val snapshot =
+            try {
+                DatasetSnapshots.create(
+                    dataRoot = root,
+                    symbol = symbol,
+                    from = from,
+                    to = to,
+                    vendor = vendor,
+                    qktVersion = BuildInfo.VERSION,
+                    gitSha = BuildInfo.GIT_SHA,
+                    qualityPolicy = policy,
+                )
+            } catch (e: IllegalArgumentException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            } catch (e: IllegalStateException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
+        out
+            .toAbsolutePath()
+            .normalize()
+            .parent
+            ?.let(Files::createDirectories)
+        Files.writeString(out, DatasetSnapshots.toJson(snapshot))
+        println("qkt data snapshot: ${snapshot.id} files=${snapshot.files.size} out=$out")
+        return ExitCodes.SUCCESS
+    }
+
+    private fun verifySnapshot(path: Path): Int {
+        val snapshot =
+            try {
+                DatasetSnapshots.read(path)
+            } catch (e: Exception) {
+                System.err.println("qkt: error: cannot read snapshot $path: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
+        val root = args.option("data-root")?.let { Path.of(it) }
+        val result = DatasetSnapshots.verify(snapshot, dataRootOverride = root, strict = args.flag("strict"))
+        if (result.ok) {
+            println("qkt data verify: snapshot ${snapshot.id} ok (${snapshot.files.size} files)")
+            return ExitCodes.SUCCESS
+        }
+        System.err.println("qkt data verify: snapshot ${snapshot.id} failed")
+        for (failure in result.failures) System.err.println("  $failure")
+        return ExitCodes.USER_ERROR
+    }
+
+    private fun qualityPolicy(): DataQualityPolicy =
+        DataQualityPolicy(
+            mode = args.option("quality") ?: if (args.flag("strict")) "strict" else "research",
+            maxGapMinutes = args.option("max-gap-minutes")?.toLongOrNull() ?: 30,
+            allowEmptyDays = args.flag("allow-empty-days"),
+            requireBidAsk = args.flag("require-bid-ask"),
+            requireVolume = args.flag("require-volume"),
+            failOnCorruptDay = !args.flag("allow-corrupt-days"),
+            failOnMissingDay = true,
+        )
 
     /**
      * `qkt data convert <symbol> [--from <date>] [--to <date>] [--prune] [--data-root <dir>]`

@@ -1,5 +1,6 @@
 package com.qkt.risk.rules
 
+import com.qkt.accounting.AccountingEngine
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
@@ -29,10 +30,11 @@ object PreTradeControls {
         maxOrderQty: BigDecimal = DEFAULT_MAX_ORDER_QTY,
         maxOrderNotional: BigDecimal = DEFAULT_MAX_ORDER_NOTIONAL,
         priceCollarFrac: BigDecimal = DEFAULT_PRICE_COLLAR_FRAC,
+        accounting: AccountingEngine = AccountingEngine(),
     ): List<RiskRule> =
         listOf(
             MaxOrderQty(maxOrderQty),
-            MaxOrderNotional(maxOrderNotional, prices, instruments),
+            MaxOrderNotional(maxOrderNotional, prices, instruments, accounting),
             PriceCollar(priceCollarFrac, prices),
         )
 }

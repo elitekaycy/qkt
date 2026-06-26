@@ -4,6 +4,7 @@ import com.qkt.backtest.sweep.SweepReplay
 import com.qkt.backtest.sweep.SweepRun
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.evidence.DatasetEvidence
 import com.qkt.marketdata.store.DataFetcher
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,10 +31,12 @@ class SweepCommand(
             }
 
         val rank: RankMetric
+        val axes: Map<String, List<String>>
         val combos: List<ParamGrid.Combo>
         try {
             rank = RankMetric.fromFlag(args.option("rank"))
-            combos = ParamGrid.parse(args.options("param"))
+            axes = ParamGrid.parseAxes(args.options("param"))
+            combos = ParamGrid.expand(axes)
         } catch (e: IllegalArgumentException) {
             System.err.println("qkt: error: ${e.message}")
             return ExitCodes.USER_ERROR
@@ -78,14 +81,52 @@ class SweepCommand(
                 return ExitCodes.USER_ERROR
             }
 
-        if (args.flag("json")) printJson(ranked, rank) else printTable(ranked, rank)
+        val largeSearchThreshold =
+            args.option("large-search-threshold")?.toIntOrNull()
+                ?: ResearchGovernance.DEFAULT_LARGE_SEARCH_THRESHOLD
+        val unstableWarning =
+            if (args.option("scenarios") == null) {
+                val gridRuns =
+                    ranked.map { run ->
+                        SweepRun(
+                            label = run.label,
+                            config = ParamGrid.Combo(run.label, run.config.params),
+                            result = run.result,
+                        )
+                    }
+                ResearchGovernance.unstableNeighborhoodWarning(
+                    ranked = gridRuns,
+                    axes = axes,
+                    rank = rank,
+                )
+            } else {
+                null
+            }
+        val unstableWarnings = if (unstableWarning != null) listOf(unstableWarning) else emptyList()
+        val warnings =
+            ResearchGovernance.largeSearchWarnings(
+                trialCount = scenarios.size,
+                threshold = largeSearchThreshold,
+            ) + unstableWarnings
+
+        if (args.flag("json")) {
+            printJson(ranked, rank, ctx.datasetEvidence, warnings)
+        } else {
+            printTable(ranked, rank, warnings)
+        }
         return ExitCodes.SUCCESS
     }
 
     private fun printTable(
         ranked: List<SweepRun<ScenarioSpec>>,
         rank: RankMetric,
+        warnings: List<String>,
     ) {
+        println(
+            "trials: ${ranked.size}   selected metric: ${rank.flag}   " +
+                "provenance: sweep.rank(desc)",
+        )
+        for (warning in warnings) println("warning: $warning")
         println("rank  ${rank.flag.padEnd(12)} trades  totalPnL      sharpe    calmar    maxDD      winRate   label")
         ranked.forEachIndexed { i, run ->
             val r = run.result.global
@@ -108,7 +149,12 @@ class SweepCommand(
     private fun printJson(
         ranked: List<SweepRun<ScenarioSpec>>,
         rank: RankMetric,
+        dataset: DatasetEvidence,
+        warnings: List<String>,
     ) {
+        val datasetJson = CliEvidenceJson.pinnedDataset(dataset)
+        val provenanceJson = ResearchGovernance.metricProvenanceJson("sweep", rank, ranked.size)
+        val warningsJson = ResearchGovernance.warningListJson(warnings)
         val rows =
             ranked.joinToString(",") { run ->
                 val r = run.result.global
@@ -119,12 +165,15 @@ class SweepCommand(
                     r.dailyPnL.entries
                         .sortedBy { it.key }
                         .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" }
+                val datasetField = datasetJson?.let { ""","dataset":$it""" } ?: ""
                 """{"label":"${run.label}","params":{$params},"rank":"${rank.flag}",""" +
+                    """"trialCount":${ranked.size},"metricProvenance":$provenanceJson,""" +
+                    """"selectionWarnings":$warningsJson,""" +
                     """"trades":${r.tradeCount},"totalPnL":${r.totalPnL.toPlainString()},""" +
                     """"sharpe":${r.sharpeRatio?.toPlainString() ?: "null"},""" +
                     """"calmar":${r.calmarRatio?.toPlainString() ?: "null"},""" +
                     """"maxDrawdown":${r.maxDrawdown.toPlainString()},"winRate":${r.winRate.toPlainString()},""" +
-                    """"maxDailyDrawdown":${r.maxDailyDrawdown.toPlainString()},"dailyPnL":{$daily}}"""
+                    """"maxDailyDrawdown":${r.maxDailyDrawdown.toPlainString()},"dailyPnL":{$daily}$datasetField}"""
             }
         println("[$rows]")
     }

@@ -10,6 +10,7 @@ class ArgsTest {
         val a = Args(arrayOf("backtest", "foo.qkt"))
         assertThat(a.subcommand).isEqualTo("backtest")
         assertThat(a.positional(0)).isEqualTo("foo.qkt")
+        assertThat(a.tokens).containsExactly("backtest", "foo.qkt")
     }
 
     @Test

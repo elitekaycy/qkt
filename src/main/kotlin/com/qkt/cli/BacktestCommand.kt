@@ -1,8 +1,14 @@
 package com.qkt.cli
 
+import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.dsl.parse.ParsedFile
+import com.qkt.evidence.AccountingEvidence
+import com.qkt.evidence.DatasetEvidence
+import com.qkt.evidence.EvidenceEnvelope
+import com.qkt.evidence.EvidenceHasher
 import com.qkt.marketdata.store.DataFetcher
 import java.nio.file.Files
 import java.nio.file.Path
@@ -81,7 +87,14 @@ class BacktestCommand(
         }
 
         return try {
-            val result = ctx.backtest(overrides).run()
+            val result =
+                attachEvidence(
+                    ctx.backtest(overrides).run(),
+                    path,
+                    parsedFile,
+                    ctx.executionConfig,
+                    ctx.datasetEvidence,
+                )
             ReportPrinter.print(result, format, System.out, ctx.brokerKind)
             if (ctx.brokerKind == BrokerKind.PAPER) {
                 System.err.println(
@@ -100,5 +113,64 @@ class BacktestCommand(
             if (args.flag("debug")) e.printStackTrace(System.err)
             ExitCodes.USER_ERROR
         }
+    }
+
+    private fun attachEvidence(
+        result: BacktestResult,
+        path: Path,
+        parsedFile: ParsedFile,
+        executionConfig: com.qkt.backtest.ExecutionSimulationConfig,
+        datasetEvidence: DatasetEvidence,
+    ): BacktestResult =
+        result.copy(
+            evidence =
+                EvidenceEnvelope(
+                    qktVersion = BuildInfo.VERSION,
+                    gitSha = BuildInfo.GIT_SHA,
+                    buildTimestamp = BuildInfo.BUILD_TIMESTAMP,
+                    command = args.tokens,
+                    strategyHash = EvidenceHasher.sha256(path),
+                    importedFileHashes = importedHashes(path, parsedFile),
+                    configHash = configHash(),
+                    dataset = datasetEvidence,
+                    execution = executionConfig.toEvidence(),
+                    accounting = accountingEvidence(result.accounting),
+                ),
+        )
+
+    private fun accountingEvidence(snapshot: com.qkt.accounting.AccountingSnapshot?): AccountingEvidence? {
+        if (snapshot == null) return null
+        return AccountingEvidence(
+            accountCurrency = snapshot.accountCurrency,
+            missingPolicy = snapshot.missingPolicy,
+            source = snapshot.source,
+            configuredFxSymbols = snapshot.configuredSymbols,
+            conversions =
+                snapshot.conversions.associate { fx ->
+                    "${fx.from}->${fx.to}@${fx.source}" to
+                        "rate=${fx.rate.toPlainString()} timestamp=${fx.timestamp}"
+                },
+            costKinds = snapshot.supportedCostKinds,
+            warnings = snapshot.warnings,
+        )
+    }
+
+    private fun importedHashes(
+        path: Path,
+        parsedFile: ParsedFile,
+    ): Map<String, String> =
+        when (parsedFile) {
+            is ParsedFile.StrategyFile -> emptyMap()
+            is ParsedFile.PortfolioFile -> {
+                val parent = path.toAbsolutePath().normalize().parent ?: Path.of(".").toAbsolutePath().normalize()
+                parsedFile.ast.imports.associate { imp ->
+                    imp.alias to EvidenceHasher.sha256(parent.resolve(imp.path).toAbsolutePath().normalize())
+                }
+            }
+        }
+
+    private fun configHash(): String? {
+        val path = Path.of(args.option("config") ?: "./qkt.config.yaml")
+        return if (Files.exists(path)) EvidenceHasher.sha256(path) else null
     }
 }

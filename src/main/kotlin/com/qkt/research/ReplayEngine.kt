@@ -1,5 +1,7 @@
 package com.qkt.research
 
+import com.qkt.accounting.AccountingConfig
+import com.qkt.accounting.AccountingEngine
 import com.qkt.app.IndicatorWarmer
 import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
@@ -8,11 +10,11 @@ import com.qkt.backtest.BookRiskMonitor
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
+import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.ReturnAutocorrCollector
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
-import com.qkt.broker.InstrumentSlippage
 import com.qkt.broker.MT5BrokerSimulator
 import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
@@ -70,8 +72,11 @@ class ReplayEngine(
     cadence: SampleCadence? = null,
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    private val accountingConfig: AccountingConfig = AccountingConfig(),
+    private val tradedSymbols: List<String> = symbols,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     brokerKind: BrokerKind = BrokerKind.PAPER,
+    private val executionConfig: ExecutionSimulationConfig = ExecutionSimulationConfig.forBrokerKind(brokerKind),
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
      * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
@@ -104,6 +109,7 @@ class ReplayEngine(
     private val clock = FixedClock(time = initialTimestamp)
     private val priceTracker = MarketPriceTracker()
     private val positions = PositionTracker()
+    private val accounting: AccountingEngine
     private val pnl: PnLCalculator
     private val strategyPnL: StrategyPnL
     private val collector: EquityCurveCollector
@@ -123,9 +129,17 @@ class ReplayEngine(
         }
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
-        pnl = PnLCalculator(positions, priceTracker, instruments)
+        accounting = AccountingEngine(accountingConfig, priceTracker)
+        pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = { currentTimestamp })
         val strategyPositions = StrategyPositionTracker()
-        strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
+        strategyPnL =
+            StrategyPnL(
+                strategyPositions,
+                priceTracker,
+                instruments,
+                accounting = accounting,
+                markTimestamp = { currentTimestamp },
+            )
         for ((id, _) in strategies) strategyPnL.setStartingBalance(id, startingBalance)
         val bus = EventBus(clock, sequencer)
         val engine = Engine(bus, priceTracker)
@@ -153,11 +167,15 @@ class ReplayEngine(
             }
         }
         com.qkt.instrument.QuoteCurrencyGuard
-            .assertAccountQuoted(symbols + brokerSymbols.values.flatten())
+            .assertAccountQuoted(
+                tradedSymbols + brokerSymbols.values.flatten(),
+                accountCurrency = accounting.accountCurrency,
+                canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
+            )
         // Same deploy-time contract as live: a real registry that cannot resolve a traded
         // symbol fails the run up front instead of silently booking contractSize=1.
         if (instruments !is NoopInstrumentRegistry) {
-            for (symbol in (symbols + brokerSymbols.values.flatten()).distinct()) {
+            for (symbol in (tradedSymbols + brokerSymbols.values.flatten()).distinct()) {
                 if (!com.qkt.instrument.QuoteCurrencyGuard
                         .requiresContractSizeMeta(symbol)
                 ) {
@@ -170,10 +188,20 @@ class ReplayEngine(
             }
         }
         val brokerFactory: () -> com.qkt.broker.Broker = {
-            when (brokerKind) {
+            when (executionConfig.brokerKind) {
                 BrokerKind.PAPER -> PaperBroker(bus, clock, priceTracker, fillAtTriggerPrice = barFills)
                 BrokerKind.MT5_SIM ->
-                    MT5BrokerSimulator(bus, clock, priceTracker, instruments, slippage = InstrumentSlippage)
+                    MT5BrokerSimulator(
+                        bus,
+                        clock,
+                        priceTracker,
+                        instruments,
+                        slippage = executionConfig.slippageModel(),
+                        latencyMs = executionConfig.latencyMs,
+                        enforceStopsLevel = executionConfig.enforceStopsLevel,
+                        rejectionModel = executionConfig.rejectionModel(),
+                        partialFillModel = executionConfig.partialFillModel(),
+                    )
             }
         }
         val broker: com.qkt.broker.Broker =
@@ -199,6 +227,7 @@ class ReplayEngine(
             com.qkt.risk.rules.PreTradeControls.standard(
                 prices = priceTracker,
                 instruments = instruments,
+                accounting = accounting,
             )
         val bookAnnualization =
             if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")
@@ -211,7 +240,7 @@ class ReplayEngine(
             bookRiskController?.let {
                 listOf(
                     com.qkt.risk.rules
-                        .BookExposureLimit(it, priceTracker, instruments),
+                        .BookExposureLimit(it, priceTracker, instruments, accounting),
                 )
             } ?: emptyList()
         val riskEngine = RiskEngine(rules + preTradeRules + bookRules, haltRules, positions, riskState)
@@ -252,6 +281,7 @@ class ReplayEngine(
                         prices = priceTracker,
                         instruments = instruments,
                         startingBalance = startingBalance,
+                        accounting = accounting,
                     ),
                 strategyCount = strategies.size,
                 startingBalance = startingBalance,
@@ -281,10 +311,24 @@ class ReplayEngine(
                 source = source,
                 candleWindow = candleWindow,
                 candleHub = candleHub,
-                onFilled = { trade, realized, strategyId ->
+                onAccountedFill = { trade, converted, strategyId ->
                     val risk = holder[0]?.orderManager?.riskUsdFor(trade.orderId)
-                    tradeRecords.add(TradeRecord(trade, realized, strategyId, risk))
-                    tape.add(TapeEvent.Filled(currentTimestamp, trade, realized, strategyId))
+                    tradeRecords.add(
+                        TradeRecord(
+                            trade = trade,
+                            realized = converted.account.amount,
+                            strategyId = strategyId,
+                            riskUsd = risk,
+                            nativeRealized = converted.native.amount,
+                            nativeCurrency = converted.native.normalizedCurrency,
+                            accountRealized = converted.account.amount,
+                            accountCurrency = converted.account.normalizedCurrency,
+                            fxRate = converted.conversion?.rate,
+                            fxRateTimestamp = converted.conversion?.timestamp,
+                            fxSource = converted.conversion?.source,
+                        ),
+                    )
+                    tape.add(TapeEvent.Filled(currentTimestamp, trade, converted.account.amount, strategyId))
                 },
                 onRejected = { e ->
                     rejections.add(e)
@@ -293,13 +337,14 @@ class ReplayEngine(
                 onCandle = { barsClosed++ },
                 instruments = instruments,
                 commissionBook = commissionBook,
+                accounting = accounting,
                 latencyEnabled = latencyEnabled,
             )
         holder[0] = pipeline
 
-        if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && symbols.isNotEmpty()) {
+        if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && tradedSymbols.isNotEmpty()) {
             IndicatorWarmer(source, pipeline).warmup(
-                symbols = symbols,
+                symbols = tradedSymbols,
                 spec = warmupSpec,
                 now = Instant.ofEpochMilli(initialTimestamp),
             )
@@ -397,6 +442,7 @@ class ReplayEngine(
             conditionalAutocorr = autocorr.snapshot(),
             bookAnalytics = bookReturns.result(),
             bookRisk = bookRiskMonitor.result(annualizationFactor),
+            accounting = accounting.snapshot(),
         )
     }
 

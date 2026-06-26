@@ -40,8 +40,11 @@ class Backtest(
     cadence: SampleCadence? = null,
     private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     private val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+    private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+    private val tradedSymbols: List<String> = symbols,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val brokerKind: BrokerKind = BrokerKind.PAPER,
+    private val executionConfig: ExecutionSimulationConfig = ExecutionSimulationConfig.forBrokerKind(brokerKind),
     /** See [com.qkt.app.TradingPipeline.latencyEnabled]; defaults to the env-var read. */
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
@@ -70,8 +73,11 @@ class Backtest(
         cadence: SampleCadence? = null,
         startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
         instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+        accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+        tradedSymbols: List<String> = emptyList(),
         bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
         brokerKind: BrokerKind = BrokerKind.PAPER,
+        executionConfig: ExecutionSimulationConfig = ExecutionSimulationConfig.forBrokerKind(brokerKind),
         latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     ) : this(
         strategies = strategies,
@@ -83,8 +89,11 @@ class Backtest(
         cadence = cadence,
         startingBalance = startingBalance,
         instruments = instruments,
+        accountingConfig = accountingConfig,
+        tradedSymbols = tradedSymbols.ifEmpty { ticks.map { it.symbol }.distinct() },
         bookRiskConfig = bookRiskConfig,
         brokerKind = brokerKind,
+        executionConfig = executionConfig,
         latencyEnabled = latencyEnabled,
     )
 
@@ -109,8 +118,11 @@ class Backtest(
             cadence = cadence,
             startingBalance = startingBalance,
             instruments = instruments,
+            accountingConfig = accountingConfig,
+            tradedSymbols = tradedSymbols,
             bookRiskConfig = bookRiskConfig,
             brokerKind = brokerKind,
+            executionConfig = executionConfig,
             latencyEnabled = latencyEnabled,
             barFills = barFills,
         )
@@ -132,6 +144,8 @@ class Backtest(
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+            accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+            tradedSymbols: List<String> = request.symbols,
             /**
              * Phase 25A: optional pre-fetched bar store (populated by `qkt fetch`). When
              * present, `LocalMarketSource.bars()` reads from it instead of aggregating
@@ -139,6 +153,7 @@ class Backtest(
              */
             barStore: com.qkt.marketdata.store.LocalBarStore? = null,
             brokerKind: BrokerKind = BrokerKind.PAPER,
+            executionConfig: ExecutionSimulationConfig = ExecutionSimulationConfig.forBrokerKind(brokerKind),
             bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
             forceBars: Boolean = false,
             barWindows: Map<String, TimeWindow> = emptyMap(),
@@ -180,7 +195,10 @@ class Backtest(
                 cadence = cadence,
                 startingBalance = startingBalance,
                 instruments = instruments,
+                accountingConfig = accountingConfig,
+                tradedSymbols = tradedSymbols,
                 brokerKind = brokerKind,
+                executionConfig = executionConfig,
                 bookRiskConfig = bookRiskConfig,
                 forceBars = forceBars,
                 barWindows = barWindows,
@@ -199,7 +217,10 @@ class Backtest(
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+            accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+            tradedSymbols: List<String> = request.symbols,
             brokerKind: BrokerKind = BrokerKind.PAPER,
+            executionConfig: ExecutionSimulationConfig = ExecutionSimulationConfig.forBrokerKind(brokerKind),
             bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
             forceBars: Boolean = false,
             barWindows: Map<String, TimeWindow> = emptyMap(),
@@ -233,7 +254,10 @@ class Backtest(
                 cadence = cadence,
                 startingBalance = startingBalance,
                 instruments = instruments,
+                accountingConfig = accountingConfig,
+                tradedSymbols = tradedSymbols,
                 brokerKind = brokerKind,
+                executionConfig = executionConfig,
                 bookRiskConfig = bookRiskConfig,
                 barFills = forceBars,
             )
