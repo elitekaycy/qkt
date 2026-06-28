@@ -302,7 +302,7 @@ class BacktestReportWriter(
         field("calmarRatio", ReportSerializer.jsonNullableBigDecimal(r.calmarRatio))
         field("sortinoRatio", ReportSerializer.jsonNullableBigDecimal(r.sortinoRatio))
         field("turnover", ReportSerializer.jsonBigDecimal(r.turnover))
-        sb.append(",\n").append(pad).append("  \"equityCurve\": [")
+        sb.append("\n").append(pad).append("  \"equityCurve\": [")
         if (r.equityCurve.isNotEmpty()) {
             sb.append('\n')
             val entries = r.equityCurve

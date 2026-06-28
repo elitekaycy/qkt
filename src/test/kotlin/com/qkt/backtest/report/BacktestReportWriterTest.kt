@@ -13,6 +13,7 @@ import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.serialization.json.Json
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -57,6 +58,7 @@ class BacktestReportWriterTest {
         assertThat(json).contains("\"accounting\": {\"accountCurrency\": \"USD\"")
         assertThat(json).contains("\"global\":")
         assertThat(json).contains("\"perStrategy\":")
+        Json.parseToJsonElement(json)
 
         val eqCsv = Files.readString(dir.resolve("equity_global.csv"))
         assertThat(eqCsv.lines().first()).isEqualTo("timestamp,equity")
