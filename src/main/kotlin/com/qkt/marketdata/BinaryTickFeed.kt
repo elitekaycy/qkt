@@ -28,6 +28,9 @@ class BinaryTickFeed(
     private val colBase: IntArray
     private var buf: ByteBuffer?
     private var index: Int = 0
+
+    // Exclusive upper bound on `index`; the whole file by default, narrowed by `slice`.
+    private var endIndex: Int = 0
     private var lastTimestamp: Long = Long.MIN_VALUE
 
     init {
@@ -40,6 +43,7 @@ class BinaryTickFeed(
         mapped.order(ByteOrder.LITTLE_ENDIAN)
         header = BinaryTickFormat.readHeader(mapped)
         val n = header.tickCount
+        endIndex = n
         // readHeader consumes the header with relative gets, leaving the position at the timestamps
         // block; the body is the timestamps block then each present column in ascending id order.
         tsBase = mapped.position()
@@ -57,7 +61,7 @@ class BinaryTickFeed(
 
     override fun next(): Tick? {
         val b = buf ?: return null
-        if (index >= header.tickCount) return null
+        if (index >= endIndex) return null
         val i = index++
         val ts = b.getLong(tsBase + i * Long.SIZE_BYTES)
         check(ts >= lastTimestamp) {
@@ -75,6 +79,39 @@ class BinaryTickFeed(
             askVolume = decode(b, BinaryTickFormat.COL_ASK_VOLUME, i),
             location = { "$path:${i + 1}" },
         )
+    }
+
+    /**
+     * Reposition this feed to the half-open time window `[fromMs, toMs)`. After calling, [next]
+     * yields exactly the ticks whose timestamp is in that range, in order, then null. Backed by a
+     * binary search over the sorted timestamp column (O(log n)) — no scan of skipped ticks. Safe to
+     * call repeatedly for forward windows. e.g. ticks at 0..9000 step 1000, `slice(3000, 7000)`
+     * yields 3000, 4000, 5000, 6000.
+     */
+    fun slice(
+        fromMs: Long,
+        toMs: Long,
+    ): BinaryTickFeed {
+        val b = buf ?: return this
+        index = lowerBound(b, fromMs)
+        endIndex = lowerBound(b, toMs)
+        lastTimestamp = Long.MIN_VALUE
+        return this
+    }
+
+    // First index whose timestamp is >= target (or tickCount if none), via binary search on the
+    // sorted timestamp column.
+    private fun lowerBound(
+        b: ByteBuffer,
+        target: Long,
+    ): Int {
+        var lo = 0
+        var hi = header.tickCount
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (b.getLong(tsBase + mid * Long.SIZE_BYTES) < target) lo = mid + 1 else hi = mid
+        }
+        return lo
     }
 
     override fun close() {
