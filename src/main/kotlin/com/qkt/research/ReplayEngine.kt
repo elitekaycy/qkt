@@ -62,7 +62,7 @@ class ReplayEngine(
     private val strategies: List<Pair<String, Strategy>>,
     rules: List<RiskRule> = emptyList(),
     haltRules: List<com.qkt.risk.HaltRule> = emptyList(),
-    private val feed: TickFeed,
+    private var feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
     source: MarketSource = NullMarketSource,
@@ -84,6 +84,14 @@ class ReplayEngine(
      * [com.qkt.broker.PaperBroker.fillAtTriggerPrice]. Off (and unused) on the tick path.
      */
     private val barFills: Boolean = false,
+    /**
+     * Tick-resolved fills: when both are non-null, the `--bars` replay is driven by these bars but
+     * fills resolve on real ticks for any bar where one is possible (see [BarResolvedFeed]). The
+     * predicate is bound to this engine's own [OrderManager], so the result is byte-identical to a
+     * full-tick replay. Null on every other path (normal ticks, plain `--bars`, fan-out sweep).
+     */
+    tickResolvedBars: Sequence<com.qkt.marketdata.Candle>? = null,
+    tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
 ) : AutoCloseable {
     private val log = org.slf4j.LoggerFactory.getLogger(ReplayEngine::class.java)
 
@@ -347,6 +355,12 @@ class ReplayEngine(
             )
         holder[0] = pipeline
 
+        // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
+        // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
+        if (tickResolvedBars != null && tickSlicer != null) {
+            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::barFillPossible)
+        }
+
         if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && tradedSymbols.isNotEmpty()) {
             IndicatorWarmer(source, pipeline).warmup(
                 symbols = tradedSymbols,
@@ -374,6 +388,14 @@ class ReplayEngine(
     }
 
     /** Pull and ingest ticks until [stop] returns true after a tick, or the feed drains. */
+    // Tick-resolved fills: does any live order on [symbol] reach into the bar range? Delegates to
+    // this engine's OrderManager so the skip decision matches the orders the run actually holds.
+    private fun barFillPossible(
+        symbol: String,
+        low: BigDecimal,
+        high: BigDecimal,
+    ): Boolean = pipeline.orderManager.canTriggerInBar(symbol, low, high)
+
     fun advanceUntil(stop: () -> Boolean) {
         if (exhausted) return
         while (true) {

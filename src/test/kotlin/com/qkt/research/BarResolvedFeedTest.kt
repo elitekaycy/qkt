@@ -21,26 +21,27 @@ class BarResolvedFeedTest {
     }
 
     @Test
-    fun `fill-possible bar streams the real slice`() {
-        val realTicks = listOf(Tick("X", Money.of("100"), 0), Tick("X", Money.of("101"), 500))
+    fun `fill-possible bar streams all real ticks`() {
+        // open + (decision: possible) the rest of the real slice
+        val real = sequenceOf(Tick("X", Money.of("100"), 0), Tick("X", Money.of("101"), 500))
         val f =
             BarResolvedFeed(
                 bars = sequenceOf(bar(0, "100", "102", "99", "101")),
-                sliceProvider = { _, _, _ -> realTicks },
+                sliceProvider = { _, _, _ -> real },
                 fillPossible = { _, _, _ -> true },
             )
-        assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("101")) // the real ticks, not O-L-H-C
+        assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("101"))
     }
 
     @Test
-    fun `fill-impossible bar streams synthetic O-L-H-C`() {
+    fun `fill-impossible bar streams the real open then synthetic low-high-close`() {
         val f =
             BarResolvedFeed(
                 bars = sequenceOf(bar(0, "100", "102", "99", "101")),
-                sliceProvider = { _, _, _ -> error("must not slice a fill-impossible bar") },
+                sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("100"), 0)) }, // just the open
                 fillPossible = { _, _, _ -> false },
             )
-        // open, low, high, close
+        // real open (100), then synthetic low, high, close
         assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("99"), Money.of("102"), Money.of("101"))
     }
 
@@ -50,7 +51,7 @@ class BarResolvedFeedTest {
         val f =
             BarResolvedFeed(
                 bars = sequenceOf(bar(0, "100", "102", "99", "101"), bar(1000, "101", "105", "100", "104")),
-                sliceProvider = { _, _, _ -> listOf(Tick("X", Money.of("1"), 0)) },
+                sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("1"), 0)) },
                 fillPossible = { _, low, high -> seen.add(low to high); false },
             )
         drain(f)
