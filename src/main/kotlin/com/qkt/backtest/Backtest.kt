@@ -57,7 +57,7 @@ class Backtest(
      * ticks for any bar where one is possible — byte-identical to a full-tick replay. Both null on
      * every other path. See [com.qkt.research.BarResolvedFeed].
      */
-    private val tickResolvedBars: Sequence<com.qkt.marketdata.Candle>? = null,
+    private val tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     private val tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
 ) {
     private val cadence: SampleCadence =
@@ -255,29 +255,21 @@ class Backtest(
             // Tick-resolved fills: the engine drives off these bars but loads real ticks for any bar
             // a fill could land in. The slice is filtered half-open [from, to) so every tick belongs
             // to exactly one bar regardless of TimeRange boundary semantics.
-            val tickResolvedBars: Sequence<com.qkt.marketdata.Candle>? =
+            val tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? =
                 if (tickFills) {
-                    mergeCandlesByStartTime(
-                        request.symbols.map { sym ->
-                            source.bars(
-                                sym,
-                                barWindows[sym] ?: candleWindow ?: error("--tick-fills needs a candle window"),
-                                range,
-                            )
-                        },
-                    )
+                    request.symbols.associateWith { sym ->
+                        source.bars(
+                            sym,
+                            barWindows[sym] ?: candleWindow ?: error("--tick-fills needs a candle window"),
+                            range,
+                        )
+                    }
                 } else {
                     null
                 }
             val tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? =
                 if (tickFills) {
-                    { sym, fromMs, toMs ->
-                        source
-                            .ticks(
-                                sym,
-                                TimeRange(java.time.Instant.ofEpochMilli(fromMs), java.time.Instant.ofEpochMilli(toMs)),
-                            ).filter { it.timestamp in fromMs until toMs }
-                    }
+                    { sym, fromMs, toMs -> source.tickSlice(sym, fromMs, toMs) }
                 } else {
                     null
                 }
@@ -307,27 +299,6 @@ class Backtest(
                 tickResolvedBars = tickResolvedBars,
                 tickSlicer = tickSlicer,
             )
-        }
-
-        private fun mergeCandlesByStartTime(
-            streams: List<Sequence<com.qkt.marketdata.Candle>>,
-        ): Sequence<com.qkt.marketdata.Candle> {
-            if (streams.size == 1) return streams[0]
-            return sequence {
-                val iters = streams.map { it.iterator() }
-                val heads = arrayOfNulls<com.qkt.marketdata.Candle>(iters.size)
-                for (i in iters.indices) if (iters[i].hasNext()) heads[i] = iters[i].next()
-                while (true) {
-                    var minIdx = -1
-                    for (i in heads.indices) {
-                        val h = heads[i] ?: continue
-                        if (minIdx == -1 || h.startTime < heads[minIdx]!!.startTime) minIdx = i
-                    }
-                    if (minIdx == -1) break
-                    yield(heads[minIdx]!!)
-                    heads[minIdx] = if (iters[minIdx].hasNext()) iters[minIdx].next() else null
-                }
-            }
         }
 
         /**

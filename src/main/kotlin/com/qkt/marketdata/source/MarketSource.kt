@@ -35,4 +35,18 @@ interface MarketSource {
         range: TimeRange,
     ): Sequence<Tick> =
         throw UnsupportedDataException(MarketSourceCapability.TICKS, this::class.java.simpleName ?: "MarketSource")
+
+    /**
+     * Real ticks in the half-open window `[fromMs, toMs)` for [symbol] — the per-bar slicing the
+     * `--tick-fills` replay does on every bar. The default re-reads via [ticks] (correct, but
+     * re-decodes the whole day on every call); [LocalMarketSource] overrides it to mmap each day
+     * once and binary-search the window, so slicing every bar is cheap.
+     */
+    fun tickSlice(
+        symbol: String,
+        fromMs: Long,
+        toMs: Long,
+    ): Sequence<Tick> =
+        ticks(symbol, TimeRange(java.time.Instant.ofEpochMilli(fromMs), java.time.Instant.ofEpochMilli(toMs)))
+            .filter { it.timestamp in fromMs until toMs }
 }

@@ -90,7 +90,7 @@ class ReplayEngine(
      * predicate is bound to this engine's own [OrderManager], so the result is byte-identical to a
      * full-tick replay. Null on every other path (normal ticks, plain `--bars`, fan-out sweep).
      */
-    tickResolvedBars: Sequence<com.qkt.marketdata.Candle>? = null,
+    tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
 ) : AutoCloseable {
     private val log = org.slf4j.LoggerFactory.getLogger(ReplayEngine::class.java)
