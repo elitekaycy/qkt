@@ -1,7 +1,7 @@
 # Tick-resolved fills — design spec
 
 - **Date:** 2026-06-29
-- **Status:** draft
+- **Status:** implemented — `--bars --tick-fills`; byte-identical to full-tick proven by `TickResolvedParityTest`. The fill-possible predicate treats composite shapes (OTO/OCO) conservatively as fill-possible, so per-bar skipping is strongest on flat bars; refining it to recurse into composite legs is a follow-up optimization.
 - **Scope:** backtest replay/feed layer only. Live execution, `OrderManager`, `RiskEngine`, and broker models are untouched (see §7).
 
 ## 1. Problem
