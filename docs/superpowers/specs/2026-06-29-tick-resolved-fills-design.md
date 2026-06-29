@@ -1,7 +1,9 @@
 # Tick-resolved fills — design spec
 
 - **Date:** 2026-06-29
-- **Status:** implemented — `--bars --tick-fills`; byte-identical to full-tick proven by `TickResolvedParityTest`. The fill-possible predicate treats composite shapes (OTO/OCO) conservatively as fill-possible, so per-bar skipping is strongest on flat bars; refining it to recurse into composite legs is a follow-up optimization.
+- **Status:** implemented for **single-symbol** strategies — byte-identical to full-tick proven by `TickResolvedParityTest` (single-symbol PaperBroker + mt5-sim). The fill-possible predicate treats composite shapes (OTO/OCO) conservatively as fill-possible, so per-bar skipping is strongest on flat bars.
+- **KNOWN BLOCKER (multi-symbol):** `BarResolvedFeed` merges bars by `startTime` and emits each symbol's bar **atomically**, so cross-symbol ticks are NOT interleaved by timestamp the way the full-tick `MergingTickFeed` does. For a multi-symbol strategy whose rules/positions interact across symbols, trades emit out of chronological order and cascade into different results. Confirmed on real forge strategy #512 (trades.csv diff: identical trades, reordered cross-symbol → P&L drift). All forge strategies are multi-symbol, so tick-fills is **not yet usable for forge grading**. Fix: a frontier-based multi-symbol `BarResolvedFeed` — per-symbol bar iterators + lazy real slices, decide each bar after its (real) opening tick is ingested, emit ticks globally by timestamp.
+- **KNOWN SPEED ISSUE:** the slicer is `source.ticks(window)` called per bar, which re-decodes the day file every call, so tick-fills ran 0.48–1.23x vs full-tick on the benchmark (slower). Fix: a persistent per-symbol mmap'd day feed sliced via `BinaryTickFeed.slice()` (O(log n) seek).
 - **Scope:** backtest replay/feed layer only. Live execution, `OrderManager`, `RiskEngine`, and broker models are untouched (see §7).
 
 ## 1. Problem

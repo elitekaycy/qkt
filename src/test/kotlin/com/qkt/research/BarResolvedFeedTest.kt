@@ -31,7 +31,7 @@ class BarResolvedFeedTest {
         val real = sequenceOf(Tick("X", Money.of("100"), 0), Tick("X", Money.of("101"), 500))
         val f =
             BarResolvedFeed(
-                bars = sequenceOf(bar(0, "100", "102", "99", "101")),
+                perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "102", "99", "101"))),
                 sliceProvider = { _, _, _ -> real },
                 fillPossible = { _, _, _ -> true },
             )
@@ -42,7 +42,7 @@ class BarResolvedFeedTest {
     fun `fill-impossible bar streams the real open then synthetic low-high-close`() {
         val f =
             BarResolvedFeed(
-                bars = sequenceOf(bar(0, "100", "102", "99", "101")),
+                perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "102", "99", "101"))),
                 sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("100"), 0)) }, // just the open
                 fillPossible = { _, _, _ -> false },
             )
@@ -55,7 +55,10 @@ class BarResolvedFeedTest {
         val seen = mutableListOf<Pair<java.math.BigDecimal, java.math.BigDecimal>>()
         val f =
             BarResolvedFeed(
-                bars = sequenceOf(bar(0, "100", "102", "99", "101"), bar(1000, "101", "105", "100", "104")),
+                perSymbolBars =
+                    mapOf(
+                        "X" to sequenceOf(bar(0, "100", "102", "99", "101"), bar(1000, "101", "105", "100", "104")),
+                    ),
                 sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("1"), 0)) },
                 fillPossible = { _, low, high ->
                     seen.add(low to high)
