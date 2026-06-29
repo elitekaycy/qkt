@@ -330,6 +330,35 @@ class OrderManager(
 
     fun activeOrders(): List<ManagedOrder> = orders.values.filter { !it.state.isTerminal }
 
+    /**
+     * Read-only: true iff a live order on [symbol] could fill within the bar range `[low, high]`.
+     * Direction-aware, so a gap-open through a level still counts (a buy stop at 100 fires on a bar
+     * that opens at 102). A live trailing stop always returns true — its level moves with the
+     * intrabar path, so the bar extremes alone cannot rule a fill out. Backs the tick-resolved fill
+     * replay's decision to decode a bar's ticks; never mutates state or fires a trigger. e.g. a
+     * resting buy stop at 100 with a bar `[98, 101]` -> true; with `[96, 99]` -> false.
+     */
+    fun canTriggerInBar(
+        symbol: String,
+        low: BigDecimal,
+        high: BigDecimal,
+    ): Boolean {
+        val ids = liveBySymbol[symbol] ?: return false
+        for (id in ids) {
+            val m = orders[id] ?: continue
+            if (m.state.isTerminal) continue
+            when (val r = m.request) {
+                is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit, is OrderRequest.ArmedTrailingStop -> return true
+                is OrderRequest.Stop -> if (if (r.side == Side.BUY) high >= r.stopPrice else low <= r.stopPrice) return true
+                is OrderRequest.StopLimit -> if (if (r.side == Side.BUY) high >= r.stopPrice else low <= r.stopPrice) return true
+                is OrderRequest.Limit -> if (if (r.side == Side.BUY) low <= r.limitPrice else high >= r.limitPrice) return true
+                is OrderRequest.IfTouched -> if (if (r.side == Side.BUY) low <= r.triggerPrice else high >= r.triggerPrice) return true
+                else -> {}
+            }
+        }
+        return false
+    }
+
     fun pendingOrders(): List<ManagedOrder> = orders.values.filter { it.state == OrderState.PENDING }
 
     private fun dispatch(request: OrderRequest): SubmitAck =
