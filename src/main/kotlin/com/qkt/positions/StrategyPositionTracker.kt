@@ -485,11 +485,14 @@ class StrategyPositionTracker(
         symbol: String,
     ): Position? = byStrategy[strategyId]?.get(symbol)?.netView()
 
-    fun positionsFor(strategyId: String): Map<String, Position> =
-        byStrategy[strategyId]
-            ?.mapNotNull { (sym, book) -> book.netView()?.let { sym to it } }
-            ?.toMap()
-            ?: emptyMap()
+    fun positionsFor(strategyId: String): Map<String, Position> {
+        val books = byStrategy[strategyId] ?: return emptyMap()
+        // Single pass straight into the result map; the previous mapNotNull{}.toMap() allocated an
+        // intermediate List of Pairs and rehashed, per call, on the per-tick position-read path.
+        return buildMap(books.size) {
+            for ((sym, book) in books) book.netView()?.let { put(sym, it) }
+        }
+    }
 
     fun allByStrategy(): Map<String, Map<String, Position>> =
         byStrategy.mapValues { (_, books) ->
