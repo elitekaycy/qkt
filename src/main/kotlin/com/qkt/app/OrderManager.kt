@@ -348,18 +348,36 @@ class OrderManager(
             val m = orders[id] ?: continue
             if (m.state.isTerminal) continue
             when (val r = m.request) {
-                is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit, is OrderRequest.ArmedTrailingStop -> return true
-                is OrderRequest.Stop -> if (if (r.side == Side.BUY) high >= r.stopPrice else low <= r.stopPrice) return true
-                is OrderRequest.StopLimit -> if (if (r.side == Side.BUY) high >= r.stopPrice else low <= r.stopPrice) return true
-                is OrderRequest.Limit -> if (if (r.side == Side.BUY) low <= r.limitPrice else high >= r.limitPrice) return true
-                is OrderRequest.IfTouched -> if (if (r.side == Side.BUY) low <= r.triggerPrice else high >= r.triggerPrice) return true
-                // Composite/unknown shapes (OTO, StandaloneOCO, ...) nest their fillable legs; we
-                // can't cheaply prove they're out of range, so conservatively resolve on real ticks.
+                is OrderRequest.Stop -> if (stopReached(r.side, low, high, r.stopPrice)) return true
+                is OrderRequest.StopLimit -> if (stopReached(r.side, low, high, r.stopPrice)) return true
+                is OrderRequest.Limit -> if (limitReached(r.side, low, high, r.limitPrice)) return true
+                is OrderRequest.IfTouched -> if (limitReached(r.side, low, high, r.triggerPrice)) return true
+                // Composite/unknown shapes (OTO, StandaloneOCO, trailing stops, ...) nest their
+                // fillable legs or move with the path; we can't cheaply rule them out, so
+                // conservatively resolve them on real ticks.
                 else -> return true
             }
         }
         return false
     }
+
+    // A stop / stop-limit trigger needs the bar to reach UP to the level for a buy (high >= level),
+    // or DOWN for a sell (low <= level). Direction-aware, so a gap-open through the level counts.
+    private fun stopReached(
+        side: Side,
+        low: BigDecimal,
+        high: BigDecimal,
+        level: BigDecimal,
+    ): Boolean = if (side == Side.BUY) high >= level else low <= level
+
+    // A limit / if-touched fill needs a dip DOWN to the level for a buy (low <= level), or a rise UP
+    // for a sell (high >= level).
+    private fun limitReached(
+        side: Side,
+        low: BigDecimal,
+        high: BigDecimal,
+        level: BigDecimal,
+    ): Boolean = if (side == Side.BUY) low <= level else high >= level
 
     fun pendingOrders(): List<ManagedOrder> = orders.values.filter { it.state == OrderState.PENDING }
 
