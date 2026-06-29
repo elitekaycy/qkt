@@ -173,8 +173,20 @@ class TickResolvedParityTest {
         return f
     }
 
-    private fun seedSym(dataRoot: Path, symbol: String, days: Int, base: Double, amp: Double, period: Double) {
-        val start = LocalDate.parse("2024-01-02").atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    private fun seedSym(
+        dataRoot: Path,
+        symbol: String,
+        days: Int,
+        base: Double,
+        amp: Double,
+        period: Double,
+    ) {
+        val start =
+            LocalDate
+                .parse("2024-01-02")
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli()
         (0 until days * 1440)
             .map { m -> Tick(symbol, Money.of("%.3f".format(base + amp * sin(m / period))), start + m * 60_000L) }
             .groupBy { LocalDate.ofInstant(Instant.ofEpochMilli(it.timestamp), ZoneOffset.UTC) }
@@ -204,6 +216,103 @@ class TickResolvedParityTest {
         return s
     }
 
+    private fun bothTradeStrategy(dir: Path): Path {
+        val s = dir.resolve("both.qkt")
+        Files.writeString(
+            s,
+            """
+            STRATEGY both VERSION 1
+            SYMBOLS
+                a = BACKTEST:XAUUSD EVERY 15m
+                b = BACKTEST:XAGUSD EVERY 15m
+            RULES
+                WHEN ema(a.close, 3) CROSSES ABOVE ema(a.close, 9)
+                THEN BUY a SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                WHEN ema(a.close, 3) CROSSES BELOW ema(a.close, 9) THEN CLOSE a
+                WHEN ema(b.close, 3) CROSSES ABOVE ema(b.close, 9)
+                THEN BUY b SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                WHEN ema(b.close, 3) CROSSES BELOW ema(b.close, 9) THEN CLOSE b
+            """.trimIndent(),
+        )
+        return s
+    }
+
+    @Test
+    fun `tick-resolved fills emit the same trades in the same order for a two-symbol strategy`(
+        @TempDir dir: Path,
+    ) {
+        val dataRoot = dir.resolve("data")
+        val from = "2024-01-02"
+        val to = "2024-01-07"
+        seedSym(dataRoot, "XAUUSD", 5, 1850.0, 30.0, 7.0)
+        seedSym(dataRoot, "XAGUSD", 5, 24.0, 0.4, 5.0)
+        for (sym in listOf("XAUUSD", "XAGUSD")) {
+            DataCommand(
+                Args(
+                    arrayOf(
+                        "data",
+                        "build-bars",
+                        sym,
+                        "--tf",
+                        "15m",
+                        "--from",
+                        from,
+                        "--to",
+                        to,
+                        "--data-root",
+                        dataRoot.toString(),
+                    ),
+                ),
+            ).run().also { assertThat(it).isEqualTo(ExitCodes.SUCCESS) }
+        }
+
+        fun trades(
+            reportDir: Path,
+            extra: List<String>,
+        ): List<String> {
+            val out = ByteArrayOutputStream()
+            val orig = System.out
+            val code =
+                try {
+                    System.setOut(PrintStream(out))
+                    BacktestCommand(
+                        Args(
+                            (
+                                listOf(
+                                    "backtest",
+                                    bothTradeStrategy(dir).toString(),
+                                    "--from",
+                                    from,
+                                    "--to",
+                                    to,
+                                    "--data-root",
+                                    dataRoot.toString(),
+                                    "--no-fetch",
+                                    "--allow-incomplete",
+                                    "--json",
+                                    "--report-dir",
+                                    reportDir.toString(),
+                                ) + extra
+                            ).toTypedArray(),
+                        ),
+                    ).run()
+                } finally {
+                    System.setOut(orig)
+                }
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+            // trades.csv: timestamp+symbol columns are enough to assert order (col 0 ts, col 2 symbol)
+            return Files.readAllLines(reportDir.resolve("trades.csv")).drop(1).map {
+                val c = it.split(",")
+                "${c[0]},${c[2]},${c[3]}"
+            }
+        }
+
+        val ft = trades(dir.resolve("ft"), emptyList())
+        val tf = trades(dir.resolve("tf"), listOf("--bars", "--tick-fills"))
+        assertThat(ft).isNotEmpty
+        assertThat(tf).isEqualTo(ft) // same trades, same chronological order
+    }
+
     @Test
     fun `tick-resolved fills match a full-tick replay for a multi-symbol strategy`(
         @TempDir dir: Path,
@@ -217,8 +326,17 @@ class TickResolvedParityTest {
             DataCommand(
                 Args(
                     arrayOf(
-                        "data", "build-bars", sym, "--tf", "15m",
-                        "--from", from, "--to", to, "--data-root", dataRoot.toString(),
+                        "data",
+                        "build-bars",
+                        sym,
+                        "--tf",
+                        "15m",
+                        "--from",
+                        from,
+                        "--to",
+                        to,
+                        "--data-root",
+                        dataRoot.toString(),
                     ),
                 ),
             ).run().also { assertThat(it).isEqualTo(ExitCodes.SUCCESS) }
@@ -234,9 +352,17 @@ class TickResolvedParityTest {
                         Args(
                             (
                                 listOf(
-                                    "backtest", twoSymbolStrategy(dir).toString(),
-                                    "--from", from, "--to", to, "--data-root", dataRoot.toString(),
-                                    "--no-fetch", "--allow-incomplete", "--json",
+                                    "backtest",
+                                    twoSymbolStrategy(dir).toString(),
+                                    "--from",
+                                    from,
+                                    "--to",
+                                    to,
+                                    "--data-root",
+                                    dataRoot.toString(),
+                                    "--no-fetch",
+                                    "--allow-incomplete",
+                                    "--json",
                                 ) + extra
                             ).toTypedArray(),
                         ),
@@ -266,8 +392,17 @@ class TickResolvedParityTest {
         DataCommand(
             Args(
                 arrayOf(
-                    "data", "build-bars", "XAUUSD", "--tf", "15m",
-                    "--from", from, "--to", to, "--data-root", dataRoot.toString(),
+                    "data",
+                    "build-bars",
+                    "XAUUSD",
+                    "--tf",
+                    "15m",
+                    "--from",
+                    from,
+                    "--to",
+                    to,
+                    "--data-root",
+                    dataRoot.toString(),
                 ),
             ),
         ).run().also { assertThat(it).isEqualTo(ExitCodes.SUCCESS) }
