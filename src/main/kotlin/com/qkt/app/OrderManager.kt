@@ -353,7 +353,9 @@ class OrderManager(
                 is OrderRequest.StopLimit -> if (if (r.side == Side.BUY) high >= r.stopPrice else low <= r.stopPrice) return true
                 is OrderRequest.Limit -> if (if (r.side == Side.BUY) low <= r.limitPrice else high >= r.limitPrice) return true
                 is OrderRequest.IfTouched -> if (if (r.side == Side.BUY) low <= r.triggerPrice else high >= r.triggerPrice) return true
-                else -> {}
+                // Composite/unknown shapes (OTO, StandaloneOCO, ...) nest their fillable legs; we
+                // can't cheaply prove they're out of range, so conservatively resolve on real ticks.
+                else -> return true
             }
         }
         return false
