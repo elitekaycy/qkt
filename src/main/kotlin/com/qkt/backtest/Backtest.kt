@@ -273,8 +273,10 @@ class Backtest(
                 if (tickFills) {
                     { sym, fromMs, toMs ->
                         source
-                            .ticks(sym, TimeRange(java.time.Instant.ofEpochMilli(fromMs), java.time.Instant.ofEpochMilli(toMs)))
-                            .filter { it.timestamp in fromMs until toMs }
+                            .ticks(
+                                sym,
+                                TimeRange(java.time.Instant.ofEpochMilli(fromMs), java.time.Instant.ofEpochMilli(toMs)),
+                            ).filter { it.timestamp in fromMs until toMs }
                     }
                 } else {
                     null
@@ -307,7 +309,9 @@ class Backtest(
             )
         }
 
-        private fun mergeCandlesByStartTime(streams: List<Sequence<com.qkt.marketdata.Candle>>): Sequence<com.qkt.marketdata.Candle> {
+        private fun mergeCandlesByStartTime(
+            streams: List<Sequence<com.qkt.marketdata.Candle>>,
+        ): Sequence<com.qkt.marketdata.Candle> {
             if (streams.size == 1) return streams[0]
             return sequence {
                 val iters = streams.map { it.iterator() }

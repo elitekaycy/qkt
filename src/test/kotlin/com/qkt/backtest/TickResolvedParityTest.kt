@@ -29,14 +29,22 @@ class TickResolvedParityTest {
     // 1 tick/min, a fast high-amplitude sine so a 15m bar (15 ticks) swings far enough to hit a 1%
     // stop / 2R target intrabar — the case that separates tick-resolved from plain --bars.
     private fun ticksFor(days: Int): List<Tick> {
-        val start = LocalDate.parse("2024-01-02").atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val start =
+            LocalDate
+                .parse("2024-01-02")
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli()
         return (0 until days * 1440).map { m ->
             val mid = 1850.0 + 30.0 * sin(m / 7.0)
             Tick("XAUUSD", Money.of("%.3f".format(mid)), start + m * 60_000L)
         }
     }
 
-    private fun seedTicks(dataRoot: Path, days: Int) {
+    private fun seedTicks(
+        dataRoot: Path,
+        days: Int,
+    ) {
         ticksFor(days)
             .groupBy { LocalDate.ofInstant(Instant.ofEpochMilli(it.timestamp), ZoneOffset.UTC) }
             .forEach { (day, dayTicks) ->
@@ -64,7 +72,13 @@ class TickResolvedParityTest {
         return s
     }
 
-    private fun runJson(dir: Path, dataRoot: Path, from: String, to: String, extra: List<String>): String {
+    private fun runJson(
+        dir: Path,
+        dataRoot: Path,
+        from: String,
+        to: String,
+        extra: List<String>,
+    ): String {
         val out = ByteArrayOutputStream()
         val orig = System.out
         val code =
@@ -74,10 +88,17 @@ class TickResolvedParityTest {
                     Args(
                         (
                             listOf(
-                                "backtest", strategyFile(dir).toString(),
-                                "--from", from, "--to", to,
-                                "--data-root", dataRoot.toString(),
-                                "--no-fetch", "--allow-incomplete", "--json",
+                                "backtest",
+                                strategyFile(dir).toString(),
+                                "--from",
+                                from,
+                                "--to",
+                                to,
+                                "--data-root",
+                                dataRoot.toString(),
+                                "--no-fetch",
+                                "--allow-incomplete",
+                                "--json",
                             ) + extra
                         ).toTypedArray(),
                     ),
@@ -89,8 +110,10 @@ class TickResolvedParityTest {
         return out.toString()
     }
 
-    private fun field(json: String, key: String): String =
-        Regex("\"$key\":\\s*(-?[0-9.]+)").find(json)?.groupValues?.get(1) ?: error("no $key in $json")
+    private fun field(
+        json: String,
+        key: String,
+    ): String = Regex("\"$key\":\\s*(-?[0-9.]+)").find(json)?.groupValues?.get(1) ?: error("no $key in $json")
 
     @Test
     fun `tick-resolved fills match a full-tick replay byte-for-byte`(
@@ -105,8 +128,17 @@ class TickResolvedParityTest {
             DataCommand(
                 Args(
                     arrayOf(
-                        "data", "build-bars", "XAUUSD", "--tf", "15m",
-                        "--from", from, "--to", to, "--data-root", dataRoot.toString(),
+                        "data",
+                        "build-bars",
+                        "XAUUSD",
+                        "--tf",
+                        "15m",
+                        "--from",
+                        from,
+                        "--to",
+                        to,
+                        "--data-root",
+                        dataRoot.toString(),
                     ),
                 ),
             ).run()

@@ -26,11 +26,18 @@ class OrderManagerTriggerRangeTest {
         return OrderManager(broker, bus, MarketPriceTracker(), clock)
     }
 
-    private fun buyStop(symbol: String, price: String) =
-        OrderRequest.Stop(
-            id = "s", symbol = symbol, side = Side.BUY, quantity = Money.of("1"),
-            stopPrice = Money.of(price), timeInForce = TimeInForce.GTC, timestamp = 0L,
-        )
+    private fun buyStop(
+        symbol: String,
+        price: String,
+    ) = OrderRequest.Stop(
+        id = "s",
+        symbol = symbol,
+        side = Side.BUY,
+        quantity = Money.of("1"),
+        stopPrice = Money.of(price),
+        timeInForce = TimeInForce.GTC,
+        timestamp = 0L,
+    )
 
     @Test
     fun `buy stop is reachable when the bar high crosses it`() {

@@ -387,7 +387,6 @@ class ReplayEngine(
         pipeline.ingest(tick)
     }
 
-    /** Pull and ingest ticks until [stop] returns true after a tick, or the feed drains. */
     // Tick-resolved fills: does any live order on [symbol] reach into the bar range? Delegates to
     // this engine's OrderManager so the skip decision matches the orders the run actually holds.
     private fun barFillPossible(
@@ -396,6 +395,7 @@ class ReplayEngine(
         high: BigDecimal,
     ): Boolean = pipeline.orderManager.canTriggerInBar(symbol, low, high)
 
+    /** Pull and ingest ticks until [stop] returns true after a tick, or the feed drains. */
     fun advanceUntil(stop: () -> Boolean) {
         if (exhausted) return
         while (true) {
