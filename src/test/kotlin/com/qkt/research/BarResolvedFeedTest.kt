@@ -1,5 +1,6 @@
 package com.qkt.research
 
+import com.qkt.app.IntrabarFill
 import com.qkt.common.Money
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
@@ -26,32 +27,61 @@ class BarResolvedFeedTest {
     }
 
     @Test
-    fun `fill-possible bar streams all real ticks`() {
-        // open + (decision: possible) the rest of the real slice
+    fun `ALL_TICKS bar streams all real ticks`() {
         val real = sequenceOf(Tick("X", Money.of("100"), 0), Tick("X", Money.of("101"), 500))
         val f =
             BarResolvedFeed(
                 perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "102", "99", "101"))),
                 sliceProvider = { _, _, _ -> real },
-                fillPossible = { _, _, _ -> true },
+                intrabarFill = { _, _, _ -> IntrabarFill.ALL_TICKS },
             )
         assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("101"))
     }
 
     @Test
-    fun `fill-impossible bar streams the real open then synthetic low-high-close`() {
+    fun `SYNTHETIC bar streams the real open then synthetic low-high-close`() {
         val f =
             BarResolvedFeed(
                 perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "102", "99", "101"))),
                 sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("100"), 0)) }, // just the open
-                fillPossible = { _, _, _ -> false },
+                intrabarFill = { _, _, _ -> IntrabarFill.SYNTHETIC },
             )
-        // real open (100), then synthetic low, high, close
         assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("99"), Money.of("102"), Money.of("101"))
     }
 
     @Test
-    fun `predicate is queried per bar with that bar's range`() {
+    fun `EXTREMES bar streams the open, only new-extreme ticks, then the close`() {
+        // rest after the open: a non-extreme (100.5) is dropped; new highs/lows and the close are kept.
+        val real =
+            sequenceOf(
+                Tick("X", Money.of("100"), 0), // open -> seeds the running extremes
+                Tick("X", Money.of("100.5"), 100), // new max
+                Tick("X", Money.of("101"), 200), // new max
+                Tick("X", Money.of("99"), 300), // new min
+                Tick("X", Money.of("103"), 400), // new max
+                Tick("X", Money.of("102"), 500), // not an extreme -> DROPPED
+                Tick("X", Money.of("105"), 600), // new max
+                Tick("X", Money.of("101"), 999), // close
+            )
+        val f =
+            BarResolvedFeed(
+                perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "105", "99", "101"))),
+                sliceProvider = { _, _, _ -> real },
+                intrabarFill = { _, _, _ -> IntrabarFill.EXTREMES },
+            )
+        assertThat(drain(f)).containsExactly(
+            Money.of("100"),
+            Money.of("100.5"),
+            Money.of("101"),
+            Money.of("99"),
+            Money.of("103"),
+            Money.of("105"),
+            Money.of("101"),
+        )
+    }
+
+    @Test
+    fun `resolver is queried per bar with that bar's range`() {
         val seen = mutableListOf<Pair<java.math.BigDecimal, java.math.BigDecimal>>()
         val f =
             BarResolvedFeed(
@@ -60,9 +90,9 @@ class BarResolvedFeedTest {
                         "X" to sequenceOf(bar(0, "100", "102", "99", "101"), bar(1000, "101", "105", "100", "104")),
                     ),
                 sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("1"), 0)) },
-                fillPossible = { _, low, high ->
+                intrabarFill = { _, low, high ->
                     seen.add(low to high)
-                    false
+                    IntrabarFill.SYNTHETIC
                 },
             )
         drain(f)
