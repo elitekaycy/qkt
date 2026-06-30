@@ -52,6 +52,13 @@ class Backtest(
      * the synthetic bar extreme. See [com.qkt.broker.PaperBroker.fillAtTriggerPrice].
      */
     private val barFills: Boolean = false,
+    /**
+     * Tick-resolved fills (`--bars --tick-fills`): bars drive signals, but fills resolve on real
+     * ticks for any bar where one is possible — byte-identical to a full-tick replay. Both null on
+     * every other path. See [com.qkt.research.BarResolvedFeed].
+     */
+    private val tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
+    private val tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -125,6 +132,8 @@ class Backtest(
             executionConfig = executionConfig,
             latencyEnabled = latencyEnabled,
             barFills = barFills,
+            tickResolvedBars = tickResolvedBars,
+            tickSlicer = tickSlicer,
         )
 
     fun run(): BacktestResult = toEngine().runToEnd()
@@ -158,6 +167,7 @@ class Backtest(
             forceBars: Boolean = false,
             barWindows: Map<String, TimeWindow> = emptyMap(),
             binaryBarStore: com.qkt.marketdata.store.BinaryBarStore? = null,
+            tickFills: Boolean = false,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -202,6 +212,7 @@ class Backtest(
                 bookRiskConfig = bookRiskConfig,
                 forceBars = forceBars,
                 barWindows = barWindows,
+                tickFills = tickFills,
             )
         }
 
@@ -224,6 +235,7 @@ class Backtest(
             bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
             forceBars: Boolean = false,
             barWindows: Map<String, TimeWindow> = emptyMap(),
+            tickFills: Boolean = false,
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -240,6 +252,27 @@ class Backtest(
                 }
             val feed: TickFeed =
                 if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
+            // Tick-resolved fills: the engine drives off these bars but loads real ticks for any bar
+            // a fill could land in. The slice is filtered half-open [from, to) so every tick belongs
+            // to exactly one bar regardless of TimeRange boundary semantics.
+            val tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? =
+                if (tickFills) {
+                    request.symbols.associateWith { sym ->
+                        source.bars(
+                            sym,
+                            barWindows[sym] ?: candleWindow ?: error("--tick-fills needs a candle window"),
+                            range,
+                        )
+                    }
+                } else {
+                    null
+                }
+            val tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? =
+                if (tickFills) {
+                    { sym, fromMs, toMs -> source.tickSlice(sym, fromMs, toMs) }
+                } else {
+                    null
+                }
             return Backtest(
                 strategies = strategies,
                 rules = rules,
@@ -259,7 +292,12 @@ class Backtest(
                 brokerKind = brokerKind,
                 executionConfig = executionConfig,
                 bookRiskConfig = bookRiskConfig,
-                barFills = forceBars,
+                // Tick-resolved fills use the full-tick fill model (fill at the real tick price, not
+                // the trigger level): fills only ever occur on bars fed real ticks, so the bar-tier
+                // fill-at-trigger-price guard is both unnecessary and wrong here.
+                barFills = forceBars && !tickFills,
+                tickResolvedBars = tickResolvedBars,
+                tickSlicer = tickSlicer,
             )
         }
 

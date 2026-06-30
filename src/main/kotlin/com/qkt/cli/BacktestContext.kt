@@ -81,6 +81,7 @@ class BacktestContext private constructor(
     private val forceBars: Boolean = false,
     private val barWindows: Map<String, TimeWindow> = emptyMap(),
     private val binaryBarStore: BinaryBarStore? = null,
+    private val tickFills: Boolean = false,
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -152,6 +153,7 @@ class BacktestContext private constructor(
             forceBars = forceBars,
             barWindows = barWindows,
             binaryBarStore = binaryBarStore,
+            tickFills = tickFills,
         )
     }
 
@@ -331,6 +333,10 @@ class BacktestContext private constructor(
             // covers the whole standard ladder, no need to pre-build every tf. Fail loud if nothing
             // usable is built, naming the build-bars command — never silently fall back to slow ticks.
             val forceBars = args.flag("bars")
+            val tickFills = args.flag("tick-fills")
+            require(!tickFills || forceBars) {
+                "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
+            }
             val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
             val finestDeclared: Map<String, TimeWindow> =
                 ast.streams
@@ -394,6 +400,7 @@ class BacktestContext private constructor(
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
+                tickFills = tickFills,
             )
         }
 

@@ -8,12 +8,20 @@ import java.util.concurrent.ConcurrentHashMap
 
 private fun normalizeCurrencyPair(raw: String): String = raw.uppercase().filter { it in 'A'..'Z' }
 
+// A 3-5 letter currency code — equivalent to the regex [A-Za-z]{3,5}, but as a char check so the
+// per-tick MoneyAmount construction compiles no pattern and allocates no Matcher (that regex
+// dominated the backtest hot path). e.g. "USD" -> true, "us" -> false, "DOLLAR" -> false.
+private fun isCurrencyCode(code: String): Boolean {
+    val trimmed = code.trim()
+    return trimmed.length in 3..5 && trimmed.all { it in 'A'..'Z' || it in 'a'..'z' }
+}
+
 @JvmInline
 value class AccountCurrency(
     val code: String,
 ) {
     init {
-        require(code.trim().matches(Regex("[A-Za-z]{3,5}"))) {
+        require(isCurrencyCode(code)) {
             "account currency must be a 3-5 letter code: $code"
         }
     }
@@ -28,7 +36,7 @@ data class MoneyAmount(
     val currency: String,
 ) {
     init {
-        require(currency.trim().matches(Regex("[A-Za-z]{3,5}"))) {
+        require(isCurrencyCode(currency)) {
             "money currency must be a 3-5 letter code: $currency"
         }
     }

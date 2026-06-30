@@ -3,8 +3,6 @@ package com.qkt.risk
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import java.math.BigDecimal
-import java.time.Instant
-import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -78,12 +76,14 @@ class DailyPnLTracker(
         }
     }
 
-    private fun epochDay(): Long =
-        Instant
-            .ofEpochMilli(clock.now())
-            .atZone(ZoneOffset.UTC)
-            .toLocalDate()
-            .toEpochDay()
+    // UTC epoch-day = floor(epochMillis / millis-per-day). Identical to building an Instant ->
+    // ZonedDateTime(UTC) -> LocalDate -> toEpochDay(), but without the per-tick java.time allocations
+    // that chain incurred on the hot path (rolloverIfNeeded runs every tick).
+    private fun epochDay(): Long = Math.floorDiv(clock.now(), MILLIS_PER_DAY)
+
+    private companion object {
+        const val MILLIS_PER_DAY = 86_400_000L
+    }
 }
 
 /** Value snapshot of one UTC day's realized PnL. */
