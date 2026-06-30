@@ -68,7 +68,15 @@ class BinaryTickFeed(
             "$path:${i + 1}: non-decreasing timestamps required (got $ts, last $lastTimestamp)"
         }
         lastTimestamp = ts
-        return TickAssembler.assemble(
+        return assembleAt(b, i, ts)
+    }
+
+    private fun assembleAt(
+        b: ByteBuffer,
+        i: Int,
+        ts: Long,
+    ): Tick =
+        TickAssembler.assemble(
             symbol = header.symbol,
             timestamp = ts,
             price = decode(b, BinaryTickFormat.COL_PRICE, i),
@@ -79,6 +87,90 @@ class BinaryTickFeed(
             askVolume = decode(b, BinaryTickFormat.COL_ASK_VOLUME, i),
             location = { "$path:${i + 1}" },
         )
+
+    /**
+     * A fill bar's must-feed ticks for tick-resolved fills: of the ticks in `[fromMs, toMs)` after the
+     * opening (the first tick), the ones that set a new extreme of price, ask (`ask ?: price`) or bid
+     * (`bid ?: price`) — seeded from the opening — plus the last tick (the close), in order. Only the
+     * kept ticks are decoded to a [Tick]; the scan itself reads the stored scaled `long`s directly,
+     * which is order-equivalent to comparing the BigDecimals (same scale). The returned ticks carry
+     * their real volume; the caller applies the bar's residual volume to the close.
+     *
+     * e.g. opening 100, then 100, 101, 100.5, 98, close 99 -> the 101 (new high), the 98 (new low) and
+     * the close 99. The first crossing of any static order level is necessarily one of these, so feeding
+     * only them is byte-identical to a full-tick replay.
+     */
+    fun mustFeedRest(
+        fromMs: Long,
+        toMs: Long,
+    ): List<Tick> {
+        val b = buf ?: return emptyList()
+        val lo = lowerBound(b, fromMs)
+        val hi = lowerBound(b, toMs)
+        if (hi - lo <= 1) return emptyList()
+        val last = hi - 1
+        var maxPrice = priceLong(b, lo)
+        var minPrice = maxPrice
+        var maxAsk = buyLong(b, lo)
+        var minBid = sellLong(b, lo)
+        val out = ArrayList<Tick>()
+        for (i in (lo + 1) until last) {
+            var keep = false
+            val p = priceLong(b, i)
+            if (p > maxPrice) {
+                maxPrice = p
+                keep = true
+            }
+            if (p < minPrice) {
+                minPrice = p
+                keep = true
+            }
+            val a = buyLong(b, i)
+            if (a > maxAsk) {
+                maxAsk = a
+                keep = true
+            }
+            val bid = sellLong(b, i)
+            if (bid < minBid) {
+                minBid = bid
+                keep = true
+            }
+            if (keep) out.add(assembleAt(b, i, b.getLong(tsBase + i * Long.SIZE_BYTES)))
+        }
+        out.add(assembleAt(b, last, b.getLong(tsBase + last * Long.SIZE_BYTES)))
+        return out
+    }
+
+    private fun rawLong(
+        b: ByteBuffer,
+        col: Int,
+        i: Int,
+    ): Long {
+        val base = colBase[col]
+        if (base < 0) return BinaryTickFormat.NULL_SENTINEL
+        return b.getLong(base + i * Long.SIZE_BYTES)
+    }
+
+    private fun priceLong(
+        b: ByteBuffer,
+        i: Int,
+    ): Long = rawLong(b, BinaryTickFormat.COL_PRICE, i)
+
+    // buyExecPrice = ask ?: price, sellExecPrice = bid ?: price — same scale, so long order == value order.
+    private fun buyLong(
+        b: ByteBuffer,
+        i: Int,
+    ): Long {
+        val a = rawLong(b, BinaryTickFormat.COL_ASK, i)
+        return if (a == BinaryTickFormat.NULL_SENTINEL) priceLong(b, i) else a
+    }
+
+    private fun sellLong(
+        b: ByteBuffer,
+        i: Int,
+    ): Long {
+        val bid = rawLong(b, BinaryTickFormat.COL_BID, i)
+        return if (bid == BinaryTickFormat.NULL_SENTINEL) priceLong(b, i) else bid
     }
 
     /**

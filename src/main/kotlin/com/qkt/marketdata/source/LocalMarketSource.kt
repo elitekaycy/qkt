@@ -149,6 +149,26 @@ class LocalMarketSource(
         }
     }
 
+    override fun mustFeedRest(
+        symbol: String,
+        fromMs: Long,
+        toMs: Long,
+    ): List<Tick>? {
+        val storeKey = symbol.substringAfter(':')
+        val range = TimeRange(Instant.ofEpochMilli(fromMs), Instant.ofEpochMilli(toMs))
+        // A bar spanning more than one day-file can't be scanned from a single mmap'd feed; let the
+        // caller fall back to decoding the (cross-day) slice. Intraday bars are within one day.
+        val days = daysCovering(range).toList()
+        if (days.size != 1) return null
+        val feed =
+            sliceFeeds.getOrPut(storeKey to days[0]) {
+                val path = store.dayFile(storeKey, days[0])
+                if (path != null && path.toString().endsWith(".bin")) com.qkt.marketdata.BinaryTickFeed(path) else null
+            } ?: return null
+        val rest = feed.mustFeedRest(fromMs, toMs)
+        return rest.map { if (it.symbol == symbol) it else it.copy(symbol = symbol) }
+    }
+
     override fun bars(
         symbol: String,
         window: TimeWindow,

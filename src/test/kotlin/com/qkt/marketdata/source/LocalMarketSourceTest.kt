@@ -172,4 +172,49 @@ class LocalMarketSourceTest {
         val ts = src.ticks("B", range).toList().map { it.timestamp }
         assertThat(ts).containsExactly(day15 + 1000L, day15 + 31_000L)
     }
+
+    @Test
+    fun `mustFeedRest scans a binary day-file and returns the rest extremes plus close`() {
+        val symDir = dir.resolve("symbols").resolve("B")
+        Files.createDirectories(symDir)
+
+        fun t(
+            off: Long,
+            price: String,
+            bid: String,
+            ask: String,
+        ) = TickAssembler.assemble(
+            "B",
+            day15 + off,
+            Money.of(
+                price,
+            ),
+            Money.of("1"),
+            Money.of(bid),
+            Money.of(ask),
+            null,
+            null,
+            {
+                "t"
+            },
+        )
+        // opening, non-extreme, new-high, new-low, close.
+        val ticks =
+            listOf(
+                t(1000, "100", "99.9", "100.1"),
+                t(2000, "100", "99.9", "100.1"),
+                t(3000, "101", "100.9", "101.1"),
+                t(4000, "98", "97.9", "98.1"),
+                t(5000, "99", "98.9", "99.1"),
+            )
+        BinaryTickWriter().write(symDir.resolve("2024-01-15.bin"), "B", ticks)
+        val clock = FixedClock(time = Instant.parse("2024-01-16T00:00:00Z").toEpochMilli())
+        val src = LocalMarketSource(DefaultDataStore(root = dir, clock = clock), clock)
+
+        val got = src.mustFeedRest("MT5:B", day15 + 1000, day15 + 5001)
+
+        assertThat(got).isNotNull
+        assertThat(got!!.map { it.price }).containsExactly(Money.of("101"), Money.of("98"), Money.of("99"))
+        assertThat(got.map { it.symbol }.toSet()).containsExactly("MT5:B")
+    }
 }

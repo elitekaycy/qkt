@@ -49,4 +49,17 @@ interface MarketSource {
     ): Sequence<Tick> =
         ticks(symbol, TimeRange(java.time.Instant.ofEpochMilli(fromMs), java.time.Instant.ofEpochMilli(toMs)))
             .filter { it.timestamp in fromMs until toMs }
+
+    /**
+     * The must-feed ticks of the fill bar `[fromMs, toMs)` for a tick-resolved replay: the ticks after
+     * the opening that set a new price/ask/bid extreme, plus the close (see [com.qkt.marketdata.BinaryTickFeed.mustFeedRest]).
+     * Returns null when this source can't scan them cheaply (the caller then decodes the whole slice and
+     * selects the same set itself). The default returns null; [LocalMarketSource] serves it from the
+     * mmap'd binary day-file by scanning raw columns, decoding only the kept ticks.
+     */
+    fun mustFeedRest(
+        symbol: String,
+        fromMs: Long,
+        toMs: Long,
+    ): List<Tick>? = null
 }

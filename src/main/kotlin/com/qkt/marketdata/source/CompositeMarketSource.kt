@@ -62,6 +62,12 @@ class CompositeMarketSource(
         symbol: String,
         range: TimeRange,
     ): Sequence<Tick> = sourceFor(symbol).ticks(symbol, range)
+
+    override fun mustFeedRest(
+        symbol: String,
+        fromMs: Long,
+        toMs: Long,
+    ): List<Tick>? = sourceFor(symbol).mustFeedRest(symbol, fromMs, toMs)
 }
 
 private class FanInTickFeed(
