@@ -1,8 +1,11 @@
 package com.qkt.research
 
+import com.qkt.app.IntrabarFill
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.buyExecPrice
+import com.qkt.marketdata.sellExecPrice
 import com.qkt.marketdata.source.candleToTicks
 import java.math.BigDecimal
 
@@ -14,23 +17,25 @@ import java.math.BigDecimal
  * earliest pending tick across symbols, so the global tick order matches a full-tick `MergingTickFeed`.
  *
  * Per symbol, per bar: emit the bar's **opening tick** (real), then — once the engine has ingested it
- * (the next merge cycle) — decide the remainder. The opening must go first because a candle closes, and
- * the strategy places orders (including an entry's bracket), on the *next bar's first tick*; deciding
- * before the opening would resolve an entry-and-exit-in-one-bar on synthetic prices. After the opening:
- *  - fill possible -> stream the rest of the real ticks;
- *  - otherwise -> stream the synthetic `low -> high -> close` (no fill can occur, and the candle built
- *    from `realOpen, low, high, close` equals the prebuilt bar).
+ * — decide the remainder via [IntrabarFill]:
+ *  - `SYNTHETIC` -> the synthetic `low -> high -> close` (no fill can occur);
+ *  - `EXTREMES`  -> only the bar's new-extreme ticks plus the close (the first crossing of any static
+ *    level is necessarily a new-extreme tick, and the price extremes carry the candle high/low and the
+ *    mark-to-market excursion — so this is byte-identical while feeding far fewer ticks);
+ *  - `ALL_TICKS` -> the full real slice (a trailing/composite order or a time-based exit could fire on
+ *    a tick the extreme filter would skip).
  */
 class BarResolvedFeed(
     perSymbolBars: Map<String, Sequence<Candle>>,
     sliceProvider: (symbol: String, fromMs: Long, toMs: Long) -> Sequence<Tick>,
-    fillPossible: (symbol: String, low: BigDecimal, high: BigDecimal) -> Boolean,
+    intrabarFill: (symbol: String, low: BigDecimal, high: BigDecimal) -> IntrabarFill,
 ) : TickFeed {
-    private val subs = perSymbolBars.entries.map { (sym, bars) -> SymbolFeed(sym, bars, sliceProvider, fillPossible) }
+    private val subs =
+        perSymbolBars.entries.map { (sym, bars) -> SymbolFeed(sym, bars, sliceProvider, intrabarFill) }
 
     override fun next(): Tick? {
         // The tick emitted last cycle is now ingested; let whichever symbol just emitted its opening
-        // tick resolve its bar's fill-possible decision before we compare frontiers.
+        // tick resolve its bar before we compare frontiers.
         for (s in subs) s.settle()
         val pick = subs.filter { it.peek() != null }.minByOrNull { it.peek()!!.timestamp } ?: return null
         return pick.pop()
@@ -39,13 +44,13 @@ class BarResolvedFeed(
 
 /**
  * One symbol's bar-driven, fill-on-ticks stream. [peek] is the next tick it will emit (its frontier);
- * [pop] emits it; [settle] resolves the pending bar decision once the opening tick has been ingested.
+ * [pop] emits it; [settle] resolves the pending bar once the opening tick has been ingested.
  */
 private class SymbolFeed(
     private val symbol: String,
     bars: Sequence<Candle>,
     private val slice: (String, Long, Long) -> Sequence<Tick>,
-    private val fillPossible: (String, BigDecimal, BigDecimal) -> Boolean,
+    private val intrabarFill: (String, BigDecimal, BigDecimal) -> IntrabarFill,
 ) {
     private val barIter = bars.iterator()
     private var head: Tick? = null
@@ -54,6 +59,7 @@ private class SymbolFeed(
     private var nextSlice: Iterator<Tick>? = null
     private var awaitBar: Candle? = null
     private var awaitSlice: Iterator<Tick>? = null
+    private var awaitOpening: Tick? = null
     private var rest: Iterator<Tick> = emptyList<Tick>().iterator()
 
     init {
@@ -84,9 +90,16 @@ private class SymbolFeed(
 
     fun settle() {
         val bar = awaitBar ?: return
-        rest = if (fillPossible(symbol, bar.low, bar.high)) awaitSlice!! else syntheticRest(bar)
+        val slice = awaitSlice!!
+        rest =
+            when (intrabarFill(symbol, bar.low, bar.high)) {
+                IntrabarFill.SYNTHETIC -> syntheticRest(bar)
+                IntrabarFill.ALL_TICKS -> slice
+                IntrabarFill.EXTREMES -> extremeRest(awaitOpening!!, slice, bar)
+            }
         awaitBar = null
         awaitSlice = null
+        awaitOpening = null
         if (rest.hasNext()) {
             head = rest.next()
             headIsOpening = false
@@ -103,6 +116,7 @@ private class SymbolFeed(
             // Opening emitted; defer the decision to the next cycle (after this tick is ingested).
             awaitBar = nextBar
             awaitSlice = nextSlice
+            awaitOpening = t
             nextBar = null
             nextSlice = null
             head = null
@@ -123,5 +137,54 @@ private class SymbolFeed(
             Tick(bar.symbol, bar.high, bar.startTime + 2 * step),
             Tick(bar.symbol, bar.close, bar.endTime - 1, volume = bar.volume),
         ).iterator()
+    }
+
+    // Keep only the rest-slice ticks that set a new extreme of price (candle high/low + mark-to-market),
+    // ask (buy-side fills) or bid (sell-side fills), seeded from the opening; the close tick is always
+    // fed last carrying the bar's residual volume, so the aggregated candle equals the prebuilt bar.
+    private fun extremeRest(
+        opening: Tick,
+        slice: Iterator<Tick>,
+        bar: Candle,
+    ): Iterator<Tick> {
+        val ticks = slice.asSequence().toList()
+        if (ticks.isEmpty()) return ticks.iterator()
+        var maxPrice = opening.price
+        var minPrice = opening.price
+        var maxAsk = opening.buyExecPrice()
+        var minBid = opening.sellExecPrice()
+        var fedVolume = opening.volume ?: BigDecimal.ZERO
+        val out = ArrayList<Tick>()
+        val lastIndex = ticks.size - 1
+        for (i in ticks.indices) {
+            val t = ticks[i]
+            var keep = false
+            if (t.price > maxPrice) {
+                maxPrice = t.price
+                keep = true
+            }
+            if (t.price < minPrice) {
+                minPrice = t.price
+                keep = true
+            }
+            val a = t.buyExecPrice()
+            if (a > maxAsk) {
+                maxAsk = a
+                keep = true
+            }
+            val b = t.sellExecPrice()
+            if (b < minBid) {
+                minBid = b
+                keep = true
+            }
+            if (i == lastIndex) break // the close is fed below, carrying the residual volume
+            if (keep) {
+                out.add(t)
+                fedVolume = fedVolume.add(t.volume ?: BigDecimal.ZERO)
+            }
+        }
+        val residual = bar.volume.subtract(fedVolume)
+        out.add(ticks[lastIndex].copy(volume = if (residual.signum() >= 0) residual else BigDecimal.ZERO))
+        return out.iterator()
     }
 }
