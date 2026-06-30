@@ -1,10 +1,10 @@
 package com.qkt.research
 
 import com.qkt.common.Money
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import kotlin.random.Random
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
 
 /**
  * Spike for the per-bar level-crossing tick-fills design. Two questions, on realistic dense ticks:
@@ -18,7 +18,9 @@ import kotlin.random.Random
  * crossing parity holds for any series, and the reduction is the structural win.
  */
 class LevelCrossingSpikeTest {
-    private data class Bar(val ticks: List<BigDecimal>)
+    private data class Bar(
+        val ticks: List<BigDecimal>,
+    )
 
     /** B bars of a gold-like random walk, each with a random dense tick count. */
     private fun synthBars(
@@ -121,8 +123,14 @@ class LevelCrossingSpikeTest {
                 var mx = bar.ticks[0]
                 var mn = bar.ticks[0]
                 for (t in bar.ticks) {
-                    if (t > mx) { mx = t; rec++ }
-                    if (t < mn) { mn = t; rec++ }
+                    if (t > mx) {
+                        mx = t
+                        rec++
+                    }
+                    if (t < mn) {
+                        mn = t
+                        rec++
+                    }
                 }
                 totalMustFeed += (rec + 1).toLong() // + close tick
             }
@@ -136,6 +144,8 @@ class LevelCrossingSpikeTest {
         println("avg ticks/fill-bar     : ${totalTicks / fillBars}")
         println("avg must-feed/fill-bar : ${totalMustFeed / fillBars}  (new-extreme ticks + close)")
         println("tick reduction         : ${"%.1f".format(ratio)}x fewer ticks fed to the engine on fill bars")
-        println("find-crossing time     : scan=${scanNanos / 1_000_000}ms search=${searchNanos / 1_000_000}ms (sinks $scanSink/$searchSink)")
+        println(
+            "find-crossing time     : scan=${scanNanos / 1_000_000}ms search=${searchNanos / 1_000_000}ms (sinks $scanSink/$searchSink)",
+        )
     }
 }
