@@ -338,27 +338,36 @@ class OrderManager(
      * replay's decision to decode a bar's ticks; never mutates state or fires a trigger. e.g. a
      * resting buy stop at 100 with a bar `[98, 101]` -> true; with `[96, 99]` -> false.
      */
-    fun canTriggerInBar(
+    fun intrabarFill(
         symbol: String,
         low: BigDecimal,
         high: BigDecimal,
-    ): Boolean {
-        val ids = liveBySymbol[symbol] ?: return false
+    ): IntrabarFill {
+        // Time-based exits (GTD expiry, TimeExit, stack deadline) fire on time, not price, so a
+        // fill/cancel can land on a tick the new-extreme filter would skip. Conservatively bail to a
+        // full real-tick replay whenever any is live.
+        if (gtdLive.isNotEmpty() ||
+            timeExits.isNotEmpty() ||
+            stacks.activeView().any { it.deadlineEpochMs != null }
+        ) {
+            return IntrabarFill.ALL_TICKS
+        }
+        val ids = liveBySymbol[symbol] ?: return IntrabarFill.SYNTHETIC
+        var fillable = false
         for (id in ids) {
             val m = orders[id] ?: continue
             if (m.state.isTerminal) continue
             when (val r = m.request) {
-                is OrderRequest.Stop -> if (stopReached(r.side, low, high, r.stopPrice)) return true
-                is OrderRequest.StopLimit -> if (stopReached(r.side, low, high, r.stopPrice)) return true
-                is OrderRequest.Limit -> if (limitReached(r.side, low, high, r.limitPrice)) return true
-                is OrderRequest.IfTouched -> if (limitReached(r.side, low, high, r.triggerPrice)) return true
-                // Composite/unknown shapes (OTO, StandaloneOCO, trailing stops, ...) nest their
-                // fillable legs or move with the path; we can't cheaply rule them out, so
-                // conservatively resolve them on real ticks.
-                else -> return true
+                is OrderRequest.Stop -> if (stopReached(r.side, low, high, r.stopPrice)) fillable = true
+                is OrderRequest.StopLimit -> if (stopReached(r.side, low, high, r.stopPrice)) fillable = true
+                is OrderRequest.Limit -> if (limitReached(r.side, low, high, r.limitPrice)) fillable = true
+                is OrderRequest.IfTouched -> if (limitReached(r.side, low, high, r.triggerPrice)) fillable = true
+                // Trailing/composite shapes (OTO, OCO, trailing stops, ...) move with the path; their
+                // trigger is not a fixed level we can search for, so resolve the bar on real ticks.
+                else -> return IntrabarFill.ALL_TICKS
             }
         }
-        return false
+        return if (fillable) IntrabarFill.EXTREMES else IntrabarFill.SYNTHETIC
     }
 
     // A stop / stop-limit trigger needs the bar to reach UP to the level for a buy (high >= level),
