@@ -59,6 +59,7 @@ class Backtest(
      */
     private val tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     private val tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
+    private val mustFeedSlicer: ((String, Long, Long) -> List<Tick>?)? = null,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -134,6 +135,7 @@ class Backtest(
             barFills = barFills,
             tickResolvedBars = tickResolvedBars,
             tickSlicer = tickSlicer,
+            mustFeedSlicer = mustFeedSlicer,
         )
 
     fun run(): BacktestResult = toEngine().runToEnd()
@@ -273,6 +275,14 @@ class Backtest(
                 } else {
                     null
                 }
+            // A fill bar's must-feed ticks via the binary store's raw columnar scan; null per bar (or
+            // null lambda) makes BarResolvedFeed fall back to decoding the whole slice and selecting.
+            val mustFeedSlicer: ((String, Long, Long) -> List<Tick>?)? =
+                if (tickFills) {
+                    { sym, fromMs, toMs -> source.mustFeedRest(sym, fromMs, toMs) }
+                } else {
+                    null
+                }
             return Backtest(
                 strategies = strategies,
                 rules = rules,
@@ -298,6 +308,7 @@ class Backtest(
                 barFills = forceBars && !tickFills,
                 tickResolvedBars = tickResolvedBars,
                 tickSlicer = tickSlicer,
+                mustFeedSlicer = mustFeedSlicer,
             )
         }
 

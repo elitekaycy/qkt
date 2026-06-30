@@ -92,6 +92,7 @@ class ReplayEngine(
      */
     tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
+    mustFeedSlicer: ((String, Long, Long) -> List<Tick>?)? = null,
 ) : AutoCloseable {
     private val log = org.slf4j.LoggerFactory.getLogger(ReplayEngine::class.java)
 
@@ -358,7 +359,7 @@ class ReplayEngine(
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
         // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
         if (tickResolvedBars != null && tickSlicer != null) {
-            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill)
+            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill, mustFeedSlicer)
         }
 
         if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && tradedSymbols.isNotEmpty()) {

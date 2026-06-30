@@ -29,9 +29,12 @@ class BarResolvedFeed(
     perSymbolBars: Map<String, Sequence<Candle>>,
     sliceProvider: (symbol: String, fromMs: Long, toMs: Long) -> Sequence<Tick>,
     intrabarFill: (symbol: String, low: BigDecimal, high: BigDecimal) -> IntrabarFill,
+    mustFeedSlicer: ((symbol: String, fromMs: Long, toMs: Long) -> List<Tick>?)? = null,
 ) : TickFeed {
     private val subs =
-        perSymbolBars.entries.map { (sym, bars) -> SymbolFeed(sym, bars, sliceProvider, intrabarFill) }
+        perSymbolBars.entries.map { (sym, bars) ->
+            SymbolFeed(sym, bars, sliceProvider, intrabarFill, mustFeedSlicer)
+        }
 
     override fun next(): Tick? {
         // The tick emitted last cycle is now ingested; let whichever symbol just emitted its opening
@@ -51,6 +54,7 @@ private class SymbolFeed(
     bars: Sequence<Candle>,
     private val slice: (String, Long, Long) -> Sequence<Tick>,
     private val intrabarFill: (String, BigDecimal, BigDecimal) -> IntrabarFill,
+    private val mustFeedSlicer: ((String, Long, Long) -> List<Tick>?)?,
 ) {
     private val barIter = bars.iterator()
     private var head: Tick? = null
@@ -95,7 +99,14 @@ private class SymbolFeed(
             when (intrabarFill(symbol, bar.low, bar.high)) {
                 IntrabarFill.SYNTHETIC -> syntheticRest(bar)
                 IntrabarFill.ALL_TICKS -> slice
-                IntrabarFill.EXTREMES -> extremeRest(awaitOpening!!, slice, bar)
+                IntrabarFill.EXTREMES -> {
+                    // Prefer a raw-columnar must-feed scan (decodes only the kept ticks); fall back to
+                    // selecting over the fully-decoded slice when the day isn't binary-backed.
+                    val selected =
+                        mustFeedSlicer?.invoke(symbol, bar.startTime, bar.endTime)
+                            ?: selectRestExtremes(awaitOpening!!, slice.asSequence().toList())
+                    finalizeVolumes(awaitOpening!!, selected, bar.volume).iterator()
+                }
             }
         awaitBar = null
         awaitSlice = null
@@ -139,25 +150,23 @@ private class SymbolFeed(
         ).iterator()
     }
 
-    // Keep only the rest-slice ticks that set a new extreme of price (candle high/low + mark-to-market),
-    // ask (buy-side fills) or bid (sell-side fills), seeded from the opening; the close tick is always
-    // fed last carrying the bar's residual volume, so the aggregated candle equals the prebuilt bar.
-    private fun extremeRest(
+    // Of the rest ticks (those after the opening), the ones setting a new extreme of price (candle
+    // high/low + mark-to-market), ask (buy-side fills) or bid (sell-side fills) — seeded from the
+    // opening — plus the close (always last). Mirrors BinaryTickFeed.mustFeedRest in BigDecimal form,
+    // and is the fallback when the day isn't binary-backed. Volumes are left as read.
+    private fun selectRestExtremes(
         opening: Tick,
-        slice: Iterator<Tick>,
-        bar: Candle,
-    ): Iterator<Tick> {
-        val ticks = slice.asSequence().toList()
-        if (ticks.isEmpty()) return ticks.iterator()
+        rest: List<Tick>,
+    ): List<Tick> {
+        if (rest.isEmpty()) return rest
         var maxPrice = opening.price
         var minPrice = opening.price
         var maxAsk = opening.buyExecPrice()
         var minBid = opening.sellExecPrice()
-        var fedVolume = opening.volume ?: BigDecimal.ZERO
         val out = ArrayList<Tick>()
-        val lastIndex = ticks.size - 1
-        for (i in ticks.indices) {
-            val t = ticks[i]
+        val last = rest.size - 1
+        for (i in 0 until last) {
+            val t = rest[i]
             var keep = false
             if (t.price > maxPrice) {
                 maxPrice = t.price
@@ -177,14 +186,30 @@ private class SymbolFeed(
                 minBid = b
                 keep = true
             }
-            if (i == lastIndex) break // the close is fed below, carrying the residual volume
-            if (keep) {
-                out.add(t)
-                fedVolume = fedVolume.add(t.volume ?: BigDecimal.ZERO)
-            }
+            if (keep) out.add(t)
         }
-        val residual = bar.volume.subtract(fedVolume)
-        out.add(ticks[lastIndex].copy(volume = if (residual.signum() >= 0) residual else BigDecimal.ZERO))
-        return out.iterator()
+        out.add(rest[last])
+        return out
+    }
+
+    // The must-feed ticks (`[rest extremes..., close]`) with the close carrying the bar's residual
+    // volume (bar total minus the opening's and the fed extremes' volume), so the candle aggregated
+    // from the fed ticks has exactly the prebuilt bar's volume.
+    private fun finalizeVolumes(
+        opening: Tick,
+        selected: List<Tick>,
+        barVolume: BigDecimal,
+    ): List<Tick> {
+        if (selected.isEmpty()) return selected
+        var fedVolume = opening.volume ?: BigDecimal.ZERO
+        val out = ArrayList<Tick>(selected.size)
+        val last = selected.size - 1
+        for (i in 0 until last) {
+            out.add(selected[i])
+            fedVolume = fedVolume.add(selected[i].volume ?: BigDecimal.ZERO)
+        }
+        val residual = barVolume.subtract(fedVolume)
+        out.add(selected[last].copy(volume = if (residual.signum() >= 0) residual else BigDecimal.ZERO))
+        return out
     }
 }

@@ -17,12 +17,27 @@ class BarResolvedFeedTest {
         c: String,
     ) = Candle("X", Money.of(o), Money.of(h), Money.of(l), Money.of(c), Money.of("0"), start, start + 1000)
 
+    private fun barV(
+        start: Long,
+        o: String,
+        h: String,
+        l: String,
+        c: String,
+        v: String,
+    ) = Candle("X", Money.of(o), Money.of(h), Money.of(l), Money.of(c), Money.of(v), start, start + 1000)
+
     private fun drain(f: BarResolvedFeed): List<java.math.BigDecimal> {
         val out = mutableListOf<java.math.BigDecimal>()
         while (true) {
             val t = f.next() ?: break
             out.add(t.price)
         }
+        return out
+    }
+
+    private fun drainTicks(f: BarResolvedFeed): List<Tick> {
+        val out = mutableListOf<Tick>()
+        while (true) out.add(f.next() ?: break)
         return out
     }
 
@@ -78,6 +93,48 @@ class BarResolvedFeedTest {
             Money.of("105"),
             Money.of("101"),
         )
+    }
+
+    @Test
+    fun `EXTREMES bar uses the must-feed slicer when present and applies the close residual`() {
+        val opening = Tick("X", Money.of("100"), 0, volume = Money.of("2"))
+        // The slicer pre-selects the rest extremes + close (real volumes); the feed must emit the
+        // opening + these, with the close carrying the bar's residual volume (not its own).
+        val mustFeed =
+            listOf(
+                Tick("X", Money.of("104"), 300, volume = Money.of("5")),
+                Tick("X", Money.of("101"), 999, volume = Money.of("9")),
+            )
+        val f =
+            BarResolvedFeed(
+                perSymbolBars = mapOf("X" to sequenceOf(barV(0, "100", "105", "99", "101", "20"))),
+                sliceProvider = { _, _, _ -> sequenceOf(opening) },
+                intrabarFill = { _, _, _ -> IntrabarFill.EXTREMES },
+                mustFeedSlicer = { _, _, _ -> mustFeed },
+            )
+        val ticks = drainTicks(f)
+        assertThat(ticks.map { it.price }).containsExactly(Money.of("100"), Money.of("104"), Money.of("101"))
+        // residual = barVolume(20) - opening(2) - extreme(5) = 13
+        assertThat(ticks.last().volume).isEqualTo(Money.of("13"))
+    }
+
+    @Test
+    fun `EXTREMES bar falls back to the decoded slice when the must-feed slicer returns null`() {
+        val real =
+            sequenceOf(
+                Tick("X", Money.of("100"), 0),
+                Tick("X", Money.of("103"), 200), // new max
+                Tick("X", Money.of("102"), 500), // not an extreme -> DROPPED
+                Tick("X", Money.of("101"), 999), // close
+            )
+        val f =
+            BarResolvedFeed(
+                perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "103", "99", "101"))),
+                sliceProvider = { _, _, _ -> real },
+                intrabarFill = { _, _, _ -> IntrabarFill.EXTREMES },
+                mustFeedSlicer = { _, _, _ -> null },
+            )
+        assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("103"), Money.of("101"))
     }
 
     @Test
