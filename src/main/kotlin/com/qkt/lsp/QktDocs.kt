@@ -276,6 +276,59 @@ object QktDocs {
                     "Fraction of peer series whose return over `lookback` bars matches the signal's direction, " +
                         "in [0,1]. Negate a peer (`-usdchf.close`) to flip polarity for inverse pairs.",
                 ),
+            "ANCHORED_RETURN" to
+                doc(
+                    "anchored_return(stream.candle, bucketMinutes)",
+                    "Return since the open of the current `bucketMinutes` UTC-grid cell, resetting each bucket. " +
+                        "Bind on a fine stream (1m) with a coarser bucket (30) to read the forming coarse bar's " +
+                        "intra-bar move, e.g. `beta(gbp.close, eur.close, n) * anchored_return(gbp.candle, 30) - " +
+                        "anchored_return(eur.candle, 30)`.",
+                ),
+            "REOPEN_GAP" to
+                doc(
+                    "reopen_gap(stream.candle, minGapHours)",
+                    "Signed price gap opened across a trading break longer than `minGapHours` (the weekend): the " +
+                        "reopen open minus the last close before the break. Latched at the reopen, held until the " +
+                        "next one. Size it against `atr` to isolate large gaps.",
+                ),
+            "REOPEN_GAP_ORIGIN" to
+                doc(
+                    "reopen_gap_origin(stream.candle, minGapHours)",
+                    "The pre-break close a full fill of the reopen gap returns to — use as a protective-stop price " +
+                        "level for a gap-continuation trade. Companion to `reopen_gap` / `gap_fill_fraction`.",
+                ),
+            "GAP_FILL_FRACTION" to
+                doc(
+                    "gap_fill_fraction(stream.candle, minGapHours)",
+                    "How far price has retraced from the reopen open back toward the gap origin, in gap units: 0 at " +
+                        "the reopen, 1 at a full fill. Gate a continuation on a non-fill, e.g. `< 0.5`.",
+                ),
+            "FAILED_BREAK_HIGH" to
+                doc(
+                    "failed_break_high(stream.candle, rangeLen, reclaimBars, armBars)",
+                    "1 for `armBars` bars after the high of the prior `rangeLen` bars is pierced and then a bar " +
+                        "within `reclaimBars` closes back inside — a trapped-breakout fakeout. A pierce that keeps " +
+                        "closing outside is a real break and never arms.",
+                ),
+            "FAILED_BREAK_LOW" to
+                doc(
+                    "failed_break_low(stream.candle, rangeLen, reclaimBars, armBars)",
+                    "The downside mirror of `failed_break_high`: 1 for `armBars` bars after the prior-`rangeLen` low " +
+                        "is pierced and reclaimed (a bar closes back above it) within `reclaimBars`.",
+                ),
+            "IB_DEFENDED_HIGH" to
+                doc(
+                    "ib_defended_high(stream.candle, sessionStartHour, ibMinutes)",
+                    "1 once the session's Initial-Balance high (high of the first `ibMinutes` from " +
+                        "`sessionStartHour` UTC) has been tested and held — a bar traded through it but closed back " +
+                        "inside — earlier this session; else 0. Resets daily. Pair with `session_range_high`.",
+                ),
+            "IB_DEFENDED_LOW" to
+                doc(
+                    "ib_defended_low(stream.candle, sessionStartHour, ibMinutes)",
+                    "The downside mirror of `ib_defended_high`: 1 once the session's Initial-Balance low has been " +
+                        "tested and held earlier this session. Resets daily. Pair with `session_range_low`.",
+                ),
         )
 
     private val FUNCTIONS: Map<String, String> =
