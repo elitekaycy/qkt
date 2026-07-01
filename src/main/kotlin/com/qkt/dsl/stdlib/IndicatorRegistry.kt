@@ -22,8 +22,10 @@ import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RegressionSlope
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
+import com.qkt.indicators.catalog.RunLength
 import com.qkt.indicators.catalog.SMA
 import com.qkt.indicators.catalog.SeasonalRange
+import com.qkt.indicators.catalog.SeasonalRangeStdev
 import com.qkt.indicators.catalog.SessionMomentum
 import com.qkt.indicators.catalog.SessionRange
 import com.qkt.indicators.catalog.SessionVwap
@@ -151,6 +153,9 @@ object IndicatorRegistry {
                 IndicatorSpec("LAG", IndicatorInput.NUMERIC_SERIES, arity = 2) { args ->
                     Lag(n = args[0].toInt())
                 },
+            // ---- same-direction run length (signed streak counter) ----
+            "RUNLENGTH" to
+                IndicatorSpec("RUNLENGTH", IndicatorInput.NUMERIC_SERIES, arity = 1) { RunLength() },
             // ---- cross-series (two-input) ----
             "CORRELATION" to
                 IndicatorSpec("CORRELATION", IndicatorInput.NUMERIC_SERIES, arity = 3, seriesCount = 2) { args ->
@@ -418,10 +423,14 @@ object IndicatorRegistry {
                         override val warmupBars: Int = pp.warmupBars
                     }
                 },
-            // ---- Hour-of-day volatility seasonality (candle; mean range per UTC hour) ----
+            // ---- Hour-of-day volatility seasonality (candle; mean/stdev range per UTC hour) ----
             "SEASONAL_RANGE" to
                 IndicatorSpec("SEASONAL_RANGE", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
                     SeasonalRange(window = args[0].toInt())
+                },
+            "SEASONAL_RANGE_STDEV" to
+                IndicatorSpec("SEASONAL_RANGE_STDEV", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    SeasonalRangeStdev(window = args[0].toInt())
                 },
             // ---- Session-restricted momentum (candle; in-window drift over nDays) ----
             "SESSION_MOMENTUM" to
