@@ -374,6 +374,16 @@ This section will grow when Phase 5 begins.
 - **Comments.** Default to none. Only when the **why** is non-obvious — a workaround, a subtle invariant, a constraint that won't survive a casual reader. Never comment to describe what the next line of code does.
 - **No dead code.** Unused imports, unused functions, commented-out blocks all get deleted before commit. `git` remembers; the file shouldn't.
 
+### ktlint — clean from the first line, not fixed at the end
+
+ktlint is the enforced formatter for every `.kt` file (main and test). Ktlint-compliance is part of **done**, exactly like a passing test — not a cleanup pass afterward. Write it clean as you type; don't accumulate violations and reformat later.
+
+- **TDD loop is RED → GREEN → ktlint-clean → refactor.** When you write the failing test, write it ktlint-clean. When you write the passing code, write it ktlint-clean. A cycle isn't GREEN until both the assertion passes *and* ktlint is silent. Treat a ktlint violation the same as a failing test: fix it before moving on.
+- **The two commands.** `./gradlew ktlintFormat` auto-fixes what it can (import order, spacing, trailing commas, wildcard-import expansion); `./gradlew ktlintCheck` verifies and is what CI runs. Format, then check, as part of the same beat you run the test.
+- **Know the rules that bite before you write, so there's nothing to fix.** No wildcard imports; imports grouped and ordered; trailing commas on multi-line argument/parameter lists; 4-space indent, no tabs; max line length is enforced (wrap long signatures and string concatenations — see the `error("… " +` continuation style already in `IndicatorRegistry`/`ExprCompiler`); one blank line between declarations, none at file start/end; `*` in a `when`/expression spaced as an operator.
+- **CI gate.** `dev`'s essentials CI runs ktlint (see §2) — a violation red-fails the build the same as a compile error. There is no "reformat in a follow-up PR."
+- **Generated/vendored code** is the only exception, and it lives under an explicit ktlint exclude — never hand-disable a rule inline to dodge a violation in code you wrote.
+
 ---
 
 ## 13. Living-document protocol
