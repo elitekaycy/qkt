@@ -4,6 +4,7 @@ import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
 import com.qkt.indicators.catalog.ADX
 import com.qkt.indicators.catalog.ATR
+import com.qkt.indicators.catalog.AnchoredReturn
 import com.qkt.indicators.catalog.Beta
 import com.qkt.indicators.catalog.BollingerBands
 import com.qkt.indicators.catalog.CCI
@@ -11,7 +12,9 @@ import com.qkt.indicators.catalog.Correlation
 import com.qkt.indicators.catalog.DEMA
 import com.qkt.indicators.catalog.EMA
 import com.qkt.indicators.catalog.EfficiencyRatio
+import com.qkt.indicators.catalog.FailedBreak
 import com.qkt.indicators.catalog.HMA
+import com.qkt.indicators.catalog.IbDefended
 import com.qkt.indicators.catalog.KeltnerChannels
 import com.qkt.indicators.catalog.Lag
 import com.qkt.indicators.catalog.MACD
@@ -20,6 +23,7 @@ import com.qkt.indicators.catalog.PercentileRank
 import com.qkt.indicators.catalog.PivotPoints
 import com.qkt.indicators.catalog.RSI
 import com.qkt.indicators.catalog.RegressionSlope
+import com.qkt.indicators.catalog.ReopenGap
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.RunLength
@@ -440,6 +444,68 @@ object IndicatorRegistry {
                         endHour = args[1].toInt(),
                         nDays = args[2].toInt(),
                     )
+                },
+            // ---- Return since the current time-bucket open (candle; resets each bucket) ----
+            "ANCHORED_RETURN" to
+                IndicatorSpec("ANCHORED_RETURN", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    AnchoredReturn(bucketMinutes = args[0].toInt())
+                },
+            // ---- Session-boundary reopen gap (candle; size / origin / fill-fraction) ----
+            "REOPEN_GAP" to
+                IndicatorSpec("REOPEN_GAP", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    ReopenGap(minGapHours = args[0].toInt())
+                },
+            "REOPEN_GAP_ORIGIN" to
+                IndicatorSpec("REOPEN_GAP_ORIGIN", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    val g = ReopenGap(minGapHours = args[0].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = g.update(input)
+
+                        override fun value(): BigDecimal? = g.origin()
+
+                        override val isReady: Boolean get() = g.isReady
+                        override val warmupBars: Int = g.warmupBars
+                    }
+                },
+            "GAP_FILL_FRACTION" to
+                IndicatorSpec("GAP_FILL_FRACTION", IndicatorInput.CANDLE_SERIES, arity = 2) { args ->
+                    val g = ReopenGap(minGapHours = args[0].toInt())
+                    object : Indicator<Candle> {
+                        override fun update(input: Candle) = g.update(input)
+
+                        override fun value(): BigDecimal? = g.fillFraction()
+
+                        override val isReady: Boolean get() = g.isReady
+                        override val warmupBars: Int = g.warmupBars
+                    }
+                },
+            // ---- Failed-breakout (fakeout) latch (candle; pierce then reclaim, armed M bars) ----
+            "FAILED_BREAK_HIGH" to
+                IndicatorSpec("FAILED_BREAK_HIGH", IndicatorInput.CANDLE_SERIES, arity = 4) { args ->
+                    FailedBreak(
+                        rangeLen = args[0].toInt(),
+                        reclaimBars = args[1].toInt(),
+                        armBars = args[2].toInt(),
+                        high = true,
+                    )
+                },
+            "FAILED_BREAK_LOW" to
+                IndicatorSpec("FAILED_BREAK_LOW", IndicatorInput.CANDLE_SERIES, arity = 4) { args ->
+                    FailedBreak(
+                        rangeLen = args[0].toInt(),
+                        reclaimBars = args[1].toInt(),
+                        armBars = args[2].toInt(),
+                        high = false,
+                    )
+                },
+            // ---- Initial-Balance prior-defense memory (candle; tested-and-held earlier this session) ----
+            "IB_DEFENDED_HIGH" to
+                IndicatorSpec("IB_DEFENDED_HIGH", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
+                    IbDefended(sessionStartHour = args[0].toInt(), ibMinutes = args[1].toInt(), high = true)
+                },
+            "IB_DEFENDED_LOW" to
+                IndicatorSpec("IB_DEFENDED_LOW", IndicatorInput.CANDLE_SERIES, arity = 3) { args ->
+                    IbDefended(sessionStartHour = args[0].toInt(), ibMinutes = args[1].toInt(), high = false)
                 },
             // ---- Donchian rolling extremes ----
             // Rules evaluate after the closing bar has already been pushed into every
