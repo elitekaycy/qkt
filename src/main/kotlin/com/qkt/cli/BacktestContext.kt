@@ -348,17 +348,29 @@ class BacktestContext private constructor(
                             .minByOrNull { w -> w.durationMs }
                             ?.let { sym to it }
                     }.toMap()
+            // --bar-tf pins the fill-resolution feed to a specific built tf (e.g. 1m) instead of the
+            // coarsest divisor: finer intrabar fills (fewer bars span both SL and TP) for more cost than
+            // coarse bars, less than ticks. Must divide each strategy's declared tf so rollup stays exact.
+            val barTfOverride = args.option("bar-tf")?.let { TimeWindow.parse(it) }
             val barWindows: Map<String, TimeWindow> =
                 if (!forceBars) {
                     finestDeclared
                 } else {
                     finestDeclared.mapValues { (sym, declared) ->
                         val (broker, bare) = brokerAndBare(sym)
-                        binaryBarStore
-                            .builtTimeframes(broker, bare)
-                            .filter { declared.durationMs % it.durationMs == 0L }
-                            .maxByOrNull { it.durationMs }
-                            ?: declared // no usable built tf — let the guardrail below report it
+                        if (barTfOverride != null) {
+                            require(declared.durationMs % barTfOverride.durationMs == 0L) {
+                                "--bar-tf ${barTfOverride.canonicalSpec()} must divide $sym's " +
+                                    "declared ${declared.canonicalSpec()}"
+                            }
+                            barTfOverride
+                        } else {
+                            binaryBarStore
+                                .builtTimeframes(broker, bare)
+                                .filter { declared.durationMs % it.durationMs == 0L }
+                                .maxByOrNull { it.durationMs }
+                                ?: declared // no usable built tf — let the guardrail below report it
+                        }
                     }
                 }
             if (forceBars) {
