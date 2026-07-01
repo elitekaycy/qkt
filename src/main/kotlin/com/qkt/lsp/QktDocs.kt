@@ -192,6 +192,13 @@ object QktDocs {
                         "`lag(close, 21) - lag(close, 252)` to measure a trend that ends 21 bars in the past. " +
                         "Null until n+1 bars seen.",
                 ),
+            "RUNLENGTH" to
+                doc(
+                    "runlength(value)",
+                    "Signed length of the current same-direction run: +k after k consecutive rises, -k after k " +
+                        "consecutive falls, 0 when the last change was flat (a flat value breaks the run). No " +
+                        "lookback — the streak accumulates from the last direction change. Null until one prior value.",
+                ),
             "VARIANCE_RATIO" to
                 doc(
                     "variance_ratio(value, k, lookback)",
@@ -247,6 +254,14 @@ object QktDocs {
                     "Trailing mean realized range (high - low) of the last `window` bars sharing the current " +
                         "bar's UTC hour — a per-hour vol baseline. Divide the bar's range by it for an excess-vol " +
                         "ratio that flags shock vol, not clock vol. Null until `window` bars of that hour are seen.",
+                ),
+            "SEASONAL_RANGE_STDEV" to
+                doc(
+                    "seasonal_range_stdev(stream.candle, window)",
+                    "Trailing sample standard deviation of realized range (high - low) across the last `window` bars " +
+                        "sharing the current bar's UTC hour — the dispersion companion to `seasonal_range`. Use " +
+                        "`((high - low) - seasonal_range(...)) / seasonal_range_stdev(...)` for an hour-relative " +
+                        "z-score. Needs `window` > 1; null until `window` bars of that hour are seen.",
                 ),
             "SESSION_MOMENTUM" to
                 doc(
