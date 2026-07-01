@@ -312,6 +312,33 @@ THEN BUY gold
 
 It is `null` for a given hour until `<window>` earlier bars of that hour have been seen.
 
+`seasonal_range_stdev(<stream>.candle, <window>)` is the companion sample standard deviation (n-1 divisor) of the same per-hour range window. Together they z-score a bar against its own hour, so the trigger fires on a bar that is wide relative to the normal *spread* of its hour, not just its mean:
+
+```qkt
+-- Continue an outlier that clears ~2.5 sigma above its hour's own range baseline.
+LET hourz = ((gold.high - gold.low) - seasonal_range(gold.candle, 20)) / seasonal_range_stdev(gold.candle, 20)
+WHEN hourz > 2.5 AND POSITION.gold = 0
+THEN BUY gold
+```
+
+`seasonal_range_stdev` needs `<window>` > 1 (the sample stddev needs at least two occurrences) and is `null` for a given hour until that many earlier bars of the hour have been seen.
+
+### Run length (same-direction streak)
+
+```qkt
+runlength(<value>)   -- signed count of the current same-direction run in the series
+```
+
+`runlength` is the signed length of the current run of same-direction changes: `+k` after `k` consecutive rises, `-k` after `k` consecutive falls, and `0` when the last change was flat (an unchanged value breaks the run). There is no lookback window — the streak accumulates from the last direction change. Fed `<stream>.close` on a daily stream it counts a daily-close streak; fed any expression it counts that expression's run.
+
+```qkt
+-- Continuation: enter with a 4+ up-close streak, but stand down past an 8-close blow-off.
+WHEN runlength(eur.close) >= 4 AND runlength(eur.close) <= 8 AND POSITION.eur = 0
+THEN BUY eur
+```
+
+It is `null` until the first change is seen (one prior value is needed).
+
 ### Session momentum
 
 ```qkt
@@ -489,6 +516,8 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `session_range_*(stream, …)` | until the first window completes |
 | `pivot_p`/`pivot_r1`/`pivot_s1(stream.candle)` | until the first UTC day completes |
 | `seasonal_range(stream.candle, N)` | N bars of the current bar's UTC hour |
+| `seasonal_range_stdev(stream.candle, N)` | N bars of the current bar's UTC hour (N > 1) |
+| `runlength(value)` | 1 bar (needs one prior value) |
 | `session_momentum(stream.candle, sh, eh, N)` | until N in-window days complete |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
