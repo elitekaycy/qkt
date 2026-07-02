@@ -46,9 +46,10 @@ class ExprCompiler(
         ruleAlias: String? = null,
     ): CompiledExpr =
         when (expr) {
-            is NumLit -> CompiledExpr { Value.Num(expr.value) }
-            is BoolLit -> CompiledExpr { Value.Bool(expr.value) }
-            is StringLit -> CompiledExpr { Value.Str(expr.value) }
+            // Literals box once at compile time, not per evaluation.
+            is NumLit -> Value.Num(expr.value).let { v -> CompiledExpr { v } }
+            is BoolLit -> Value.of(expr.value).let { v -> CompiledExpr { v } }
+            is StringLit -> Value.Str(expr.value).let { v -> CompiledExpr { v } }
             is BinaryOp -> compileBinary(expr, ruleAlias)
             is UnaryOp -> compileUnary(expr, ruleAlias)
             is CmpOp -> compileCmp(expr, ruleAlias)
@@ -119,7 +120,7 @@ class ExprCompiler(
             // A non-wrapping window is a simple range; a wrapping one (start later than end,
             // e.g. Dec 1 -> Jan 31) matches dates at or after the start OR at or before the end.
             val hit = if (start <= end) cur in start..end else cur >= start || cur <= end
-            Value.Bool(hit)
+            Value.of(hit)
         }
     }
 
@@ -137,7 +138,7 @@ class ExprCompiler(
             // A non-wrapping window is a simple range; a wrapping one (start later than end, e.g.
             // 23:00 -> 01:00) matches times at or after the start OR at or before the end.
             val hit = if (start <= end) cur in start..end else cur >= start || cur <= end
-            Value.Bool(hit)
+            Value.of(hit)
         }
     }
 
@@ -156,7 +157,7 @@ class ExprCompiler(
                     java.time.DayOfWeek.SUNDAY -> lastDay.minusDays(2)
                     else -> lastDay
                 }
-            Value.Bool(date == lastTradingDay)
+            Value.of(date == lastTradingDay)
         }
 
     private fun compileAggregate(
@@ -203,11 +204,17 @@ class ExprCompiler(
         require(FuncRegistry.has(call.name)) { "Unknown function: ${call.name}" }
         val args = call.args.map { compile(it, ruleAlias) }
         return CompiledExpr { ctx ->
-            val values = args.map { it.evaluate(ctx) }
-            if (values.any { it !is Value.Num }) {
+            // One pre-sized list instead of two intermediate .map lists per evaluation.
+            val nums = ArrayList<java.math.BigDecimal>(args.size)
+            var undefined = false
+            for (i in args.indices) {
+                val v = args[i].evaluate(ctx)
+                if (v is Value.Num) nums.add(v.v) else undefined = true
+            }
+            if (undefined) {
                 Value.Undefined
             } else {
-                val result = FuncRegistry.invoke(call.name, values.map { (it as Value.Num).v })
+                val result = FuncRegistry.invoke(call.name, nums)
                 if (result == null) Value.Undefined else Value.Num(result)
             }
         }
@@ -236,7 +243,9 @@ class ExprCompiler(
         expr: CaseWhen,
         ruleAlias: String?,
     ): CompiledExpr {
-        val branches = expr.branches.map { compile(it.first, ruleAlias) to compile(it.second, ruleAlias) }
+        // Parallel arrays: a Pair list destructures (allocating an iterator) per evaluation.
+        val conds = expr.branches.map { compile(it.first, ruleAlias) }.toTypedArray()
+        val bodies = expr.branches.map { compile(it.second, ruleAlias) }.toTypedArray()
         val elseE = compile(expr.elseExpr, ruleAlias)
         return CompiledExpr { ctx ->
             // Evaluate EVERY branch condition each bar — not just up to the first match — so a
@@ -245,9 +254,9 @@ class ExprCompiler(
             // bar behind, misdetecting crossings (#390 DSL-17). The result is still the first
             // matching branch's body (or the else).
             var chosen: CompiledExpr? = null
-            for ((cond, body) in branches) {
-                val cv = cond.evaluate(ctx)
-                if (chosen == null && cv is Value.Bool && cv.v) chosen = body
+            for (i in conds.indices) {
+                val cv = conds[i].evaluate(ctx)
+                if (chosen == null && cv is Value.Bool && cv.v) chosen = bodies[i]
             }
             (chosen ?: elseE).evaluate(ctx)
         }
@@ -272,7 +281,7 @@ class ExprCompiler(
                         break
                     }
                 }
-                Value.Bool(hit)
+                Value.of(hit)
             }
         }
     }
@@ -285,7 +294,7 @@ class ExprCompiler(
         return CompiledExpr { ctx ->
             val v = inner.evaluate(ctx)
             val isUndef = v is Value.Undefined
-            Value.Bool(if (expr.negated) !isUndef else isUndef)
+            Value.of(if (expr.negated) !isUndef else isUndef)
         }
     }
 
@@ -303,7 +312,7 @@ class ExprCompiler(
             if (vv !is Value.Num || lov !is Value.Num || hiv !is Value.Num) {
                 Value.Undefined
             } else {
-                Value.Bool(vv.v >= lov.v && vv.v <= hiv.v)
+                Value.of(vv.v >= lov.v && vv.v <= hiv.v)
             }
         }
     }
@@ -783,9 +792,9 @@ class ExprCompiler(
             val lv = l.evaluate(ctx)
             val rv = r.evaluate(ctx)
             when {
-                lv is Value.Bool && !lv.v -> Value.Bool(false)
-                rv is Value.Bool && !rv.v -> Value.Bool(false)
-                lv is Value.Bool && rv is Value.Bool -> Value.Bool(true)
+                lv is Value.Bool && !lv.v -> Value.of(false)
+                rv is Value.Bool && !rv.v -> Value.of(false)
+                lv is Value.Bool && rv is Value.Bool -> Value.of(true)
                 else -> Value.Undefined
             }
         }
@@ -798,9 +807,9 @@ class ExprCompiler(
             val lv = l.evaluate(ctx)
             val rv = r.evaluate(ctx)
             when {
-                lv is Value.Bool && lv.v -> Value.Bool(true)
-                rv is Value.Bool && rv.v -> Value.Bool(true)
-                lv is Value.Bool && rv is Value.Bool -> Value.Bool(false)
+                lv is Value.Bool && lv.v -> Value.of(true)
+                rv is Value.Bool && rv.v -> Value.of(true)
+                lv is Value.Bool && rv is Value.Bool -> Value.of(false)
                 else -> Value.Undefined
             }
         }
@@ -819,7 +828,7 @@ class ExprCompiler(
             UnOp.NOT ->
                 CompiledExpr { ctx ->
                     val v = a.evaluate(ctx)
-                    if (v !is Value.Bool) Value.Undefined else Value.Bool(!v.v)
+                    if (v !is Value.Bool) Value.Undefined else Value.of(!v.v)
                 }
         }
     }
@@ -837,7 +846,7 @@ class ExprCompiler(
                 Value.Undefined
             } else {
                 val c = lv.v.compareTo(rv.v)
-                Value.Bool(
+                Value.of(
                     when (op.op) {
                         Cmp.GT -> c > 0
                         Cmp.LT -> c < 0

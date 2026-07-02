@@ -15,8 +15,12 @@ class WarmupGate(
 ) {
     private val counts: MutableMap<String, Int> = mutableMapOf()
 
+    // Warmth is monotonic (counts only grow), so once a set is warm it stays warm — latch it
+    // and skip the per-alias walk that otherwise runs on every rule evaluation forever.
+    private val warmSets: MutableSet<Set<String>> = HashSet()
+
     fun onClosedCandle(alias: String) {
-        counts.merge(alias, 1, Int::plus)
+        counts[alias] = (counts[alias] ?: 0) + 1
     }
 
     /**
@@ -29,7 +33,7 @@ class WarmupGate(
         count: Int,
     ) {
         if (count <= 0) return
-        counts.merge(alias, count, Int::plus)
+        counts[alias] = (counts[alias] ?: 0) + count
     }
 
     fun isWarm(alias: String): Boolean {
@@ -38,5 +42,10 @@ class WarmupGate(
         return seen >= required
     }
 
-    fun isWarm(aliases: Set<String>): Boolean = aliases.all(::isWarm)
+    fun isWarm(aliases: Set<String>): Boolean {
+        if (aliases in warmSets) return true
+        val warm = aliases.all(::isWarm)
+        if (warm) warmSets.add(aliases)
+        return warm
+    }
 }
