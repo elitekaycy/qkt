@@ -284,6 +284,38 @@ Things that must remain true regardless of phase. Violations require a design di
 - **No backwards compatibility cruft.** Phase 1 has no production users. We do not maintain compatibility shims, deprecated aliases, or transitional code paths. Refactors break things, and that's fine.
 - **Strategies do not see brokers.** A strategy that imports `com.qkt.broker.*` is a design bug. The dependency arrow goes one way only — see the architecture spec for each phase.
 
+The 2026-07-02 parity audit traced nearly every backtest↔live divergence to violations of
+four structural rules. They are invariants now:
+
+- **Mode symmetry is explicit, never accidental.** Backtest and live share one pipeline
+  (`TradingPipeline`); that symmetry is the parity contract. Any component wired in only
+  one mode — a subscriber, a risk rule, a config consumer — is a *declared divergence*:
+  wire it in both `LiveSession` and `ReplayEngine`, or add it to the divergence catalog
+  (`docs/parity/backtest-vs-live.md`) in the same PR, with the reason. A behavior that
+  exists in one assembly file and not the other is the single largest historical source
+  of parity bugs (a risk layer that only ran in backtest; a halt kill-switch that only
+  ran live). If you touch one wiring path, open the other and check.
+- **Translate at exactly one boundary per venue.** Each external system gets one
+  translation layer that owns units, volume quantization, time-base normalization, and
+  cost attachment — and each engine-facing event type is constructed in exactly one
+  function. Never normalize (or skip normalizing) at individual call sites: scattered
+  translation is how live fills booked unquantized volumes while the wire was quantized,
+  and how three code paths disagreed about whether `time_msc` is UTC. If an event can be
+  built in three places, one of them is wrong.
+- **One writer per derived quantity.** Equity, positions, realized PnL, marks: each is
+  computed by one service per event and read by everyone else. A consumer that recomputes
+  a quantity a tracker already owns will eventually disagree with it (and pay for the
+  recompute per tick — see §9).
+- **Lifecycles are sealed state machines; linkage lives in the type.** Where an execution
+  object has a lifecycle (order → bracket → exits, leg → close, trail arm → fire), model
+  the states as a sealed hierarchy and put the relationships in fields — a bracket whose
+  exit ids are fields cannot orphan its trail the way a side map someone forgot to write
+  can. Exhaustive `when` then forces every consumer to handle a new state at compile time.
+- **A claim without a test is unproven.** Any parity, fidelity, or byte-identical claim in
+  docs or KDoc must cite the test that enforces it. A doc row marked FIXED links its
+  regression test or reads UNPROVEN — the audit's most repeated finding was documentation
+  claims exceeding what any test actually pinned.
+
 ---
 
 ## 8. Quant-system principles (do / don't)
