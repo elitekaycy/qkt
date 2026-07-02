@@ -233,6 +233,49 @@ class MT5Client(
         }
     }
 
+    /**
+     * Close a position WITHOUT blocking the caller — the async sibling of [closePosition],
+     * with the same contract as [placeOrderAsync]: [onResult] runs on an OkHttp dispatcher
+     * thread with the parsed response, or a synthetic retcode -1 failure. Not retried.
+     * Closes ride the engine thread (CLOSE rules, trailing stops, flattens), where a
+     * blocking gateway round-trip stalls tick processing exactly when exits matter.
+     */
+    fun closePositionAsync(
+        ticket: Long,
+        volume: BigDecimal? = null,
+        onResult: (MT5OrderResponse) -> Unit,
+    ) {
+        val body = encodeClosePosition(ticket, volume).toRequestBody(JSON_MEDIA)
+        val request =
+            Request
+                .Builder()
+                .url("$gatewayUrl/close_position")
+                .post(body)
+                .build()
+        http.newCall(request).enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    e: java.io.IOException,
+                ) {
+                    onResult(errorResponse("IO error: ${e.message}"))
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    response.use {
+                        val raw = it.body?.string().orEmpty()
+                        val result =
+                            if (it.isSuccessful) parseOrderResponse(raw) else errorResponse("HTTP ${it.code}: $raw")
+                        onResult(result)
+                    }
+                }
+            },
+        )
+    }
+
     private fun encodeClosePosition(
         ticket: Long,
         volume: BigDecimal?,
@@ -423,6 +466,51 @@ class MT5Client(
             }
             return raw
         }
+    }
+
+    /**
+     * Cancel a pending order WITHOUT blocking the caller — the async sibling of [cancelOrder].
+     * [onResult] receives the raw body on 2xx, an empty string on a non-2xx (logged, matching
+     * [cancelOrder]), or null when the send itself failed with an IO error. OCO sibling-cancels
+     * and the halt kill-switch's per-symbol sweep run on the engine thread, where serialized
+     * blocking cancels stall it exactly when it must stop fast.
+     */
+    fun cancelOrderAsync(
+        ticket: Long,
+        onResult: (String?) -> Unit,
+    ) {
+        val request =
+            Request
+                .Builder()
+                .url("$gatewayUrl/orders/$ticket")
+                .delete()
+                .build()
+        http.newCall(request).enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    e: java.io.IOException,
+                ) {
+                    log.warn("MT5Client cancelOrder($ticket) IO error: ${e.message}")
+                    onResult(null)
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    response.use {
+                        val raw = it.body?.string().orEmpty()
+                        if (!it.isSuccessful) {
+                            log.warn("MT5Client cancelOrder($ticket) HTTP ${it.code}: $raw")
+                            onResult("")
+                        } else {
+                            onResult(raw)
+                        }
+                    }
+                }
+            },
+        )
     }
 
     /**
