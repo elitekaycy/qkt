@@ -42,7 +42,18 @@ class RiskState(
     val drawdownTracker: DrawdownTracker = DrawdownTracker(equityTracker)
     val dailyPnLTracker: DailyPnLTracker = DailyPnLTracker(clock)
     val dailyDrawdownTracker: DailyDrawdownTracker =
-        DailyDrawdownTracker(clock, dailyDdBasis, initialBalance, pnl, strategyPnL)
+        DailyDrawdownTracker(
+            clock,
+            dailyDdBasis,
+            initialBalance,
+            pnl,
+            strategyPnL,
+            // onTick/onFill refresh the equity tracker before halt rules evaluate, so these
+            // cached reads carry the same value the tracker would recompute — minus a second
+            // full unrealized-PnL walk per tick.
+            currentGlobalEquity = equityTracker::currentEquity,
+            currentStrategyEquity = equityTracker::currentEquityFor,
+        )
 
     @Volatile
     var halted: Boolean = false
@@ -119,19 +130,19 @@ class RiskState(
      * [RiskEngine] before each halt-rule evaluation.
      */
     fun clearExpiredDailyHalts() {
+        if (!halted && haltedStrategies.isEmpty()) return
         val today = epochDay()
         if (halted && haltScope == HaltScope.DAILY && haltEpochDay < today) resume()
+        if (haltedStrategies.isEmpty()) return
         for ((id, info) in haltedStrategies) {
             if (info.scope == HaltScope.DAILY && info.epochDay < today) resumeStrategy(id)
         }
     }
 
-    private fun epochDay(): Long =
-        java.time.Instant
-            .ofEpochMilli(clock.now())
-            .atZone(java.time.ZoneOffset.UTC)
-            .toLocalDate()
-            .toEpochDay()
+    // UTC epoch-day without the per-call Instant/ZonedDateTime/LocalDate chain — this runs on
+    // every tick via RiskEngine.evaluateHaltRules. floorDiv matches toEpochDay for all epoch
+    // millis, including pre-1970.
+    private fun epochDay(): Long = Math.floorDiv(clock.now(), MILLIS_PER_DAY)
 
     @Synchronized
     fun resume() {
@@ -199,6 +210,8 @@ class RiskState(
     }
 
     companion object {
+        private const val MILLIS_PER_DAY = 86_400_000L
+
         fun noOp(clock: Clock = SystemClock()): RiskState {
             val sequencer = MonotonicSequenceGenerator()
             val bus = EventBus(clock, sequencer)

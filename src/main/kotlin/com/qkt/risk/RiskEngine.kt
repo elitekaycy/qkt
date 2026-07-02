@@ -57,7 +57,9 @@ class RiskEngine(
         if (!riskState.warmupComplete) return
         riskState.clearExpiredDailyHalts()
         for (rule in haltRules) {
-            runCatching {
+            // Plain try/catch: this runs per rule on every tick, and runCatching's two capturing
+            // lambdas allocated on each pass.
+            try {
                 when (val decision = rule.evaluate(riskState)) {
                     HaltDecision.Continue -> Unit
                     is HaltDecision.Halt ->
@@ -67,7 +69,9 @@ class RiskEngine(
                             riskState.halt(decision.reason, decision.scope)
                         }
                 }
-            }.onFailure { log.warn("HaltRule {} threw: {}", rule::class.simpleName, it.message) }
+            } catch (e: Exception) {
+                log.warn("HaltRule {} threw: {}", rule::class.simpleName, e.message)
+            }
         }
     }
 }

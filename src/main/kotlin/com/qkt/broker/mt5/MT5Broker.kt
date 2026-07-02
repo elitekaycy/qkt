@@ -93,6 +93,7 @@ class MT5Broker(
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onGatewayUnreachable = ::publishGatewayUnreachable,
+            onPollRound = ::refreshMarginLevelIfStale,
         )
     internal val pendingPoller =
         MT5PendingOrderPoller(
@@ -277,7 +278,10 @@ class MT5Broker(
     /**
      * Venue margin level, cached for [MARGIN_CACHE_TTL_MS] — the margin floor consults
      * this on every entry, and a synchronous /account round-trip per order would put
-     * gateway latency on the approve path.
+     * gateway latency on the approve path. The position poller keeps the cache warm via
+     * [refreshMarginLevelIfStale], so in normal operation this never leaves the cache;
+     * the synchronous fetch below is the fallback for a stale cache (poller not started,
+     * out of session, or gateway hiccup) — never trade a margin gate on stale data.
      */
     override fun marginLevel(): java.math.BigDecimal? {
         val now = clock.now()
@@ -285,6 +289,19 @@ class MT5Broker(
         val level = runCatching { client.getAccount()?.marginLevel }.getOrNull()
         marginLevelCache = now to level
         return level
+    }
+
+    /**
+     * Poller-thread cache warmer: refreshes [marginLevelCache] once its TTL lapses. Only keeps
+     * an already-populated cache warm — the first fetch stays on the first [marginLevel] read,
+     * so sessions that never consult the margin floor never poll `/account` at all.
+     */
+    private fun refreshMarginLevelIfStale() {
+        val (at, _) = marginLevelCache ?: return
+        val now = clock.now()
+        if (now - at < MARGIN_CACHE_TTL_MS) return
+        val level = runCatching { client.getAccount()?.marginLevel }.getOrNull()
+        marginLevelCache = now to level
     }
 
     private fun publishGatewayUnreachable(consecutiveFailures: Int) {
@@ -318,6 +335,12 @@ class MT5Broker(
      * position. Emits the close as an attributed [BrokerEvent.OrderFilled] under [request.id]
      * so the strategy's position tracker realizes it, and marks the ticket via
      * [recentlyClosedByTicket] so the position poller does not publish a duplicate close.
+     *
+     * Non-blocking like [submitSingle]'s market path: the HTTP send runs on OkHttp's dispatcher
+     * and the outcome returns as bus events — closes ride CLOSE rules, trailing-stop fires, and
+     * flattens on the engine thread, where a blocking round-trip stalls tick processing exactly
+     * when exits matter. The poller-suppression mark is set BEFORE the send (the poller could
+     * observe the position gone before our callback runs) and rolled back on failure.
      */
     private fun submitCloseByTicket(
         request: OrderRequest.Market,
@@ -332,63 +355,67 @@ class MT5Broker(
                 is VolumeResult.Ok -> result.quantity
                 is VolumeResult.Reject -> return reject(request, result.reason)
             }
-        val resp =
-            runCatching { client.closePosition(ticket, volume = closeQuantity) }
-                .getOrElse { ex -> return reject(request, ex.message ?: "close_position failed") }
-        if (!isOrderSuccessful(resp.result.retcode)) {
-            return reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
-        }
-        val partial = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
-        if (!partial) {
-            positionMetaByTicket.remove(ticket)
-            recentlyClosedByTicket[ticket] = clock.now()
-        }
-        val reportedVolume = resp.result.volume?.takeIf { it.signum() > 0 }
-        val filledQuantity =
-            if (reportedVolume != null) {
-                reportedVolume
-            } else if (!partial) {
-                closeQuantity
-            } else {
-                // The venue changed state, so a rejection would invite a duplicate close.
-                // Keep the order accepted-but-unresolved and alert; the position poller will
-                // reconcile the remaining venue quantity without sending a second close.
-                bus.publish(
-                    BrokerEvent.OrderAccepted(
-                        clientOrderId = request.id,
-                        brokerOrderId = ticket.toString(),
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-                publishGatewayUnreachable(1)
-                log.error(
-                    "MT5Broker {} partial close {} omitted actual filled volume",
-                    profile.name,
-                    request.id,
-                )
-                return SubmitAck(request.id, ticket.toString(), accepted = true)
+        recentlyClosedByTicket[ticket] = clock.now()
+        client.closePositionAsync(ticket, volume = closeQuantity) { resp ->
+            if (!isOrderSuccessful(resp.result.retcode)) {
+                recentlyClosedByTicket.remove(ticket)
+                reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
+                return@closePositionAsync
             }
-        bus.publish(
-            BrokerEvent.OrderAccepted(
-                clientOrderId = request.id,
-                brokerOrderId = ticket.toString(),
-                timestamp = clock.now(),
-            ),
-        )
-        bus.publish(
-            BrokerEvent.OrderFilled(
-                clientOrderId = request.id,
-                brokerOrderId = ticket.toString(),
-                symbol = request.symbol,
-                side = request.side,
-                price = resp.result.price,
-                quantity = filledQuantity,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-                venueCosts = venueCostsForDeal(resp.result.deal),
-            ),
-        )
+            val partial = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
+            if (partial) {
+                recentlyClosedByTicket.remove(ticket)
+            } else {
+                positionMetaByTicket.remove(ticket)
+            }
+            val reportedVolume = resp.result.volume?.takeIf { it.signum() > 0 }
+            val filledQuantity =
+                if (reportedVolume != null) {
+                    reportedVolume
+                } else if (!partial) {
+                    closeQuantity
+                } else {
+                    // The venue changed state, so a rejection would invite a duplicate close.
+                    // Keep the order accepted-but-unresolved and alert; the position poller will
+                    // reconcile the remaining venue quantity without sending a second close.
+                    bus.publish(
+                        BrokerEvent.OrderAccepted(
+                            clientOrderId = request.id,
+                            brokerOrderId = ticket.toString(),
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                    publishGatewayUnreachable(1)
+                    log.error(
+                        "MT5Broker {} partial close {} omitted actual filled volume",
+                        profile.name,
+                        request.id,
+                    )
+                    return@closePositionAsync
+                }
+            bus.publish(
+                BrokerEvent.OrderAccepted(
+                    clientOrderId = request.id,
+                    brokerOrderId = ticket.toString(),
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+            bus.publish(
+                BrokerEvent.OrderFilled(
+                    clientOrderId = request.id,
+                    brokerOrderId = ticket.toString(),
+                    symbol = request.symbol,
+                    side = request.side,
+                    price = resp.result.price,
+                    quantity = filledQuantity,
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                    venueCosts = venueCostsForDeal(resp.result.deal),
+                ),
+            )
+        }
         return SubmitAck(request.id, ticket.toString(), accepted = true)
     }
 
@@ -980,8 +1007,14 @@ class MT5Broker(
     override fun cancel(orderId: String) {
         val ticket = pendingTickets.remove(orderId) ?: return
         pendingByTicket.remove(ticket)
-        runCatching { client.cancelOrder(ticket) }
-            .onSuccess {
+        // Non-blocking: OCO sibling-cancels and the halt kill-switch sweep call this from the
+        // engine thread, and serialized round-trips stall it exactly when it must stop fast.
+        // A null result is an IO failure (send never reached the gateway) — matches the sync
+        // version's thrown-exception branch, which only logged.
+        client.cancelOrderAsync(ticket) { result ->
+            if (result == null) {
+                log.warn("MT5Broker ${profile.name} cancel($orderId, ticket=$ticket) failed: IO error")
+            } else {
                 bus.publish(
                     BrokerEvent.OrderCancelled(
                         clientOrderId = orderId,
@@ -991,9 +1024,8 @@ class MT5Broker(
                         timestamp = clock.now(),
                     ),
                 )
-            }.onFailure { e ->
-                log.warn("MT5Broker ${profile.name} cancel($orderId, ticket=$ticket) failed: ${e.message}")
             }
+        }
     }
 
     override fun modifyPosition(

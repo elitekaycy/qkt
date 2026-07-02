@@ -49,6 +49,10 @@ class PaperBroker(
     private val working: MutableList<OrderRequest> = mutableListOf()
     private val lastTickTimestampBySymbol: MutableMap<String, Long> = mutableMapOf()
 
+    // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
+    // Shareable because the broker is single-threaded and fill callbacks never re-enter onTick.
+    private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
+
     init {
         bus.subscribe<TickEvent> { e -> onTick(e.tick) }
     }
@@ -118,8 +122,13 @@ class PaperBroker(
             fillAtTriggerPrice &&
                 previousTimestamp != null &&
                 tick.timestamp > previousTimestamp + 1
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
-        for (wo in toFill) {
+        toFillScratch.clear()
+        for (i in working.indices) {
+            val req = working[i]
+            if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
+        }
+        for (i in toFillScratch.indices) {
+            val wo = toFillScratch[i]
             // A synchronous fill callback may cancel an OCO sibling that is also present in
             // this tick's trigger snapshot. Never fill an order that is no longer working.
             if (!working.remove(wo)) continue

@@ -570,6 +570,10 @@ private class CompiledStrategy(
         }
     }
 
+    // Rules grouped by their alias — fireRulesForAlias runs per bar close, and scanning every
+    // rule with a string compare to find the alias's few was per-bar overhead.
+    private val rulesByAlias: Map<String, List<CompiledRule>> by lazy { rules.groupBy { it.ruleAlias } }
+
     /**
      * Fire every rule whose `ruleAlias` matches [alias] and whose referenced streams
      * are warm. Must run after [updatePerAlias] so the rule body sees current state.
@@ -581,6 +585,7 @@ private class CompiledStrategy(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        val aliasRules = rulesByAlias[alias] ?: return
         val ec =
             EvalContext(
                 candle = candle,
@@ -592,10 +597,21 @@ private class CompiledStrategy(
                 currentAlias = alias,
                 evaluationTimeMs = candle.endTime,
             )
-        for (rule in rules) {
-            if (rule.ruleAlias != alias) continue
+        for (rule in aliasRules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
             for (sig in rule.fire(ec, ctx)) emit(sig)
+        }
+    }
+
+    // Symbol-keyed view of tick-fed indicator bindings, built on first tick — most strategies
+    // have none, and iterating the streams map per tick to discover that was pure overhead.
+    private val tickFedBySymbol: Map<String, List<IndicatorBinding>> by lazy {
+        buildMap<String, MutableList<IndicatorBinding>> {
+            for ((alias, key) in streams) {
+                val tickBindings = bindings.tickFedForAlias(alias)
+                if (tickBindings.isEmpty()) continue
+                getOrPut(key.qktSymbol) { mutableListOf() }.addAll(tickBindings)
+            }
         }
     }
 
@@ -607,12 +623,9 @@ private class CompiledStrategy(
         // Phase 25E: feed tick-fed indicators (e.g. VWAP) on every raw tick.
         // Candle-fed indicators keep updating only at candle close in [evaluate]; the
         // two paths are disjoint by indicator input kind, so there's no double-feeding.
-        for ((alias, key) in streams) {
-            if (key.qktSymbol != tick.symbol) continue
-            val tickBindings = bindings.tickFedForAlias(alias)
-            if (tickBindings.isEmpty()) continue
-            for (b in tickBindings) b.updateFromTick(tick)
-        }
+        if (tickFedBySymbol.isEmpty()) return
+        val tickBindings = tickFedBySymbol[tick.symbol] ?: return
+        for (b in tickBindings) b.updateFromTick(tick)
     }
 
     override fun onCandle(

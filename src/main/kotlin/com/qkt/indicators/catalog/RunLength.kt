@@ -38,10 +38,15 @@ class RunLength : Indicator<BigDecimal> {
                     (run > 0 && sign > 0) || (run < 0 && sign < 0) -> run + sign
                     else -> sign
                 }
+            // Boxed once per update rather than on every read — value() is read once per
+            // referencing expression node per bar.
+            lastValue = BigDecimal(run)
             ready = true
         }
         prev = input
     }
 
-    override fun value(): BigDecimal? = if (ready) BigDecimal(run) else null
+    private var lastValue: BigDecimal? = null
+
+    override fun value(): BigDecimal? = if (ready) lastValue else null
 }

@@ -208,6 +208,7 @@ class StrategyPositionTracker(
         symbol: String,
         price: BigDecimal,
     ) {
+        if (primaryMfeTrackers.isEmpty()) return
         for ((key, lm) in primaryMfeTrackers) {
             if (key.second == symbol) lm.tracker.onTick(price)
         }

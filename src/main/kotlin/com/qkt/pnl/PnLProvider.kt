@@ -52,22 +52,21 @@ class PnLCalculator(
                 .multiply(pos.quantity)
                 .multiply(cs)
                 .setScale(Money.SCALE, Money.ROUNDING)
-        return accounting
-            .convertPnl(
-                symbol = symbol,
-                nativeAmount = native,
-                timestamp = markTimestamp(),
-                referencePrice = price,
-            ).account.amount
+        return accounting.convertPnlAmount(
+            symbol = symbol,
+            nativeAmount = native,
+            timestamp = markTimestamp(),
+            referencePrice = price,
+        )
     }
 
-    override fun unrealizedTotal(): BigDecimal =
-        positions
-            .allPositions()
-            .keys
-            .map { unrealizedFor(it) }
-            .fold(Money.ZERO) { acc, v -> acc.add(v) }
-            .setScale(Money.SCALE, Money.ROUNDING)
+    override fun unrealizedTotal(): BigDecimal {
+        // Plain loop over the no-copy symbol view: this runs on every tick via the equity
+        // tracker, and the map-copy + intermediate-list version dominated per-tick allocation.
+        var acc = Money.ZERO
+        for (symbol in positions.symbols()) acc = acc.add(unrealizedFor(symbol))
+        return acc.setScale(Money.SCALE, Money.ROUNDING)
+    }
 
     override fun totalPnL(): BigDecimal = realizedTotal().add(unrealizedTotal()).setScale(Money.SCALE, Money.ROUNDING)
 }

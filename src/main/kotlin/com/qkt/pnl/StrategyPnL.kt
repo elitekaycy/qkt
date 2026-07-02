@@ -94,22 +94,23 @@ class StrategyPnL(
                 }
                 sum.setScale(Money.SCALE, Money.ROUNDING)
             }
-        return accounting
-            .convertPnl(
-                symbol = symbol,
-                nativeAmount = native,
-                timestamp = markTimestamp(),
-                referencePrice = price,
-            ).account.amount
+        return accounting.convertPnlAmount(
+            symbol = symbol,
+            nativeAmount = native,
+            timestamp = markTimestamp(),
+            referencePrice = price,
+        )
     }
 
-    fun unrealizedTotalFor(strategyId: String): BigDecimal =
-        strategyPositions
-            .positionsFor(strategyId)
-            .keys
-            .map { unrealizedFor(strategyId, it) }
-            .fold(Money.ZERO) { acc, v -> acc.add(v) }
-            .setScale(Money.SCALE, Money.ROUNDING)
+    fun unrealizedTotalFor(strategyId: String): BigDecimal {
+        // Keyed off positionsFor (net view) deliberately: a flat-net hedged book must value to
+        // zero here, and iterating raw book symbols would pull its leg-level unrealized back in.
+        var acc = Money.ZERO
+        for (symbol in strategyPositions.positionsFor(strategyId).keys) {
+            acc = acc.add(unrealizedFor(strategyId, symbol))
+        }
+        return acc.setScale(Money.SCALE, Money.ROUNDING)
+    }
 
     fun totalFor(strategyId: String): BigDecimal =
         realizedFor(strategyId)

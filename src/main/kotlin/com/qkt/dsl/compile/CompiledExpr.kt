@@ -21,6 +21,14 @@ sealed interface Value {
     ) : Value
 
     data object Undefined : Value
+
+    companion object {
+        /** The two Bool values, shared — comparisons produce one per rule-eval otherwise. */
+        val TRUE: Bool = Bool(true)
+        val FALSE: Bool = Bool(false)
+
+        fun of(b: Boolean): Bool = if (b) TRUE else FALSE
+    }
 }
 
 class EvalContext(

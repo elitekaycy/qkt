@@ -82,7 +82,7 @@ class RSI(
         val g = avgGain ?: return null
         val l = avgLoss ?: return null
         if (l.signum() == 0) {
-            return if (g.signum() == 0) Money.of("50") else Money.of("100")
+            return if (g.signum() == 0) NEUTRAL else TOP
         }
         val rs = g.divide(l, Money.CONTEXT)
         val rsi =
@@ -91,5 +91,11 @@ class RSI(
                 Money.CONTEXT,
             )
         return rsi.setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    private companion object {
+        // Zero-loss saturation reads; Money.of parses a string per call, so hoist them.
+        val NEUTRAL: BigDecimal = Money.of("50")
+        val TOP: BigDecimal = Money.of("100")
     }
 }

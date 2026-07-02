@@ -286,6 +286,8 @@ class MT5BrokerIntegrationTest {
         val ack = broker.submit(req)
         assertThat(ack.accepted).isTrue
         assertThat(ack.brokerOrderId).isEqualTo("424242")
+        // The close is async — the venue result arrives later, as events.
+        awaitCaptured { captured.size >= 2 }
         assertThat(captured).hasSize(2)
         assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
         val filled = captured[1] as BrokerEvent.OrderFilled
@@ -307,7 +309,7 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
-    fun `closesTicket close failure is rejected`() {
+    fun `closesTicket close failure surfaces as OrderRejected`() {
         server.enqueue(
             MockResponse().setResponseCode(400).setBody("""{"error":"Failed to close position"}"""),
         )
@@ -322,9 +324,12 @@ class MT5BrokerIntegrationTest {
                 strategyId = "s1",
                 closesTicket = "999",
             )
+        // Like async placement, the ack is optimistic; the venue's refusal lands as an event.
         val ack = broker.submit(req)
-        assertThat(ack.accepted).isFalse
+        assertThat(ack.accepted).isTrue
+        awaitCaptured { captured.any { it is BrokerEvent.OrderRejected } }
         assertThat(captured.any { it is BrokerEvent.OrderRejected }).isTrue
+        assertThat(captured.none { it is BrokerEvent.OrderFilled }).isTrue
     }
 
     @Test

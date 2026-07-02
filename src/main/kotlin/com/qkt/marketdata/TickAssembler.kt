@@ -22,6 +22,10 @@ class CrossedQuoteException(
  * validation check fails — so the hot path never builds the string for the valid-data case.
  */
 object TickAssembler {
+    // Mid-price divisor, hoisted: every quote-only tick (all of dukascopy) derives a mid, and
+    // constructing the divisor per tick was pure allocation.
+    private val TWO = BigDecimal(2)
+
     fun assemble(
         symbol: String,
         timestamp: Long,
@@ -55,7 +59,7 @@ object TickAssembler {
             price
                 ?: bid!!
                     .add(ask!!, Money.CONTEXT)
-                    .divide(BigDecimal(2), Money.CONTEXT)
+                    .divide(TWO, Money.CONTEXT)
                     .setScale(Money.SCALE, Money.ROUNDING)
         // Older Dukascopy cache rows left aggregate volume blank even though both side volumes
         // were stored. Derive it at read time so existing datasets gain the same capability as

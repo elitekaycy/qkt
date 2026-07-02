@@ -5,8 +5,6 @@ import com.qkt.common.Money
 import com.qkt.pnl.PnLProvider
 import com.qkt.pnl.StrategyPnL
 import java.math.BigDecimal
-import java.time.Instant
-import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -26,6 +24,14 @@ class DailyDrawdownTracker(
     private val initialBalance: BigDecimal,
     private val pnl: PnLProvider,
     private val strategyPnL: StrategyPnL,
+    /**
+     * Optional cached-equity reads. [RiskState] refreshes its [EquityTracker] at the top of every
+     * engine event (tick and fill) before halt rules run, so these return the same value the
+     * direct computation would — without a second full unrealized-PnL walk per tick. Null falls
+     * back to computing from [pnl]/[strategyPnL] (day-start reference capture always does).
+     */
+    private val currentGlobalEquity: (() -> BigDecimal)? = null,
+    private val currentStrategyEquity: ((String) -> BigDecimal)? = null,
 ) {
     @Volatile
     private var lastResetEpochDay: Long = epochDay()
@@ -38,14 +44,17 @@ class DailyDrawdownTracker(
     fun globalDrawdownToday(): BigDecimal {
         rolloverIfNeeded()
         val ref = globalRef ?: captureGlobalRef().also { globalRef = it }
-        val current = initialBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+        val current =
+            currentGlobalEquity?.invoke()
+                ?: initialBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         return ddFraction(ref, current)
     }
 
     fun strategyDrawdownToday(strategyId: String): BigDecimal {
         rolloverIfNeeded()
         val ref = strategyRef.getOrPut(strategyId) { captureStrategyRef(strategyId) }
-        return ddFraction(ref, strategyPnL.equityFor(strategyId))
+        val current = currentStrategyEquity?.invoke(strategyId) ?: strategyPnL.equityFor(strategyId)
+        return ddFraction(ref, current)
     }
 
     private fun captureGlobalRef(): BigDecimal {
@@ -78,10 +87,11 @@ class DailyDrawdownTracker(
         }
     }
 
-    private fun epochDay(): Long =
-        Instant
-            .ofEpochMilli(clock.now())
-            .atZone(ZoneOffset.UTC)
-            .toLocalDate()
-            .toEpochDay()
+    // UTC epoch-day without the per-call Instant/ZonedDateTime/LocalDate chain — rolloverIfNeeded
+    // runs on every tick for daily-drawdown halt rules. Same pattern as DailyPnLTracker.
+    private fun epochDay(): Long = Math.floorDiv(clock.now(), MILLIS_PER_DAY)
+
+    private companion object {
+        const val MILLIS_PER_DAY = 86_400_000L
+    }
 }
