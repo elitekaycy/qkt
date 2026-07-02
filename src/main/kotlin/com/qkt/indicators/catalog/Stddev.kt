@@ -30,6 +30,12 @@ class Stddev(
     }
 
     private val window: ArrayDeque<BigDecimal> = ArrayDeque(period)
+    private val periodDivisor = BigDecimal(period)
+    private val sampleDivisor = BigDecimal(period - 1)
+
+    // Computed once per update; the DSL reads value() once per referencing expression node
+    // per bar, and recomputing the O(period) walk on every read was pure waste.
+    private var lastValue: BigDecimal? = null
 
     override val warmupBars: Int = period
 
@@ -39,14 +45,16 @@ class Stddev(
     override fun update(input: BigDecimal) {
         window.addLast(input)
         if (window.size > period) window.removeFirst()
+        lastValue = if (window.size >= period) compute() else null
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
+    override fun value(): BigDecimal? = lastValue
+
+    private fun compute(): BigDecimal {
         // Mean.
         var sum = BigDecimal.ZERO
         for (v in window) sum = sum.add(v, Money.CONTEXT)
-        val mean = sum.divide(BigDecimal(period), Money.CONTEXT)
+        val mean = sum.divide(periodDivisor, Money.CONTEXT)
         // Sum of squared deviations.
         var ssd = BigDecimal.ZERO
         for (v in window) {
@@ -54,7 +62,7 @@ class Stddev(
             ssd = ssd.add(d.multiply(d, Money.CONTEXT), Money.CONTEXT)
         }
         // Sample variance: ssd / (n - 1).
-        val variance = ssd.divide(BigDecimal(period - 1), Money.CONTEXT)
+        val variance = ssd.divide(sampleDivisor, Money.CONTEXT)
         return variance
             .sqrt(Money.CONTEXT)
             .setScale(Money.SCALE, Money.ROUNDING)

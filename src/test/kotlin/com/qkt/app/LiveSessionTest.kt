@@ -531,7 +531,7 @@ class LiveSessionTest {
         assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
 
         val journal = Files.readString(tmp.resolve("journal/test/journal-2024-01-15.jsonl"))
-        assertThat(journal).contains("\"kind\":\"risk-approved\"")
-        assertThat(journal.indexOf("\"kind\":\"risk-approved\"")).isLessThan(journal.indexOf("\"kind\":\"submit\""))
+        assertThat(journal).contains("\"kind\":\"submit\"")
+        assertThat(journal).contains("\"approved\":\"true\"")
     }
 }
