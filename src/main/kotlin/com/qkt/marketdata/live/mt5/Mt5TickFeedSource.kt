@@ -7,14 +7,22 @@ import com.qkt.common.SystemClock
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickSource
 import java.time.Instant
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.OkHttpClient
 
 /**
  * Polling [LiveTickSource] over the `mt5-gateway` HTTP `/symbol_info_tick/{symbol}` endpoint.
  *
- * Round-robins across [symbols] each iteration, dedupes per-symbol by `time_msc`, sleeps
- * [pollIntervalMs] between rounds. One daemon thread per source instance.
+ * Each round fetches every symbol concurrently (one pool thread per symbol), so per-symbol
+ * staleness is ~one gateway round-trip + [pollIntervalMs] regardless of how many symbols are
+ * configured — serial fetches would make it K round-trips for K symbols (#653). Results are
+ * deduped per-symbol by `time_msc` and emitted in configured-symbol order once the round
+ * completes; one symbol failing surfaces via `onError` without killing the round. Sleeps
+ * [pollIntervalMs] between rounds. One polling daemon thread per source instance.
  *
  * When [symbolCalendars] is supplied, the poller skips a round only when every configured
  * calendar is out of session (sleeps [outOfSessionSleepMs] instead). A multi-asset broker keeps
@@ -45,6 +53,12 @@ class Mt5TickFeedSource(
     ) {
         check(running.compareAndSet(false, true)) { "Mt5TickFeedSource already started" }
         val client = Mt5TickClient(baseUrl, http)
+        // One thread per symbol: a round's K fetches run in parallel against the gateway,
+        // and the polling thread emits in configured order once all complete.
+        val fetchPool =
+            Executors.newFixedThreadPool(symbols.size.coerceAtLeast(1)) { r ->
+                Thread(r, "mt5-tick-fetch-${baseUrl.hashCode()}").apply { isDaemon = true }
+            }
         val lastBrokerMs = mutableMapOf<String, Long>()
         // Repeated poll failure must surface as a DISCONNECT, not an endless onError
         // stream: only onDisconnect starts the feed's reconnect budget, so without it a
@@ -69,10 +83,13 @@ class Mt5TickFeedSource(
                             continue
                         }
                         var roundHadSuccess = false
-                        for (sym in symbols) {
-                            if (!running.get()) break
+                        val fetches: List<Future<Mt5TickClient.Mt5Tick>> =
+                            symbols.map { sym ->
+                                fetchPool.submit(Callable { client.fetchOnce(sym, capturedAtMs = clock.now()) })
+                            }
+                        for ((i, sym) in symbols.withIndex()) {
                             try {
-                                val tick = client.fetchOnce(sym, capturedAtMs = clock.now())
+                                val tick = fetches[i].get()
                                 roundHadSuccess = true
                                 val seen = lastBrokerMs[sym] ?: 0L
                                 if (tick.brokerTimeMs > seen) {
@@ -98,6 +115,8 @@ class Mt5TickFeedSource(
                             } catch (e: InterruptedException) {
                                 Thread.currentThread().interrupt()
                                 return@Thread
+                            } catch (e: ExecutionException) {
+                                onError(e.cause ?: e)
                             } catch (e: Exception) {
                                 onError(e)
                             }
@@ -131,6 +150,7 @@ class Mt5TickFeedSource(
                         }
                     }
                 } finally {
+                    fetchPool.shutdownNow()
                     onDisconnect()
                 }
             }, "mt5-tick-feed-${baseUrl.hashCode()}").apply {

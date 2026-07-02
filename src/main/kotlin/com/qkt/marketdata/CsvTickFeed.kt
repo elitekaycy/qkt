@@ -66,9 +66,13 @@ class CsvTickFeed(
             ask = parseOpt(cols[5], "ask"),
             bidVolume = parseOpt(cols[6], "bidVolume"),
             askVolume = parseOpt(cols[7], "askVolume"),
-            location = { "$path:$lineNumber" },
+            location = location,
         )
     }
+
+    // Single reused supplier: an inline lambda here is a fresh Function0 per row, allocated
+    // purely to name the row in errors that never fire on clean data. Reads the current line.
+    private val location: () -> String = { "$path:$lineNumber" }
 
     private fun parseOpt(
         raw: String,

@@ -48,6 +48,10 @@ class PaperBroker(
 
     private val working: MutableList<OrderRequest> = mutableListOf()
 
+    // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
+    // Shareable because the broker is single-threaded and fill callbacks never re-enter onTick.
+    private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
+
     init {
         bus.subscribe<TickEvent> { e -> onTick(e.tick) }
     }
@@ -107,8 +111,16 @@ class PaperBroker(
 
     fun onTick(tick: Tick) {
         if (working.isEmpty()) return
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
-        for (wo in toFill) {
+        // Snapshot the triggered orders before filling: a fill callback may cancel a sibling, and
+        // under snapshot semantics the sibling still fills on this tick (#625 tracks whether that
+        // is desired). The remove result is ignored for the same reason.
+        toFillScratch.clear()
+        for (i in working.indices) {
+            val req = working[i]
+            if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
+        }
+        for (i in toFillScratch.indices) {
+            val wo = toFillScratch[i]
             working.remove(wo)
             fillFromTrigger(wo, tick.price)
         }

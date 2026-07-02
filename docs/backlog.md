@@ -51,6 +51,57 @@ Status legend:
 
 ## Immediate (blocks going live with real money)
 
+### 2026-07-02 backtest/live parity audit
+
+Full-code parity audit (7 pillars, findings verified against source before filing). P0 = live-money correctness; P2/P3 = backtest-side parity and research-tier fidelity.
+
+- `tbd` — Live DSL warmup credits the gate but leaves every indicator/DSL state cold ([#614](https://github.com/elitekaycy/qkt/issues/614))
+- `tbd` — Live fill events book unquantized/partial quantity ([#615](https://github.com/elitekaycy/qkt/issues/615))
+- `tbd` — Live engine-initiated closes are commission/swap-blind ([#616](https://github.com/elitekaycy/qkt/issues/616))
+- `tbd` — Armed-trail orphaned after venue-side close on attached brackets ([#617](https://github.com/elitekaycy/qkt/issues/617))
+- `tbd` — Plain-bracket armed-trail close has no ticket → counter position on hedging ([#618](https://github.com/elitekaycy/qkt/issues/618))
+- `tbd` — RESIZE live semantics: netting shrink, stale qty, no min-lot deadband ([#619](https://github.com/elitekaycy/qkt/issues/619))
+- `tbd` — Book-risk layer never wired live ([#620](https://github.com/elitekaycy/qkt/issues/620))
+- `tbd` — MT5 time_msc convention contradiction across feed/broker/warmup ([#621](https://github.com/elitekaycy/qkt/issues/621))
+- `tbd` — Live CompositeBroker silently paper-fills unrouted symbols ([#622](https://github.com/elitekaycy/qkt/issues/622))
+- `tbd` — Session/day-latching indicators latch partial windows at deploy ([#623](https://github.com/elitekaycy/qkt/issues/623))
+- `tbd` — tick-fills classifier mid-based vs side-aware triggers ([#624](https://github.com/elitekaycy/qkt/issues/624))
+- `tbd` — Backtest brokers fill orders cancelled in the same pass ([#625](https://github.com/elitekaycy/qkt/issues/625))
+- `tbd` — Halt kill-switch live-only; backtest fills post-halt ([#626](https://github.com/elitekaycy/qkt/issues/626))
+- `tbd` — Portfolio backtest ≠ live: capital/gates/topology/caps ([#627](https://github.com/elitekaycy/qkt/issues/627))
+- `tbd` — Portfolio backtest silently ignores --bars flags, skips validation ([#628](https://github.com/elitekaycy/qkt/issues/628))
+- `tbd` — sweep --scenarios downgrades --bars --tick-fills silently ([#629](https://github.com/elitekaycy/qkt/issues/629))
+- `tbd` — --bars tier has no completeness validation ([#630](https://github.com/elitekaycy/qkt/issues/630))
+- `tbd` — Live warmup bars bid-based vs backtest mid ([#631](https://github.com/elitekaycy/qkt/issues/631))
+- `tbd` — Bar-close rules read NOW at flush time ([#632](https://github.com/elitekaycy/qkt/issues/632))
+- `tbd` — SCHEDULE over gaps: per-occurrence live vs coalesced backtest ([#633](https://github.com/elitekaycy/qkt/issues/633))
+- `tbd` — Heartbeat early bar close duplicates windows ([#634](https://github.com/elitekaycy/qkt/issues/634))
+- `tbd` — Sim StopLimit instant-fill + slippage on limit fills ([#635](https://github.com/elitekaycy/qkt/issues/635))
+- `tbd` — GTD deadline==touch tie: fill vs cancel by mode ([#636](https://github.com/elitekaycy/qkt/issues/636))
+- `tbd` — fireFallbackTrigger submits after refused transition ([#637](https://github.com/elitekaycy/qkt/issues/637))
+- `tbd` — Stops-level halves + freeze-level unmodeled ([#638](https://github.com/elitekaycy/qkt/issues/638))
+- `tbd` — Crossed stored tick crashes backtests forever ([#639](https://github.com/elitekaycy/qkt/issues/639))
+- `tbd` — Volume feed inert: fetcher writes empty volume ([#640](https://github.com/elitekaycy/qkt/issues/640))
+- `tbd` — Non-dukascopy symbols: no validation, silent empty feeds ([#641](https://github.com/elitekaycy/qkt/issues/641))
+- `tbd` — tick-fills contract unproven for latency/mixed-tf ([#642](https://github.com/elitekaycy/qkt/issues/642))
+- `tbd` — --bars gap-through stops filled at level not gap ([#643](https://github.com/elitekaycy/qkt/issues/643))
+- `tbd` — Model swap in backtest cost model ([#644](https://github.com/elitekaycy/qkt/issues/644))
+- `tbd` — Cross-mode parity test program epic ([#645](https://github.com/elitekaycy/qkt/issues/645))
+
+### 2026-07-02 performance audit
+
+Hot-path audit per the hedge-fund checklist (allocation-minimal, lock-free, no blocking I/O on the engine thread). All proposed fixes are byte-identical restructuring; measured dead-ends (symbol→int, query-time columnar, setScale removal) were excluded up front.
+
+- `done` — Live persistence defaults to sync DSYNC: ~7 fsyncs per fill on engine thread ([#646](https://github.com/elitekaycy/qkt/issues/646))
+- `done` — MT5 close/cancel/modify are sync HTTP on engine thread ([#647](https://github.com/elitekaycy/qkt/issues/647))
+- `done` — OrderJournal per-event open+DSYNC+close, submit written twice ([#648](https://github.com/elitekaycy/qkt/issues/648))
+- `done` — Per-tick equity recompute: map copies, FX churn, 4x duplicate work ([#649](https://github.com/elitekaycy/qkt/issues/649))
+- `done` — epochDay java.time chain allocated every tick ([#650](https://github.com/elitekaycy/qkt/issues/650))
+- `done` — Hot-path allocation batch: broker filter, empty-loop iterators, merge feed ([#651](https://github.com/elitekaycy/qkt/issues/651))
+- `done` — DSL eval batch: value() recompute per read, duplicate instances, boxing ([#652](https://github.com/elitekaycy/qkt/issues/652))
+- `done` — Serial symbol polling staleness + unbounded trades list ([#653](https://github.com/elitekaycy/qkt/issues/653))
+- `done` — PortfolioStrategy dead code with per-tick alloc landmines ([#654](https://github.com/elitekaycy/qkt/issues/654))
+
 - `done` — DSL `LOG` action with levels, placeholders, structured fields; stdout `[strategy]` prefix; child file slash-safe names (see [phase 15](phases/phase-15.md))
 - `done` — Backtest fidelity audit: equity curve, DD-days, Monte Carlo, per-trade risk in HTML report (slippage/spread/regime deferred) (see [phase 16](phases/phase-16.md))
 - `done` — Backtest vs live execution parity: identical trades (orderId/symbol/side/qty/price/timestamp) between Backtest and LiveSession given same compiled strategy and tick sequence (`src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt`)
