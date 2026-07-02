@@ -33,17 +33,14 @@ This is judgment, not a gate — a docs typo needs no latency analysis. But a ho
 
 ## 1. Phases
 
-Trading-engine work is structured in numbered phases. Each phase has its own spec and plan.
+Large trading-engine efforts are structured in numbered phases, each with its own spec and
+plan under `docs/superpowers/` and a changelog under `docs/phases/`. The authoritative list
+of shipped phases lives in `docs/backlog.md` (the table that used to sit here froze at
+Phase 5 while the repo passed Phase 30 — the backlog is maintained, this file was not).
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Core engine MVP — tick → strategy → signal → order → broker → trade | shipped |
-| 2 | Event bus, candle aggregator, multi-strategy support, SLF4J | planned |
-| 3 | Risk engine, position tracking, P&L, `BigDecimal` for prices | planned |
-| 4 | Backtest replay engine — deterministic execution against historical data | planned |
-| 5 | DSL — internal Kotlin DSL first, then external SQL-like parser | planned |
-
-Every PR title and body must reference the phase it contributes to (see PR template below). Cross-phase work is not normally permitted; if a Phase 2 PR touches Phase 1 code, justify it in the PR description.
+Not all work is phase-scoped: bug fixes, audit findings, and capability-gap batches are
+issue-driven (see the `issue-flow` skill) and carry no phase. A PR references whichever it
+belongs to — its phase, or its issue(s).
 
 ---
 
@@ -174,13 +171,16 @@ Every PR has a title, a description following the template, and links to its spe
 
 Same format as a commit subject: `<type>(<scope>): <subject>`. Maximum 70 characters.
 
-Plus a phase prefix in brackets at the start: `[phase 2] feat(engine): add event bus`.
+Phase-scoped work adds a phase prefix in brackets: `[phase 2] feat(engine): add event bus`.
+Issue-driven work uses the plain conventional title and closes its issues from the body
+(`Closes #NN`).
 
 ### PR description template
 
 ```markdown
 ## Phase
-Phase <N>. Spec: <link to docs/superpowers/specs/...>. Plan: <link to docs/superpowers/plans/...>.
+Phase <N> with spec/plan links — or, for issue-driven work, the issue(s) this closes and
+the audit/backlog section they came from.
 
 ## Summary
 <1–3 sentences. The why.>
@@ -320,9 +320,12 @@ computes, a new rule the risk engine walks).
 
 ### Do
 
-- **State the per-event cost of a new feature in its PR.** One sentence: what runs per
-  tick/bar, O(1) or O(n), and n = what. If the answer is "O(all orders)" or "O(all
-  strategies)", key it by symbol/account first (the working-set rule from §0).
+- **Classify every new feature: hot or cold.** Cold features (a CLI command, a report
+  field, a deploy check) owe this section nothing further — say "cold path" in the PR's
+  Risk line and move on. A feature that adds per-event work states its cost in one
+  sentence: what runs per tick/bar, O(1) or O(n), and n = what. If the answer is "O(all
+  orders)" or "O(all strategies)", key it by symbol/account first (the working-set rule
+  from §0).
 - **Compute in `update()`, cache the read.** An indicator's `value()` is read once per
   referencing expression node per bar — it must be a field read, never a recompute.
   `SeasonalRangeStdev` is the canonical shape.
