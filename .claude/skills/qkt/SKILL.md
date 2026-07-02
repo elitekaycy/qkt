@@ -284,6 +284,38 @@ Things that must remain true regardless of phase. Violations require a design di
 - **No backwards compatibility cruft.** Phase 1 has no production users. We do not maintain compatibility shims, deprecated aliases, or transitional code paths. Refactors break things, and that's fine.
 - **Strategies do not see brokers.** A strategy that imports `com.qkt.broker.*` is a design bug. The dependency arrow goes one way only — see the architecture spec for each phase.
 
+The 2026-07-02 parity audit traced nearly every backtest↔live divergence to violations of
+four structural rules. They are invariants now:
+
+- **Mode symmetry is explicit, never accidental.** Backtest and live share one pipeline
+  (`TradingPipeline`); that symmetry is the parity contract. Any component wired in only
+  one mode — a subscriber, a risk rule, a config consumer — is a *declared divergence*:
+  wire it in both `LiveSession` and `ReplayEngine`, or add it to the divergence catalog
+  (`docs/parity/backtest-vs-live.md`) in the same PR, with the reason. A behavior that
+  exists in one assembly file and not the other is the single largest historical source
+  of parity bugs (a risk layer that only ran in backtest; a halt kill-switch that only
+  ran live). If you touch one wiring path, open the other and check.
+- **Translate at exactly one boundary per venue.** Each external system gets one
+  translation layer that owns units, volume quantization, time-base normalization, and
+  cost attachment — and each engine-facing event type is constructed in exactly one
+  function. Never normalize (or skip normalizing) at individual call sites: scattered
+  translation is how live fills booked unquantized volumes while the wire was quantized,
+  and how three code paths disagreed about whether `time_msc` is UTC. If an event can be
+  built in three places, one of them is wrong.
+- **One writer per derived quantity.** Equity, positions, realized PnL, marks: each is
+  computed by one service per event and read by everyone else. A consumer that recomputes
+  a quantity a tracker already owns will eventually disagree with it (and pay for the
+  recompute per tick — see §9).
+- **Lifecycles are sealed state machines; linkage lives in the type.** Where an execution
+  object has a lifecycle (order → bracket → exits, leg → close, trail arm → fire), model
+  the states as a sealed hierarchy and put the relationships in fields — a bracket whose
+  exit ids are fields cannot orphan its trail the way a side map someone forgot to write
+  can. Exhaustive `when` then forces every consumer to handle a new state at compile time.
+- **A claim without a test is unproven.** Any parity, fidelity, or byte-identical claim in
+  docs or KDoc must cite the test that enforces it. A doc row marked FIXED links its
+  regression test or reads UNPROVEN — the audit's most repeated finding was documentation
+  claims exceeding what any test actually pinned.
+
 ---
 
 ## 8. Quant-system principles (do / don't)
@@ -305,6 +337,40 @@ Things that must remain true regardless of phase. Violations require a design di
 - **Don't model time zones in Phase 1–4.** Everything is UTC milliseconds. Time-zone-aware reporting is a presentation-layer concern.
 - **Don't invent symbol formats.** Use whatever string the data feed produces. A symbol registry is a Phase 5+ concern.
 - **Don't introduce premature concurrency.** Phase 1 is single-threaded. Adding coroutines, channels, or threads is a phased decision, not a per-feature one.
+
+### Money, units, and null semantics — the consistency layer
+
+The mechanical conventions every function definition follows, so code from any contributor
+composes without subtle drift:
+
+- **Money math is `BigDecimal` through `Money.CONTEXT`, scaled at boundaries only.**
+  Every price/PnL arithmetic step passes `Money.CONTEXT`; `setScale(Money.SCALE,
+  Money.ROUNDING)` is applied where a value crosses a boundary (an event, persistence, a
+  report, a tracker's stored total) — never on intermediates, where repeated rounding
+  compounds into drift.
+- **Compare `BigDecimal` with `compareTo`/`signum()`, never `equals`.** `equals` is
+  scale-sensitive (`1.0 != 1.00`). Tests assert with `isEqualByComparingTo`. Zero checks
+  are `signum() == 0`, sign checks `signum() > 0` — not comparisons against a fresh
+  `BigDecimal.ZERO`.
+- **`Double` never touches money.** It is allowed only in explicitly non-monetary judgment
+  statistics (e.g. the market-data outlier gate) and reporting ratios, and the KDoc says so.
+- **Timestamps are UTC epoch millis, `Long`, named with an `Ms` suffix.** One time base per
+  component; venue time is normalized to UTC at the venue's translation boundary (§7),
+  never at call sites. `java.time` types appear at presentation edges only.
+- **Quantities carry their sign convention in the type.** Position legs are `Side` +
+  absolute quantity; net positions are signed quantity. Never infer side from a sign in
+  leg-land or carry `Side` alongside a signed value — pick the representation the
+  surrounding types already use.
+- **Execution decisions use sided prices; marks use mid.** BUY triggers/fills evaluate
+  against ask (`buyExecPrice()`), SELL against bid (`sellExecPrice()`); mid (`tick.price`)
+  is for indicator feeds and mark-to-market. A trigger checked on mid is a parity bug (A4).
+- **`null`/`Undefined` means "cannot compute" — never zero.** An indicator returns null
+  until genuinely ready (its `warmupBars` must reflect its true state horizon, not 1); a
+  rule reading `Undefined` does not fire; a broker that can't price returns rejection. The
+  moment "no data" silently becomes `0`, every downstream comparison lies.
+- **Functions take domain types, not primitives-in-trench-coats.** Pass `Side`, `HubKey`,
+  `TimeWindow`, `OrderRequest` — not a `String` that three call sites interpret three ways.
+  New shared vocabulary goes in the owning package, once, with KDoc.
 
 ---
 
