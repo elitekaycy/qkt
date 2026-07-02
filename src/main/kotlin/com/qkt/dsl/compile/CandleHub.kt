@@ -295,5 +295,17 @@ class CandleHub {
     /** Immutable oldest-to-newest snapshot used to replay seeded bars into DSL state. */
     fun seededHistory(key: HubKey): List<Candle> = slots[key]?.ring?.toList() ?: emptyList()
 
+    fun latestAtOrBefore(
+        key: HubKey,
+        endTimeMs: Long,
+    ): Candle? {
+        val ring = slots[key]?.ring ?: return null
+        for (i in ring.indices.reversed()) {
+            val candle = ring[i]
+            if (candle.endTime <= endTimeMs) return candle
+        }
+        return null
+    }
+
     fun keys(): Set<HubKey> = slots.keys.toSet()
 }

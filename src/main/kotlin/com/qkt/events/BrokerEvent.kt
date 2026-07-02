@@ -36,6 +36,8 @@ sealed interface BrokerEvent : Event {
         override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
+        val venueCosts: BigDecimal = BigDecimal.ZERO,
+        val typedVenueCosts: List<VenueCost> = emptyList(),
     ) : OrderEvent
 
     /** The broker refused the order. [reason] is the venue's rejection message. */
@@ -90,6 +92,8 @@ sealed interface BrokerEvent : Event {
         override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
+        val venueCosts: BigDecimal = BigDecimal.ZERO,
+        val typedVenueCosts: List<VenueCost> = emptyList(),
     ) : OrderEvent
 
     /** The order was cancelled by the strategy, the engine, or the venue. */

@@ -41,6 +41,7 @@ class IbDefended(
     private var ibLow: BigDecimal? = null
     private var pastWindow = false
     private var defended = false
+    private var completeSession = false
 
     override val warmupBars: Int = 1
 
@@ -51,11 +52,13 @@ class IbDefended(
         val idx = Math.floorDiv(input.startTime - startOffsetMs, MS_PER_DAY)
         if (idx != session) {
             session = idx
+            completeSession = Math.floorMod(input.startTime - startOffsetMs, MS_PER_DAY) == 0L
             ibHigh = null
             ibLow = null
             pastWindow = false
             defended = false
         }
+        if (!completeSession) return
         val msIntoSession = Math.floorMod(input.startTime - startOffsetMs, MS_PER_DAY)
         if (msIntoSession < ibMs) {
             ibHigh = ibHigh?.max(input.high) ?: input.high

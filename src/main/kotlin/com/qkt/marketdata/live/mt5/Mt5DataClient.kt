@@ -36,17 +36,33 @@ class Mt5DataClient(
         timeframe: String,
         startIso: String,
         endIso: String,
+        midPoint: BigDecimal? = null,
     ): List<Candle> {
         val s = java.net.URLEncoder.encode(startIso, "UTF-8")
         val e = java.net.URLEncoder.encode(endIso, "UTF-8")
         val url = "$baseUrl/fetch_data_range?symbol=$symbol&timeframe=$timeframe&start=$s&end=$e"
-        return fetchAndParse(url, symbol, timeframe)
+        return fetchAndParse(url, symbol, timeframe, midPoint)
+    }
+
+    fun fetchSymbolPoint(symbol: String): BigDecimal? {
+        val req = Request.Builder().url("$baseUrl/symbol_info/$symbol").build()
+        return http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return null
+            val raw = resp.body?.string() ?: return null
+            json
+                .parseToJsonElement(raw)
+                .jsonObject["point"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.toBigDecimalOrNull()
+        }
     }
 
     private fun fetchAndParse(
         url: String,
         symbol: String,
         timeframe: String,
+        midPoint: BigDecimal? = null,
     ): List<Candle> {
         val req = Request.Builder().url(url).build()
         val raw =
@@ -63,18 +79,42 @@ class Mt5DataClient(
                 else -> error("Unexpected MT5 response shape for $url; raw=$raw")
             }
         val tfMs = timeframeToMillis(timeframe)
-        return rows.map { row -> rowToCandle(symbol, row.jsonObject, tfMs) }
+        return rows.map { row -> rowToCandle(symbol, row.jsonObject, tfMs, midPoint) }
     }
 
     private fun rowToCandle(
         symbol: String,
         row: JsonObject,
         tfMs: Long,
+        midPoint: BigDecimal?,
     ): Candle {
-        val open = row["open"]!!.jsonPrimitive.content.toBigDecimal()
-        val high = row["high"]!!.jsonPrimitive.content.toBigDecimal()
-        val low = row["low"]!!.jsonPrimitive.content.toBigDecimal()
-        val close = row["close"]!!.jsonPrimitive.content.toBigDecimal()
+        val halfSpread =
+            midPoint?.let { point ->
+                val spread =
+                    row["spread"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull()
+                        ?: error("MT5 bar row missing spread required for bid-to-mid normalization: $row")
+                spread.multiply(point).divide(BigDecimal(2))
+            } ?: BigDecimal.ZERO
+        val open =
+            row["open"]!!
+                .jsonPrimitive.content
+                .toBigDecimal()
+                .add(halfSpread)
+        val high =
+            row["high"]!!
+                .jsonPrimitive.content
+                .toBigDecimal()
+                .add(halfSpread)
+        val low =
+            row["low"]!!
+                .jsonPrimitive.content
+                .toBigDecimal()
+                .add(halfSpread)
+        val close =
+            row["close"]!!
+                .jsonPrimitive.content
+                .toBigDecimal()
+                .add(halfSpread)
         val volume =
             (row["tick_volume"] ?: row["volume"] ?: row["real_volume"])
                 ?.jsonPrimitive

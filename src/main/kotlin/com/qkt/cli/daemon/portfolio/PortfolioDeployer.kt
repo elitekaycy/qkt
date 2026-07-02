@@ -77,6 +77,12 @@ class PortfolioDeployer(
         try {
             val allocations = capitalAllocations(compiled.ast)
             val bookCapital = bookRiskConfig?.capital ?: compiled.ast.capital
+            require(bookRiskConfig == null || bookCapital != null) {
+                "book_risk is configured but neither book_risk.capital nor portfolio CAPITAL is set"
+            }
+            require((maxDrawdownPct == null && maxDailyDrawdownPct == null) || bookCapital != null) {
+                "portfolio drawdown limits require portfolio CAPITAL or book_risk.capital"
+            }
             val bookController =
                 if (bookRiskConfig != null && bookCapital != null) {
                     com.qkt.risk.book
@@ -136,8 +142,14 @@ class PortfolioDeployer(
     ): PortfolioRiskAggregator? {
         val capital = compiled.ast.capital
         val controllerCapital = bookRiskConfig?.capital ?: capital
-        if (controllerCapital == null) return null
-        if (bookController == null && maxDrawdownPct == null && maxDailyDrawdownPct == null) return null
+        if (bookController == null &&
+            maxDrawdownPct == null &&
+            maxDailyDrawdownPct == null &&
+            maxDailyLoss.signum() <= 0
+        ) {
+            return null
+        }
+        val riskCapital = controllerCapital ?: java.math.BigDecimal.ZERO
 
         val pnlSources: List<() -> com.qkt.app.SessionPnl> =
             compiled.children.zip(wrappers).map { (child, w) ->
@@ -162,15 +174,21 @@ class PortfolioDeployer(
                 ),
                 clock,
                 com.qkt.bus.EventBus(clock, com.qkt.common.MonotonicSequenceGenerator()),
-                controllerCapital,
+                riskCapital,
                 dailyDdBasis,
             )
         val haltRules =
             buildList {
+                if (maxDailyLoss.signum() > 0) {
+                    add(
+                        com.qkt.risk.rules
+                            .MaxDailyLoss(maxDailyLoss),
+                    )
+                }
                 maxDrawdownPct?.let {
                     add(
                         com.qkt.risk.rules
-                            .MaxDrawdown(it, totalDdBasis, controllerCapital),
+                            .MaxDrawdown(it, totalDdBasis, riskCapital),
                     )
                 }
                 maxDailyDrawdownPct?.let {
@@ -193,7 +211,7 @@ class PortfolioDeployer(
                     child.strategyId to pnl.realized.add(pnl.unrealized)
                 }
             val equity =
-                controllerCapital.add(
+                riskCapital.add(
                     perStrategyPnl.values.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add),
                 )
             controller.onSample(
@@ -234,15 +252,9 @@ class PortfolioDeployer(
                 ?.timeframe
                 ?.let { TimeWindow.parse(it) }
 
-        val haltRules: List<com.qkt.risk.HaltRule> =
-            if (maxDailyLoss.signum() > 0) {
-                listOf(
-                    com.qkt.risk.rules
-                        .MaxDailyLoss(maxDailyLoss),
-                )
-            } else {
-                emptyList()
-            }
+        // Match the shared-account portfolio backtest: this cap is book-wide, not N
+        // independent child budgets that multiply the configured loss limit.
+        val haltRules: List<com.qkt.risk.HaltRule> = emptyList()
         val session =
             LiveSession(
                 strategies = listOf(compiledChild.strategyId to compiledChild.compiled),

@@ -282,23 +282,33 @@ class BacktestContext private constructor(
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
-                val provisionStreams =
+                val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (_, bare) -> DukascopyInstrument.ofOrNull(bare) != null }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
+                val (fetchableStreams, validateOnlyStreams) =
+                    allProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
                 // completeness validation: it would otherwise scan the tick store and warn on holiday
                 // holes the bar run doesn't care about (pure waste + log noise every gate run).
-                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && allProvisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
-                        streams = provisionStreams,
+                        streams = fetchableStreams,
                         from = provisionFrom,
                         to = provisionTo,
                         fetchEnabled = !noFetch,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { defaultCalendars().calendarFor(it) },
+                    )
+                    BacktestDataProvisioner(store).ensure(
+                        streams = validateOnlyStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = false,
                         allowIncomplete = args.flag("allow-incomplete"),
                         calendarFor = { defaultCalendars().calendarFor(it) },
                     )
@@ -340,6 +350,16 @@ class BacktestContext private constructor(
             require(!tickFills || executionConfig.latencyMs == 0L) {
                 "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
                     "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
+            }
+            require(
+                !tickFills ||
+                    ast.streams
+                        .map { it.timeframe }
+                        .distinct()
+                        .size <= 1,
+            ) {
+                "--tick-fills is not valid for mixed-timeframe strategies: a finer-stream close can place " +
+                    "a cross-symbol order after the other symbol's bar was already resolved"
             }
             val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
             val finestDeclared: Map<String, TimeWindow> =
@@ -535,20 +555,30 @@ class BacktestContext private constructor(
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
-                val provisionStreams =
+                val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (_, bare) -> DukascopyInstrument.ofOrNull(bare) != null }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
+                val (fetchableStreams, validateOnlyStreams) =
+                    allProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                if (!provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                if (!provisionTo.isBefore(provisionFrom) && allProvisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
-                        streams = provisionStreams,
+                        streams = fetchableStreams,
                         from = provisionFrom,
                         to = provisionTo,
                         fetchEnabled = !noFetch,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { defaultCalendars().calendarFor(it) },
+                    )
+                    BacktestDataProvisioner(store).ensure(
+                        streams = validateOnlyStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = false,
                         allowIncomplete = args.flag("allow-incomplete"),
                         calendarFor = { defaultCalendars().calendarFor(it) },
                     )

@@ -10,6 +10,44 @@ import org.junit.jupiter.api.Test
 
 class Mt5BarFetcherTest {
     @Test
+    fun `live warmup converts MT5 bid bars to mid using recorded spread`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(MockResponse().setBody("""{"point":"0.01"}"""))
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"open":100,"high":101,"low":99,"close":100.5,"spread":20,"tick_volume":1,"time":"2026-05-13T08:00:00Z"}]""",
+                ),
+            )
+            val fetcher =
+                Mt5BarFetcher(
+                    server.url("/").toString().trimEnd('/'),
+                    normalizeBidBarsToMid = true,
+                )
+
+            val candle =
+                fetcher
+                    .fetchRange(
+                        "XAUUSDm",
+                        TimeWindow.parse("5m"),
+                        TimeRange(
+                            Instant.parse("2026-05-13T08:00:00Z"),
+                            Instant.parse("2026-05-13T08:05:00Z"),
+                        ),
+                    ).single()
+
+            assertThat(candle.open).isEqualByComparingTo("100.10")
+            assertThat(candle.high).isEqualByComparingTo("101.10")
+            assertThat(candle.low).isEqualByComparingTo("99.10")
+            assertThat(candle.close).isEqualByComparingTo("100.60")
+            assertThat(server.takeRequest().path).isEqualTo("/symbol_info/XAUUSDm")
+            assertThat(server.takeRequest().path).contains("/fetch_data_range")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `broker-local bar request and response normalize to UTC`() {
         val server = MockWebServer().apply { start() }
         try {

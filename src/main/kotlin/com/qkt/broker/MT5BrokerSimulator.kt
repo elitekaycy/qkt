@@ -448,7 +448,7 @@ class MT5BrokerSimulator(
                 meta = meta,
             ) ?: return null
         val minDistance = meta.pointSize.multiply(BigDecimal(meta.tradeStopsLevelPoints))
-        for ((label, price) in protectedPrices(request)) {
+        for ((label, price) in pendingPrices(request)) {
             val distance = price.subtract(ref).abs()
             if (distance < minDistance) {
                 return "$label ${price.toPlainString()} is inside tradeStopsLevel " +
@@ -456,10 +456,26 @@ class MT5BrokerSimulator(
                     "(tradeStopsLevel=${meta.tradeStopsLevelPoints}, pointSize=${meta.pointSize.toPlainString()})"
             }
         }
+        if (request is OrderRequest.Bracket) {
+            val entry = entryPrice(request.entry) ?: ref
+            val exits =
+                buildList {
+                    add("takeProfit" to request.takeProfit)
+                    (request.stopLoss as? com.qkt.execution.StopLossSpec.Fixed)
+                        ?.let { add("stopLoss" to it.price) }
+                }
+            for ((label, price) in exits) {
+                val distance = price.subtract(entry).abs()
+                if (distance < minDistance) {
+                    return "$label ${price.toPlainString()} is inside tradeStopsLevel " +
+                        "${minDistance.toPlainString()} from entry ${entry.toPlainString()}"
+                }
+            }
+        }
         return null
     }
 
-    private fun protectedPrices(request: OrderRequest): List<Pair<String, BigDecimal>> =
+    private fun pendingPrices(request: OrderRequest): List<Pair<String, BigDecimal>> =
         when (request) {
             is OrderRequest.Limit -> listOf("limitPrice" to request.limitPrice)
             is OrderRequest.Stop -> listOf("stopPrice" to request.stopPrice)
@@ -470,7 +486,17 @@ class MT5BrokerSimulator(
                     request.limitPrice?.let { "limitPrice" to it },
                 )
             is OrderRequest.Market -> emptyList()
+            is OrderRequest.Bracket -> pendingPrices(request.entry)
             else -> emptyList()
+        }
+
+    private fun entryPrice(request: OrderRequest): BigDecimal? =
+        when (request) {
+            is OrderRequest.Limit -> request.limitPrice
+            is OrderRequest.Stop -> request.stopPrice
+            is OrderRequest.StopLimit -> request.stopPrice
+            is OrderRequest.IfTouched -> request.triggerPrice
+            else -> null
         }
 
     // Side-aware like MT5 itself: BUY_STOP fires on the ask, SELL_STOP on the bid.
