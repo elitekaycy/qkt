@@ -338,6 +338,40 @@ four structural rules. They are invariants now:
 - **Don't invent symbol formats.** Use whatever string the data feed produces. A symbol registry is a Phase 5+ concern.
 - **Don't introduce premature concurrency.** Phase 1 is single-threaded. Adding coroutines, channels, or threads is a phased decision, not a per-feature one.
 
+### Money, units, and null semantics — the consistency layer
+
+The mechanical conventions every function definition follows, so code from any contributor
+composes without subtle drift:
+
+- **Money math is `BigDecimal` through `Money.CONTEXT`, scaled at boundaries only.**
+  Every price/PnL arithmetic step passes `Money.CONTEXT`; `setScale(Money.SCALE,
+  Money.ROUNDING)` is applied where a value crosses a boundary (an event, persistence, a
+  report, a tracker's stored total) — never on intermediates, where repeated rounding
+  compounds into drift.
+- **Compare `BigDecimal` with `compareTo`/`signum()`, never `equals`.** `equals` is
+  scale-sensitive (`1.0 != 1.00`). Tests assert with `isEqualByComparingTo`. Zero checks
+  are `signum() == 0`, sign checks `signum() > 0` — not comparisons against a fresh
+  `BigDecimal.ZERO`.
+- **`Double` never touches money.** It is allowed only in explicitly non-monetary judgment
+  statistics (e.g. the market-data outlier gate) and reporting ratios, and the KDoc says so.
+- **Timestamps are UTC epoch millis, `Long`, named with an `Ms` suffix.** One time base per
+  component; venue time is normalized to UTC at the venue's translation boundary (§7),
+  never at call sites. `java.time` types appear at presentation edges only.
+- **Quantities carry their sign convention in the type.** Position legs are `Side` +
+  absolute quantity; net positions are signed quantity. Never infer side from a sign in
+  leg-land or carry `Side` alongside a signed value — pick the representation the
+  surrounding types already use.
+- **Execution decisions use sided prices; marks use mid.** BUY triggers/fills evaluate
+  against ask (`buyExecPrice()`), SELL against bid (`sellExecPrice()`); mid (`tick.price`)
+  is for indicator feeds and mark-to-market. A trigger checked on mid is a parity bug (A4).
+- **`null`/`Undefined` means "cannot compute" — never zero.** An indicator returns null
+  until genuinely ready (its `warmupBars` must reflect its true state horizon, not 1); a
+  rule reading `Undefined` does not fire; a broker that can't price returns rejection. The
+  moment "no data" silently becomes `0`, every downstream comparison lies.
+- **Functions take domain types, not primitives-in-trench-coats.** Pass `Side`, `HubKey`,
+  `TimeWindow`, `OrderRequest` — not a `String` that three call sites interpret three ways.
+  New shared vocabulary goes in the owning package, once, with KDoc.
+
 ---
 
 ## 9. Hot-path performance (do / don't)
