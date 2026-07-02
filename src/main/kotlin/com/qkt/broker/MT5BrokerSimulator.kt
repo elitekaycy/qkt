@@ -69,6 +69,10 @@ class MT5BrokerSimulator(
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
+
+    // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
+    // Shareable because the simulator is single-threaded and fill callbacks never re-enter onTick.
+    private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
     private val delayedSubmissions: MutableList<DelayedSubmission> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = HashMap()
     private var submittedOrdinal: Int = 0
@@ -169,8 +173,16 @@ class MT5BrokerSimulator(
         lastTickBySymbol[tick.symbol] = tick
         drainDelayedSubmissions(clock.now())
         if (working.isEmpty()) return
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
-        for (wo in toFill) {
+        // Snapshot the triggered orders before filling: a fill callback may cancel a sibling, and
+        // under snapshot semantics the sibling still fills on this tick (#625 tracks whether that
+        // is desired). The remove result is ignored for the same reason.
+        toFillScratch.clear()
+        for (i in working.indices) {
+            val req = working[i]
+            if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
+        }
+        for (i in toFillScratch.indices) {
+            val wo = toFillScratch[i]
             working.remove(wo)
             fillFromTrigger(wo, tick)
         }
