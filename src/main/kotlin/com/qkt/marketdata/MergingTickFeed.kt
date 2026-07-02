@@ -11,13 +11,19 @@ import java.util.PriorityQueue
 class MergingTickFeed(
     private val feeds: List<TickFeed>,
 ) : TickFeed {
-    private data class HeadEntry(
+    // One reusable entry per feed: a merge advances one head per emitted tick, so allocating
+    // a fresh entry (plus the boxed compareBy selectors) per tick dominated the merge's cost.
+    // Mutating [tick] is safe because an entry is only updated while polled out of the heap.
+    private class HeadEntry(
         val feedIndex: Int,
-        val tick: Tick,
+        var tick: Tick,
     )
 
     private val heap: PriorityQueue<HeadEntry> =
-        PriorityQueue(compareBy({ it.tick.timestamp }, { it.feedIndex }))
+        PriorityQueue { a, b ->
+            val byTs = a.tick.timestamp.compareTo(b.tick.timestamp)
+            if (byTs != 0) byTs else a.feedIndex - b.feedIndex
+        }
 
     init {
         feeds.forEachIndexed { i, f ->
@@ -27,8 +33,12 @@ class MergingTickFeed(
 
     override fun next(): Tick? {
         val entry = heap.poll() ?: return null
-        feeds[entry.feedIndex].next()?.let { heap.add(HeadEntry(entry.feedIndex, it)) }
-        return entry.tick
+        val tick = entry.tick
+        feeds[entry.feedIndex].next()?.let { head ->
+            entry.tick = head
+            heap.add(entry)
+        }
+        return tick
     }
 
     override fun close() {

@@ -77,9 +77,14 @@ class BinaryTickFeed(
             ask = decode(b, BinaryTickFormat.COL_ASK, i),
             bidVolume = decode(b, BinaryTickFormat.COL_BID_VOLUME, i),
             askVolume = decode(b, BinaryTickFormat.COL_ASK_VOLUME, i),
-            location = { "$path:${i + 1}" },
+            location = location,
         )
     }
+
+    // Single reused supplier: an inline lambda capturing the row index is a fresh Function0 per
+    // tick, allocated for errors that never fire on clean data. [index] has already advanced past
+    // the row being assembled, so it equals the 1-based row number the inline version rendered.
+    private val location: () -> String = { "$path:$index" }
 
     /**
      * Reposition this feed to the half-open time window `[fromMs, toMs)`. After calling, [next]
