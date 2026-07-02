@@ -10,6 +10,13 @@ interface PositionProvider {
     fun positionFor(symbol: String): Position?
 
     fun allPositions(): Map<String, Position>
+
+    /**
+     * Symbols with an open position, without copying the backing map — [allPositions] copies,
+     * which is wasteful for per-tick sweeps like unrealized-PnL totals. The returned set is a
+     * live view where the implementation allows; callers must not retain it across mutations.
+     */
+    fun symbols(): Set<String> = allPositions().keys
 }
 
 class PositionTracker : PositionProvider {
@@ -89,4 +96,6 @@ class PositionTracker : PositionProvider {
     override fun positionFor(symbol: String): Position? = positions[symbol]
 
     override fun allPositions(): Map<String, Position> = positions.toMap()
+
+    override fun symbols(): Set<String> = positions.keys
 }
