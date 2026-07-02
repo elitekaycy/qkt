@@ -37,8 +37,18 @@ class BarResolvedFeed(
         // The tick emitted last cycle is now ingested; let whichever symbol just emitted its opening
         // tick resolve its bar before we compare frontiers.
         for (s in subs) s.settle()
-        val pick = subs.filter { it.peek() != null }.minByOrNull { it.peek()!!.timestamp } ?: return null
-        return pick.pop()
+        // Manual min scan (strict `<` keeps the earlier-sub tie-break minByOrNull had); the
+        // filter+minByOrNull pair allocated a list plus boxed comparisons per emitted tick.
+        var pick: SymbolFeed? = null
+        var pickTs = Long.MAX_VALUE
+        for (i in subs.indices) {
+            val ts = subs[i].peek()?.timestamp ?: continue
+            if (ts < pickTs) {
+                pick = subs[i]
+                pickTs = ts
+            }
+        }
+        return pick?.pop()
     }
 }
 
