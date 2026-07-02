@@ -1616,11 +1616,13 @@ class OrderManager(
         // supportsNativeGtd=true and skips it; PaperBroker, Bybit, and LogBroker fall through here.
         // Walks [gtdLive] (deadline-bearing orders only) and compares longs; the live order is
         // resolved only for the few that actually expired, in the same order a full scan would cancel.
+        // One timestamp per pass: GTD, time-exit, and stack deadlines all compare against the same
+        // tick instant. The empty guards keep the pass iterator-free when nothing has a deadline.
+        val now = clock.now()
         if (!broker.supportsNativeGtd && gtdLive.isNotEmpty()) {
-            val nowMs = clock.now()
             gtdExpiredScratch.clear()
             for ((id, deadline) in gtdLive) {
-                if (nowMs > deadline) gtdExpiredScratch.add(id)
+                if (now > deadline) gtdExpiredScratch.add(id)
             }
             for (i in gtdExpiredScratch.indices) {
                 val managed = orders[gtdExpiredScratch[i]] ?: continue
@@ -1630,28 +1632,31 @@ class OrderManager(
             }
         }
 
-        val now = clock.now()
-        expiredExitsScratch.clear()
-        for (te in timeExits.values) {
-            if (now >= te.deadline.toEpochMilli()) expiredExitsScratch.add(te)
-        }
-        for (i in expiredExitsScratch.indices) {
-            val te = expiredExitsScratch[i]
-            timeExits.remove(te.id)
-            handleTimeExitExpiry(te)
+        if (timeExits.isNotEmpty()) {
+            expiredExitsScratch.clear()
+            for (te in timeExits.values) {
+                if (now >= te.deadline.toEpochMilli()) expiredExitsScratch.add(te)
+            }
+            for (i in expiredExitsScratch.indices) {
+                val te = expiredExitsScratch[i]
+                timeExits.remove(te.id)
+                handleTimeExitExpiry(te)
+            }
         }
 
-        val nowEpoch = clock.now()
-        expiredStacksScratch.clear()
-        for (state in stacks.activeView()) {
-            val deadline = state.deadlineEpochMs ?: continue
-            if (nowEpoch < deadline) continue
-            expiredStacksScratch.add(state)
-        }
-        for (i in expiredStacksScratch.indices) {
-            val state = expiredStacksScratch[i]
-            cancelStackPending(state.id)
-            stacks.terminate(state.id)
+        val activeStacks = stacks.activeView()
+        if (activeStacks.isNotEmpty()) {
+            expiredStacksScratch.clear()
+            for (state in activeStacks) {
+                val deadline = state.deadlineEpochMs ?: continue
+                if (now < deadline) continue
+                expiredStacksScratch.add(state)
+            }
+            for (i in expiredStacksScratch.indices) {
+                val state = expiredStacksScratch[i]
+                cancelStackPending(state.id)
+                stacks.terminate(state.id)
+            }
         }
 
         triggeredScratch.clear()

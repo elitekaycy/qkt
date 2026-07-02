@@ -47,7 +47,6 @@ import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.windowMs
 import java.time.Duration
 import java.time.Instant
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -453,7 +452,13 @@ class LiveSession(
         }
     }
 
-    /** Every order-lifecycle event lands in the append-only journal, in bus order. */
+    /**
+     * Every order-lifecycle event lands in the append-only journal, in bus order.
+     *
+     * An [com.qkt.events.OrderEvent] only exists because risk approved the request, so the
+     * submit path writes ONE `"submit"` line with `"approved":"true"` instead of separate
+     * `risk-approved` + `submit` lines — one durable write per submit, not two (#648).
+     */
     private fun wireJournal(
         bus: EventBus,
         journal: com.qkt.observe.OrderJournal,
@@ -468,11 +473,10 @@ class LiveSession(
             )
 
         bus.subscribe<com.qkt.events.OrderEvent> { e ->
-            journal.append(e.request.strategyId, "risk-approved", orderFields(e.request))
             journal.append(
                 e.request.strategyId,
                 "submit",
-                orderFields(e.request),
+                orderFields(e.request) + ("approved" to "true"),
             )
         }
         bus.subscribe<BrokerEvent.OrderAccepted> { e ->
@@ -883,7 +887,7 @@ class LiveSession(
                 riskState,
             )
 
-        val trades: MutableList<Trade> = CopyOnWriteArrayList()
+        val trades = RecentTrades()
 
         val pipelineCandleHub =
             candleHub ?: com.qkt.dsl.compile
@@ -1171,6 +1175,9 @@ class LiveSession(
                     Thread.currentThread().interrupt()
                 } finally {
                     running.set(false)
+                    // Journal appends run on this thread (bus dispatch), so its channels
+                    // close here — the last event is already durable when we count down.
+                    runCatching { journal?.close() }
                     terminated.countDown()
                     if (mdcStrategy != null) org.slf4j.MDC.remove("strategy")
                 }
@@ -1338,7 +1345,7 @@ class LiveSession(
             override fun awaitTermination(timeout: Duration): Boolean =
                 terminated.await(timeout.toMillis(), TimeUnit.MILLISECONDS)
 
-            override fun recentTrades(): List<Trade> = trades.toList()
+            override fun recentTrades(): List<Trade> = trades.snapshot()
 
             override fun positionsFor(strategyId: String): List<com.qkt.positions.Position> =
                 strategyPositions.positionsFor(strategyId).values.toList()
