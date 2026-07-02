@@ -48,6 +48,12 @@ class VarianceRatio(
     override val isReady: Boolean
         get() = returns.size >= lookback
 
+    // Computed once per update; value() is read once per referencing expression node per bar,
+    // and each read re-ran the full O(lookback x k) walk.
+    private var lastValue: BigDecimal? = null
+    private val n1 = BigDecimal(lookback)
+    private val kBd = BigDecimal(k)
+
     override fun update(input: BigDecimal) {
         val prev = prevPrice
         if (prev != null) {
@@ -55,11 +61,12 @@ class VarianceRatio(
             if (returns.size > lookback) returns.removeFirst()
         }
         prevPrice = input
+        lastValue = if (returns.size >= lookback) compute() else null
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
-        val n1 = BigDecimal(lookback)
+    override fun value(): BigDecimal? = lastValue
+
+    private fun compute(): BigDecimal? {
         var sum1 = BigDecimal.ZERO
         for (r in returns) sum1 = sum1.add(r, Money.CONTEXT)
         val mean1 = sum1.divide(n1, Money.CONTEXT)
@@ -69,7 +76,7 @@ class VarianceRatio(
             var1 = var1.add(d.multiply(d, Money.CONTEXT), Money.CONTEXT)
         }
         var1 = var1.divide(n1, Money.CONTEXT)
-        val denom = BigDecimal(k).multiply(var1, Money.CONTEXT)
+        val denom = kBd.multiply(var1, Money.CONTEXT)
         if (denom.signum() == 0) return null
 
         val numSums = lookback - k + 1

@@ -23,13 +23,21 @@ class AggregateBinding(
     class Bag {
         private val list: MutableList<AggregateBinding> = mutableListOf()
 
+        // Grouped view built lazily after binding completes — bindingsForAlias runs several
+        // times per bar close, and filtering the flat list allocated a fresh list each call.
+        private var byAlias: Map<String, List<AggregateBinding>>? = null
+
         internal fun add(binding: AggregateBinding) {
             list.add(binding)
+            byAlias = null
         }
 
         fun all(): List<AggregateBinding> = list
 
-        fun bindingsForAlias(alias: String): List<AggregateBinding> = list.filter { it.ruleAlias == alias }
+        fun bindingsForAlias(alias: String): List<AggregateBinding> {
+            val grouped = byAlias ?: list.groupBy { it.ruleAlias }.also { byAlias = it }
+            return grouped[alias] ?: emptyList()
+        }
 
         companion object {
             fun stateFor(

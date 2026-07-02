@@ -30,15 +30,24 @@ class PercentileRank(
     override val isReady: Boolean
         get() = window.size >= period
 
+    // Computed once per update; value() is read once per referencing expression node per bar,
+    // and each read re-counted the whole window.
+    private var lastValue: BigDecimal? = null
+    private val periodDivisor = BigDecimal(period)
+
     override fun update(input: BigDecimal) {
         window.addLast(input)
         if (window.size > period) window.removeFirst()
+        lastValue =
+            if (window.size >= period) {
+                val current = window.last()
+                var below = 0
+                for (v in window) if (v < current) below++
+                BigDecimal(below).divide(periodDivisor, Money.CONTEXT)
+            } else {
+                null
+            }
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
-        val current = window.last()
-        val below = window.count { it < current }
-        return BigDecimal(below).divide(BigDecimal(period), Money.CONTEXT)
-    }
+    override fun value(): BigDecimal? = lastValue
 }

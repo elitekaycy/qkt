@@ -44,6 +44,11 @@ class ReopenGap(
     override val isReady: Boolean
         get() = gapOrigin != null
 
+    // Both reads recomputed subtract/divide/setScale chains per call; each is read once per
+    // referencing expression node per bar, so compute them once per update instead.
+    private var cachedSize: BigDecimal? = null
+    private var cachedFillFraction: BigDecimal? = null
+
     override fun update(input: Candle) {
         val pe = prevEndTime
         val pc = prevClose
@@ -54,10 +59,14 @@ class ReopenGap(
         lastClose = input.close
         prevClose = input.close
         prevEndTime = input.endTime
+        cachedSize = computeSize()
+        cachedFillFraction = computeFillFraction()
     }
 
     /** Signed gap size (reopen open minus origin), or null before the first reopen. */
-    fun size(): BigDecimal? {
+    fun size(): BigDecimal? = cachedSize
+
+    private fun computeSize(): BigDecimal? {
         val o = gapOrigin ?: return null
         val r = reopenOpen ?: return null
         return r.subtract(o, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
@@ -67,7 +76,9 @@ class ReopenGap(
     fun origin(): BigDecimal? = gapOrigin
 
     /** Retracement toward origin in gap units (0 at reopen, 1 at a full fill), or null. */
-    fun fillFraction(): BigDecimal? {
+    fun fillFraction(): BigDecimal? = cachedFillFraction
+
+    private fun computeFillFraction(): BigDecimal? {
         val o = gapOrigin ?: return null
         val r = reopenOpen ?: return null
         val c = lastClose ?: return null

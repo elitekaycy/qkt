@@ -62,6 +62,13 @@ class MT5PositionPoller(
      * the operator-alert hook. The poller keeps skipping diffs until a clean read.
      */
     private val onGatewayUnreachable: ((Int) -> Unit)? = null,
+    /**
+     * Invoked once per in-session poll round, on the poller thread, after the position diff.
+     * [MT5Broker] uses it to keep the margin-level cache warm so the risk engine's approve
+     * path reads a cached value instead of paying a gateway round-trip on the engine thread.
+     * Must not throw; exceptions are caught and logged.
+     */
+    private val onPollRound: (() -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PositionPoller::class.java)
     private val running = AtomicBoolean(false)
@@ -114,6 +121,13 @@ class MT5PositionPoller(
     internal fun tick() {
         if (sessionGate != null && !sessionGate(Instant.ofEpochMilli(clock.now()))) {
             return
+        }
+        onPollRound?.let { hook ->
+            try {
+                hook()
+            } catch (e: Exception) {
+                log.warn("MT5 poller for {} onPollRound hook threw: {}", profile.name, e.message)
+            }
         }
         val now = clock.now()
         closedTickets.entries.removeIf { now - it.value >= profile.pollIntervalMs * CLOSED_TICKET_RETENTION_MULTIPLIER }

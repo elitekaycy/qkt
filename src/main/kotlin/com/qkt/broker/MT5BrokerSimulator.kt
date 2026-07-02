@@ -69,6 +69,10 @@ class MT5BrokerSimulator(
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
+
+    // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
+    // Shareable because the simulator is single-threaded and fill callbacks never re-enter onTick.
+    private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
     private val delayedSubmissions: MutableList<DelayedSubmission> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = HashMap()
     private var submittedOrdinal: Int = 0
@@ -171,8 +175,13 @@ class MT5BrokerSimulator(
         if (working.isEmpty()) return
         expireGtd(tick)
         if (working.isEmpty()) return
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
-        for (wo in toFill) {
+        toFillScratch.clear()
+        for (i in working.indices) {
+            val req = working[i]
+            if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
+        }
+        for (i in toFillScratch.indices) {
+            val wo = toFillScratch[i]
             // A synchronous fill callback may cancel an OCO sibling that is also present in
             // this tick's trigger snapshot. Never fill an order that is no longer working.
             if (!working.remove(wo)) continue
