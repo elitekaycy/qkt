@@ -150,10 +150,11 @@ class CsvTickFeedTest {
     }
 
     @Test
-    fun `inverted bid greater than ask throws`() {
-        val csv = "$header\n1000,X,,,1.5,1.4,,"
+    fun `inverted bid greater than ask is dropped and counted`() {
+        val csv = "$header\n1000,X,,,1.5,1.4,,\n2000,X,,,1.4,1.5,,"
         CsvTickFeed(writeCsv("a.csv", csv)).use { feed ->
-            assertThatThrownBy { feed.next() }.hasMessageContaining("bid > ask")
+            assertThat(feed.next()!!.timestamp).isEqualTo(2000L)
+            assertThat(feed.droppedCrossedQuotes).isEqualTo(1L)
         }
     }
 

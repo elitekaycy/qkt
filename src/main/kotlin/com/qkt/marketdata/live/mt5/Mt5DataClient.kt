@@ -18,6 +18,7 @@ import okhttp3.Request
 class Mt5DataClient(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
+    private val serverTzOffsetHours: Int = 0,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -104,7 +105,7 @@ class Mt5DataClient(
         runCatching { return Instant.parse(rawTime).toEpochMilli() }
         val s = rawTime.replace('T', ' ').substringBefore('.')
         val ldt = LocalDateTime.parse(s, NAIVE_FORMAT)
-        return ldt.toInstant(ZoneOffset.UTC).toEpochMilli()
+        return ldt.toInstant(ZoneOffset.ofHours(serverTzOffsetHours)).toEpochMilli()
     }
 
     private fun timeframeToMillis(tf: String): Long =

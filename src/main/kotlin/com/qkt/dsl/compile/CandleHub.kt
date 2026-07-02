@@ -292,5 +292,8 @@ class CandleHub {
 
     fun historySize(key: HubKey): Int = slots[key]?.ring?.size ?: 0
 
+    /** Immutable oldest-to-newest snapshot used to replay seeded bars into DSL state. */
+    fun seededHistory(key: HubKey): List<Candle> = slots[key]?.ring?.toList() ?: emptyList()
+
     fun keys(): Set<HubKey> = slots.keys.toSet()
 }

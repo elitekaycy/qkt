@@ -43,6 +43,7 @@ class SessionMomentum(
     private var activeDay: Long? = null
     private var sessionOpen: BigDecimal? = null
     private var sessionClose: BigDecimal? = null
+    private var completeSession = false
 
     override val warmupBars: Int = 1
 
@@ -56,7 +57,9 @@ class SessionMomentum(
         if (day != activeDay) {
             finalizeSession()
             activeDay = day
-            sessionOpen = input.open
+            val expectedStart = day * MS_PER_DAY + startHour * MS_PER_HOUR
+            completeSession = input.startTime == expectedStart
+            sessionOpen = if (completeSession) input.open else null
             sessionClose = input.close
         } else {
             sessionClose = input.close

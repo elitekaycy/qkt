@@ -52,6 +52,7 @@ class PortfolioDeployer(
     private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
     private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
     private val riskIntervalMs: Long = 1000L,
+    private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
@@ -75,9 +76,17 @@ class PortfolioDeployer(
         val childWrappers = mutableListOf<ChildHandle>()
         try {
             val allocations = capitalAllocations(compiled.ast)
+            val bookCapital = bookRiskConfig?.capital ?: compiled.ast.capital
+            val bookController =
+                if (bookRiskConfig != null && bookCapital != null) {
+                    com.qkt.risk.book
+                        .BookRiskController(bookRiskConfig, bookCapital)
+                } else {
+                    null
+                }
             for (compiledChild in compiled.children) {
                 val (handle, wrapper) =
-                    createChild(portfolioName, compiledChild, allocations[compiledChild.alias])
+                    createChild(portfolioName, compiledChild, allocations[compiledChild.alias], bookController)
                 children.add(handle)
                 childWrappers.add(wrapper)
             }
@@ -90,7 +99,7 @@ class PortfolioDeployer(
                     ast = compiled.ast,
                     children = childWrappers,
                     marketSource = if (symbols.isEmpty()) null else marketSourceProvider(symbols),
-                    riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers),
+                    riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers, bookController),
                     riskIntervalMs = riskIntervalMs,
                 )
             supervisor.start()
@@ -123,9 +132,12 @@ class PortfolioDeployer(
         portfolioName: String,
         compiled: PortfolioCompiled,
         wrappers: List<ChildHandle>,
+        bookController: com.qkt.risk.book.BookRiskController?,
     ): PortfolioRiskAggregator? {
         val capital = compiled.ast.capital
-        if (capital == null || (maxDrawdownPct == null && maxDailyDrawdownPct == null)) return null
+        val controllerCapital = bookRiskConfig?.capital ?: capital
+        if (controllerCapital == null) return null
+        if (bookController == null && maxDrawdownPct == null && maxDailyDrawdownPct == null) return null
 
         val pnlSources: List<() -> com.qkt.app.SessionPnl> =
             compiled.children.zip(wrappers).map { (child, w) ->
@@ -150,7 +162,7 @@ class PortfolioDeployer(
                 ),
                 clock,
                 com.qkt.bus.EventBus(clock, com.qkt.common.MonotonicSequenceGenerator()),
-                capital,
+                controllerCapital,
                 dailyDdBasis,
             )
         val haltRules =
@@ -158,7 +170,7 @@ class PortfolioDeployer(
                 maxDrawdownPct?.let {
                     add(
                         com.qkt.risk.rules
-                            .MaxDrawdown(it, totalDdBasis, capital),
+                            .MaxDrawdown(it, totalDdBasis, controllerCapital),
                     )
                 }
                 maxDailyDrawdownPct?.let {
@@ -168,13 +180,39 @@ class PortfolioDeployer(
                     )
                 }
             }
-        return PortfolioRiskAggregator(targets, bookRiskState, haltRules, clock)
+        val childPairs = compiled.children.zip(wrappers)
+        return PortfolioRiskAggregator(targets, bookRiskState, haltRules, clock) { timestamp ->
+            val controller = bookController ?: return@PortfolioRiskAggregator
+            val legs =
+                childPairs.flatMap { (child, wrapper) ->
+                    wrapper.handle.live.bookLegs(child.strategyId)
+                }
+            val perStrategyPnl =
+                childPairs.associate { (child, wrapper) ->
+                    val pnl = wrapper.handle.live.pnlSnapshot(child.strategyId)
+                    child.strategyId to pnl.realized.add(pnl.unrealized)
+                }
+            val equity =
+                controllerCapital.add(
+                    perStrategyPnl.values.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add),
+                )
+            controller.onSample(
+                com.qkt.risk.book.BookSnapshot(
+                    timestamp,
+                    equity,
+                    com.qkt.risk.book
+                        .bookExposure(legs, timestampMs = timestamp),
+                    perStrategyPnl,
+                ),
+            )
+        }
     }
 
     private fun createChild(
         portfolioName: String,
         compiledChild: CompiledChild,
         allocatedCapital: java.math.BigDecimal? = null,
+        bookController: com.qkt.risk.book.BookRiskController? = null,
     ): Pair<StrategyHandle, ChildHandle> {
         val childName = "$portfolioName/${compiledChild.alias}"
         val gateActive = AtomicBoolean(false)
@@ -230,6 +268,7 @@ class PortfolioDeployer(
                     }
                 },
                 gate = effectiveActive,
+                bookRiskController = bookController,
                 brokerFactories = brokerFactories,
                 persistor = persistor,
                 notifier = notifier,

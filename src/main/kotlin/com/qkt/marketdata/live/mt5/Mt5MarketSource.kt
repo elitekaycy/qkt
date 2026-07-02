@@ -69,7 +69,8 @@ class Mt5MarketSource(
     ): Sequence<Candle> {
         require(supports(symbol)) { "$name cannot serve $symbol" }
         val wire = symbolMap.toBroker(symbol.removePrefix(prefix))
-        return Mt5BarFetcher(profile.gatewayUrl, http).fetchRange(wire, window, range)
+        return Mt5BarFetcher(profile.gatewayUrl, http, profile.serverTzOffsetHours)
+            .fetchRange(wire, window, range)
     }
 
     override fun close() {}

@@ -52,6 +52,7 @@ class SessionRange(
     private var curLow: BigDecimal = BigDecimal.ZERO
     private var latchedHigh: BigDecimal? = null
     private var latchedLow: BigDecimal? = null
+    private var activeInstanceComplete = false
 
     override val warmupBars: Int = 1
 
@@ -65,8 +66,9 @@ class SessionRange(
         if (inWindow) {
             val instance = instanceOf(epochMin)
             if (instance != activeInstance) {
-                if (activeInstance != null) latch()
+                if (activeInstance != null && activeInstanceComplete) latch()
                 activeInstance = instance
+                activeInstanceComplete = epochMin == instance
                 curHigh = input.high
                 curLow = input.low
             } else {
@@ -74,7 +76,7 @@ class SessionRange(
                 if (input.low < curLow) curLow = input.low
             }
         } else if (activeInstance != null) {
-            latch()
+            if (activeInstanceComplete) latch()
             activeInstance = null
         }
     }

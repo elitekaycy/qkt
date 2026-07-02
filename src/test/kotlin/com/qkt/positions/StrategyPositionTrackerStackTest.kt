@@ -202,6 +202,17 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `ticketForPrimary returns the venue ticket of a plain position`() {
+        val tracker = StrategyPositionTracker()
+        tracker.applyFill(
+            fill("alpha", "entry-1", "XAUUSD", Side.BUY, "0.25", "2000")
+                .copy(brokerOrderId = "TICKET-PRIMARY"),
+        )
+
+        assertThat(tracker.ticketForPrimary("alpha", "XAUUSD")).isEqualTo("TICKET-PRIMARY")
+    }
+
+    @Test
     fun `unregistered fill on same symbol falls through to existing PRIMARY averaging logic`() {
         val tracker = StrategyPositionTracker()
         tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))

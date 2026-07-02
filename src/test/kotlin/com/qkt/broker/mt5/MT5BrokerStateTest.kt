@@ -125,8 +125,7 @@ class MT5BrokerStateTest {
         assertThat(closed.swap).isEqualByComparingTo("-0.12")
         assertThat(closed.magic).isEqualTo(10001)
         assertThat(closed.comment).isEqualTo("dsl-hedge_straddle")
-        // time_msc is venue-clock millis; the exness profile is UTC+2.
-        assertThat(closed.ts).isEqualTo(1_700_050_000_000L - 2L * 3600L * 1000L)
+        assertThat(closed.ts).isEqualTo(1_700_050_000_000L)
     }
 
     @Test
@@ -177,7 +176,7 @@ class MT5BrokerStateTest {
         assertThat(t.currentPrice!!).isEqualByComparingTo("2310.2")
         assertThat(t.profit!!).isEqualByComparingTo("-9.3")
         assertThat(t.swap!!).isEqualByComparingTo("-0.12")
-        assertThat(t.openedAt).isEqualTo(1_700_000_000_000L - 2L * 3600L * 1000L)
+        assertThat(t.openedAt).isEqualTo(1_700_000_000_000L)
         assertThat(t.comment).isEqualTo("dsl-hedge_straddle")
     }
 

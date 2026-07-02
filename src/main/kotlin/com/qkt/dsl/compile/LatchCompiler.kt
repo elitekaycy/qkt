@@ -109,7 +109,7 @@ class LatchCompiler(
         return LatchEntryBuilder { direction, anchor, ec ->
             val dir = BigDecimal(direction)
             val side = if (direction > 0) Side.BUY else Side.SELL
-            val now = ec.strategyContext.clock.now()
+            val now = ec.nowMs()
             val id = ids.next()
 
             fun resolve(rel: DirRel): BigDecimal {

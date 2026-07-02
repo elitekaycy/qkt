@@ -10,6 +10,43 @@ import org.junit.jupiter.api.Test
 
 class Mt5BarFetcherTest {
     @Test
+    fun `broker-local bar request and response normalize to UTC`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"close":1,"high":1,"low":1,"open":1,"tick_volume":1,"time":"2026-05-13T10:00:00"}]""",
+                ),
+            )
+            val fetcher =
+                Mt5BarFetcher(
+                    server.url("/").toString().trimEnd('/'),
+                    serverTzOffsetHours = 2,
+                )
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSDm",
+                        window = TimeWindow.parse("5m"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-05-13T08:00:00Z"),
+                                to = Instant.parse("2026-05-13T08:05:00Z"),
+                            ),
+                    ).toList()
+
+            assertThat(candles.single().startTime)
+                .isEqualTo(Instant.parse("2026-05-13T08:00:00Z").toEpochMilli())
+            assertThat(server.takeRequest().path)
+                .contains("start=2026-05-13T10%3A00")
+                .contains("end=2026-05-13T10%3A05")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `fetchRange hits fetch_data_range and parses bars`() {
         val server = MockWebServer().apply { start() }
         try {

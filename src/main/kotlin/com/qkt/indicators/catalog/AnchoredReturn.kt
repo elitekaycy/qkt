@@ -33,6 +33,7 @@ class AnchoredReturn(
     private var bucket: Long = Long.MIN_VALUE
     private var anchor: BigDecimal? = null
     private var lastValue: BigDecimal? = null
+    private var completeBucket = false
 
     override val warmupBars: Int = 1
 
@@ -43,7 +44,8 @@ class AnchoredReturn(
         val idx = Math.floorDiv(input.startTime, bucketMs)
         if (idx != bucket) {
             bucket = idx
-            anchor = input.open
+            completeBucket = Math.floorMod(input.startTime, bucketMs) == 0L
+            anchor = if (completeBucket) input.open else null
         }
         val a = anchor
         lastValue =
