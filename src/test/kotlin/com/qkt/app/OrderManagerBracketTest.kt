@@ -7,6 +7,8 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.dsl.ast.ChildPct
+import com.qkt.dsl.ast.NumLit
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
@@ -98,6 +100,32 @@ class OrderManagerBracketTest {
         assertThat(broker.submits.size).isGreaterThanOrEqualTo(3)
         assertThat(broker.submits.map { it::class.simpleName })
             .contains("Limit", "Stop")
+    }
+
+    @Test
+    fun `relative bracket exits re-anchor to actual fill`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT, OrderTypeCapability.STOP),
+            )
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val request =
+            bracket().copy(
+                stopLossAst = ChildPct(NumLit(Money.of("0.05"))),
+                takeProfitAst = ChildPct(NumLit(Money.of("0.10"))),
+            )
+
+        om.submit(request)
+        broker.emitFill(broker.submits.single(), price = Money.of("102"))
+
+        val tp = broker.submits.filterIsInstance<OrderRequest.Limit>().first { it.id == "b1-tp" }
+        val sl = broker.submits.filterIsInstance<OrderRequest.Stop>().first { it.id == "b1-sl" }
+        assertThat(tp.limitPrice).isEqualByComparingTo("112.2")
+        assertThat(sl.stopPrice).isEqualByComparingTo("96.9")
     }
 
     @Test

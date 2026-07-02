@@ -705,7 +705,8 @@ class ExprCompiler(
                 ) {
                     ctx.candle
                 } else {
-                    ctx.hub.latest(key)
+                    ctx.historyAsOfMs?.let { ctx.hub.latestAtOrBefore(key, it) }
+                        ?: ctx.hub.latest(key)
                 }
             if (candle == null) {
                 Value.Undefined

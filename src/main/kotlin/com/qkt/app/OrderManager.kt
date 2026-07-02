@@ -471,6 +471,9 @@ class OrderManager(
                 }
                 val caps = broker.capabilitiesFor(request.symbol)
                 val isArmedTrail = request.stopLoss is StopLossSpec.ArmedTrail
+                val needsFillAnchor =
+                    (request.stopLossAst != null && request.stopLossAst !is com.qkt.dsl.ast.ChildAt) ||
+                        (request.takeProfitAst != null && request.takeProfitAst !is com.qkt.dsl.ast.ChildAt)
                 val canAttach =
                     OrderTypeCapability.BRACKET in caps && OrderTypeCapability.POSITION_MODIFY in caps
                 when {
@@ -483,7 +486,8 @@ class OrderManager(
                     canAttach -> submitBracketAttached(request)
                     // BRACKET but no position-modify, fixed SL: ship whole (venue attaches SL/TP,
                     // nothing to trail).
-                    !isArmedTrail && OrderTypeCapability.BRACKET in caps -> submitToBroker(request)
+                    !isArmedTrail && !needsFillAnchor && OrderTypeCapability.BRACKET in caps ->
+                        submitToBroker(request)
                     // No venue attach (backtest / restricted venue): decompose into engine-watched
                     // resting exits.
                     else -> submitBracketFallback(request)
@@ -646,7 +650,14 @@ class OrderManager(
                 computeChildPrice(it, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
             }
         if (slPrice == null && tpPrice == null) return
-        broker.modifyPosition(resolvedTicket, sl = slPrice, tp = tpPrice)
+        val ack = broker.modifyPosition(resolvedTicket, sl = slPrice, tp = tpPrice)
+        if (!ack.accepted) {
+            log.error(
+                "venue rejected attached SL/TP for ticket {}: {}",
+                resolvedTicket,
+                ack.rejectReason,
+            )
+        }
     }
 
     private fun attachLayerSl(
@@ -1673,9 +1684,17 @@ class OrderManager(
                                 e.price + spec.trailDistance
                             }
                     }
-                e.brokerOrderId
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { broker.modifyPosition(it, sl = sl, tp = resolved.takeProfit) }
+                val modifyAck =
+                    e.brokerOrderId
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { broker.modifyPosition(it, sl = sl, tp = resolved.takeProfit) }
+                if (modifyAck != null && !modifyAck.accepted) {
+                    log.error(
+                        "venue rejected fill-anchored bracket modify for ticket {}: {}",
+                        e.brokerOrderId,
+                        modifyAck.rejectReason,
+                    )
+                }
                 pending.orEmpty().forEach { child ->
                     val anchored =
                         if (child is OrderRequest.ArmedTrailingStop) child.copy(entryPrice = e.price) else child

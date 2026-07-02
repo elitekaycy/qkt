@@ -294,7 +294,7 @@ class StrategyPositionTracker(
         val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return null
         val leg =
             book.all().firstOrNull {
-                it.brokerTicket == ticket
+                it.role != LegRole.PRIMARY && it.brokerTicket == ticket
             } ?: return null
         val closed = book.close(leg.legId) ?: return null
         val closingQty = closed.quantity.min(event.quantity)

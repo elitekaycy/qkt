@@ -6,6 +6,22 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class WarmupRequirementsTest {
+    @Test
+    fun `session indicators derive a time-horizon warmup in stream bars`() {
+        val ast =
+            ast(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS
+                  x = EXNESS:XAUUSD EVERY 1h
+                RULES
+                  WHEN session_momentum(x.candle, 12, 14, 2) > 0 THEN FLATTEN
+                """.trimIndent(),
+            )
+
+        assertThat(WarmupRequirements.compute(ast)["x"]).isEqualTo(49)
+    }
+
     private fun ast(src: String) = (Dsl.parse(src) as ParseResult.Success).value
 
     @Test

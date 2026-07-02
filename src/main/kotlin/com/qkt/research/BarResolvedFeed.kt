@@ -88,6 +88,15 @@ private class SymbolFeed(
                 return
             }
             // No real ticks in this bar (a data gap): emit full synthetic O->L->H->C, no decision.
+            val need = intrabarFill(symbol, bar.low, bar.high, BigDecimal.ZERO)
+            if (need != IntrabarFill.SYNTHETIC) {
+                log.warn(
+                    "tick-fills falling back to synthetic path for fill-possible bar symbol={} start={} mode={}",
+                    symbol,
+                    bar.startTime,
+                    need,
+                )
+            }
             rest = candleToTicks(bar).iterator()
             if (rest.hasNext()) {
                 head = rest.next()
@@ -159,6 +168,10 @@ private class SymbolFeed(
             Tick(bar.symbol, bar.high, bar.startTime + 2 * step),
             Tick(bar.symbol, bar.close, bar.endTime - 1, volume = bar.volume),
         ).iterator()
+    }
+
+    private companion object {
+        val log = org.slf4j.LoggerFactory.getLogger(SymbolFeed::class.java)
     }
 
     // Keep only the rest-slice ticks that set a new extreme of price (candle high/low + mark-to-market),

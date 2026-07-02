@@ -66,14 +66,28 @@ import com.qkt.dsl.ast.WhenThen
  */
 object WarmupRequirements {
     fun compute(ast: StrategyAst): Map<String, Int> {
+        timeframeMinutes.set(
+            ast.streams.associate { stream ->
+                stream.alias to
+                    com.qkt.candles.TimeWindow
+                        .parse(stream.timeframe)
+                        .durationMs
+                        .div(60_000L)
+                        .coerceAtLeast(1L)
+            },
+        )
         val out = mutableMapOf<String, Int>()
-        for (s in ast.streams) {
-            val w = s.warmupBars ?: 0
-            if (w > 0) merge(out, s.alias, w)
+        try {
+            for (s in ast.streams) {
+                val w = s.warmupBars ?: 0
+                if (w > 0) merge(out, s.alias, w)
+            }
+            for (rule in ast.rules) walkRule(rule, ast, out)
+            for (let in ast.lets) walkExpr(let.expr, out)
+            return out.toMap()
+        } finally {
+            timeframeMinutes.remove()
         }
-        for (rule in ast.rules) walkRule(rule, ast, out)
-        for (let in ast.lets) walkExpr(let.expr, out)
-        return out.toMap()
     }
 
     private fun walkRule(
@@ -199,7 +213,7 @@ object WarmupRequirements {
         when (expr) {
             is IndicatorCall -> {
                 val alias = aliasFor(expr)
-                val period = registryWarmupBars(expr) ?: numLitMax(expr)
+                val period = registryWarmupBars(expr, alias) ?: numLitMax(expr)
                 if (alias != null && period != null) merge(out, alias, period)
                 expr.args.forEach { walkExpr(it, out) }
             }
@@ -245,7 +259,10 @@ object WarmupRequirements {
      * bars, HIGHEST(N) is N+1). Null when the call shape doesn't match the spec; the
      * caller falls back to [numLitMax].
      */
-    private fun registryWarmupBars(call: IndicatorCall): Int? {
+    private fun registryWarmupBars(
+        call: IndicatorCall,
+        alias: String?,
+    ): Int? {
         val spec =
             com.qkt.dsl.stdlib.IndicatorRegistry
                 .spec(call.name) ?: return null
@@ -255,11 +272,34 @@ object WarmupRequirements {
                 .filterIsInstance<NumLit>()
                 .map { it.value }
         if (consts.size != spec.arity - spec.seriesCount) return null
-        return runCatching {
-            com.qkt.dsl.stdlib.IndicatorRegistry
-                .create(call.name, consts)
-                .warmupBars
-        }.getOrNull()
+        val registryBars =
+            runCatching {
+                com.qkt.dsl.stdlib.IndicatorRegistry
+                    .create(call.name, consts)
+                    .warmupBars
+            }.getOrNull()
+        val tfMinutes = alias?.let { timeframeMinutes.get()[it] } ?: return registryBars
+
+        fun barsForMinutes(minutes: Long): Int =
+            ((minutes + tfMinutes - 1) / tfMinutes + 1)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+        val timeAware =
+            when (call.name.uppercase()) {
+                "PIVOT_P", "PIVOT_R1", "PIVOT_S1",
+                "VWAP_SESSION", "VWAP_SESSION_STDEV",
+                "SESSION_RANGE_HIGH", "SESSION_RANGE_LOW",
+                "IB_DEFENDED_HIGH", "IB_DEFENDED_LOW",
+                -> barsForMinutes(1_440L)
+                "SESSION_MOMENTUM" -> consts.getOrNull(2)?.toLong()?.let { barsForMinutes(it * 1_440L) }
+                "SEASONAL_RANGE", "SEASONAL_RANGE_STDEV" ->
+                    consts.firstOrNull()?.toLong()?.let { barsForMinutes(it * 1_440L) }
+                "ANCHORED_RETURN" -> consts.firstOrNull()?.toLong()?.let(::barsForMinutes)
+                "REOPEN_GAP", "REOPEN_GAP_ORIGIN", "REOPEN_GAP_FILL" ->
+                    consts.firstOrNull()?.toLong()?.let { barsForMinutes(it * 60L) }
+                else -> null
+            }
+        return maxOf(registryBars ?: 0, timeAware ?: 0).takeIf { it > 0 }
     }
 
     private fun numLitMax(call: IndicatorCall): Int? =
@@ -284,4 +324,6 @@ object WarmupRequirements {
     ) {
         out[alias] = maxOf(out[alias] ?: 0, bars)
     }
+
+    private val timeframeMinutes = ThreadLocal.withInitial<Map<String, Long>> { emptyMap() }
 }

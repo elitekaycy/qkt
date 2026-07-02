@@ -383,9 +383,18 @@ class TradingPipeline(
                     quantity = e.quantity,
                     strategyId = e.strategyId,
                     timestamp = e.timestamp,
+                    venueCosts = e.venueCosts,
+                    typedVenueCosts = e.typedVenueCosts,
                 )
             val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
+            val venueCosts =
+                if (e.typedVenueCosts.isNotEmpty()) {
+                    typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)
+                } else {
+                    e.venueCosts
+                }
+            val costs = commission.add(venueCosts)
             val rawRealized = positions.applyFill(asFill)
             val realized = rawRealized.multiply(cs)
             val accountRealized =
@@ -396,7 +405,7 @@ class TradingPipeline(
                         timestamp = e.timestamp,
                         referencePrice = e.price,
                     ).account.amount
-            pnl.recordRealized(accountRealized.subtract(commission))
+            pnl.recordRealized(accountRealized.subtract(costs))
 
             val rawStratRealized = strategyPositions.applyFill(asFill)
             val stratRealized = rawStratRealized.multiply(cs)
@@ -408,8 +417,15 @@ class TradingPipeline(
                         timestamp = e.timestamp,
                         referencePrice = e.price,
                     ).account.amount
-            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(commission))
-            riskState.onFill(e.strategyId, accountStratRealized.subtract(commission))
+            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(costs))
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, accountStratRealized, e.symbol)
+            riskState.onFill(e.strategyId, accountStratRealized.subtract(costs))
+            if (accountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
+            riskEngine.evaluateHaltRules()
+            val trade =
+                Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
+            bus.publish(TradeEvent(trade))
+            onFilled(trade, accountRealized, e.strategyId)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->

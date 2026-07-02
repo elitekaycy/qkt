@@ -347,7 +347,7 @@ private class CompiledStrategy(
             runner.register(
                 strategyId = ctx.strategyId,
                 schedule = sched.decl,
-                emit = { fireSchedule(sched, ctx, emit) },
+                emitAt = { fireAt -> fireSchedule(sched, ctx, emit, fireAt) },
                 nowMs = nowMs,
             )
         }
@@ -357,8 +357,9 @@ private class CompiledStrategy(
         sched: CompiledSchedule,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
-    ) {
-        val hub = boundHub ?: return
+        fireAt: Long,
+    ): Boolean {
+        val hub = boundHub ?: return false
         val syntheticCandle =
             latestKnownCandle(hub) ?: run {
                 scheduleLog.warn(
@@ -366,7 +367,7 @@ private class CompiledStrategy(
                         "(warmup not complete). Trigger will retry on the next fire time.",
                     ctx.strategyId,
                 )
-                return
+                return false
             }
         val ec =
             EvalContext(
@@ -377,8 +378,10 @@ private class CompiledStrategy(
                 snapshotStore = snapshotStore,
                 hub = hub,
                 currentAlias = null,
+                evaluationTimeMs = fireAt,
             )
         for (sig in sched.action(ec)) emit(sig)
+        return true
     }
 
     private fun latestKnownCandle(hub: CandleHub): Candle? {
@@ -533,6 +536,7 @@ private class CompiledStrategy(
                 hub = hub,
                 currentAlias = alias,
                 evaluationTimeMs = candle.endTime,
+                historyAsOfMs = candle.endTime.takeIf { warmupReplay },
             )
 
         val symbol = streams[alias]!!.qktSymbol

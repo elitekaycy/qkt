@@ -46,6 +46,8 @@ class EvalContext(
     val entryPrice: BigDecimal? = null,
     /** Event time for deterministic bar-close evaluation; null uses the runtime clock. */
     val evaluationTimeMs: Long? = null,
+    /** Warmup replay frontier for cross-stream reads; null uses the live latest value. */
+    val historyAsOfMs: Long? = null,
 ) {
     fun nowMs(): Long = evaluationTimeMs ?: strategyContext.clock.now()
 
@@ -61,6 +63,7 @@ class EvalContext(
             currentAlias,
             entryPrice,
             evaluationTimeMs,
+            historyAsOfMs,
         )
 }
 

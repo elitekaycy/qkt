@@ -7,7 +7,6 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
-import org.slf4j.LoggerFactory
 
 /**
  * Clock-driven runner for `SCHEDULE` blocks (#77 Phase 40).
@@ -22,11 +21,9 @@ import org.slf4j.LoggerFactory
  * of a strategy with `SCHEDULE AT 09:00 UTC` fires the action at the same
  * simulated instant on every run, regardless of wall clock.
  *
- * Fire model: **skip-on-miss**. If multiple fire times elapse between calls
- * (engine paused, restarted, quiet market longer than the trigger interval),
- * the runner advances the watermark past all missed fires, logs a WARN per
- * skipped fire, and emits the action exactly once. Strategies that need
- * catch-up should detect via `NOW` and decide themselves.
+ * Fire model: **replay missed occurrences**. Every elapsed fire is emitted once with
+ * its scheduled event-time. Live's one-second heartbeat and sparse backtest ticks
+ * therefore observe the same occurrence count across quiet market gaps.
  */
 class ScheduleRunner(
     /**
@@ -45,7 +42,7 @@ class ScheduleRunner(
         val strategyId: String,
         val schedule: ScheduleDecl,
         val trigger: ScheduleTrigger,
-        val emit: () -> Unit,
+        val emit: (Long) -> Boolean,
         var nextFireMs: Long,
     )
 
@@ -59,7 +56,8 @@ class ScheduleRunner(
     fun register(
         strategyId: String,
         schedule: ScheduleDecl,
-        emit: () -> Unit,
+        emit: () -> Unit = {},
+        emitAt: ((Long) -> Boolean)? = null,
         nowMs: Long,
     ) {
         for (trigger in schedule.triggers) {
@@ -68,7 +66,11 @@ class ScheduleRunner(
                     strategyId = strategyId,
                     schedule = schedule,
                     trigger = trigger,
-                    emit = emit,
+                    emit =
+                        emitAt ?: {
+                            emit()
+                            true
+                        },
                     nextFireMs = computeNextFire(trigger, nowMs, strategyId),
                 ),
             )
@@ -116,41 +118,20 @@ class ScheduleRunner(
 
     /**
      * Heartbeat. For each registered trigger:
-     *   - while [nowMs] has crossed `nextFireMs`, advance the watermark past
-     *     every fire that's elapsed;
-     *   - if more than one fire elapsed in one heartbeat call, emit one WARN
-     *     per skipped fire;
-     *   - emit the action exactly once at the most recent eligible time.
+     * Emit every elapsed occurrence in chronological order.
      */
     fun tick(nowMs: Long) {
         for (reg in regs) {
-            if (nowMs < reg.nextFireMs) continue
-            var fired = false
-            var missed = 0
-            var firstMissed: Long? = null
-            var lastMissed: Long? = null
             while (reg.nextFireMs <= nowMs) {
                 val thisFire = reg.nextFireMs
-                val next = computeNextFire(reg.trigger, thisFire + 1, reg.strategyId)
-                if (fired) {
-                    missed++
-                    if (firstMissed == null) firstMissed = thisFire
-                    lastMissed = thisFire
+                reg.nextFireMs = computeNextFire(reg.trigger, thisFire + 1, reg.strategyId)
+                if (!reg.emit(thisFire)) {
+                    while (reg.nextFireMs <= nowMs) {
+                        reg.nextFireMs = computeNextFire(reg.trigger, reg.nextFireMs + 1, reg.strategyId)
+                    }
+                    break
                 }
-                reg.nextFireMs = next
-                if (!fired) fired = true
             }
-            if (missed > 0) {
-                log.warn(
-                    "schedule for strategy={} missed {} fire(s) from {} to {} (last {}ms behind heartbeat)",
-                    reg.strategyId,
-                    missed,
-                    Instant.ofEpochMilli(firstMissed!!),
-                    Instant.ofEpochMilli(lastMissed!!),
-                    nowMs - lastMissed,
-                )
-            }
-            if (fired) reg.emit()
         }
     }
 
@@ -269,7 +250,6 @@ class ScheduleRunner(
     }
 
     companion object {
-        private val log = LoggerFactory.getLogger(ScheduleRunner::class.java)
         private const val HOUR_MS = 3_600_000L
     }
 }

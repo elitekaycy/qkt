@@ -167,6 +167,7 @@ class MT5Client(
             digits = obj["digits"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             point = obj["point"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             tradeStopsLevel = obj["trade_stops_level"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            tradeFreezeLevel = obj["trade_freeze_level"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             volumeMin = obj["volume_min"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             volumeStep = obj["volume_step"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             // Default 1 keeps callers safe if the gateway version doesn't return the field;

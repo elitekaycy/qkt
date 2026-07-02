@@ -8,6 +8,31 @@ import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
 
 class AnchoredReturnTest {
+    @Test
+    fun `first partial bucket stays undefined`() {
+        val indicator = AnchoredReturn(30)
+        indicator.update(
+            candle(
+                java.time.Instant
+                    .parse("2026-01-01T00:05:00Z")
+                    .toEpochMilli(),
+                "100",
+                "105",
+            ),
+        )
+        assertThat(indicator.value()).isNull()
+        indicator.update(
+            candle(
+                java.time.Instant
+                    .parse("2026-01-01T00:30:00Z")
+                    .toEpochMilli(),
+                "110",
+                "111",
+            ),
+        )
+        assertThat(indicator.value()).isNotNull()
+    }
+
     private val minMs = 60_000L
 
     private fun candle(
