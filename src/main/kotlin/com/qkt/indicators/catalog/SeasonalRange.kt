@@ -34,6 +34,7 @@ class SeasonalRange(
     }
 
     private val buckets: Array<ArrayDeque<BigDecimal>> = Array(24) { ArrayDeque(window) }
+    private val windowDivisor = BigDecimal(window)
     private var lastValue: BigDecimal? = null
     private var lastReady = false
 
@@ -48,7 +49,7 @@ class SeasonalRange(
         if (bucket.size >= window) {
             var sum = BigDecimal.ZERO
             for (r in bucket) sum = sum.add(r, Money.CONTEXT)
-            lastValue = sum.divide(BigDecimal(window), Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+            lastValue = sum.divide(windowDivisor, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
             lastReady = true
         } else {
             lastValue = null

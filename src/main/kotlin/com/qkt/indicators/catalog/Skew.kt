@@ -40,6 +40,11 @@ class Skew(
     override val isReady: Boolean
         get() = returns.size >= period
 
+    // Computed once per update; value() is read once per referencing expression node per bar,
+    // and each read re-walked the whole window.
+    private var lastValue: BigDecimal? = null
+    private val n = BigDecimal(period)
+
     override fun update(input: BigDecimal) {
         val prev = prevPrice
         if (prev != null) {
@@ -47,11 +52,12 @@ class Skew(
             if (returns.size > period) returns.removeFirst()
         }
         prevPrice = input
+        lastValue = if (returns.size >= period) compute() else null
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
-        val n = BigDecimal(period)
+    override fun value(): BigDecimal? = lastValue
+
+    private fun compute(): BigDecimal {
         // Mean of returns.
         var sum = BigDecimal.ZERO
         for (r in returns) sum = sum.add(r, Money.CONTEXT)

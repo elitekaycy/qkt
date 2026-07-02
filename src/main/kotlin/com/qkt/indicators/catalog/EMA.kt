@@ -36,6 +36,10 @@ class EMA(
     override val isReady: Boolean
         get() = ema != null
 
+    // The rounded read, computed once per update — value() is read once per referencing
+    // expression node per bar, and each read allocated a fresh setScale.
+    private var lastValue: BigDecimal? = null
+
     override fun update(input: BigDecimal) {
         val prev = ema
         if (prev == null) {
@@ -52,7 +56,8 @@ class EMA(
                     .multiply(input, Money.CONTEXT)
                     .add(oneMinusAlpha.multiply(prev, Money.CONTEXT), Money.CONTEXT)
         }
+        lastValue = ema?.setScale(Money.SCALE, Money.ROUNDING)
     }
 
-    override fun value(): BigDecimal? = ema?.setScale(Money.SCALE, Money.ROUNDING)
+    override fun value(): BigDecimal? = lastValue
 }

@@ -26,6 +26,12 @@ class ZScore(
     }
 
     private val window: ArrayDeque<BigDecimal> = ArrayDeque(period)
+    private val periodDivisor = BigDecimal(period)
+    private val sampleDivisor = BigDecimal(period - 1)
+
+    // Computed once per update; the DSL reads value() once per referencing expression node
+    // per bar, and recomputing the O(period) walk on every read was pure waste.
+    private var lastValue: BigDecimal? = null
 
     override val warmupBars: Int = period
 
@@ -35,19 +41,21 @@ class ZScore(
     override fun update(input: BigDecimal) {
         window.addLast(input)
         if (window.size > period) window.removeFirst()
+        lastValue = if (window.size >= period) compute() else null
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
+    override fun value(): BigDecimal? = lastValue
+
+    private fun compute(): BigDecimal? {
         var sum = BigDecimal.ZERO
         for (v in window) sum = sum.add(v, Money.CONTEXT)
-        val mean = sum.divide(BigDecimal(period), Money.CONTEXT)
+        val mean = sum.divide(periodDivisor, Money.CONTEXT)
         var ssd = BigDecimal.ZERO
         for (v in window) {
             val d = v.subtract(mean, Money.CONTEXT)
             ssd = ssd.add(d.multiply(d, Money.CONTEXT), Money.CONTEXT)
         }
-        val stddev = ssd.divide(BigDecimal(period - 1), Money.CONTEXT).sqrt(Money.CONTEXT)
+        val stddev = ssd.divide(sampleDivisor, Money.CONTEXT).sqrt(Money.CONTEXT)
         if (stddev.signum() == 0) return null
         return window
             .last()
