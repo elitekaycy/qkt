@@ -3,6 +3,7 @@ package com.qkt.marketdata.live.mt5
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
+import java.time.ZoneOffset
 import okhttp3.OkHttpClient
 
 /**
@@ -15,6 +16,7 @@ import okhttp3.OkHttpClient
 class Mt5BarFetcher(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
+    private val serverTzOffsetHours: Int = 0,
 ) {
     fun fetchRange(
         symbol: String,
@@ -22,9 +24,18 @@ class Mt5BarFetcher(
         range: TimeRange,
     ): Sequence<Candle> {
         val tf = windowToTimeframe(window)
-        val startIso = range.from.toString().removeSuffix("Z")
-        val endIso = range.to.toString().removeSuffix("Z")
-        val client = Mt5DataClient(baseUrl, http)
+        val offset = ZoneOffset.ofHours(serverTzOffsetHours)
+        val startIso =
+            range.from
+                .atOffset(offset)
+                .toLocalDateTime()
+                .toString()
+        val endIso =
+            range.to
+                .atOffset(offset)
+                .toLocalDateTime()
+                .toString()
+        val client = Mt5DataClient(baseUrl, http, serverTzOffsetHours)
         // The gateway includes the currently-open bar when `end` lands inside it;
         // match Bybit / TradingView / Local boundary semantics so consumers never
         // see an unclosed bar.

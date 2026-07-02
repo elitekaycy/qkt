@@ -7,6 +7,7 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.GZIPInputStream
+import org.slf4j.LoggerFactory
 
 /**
  * Streams ticks from a CSV file at [path]. Transparently handles `.gz` compression.
@@ -21,6 +22,8 @@ class CsvTickFeed(
     private val reader: BufferedReader = openReader(path)
     private var lineNumber: Int = 1
     private var lastTimestamp: Long = Long.MIN_VALUE
+    var droppedCrossedQuotes: Long = 0
+        private set
 
     init {
         try {
@@ -39,7 +42,13 @@ class CsvTickFeed(
             val line = reader.readLine() ?: return null
             lineNumber++
             if (line.isEmpty()) continue
-            val tick = parseLine(line)
+            val tick =
+                try {
+                    parseLine(line)
+                } catch (e: CrossedQuoteException) {
+                    recordCrossedQuote(e.message.orEmpty())
+                    continue
+                }
             check(tick.timestamp >= lastTimestamp) {
                 "$path:$lineNumber: non-decreasing timestamps required " +
                     "(got ${tick.timestamp}, last $lastTimestamp): $line"
@@ -50,6 +59,17 @@ class CsvTickFeed(
     }
 
     override fun close() = reader.close()
+
+    private fun recordCrossedQuote(message: String) {
+        droppedCrossedQuotes++
+        if (droppedCrossedQuotes == 1L || droppedCrossedQuotes % 1_000L == 0L) {
+            log.warn(
+                "dropping crossed stored quote (count={}): {}",
+                droppedCrossedQuotes,
+                message,
+            )
+        }
+    }
 
     private fun parseLine(line: String): Tick {
         val cols = line.split(",")
@@ -94,6 +114,7 @@ class CsvTickFeed(
     }
 
     companion object {
+        private val log = LoggerFactory.getLogger(CsvTickFeed::class.java)
         const val EXPECTED_HEADER: String = "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume"
     }
 }

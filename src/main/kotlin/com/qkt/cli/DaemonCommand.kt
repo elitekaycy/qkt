@@ -255,6 +255,7 @@ class DaemonCommand(
                     maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
                     totalDdBasis = cfg.totalDdBasis,
                     dailyDdBasis = cfg.dailyDdBasis,
+                    bookRiskConfig = cfg.bookRisk,
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,

@@ -326,14 +326,49 @@ class MT5Broker(
         val ticket =
             ticketStr.toLongOrNull()
                 ?: return reject(request, "closesTicket is not a valid ticket: $ticketStr")
+        val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
+        val closeQuantity =
+            when (val result = prepareVolume(brokerSymbol, request.quantity)) {
+                is VolumeResult.Ok -> result.quantity
+                is VolumeResult.Reject -> return reject(request, result.reason)
+            }
         val resp =
-            runCatching { client.closePosition(ticket, volume = request.quantity) }
+            runCatching { client.closePosition(ticket, volume = closeQuantity) }
                 .getOrElse { ex -> return reject(request, ex.message ?: "close_position failed") }
         if (!isOrderSuccessful(resp.result.retcode)) {
             return reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
         }
-        positionMetaByTicket.remove(ticket)
-        recentlyClosedByTicket[ticket] = clock.now()
+        val partial = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
+        if (!partial) {
+            positionMetaByTicket.remove(ticket)
+            recentlyClosedByTicket[ticket] = clock.now()
+        }
+        val reportedVolume = resp.result.volume?.takeIf { it.signum() > 0 }
+        val filledQuantity =
+            if (reportedVolume != null) {
+                reportedVolume
+            } else if (!partial) {
+                closeQuantity
+            } else {
+                // The venue changed state, so a rejection would invite a duplicate close.
+                // Keep the order accepted-but-unresolved and alert; the position poller will
+                // reconcile the remaining venue quantity without sending a second close.
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        clientOrderId = request.id,
+                        brokerOrderId = ticket.toString(),
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                publishGatewayUnreachable(1)
+                log.error(
+                    "MT5Broker {} partial close {} omitted actual filled volume",
+                    profile.name,
+                    request.id,
+                )
+                return SubmitAck(request.id, ticket.toString(), accepted = true)
+            }
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
@@ -348,9 +383,10 @@ class MT5Broker(
                 symbol = request.symbol,
                 side = request.side,
                 price = resp.result.price,
-                quantity = request.quantity,
+                quantity = filledQuantity,
                 strategyId = request.strategyId,
                 timestamp = clock.now(),
+                venueCosts = venueCostsForDeal(resp.result.deal),
             ),
         )
         return SubmitAck(request.id, ticket.toString(), accepted = true)
@@ -383,6 +419,36 @@ class MT5Broker(
         data class Reject(
             val reason: String,
         ) : PrepareResult
+    }
+
+    private sealed interface VolumeResult {
+        data class Ok(
+            val quantity: BigDecimal,
+        ) : VolumeResult
+
+        data class Reject(
+            val reason: String,
+        ) : VolumeResult
+    }
+
+    private fun prepareVolume(
+        brokerSymbol: String,
+        quantity: BigDecimal,
+    ): VolumeResult {
+        val rules = resolveVenueRules(brokerSymbol) ?: return VolumeResult.Ok(quantity)
+        val quantized =
+            if (rules.volumeStep.signum() > 0) {
+                quantity.divide(rules.volumeStep, 0, RoundingMode.DOWN).multiply(rules.volumeStep)
+            } else {
+                quantity
+            }
+        return if (quantized < rules.volumeMin) {
+            VolumeResult.Reject(
+                "quantized volume below venue volumeMin for $brokerSymbol (input=${quantity.toPlainString()})",
+            )
+        } else {
+            VolumeResult.Ok(quantized)
+        }
     }
 
     /**
@@ -521,7 +587,7 @@ class MT5Broker(
         // thread by the single-consumer loop). submit returns an optimistic ack at once so the
         // engine thread never waits on the order round-trip — the real accept/reject/fill
         // follows on the bus, which is what the event-driven OCO/OTO sequencing consumes.
-        client.placeOrderAsync(prepared) { resp -> handlePlacementResult(request, resp) }
+        client.placeOrderAsync(prepared) { resp -> handlePlacementResult(request, prepared.volume, resp) }
         return SubmitAck(
             clientOrderId = request.id,
             brokerOrderId = null,
@@ -538,6 +604,7 @@ class MT5Broker(
      */
     private fun handlePlacementResult(
         request: OrderRequest,
+        preparedVolume: BigDecimal,
         resp: MT5OrderResponse,
     ) {
         if (!isOrderSuccessful(resp.result.retcode)) {
@@ -565,6 +632,13 @@ class MT5Broker(
         val isInstantFill =
             request is OrderRequest.Market ||
                 (request is OrderRequest.Bracket && request.entry is OrderRequest.Market)
+        if (isInstantFill &&
+            resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL &&
+            resp.result.volume?.signum() != 1
+        ) {
+            resolveUnknownOutcome(request, "partial fill response omitted actual volume")
+            return
+        }
         // Register the venue ticket BEFORE announcing acceptance so any consumer reacting to
         // [BrokerEvent.OrderAccepted] (e.g. a follow-up modify keyed by clientOrderId) sees the
         // broker's bookkeeping already consistent.
@@ -595,6 +669,9 @@ class MT5Broker(
             ),
         )
         if (isInstantFill) {
+            val filledQuantity =
+                resp.result.volume?.takeIf { it.signum() > 0 }
+                    ?: preparedVolume
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = request.id,
@@ -602,12 +679,29 @@ class MT5Broker(
                     symbol = request.symbol,
                     side = request.side,
                     price = resp.result.price,
-                    quantity = request.quantity,
+                    quantity = filledQuantity,
                     strategyId = request.strategyId,
                     timestamp = clock.now(),
                 ),
             )
         }
+    }
+
+    private fun venueCostsForDeal(dealTicket: Long): BigDecimal {
+        if (dealTicket == 0L) return BigDecimal.ZERO
+        val now = clock.now()
+        val deals =
+            runCatching {
+                client.getDeals(
+                    fromUtcMs = now - DEAL_LOOKUP_WINDOW_MS,
+                    toUtcMs = now + DEAL_LOOKUP_WINDOW_MS,
+                )
+            }.getOrNull() ?: return BigDecimal.ZERO
+        val deal = deals.firstOrNull { it.ticket == dealTicket } ?: return BigDecimal.ZERO
+        return deal.commission
+            .add(deal.swap)
+            .add(deal.fee)
+            .negate()
     }
 
     /** True for failures where the request may have reached the venue despite the error. */
@@ -1160,5 +1254,8 @@ class MT5Broker(
 
         /** Margin-level cache TTL — fresh enough for a floor check, cheap on the gateway. */
         private const val MARGIN_CACHE_TTL_MS: Long = 5_000L
+
+        /** Deal-history window around an immediate fill used to retrieve its exact venue costs. */
+        private const val DEAL_LOOKUP_WINDOW_MS: Long = 24L * 60L * 60L * 1_000L
     }
 }

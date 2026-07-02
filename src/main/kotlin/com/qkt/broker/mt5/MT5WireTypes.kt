@@ -94,7 +94,7 @@ data class MT5Deal(
     val fee: BigDecimal,
     val magic: Int,
     val comment: String?,
-    /** Deal execution time in UTC epoch millis (the venue's `time_msc`, tz-shifted). */
+    /** Deal execution time in UTC epoch millis (the venue's raw `time_msc`). */
     val timeMs: Long,
 )
 
@@ -186,6 +186,8 @@ data class MT5OrderResult(
     val deal: Long,
     val price: BigDecimal,
     val comment: String,
+    /** Actual volume executed by the venue; null when an older gateway omits it. */
+    val volume: BigDecimal? = null,
 )
 
 /**

@@ -55,7 +55,7 @@ class DukascopyTickFetcher(
             w.newLine()
             for (t in ticks) {
                 // timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume — price blank, mid derived.
-                w.write("${t.timestamp},${t.symbol},,,${t.bid},${t.ask},${t.bidVolume},${t.askVolume}")
+                w.write("${t.timestamp},${t.symbol},,${t.volume},${t.bid},${t.ask},${t.bidVolume},${t.askVolume}")
                 w.newLine()
             }
         }

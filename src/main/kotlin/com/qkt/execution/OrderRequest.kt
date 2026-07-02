@@ -298,6 +298,9 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        /** Original DSL child prices, retained so exits can re-anchor to the actual fill. */
+        val takeProfitAst: com.qkt.dsl.ast.ChildPriceAst? = null,
+        val stopLossAst: com.qkt.dsl.ast.ChildPriceAst? = null,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }

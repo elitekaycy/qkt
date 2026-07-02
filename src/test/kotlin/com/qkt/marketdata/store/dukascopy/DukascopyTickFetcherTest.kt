@@ -60,6 +60,7 @@ class DukascopyTickFetcherTest {
         assertThat(ticks.map { it.timestamp }).isSorted()
         assertThat(ticks[0].symbol).isEqualTo("XAUUSD")
         assertThat(ticks[0].bid).isEqualByComparingTo("2345.65")
+        assertThat(ticks[0].volume).isEqualByComparingTo("2")
     }
 
     @Test

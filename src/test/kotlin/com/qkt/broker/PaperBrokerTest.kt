@@ -125,6 +125,43 @@ class PaperBrokerTest {
     }
 
     @Test
+    fun `order cancelled by an earlier fill in the same tick is not filled`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val broker = PaperBroker(bus, FixedClock(0L), MarketPriceTracker())
+        bus.subscribe<BrokerEvent.OrderFilled> { fill ->
+            fills.add(fill)
+            if (fill.clientOrderId == "first") broker.cancel("sibling")
+        }
+        broker.submit(
+            OrderRequest.Limit(
+                id = "first",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("101"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        broker.submit(
+            OrderRequest.Limit(
+                id = "sibling",
+                symbol = "X",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("99"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        broker.onTick(tick("X", "100"))
+
+        assertThat(fills.map { it.clientOrderId }).containsExactly("first")
+    }
+
+    @Test
     fun `stop triggers are side-aware on the quote, not the mid`() {
         // MT5 fires BUY_STOP on the ASK and SELL_STOP on the BID. With bid 100.4 /
         // ask 100.6 (mid 100.5): a buy stop at 100.55 must trigger (ask crossed it)
@@ -204,6 +241,31 @@ class PaperBrokerTest {
     }
 
     @Test
+    fun `bar-mode stop that gaps through fills at the adverse opening price`() {
+        val tracker = MarketPriceTracker()
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val broker = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = true)
+        broker.onTick(tick("EURUSD", "1.10", ts = 999L))
+        broker.submit(
+            OrderRequest.Stop(
+                id = "gap-sl",
+                symbol = "EURUSD",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("1.09"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        broker.onTick(tick("EURUSD", "1.07", ts = 10_000L))
+
+        assertThat(fills.single().price).isEqualByComparingTo("1.07")
+    }
+
+    @Test
     fun `bar-mode fills a triggered Limit at the limit price, not the overshooting tick`() {
         // A long take-profit is a SELL limit above; the bar's synthetic high overshoots
         // it. Bar mode books the limit level, not the bar high.
@@ -228,6 +290,32 @@ class PaperBrokerTest {
 
         assertThat(fills).hasSize(1)
         assertThat(fills.single().price).isEqualByComparingTo(Money.of("1.11"))
+    }
+
+    @Test
+    fun `stop-limit activation rests the limit until it becomes marketable`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val broker = PaperBroker(bus, FixedClock(0L), MarketPriceTracker())
+        broker.submit(
+            OrderRequest.StopLimit(
+                id = "stop-limit",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("100"),
+                limitPrice = Money.of("99"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        broker.onTick(tick("X", "100.5", ts = 1L))
+        assertThat(fills).isEmpty()
+        broker.onTick(tick("X", "98.5", ts = 2L))
+
+        assertThat(fills.single().price).isLessThanOrEqualTo(Money.of("99"))
     }
 
     @Test

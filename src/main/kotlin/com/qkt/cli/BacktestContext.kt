@@ -337,6 +337,10 @@ class BacktestContext private constructor(
             require(!tickFills || forceBars) {
                 "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
             }
+            require(!tickFills || executionConfig.latencyMs == 0L) {
+                "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
+                    "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
+            }
             val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
             val finestDeclared: Map<String, TimeWindow> =
                 ast.streams
@@ -376,16 +380,36 @@ class BacktestContext private constructor(
             if (forceBars) {
                 val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                val days = generateSequence(fromDay) { it.plusDays(1) }.takeWhile { !it.isAfter(toDay) }.toList()
                 for (sym in symbols) {
                     val tf = barWindows[sym] ?: candleWindow ?: continue
                     val (broker, bare) = brokerAndBare(sym)
-                    if (days.none { binaryBarStore.hasDay(broker, bare, tf, it) }) {
-                        throw SetupError(
-                            "--bars: no built bars usable for $sym (need a built tf that divides " +
-                                "${tf.canonicalSpec()}); run: qkt data build-bars $bare --tf 1m " +
-                                "--from $fromDay --to ${toDay.plusDays(1)}",
+                    val coverage =
+                        com.qkt.marketdata.store.BarCompletenessValidator.validate(
+                            binaryBarStore,
+                            broker,
+                            bare,
+                            tf,
+                            fromDay,
+                            toDay,
+                            defaultCalendars().calendarFor(bare),
                         )
+                    System.err.println(
+                        "qkt: bar coverage $sym ${coverage.coveredTradingDays}/${coverage.requestedTradingDays} " +
+                            "trading days (${tf.canonicalSpec()})",
+                    )
+                    if (coverage.missingDays.isNotEmpty()) {
+                        val message =
+                            "--bars: incomplete built bars for $sym: ${coverage.coveredTradingDays}/" +
+                                "${coverage.requestedTradingDays} trading days; missing " +
+                                coverage.missingDays.joinToString(",") +
+                                ". Run: qkt data build-bars $bare --tf ${tf.canonicalSpec()} " +
+                                "--from $fromDay --to ${toDay.plusDays(1)}"
+                        if (!args.flag("allow-incomplete")) {
+                            throw com.qkt.backtest.IncompleteDataException(
+                                "$message\n  re-run with --allow-incomplete to proceed anyway",
+                            )
+                        }
+                        System.err.println("qkt: WARNING — $message")
                     }
                 }
                 System.err.println("qkt: --bars research tier — bar-approximated intrabar fills; not for grading")
@@ -426,6 +450,32 @@ class BacktestContext private constructor(
             compiled: com.qkt.dsl.portfolio.PortfolioCompiled,
             fetcherOverride: DataFetcher? = null,
         ): BacktestContext {
+            val hasRegimeGates =
+                compiled.ast.rules.any { it is com.qkt.dsl.ast.WhenRun }
+            val hasAllocatedCapital = compiled.ast.capital != null
+            if (hasRegimeGates || hasAllocatedCapital) {
+                throw SetupError(
+                    "portfolio backtest cannot truthfully model " +
+                        listOfNotNull(
+                            "WHEN..RUN gates".takeIf { hasRegimeGates },
+                            "CAPITAL/WEIGHT allocation".takeIf { hasAllocatedCapital },
+                        ).joinToString(" and ") +
+                        " with the live per-child topology; refusing a misleading result",
+                )
+            }
+            val unsupportedBarsFlag =
+                when {
+                    args.flag("bars") -> "--bars"
+                    args.option("bar-tf") != null -> "--bar-tf"
+                    args.flag("tick-fills") -> "--tick-fills"
+                    else -> null
+                }
+            if (unsupportedBarsFlag != null) {
+                throw SetupError(
+                    "$unsupportedBarsFlag is not supported for portfolio backtests; " +
+                        "run the validated full-tick tier until portfolio bar replay is wired",
+                )
+            }
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
             val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
@@ -493,8 +543,7 @@ class BacktestContext private constructor(
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                // --bars never reads ticks; skip tick fetch + completeness validation (see build()).
-                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                if (!provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
                         streams = provisionStreams,
                         from = provisionFrom,

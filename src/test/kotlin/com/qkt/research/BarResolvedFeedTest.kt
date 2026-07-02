@@ -33,7 +33,7 @@ class BarResolvedFeedTest {
             BarResolvedFeed(
                 perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "102", "99", "101"))),
                 sliceProvider = { _, _, _ -> real },
-                intrabarFill = { _, _, _ -> IntrabarFill.ALL_TICKS },
+                intrabarFill = { _, _, _, _ -> IntrabarFill.ALL_TICKS },
             )
         assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("101"))
     }
@@ -44,7 +44,7 @@ class BarResolvedFeedTest {
             BarResolvedFeed(
                 perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "102", "99", "101"))),
                 sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("100"), 0)) }, // just the open
-                intrabarFill = { _, _, _ -> IntrabarFill.SYNTHETIC },
+                intrabarFill = { _, _, _, _ -> IntrabarFill.SYNTHETIC },
             )
         assertThat(drain(f)).containsExactly(Money.of("100"), Money.of("99"), Money.of("102"), Money.of("101"))
     }
@@ -67,7 +67,7 @@ class BarResolvedFeedTest {
             BarResolvedFeed(
                 perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "105", "99", "101"))),
                 sliceProvider = { _, _, _ -> real },
-                intrabarFill = { _, _, _ -> IntrabarFill.EXTREMES },
+                intrabarFill = { _, _, _, _ -> IntrabarFill.EXTREMES },
             )
         assertThat(drain(f)).containsExactly(
             Money.of("100"),
@@ -90,7 +90,7 @@ class BarResolvedFeedTest {
                         "X" to sequenceOf(bar(0, "100", "102", "99", "101"), bar(1000, "101", "105", "100", "104")),
                     ),
                 sliceProvider = { _, _, _ -> sequenceOf(Tick("X", Money.of("1"), 0)) },
-                intrabarFill = { _, low, high ->
+                intrabarFill = { _, low, high, _ ->
                     seen.add(low to high)
                     IntrabarFill.SYNTHETIC
                 },

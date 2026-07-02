@@ -160,6 +160,10 @@ class TradingPipeline(
             closeTicketFor = { strategyId, exitId ->
                 strategyPositions.ticketForLeg(strategyId, exitId.removeSuffix("-sl"))
             },
+            closePrimaryTicketFor = { strategyId, symbol ->
+                strategyPositions.ticketForPrimary(strategyId, symbol)
+            },
+            requireArmedTrailTicket = mode == Mode.LIVE,
             // Risk-per-trade is a backtest-report feature; only record it there so the live
             // daemon's risk map doesn't grow unbounded.
             trackRisk = mode == Mode.BACKTEST,
