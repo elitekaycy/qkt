@@ -21,7 +21,7 @@ This skill is the source of truth for **how** we work in the qkt repository. The
 
 Weigh every change on five axes, not just "does it work". Most are enforced in detail elsewhere in this skill; this is the reminder to consider all five before calling work done.
 
-- **Best practices.** Default to the patterns already here — §7 invariants, §10 idioms, §11 testing. When no pattern fits, add the new one to this skill in the same PR rather than forking a parallel convention.
+- **Best practices.** Default to the patterns already here — §7 invariants, §9 hot-path rules, §11 idioms, §12 testing. When no pattern fits, add the new one to this skill in the same PR rather than forking a parallel convention.
 - **Scalability.** Hot-path cost scales with the *active working set*, not the historical total. Key per-tick/per-event scans by symbol or account; never iterate all orders to act on one. (cf. the symbol-keyed trigger scan and per-account sharding.)
 - **Efficiency.** No per-event allocation or O(n) rescans on the hot path. Precompute bindings, reuse buffers, prefer O(1) rolling state over recompute-from-scratch.
 - **Latency.** The hot path is tick → strategy → signal → order → broker. Keep blocking I/O and unbounded work off the consumer thread; order sends are async and the live engine is a single-consumer queue.
@@ -33,17 +33,14 @@ This is judgment, not a gate — a docs typo needs no latency analysis. But a ho
 
 ## 1. Phases
 
-Trading-engine work is structured in numbered phases. Each phase has its own spec and plan.
+Large trading-engine efforts are structured in numbered phases, each with its own spec and
+plan under `docs/superpowers/` and a changelog under `docs/phases/`. The authoritative list
+of shipped phases lives in `docs/backlog.md` (the table that used to sit here froze at
+Phase 5 while the repo passed Phase 30 — the backlog is maintained, this file was not).
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Core engine MVP — tick → strategy → signal → order → broker → trade | shipped |
-| 2 | Event bus, candle aggregator, multi-strategy support, SLF4J | planned |
-| 3 | Risk engine, position tracking, P&L, `BigDecimal` for prices | planned |
-| 4 | Backtest replay engine — deterministic execution against historical data | planned |
-| 5 | DSL — internal Kotlin DSL first, then external SQL-like parser | planned |
-
-Every PR title and body must reference the phase it contributes to (see PR template below). Cross-phase work is not normally permitted; if a Phase 2 PR touches Phase 1 code, justify it in the PR description.
+Not all work is phase-scoped: bug fixes, audit findings, and capability-gap batches are
+issue-driven (see the `issue-flow` skill) and carry no phase. A PR references whichever it
+belongs to — its phase, or its issue(s).
 
 ---
 
@@ -174,13 +171,16 @@ Every PR has a title, a description following the template, and links to its spe
 
 Same format as a commit subject: `<type>(<scope>): <subject>`. Maximum 70 characters.
 
-Plus a phase prefix in brackets at the start: `[phase 2] feat(engine): add event bus`.
+Phase-scoped work adds a phase prefix in brackets: `[phase 2] feat(engine): add event bus`.
+Issue-driven work uses the plain conventional title and closes its issues from the body
+(`Closes #NN`).
 
 ### PR description template
 
 ```markdown
 ## Phase
-Phase <N>. Spec: <link to docs/superpowers/specs/...>. Plan: <link to docs/superpowers/plans/...>.
+Phase <N> with spec/plan links — or, for issue-driven work, the issue(s) this closes and
+the audit/backlog section they came from.
 
 ## Summary
 <1–3 sentences. The why.>
@@ -308,7 +308,67 @@ Things that must remain true regardless of phase. Violations require a design di
 
 ---
 
-## 9. DSL principles (deferred to Phase 5; recorded so we don't drift)
+## 9. Hot-path performance (do / don't)
+
+The §0 posture in concrete form. The **hot path** is everything that runs per tick or per
+bar close: feed decode → `TradingPipeline.ingest` → bus dispatch → every `TickEvent`
+subscriber (broker fills, trigger scan, candle aggregation, strategy/DSL evaluation, risk +
+equity) plus the per-bar `updatePerAlias`/rule-firing pass. Everything else — config, deploy,
+reporting, teardown — is cold and exempt. A change is "in the hot path" if it adds work to
+any of those per-event flows, even indirectly (a new subscriber, a new field the fill handler
+computes, a new rule the risk engine walks).
+
+### Do
+
+- **Classify every new feature: hot or cold.** Cold features (a CLI command, a report
+  field, a deploy check) owe this section nothing further — say "cold path" in the PR's
+  Risk line and move on. A feature that adds per-event work states its cost in one
+  sentence: what runs per tick/bar, O(1) or O(n), and n = what. If the answer is "O(all
+  orders)" or "O(all strategies)", key it by symbol/account first (the working-set rule
+  from §0).
+- **Compute in `update()`, cache the read.** An indicator's `value()` is read once per
+  referencing expression node per bar — it must be a field read, never a recompute.
+  `SeasonalRangeStdev` is the canonical shape.
+- **Reuse scratch, precompute indexes, guard empty loops.** Per-tick `.filter{}`/`.map{}`/
+  `.toMap()`/`copy()` chains are the historical top allocator. Patterns to copy:
+  `OrderManager`'s cleared-per-pass scratch lists + `liveBySymbol`/`gtdLive` indexes,
+  `PaperBroker.toFillScratch`, `isEmpty()` early-returns before any iterator over a
+  usually-empty collection.
+- **Hoist what the compiler knows.** Literals, divisors (`BigDecimal(period)`), map keys, and
+  resolved lookups move out of compiled closures and per-event bodies into fields —
+  `ExprCompiler` literal hoisting and `Value.of` Bool singletons are the shape.
+- **Keep blocking I/O off the engine thread.** Disk goes through `AsyncStatePersistor` or a
+  held-open channel (`OrderJournal`); broker HTTP is async with results returning as bus
+  events (`placeOrderAsync` / `closePositionAsync` pattern); anything polled belongs on the
+  poller's thread, cached for the engine to read.
+- **Use integer time math on per-tick paths.** `Math.floorDiv(now, MS_PER_DAY)` and friends —
+  never an `Instant`→`ZonedDateTime`→`LocalDate` chain per tick (`DailyPnLTracker` pattern).
+  Full `java.time` is fine per bar close and colder.
+- **Profile before optimizing, then fix what the profile names.** JFR on a representative
+  backtest. Three campaigns of evidence say the cost is plumbing and allocation, not
+  BigDecimal math — assume the same until a profile says otherwise.
+- **Ship every hot-path change behind a byte-identical A/B** — same build, same harness, full
+  trade tape + metrics compared. Parity outranks speed, always. A fix that changes results is
+  a bug, not an optimization.
+
+### Don't
+
+- **Don't re-attempt the measured dead-ends** without new evidence: symbol→int interning,
+  query-time columnar decode (wash), `setScale` removal (not parity-safe), JNI/native math
+  (the hot path is object traversal, not a numeric kernel; boundary crossings lose), and
+  intra-run threading (breaks the determinism the parity contract stands on).
+- **Don't micro-optimize before the profile.** The measured speed levers, in order: fan-out
+  across cores (sweeps/scenarios sharing one decode), data tiering (`--bars` for ranking,
+  `--bars --tick-fills` for exact runs, full-tick for final), data layout (binary store,
+  mmap), and only then code micro-opt.
+- **Don't log per tick.** Cadence-gate it (first + every Nth) or guard the level; a per-tick
+  log line is never actionable.
+- **Don't trade readability for single-digit gains outside the hot path.** Cold code follows
+  §11 idioms, full stop.
+
+---
+
+## 10. DSL principles (deferred to Phase 5; recorded so we don't drift)
 
 - The DSL exists to compile into the same `Strategy` objects we hand-write today. There is no separate runtime for DSL strategies.
 - Internal Kotlin DSL first (`strategy { whenCondition { ema(9) > ema(21) }; buy("XAUUSD", 1.0) }`). External SQL-like parser only after the internal DSL stabilizes.
@@ -320,7 +380,7 @@ This section will grow when Phase 5 begins.
 
 ---
 
-## 10. Kotlin idioms (do / don't)
+## 11. Kotlin idioms (do / don't)
 
 ### Do
 
@@ -350,7 +410,7 @@ This section will grow when Phase 5 begins.
 
 ---
 
-## 11. Testing standards
+## 12. Testing standards
 
 - **Use real types.** No Mockito, no MockK, no test-doubles libraries. Anonymous objects (`object : Strategy { ... }`) and capture lists (`val captured = mutableListOf<Trade>()`) are sufficient.
 - **JUnit 5 + AssertJ.** No other frameworks until justified.
@@ -364,7 +424,7 @@ This section will grow when Phase 5 begins.
 
 ---
 
-## 12. Code style
+## 13. Code style
 
 - **File size: aim for under 150 lines per source file.** Tests may exceed by ~10% if the alternative is splitting a tightly coupled test class. Anything over 200 lines needs a refactor.
 - **One top-level concept per file** — exception: tightly coupled types like `MarketPriceProvider` (interface) + `MarketPriceTracker` (impl), or a sealed class with its variants.
@@ -386,7 +446,7 @@ ktlint is the enforced formatter for every `.kt` file (main and test). Ktlint-co
 
 ---
 
-## 13. Living-document protocol
+## 14. Living-document protocol
 
 When this skill is wrong or incomplete:
 
