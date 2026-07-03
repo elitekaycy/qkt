@@ -3,6 +3,11 @@ package com.qkt.marketdata
 import com.qkt.common.Money
 import java.math.BigDecimal
 
+/** A structurally readable quote whose bid exceeds its ask. Feeds may drop this vendor anomaly. */
+class CrossedQuoteException(
+    message: String,
+) : IllegalStateException(message)
+
 /**
  * Builds a validated [Tick] from already-parsed optional fields, applying qkt's data-integrity
  * rules and deriving the canonical trade price (the bid/ask midpoint when no explicit price is
@@ -37,7 +42,9 @@ object TickAssembler {
             "${location()}: row needs price OR (bid AND ask)"
         }
         if (bid != null && ask != null) {
-            check(bid <= ask) { "${location()}: bid > ask: bid=$bid, ask=$ask" }
+            if (bid > ask) {
+                throw CrossedQuoteException("${location()}: bid > ask: bid=$bid, ask=$ask")
+            }
         }
         // Inline per-field sign checks. The previous `listOf("name" to v, ...).forEach` allocated six
         // Pairs and a list on every tick purely to name the field in an error that only fires on
@@ -54,11 +61,21 @@ object TickAssembler {
                     .add(ask!!, Money.CONTEXT)
                     .divide(TWO, Money.CONTEXT)
                     .setScale(Money.SCALE, Money.ROUNDING)
+        // Older Dukascopy cache rows left aggregate volume blank even though both side volumes
+        // were stored. Derive it at read time so existing datasets gain the same capability as
+        // newly fetched rows without requiring a destructive backfill.
+        val finalVolume =
+            volume
+                ?: if (bidVolume != null && askVolume != null) {
+                    bidVolume.add(askVolume, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+                } else {
+                    null
+                }
         return Tick(
             symbol = symbol,
             price = finalPrice,
             timestamp = timestamp,
-            volume = volume,
+            volume = finalVolume,
             bid = bid,
             ask = ask,
             bidVolume = bidVolume,

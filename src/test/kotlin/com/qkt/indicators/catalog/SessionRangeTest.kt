@@ -55,14 +55,13 @@ class SessionRangeTest {
     }
 
     @Test
-    fun `holds the prior day's range until the next window completes`() {
+    fun `discards a first partial window and latches the next complete window`() {
         val sr = asian()
         sr.update(bar("2026-01-01T03:00:00Z", "12", "4"))
-        sr.update(bar("2026-01-01T07:00:00Z", "20", "1")) // latch day 1 → 12/4
-        sr.update(bar("2026-01-02T00:30:00Z", "99", "0")) // day 2 window in progress
-        assertThat(sr.range()!!.high).isEqualByComparingTo("12") // still day 1
-        assertThat(sr.range()!!.low).isEqualByComparingTo("4")
-        sr.update(bar("2026-01-02T07:30:00Z", "30", "8")) // out of window → latch day 2
+        sr.update(bar("2026-01-01T07:00:00Z", "20", "1"))
+        assertThat(sr.range()).isNull()
+        sr.update(bar("2026-01-02T00:00:00Z", "99", "0"))
+        sr.update(bar("2026-01-02T07:30:00Z", "30", "8"))
         assertThat(sr.range()!!.high).isEqualByComparingTo("99")
         assertThat(sr.range()!!.low).isEqualByComparingTo("0")
     }
@@ -70,7 +69,7 @@ class SessionRangeTest {
     @Test
     fun `wrap-midnight window accumulates across the day boundary`() {
         val sr = SessionRange(startHour = 22, startMinute = 0, endHour = 2, endMinute = 0)
-        sr.update(bar("2026-01-01T22:30:00Z", "10", "5"))
+        sr.update(bar("2026-01-01T22:00:00Z", "10", "5"))
         sr.update(bar("2026-01-01T23:30:00Z", "12", "4"))
         sr.update(bar("2026-01-02T01:30:00Z", "8", "3")) // still same instance (started 22:00)
         sr.update(bar("2026-01-02T03:00:00Z", "50", "50")) // out of window → latch

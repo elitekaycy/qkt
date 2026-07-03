@@ -354,6 +354,12 @@ class ReplayEngine(
                 latencyEnabled = latencyEnabled,
             )
         holder[0] = pipeline
+        // Match the live kill-switch: a halt must remove every resting pending before
+        // another replay tick can trigger it. RiskEngine only rejects new submissions;
+        // without this subscription backtests could fill old entries after the halt.
+        bus.subscribe<com.qkt.events.RiskEvent.Halted> {
+            for (symbol in tradedSymbols) pipeline.orderManager.cancelPendingForSymbol(symbol)
+        }
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
         // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
@@ -393,7 +399,8 @@ class ReplayEngine(
         symbol: String,
         low: BigDecimal,
         high: BigDecimal,
-    ): com.qkt.app.IntrabarFill = pipeline.orderManager.intrabarFill(symbol, low, high)
+        maxHalfSpread: BigDecimal,
+    ): com.qkt.app.IntrabarFill = pipeline.orderManager.intrabarFill(symbol, low, high, maxHalfSpread)
 
     /** Pull and ingest ticks until [stop] returns true after a tick, or the feed drains. */
     fun advanceUntil(stop: () -> Boolean) {

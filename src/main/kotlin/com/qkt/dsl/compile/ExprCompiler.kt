@@ -82,7 +82,7 @@ class ExprCompiler(
 
     private fun compileNow(acc: NowAccessor): CompiledExpr =
         CompiledExpr { ctx ->
-            val nowMs = ctx.strategyContext.clock.now()
+            val nowMs = ctx.nowMs()
             when (acc.field) {
                 NowField.EPOCH_MS -> Value.Num(BigDecimal.valueOf(nowMs))
                 else -> {
@@ -114,7 +114,7 @@ class ExprCompiler(
         return CompiledExpr { ctx ->
             val z =
                 java.time.Instant
-                    .ofEpochMilli(ctx.strategyContext.clock.now())
+                    .ofEpochMilli(ctx.nowMs())
                     .atZone(java.time.ZoneOffset.UTC)
             val cur = z.monthValue * 100 + z.dayOfMonth
             // A non-wrapping window is a simple range; a wrapping one (start later than end,
@@ -132,7 +132,7 @@ class ExprCompiler(
         return CompiledExpr { ctx ->
             val z =
                 java.time.Instant
-                    .ofEpochMilli(ctx.strategyContext.clock.now())
+                    .ofEpochMilli(ctx.nowMs())
                     .atZone(java.time.ZoneOffset.UTC)
             val cur = z.hour * 60 + z.minute
             // A non-wrapping window is a simple range; a wrapping one (start later than end, e.g.
@@ -146,7 +146,7 @@ class ExprCompiler(
         CompiledExpr { ctx ->
             val date =
                 java.time.Instant
-                    .ofEpochMilli(ctx.strategyContext.clock.now())
+                    .ofEpochMilli(ctx.nowMs())
                     .atZone(java.time.ZoneOffset.UTC)
                     .toLocalDate()
             // The last weekday of the month: roll the calendar last day back off any weekend.
@@ -402,7 +402,7 @@ class ExprCompiler(
                         ctx.strategyContext.positions
                             .positionFor(symbol)
                             ?.openedAt
-                    val durationMs = if (openedAt == null) 0L else ctx.strategyContext.clock.now() - openedAt
+                    val durationMs = if (openedAt == null) 0L else ctx.nowMs() - openedAt
                     Value.Num(BigDecimal.valueOf(durationMs).divide(MS_PER_SECOND, Money.CONTEXT))
                 }
             StateSource.POSITION_MFE ->
@@ -437,7 +437,7 @@ class ExprCompiler(
             StateSource.POSITION_TRADES_TODAY ->
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
-                    val now = ctx.strategyContext.clock.now()
+                    val now = ctx.nowMs()
                     val n = ctx.strategyContext.tradeHistory.tradesTodayFor(symbol, now)
                     Value.Num(BigDecimal.valueOf(n.toLong()))
                 }
@@ -484,7 +484,7 @@ class ExprCompiler(
                 }
                 in historyFields -> {
                     val h = ctx.strategyContext.tradeHistory
-                    val now = ctx.strategyContext.clock.now()
+                    val now = ctx.nowMs()
                     when (ref.field) {
                         "last_trade_at" -> h.lastTradeAt()?.let { Value.Num(BigDecimal.valueOf(it)) } ?: Value.Undefined
                         "last_trade_pnl" -> h.lastTradePnl()?.let { Value.Num(it) } ?: Value.Undefined
@@ -705,7 +705,8 @@ class ExprCompiler(
                 ) {
                     ctx.candle
                 } else {
-                    ctx.hub.latest(key)
+                    ctx.historyAsOfMs?.let { ctx.hub.latestAtOrBefore(key, it) }
+                        ?: ctx.hub.latest(key)
                 }
             if (candle == null) {
                 Value.Undefined

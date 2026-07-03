@@ -262,7 +262,14 @@ class MT5BrokerIntegrationTest {
     fun `submit market with closesTicket closes the position by ticket`() {
         server.enqueue(
             MockResponse().setBody(
-                """{"result":{"retcode":10009,"order":0,"deal":777,"price":"1.1050","comment":"ok"}}""",
+                """{"result":{"retcode":10009,"order":0,"deal":777,"price":"1.1050","volume":"0.10","comment":"ok"}}""",
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":777,"order":1,"position_id":424242,"symbol":"EURUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.10","price":"1.1050","profit":"10","commission":"-0.70","swap":"-0.30",""" +
+                    """"fee":"-0.10","magic":10001,"time_msc":1700000000000}]""",
             ),
         )
         val req =
@@ -289,6 +296,8 @@ class MT5BrokerIntegrationTest {
         assertThat(filled.symbol).isEqualTo("EXNESS:EURUSD")
         assertThat(filled.side).isEqualTo(Side.SELL)
         assertThat(filled.price).isEqualByComparingTo("1.1050")
+        assertThat(filled.quantity).isEqualByComparingTo("0.10")
+        assertThat(filled.venueCosts).isEqualByComparingTo("1.10")
         // The gateway was hit at /close_position with the ticket — NOT /order.
         server.takeRequest() // state recovery
         server.takeRequest() // position poller seed
@@ -296,7 +305,7 @@ class MT5BrokerIntegrationTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/close_position")
         assertThat(recorded.method).isEqualTo("POST")
-        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":{"ticket":424242,"volume":0.1}}""")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":{"ticket":424242,"volume":0.10}}""")
     }
 
     @Test
@@ -802,7 +811,7 @@ class MT5BrokerIntegrationTest {
         // hedge-straddle sizing footgun that crashed live 02:55 / 09:55 placements.
         server.enqueue(
             MockResponse().setBody(
-                """{"result":{"retcode":10009,"order":11,"deal":0,"price":"1.1234","comment":"ok"}}""",
+                """{"result":{"retcode":10009,"order":11,"deal":0,"price":"1.1234","volume":"0.19","comment":"ok"}}""",
             ),
         )
         val req =
@@ -822,6 +831,9 @@ class MT5BrokerIntegrationTest {
         val body = server.takeRequest().body.readUtf8()
         assertThat(body).contains("\"volume\":0.19")
         assertThat(body).doesNotContain("0.1944")
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>().single().quantity)
+            .isEqualByComparingTo("0.19")
     }
 
     @Test

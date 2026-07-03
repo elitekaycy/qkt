@@ -194,7 +194,13 @@ class FetchCommand(
                         )
                         return null
                     }
-                Mt5Fetcher(Mt5BarFetcher(profile.gatewayUrl))
+                Mt5Fetcher(
+                    Mt5BarFetcher(
+                        profile.gatewayUrl,
+                        serverTzOffsetHours = profile.serverTzOffsetHours,
+                        normalizeBidBarsToMid = true,
+                    ),
+                )
             }
         }
 

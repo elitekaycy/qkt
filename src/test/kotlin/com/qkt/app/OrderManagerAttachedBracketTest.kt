@@ -115,6 +115,55 @@ class OrderManagerAttachedBracketTest {
     }
 
     @Test
+    fun `plain bracket armed trail resolves the primary position ticket`() {
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps)
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                closePrimaryTicketFor = { _, symbol -> if (symbol == "X") "primary-7" else null },
+                requireArmedTrailTicket = true,
+            )
+
+        om.submit(armedTrailBracket())
+        broker.emitFill(broker.submits.single(), price = Money.of("100"))
+        bus.publish(TickEvent(Tick("X", Money.of("110"), 1L)))
+        bus.publish(TickEvent(Tick("X", Money.of("104"), 2L)))
+
+        val fired = broker.submits.first { it.id == "b1-sl" } as OrderRequest.Market
+        assertThat(fired.closesTicket).isEqualTo("primary-7")
+    }
+
+    @Test
+    fun `attached armed trail is cancelled when its venue position disappears`() {
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps)
+        var ticket: String? = "primary-7"
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                closePrimaryTicketFor = { _, _ -> ticket },
+                requireArmedTrailTicket = true,
+            )
+
+        om.submit(armedTrailBracket())
+        broker.emitFill(broker.submits.single(), price = Money.of("100"))
+        ticket = null
+        bus.publish(TickEvent(Tick("X", Money.of("110"), 1L)))
+        bus.publish(TickEvent(Tick("X", Money.of("104"), 2L)))
+
+        assertThat(broker.submits.map { it.id }).doesNotContain("b1-sl")
+    }
+
+    @Test
     fun `fixed bracket on an attach venue ships native keyed under the entry id`() {
         // The orchestrator stack-tier shape: a market entry with a fixed SL/TP. Keying the venue
         // order under the entry id is what lets registerStackOpen (which keys on entry.id) match

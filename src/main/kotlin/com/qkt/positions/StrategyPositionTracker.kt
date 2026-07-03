@@ -194,7 +194,7 @@ class StrategyPositionTracker(
                 side = event.side,
                 timestamp = event.timestamp,
             )
-        val realized = apply(event.strategyId, trade)
+        val realized = apply(event.strategyId, trade, event.brokerOrderId)
         syncPrimaryMfeTracker(event.strategyId, trade.symbol)
         persistBook(event.strategyId, event.symbol)
         return realized
@@ -294,16 +294,19 @@ class StrategyPositionTracker(
         val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return null
         val leg =
             book.all().firstOrNull {
-                it.brokerTicket == ticket
+                it.role != LegRole.PRIMARY && it.brokerTicket == ticket
             } ?: return null
         val closed = book.close(leg.legId) ?: return null
+        val closingQty = closed.quantity.min(event.quantity)
         val priceDiff =
             if (closed.side == Side.BUY) {
                 event.price.subtract(closed.entryPrice)
             } else {
                 closed.entryPrice.subtract(event.price)
             }
-        val realized = closed.quantity.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
+        val realized = closingQty.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
+        val remaining = closed.quantity.subtract(closingQty)
+        if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
         if (book.isEmpty()) byStrategy[event.strategyId]?.remove(event.symbol)
         return realized
     }
@@ -314,13 +317,16 @@ class StrategyPositionTracker(
     ): BigDecimal {
         val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return Money.ZERO
         val closed = book.close(stackLegId) ?: return Money.ZERO
+        val closingQty = closed.quantity.min(event.quantity)
         val priceDiff =
             if (closed.side == Side.BUY) {
                 event.price.subtract(closed.entryPrice)
             } else {
                 closed.entryPrice.subtract(event.price)
             }
-        val realized = closed.quantity.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
+        val realized = closingQty.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
+        val remaining = closed.quantity.subtract(closingQty)
+        if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
         if (book.isEmpty()) {
             byStrategy[event.strategyId]?.remove(event.symbol)
         }
@@ -330,6 +336,7 @@ class StrategyPositionTracker(
     fun apply(
         strategyId: String,
         trade: Trade,
+        brokerTicket: String? = null,
     ): BigDecimal {
         val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(trade.symbol) { LegBook(trade.symbol) }
@@ -346,6 +353,7 @@ class StrategyPositionTracker(
                     entryPrice = trade.price,
                     openedAt = trade.timestamp,
                     role = LegRole.PRIMARY,
+                    brokerTicket = brokerTicket,
                 ),
             )
             return Money.ZERO
@@ -373,6 +381,7 @@ class StrategyPositionTracker(
                     entryPrice = newAvg,
                     openedAt = primary.openedAt,
                     role = LegRole.PRIMARY,
+                    brokerTicket = if (primary.brokerTicket == brokerTicket) brokerTicket else null,
                 ),
             )
             return Money.ZERO
@@ -406,6 +415,7 @@ class StrategyPositionTracker(
                         entryPrice = primary.entryPrice,
                         openedAt = primary.openedAt,
                         role = LegRole.PRIMARY,
+                        brokerTicket = primary.brokerTicket,
                     ),
                 )
             }
@@ -420,6 +430,7 @@ class StrategyPositionTracker(
                         entryPrice = trade.price,
                         openedAt = trade.timestamp,
                         role = LegRole.PRIMARY,
+                        brokerTicket = brokerTicket,
                     ),
                 )
             }
@@ -527,6 +538,12 @@ class StrategyPositionTracker(
         byStrategy[strategyId]?.values?.firstNotNullOfOrNull { book ->
             book.all().firstOrNull { it.legId == legId }?.brokerTicket
         }
+
+    /** Venue ticket for the strategy's PRIMARY position on [symbol], when unambiguous. */
+    fun ticketForPrimary(
+        strategyId: String,
+        symbol: String,
+    ): String? = byStrategy[strategyId]?.get(symbol)?.primary()?.brokerTicket
 
     /** Open position count on [symbol] for [strategyId] — the real number of legs, not the net. */
     fun openCountFor(

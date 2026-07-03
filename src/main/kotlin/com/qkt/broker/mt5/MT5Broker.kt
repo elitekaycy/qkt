@@ -133,6 +133,14 @@ class MT5Broker(
     private val pendingByTicket: MutableMap<Long, PendingMeta> = ConcurrentHashMap()
 
     /**
+     * Positions observed before the asynchronous placement response registered their pending
+     * ticket. This closes the poller-vs-HTTP callback race without treating a venue position as
+     * external merely because the callback arrived a few milliseconds later.
+     */
+    private val earlyPositionByTicket: MutableMap<Long, MT5Position> = ConcurrentHashMap()
+    private val pendingTransitionLock = Any()
+
+    /**
      * Open positions opened by this qkt session, keyed by MT5 ticket. Lets
      * [MT5PositionPoller] resolve a closed ticket back to (clientOrderId, strategyId)
      * when it observes the ticket disappear. Populated by:
@@ -141,6 +149,7 @@ class MT5Broker(
      * Entries are removed when the poller publishes the close event.
      */
     private val positionMetaByTicket: MutableMap<Long, PendingMeta> = ConcurrentHashMap()
+    private val positionSymbolByTicket: MutableMap<Long, String> = ConcurrentHashMap()
 
     /**
      * Tickets that just transitioned from pending → position. The pending-order poller
@@ -349,33 +358,73 @@ class MT5Broker(
         val ticket =
             ticketStr.toLongOrNull()
                 ?: return reject(request, "closesTicket is not a valid ticket: $ticketStr")
+        val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
+        val closeQuantity =
+            when (val result = prepareVolume(brokerSymbol, request.quantity)) {
+                is VolumeResult.Ok -> result.quantity
+                is VolumeResult.Reject -> return reject(request, result.reason)
+            }
         recentlyClosedByTicket[ticket] = clock.now()
-        client.closePositionAsync(ticket, volume = request.quantity) { resp ->
+        client.closePositionAsync(ticket, volume = closeQuantity) { resp ->
             if (!isOrderSuccessful(resp.result.retcode)) {
                 recentlyClosedByTicket.remove(ticket)
                 reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
+                return@closePositionAsync
+            }
+            val partial = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
+            if (partial) {
+                recentlyClosedByTicket.remove(ticket)
             } else {
                 positionMetaByTicket.remove(ticket)
-                bus.publish(
-                    BrokerEvent.OrderAccepted(
-                        clientOrderId = request.id,
-                        brokerOrderId = ticket.toString(),
-                        timestamp = clock.now(),
-                    ),
-                )
-                bus.publish(
-                    BrokerEvent.OrderFilled(
-                        clientOrderId = request.id,
-                        brokerOrderId = ticket.toString(),
-                        symbol = request.symbol,
-                        side = request.side,
-                        price = resp.result.price,
-                        quantity = request.quantity,
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
+                positionSymbolByTicket.remove(ticket)
             }
+            val reportedVolume = resp.result.volume?.takeIf { it.signum() > 0 }
+            val filledQuantity =
+                if (reportedVolume != null) {
+                    reportedVolume
+                } else if (!partial) {
+                    closeQuantity
+                } else {
+                    // The venue changed state, so a rejection would invite a duplicate close.
+                    // Keep the order accepted-but-unresolved and alert; the position poller will
+                    // reconcile the remaining venue quantity without sending a second close.
+                    bus.publish(
+                        BrokerEvent.OrderAccepted(
+                            clientOrderId = request.id,
+                            brokerOrderId = ticket.toString(),
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                    publishGatewayUnreachable(1)
+                    log.error(
+                        "MT5Broker {} partial close {} omitted actual filled volume",
+                        profile.name,
+                        request.id,
+                    )
+                    return@closePositionAsync
+                }
+            bus.publish(
+                BrokerEvent.OrderAccepted(
+                    clientOrderId = request.id,
+                    brokerOrderId = ticket.toString(),
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+            bus.publish(
+                BrokerEvent.OrderFilled(
+                    clientOrderId = request.id,
+                    brokerOrderId = ticket.toString(),
+                    symbol = request.symbol,
+                    side = request.side,
+                    price = resp.result.price,
+                    quantity = filledQuantity,
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                    venueCosts = venueCostsForDeal(resp.result.deal),
+                ),
+            )
         }
         return SubmitAck(request.id, ticket.toString(), accepted = true)
     }
@@ -392,6 +441,7 @@ class MT5Broker(
         val digits: Int,
         val pointSize: BigDecimal,
         val tradeStopsLevelPoints: Int,
+        val tradeFreezeLevelPoints: Int,
     )
 
     /**
@@ -407,6 +457,36 @@ class MT5Broker(
         data class Reject(
             val reason: String,
         ) : PrepareResult
+    }
+
+    private sealed interface VolumeResult {
+        data class Ok(
+            val quantity: BigDecimal,
+        ) : VolumeResult
+
+        data class Reject(
+            val reason: String,
+        ) : VolumeResult
+    }
+
+    private fun prepareVolume(
+        brokerSymbol: String,
+        quantity: BigDecimal,
+    ): VolumeResult {
+        val rules = resolveVenueRules(brokerSymbol) ?: return VolumeResult.Ok(quantity)
+        val quantized =
+            if (rules.volumeStep.signum() > 0) {
+                quantity.divide(rules.volumeStep, 0, RoundingMode.DOWN).multiply(rules.volumeStep)
+            } else {
+                quantity
+            }
+        return if (quantized < rules.volumeMin) {
+            VolumeResult.Reject(
+                "quantized volume below venue volumeMin for $brokerSymbol (input=${quantity.toPlainString()})",
+            )
+        } else {
+            VolumeResult.Ok(quantized)
+        }
     }
 
     /**
@@ -426,6 +506,7 @@ class MT5Broker(
                 digits = spec.digits,
                 pointSize = spec.pointSize,
                 tradeStopsLevelPoints = spec.tradeStopsLevelPoints,
+                tradeFreezeLevelPoints = 0,
             )
         }
         symbolMeta[brokerSymbol]?.let { info ->
@@ -435,6 +516,7 @@ class MT5Broker(
                 digits = info.digits,
                 pointSize = info.point,
                 tradeStopsLevelPoints = info.tradeStopsLevel,
+                tradeFreezeLevelPoints = info.tradeFreezeLevel,
             )
         }
         val fetched =
@@ -449,6 +531,7 @@ class MT5Broker(
             digits = fetched.digits,
             pointSize = fetched.point,
             tradeStopsLevelPoints = fetched.tradeStopsLevel,
+            tradeFreezeLevelPoints = fetched.tradeFreezeLevel,
         )
     }
 
@@ -502,6 +585,14 @@ class MT5Broker(
             quantized.price != null
         ) {
             val minDistance = rules.pointSize.multiply(BigDecimal(rules.tradeStopsLevelPoints))
+            val current = priceTracker?.lastPrice("${profile.name.uppercase()}:${mt5Symbol.toQkt(wire.symbol)}")
+            if (current != null && (quantized.price - current).abs() < minDistance) {
+                return PrepareResult.Reject(
+                    "entry too close to current price for ${wire.symbol}: " +
+                        "distance=${(quantized.price - current).abs().toPlainString()} " +
+                        "min=${minDistance.toPlainString()}",
+                )
+            }
             for ((field, value) in listOf("sl" to quantized.sl, "tp" to quantized.tp)) {
                 if (value != null && value.signum() > 0) {
                     val distance = (quantized.price - value).abs()
@@ -545,7 +636,7 @@ class MT5Broker(
         // thread by the single-consumer loop). submit returns an optimistic ack at once so the
         // engine thread never waits on the order round-trip — the real accept/reject/fill
         // follows on the bus, which is what the event-driven OCO/OTO sequencing consumes.
-        client.placeOrderAsync(prepared) { resp -> handlePlacementResult(request, resp) }
+        client.placeOrderAsync(prepared) { resp -> handlePlacementResult(request, prepared.volume, resp) }
         return SubmitAck(
             clientOrderId = request.id,
             brokerOrderId = null,
@@ -562,6 +653,7 @@ class MT5Broker(
      */
     private fun handlePlacementResult(
         request: OrderRequest,
+        preparedVolume: BigDecimal,
         resp: MT5OrderResponse,
     ) {
         if (!isOrderSuccessful(resp.result.retcode)) {
@@ -589,6 +681,13 @@ class MT5Broker(
         val isInstantFill =
             request is OrderRequest.Market ||
                 (request is OrderRequest.Bracket && request.entry is OrderRequest.Market)
+        if (isInstantFill &&
+            resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL &&
+            resp.result.volume?.signum() != 1
+        ) {
+            resolveUnknownOutcome(request, "partial fill response omitted actual volume")
+            return
+        }
         // Register the venue ticket BEFORE announcing acceptance so any consumer reacting to
         // [BrokerEvent.OrderAccepted] (e.g. a follow-up modify keyed by clientOrderId) sees the
         // broker's bookkeeping already consistent.
@@ -600,14 +699,14 @@ class MT5Broker(
                     ?: resp.result.deal.takeIf { it != 0L }
             if (positionTicket != null) {
                 positionMetaByTicket[positionTicket] = PendingMeta(request.id, request.strategyId)
+                positionSymbolByTicket[positionTicket] = request.symbol
             }
         } else {
             // Pending: track ticket so we can correlate fill events and cancel by orderId.
             resp.result.order
                 .takeIf { it != 0L }
                 ?.let { ticket ->
-                    pendingTickets[request.id] = ticket
-                    pendingByTicket[ticket] = PendingMeta(request.id, request.strategyId)
+                    registerPendingTicket(ticket, PendingMeta(request.id, request.strategyId))
                 }
         }
         bus.publish(
@@ -619,6 +718,9 @@ class MT5Broker(
             ),
         )
         if (isInstantFill) {
+            val filledQuantity =
+                resp.result.volume?.takeIf { it.signum() > 0 }
+                    ?: preparedVolume
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = request.id,
@@ -626,12 +728,29 @@ class MT5Broker(
                     symbol = request.symbol,
                     side = request.side,
                     price = resp.result.price,
-                    quantity = request.quantity,
+                    quantity = filledQuantity,
                     strategyId = request.strategyId,
                     timestamp = clock.now(),
                 ),
             )
         }
+    }
+
+    private fun venueCostsForDeal(dealTicket: Long): BigDecimal {
+        if (dealTicket == 0L) return BigDecimal.ZERO
+        val now = clock.now()
+        val deals =
+            runCatching {
+                client.getDeals(
+                    fromUtcMs = now - DEAL_LOOKUP_WINDOW_MS,
+                    toUtcMs = now + DEAL_LOOKUP_WINDOW_MS,
+                )
+            }.getOrNull() ?: return BigDecimal.ZERO
+        val deal = deals.firstOrNull { it.ticket == dealTicket } ?: return BigDecimal.ZERO
+        return deal.commission
+            .add(deal.swap)
+            .add(deal.fee)
+            .negate()
     }
 
     /** True for failures where the request may have reached the venue despite the error. */
@@ -668,8 +787,10 @@ class MT5Broker(
             val pendingMatch =
                 pendings.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
             if (pendingMatch != null) {
-                pendingTickets[request.id] = pendingMatch.ticket
-                pendingByTicket[pendingMatch.ticket] = PendingMeta(request.id, request.strategyId)
+                registerPendingTicket(
+                    pendingMatch.ticket,
+                    PendingMeta(request.id, request.strategyId),
+                )
                 bus.publish(
                     BrokerEvent.OrderAccepted(
                         clientOrderId = request.id,
@@ -690,6 +811,7 @@ class MT5Broker(
                 positions.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
             if (positionMatch != null) {
                 positionMetaByTicket[positionMatch.ticket] = PendingMeta(request.id, request.strategyId)
+                positionSymbolByTicket[positionMatch.ticket] = request.symbol
                 bus.publish(
                     BrokerEvent.OrderAccepted(
                         clientOrderId = request.id,
@@ -784,8 +906,7 @@ class MT5Broker(
             val ticket = resp.result.order
             if (ticket != 0L) {
                 val legOrderId = decodeOcoLegOrderId(wire.comment) ?: request.id
-                pendingTickets[legOrderId] = ticket
-                pendingByTicket[ticket] = PendingMeta(legOrderId, request.strategyId)
+                registerPendingTicket(ticket, PendingMeta(legOrderId, request.strategyId))
                 placed.add(PlacedLeg(ticket, legOrderId))
             }
         }
@@ -886,8 +1007,10 @@ class MT5Broker(
         // cancel triggered by pass 2 can resolve its sibling's ticket.
         for (a in actions) {
             if (a is OcoRecoveryAction.Reseed) {
-                pendingTickets[a.order.id] = a.ticket
-                pendingByTicket[a.ticket] = PendingMeta(a.order.id, a.order.request.strategyId)
+                registerPendingTicket(
+                    a.ticket,
+                    PendingMeta(a.order.id, a.order.request.strategyId),
+                )
                 log.info(
                     "MT5Broker ${profile.name} recovery: re-seeded pending leg ${a.order.id} ticket=${a.ticket}",
                 )
@@ -942,6 +1065,26 @@ class MT5Broker(
         ) = SubmitAck(clientOrderId = ticket, brokerOrderId = ticket, accepted = accepted, rejectReason = reason)
 
         val t = ticket.toLongOrNull() ?: return ack(false, "modifyPosition: bad ticket $ticket")
+        val qktSymbol = positionSymbolByTicket[t]
+        if (qktSymbol != null) {
+            val brokerSymbol = mt5Symbol.toBroker(qktSymbol.substringAfter(':'))
+            val info = symbolMeta[brokerSymbol]
+            val current = priceTracker?.lastPrice(qktSymbol)
+            if (info != null && current != null && info.tradeFreezeLevel > 0) {
+                val minDistance = info.point.multiply(BigDecimal(info.tradeFreezeLevel))
+                val blocked =
+                    listOfNotNull(sl, tp).firstOrNull { level ->
+                        (level - current).abs() < minDistance
+                    }
+                if (blocked != null) {
+                    return ack(
+                        false,
+                        "modify inside tradeFreezeLevel for $qktSymbol: " +
+                            "level=$blocked current=$current minDistance=$minDistance",
+                    )
+                }
+            }
+        }
         val resp =
             runCatching { client.modifyPosition(t, sl, tp) }
                 .getOrElse { ex -> return ack(false, ex.message) }
@@ -1012,7 +1155,16 @@ class MT5Broker(
      * is a separate concern.
      */
     private fun onPendingPositionOpened(position: MT5Position) {
-        val meta = pendingByTicket.remove(position.ticket)
+        val meta =
+            synchronized(pendingTransitionLock) {
+                pendingByTicket.remove(position.ticket)
+                    ?: run {
+                        if (!positionMetaByTicket.containsKey(position.ticket)) {
+                            earlyPositionByTicket[position.ticket] = position
+                        }
+                        null
+                    }
+            }
         if (meta == null) {
             // Already tracked? The Fix A cross-check in onPendingDisappeared may have
             // synthesized this fill on a prior pending-poller tick; the position-poller
@@ -1020,8 +1172,8 @@ class MT5Broker(
             if (positionMetaByTicket.containsKey(position.ticket)) return
             log.warn(
                 "MT5Broker {} saw new position ticket={} symbol={} side={} magic={} with no qkt-side " +
-                    "pending meta — either externally placed or pending-poller already consumed the " +
-                    "meta (poll-ordering race).",
+                    "pending meta yet; deferring attribution while awaiting a possible asynchronous " +
+                    "placement response",
                 profile.name,
                 position.ticket,
                 position.symbol,
@@ -1030,6 +1182,28 @@ class MT5Broker(
             )
             return
         }
+        publishPendingPositionOpened(position, meta)
+    }
+
+    private fun registerPendingTicket(
+        ticket: Long,
+        meta: PendingMeta,
+    ) {
+        val earlyPosition =
+            synchronized(pendingTransitionLock) {
+                pendingTickets[meta.orderId] = ticket
+                pendingByTicket[ticket] = meta
+                earlyPositionByTicket.remove(ticket)
+            }
+        if (earlyPosition != null) {
+            onPendingPositionOpened(earlyPosition)
+        }
+    }
+
+    private fun publishPendingPositionOpened(
+        position: MT5Position,
+        meta: PendingMeta,
+    ) {
         pendingTickets.remove(meta.orderId)
         // Mark the ticket as recently filled so the pending-order poller doesn't
         // mistake the subsequent "disappeared from /orders" for an external cancel.
@@ -1043,6 +1217,7 @@ class MT5Broker(
         // Keep the meta accessible to the position poller for the eventual close event.
         positionMetaByTicket[position.ticket] = meta
         val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(position.symbol)}"
+        positionSymbolByTicket[position.ticket] = qktSymbol
         val filledSide = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL
         bus.publish(
             BrokerEvent.OrderFilled(
@@ -1064,7 +1239,9 @@ class MT5Broker(
      * the entry on lookup — the poller publishes exactly one close event per ticket.
      */
     private fun lookupClosedTicketMeta(ticket: Long): ClosedPositionMeta? {
+        earlyPositionByTicket.remove(ticket)
         val meta = positionMetaByTicket.remove(ticket) ?: return null
+        positionSymbolByTicket.remove(ticket)
         return ClosedPositionMeta(clientOrderId = meta.orderId, strategyId = meta.strategyId)
     }
 
@@ -1189,5 +1366,8 @@ class MT5Broker(
 
         /** Margin-level cache TTL — fresh enough for a floor check, cheap on the gateway. */
         private const val MARGIN_CACHE_TTL_MS: Long = 5_000L
+
+        /** Deal-history window around an immediate fill used to retrieve its exact venue costs. */
+        private const val DEAL_LOOKUP_WINDOW_MS: Long = 24L * 60L * 60L * 1_000L
     }
 }

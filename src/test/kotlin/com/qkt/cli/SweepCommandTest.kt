@@ -110,6 +110,30 @@ class SweepCommandTest {
     }
 
     @Test
+    fun `tick-resolved fills are rejected before sweep fan-out`(
+        @TempDir dir: Path,
+    ) {
+        val args =
+            Args(
+                arrayOf(
+                    "sweep",
+                    strategy(dir).toString(),
+                    "--from",
+                    "2026-06-04",
+                    "--to",
+                    "2026-06-05",
+                    "--bars",
+                    "--tick-fills",
+                    "--param",
+                    "fast=3",
+                ),
+            )
+
+        assertThat(SweepCommand(args, fetcherOverride = FakeXauFetcher).run())
+            .isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
     fun `sweep with a scenarios file runs each scenario`(
         @TempDir dir: Path,
     ) {

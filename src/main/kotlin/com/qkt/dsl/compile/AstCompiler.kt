@@ -347,7 +347,7 @@ private class CompiledStrategy(
             runner.register(
                 strategyId = ctx.strategyId,
                 schedule = sched.decl,
-                emit = { fireSchedule(sched, ctx, emit) },
+                emitAt = { fireAt -> fireSchedule(sched, ctx, emit, fireAt) },
                 nowMs = nowMs,
             )
         }
@@ -357,8 +357,9 @@ private class CompiledStrategy(
         sched: CompiledSchedule,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
-    ) {
-        val hub = boundHub ?: return
+        fireAt: Long,
+    ): Boolean {
+        val hub = boundHub ?: return false
         val syntheticCandle =
             latestKnownCandle(hub) ?: run {
                 scheduleLog.warn(
@@ -366,7 +367,7 @@ private class CompiledStrategy(
                         "(warmup not complete). Trigger will retry on the next fire time.",
                     ctx.strategyId,
                 )
-                return
+                return false
             }
         val ec =
             EvalContext(
@@ -377,8 +378,10 @@ private class CompiledStrategy(
                 snapshotStore = snapshotStore,
                 hub = hub,
                 currentAlias = null,
+                evaluationTimeMs = fireAt,
             )
         for (sig in sched.action(ec)) emit(sig)
+        return true
     }
 
     private fun latestKnownCandle(hub: CandleHub): Candle? {
@@ -416,11 +419,13 @@ private class CompiledStrategy(
 
         for ((alias, key) in streams) {
             if (alias in basketAliases) continue
-            // Phase 25B: credit the gate with whatever historical bars the seed phase
-            // (run by LiveSession before bindToHub) placed in the hub. Without this,
-            // the gate stays cold even when lookback + indicators are already warm.
-            val seeded = hub.historySize(key)
-            if (seeded > 0) warmupGate.recordBars(alias, seeded)
+            // Seeding the ring alone is insufficient: indicators, aggregates, rolling
+            // snapshots and CROSSES state must see the same historical closes that a
+            // continuous backtest saw. Replay without firing rules or position-open
+            // transitions, then attach the live listener.
+            for (seeded in hub.seededHistory(key)) {
+                updatePerAlias(alias, seeded, hub, ctx, warmupReplay = true)
+            }
             if (alias in syncedAliases) continue
             hub.onClosed(key, ctx.strategyId) { closed ->
                 evaluate(alias, closed, hub, ctx, emit)
@@ -517,6 +522,7 @@ private class CompiledStrategy(
         candle: Candle,
         hub: CandleHub,
         ctx: StrategyContext,
+        warmupReplay: Boolean = false,
     ) {
         warmupGate.onClosedCandle(alias)
 
@@ -529,20 +535,24 @@ private class CompiledStrategy(
                 snapshotStore = snapshotStore,
                 hub = hub,
                 currentAlias = alias,
+                evaluationTimeMs = candle.endTime,
+                historyAsOfMs = candle.endTime.takeIf { warmupReplay },
             )
 
         val symbol = streams[alias]!!.qktSymbol
 
-        val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
-        val transition = transitions.observe(symbol, qty)
-        when (transition) {
-            PositionTransition.ClosedToZero, PositionTransition.Flipped -> {
-                for (name in plan.captureOnOpen) snapshotStore.clearSlot(alias, name, SnapshotOpen)
-                aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
+        if (!warmupReplay) {
+            val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            val transition = transitions.observe(symbol, qty)
+            when (transition) {
+                PositionTransition.ClosedToZero, PositionTransition.Flipped -> {
+                    for (name in plan.captureOnOpen) snapshotStore.clearSlot(alias, name, SnapshotOpen)
+                    aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
+                }
+                PositionTransition.OpenedFromZero ->
+                    aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
+                PositionTransition.Stay -> {}
             }
-            PositionTransition.OpenedFromZero ->
-                aggregates.bindingsForAlias(alias).forEach { it.resetIfSinceOpen() }
-            PositionTransition.Stay -> {}
         }
 
         bindings.updateForAlias(alias, ec)
@@ -555,6 +565,7 @@ private class CompiledStrategy(
 
         for (b in aggregates.bindingsForAlias(alias)) {
             if (b.window is SinceOpen) {
+                if (warmupReplay) continue
                 val curQty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
                 if (curQty.signum() != 0) b.update(ec)
             } else {
@@ -588,6 +599,7 @@ private class CompiledStrategy(
                 snapshotStore = snapshotStore,
                 hub = hub,
                 currentAlias = alias,
+                evaluationTimeMs = candle.endTime,
             )
         for (rule in aliasRules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
@@ -639,6 +651,7 @@ private class CompiledStrategy(
                 lets = emptyMap(),
                 strategyContext = ctx,
                 snapshotStore = snapshotStore,
+                evaluationTimeMs = candle.endTime,
             )
 
         // 1. Position transitions for this candle's symbol

@@ -104,6 +104,7 @@ class BacktestCommandTest {
                 "2024-01-16",
                 "--data-root",
                 "src/test/resources/cli/data",
+                "--allow-incomplete",
             )
         assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
         assertThat(stdout).contains("Trades:")
@@ -138,6 +139,7 @@ class BacktestCommandTest {
                 "2024-01-16",
                 "--data-root",
                 "src/test/resources/cli/data",
+                "--allow-incomplete",
                 "--json",
             )
         assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
@@ -171,6 +173,7 @@ class BacktestCommandTest {
                 "2024-01-16",
                 "--data-root",
                 "src/test/resources/cli/data",
+                "--allow-incomplete",
                 "--report-dir",
                 reportDir.toString(),
                 "--json",
@@ -195,6 +198,7 @@ class BacktestCommandTest {
                 "2024-01-16",
                 "--data-root",
                 "src/test/resources/cli/data",
+                "--allow-incomplete",
                 "--json",
                 "--execution",
                 "mt5-realistic",
@@ -255,6 +259,7 @@ class BacktestCommandTest {
                 "2024-01-16",
                 "--dataset",
                 snapshot.toString(),
+                "--allow-incomplete",
                 "--json",
             )
 
@@ -376,6 +381,7 @@ class BacktestCommandTest {
                 "2024-01-16",
                 "--data-root",
                 dataRoot.toString(),
+                "--allow-incomplete",
                 "--json",
             )
 

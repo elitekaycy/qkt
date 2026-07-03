@@ -45,6 +45,7 @@ class SessionVwap(
     private var sumVol = BigDecimal.ZERO
     private var sumPv = BigDecimal.ZERO
     private var sumP2v = BigDecimal.ZERO
+    private var completeSession = false
 
     override val warmupBars: Int = 1
 
@@ -55,10 +56,12 @@ class SessionVwap(
         val idx = Math.floorDiv(input.startTime - anchorOffsetMs, MS_PER_DAY)
         if (idx != session) {
             session = idx
+            completeSession = Math.floorMod(input.startTime - anchorOffsetMs, MS_PER_DAY) == 0L
             sumVol = BigDecimal.ZERO
             sumPv = BigDecimal.ZERO
             sumP2v = BigDecimal.ZERO
         }
+        if (!completeSession) return
         val volume = input.volume
         if (volume.signum() <= 0) return
         val tp =
