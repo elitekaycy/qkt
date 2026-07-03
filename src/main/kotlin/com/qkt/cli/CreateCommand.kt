@@ -3,7 +3,7 @@ package com.qkt.cli
 import java.nio.file.Path
 
 /**
- * `qkt create template <path> [--kind mt5|minimal|bybit]` — scaffold a new qkt project.
+ * `qkt create template <path> [--kind <kind>]` — scaffold a new qkt project.
  *
  * Writes a working tree (compose stack, sample strategy, Makefile, `.env.example`)
  * so a new operator can go from "I have qkt installed" to "I have a daemon running
@@ -19,7 +19,7 @@ class CreateCommand(
         val sub = args.firstNonOption()
         if (sub != "template") {
             System.err.println(
-                "qkt: error: usage: qkt create template <path> [--kind mt5|minimal|bybit]",
+                "qkt: error: usage: qkt create template <path> [--kind ${VALID_KINDS.joinToString("|")}]",
             )
             return ExitCodes.USER_ERROR
         }
@@ -37,16 +37,27 @@ class CreateCommand(
         }
         val target = Path.of(pathArg).toAbsolutePath()
         val tokens = mapOf("QKT_VERSION" to BuildInfo.VERSION)
-        return when (val result = scaffolder.scaffold(kind, target, tokens)) {
+        val layers =
+            when (kind) {
+                "backtest" -> listOf("minimal", "backtest")
+                "portfolio" -> listOf("minimal", "portfolio")
+                "mt5-ci" -> listOf("mt5", "mt5-ci")
+                else -> listOf(kind)
+            }
+        return when (val result = scaffolder.scaffoldLayers(layers, target, tokens)) {
             is TemplateScaffolder.Result.Created -> {
                 println("Created ${result.filesWritten.size} files at $target")
                 println("")
                 println("Next steps:")
                 println("  cd $target")
                 println("  cp .env.example .env  # then edit .env with your broker credentials")
-                println("  make up               # start the qkt daemon")
-                println("  make deploy STRAT=ema_cross")
-                println("  make logs")
+                if (kind in setOf("backtest", "portfolio")) {
+                    println("  make backtest         # run the included research strategy")
+                } else {
+                    println("  make up               # start the qkt daemon")
+                    println("  make deploy STRAT=ema_cross")
+                    println("  make logs")
+                }
                 ExitCodes.SUCCESS
             }
 
@@ -58,6 +69,6 @@ class CreateCommand(
     }
 
     private companion object {
-        private val VALID_KINDS = setOf("mt5", "minimal", "bybit")
+        private val VALID_KINDS = linkedSetOf("mt5", "mt5-ci", "backtest", "portfolio", "minimal", "bybit")
     }
 }

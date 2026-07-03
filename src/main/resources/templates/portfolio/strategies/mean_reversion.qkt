@@ -1,0 +1,13 @@
+STRATEGY mean_reversion VERSION 1
+
+SYMBOLS
+    gold = BACKTEST:XAUUSD EVERY 1h WARMUP 30 BARS
+
+RULES
+    WHEN rsi(gold.close, 14) < 30
+     AND POSITION.gold = 0
+    THEN BUY gold SIZING 0.01
+
+    WHEN POSITION.gold > 0
+     AND rsi(gold.close, 14) > 55
+    THEN CLOSE gold

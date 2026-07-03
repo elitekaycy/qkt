@@ -33,20 +33,18 @@ class TemplateScaffolder(
         kind: String,
         target: Path,
         tokens: Map<String, String> = emptyMap(),
-    ): Result {
-        val manifestResource = "templates/$kind/MANIFEST"
-        val manifestStream =
-            classLoader.getResourceAsStream(manifestResource)
-                ?: return Result.Failed("unknown template kind '$kind' (no MANIFEST at $manifestResource)")
-        val entries =
-            manifestStream
-                .bufferedReader()
-                .use { it.readText() }
-                .lineSequence()
-                .map { it.trim() }
-                .filter { it.isNotEmpty() && !it.startsWith("#") }
-                .toList()
+    ): Result = scaffoldLayers(listOf(kind), target, tokens)
 
+    /**
+     * Applies template layers in order. Later layers may replace files from an
+     * earlier layer, which keeps specialized bundles (portfolio, CI deployment)
+     * small while retaining the tested base project.
+     */
+    fun scaffoldLayers(
+        kinds: List<String>,
+        target: Path,
+        tokens: Map<String, String> = emptyMap(),
+    ): Result {
         if (Files.exists(target)) {
             val anyChild = Files.newDirectoryStream(target).use { it.iterator().hasNext() }
             if (anyChild) {
@@ -57,23 +55,42 @@ class TemplateScaffolder(
         }
 
         val written = mutableListOf<Path>()
-        for (entry in entries) {
-            val resourcePath = "templates/$kind/$entry"
-            val stream =
-                classLoader.getResourceAsStream(resourcePath)
-                    ?: return Result.Failed("template entry missing from classpath: $resourcePath")
-            val bytes = stream.use { it.readBytes() }
-            val out =
-                if (entry.endsWith(".tmpl")) {
-                    val rendered = substitute(String(bytes, Charsets.UTF_8), tokens)
-                    rendered.toByteArray(Charsets.UTF_8) to target.resolve(entry.removeSuffix(".tmpl"))
-                } else {
-                    bytes to target.resolve(entry)
-                }
-            val (data, dest) = out
-            dest.parent?.let { Files.createDirectories(it) }
-            Files.write(dest, data)
-            written.add(dest)
+        for (kind in kinds) {
+            val manifestResource = "templates/$kind/MANIFEST"
+            val manifestStream =
+                classLoader.getResourceAsStream(manifestResource)
+                    ?: return Result.Failed("unknown template kind '$kind' (no MANIFEST at $manifestResource)")
+            val entries =
+                manifestStream
+                    .bufferedReader()
+                    .use { it.readText() }
+                    .lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && !it.startsWith("#") }
+                    .toList()
+            for (entry in entries) {
+                val resourcePath = "templates/$kind/$entry"
+                val stream =
+                    classLoader.getResourceAsStream(resourcePath)
+                        ?: return Result.Failed("template entry missing from classpath: $resourcePath")
+                val bytes = stream.use { it.readBytes() }
+                val out =
+                    if (entry.endsWith(".tmpl")) {
+                        val rendered = substitute(String(bytes, Charsets.UTF_8), tokens)
+                        val outputName =
+                            when (entry) {
+                                "gitignore.tmpl" -> ".gitignore"
+                                else -> entry.removeSuffix(".tmpl")
+                            }
+                        rendered.toByteArray(Charsets.UTF_8) to target.resolve(outputName)
+                    } else {
+                        bytes to target.resolve(entry)
+                    }
+                val (data, dest) = out
+                dest.parent?.let { Files.createDirectories(it) }
+                Files.write(dest, data)
+                written.add(dest)
+            }
         }
         return Result.Created(written)
     }
