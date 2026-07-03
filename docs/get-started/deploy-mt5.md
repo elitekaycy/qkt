@@ -12,7 +12,7 @@ Live trading routes orders through a per-broker `mt5-gateway` HTTP service that 
 
 ```bash
 cp .env.example .env
-# Edit .env: MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, VNC_PASSWORD
+# Edit .env: MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, MT5_API_KEY
 
 cp qkt.config.yaml.example qkt.config.yaml
 # Adjust profile entries if you're not using Exness
@@ -25,15 +25,15 @@ The compose file ([`docker-compose.yml`](https://github.com/elitekaycy/qkt/blob/
 - `mt5-gateway` on ports 3000 (VNC) + 5001 (HTTP API)
 - `qkt` daemon, depends-on healthy gateway
 
-## 2. Log in to MT5
+## 2. Verify the headless login
 
-The first time you start the gateway, you have to log in to MT5 through the VNC GUI:
+The gateway resolves the broker server and logs in using the three `MT5_*` values:
 
-1. Connect to `localhost:3000` with a VNC client.
-2. Use the `VNC_PASSWORD` from `.env`.
-3. In the MT5 window, log in with your broker account.
+```bash
+curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
+```
 
-After login, `curl http://localhost:5001/health` should return `{"status":"ok"}`. The qkt daemon's `depends_on` healthcheck waits for this.
+A 200 response with `"status":"ready"` confirms the API, terminal, and account. Use VNC on `localhost:3000` only to diagnose an automatic-login failure.
 
 ## 3. Configure the broker profile
 
@@ -44,6 +44,7 @@ brokers:
   exness:
     type: mt5
     gateway_url: http://mt5-gateway:5001
+    api_key: ${QKT_BROKER_EXNESS_API_KEY}
 ```
 
 The `gateway_url` matches the Docker service name. On a non-Docker setup, use `http://localhost:5001`.
@@ -100,7 +101,7 @@ docker compose down -v         # also wipes the volume
 
 ## Common issues
 
-- **Gateway returns 502.** MT5 isn't logged in. Connect to VNC and log in through the GUI.
+- **Readiness returns 503.** Check the container logs for broker resolution/login errors, then use VNC if needed.
 - **Symbol not found.** Verify the broker's actual symbol via the MT5 market watch — Exness uses `m` suffix (`EURUSDm`), ICMarkets uses `.raw`. The `MT5Symbol` translator handles this if your profile is right.
 - **Orders rejected with retcode 10018.** Market closed (weekend / outside session). Wait for the broker's session.
 

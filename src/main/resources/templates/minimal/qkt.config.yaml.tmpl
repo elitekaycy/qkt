@@ -1,11 +1,20 @@
 # Minimal qkt config — no brokers configured. Strategies run paper-only.
 # Add a broker by appending under brokers:
 #   exness:
-#     kind: mt5
-#     url: http://mt5-gateway:5001
+#     type: mt5
+#     extends: exness
+#     gateway_url: http://mt5-gateway:5001
+#     api_key: ${QKT_BROKER_EXNESS_API_KEY}
 # and adding the mt5-gateway service to docker-compose.yml.
 
+source: local
+data_root: /data
+starting_balance: ${QKT_STARTING_BALANCE:-10000}
+
+runtime:
+  mode: paper
+
 state:
-  dir: /var/lib/qkt
+  enabled: true
 
 brokers: {}

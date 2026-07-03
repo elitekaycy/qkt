@@ -25,6 +25,7 @@ data class MT5BrokerProfile(
     val httpTimeoutMs: Long = 5000,
     val retryAttempts: Int = 3,
     val deviationPoints: Int = 20,
+    val apiKey: String? = null,
     val capabilityRestrictions: Set<OrderTypeCapability> = emptySet(),
     val symbolCalendars: SymbolCalendars = SymbolCalendars.fxDefault(),
 ) {

@@ -4,17 +4,17 @@
 # to trade through them from the same daemon.
 
 state:
-  dir: /var/lib/qkt
+  enabled: true
 
 brokers: {}
 
 notify:
   telegram:
     enabled: ${TELEGRAM_ENABLED}
-    botToken: ${TELEGRAM_BOT_TOKEN}
-    chatId: ${TELEGRAM_CHAT_ID}
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}
     events:
-      - DAEMON_STARTED
-      - DAEMON_STOPPED
-      - STRATEGY_ERROR
-      - DAILY_SUMMARY
+      - daemon_started
+      - strategy_error
+      - halted
+      - resumed

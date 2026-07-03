@@ -53,6 +53,8 @@ class MT5ClientTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/order")
         assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.getHeader("Idempotency-Key")).isEqualTo("ord-1")
+        assertThat(recorded.body.readUtf8()).contains("\"client_order_id\":\"ord-1\"")
     }
 
     @Test
@@ -167,7 +169,7 @@ class MT5ClientTest {
         )
         val body = server.takeRequest().body.readUtf8()
         assertThat(body).contains("\"comment\":\"${longId.take(MT5_COMMENT_MAX_LENGTH)}\"")
-        assertThat(body).doesNotContain(longId)
+        assertThat(body).contains("\"client_order_id\":\"$longId\"")
     }
 
     @Test
@@ -207,6 +209,16 @@ class MT5ClientTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/get_positions?magic=10001")
         assertThat(recorded.method).isEqualTo("GET")
+    }
+
+    @Test
+    fun `getPositions accepts the current data envelope`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ok":true,"data":[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":1700000000000,"comment":"x"}]}""",
+            ),
+        )
+        assertThat(client.getPositions()).hasSize(1)
     }
 
     @Test
@@ -263,8 +275,9 @@ class MT5ClientTest {
 
     @Test
     fun `isReady returns true on 200`() {
-        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"ok"}"""))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"ready","ok":true}"""))
         assertThat(client.isReady()).isTrue
+        assertThat(server.takeRequest().path).isEqualTo("/health/ready")
     }
 
     @Test
@@ -291,6 +304,26 @@ class MT5ClientTest {
         val orders = client.getPendingOrders(magic = 10001)!!
         assertThat(orders).hasSize(1)
         assertThat(orders[0].ticket).isEqualTo(7L)
+    }
+
+    @Test
+    fun `getPendingOrders parses the current data envelope`() {
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":[$pendingOrderJson]}"""))
+        assertThat(client.getPendingOrders()).hasSize(1)
+    }
+
+    @Test
+    fun `configured api key authenticates readiness and data requests`() {
+        client =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                tzOffsetHours = 0,
+                retryAttempts = 0,
+                apiKey = "secret-token",
+            )
+        server.enqueue(MockResponse().setBody("""{"status":"ready"}"""))
+        assertThat(client.isReady()).isTrue
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer secret-token")
     }
 
     @Test

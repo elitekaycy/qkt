@@ -199,6 +199,7 @@ class FetchCommand(
                         profile.gatewayUrl,
                         serverTzOffsetHours = profile.serverTzOffsetHours,
                         normalizeBidBarsToMid = true,
+                        apiKey = profile.apiKey,
                     ),
                 )
             }
