@@ -1,0 +1,97 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/qkt' }}
+      MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+      MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+      MT5_SERVER: ${{ vars.MT5_SERVER || 'Exness-MT5Trial9' }}
+      MT5_API_KEY: ${{ secrets.MT5_API_KEY }}
+      MT5_VNC_USER: ${{ vars.MT5_VNC_USER || 'admin' }}
+      MT5_VNC_PASSWORD: ${{ secrets.MT5_VNC_PASSWORD }}
+      QKT_EXNESS_MAGIC: ${{ vars.QKT_EXNESS_MAGIC || '10001' }}
+      TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Validate required environment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS \
+            MT5_LOGIN MT5_PASSWORD MT5_API_KEY MT5_VNC_PASSWORD; do
+            test -n "${!name:-}" || { echo "::error::$name is required in the production environment"; exit 1; }
+          done
+
+      - name: Render deployment environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          {
+            printf 'QKT_IMAGE_TAG=v%s\n' '{{QKT_VERSION}}'
+            printf 'MT5_GATEWAY_IMAGE=%s\n' 'elitekaycy/mt5-gateway-api:0.3.0'
+            printf 'QKT_EXNESS_MAGIC=%s\n' "$QKT_EXNESS_MAGIC"
+            printf 'MT5_API_KEY=%s\n' "$MT5_API_KEY"
+            printf 'MT5_VNC_USER=%s\n' "$MT5_VNC_USER"
+            printf 'MT5_VNC_PASSWORD=%s\n' "$MT5_VNC_PASSWORD"
+            printf 'MT5_LOGIN=%s\n' "$MT5_LOGIN"
+            printf 'MT5_PASSWORD=%s\n' "$MT5_PASSWORD"
+            printf 'MT5_SERVER=%s\n' "$MT5_SERVER"
+            printf 'MT5_RESOLVER_URL=%s\n' 'https://mt5.mtapi.io'
+            printf 'MT5_LOG_LEVEL=%s\n' 'INFO'
+            printf 'TELEGRAM_ENABLED=%s\n' "$TELEGRAM_ENABLED"
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
+            printf 'TELEGRAM_CHAT_ID=%s\n' "$TELEGRAM_CHAT_ID"
+          } > .env
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Validate generated deployment
+        shell: bash
+        run: docker compose --env-file .env config --quiet
+
+      - name: Deploy atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -p "$DEPLOY_PORT" "$remote" "install -d -m 700 '$DEPLOY_PATH'"
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'state/' \
+            --exclude 'data/' \
+            -e "ssh -p $DEPLOY_PORT" \
+            ./ "$remote:$DEPLOY_PATH/"
+          ssh -p "$DEPLOY_PORT" "$remote" \
+            "cd '$DEPLOY_PATH' && chmod 600 .env && docker compose pull && docker compose up -d --remove-orphans && docker compose ps"

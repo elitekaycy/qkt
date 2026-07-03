@@ -1,0 +1,13 @@
+STRATEGY trend VERSION 1
+
+SYMBOLS
+    eur = BACKTEST:EURUSD EVERY 1h WARMUP 60 BARS
+
+RULES
+    WHEN ema(eur.close, 12) CROSSES ABOVE ema(eur.close, 48)
+     AND POSITION.eur = 0
+    THEN BUY eur SIZING 0.01
+
+    WHEN POSITION.eur > 0
+     AND ema(eur.close, 12) CROSSES BELOW ema(eur.close, 48)
+    THEN CLOSE eur
