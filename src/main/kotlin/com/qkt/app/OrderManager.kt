@@ -992,15 +992,19 @@ class OrderManager(
     private fun bracketExitOco(
         req: OrderRequest.Bracket,
         fillPrice: BigDecimal,
+        fillQuantity: BigDecimal,
     ): OrderRequest.StandaloneOCO {
         val resolved = resolveBracketAtFill(req, fillPrice)
+        // Exits must never exceed what actually filled — a venue partial booked at its
+        // real volume (#615) would otherwise get exits sized to the full request.
+        val exitQuantity = resolved.quantity.min(fillQuantity)
         val exitSide = if (resolved.side == Side.BUY) Side.SELL else Side.BUY
         val tp =
             OrderRequest.Limit(
                 "${resolved.id}-tp",
                 resolved.symbol,
                 exitSide,
-                resolved.quantity,
+                exitQuantity,
                 resolved.takeProfit,
                 resolved.timeInForce,
                 clock.now(),
@@ -1013,7 +1017,7 @@ class OrderManager(
                         "${resolved.id}-sl",
                         resolved.symbol,
                         exitSide,
-                        resolved.quantity,
+                        exitQuantity,
                         spec.price,
                         resolved.timeInForce,
                         clock.now(),
@@ -1024,7 +1028,7 @@ class OrderManager(
                         "${resolved.id}-sl",
                         resolved.symbol,
                         exitSide,
-                        resolved.quantity,
+                        exitQuantity,
                         fillPrice,
                         spec.trailDistance,
                         spec.mfeThreshold,
@@ -1037,7 +1041,7 @@ class OrderManager(
             "${resolved.id}-oco",
             resolved.symbol,
             exitSide,
-            resolved.quantity,
+            exitQuantity,
             tp,
             sl,
             resolved.timeInForce,
@@ -1671,7 +1675,7 @@ class OrderManager(
         val fallbackBracket = fillAnchoredFallbackBrackets.remove(e.clientOrderId)
         val attachedBracket = fillAnchoredAttachedBrackets.remove(e.clientOrderId)
         when {
-            fallbackBracket != null -> dispatch(bracketExitOco(fallbackBracket, e.price))
+            fallbackBracket != null -> dispatch(bracketExitOco(fallbackBracket, e.price, e.quantity))
             attachedBracket != null -> {
                 val resolved = resolveBracketAtFill(attachedBracket, e.price)
                 val sl =
@@ -1697,7 +1701,11 @@ class OrderManager(
                 }
                 pending.orEmpty().forEach { child ->
                     val anchored =
-                        if (child is OrderRequest.ArmedTrailingStop) child.copy(entryPrice = e.price) else child
+                        if (child is OrderRequest.ArmedTrailingStop) {
+                            child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity))
+                        } else {
+                            child
+                        }
                     dispatch(anchored)
                 }
             }
