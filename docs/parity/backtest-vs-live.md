@@ -35,7 +35,7 @@ Each row lists the symptom, the source file the live behavior lives in, and whet
 | 5 | **Spread / slippage** | uses `tick.price` (the mid set by `Mt5TickFeedSource` when `last=0`) | live pays the venue spread; volatile bars also slip | **closed in MT5_SIM** |
 | 6 | **Market-order fill price** | `priceProvider.lastPrice(symbol)` — the last tracked tick (`PaperBroker.fillMarket`) | MT5 fills at venue ask/bid at submit time, with `deviation` slack | **closed in MT5_SIM** |
 | 7 | **Contract size** | reads `contractSize` from `InstrumentRegistry`; both backtest and live multiply through it | MT5 sizes positions as `lot × contract_size` (XAUUSD = 100 oz/lot) | **closed in Phase 30** |
-| 8 | **`tradeStopsLevel`** | not enforced (closing that is the simulator's job) | rejected pre-placement in `MT5Broker` since Phase 30 | live closed in Phase 30, backtest open |
+| 8 | **`tradeStopsLevel`** | mt5-sim (opt-in `enforceStopsLevel`) validates pending trigger/limit distance from current price AND bracket exits from entry | rejected pre-placement in `MT5Broker`: entry distance from current price, SL/TP distance from entry, freeze-level on modifies (#638) | both halves aligned in #658; freeze-level live-only (see residuals) |
 | 9 | **OCO atomicity** | both legs always coupled in memory | emulated via comment-tag prefix + position poller; cancel-on-fill has a few-ms window between the fill event and the sibling-cancel request | divergent edge case |
 | 10 | **Pending-order persistence** | always in memory of the running backtest | persists to the broker's order book; daemon restart re-reads via `MT5StateRecovery` | divergent edge case |
 | 11 | **Latency** | instantaneous tick → fill | gateway HTTP round-trip + venue execution latency | divergent |
@@ -123,6 +123,49 @@ keep in mind when reading a backtest.
 | A10 | `x.bid` / `x.ask` / `x.spread` evaluate Undefined on bar-sourced backtest data — spread-aware rules silently never fire in bar backtests (tick-sourced backtests carry real quotes) | OPEN (#389) — prefer tick data for spread-aware strategies |
 | A12 | Quiet-symbol candle close: live closes an ended bar from the 1Hz heartbeat even with no next tick; backtest closes only on the next replayed tick (event time is its only clock) | INHERENT — affects the last bar before a session gap |
 | A11 | Live-only operational effects: restart reconcile, OCO restore, poller-synthesized closes, gateway-outage suspensions, the runaway breaker and market-data gate (#395/#396 are live-only by design) | INHERENT — none have a backtest equivalent |
+
+## 2026-07-03 hardening pass — parity-audit rows resolved (#658)
+
+The 2026-07-02 parity audit (issues #614-#643) was resolved in one hardening PR.
+Statuses below supersede any older row that disagrees; each FIXED row cites the
+test class that pins it.
+
+| Issue | Resolution | Pinned by |
+| --- | --- | --- |
+| #614 | Live deploy replays seeded candles through the full per-alias update path (indicators, aggregates, rolling snapshots) with rules and position transitions suppressed; session/anchored indicators declare timeframe-aware warmup horizons instead of `warmupBars = 1` | `CompiledStrategyAutoWarmupTest`, `WarmupRequirementsTest` |
+| #615 | Live fills book the venue-reported executed volume (quantized, partial-aware); a partial response without a volume resolves as unknown-outcome instead of booking the full request | `MT5BrokerIntegrationTest`, `MT5ClientTest` |
+| #616 | Engine-initiated closes attach venue deal costs (`commission + swap + fee`) to the fill; the shared pipeline nets them from realized PnL and halt inputs in both modes | `MT5BrokerIntegrationTest` |
+| #617/#618 | Live armed trails cancel when their venue position ticket no longer exists (never a naked market order), and fall back to the strategy's PRIMARY position ticket when the leg map has no entry | `OrderManagerAttachedBracketTest`, `StrategyPositionTrackerStackTest` |
+| #619 | RESIZE quantizes deltas to `volume_step`, floors at `volume_min`, shrinks by closing the primary's exact venue ticket, and reuses a stable order id so an in-flight resize cannot double-submit | `ActionCompiler` resize tests |
+| #620 | Portfolio live sessions share one `BookRiskController` (exposure limit rule + sizing scale), sampled from real child legs each risk tick; per-child `maxDailyLoss` became book-wide to match the backtest | `LiveSessionBrokerCoverageTest` |
+| #621 | `time_msc` fields are UTC epoch millis and are no longer offset-shifted; only naive datetime strings use the broker offset (one rule, one boundary) | `MT5ClientTest`, `Mt5BarFetcherTest` |
+| #622 | A configured live session fails closed: no silent `PaperBroker` fallback for unrouted symbols | `LiveSessionBrokerCoverageTest` |
+| #623 | Session-scoped indicators (`SessionRange`, `SessionVwap`, `AnchoredReturn`) refuse to latch partial initial windows — Undefined until the first complete window | `SessionRangeTest`, `SessionVwapTest`, `AnchoredReturnTest` |
+| #624 | The tick-fills classifier expands the mid bar range by the slice's max half-spread, so levels crossed only by the executable quote resolve on real (side-aware) ticks | `OrderManagerIntrabarFillTest`, `BarResolvedFeedTest` |
+| #625 | Backtest sims never fill an order cancelled earlier in the same tick | `PaperBrokerTest`, `MT5BrokerSimulatorTest` |
+| #626 | Backtest halts cancel resting pendings, matching the live kill-switch | `ReplayEngine` halt subscription |
+| #627/#628 | Portfolio backtests refuse WHEN..RUN / CAPITAL topologies and `--bars`/`--bar-tf`/`--tick-fills` rather than produce a misleading result | `BacktestCommandPortfolioTest` |
+| #629 | `qkt sweep --tick-fills` errors instead of silently downgrading | `SweepCommandTest` |
+| #630/#641 | `--bars` validates bar-store coverage per trading day (fail-loud, `--allow-incomplete` escape); non-Dukascopy streams are completeness-validated; empty feeds error instead of replaying nothing | `BarCompletenessValidatorTest`, `BacktestFromStoreTest` |
+| #631 | MT5 warmup bars normalize bid OHLC to mid via half-spread, matching the backtest's mid bars | `Mt5BarFetcherTest` |
+| #632/#633 | `NOW.*` and schedule actions evaluate at event time (bar close / scheduled fire time), and missed schedule occurrences replay one-by-one instead of coalescing | `NowAccessorEvalTest`, `ScheduleRunnerTest` |
+| #634 | `CandleAggregator` never reopens a closed window; late ticks are dropped and counted | `CandleAggregatorTest` |
+| #635 | Sim StopLimit/IfTouched-LIMIT activate a resting limit (no instant fill at the limit); limit fills are limit-or-better, never slipped adversely | `PaperBrokerTest`, `MT5BrokerSimulatorTest` |
+| #636 | Expiry wins the deadline instant in both venue-held (sim `expireGtd` before the trigger pass) and engine-held (`now >= deadline`) paths | `OrderManagerGtdSweepTest` |
+| #637 | A triggered order re-checks its live state before broker submission — a same-pass cancel can no longer double-submit | `OrderManagerBracketTest` |
+| #639 | Crossed stored quotes (bid > ask) are dropped identically at read time by CSV and binary feeds, warn-counted, instead of crashing the replay | `CsvTickFeedTest`, `BinaryTickParityTest` |
+| #640 | Fetch persists tick volume; old cached rows derive volume from stored side volumes at read time | `DukascopyTickFetcherTest`, `TickAssemblerTest` |
+| #643 | Plain `--bars` stops that gap through their level fill at the adverse opening print, not the level | `PaperBrokerTest` |
+| #390 | Bracket exits re-anchor on the actual fill price (fallback OCO and venue-attached modify both) | `OrderManagerAttachedBracketTest`, `OrderManagerTier2FallbackTest` |
+
+### Residual divergences (known, accepted, tracked)
+
+| Residual | Behavior | Tracking |
+| --- | --- | --- |
+| CROSSES cold start | Warmup replay does not evaluate rule expressions, so a `CROSSES` node's prev-state is unset on the first post-deploy bar — it returns Undefined (rule does not fire) for exactly one bar. Fail-safe: a missed signal, never a wrong one | inherent to replay-without-firing |
+| Freeze-level in backtest | Live `modifyPosition` rejects SL/TP moves inside `SYMBOL_TRADE_FREEZE_LEVEL` (surfaced + logged); the mt5-sim does not model freeze-level, so a backtest trail always tightens where live may be refused | #638 residual |
+| Tick-fills synthetic marks | A symbol with an open position but no live orders resolves SYNTHETIC under `--tick-fills`, so its intrabar equity marks come from synthetic points (fills are exact; drawdown sampling is approximate) | #642 residual |
+| Venue partials on fallback exits | When a venue partial fills a fallback (non-attached) bracket, exits are sized to the first fill's volume; a later remainder fill has no engine exit | follow-up if partial-fill venues go live |
 
 ## File pointers
 
