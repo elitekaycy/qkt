@@ -1,0 +1,11 @@
+.PHONY: backtest shell
+
+# Usage: cp .env.example .env && make backtest
+backtest:
+	@test -f .env || (echo "copy .env.example to .env first"; exit 1)
+	@set -a; . ./.env; set +a; \
+	docker compose run --rm qkt qkt backtest /strategies/backtest.qkt \
+	  --from "$$BACKTEST_FROM" --to "$$BACKTEST_TO" --data-root /data
+
+shell:
+	docker compose run --rm qkt sh

@@ -13,7 +13,6 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.slf4j.LoggerFactory
@@ -30,6 +29,7 @@ class MT5Client(
     private val tzOffsetHours: Int,
     private val httpTimeoutMs: Long = 5000,
     private val retryAttempts: Int = 3,
+    private val apiKey: String? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5Client::class.java)
     private val tzOffsetMs: Long = tzOffsetHours.toLong() * 3600L * 1000L
@@ -44,16 +44,20 @@ class MT5Client(
 
     fun isReady(): Boolean =
         runCatching {
-            val resp = http.newCall(Request.Builder().url("$gatewayUrl/health").build()).execute()
-            resp.use { it.isSuccessful }
+            val resp = http.newCall(mt5RequestBuilder("$gatewayUrl/health/ready", apiKey).build()).execute()
+            resp.use { response ->
+                if (!response.isSuccessful) return@use false
+                val payload = response.body?.string().orEmpty()
+                val root = json.parseToJsonElement(payload).jsonObject
+                root["status"]?.jsonPrimitive?.contentOrNull == "ready"
+            }
         }.getOrDefault(false)
 
     fun placeOrder(req: MT5OrderRequest): MT5OrderResponse {
         val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/order")
+            mt5RequestBuilder("$gatewayUrl/order", apiKey)
+                .header("Idempotency-Key", req.comment)
                 .post(body)
                 .build()
         // POST /order is NOT retried: duplicate placement is worse than a surfaced failure.
@@ -85,9 +89,8 @@ class MT5Client(
     ) {
         val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/order")
+            mt5RequestBuilder("$gatewayUrl/order", apiKey)
+                .header("Idempotency-Key", req.comment)
                 .post(body)
                 .build()
         http.newCall(request).enqueue(
@@ -129,7 +132,7 @@ class MT5Client(
     fun getPositions(magic: Int? = null): List<MT5Position>? {
         val url = if (magic != null) "$gatewayUrl/get_positions?magic=$magic" else "$gatewayUrl/get_positions"
         val raw = getWithRetry(url) ?: return null
-        val arr = json.parseToJsonElement(raw).jsonArray
+        val arr = unwrapMT5Data(json.parseToJsonElement(raw)).jsonArray
         return arr.map { parsePosition(it.jsonObject) }
     }
 
@@ -144,7 +147,7 @@ class MT5Client(
         // The gateway's /orders shape varies by version: some return a bare
         // array, others wrap it as {"orders": [...], "total": N}. Accept both.
         val arr =
-            when (val root = json.parseToJsonElement(raw)) {
+            when (val root = unwrapMT5Data(json.parseToJsonElement(raw))) {
                 is JsonArray -> root
                 is JsonObject -> root["orders"]?.jsonArray ?: return emptyList()
                 else -> return emptyList()
@@ -216,9 +219,7 @@ class MT5Client(
     ): MT5OrderResponse {
         val body = encodeClosePosition(ticket, volume).toRequestBody(JSON_MEDIA)
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/close_position")
+            mt5RequestBuilder("$gatewayUrl/close_position", apiKey)
                 .post(body)
                 .build()
         val resp = http.newCall(request).execute()
@@ -248,9 +249,7 @@ class MT5Client(
     ) {
         val body = encodeClosePosition(ticket, volume).toRequestBody(JSON_MEDIA)
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/close_position")
+            mt5RequestBuilder("$gatewayUrl/close_position", apiKey)
                 .post(body)
                 .build()
         http.newCall(request).enqueue(
@@ -305,9 +304,7 @@ class MT5Client(
     ): MT5OrderResponse {
         val body = encodeModifyPosition(ticket, sl, tp).toRequestBody(JSON_MEDIA)
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/modify_sl_tp")
+            mt5RequestBuilder("$gatewayUrl/modify_sl_tp", apiKey)
                 .post(body)
                 .build()
         val resp = http.newCall(request).execute()
@@ -355,7 +352,7 @@ class MT5Client(
         val to = venueIso(toUtcMs + DEAL_WINDOW_PAD_MS)
         val url = "$gatewayUrl/history_deals_get?from_date=$from&to_date=$to&position=$positionTicket"
         val raw = getWithRetry(url) ?: return null
-        val arr = json.parseToJsonElement(raw) as? JsonArray ?: return null
+        val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
         // DEAL_ENTRY_IN (0) opened the position; OUT (1) / INOUT (2) / OUT_BY (3)
         // reduced or closed it. The close may have happened in several partial deals —
         // volume-weight them into the single price the synthesized fill carries.
@@ -400,7 +397,7 @@ class MT5Client(
     ): List<MT5Deal>? {
         val url = "$gatewayUrl/history_deals_get?from_date=${venueIso(fromUtcMs)}&to_date=${venueIso(toUtcMs)}"
         val raw = getWithRetry(url) ?: return null
-        val arr = json.parseToJsonElement(raw) as? JsonArray ?: return null
+        val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
         return arr.map { parseDeal(it.jsonObject) }
     }
 
@@ -453,9 +450,7 @@ class MT5Client(
      */
     fun cancelOrder(ticket: Long): String {
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/orders/$ticket")
+            mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
                 .delete()
                 .build()
         val resp = http.newCall(request).execute()
@@ -481,9 +476,7 @@ class MT5Client(
         onResult: (String?) -> Unit,
     ) {
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/orders/$ticket")
+            mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
                 .delete()
                 .build()
         http.newCall(request).enqueue(
@@ -526,9 +519,7 @@ class MT5Client(
     ): MT5OrderResponse {
         val body = encodeModification(mods).toRequestBody(JSON_MEDIA)
         val request =
-            Request
-                .Builder()
-                .url("$gatewayUrl/orders/$ticket")
+            mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
                 .put(body)
                 .build()
         val resp = http.newCall(request).execute()
@@ -559,7 +550,7 @@ class MT5Client(
         var lastError: Exception? = null
         while (attempt <= retryAttempts) {
             try {
-                val resp = http.newCall(Request.Builder().url(url).build()).execute()
+                val resp = http.newCall(mt5RequestBuilder(url, apiKey).build()).execute()
                 resp.use {
                     if (it.isSuccessful) return it.body?.string().orEmpty()
                 }
@@ -594,6 +585,7 @@ class MT5Client(
         if (req.slDistance != null) field("sl_distance", req.slDistance.toString())
         field("deviation", req.deviation.toString())
         field("magic", req.magic.toString())
+        field("client_order_id", "\"${req.comment}\"")
         // GTD expiry (epoch seconds). Without this a GTD pending rests GTC-forever on MT5
         // and fills late. Mirrors encodeModification, which the gateway accepts without an
         // explicit type_time — it infers TIME_SPECIFIED from the expiration's presence.

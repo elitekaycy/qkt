@@ -114,15 +114,15 @@ Two containers start:
 - **mt5-gateway** — a Wine container running the MT5 desktop terminal with a Flask HTTP API exposing its functionality
 - **qkt** — the trading daemon, depends on the gateway being healthy
 
-The first time, the gateway needs you to log in interactively. Open a VNC viewer at `localhost:3000` (password from `.env`), then inside the MT5 GUI: **File → Login to Trade Account**, enter your demo credentials, click Login. The "connected" indicator at the bottom-right of MT5 turns green.
+The gateway logs in headlessly from `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`. VNC at `localhost:3000` is retained for diagnosis.
 
 Verify from your host:
 
 ```bash
-curl http://localhost:5001/health
+curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
 ```
 
-If you see `{"ok": true, ...}` with your account number, the gateway is alive.
+If you see `{"ok":true,"status":"ready",...}`, the API, terminal, and account are ready.
 
 ### Adapt the strategy for live
 
@@ -247,7 +247,7 @@ You've gone backtest → paper → live demo. To go to **live real money**:
 
 ## If something went wrong
 
-- **`docker compose up -d` fails on `mt5-gateway:latest`** — the image isn't on Docker Hub. Build it locally from [github.com/elitekaycy/mt5-gateway](https://github.com/elitekaycy/mt5-gateway) first.
-- **`curl localhost:5001/health` returns `{"ok": false}`** — you haven't logged into MT5 yet. VNC at `localhost:3000` and log in via the GUI.
+- **The gateway image cannot be pulled** — verify access to `elitekaycy/mt5-gateway-api:0.3.0`.
+- **`/health/ready` returns 503** — inspect gateway logs for resolver/login errors; use VNC only if headless login cannot resolve the broker.
 - **Strategy deploys but doesn't trade** — see [debug a strategy that isn't firing](../how-to/debug-not-firing.md). Most often the EMAs haven't warmed up yet — the first 21 candles produce no signal.
 - **MT5 logs out periodically** — some brokers force daily re-auth. VNC back in. Add a healthcheck alert in production.

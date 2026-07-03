@@ -1,5 +1,8 @@
 package com.qkt.cli
 
+import com.qkt.dsl.parse.Lexer
+import com.qkt.dsl.parse.ParseResult
+import com.qkt.dsl.parse.Parser
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -49,6 +52,22 @@ class CreateCommandTest {
         invoke("create", "template", target.toString())
         val envContent = Files.readString(target.resolve(".env.example"))
         assertThat(envContent).contains("QKT_IMAGE_TAG=v${BuildInfo.VERSION}")
+        assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.0")
+        assertThat(envContent).contains("MT5_API_KEY=replace-with-a-long-random-value")
+    }
+
+    @Test
+    fun `mt5 config uses the current authenticated gateway contract`(
+        @TempDir tmp: Path,
+    ) {
+        val target = tmp.resolve("project")
+        invoke("create", "template", target.toString())
+        val config = Files.readString(target.resolve("qkt.config.yaml"))
+        assertThat(config).contains("type: mt5")
+        assertThat(config).contains("gateway_url: \${QKT_EXNESS_URL:-http://mt5-gateway:5001}")
+        assertThat(config).contains("api_key: \${QKT_BROKER_EXNESS_API_KEY}")
+        assertThat(config).doesNotContain("kind: mt5")
+        assertThat(config).doesNotContain("botToken:")
     }
 
     @Test
@@ -120,6 +139,55 @@ class CreateCommandTest {
     }
 
     @Test
+    fun `research kinds scaffold complete backtest projects`(
+        @TempDir tmp: Path,
+    ) {
+        val expectedStrategies =
+            mapOf(
+                "backtest" to listOf("strategies/backtest.qkt"),
+                "portfolio" to
+                    listOf(
+                        "strategies/portfolio.qkt",
+                        "strategies/trend.qkt",
+                        "strategies/mean_reversion.qkt",
+                    ),
+            )
+        for ((kind, strategies) in expectedStrategies) {
+            val target = tmp.resolve(kind)
+            val (code, stdout, _) = invoke("create", "template", target.toString(), "--kind", kind)
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+            assertThat(stdout).contains("make backtest")
+            assertThat(target.resolve(".gitignore")).exists()
+            assertThat(target.resolve("data/README.md")).exists()
+            strategies.forEach { assertThat(target.resolve(it)).exists() }
+            assertThat(Files.readString(target.resolve("qkt.config.yaml"))).contains("source: local")
+            if (kind == "portfolio") {
+                val portfolio = Files.readString(target.resolve("strategies/portfolio.qkt"))
+                assertThat(Parser(Lexer(portfolio).tokenize()).parseFile())
+                    .isInstanceOf(ParseResult.Success::class.java)
+            }
+        }
+    }
+
+    @Test
+    fun `mt5-ci adds a production deployment workflow without embedding secrets`(
+        @TempDir tmp: Path,
+    ) {
+        val target = tmp.resolve("project")
+        val (code, _, _) = invoke("create", "template", target.toString(), "--kind", "mt5-ci")
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+
+        val workflow = Files.readString(target.resolve(".github/workflows/deploy.yml"))
+        assertThat(workflow).contains("environment: production")
+        assertThat(workflow).contains("\${{ secrets.MT5_PASSWORD }}")
+        assertThat(workflow).contains("printf 'QKT_IMAGE_TAG=v%s")
+        assertThat(workflow).contains("'${BuildInfo.VERSION}'")
+        assertThat(workflow).contains("docker compose --env-file .env config --quiet")
+        assertThat(workflow).doesNotContain("replace-with-a-long-random-value")
+        assertThat(target.resolve("DEPLOYMENT.md")).exists()
+    }
+
+    @Test
     fun `unknown --kind errors out and lists valid kinds`(
         @TempDir tmp: Path,
     ) {
@@ -128,6 +196,9 @@ class CreateCommandTest {
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(stderr).contains("unknown --kind 'notathing'")
         assertThat(stderr).contains("mt5")
+        assertThat(stderr).contains("mt5-ci")
+        assertThat(stderr).contains("backtest")
+        assertThat(stderr).contains("portfolio")
         assertThat(stderr).contains("minimal")
         assertThat(stderr).contains("bybit")
     }
@@ -150,13 +221,15 @@ class CreateCommandTest {
         private val MT5_EXPECTED_FILES =
             listOf(
                 ".env.example",
+                ".gitignore",
                 "Makefile",
                 "docker-compose.yml",
                 "qkt.config.yaml",
                 "strategies/README.md",
                 "strategies/ema_cross.qkt",
+                "strategies/full_strategy.qkt",
             )
-        private val MINIMAL_EXPECTED_FILES = MT5_EXPECTED_FILES
-        private val BYBIT_EXPECTED_FILES = MT5_EXPECTED_FILES
+        private val MINIMAL_EXPECTED_FILES = MT5_EXPECTED_FILES - "strategies/full_strategy.qkt"
+        private val BYBIT_EXPECTED_FILES = MINIMAL_EXPECTED_FILES
     }
 }

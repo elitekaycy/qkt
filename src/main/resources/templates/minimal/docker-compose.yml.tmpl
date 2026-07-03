@@ -22,6 +22,7 @@ services:
     volumes:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
+      - ./data:/data
       # Single bind for the daemon's state dir. The daemon writes its `logs/`
       # subdir inside this bind, persisted to `./state/logs/` on host. Avoid
       # nesting a separate `./logs:/var/lib/qkt/logs` mount — Docker handles

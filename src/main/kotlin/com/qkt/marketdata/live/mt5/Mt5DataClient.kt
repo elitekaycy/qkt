@@ -1,5 +1,7 @@
 package com.qkt.marketdata.live.mt5
 
+import com.qkt.broker.mt5.mt5RequestBuilder
+import com.qkt.broker.mt5.unwrapMT5Data
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 import java.time.Instant
@@ -13,12 +15,12 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
-import okhttp3.Request
 
 class Mt5DataClient(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
     private val serverTzOffsetHours: Int = 0,
+    private val apiKey: String? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -45,7 +47,7 @@ class Mt5DataClient(
     }
 
     fun fetchSymbolPoint(symbol: String): BigDecimal? {
-        val req = Request.Builder().url("$baseUrl/symbol_info/$symbol").build()
+        val req = mt5RequestBuilder("$baseUrl/symbol_info/$symbol", apiKey).build()
         return http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return null
             val raw = resp.body?.string() ?: return null
@@ -64,13 +66,13 @@ class Mt5DataClient(
         timeframe: String,
         midPoint: BigDecimal? = null,
     ): List<Candle> {
-        val req = Request.Builder().url(url).build()
+        val req = mt5RequestBuilder(url, apiKey).build()
         val raw =
             http.newCall(req).execute().use { resp ->
                 check(resp.isSuccessful) { "MT5 gateway HTTP ${resp.code} for $url: ${resp.body?.string()}" }
                 resp.body?.string() ?: error("MT5 gateway empty body for $url")
             }
-        val parsed = json.parseToJsonElement(raw)
+        val parsed = unwrapMT5Data(json.parseToJsonElement(raw))
         val rows: JsonArray =
             when {
                 parsed is JsonArray -> parsed

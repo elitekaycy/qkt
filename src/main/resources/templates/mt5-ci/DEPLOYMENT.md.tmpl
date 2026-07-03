@@ -1,0 +1,30 @@
+# Production deployment
+
+This project deploys on pushes to `main` through the GitHub `production`
+environment. The workflow renders `.env` from protected environment secrets,
+validates Compose, syncs the project, and starts the pinned images.
+
+Create these GitHub environment secrets:
+
+- `DEPLOY_HOST`
+- `DEPLOY_USER`
+- `DEPLOY_SSH_KEY`
+- `DEPLOY_KNOWN_HOSTS` (the pinned server host-key line)
+- `MT5_LOGIN`
+- `MT5_PASSWORD`
+- `MT5_API_KEY`
+- `MT5_VNC_PASSWORD`
+
+Optional secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+
+Optional environment variables have safe defaults:
+
+- `DEPLOY_PORT=22`
+- `DEPLOY_PATH=/opt/qkt`
+- `MT5_SERVER=Exness-MT5Trial9`
+- `MT5_VNC_USER=admin`
+- `QKT_EXNESS_MAGIC=10001`
+- `TELEGRAM_ENABLED=false`
+
+The remote account must have Docker Compose access. No repository secret is
+stored in Git, and `state/`/`data/` are preserved between deployments.

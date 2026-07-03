@@ -63,34 +63,16 @@ Verify both are running:
 docker compose ps
 ```
 
-## 3. Log in to MT5 once
+## 3. Verify the headless MT5 login
 
-The MT5 terminal needs an interactive login the first time. Connect to it via VNC:
-
-```bash
-# Mac: brew install tigervnc-viewer ; open vnc://localhost:3000
-# Linux: any VNC client → localhost:3000
-# Windows: TightVNC, RealVNC, or RDP-style tools
-```
-
-Use the `VNC_PASSWORD` you set in `.env`.
-
-Inside the MT5 GUI:
-
-1. **File → Login to Trade Account**
-2. Enter your login, password, and server name
-3. Click "Login"
-
-You should see your balance + a green "connected" indicator at the bottom-right of MT5.
-
-**Verify from the host:**
+The gateway uses `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER` from `.env`. Verify from the host:
 
 ```bash
-curl http://localhost:5001/health
-# {"ok": true, "account": {"login": 12345678, "balance": 10000.00, ...}}
+curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
+# {"ok":true,"status":"ready",...}
 ```
 
-If `ok: false`, the login didn't take — back into the VNC GUI.
+If readiness is 503, inspect `docker compose logs mt5-gateway`; VNC remains available as a diagnostic fallback.
 
 ## 4. Audit the tick feed first
 

@@ -72,6 +72,7 @@ brokers:
     type: mt5
     extends: exness                     # built-in profile
     gateway_url: ${EXNESS_GATEWAY_URL}
+    api_key: ${QKT_BROKER_EXNESS_API_KEY}
     magic: 4242
 
 risk:
@@ -93,17 +94,18 @@ version: '3.9'
 
 services:
   mt5-gateway:
-    image: mt5-gateway:latest
+    image: elitekaycy/mt5-gateway-api:0.3.0
     environment:
       - MT5_LOGIN=${MT5_LOGIN}
       - MT5_PASSWORD=${MT5_PASSWORD}
       - MT5_SERVER=${MT5_SERVER}
-      - VNC_PASSWORD=${VNC_PASSWORD}
+      - API_KEY=${MT5_API_KEY}
+      - PASSWORD=${VNC_PASSWORD}
     ports:
-      - "3000:3000"        # VNC for one-time MT5 login
+      - "3000:3000"        # VNC diagnostic fallback
       - "5001:5001"        # HTTP API the gateway exposes
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$API_KEY\" http://localhost:5001/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 6
@@ -118,6 +120,7 @@ services:
       - BYBIT_API_KEY=${BYBIT_API_KEY}
       - BYBIT_API_SECRET=${BYBIT_API_SECRET}
       - EXNESS_GATEWAY_URL=http://mt5-gateway:5001
+      - QKT_BROKER_EXNESS_API_KEY=${MT5_API_KEY}
     volumes:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
@@ -144,6 +147,7 @@ BYBIT_API_SECRET=xxx
 MT5_LOGIN=12345678
 MT5_PASSWORD=demo-password
 MT5_SERVER=Exness-MT5Trial
+MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=changeme
 EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```

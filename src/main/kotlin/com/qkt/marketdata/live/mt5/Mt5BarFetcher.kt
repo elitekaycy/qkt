@@ -18,6 +18,7 @@ class Mt5BarFetcher(
     private val http: OkHttpClient = OkHttpClient(),
     private val serverTzOffsetHours: Int = 0,
     private val normalizeBidBarsToMid: Boolean = false,
+    private val apiKey: String? = null,
 ) {
     private val pointBySymbol = java.util.concurrent.ConcurrentHashMap<String, java.math.BigDecimal>()
 
@@ -38,7 +39,7 @@ class Mt5BarFetcher(
                 .atOffset(offset)
                 .toLocalDateTime()
                 .toString()
-        val client = Mt5DataClient(baseUrl, http, serverTzOffsetHours)
+        val client = Mt5DataClient(baseUrl, http, serverTzOffsetHours, apiKey)
         val midPoint =
             if (normalizeBidBarsToMid) {
                 pointBySymbol[symbol]
