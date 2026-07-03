@@ -73,6 +73,7 @@ class MT5BrokerSimulator(
     // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
     // Shareable because the simulator is single-threaded and fill callbacks never re-enter onTick.
     private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
+    private val gtdExpiredScratch: MutableList<OrderRequest> = mutableListOf()
     private val delayedSubmissions: MutableList<DelayedSubmission> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = HashMap()
     private var submittedOrdinal: Int = 0
@@ -190,12 +191,15 @@ class MT5BrokerSimulator(
     }
 
     private fun expireGtd(tick: Tick) {
-        val expired =
-            working.filter { request ->
-                request.symbol == tick.symbol &&
-                    request.expiresAt?.let { tick.timestamp >= it } == true
-            }
-        for (request in expired) {
+        gtdExpiredScratch.clear()
+        for (i in working.indices) {
+            val request = working[i]
+            if (request.symbol != tick.symbol) continue
+            val expiresAt = request.expiresAt ?: continue
+            if (tick.timestamp >= expiresAt) gtdExpiredScratch.add(request)
+        }
+        for (i in gtdExpiredScratch.indices) {
+            val request = gtdExpiredScratch[i]
             if (!working.remove(request)) continue
             bus.publish(
                 BrokerEvent.OrderCancelled(
