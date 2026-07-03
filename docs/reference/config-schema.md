@@ -365,6 +365,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `brokers.<name>.type` | string | yes | none | Currently `mt5` for config-driven MT5 profiles. |
 | `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or earlier user profile. |
 | `gateway_url` | URL | yes for fresh profile | inherited or built-in | MT5 gateway HTTP base URL. |
+| `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; prefer `${QKT_BROKER_<NAME>_API_KEY}`. |
 | `symbol_suffix` | string | no | inherited or empty | Appended to broker symbol names. |
 | `magic` | int | yes for fresh profile | inherited or built-in | Must be unique across MT5 profiles. |
 | `server_tz_offset_hours` | int | yes for fresh profile | inherited or built-in | MT5 server offset from UTC. |

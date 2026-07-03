@@ -32,12 +32,12 @@ docker compose up -d
     docker compose up -d
     ```
 
-2. **Log in to MT5 once:** connect to `localhost:3000` with a VNC client, use `VNC_PASSWORD` from `.env`, log in to your broker through the MT5 GUI. The healthcheck will go green within a minute.
+2. **Wait for the headless MT5 login:** the gateway uses the broker credentials in `.env`. VNC is only a diagnostic fallback.
 
 3. **Verify:**
 
     ```bash
-    curl http://localhost:5001/health
+    curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
     docker compose exec qkt qkt brokers list
     ```
 

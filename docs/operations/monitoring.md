@@ -86,7 +86,7 @@ A reasonable starting set:
 | **P1** | Aggregate equity drop >5% in 1 hour | Either a fast drawdown or a market event worth a human eye |
 | **P2 — investigate in hours** | Any strategy 0 trades in N hours when expected | Strategy might be silently broken (warmup, condition logic) |
 | **P2** | Broker rejection rate >5% over 15 min | Venue-side problem; can it recover? |
-| **P2** | MT5 gateway `/health` not 200 | Broker connection lost; positions still safe but no new trades |
+| **P2** | MT5 gateway `/health/ready` not 200 | Broker connection lost or trading halted; positions still safe but no new trades |
 | **P3 — review daily** | High slippage trades (live entry price differs from signal price by >X) | Tune stops or move to a tighter venue |
 
 ## Wiring it to Prometheus

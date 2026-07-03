@@ -23,6 +23,7 @@ brokers:
   exness:
     type: mt5
     gateway_url: ${QKT_EXNESS_URL:-http://mt5-gateway:5001}
+    api_key: ${QKT_BROKER_EXNESS_API_KEY}
 
   # Example: a second Exness account on a separate gateway/login.
   # exness-personal:

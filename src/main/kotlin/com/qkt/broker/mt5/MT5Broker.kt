@@ -47,6 +47,7 @@ class MT5Broker(
             tzOffsetHours = profile.serverTzOffsetHours,
             httpTimeoutMs = profile.httpTimeoutMs,
             retryAttempts = profile.retryAttempts,
+            apiKey = profile.apiKey,
         ),
     /**
      * Owning strategy name (single-strategy LiveSession). When set, startup state recovery
@@ -71,11 +72,8 @@ class MT5Broker(
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
 
-    // The mt5-gateway's order route hardcodes ORDER_TIME_GTC and ignores the expiration
-    // field qkt sends, so the venue never expires a GTD on its own. Declaring false keeps
-    // the engine's GTD sweep active — it cancels expired pendings itself. Flip back only
-    // once the gateway honors expiration (type_time=TIME_SPECIFIED) end-to-end (#368).
-    override val supportsNativeGtd: Boolean = false
+    // Current mt5-gateway applies ORDER_TIME_SPECIFIED whenever expiration is present.
+    override val supportsNativeGtd: Boolean = true
 
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
