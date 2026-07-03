@@ -17,6 +17,24 @@ are the per-item tracker. The two are kept in sync.
 This skill is the source of truth for **how** issues are written and labeled.
 For branching/commit/PR conventions, see the `qkt` skill.
 
+## Low-context commands
+
+Prefer the deterministic repository helper for routine work:
+
+```bash
+# Compact, priority/effort-sorted open bugs
+./scripts/agent-workflow.sh bugs
+
+# Validate an issue payload; add --apply only after reviewing the dry run
+./scripts/agent-workflow.sh issue-create \
+  --title "..." --priority P0 --effort simple --type bug \
+  --problem "..." --solution "..." --backlog "..."
+```
+
+Use `./scripts/agent-workflow.sh --help` for file-backed problem/solution
+arguments and optional labels. Do not manually reconstruct `gh issue create`
+when the helper covers the operation.
+
 ---
 
 ## 1. When to open an issue
