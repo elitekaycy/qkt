@@ -68,11 +68,8 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
-    fun `GTD expiry stays engine-owned while the gateway ignores expiration`() {
-        // The mt5-gateway hardcodes ORDER_TIME_GTC, so the venue never expires a GTD.
-        // supportsNativeGtd must stay false or the engine's expiry sweep is disabled
-        // and GTD pendings rest forever (#368).
-        assertThat(broker.supportsNativeGtd).isFalse()
+    fun `GTD expiry is venue-owned by the current gateway`() {
+        assertThat(broker.supportsNativeGtd).isTrue()
     }
 
     @Test

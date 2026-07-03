@@ -38,6 +38,7 @@ BYBIT_TESTNET=false                # set true for paper-testing first
 MT5_LOGIN=
 MT5_PASSWORD=
 MT5_SERVER=Exness-MT5Trial
+MT5_API_KEY=replace-with-a-long-random-value
 
 # ---- VNC for one-time MT5 login ----
 # Pick anything; you'll use this when you connect to the gateway via VNC.
@@ -54,18 +55,19 @@ version: '3.9'
 
 services:
   mt5-gateway:
-    image: mt5-gateway:latest
+    image: elitekaycy/mt5-gateway-api:0.3.0
     container_name: mt5-gateway
     environment:
       MT5_LOGIN: ${MT5_LOGIN}
       MT5_PASSWORD: ${MT5_PASSWORD}
       MT5_SERVER: ${MT5_SERVER}
-      VNC_PASSWORD: ${VNC_PASSWORD}
+      API_KEY: ${MT5_API_KEY}
+      PASSWORD: ${VNC_PASSWORD}
     ports:
-      - "3000:3000"        # VNC: one-time MT5 login
+      - "3000:3000"        # VNC diagnostic fallback
       - "5001:5001"        # HTTP API
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$API_KEY\" http://localhost:5001/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 6
@@ -84,6 +86,7 @@ services:
       BYBIT_API_SECRET: ${BYBIT_API_SECRET}
       BYBIT_TESTNET: ${BYBIT_TESTNET}
       EXNESS_GATEWAY_URL: ${EXNESS_GATEWAY_URL}
+      QKT_BROKER_EXNESS_API_KEY: ${MT5_API_KEY}
       QKT_STATE_DIR: /var/lib/qkt
     volumes:
       - ./strategies:/strategies:ro
@@ -139,6 +142,7 @@ brokers:
     type: mt5
     extends: exness                   # inherits built-in suffix + tz settings
     gateway_url: ${EXNESS_GATEWAY_URL}
+    api_key: ${QKT_BROKER_EXNESS_API_KEY}
     magic: 4242                       # unique per qkt instance
     deviation_points: 30              # max slippage on market orders
 

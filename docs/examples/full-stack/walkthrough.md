@@ -42,6 +42,7 @@ BYBIT_TESTNET=true                     # important — testnet first
 MT5_LOGIN=12345678
 MT5_PASSWORD=your-exness-demo-password
 MT5_SERVER=Exness-MT5Trial
+MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=changeme
 
 EXNESS_GATEWAY_URL=http://mt5-gateway:5001
@@ -96,7 +97,7 @@ Inside the MT5 GUI:
 Verify from the host:
 
 ```bash
-curl http://localhost:5001/health
+curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
 # {"ok": true, "account": {"login": 12345678, "balance": 10000.00, ...}}
 ```
 

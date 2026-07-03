@@ -38,6 +38,7 @@ class Mt5TickFeedSource(
     private val clock: Clock = SystemClock(),
     private val symbolCalendars: SymbolCalendars? = null,
     private val outOfSessionSleepMs: Long = 60_000L,
+    private val apiKey: String? = null,
 ) : LiveTickSource {
     private val log = org.slf4j.LoggerFactory.getLogger(Mt5TickFeedSource::class.java)
     private val symbols: List<String> = symbolMap.keys.toList()
@@ -52,7 +53,7 @@ class Mt5TickFeedSource(
         onReconnect: () -> Unit,
     ) {
         check(running.compareAndSet(false, true)) { "Mt5TickFeedSource already started" }
-        val client = Mt5TickClient(baseUrl, http)
+        val client = Mt5TickClient(baseUrl, http, apiKey)
         // One thread per symbol: a round's K fetches run in parallel against the gateway,
         // and the polling thread emits in configured order once all complete.
         val fetchPool =

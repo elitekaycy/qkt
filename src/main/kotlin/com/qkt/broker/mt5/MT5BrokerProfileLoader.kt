@@ -134,6 +134,7 @@ class MT5BrokerProfileLoader {
             deviationPoints =
                 pick("deviation_points", fields, env, name, base?.deviationPoints?.toString())?.toInt()
                     ?: 20,
+            apiKey = pick("api_key", fields, env, name, base?.apiKey),
             capabilityRestrictions = capabilityRestrictions,
             symbolCalendars = symbolCalendars,
         )
