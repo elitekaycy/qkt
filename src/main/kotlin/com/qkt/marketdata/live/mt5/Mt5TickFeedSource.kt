@@ -93,6 +93,16 @@ class Mt5TickFeedSource(
                                 roundHadSuccess = true
                                 val seen = lastBrokerMs[sym] ?: 0L
                                 if (tick.brokerTimeMs > seen) {
+                                    if (!lastBrokerMs.containsKey(sym)) {
+                                        val skewMs = tick.brokerTimeMs - clock.now()
+                                        log.info(
+                                            "MT5 tick clock check symbol={} brokerUtc={} localUtc={} skewMs={}",
+                                            sym,
+                                            Instant.ofEpochMilli(tick.brokerTimeMs),
+                                            Instant.ofEpochMilli(clock.now()),
+                                            skewMs,
+                                        )
+                                    }
                                     lastBrokerMs[sym] = tick.brokerTimeMs
                                     onTick(
                                         Tick(

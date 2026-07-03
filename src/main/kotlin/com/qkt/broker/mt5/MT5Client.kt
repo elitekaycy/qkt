@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory
  *
  * One client per [MT5Broker]. Handles JSON serialization, retries on GETs (POST /order
  * is deliberately not retried — duplicate placement is worse than a surfaced failure),
- * timezone offsets between the venue clock and UTC, and basic error parsing.
+ * broker-local query windows and UTC epoch timestamps returned by MT5, plus basic error parsing.
  */
 class MT5Client(
     private val gatewayUrl: String,
@@ -167,6 +167,7 @@ class MT5Client(
             digits = obj["digits"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             point = obj["point"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             tradeStopsLevel = obj["trade_stops_level"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            tradeFreezeLevel = obj["trade_freeze_level"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             volumeMin = obj["volume_min"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             volumeStep = obj["volume_step"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             // Default 1 keeps callers safe if the gateway version doesn't return the field;
@@ -421,7 +422,7 @@ class MT5Client(
             fee = obj["fee"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
-            timeMs = rawTimeMs - tzOffsetMs,
+            timeMs = rawTimeMs,
         )
     }
 
@@ -438,7 +439,7 @@ class MT5Client(
             symbol = brokerSymbol,
             bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            time = rawTime - tzOffsetMs,
+            time = rawTime,
         )
     }
 
@@ -618,15 +619,15 @@ class MT5Client(
                     deal = r["deal"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
                     price = r["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
                     comment = r["comment"]?.jsonPrimitive?.contentOrNull ?: "",
+                    volume = r["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
                 ),
             errorMessage = obj["error"]?.jsonPrimitive?.contentOrNull,
         )
     }
 
     private fun parsePosition(obj: JsonObject): MT5Position {
-        // The gateway serializes the raw MT5 position tuple, whose open time is `time_msc`
-        // (server-time epoch millis) — there is no `open_time` column. Subtracting the venue
-        // offset below lands it on UTC, the same handling parseDeal uses for deal times.
+        // MT5 time_msc fields are Unix epoch milliseconds. The displayed broker timezone must
+        // never be subtracted from an epoch value; doing so corrupts recovered durations.
         val rawTime = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         return MT5Position(
             ticket = obj["ticket"]!!.jsonPrimitive.content.toLong(),
@@ -638,7 +639,7 @@ class MT5Client(
             tp = obj["tp"]!!.jsonPrimitive.content.toBigDecimal(),
             profit = obj["profit"]!!.jsonPrimitive.content.toBigDecimal(),
             magic = obj["magic"]!!.jsonPrimitive.content.toInt(),
-            openTime = rawTime - tzOffsetMs,
+            openTime = rawTime,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
             swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
             priceCurrent = obj["price_current"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
@@ -663,8 +664,8 @@ class MT5Client(
             sl = obj["sl"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             tp = obj["tp"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
-            timeSetup = rawTime - tzOffsetMs,
-            timeExpiration = if (rawExp == 0L) 0L else rawExp - tzOffsetMs,
+            timeSetup = rawTime,
+            timeExpiration = rawExp,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
         )
     }

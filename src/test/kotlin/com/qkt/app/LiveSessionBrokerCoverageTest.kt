@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.CompositeBroker
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PaperBroker
@@ -208,6 +209,55 @@ class LiveSessionBrokerCoverageTest {
         val handle = session.start()
         handle.stop()
         handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
+    fun `configured live broker rejects symbols outside declared routes instead of paper filling`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
+            )
+        val clock = FixedClock(time = 0L)
+        val bus = EventBus(clock, com.qkt.common.MonotonicSequenceGenerator())
+        val prices = MarketPriceTracker()
+        val paper = PaperBroker(bus, clock, prices)
+        val positions =
+            object : PositionProvider {
+                override fun positionFor(symbol: String) = null
+
+                override fun allPositions() = emptyMap<String, com.qkt.positions.Position>()
+            }
+        val factory: BrokerFactory = { _, _, _, _, _ -> PaperBroker(bus, clock, prices) }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:XAUUSD"),
+                clock = clock,
+                brokerFactories = mapOf("exness" to factory),
+            )
+        val buildBroker =
+            LiveSession::class.java.declaredMethods.single { it.name == "buildBroker" }.apply {
+                isAccessible = true
+            }
+        val broker =
+            buildBroker.invoke(session, paper, bus, clock, prices, positions) as CompositeBroker
+
+        val ack =
+            broker.submit(
+                OrderRequest.Market(
+                    id = "bad-route",
+                    symbol = "EXNESS:TYPO",
+                    side = Side.BUY,
+                    quantity = BigDecimal.ONE,
+                    timeInForce = com.qkt.execution.TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(ack.rejectReason).contains("no broker")
     }
 
     @Test

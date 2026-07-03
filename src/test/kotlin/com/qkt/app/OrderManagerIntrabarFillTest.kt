@@ -66,6 +66,20 @@ class OrderManagerIntrabarFillTest {
     }
 
     @Test
+    fun `a buy stop crossed by ask but not mid resolves to extremes`() {
+        val om = newOm()
+        om.submit(buyStop("X", "100.05"))
+        assertThat(
+            om.intrabarFill(
+                symbol = "X",
+                low = Money.of("99"),
+                high = Money.of("100"),
+                maxHalfSpread = Money.of("0.10"),
+            ),
+        ).isEqualTo(IntrabarFill.EXTREMES)
+    }
+
+    @Test
     fun `a trailing stop forces a full replay`() {
         val om = newOm()
         om.submit(

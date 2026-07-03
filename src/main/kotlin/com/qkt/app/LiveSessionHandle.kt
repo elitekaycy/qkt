@@ -100,6 +100,9 @@ interface LiveSessionHandle {
      * session overrides it to read from its strategy P&L tracker so `/status` shows real P&L.
      */
     fun pnlSnapshot(strategyId: String): SessionPnl = SessionPnl.ZERO
+
+    /** Current valued legs for account-wide live book-risk aggregation. */
+    fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> = emptyList()
 }
 
 /** A point-in-time P&L reading for one strategy, surfaced through `/status`. */

@@ -43,6 +43,7 @@ class PivotPoints : Indicator<Candle> {
     private var latchedHigh: BigDecimal? = null
     private var latchedLow: BigDecimal? = null
     private var latchedClose: BigDecimal? = null
+    private var activeDayComplete = false
 
     override val warmupBars: Int = 1
 
@@ -52,8 +53,9 @@ class PivotPoints : Indicator<Candle> {
     override fun update(input: Candle) {
         val day = Math.floorDiv(input.startTime, MS_PER_DAY)
         if (day != activeDay) {
-            if (activeDay != null) latch()
+            if (activeDay != null && activeDayComplete) latch()
             activeDay = day
+            activeDayComplete = Math.floorMod(input.startTime, MS_PER_DAY) == 0L
             curHigh = input.high
             curLow = input.low
             curClose = input.close

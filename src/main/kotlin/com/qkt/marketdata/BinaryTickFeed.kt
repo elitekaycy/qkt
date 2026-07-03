@@ -6,6 +6,7 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import org.slf4j.LoggerFactory
 
 /**
  * Streams [Tick]s from a binary day-file ([BinaryTickFormat]) by memory-mapping the file and reading
@@ -32,6 +33,8 @@ class BinaryTickFeed(
     // Exclusive upper bound on `index`; the whole file by default, narrowed by `slice`.
     private var endIndex: Int = 0
     private var lastTimestamp: Long = Long.MIN_VALUE
+    var droppedCrossedQuotes: Long = 0
+        private set
 
     init {
         val mapped =
@@ -61,24 +64,41 @@ class BinaryTickFeed(
 
     override fun next(): Tick? {
         val b = buf ?: return null
-        if (index >= endIndex) return null
-        val i = index++
-        val ts = b.getLong(tsBase + i * Long.SIZE_BYTES)
-        check(ts >= lastTimestamp) {
-            "$path:${i + 1}: non-decreasing timestamps required (got $ts, last $lastTimestamp)"
+        while (index < endIndex) {
+            val i = index++
+            val ts = b.getLong(tsBase + i * Long.SIZE_BYTES)
+            check(ts >= lastTimestamp) {
+                "$path:${i + 1}: non-decreasing timestamps required (got $ts, last $lastTimestamp)"
+            }
+            lastTimestamp = ts
+            try {
+                return TickAssembler.assemble(
+                    symbol = header.symbol,
+                    timestamp = ts,
+                    price = decode(b, BinaryTickFormat.COL_PRICE, i),
+                    volume = decode(b, BinaryTickFormat.COL_VOLUME, i),
+                    bid = decode(b, BinaryTickFormat.COL_BID, i),
+                    ask = decode(b, BinaryTickFormat.COL_ASK, i),
+                    bidVolume = decode(b, BinaryTickFormat.COL_BID_VOLUME, i),
+                    askVolume = decode(b, BinaryTickFormat.COL_ASK_VOLUME, i),
+                    location = location,
+                )
+            } catch (e: CrossedQuoteException) {
+                recordCrossedQuote(e.message.orEmpty())
+            }
         }
-        lastTimestamp = ts
-        return TickAssembler.assemble(
-            symbol = header.symbol,
-            timestamp = ts,
-            price = decode(b, BinaryTickFormat.COL_PRICE, i),
-            volume = decode(b, BinaryTickFormat.COL_VOLUME, i),
-            bid = decode(b, BinaryTickFormat.COL_BID, i),
-            ask = decode(b, BinaryTickFormat.COL_ASK, i),
-            bidVolume = decode(b, BinaryTickFormat.COL_BID_VOLUME, i),
-            askVolume = decode(b, BinaryTickFormat.COL_ASK_VOLUME, i),
-            location = location,
-        )
+        return null
+    }
+
+    private fun recordCrossedQuote(message: String) {
+        droppedCrossedQuotes++
+        if (droppedCrossedQuotes == 1L || droppedCrossedQuotes % 1_000L == 0L) {
+            log.warn(
+                "dropping crossed stored quote (count={}): {}",
+                droppedCrossedQuotes,
+                message,
+            )
+        }
     }
 
     // Single reused supplier: an inline lambda capturing the row index is a fresh Function0 per
@@ -140,6 +160,8 @@ class BinaryTickFeed(
     }
 
     private companion object {
+        private val log = LoggerFactory.getLogger(BinaryTickFeed::class.java)
+
         // sun.misc.Unsafe.invokeCleaner releases a mapped buffer's native mapping on demand. Resolved
         // once; null on a JVM where it is unavailable, in which case the mapping frees on GC instead.
         private val CLEANER: ((ByteBuffer) -> Unit)? =

@@ -34,6 +34,7 @@ import com.qkt.execution.TimeInForce
 import com.qkt.execution.withExpiresAt
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
+import java.math.RoundingMode
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -80,6 +81,9 @@ class ActionCompiler(
     private fun compileResize(action: Resize): (EvalContext) -> List<Signal> {
         val compiledTarget = sizingCompiler.compile(action.target, stopDistance = null, streamAlias = action.stream)
         val compiledMinStep = action.minStep?.let { exprCompiler.compile(it) }
+        // Stable across evaluations: OrderManager treats an identical non-terminal id as the same
+        // in-flight resize, preventing repeated rule evaluations from submitting the stale delta.
+        val resizeOrderId = ids.next()
         return resize@{ ctx ->
             val symbol =
                 ctx.streams[action.stream]?.qktSymbol
@@ -94,16 +98,41 @@ class ActionCompiler(
             val target = if (rawTarget.signum() < 0) BigDecimal.ZERO else rawTarget
             val cur = primary.quantity.abs()
             val delta = target.subtract(cur, Money.CONTEXT)
-            val minStep =
+            val instrument = ctx.strategyContext.instruments.lookup(symbol)
+            val configuredMinStep =
                 compiledMinStep?.let { (it.evaluate(ctx) as? Value.Num)?.v }
                     ?: target.multiply(defaultMinStepFraction, Money.CONTEXT)
+            val minStep = configuredMinStep.max(instrument?.volumeMin ?: BigDecimal.ZERO)
             if (delta.signum() == 0 || delta.abs() < minStep) return@resize emptyList()
+            val quantity =
+                instrument
+                    ?.volumeStep
+                    ?.takeIf { it.signum() > 0 }
+                    ?.let { step -> delta.abs().divide(step, 0, RoundingMode.DOWN).multiply(step) }
+                    ?: delta.abs()
+            if (quantity.signum() == 0 || quantity < (instrument?.volumeMin ?: BigDecimal.ZERO)) {
+                return@resize emptyList()
+            }
             // Grow with a same-side add (the tracker averages it into the primary); shrink/flatten
-            // with an opposite-side trade (the tracker's netting path reduces the primary, keeping
-            // its entry price). Both fill at the bar price, so backtest == live.
+            // by closing the PRIMARY's exact venue ticket. A plain opposite market would open a
+            // counter-position on a hedging account instead of reducing exposure.
             val grow = delta.signum() > 0
             val side = if (grow == (primary.side == Side.BUY)) Side.BUY else Side.SELL
-            listOf(if (side == Side.BUY) Signal.Buy(symbol, delta.abs()) else Signal.Sell(symbol, delta.abs()))
+            listOf(
+                Signal.Submit(
+                    OrderRequest.Market(
+                        id = resizeOrderId,
+                        symbol = symbol,
+                        side = side,
+                        quantity = quantity,
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = ctx.candle.endTime,
+                        strategyId = ctx.strategyContext.strategyId,
+                        closesTicket = if (grow) null else primary.brokerTicket,
+                        closesLegId = if (grow) null else primary.legId,
+                    ),
+                ),
+            )
         }
     }
 
@@ -399,6 +428,8 @@ class ActionCompiler(
                             entry = entryReq,
                             takeProfit = tpPrice,
                             stopLoss = slSpec,
+                            takeProfitAst = opts.bracket.takeProfit,
+                            stopLossAst = opts.bracket.stopLoss,
                             timeInForce = tif,
                             timestamp = ts,
                         )

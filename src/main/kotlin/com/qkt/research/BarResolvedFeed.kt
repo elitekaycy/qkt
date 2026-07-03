@@ -28,7 +28,7 @@ import java.math.BigDecimal
 class BarResolvedFeed(
     perSymbolBars: Map<String, Sequence<Candle>>,
     sliceProvider: (symbol: String, fromMs: Long, toMs: Long) -> Sequence<Tick>,
-    intrabarFill: (symbol: String, low: BigDecimal, high: BigDecimal) -> IntrabarFill,
+    intrabarFill: (symbol: String, low: BigDecimal, high: BigDecimal, maxHalfSpread: BigDecimal) -> IntrabarFill,
 ) : TickFeed {
     private val subs =
         perSymbolBars.entries.map { (sym, bars) -> SymbolFeed(sym, bars, sliceProvider, intrabarFill) }
@@ -60,7 +60,7 @@ private class SymbolFeed(
     private val symbol: String,
     bars: Sequence<Candle>,
     private val slice: (String, Long, Long) -> Sequence<Tick>,
-    private val intrabarFill: (String, BigDecimal, BigDecimal) -> IntrabarFill,
+    private val intrabarFill: (String, BigDecimal, BigDecimal, BigDecimal) -> IntrabarFill,
 ) {
     private val barIter = bars.iterator()
     private var head: Tick? = null
@@ -88,6 +88,15 @@ private class SymbolFeed(
                 return
             }
             // No real ticks in this bar (a data gap): emit full synthetic O->L->H->C, no decision.
+            val need = intrabarFill(symbol, bar.low, bar.high, BigDecimal.ZERO)
+            if (need != IntrabarFill.SYNTHETIC) {
+                log.warn(
+                    "tick-fills falling back to synthetic path for fill-possible bar symbol={} start={} mode={}",
+                    symbol,
+                    bar.startTime,
+                    need,
+                )
+            }
             rest = candleToTicks(bar).iterator()
             if (rest.hasNext()) {
                 head = rest.next()
@@ -101,11 +110,23 @@ private class SymbolFeed(
     fun settle() {
         val bar = awaitBar ?: return
         val slice = awaitSlice!!
+        val ticks = slice.asSequence().toList()
+        val maxHalfSpread =
+            (listOfNotNull(awaitOpening) + ticks)
+                .maxOfOrNull { tick ->
+                    val ask = tick.ask
+                    val bid = tick.bid
+                    if (ask == null || bid == null) {
+                        BigDecimal.ZERO
+                    } else {
+                        ask.subtract(bid).abs().divide(BigDecimal(2))
+                    }
+                } ?: BigDecimal.ZERO
         rest =
-            when (intrabarFill(symbol, bar.low, bar.high)) {
+            when (intrabarFill(symbol, bar.low, bar.high, maxHalfSpread)) {
                 IntrabarFill.SYNTHETIC -> syntheticRest(bar)
-                IntrabarFill.ALL_TICKS -> slice
-                IntrabarFill.EXTREMES -> extremeRest(awaitOpening!!, slice, bar)
+                IntrabarFill.ALL_TICKS -> ticks.iterator()
+                IntrabarFill.EXTREMES -> extremeRest(awaitOpening!!, ticks.iterator(), bar)
             }
         awaitBar = null
         awaitSlice = null
@@ -147,6 +168,10 @@ private class SymbolFeed(
             Tick(bar.symbol, bar.high, bar.startTime + 2 * step),
             Tick(bar.symbol, bar.close, bar.endTime - 1, volume = bar.volume),
         ).iterator()
+    }
+
+    private companion object {
+        val log = org.slf4j.LoggerFactory.getLogger(SymbolFeed::class.java)
     }
 
     // Keep only the rest-slice ticks that set a new extreme of price (candle high/low + mark-to-market),

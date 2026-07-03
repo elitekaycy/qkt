@@ -24,6 +24,21 @@ class CandleAggregatorTest {
 
     private fun aggregator() = CandleAggregator(bus, TimeWindow.ONE_MINUTE)
 
+    @Test
+    fun `late ticks cannot reopen a window already closed by heartbeat`() {
+        val emitted = mutableListOf<Candle>()
+        val agg = CandleAggregator.standalone(TimeWindow.ONE_MINUTE) { emitted.add(it) }
+        agg.onTick(Tick("X", Money.of("100"), 1_000L))
+        agg.flushClosed(60_000L)
+        agg.onTick(Tick("X", Money.of("200"), 30_000L))
+        agg.onTick(Tick("X", Money.of("101"), 61_000L))
+        agg.flushClosed(120_000L)
+
+        assertThat(emitted.map { it.startTime }).containsExactly(0L, 60_000L)
+        assertThat(emitted.first().high).isEqualByComparingTo("100")
+        assertThat(agg.droppedLateTicks).isEqualTo(1)
+    }
+
     private fun publishTick(
         symbol: String,
         price: BigDecimal,
