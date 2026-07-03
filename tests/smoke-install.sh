@@ -121,11 +121,15 @@ ok "hedge-straddle example parses"
 # ──────────────────────────────────────────────────────────────────────── #
 # Step 4 — Backtest
 # ──────────────────────────────────────────────────────────────────────── #
+# The bundled fixture is intentionally a short deterministic slice, not two
+# complete market days. The smoke validates execution/reporting rather than
+# dataset completeness, which has its own strict test coverage.
 say "Step 4: qkt backtest"
 "$INSTALL_QKT" backtest "$SMOKE_DIR/strategies/smoke.qkt" \
     --from 2024-01-15 \
     --to 2024-01-17 \
     --data-root "$SMOKE_DIR/data" \
+    --allow-incomplete \
     >>"$LOG_FILE" 2>&1 \
     || die "qkt backtest failed (log: $LOG_FILE)"
 ok "backtest completed without error"
@@ -154,6 +158,7 @@ STRAT
     --from 2024-01-15 \
     --to 2024-01-17 \
     --data-root "$SMOKE_DIR/data" \
+    --allow-incomplete \
     --json \
     > "$SMOKE_DIR/momentum.json" 2>>"$LOG_FILE" \
     || die "momentum backtest failed (log: $LOG_FILE)"
