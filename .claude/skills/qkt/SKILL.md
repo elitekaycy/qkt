@@ -80,6 +80,16 @@ The pipeline is specified in
 
 We use **Conventional Commits** with strict project rules.
 
+For routine commits, use the repository helper. It validates the branch,
+message, staged patch, and forbidden attribution before committing:
+
+```bash
+./scripts/agent-workflow.sh commit --message "fix(engine): reject invalid route"
+# Review the dry run, then repeat with --apply.
+```
+
+Use `./scripts/agent-workflow.sh status` for compact repository context.
+
 ### Format
 
 ```
