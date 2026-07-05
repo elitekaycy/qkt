@@ -77,6 +77,7 @@ class AuditTicksCommand(
                 tzOffsetHours = profile.serverTzOffsetHours,
                 httpTimeoutMs = profile.httpTimeoutMs,
                 retryAttempts = 0,
+                apiKey = profile.apiKey,
             )
         if (!mt5Client.isReady()) {
             System.err.println("qkt: mt5-gateway at ${profile.gatewayUrl} is not responding")

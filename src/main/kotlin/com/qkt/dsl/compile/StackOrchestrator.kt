@@ -156,6 +156,7 @@ class StackOrchestrator(
         symbol: String,
         price: BigDecimal,
     ) {
+        if (engines.isEmpty()) return
         for (engine in engines.values) {
             if (engine.parentSymbol == symbol) engine.onTick(price)
         }

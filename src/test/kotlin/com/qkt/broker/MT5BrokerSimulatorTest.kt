@@ -117,6 +117,44 @@ class MT5BrokerSimulatorTest {
     }
 
     @Test
+    fun `order cancelled by an earlier fill in the same tick is not filled`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val symbol = "EXNESS:XAUUSD"
+        val sim = MT5BrokerSimulator(bus, FixedClock(0L), MarketPriceTracker(), registry(xauusd()))
+        bus.subscribe<BrokerEvent.OrderFilled> { fill ->
+            fills.add(fill)
+            if (fill.clientOrderId == "first") sim.cancel("sibling")
+        }
+        sim.submit(
+            OrderRequest.Limit(
+                id = "first",
+                symbol = symbol,
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("2001"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        sim.submit(
+            OrderRequest.Limit(
+                id = "sibling",
+                symbol = symbol,
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("1999"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        sim.onTick(Tick(symbol, Money.of("2000"), 1L))
+
+        assertThat(fills.map { it.clientOrderId }).containsExactly("first")
+    }
+
+    @Test
     fun `fill price is rounded HALF_EVEN to digits`() {
         val bus = newBus()
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
@@ -317,6 +355,71 @@ class MT5BrokerSimulatorTest {
 
         assertThat(fills).hasSize(1)
         assertThat(fills.single().price).isEqualByComparingTo(Money.of("1995.000"))
+    }
+
+    @Test
+    fun `stop-limit activation rests the limit until it becomes marketable`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val tracker = MarketPriceTracker()
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                FixedClock(0L),
+                tracker,
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+            )
+        sim.submit(
+            OrderRequest.StopLimit(
+                id = "stop-limit",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                stopPrice = Money.of("2000"),
+                limitPrice = Money.of("1999"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        sim.onTick(Tick("EXNESS:XAUUSD", Money.of("2000.5"), 1L))
+        assertThat(fills).isEmpty()
+        sim.onTick(Tick("EXNESS:XAUUSD", Money.of("1998.5"), 2L))
+
+        assertThat(fills.single().price).isLessThanOrEqualTo(Money.of("1999"))
+    }
+
+    @Test
+    fun `limit fill never applies adverse slippage beyond its limit`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                FixedClock(0L),
+                MarketPriceTracker(),
+                registry(xauusd()),
+                slippage = FixedPointsSlippage(points = 10),
+                syntheticSpreadPoints = 0,
+            )
+        sim.submit(
+            OrderRequest.Limit(
+                id = "buy-limit",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                limitPrice = Money.of("2000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        sim.onTick(Tick("EXNESS:XAUUSD", Money.of("1999.5"), 1L))
+
+        assertThat(fills.single().price).isLessThanOrEqualTo(Money.of("2000"))
     }
 
     @Test
@@ -545,7 +648,7 @@ class MT5BrokerSimulatorTest {
     }
 
     @Test
-    fun `StopLimit BUY triggers on stop cross and fills at limitPrice`() {
+    fun `StopLimit BUY activates then fills at limit or better`() {
         val bus = newBus()
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
@@ -576,8 +679,20 @@ class MT5BrokerSimulatorTest {
             ),
         )
 
-        assertThat(fills).hasSize(1)
-        assertThat(fills.single().price).isEqualByComparingTo(Money.of("2010.200"))
+        assertThat(fills).isEmpty()
+        bus.publish(
+            TickEvent(
+                Tick(
+                    symbol = "EXNESS:XAUUSD",
+                    price = Money.of("2010.100"),
+                    timestamp = 2L,
+                    bid = Money.of("2010.050"),
+                    ask = Money.of("2010.150"),
+                ),
+            ),
+        )
+
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("2010.150"))
     }
 
     @Test

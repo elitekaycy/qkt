@@ -37,13 +37,19 @@ class EfficiencyRatio(
     override val isReady: Boolean
         get() = window.size >= period + 1
 
+    // Computed once per update; value() is read once per referencing expression node per bar,
+    // and each read re-walked the whole window.
+    private var lastValue: BigDecimal? = null
+
     override fun update(input: BigDecimal) {
         window.addLast(input)
         if (window.size > period + 1) window.removeFirst()
+        lastValue = if (window.size >= period + 1) compute() else null
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
+    override fun value(): BigDecimal? = lastValue
+
+    private fun compute(): BigDecimal {
         val net = window.last().subtract(window.first(), Money.CONTEXT).abs()
         var path = BigDecimal.ZERO
         var prev = window.first()

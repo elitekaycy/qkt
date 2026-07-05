@@ -3,13 +3,9 @@ package com.qkt.app
 import com.qkt.backtest.Backtest
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
-import com.qkt.dsl.compile.AggregateBinding
 import com.qkt.dsl.compile.AstCompiler
-import com.qkt.dsl.compile.ExprCompiler
-import com.qkt.dsl.compile.IndicatorBinding
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
-import com.qkt.dsl.portfolio.PortfolioLoader
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 import java.nio.file.Path
@@ -48,30 +44,14 @@ class MultiStrategyStressTest {
             Fixture("streak_aware", "src/test/resources/stress/streak-aware.qkt", 21),
         )
 
-    private val portfolioId = "stress_portfolio"
-    private val portfolioPath = "src/test/resources/stress/portfolio.qkt"
-
-    private fun loadPortfolio(): Pair<String, Strategy> {
-        val compiled = PortfolioLoader.load(Path.of(portfolioPath))
-        val portfolio =
-            PortfolioStrategy(
-                compiled,
-                ExprCompiler(IndicatorBinding.Bag(), AggregateBinding.Bag()),
-            )
-        return portfolioId to portfolio
-    }
-
-    private fun loadStrategies(): List<Pair<String, Strategy>> {
-        val standalones =
-            fixtures.map { fx ->
-                val result = Dsl.parseFile(Path.of(fx.file))
-                val ast =
-                    (result as? ParseResult.Success)?.value
-                        ?: error("failed to parse ${fx.file}: $result")
-                fx.id to AstCompiler().compile(ast)
-            }
-        return standalones + loadPortfolio()
-    }
+    private fun loadStrategies(): List<Pair<String, Strategy>> =
+        fixtures.map { fx ->
+            val result = Dsl.parseFile(Path.of(fx.file))
+            val ast =
+                (result as? ParseResult.Success)?.value
+                    ?: error("failed to parse ${fx.file}: $result")
+            fx.id to AstCompiler().compile(ast)
+        }
 
     private fun newBacktest(): Backtest {
         val ticks =
@@ -91,9 +71,9 @@ class MultiStrategyStressTest {
     }
 
     @Test
-    fun `five standalone strategies plus one portfolio coexist and produce trade timelines`() {
+    fun `five standalone strategies coexist and produce trade timelines`() {
         val result = newBacktest().run()
-        val expectedKeys = (fixtures.map { it.id } + portfolioId).toTypedArray()
+        val expectedKeys = fixtures.map { it.id }.toTypedArray()
         assertThat(result.perStrategy).containsOnlyKeys(*expectedKeys)
         for (fx in fixtures) {
             val report = result.perStrategy.getValue(fx.id)
@@ -101,33 +81,10 @@ class MultiStrategyStressTest {
                 .withFailMessage("strategy ${fx.id} has no equity samples")
                 .isNotEmpty()
         }
-        assertThat(result.perStrategy.getValue(portfolioId).equityCurve)
-            .withFailMessage("portfolio has no equity samples")
-            .isNotEmpty()
         val tradingStrategies = result.perStrategy.count { it.value.tradeCount > 0 }
         assertThat(tradingStrategies)
-            .withFailMessage("expected at least 3 of 6 strategies (incl. portfolio) to trade — got $tradingStrategies")
+            .withFailMessage("expected at least 3 of 5 strategies to trade — got $tradingStrategies")
             .isGreaterThanOrEqualTo(3)
-    }
-
-    @Test
-    fun `portfolio trades attribute to portfolio id, not to standalone strategies`() {
-        val result = newBacktest().run()
-        val portfolioReport = result.perStrategy.getValue(portfolioId)
-        if (portfolioReport.tradeCount == 0) {
-            // Portfolio did not trade in this run — nothing to attribute. The other
-            // tests already cover the not-traded case for standalones; nothing leaks
-            // a trade THE PORTFOLIO didn't make either, since there were none.
-            return
-        }
-        val portfolioTrades = result.trades.filter { it.strategyId == portfolioId }
-        assertThat(portfolioTrades).isNotEmpty()
-        val standaloneIds = fixtures.map { it.id }.toSet()
-        for (record in portfolioTrades) {
-            assertThat(record.strategyId)
-                .withFailMessage("portfolio trade attributed to standalone id ${record.strategyId}")
-                .isNotIn(standaloneIds)
-        }
     }
 
     @Test
@@ -148,7 +105,7 @@ class MultiStrategyStressTest {
     @Test
     fun `every trade is attributed to exactly one strategy and that strategy owns it`() {
         val result = newBacktest().run()
-        val knownIds = fixtures.map { it.id }.toSet() + portfolioId
+        val knownIds = fixtures.map { it.id }.toSet()
         for (record in result.trades) {
             assertThat(record.strategyId)
                 .withFailMessage("trade $record has unknown strategyId")

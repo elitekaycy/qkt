@@ -68,11 +68,8 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
-    fun `GTD expiry stays engine-owned while the gateway ignores expiration`() {
-        // The mt5-gateway hardcodes ORDER_TIME_GTC, so the venue never expires a GTD.
-        // supportsNativeGtd must stay false or the engine's expiry sweep is disabled
-        // and GTD pendings rest forever (#368).
-        assertThat(broker.supportsNativeGtd).isFalse()
+    fun `GTD expiry is venue-owned by the current gateway`() {
+        assertThat(broker.supportsNativeGtd).isTrue()
     }
 
     @Test
@@ -262,7 +259,14 @@ class MT5BrokerIntegrationTest {
     fun `submit market with closesTicket closes the position by ticket`() {
         server.enqueue(
             MockResponse().setBody(
-                """{"result":{"retcode":10009,"order":0,"deal":777,"price":"1.1050","comment":"ok"}}""",
+                """{"result":{"retcode":10009,"order":0,"deal":777,"price":"1.1050","volume":"0.10","comment":"ok"}}""",
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":777,"order":1,"position_id":424242,"symbol":"EURUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.10","price":"1.1050","profit":"10","commission":"-0.70","swap":"-0.30",""" +
+                    """"fee":"-0.10","magic":10001,"time_msc":1700000000000}]""",
             ),
         )
         val req =
@@ -279,6 +283,8 @@ class MT5BrokerIntegrationTest {
         val ack = broker.submit(req)
         assertThat(ack.accepted).isTrue
         assertThat(ack.brokerOrderId).isEqualTo("424242")
+        // The close is async — the venue result arrives later, as events.
+        awaitCaptured { captured.size >= 2 }
         assertThat(captured).hasSize(2)
         assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
         val filled = captured[1] as BrokerEvent.OrderFilled
@@ -287,6 +293,8 @@ class MT5BrokerIntegrationTest {
         assertThat(filled.symbol).isEqualTo("EXNESS:EURUSD")
         assertThat(filled.side).isEqualTo(Side.SELL)
         assertThat(filled.price).isEqualByComparingTo("1.1050")
+        assertThat(filled.quantity).isEqualByComparingTo("0.10")
+        assertThat(filled.venueCosts).isEqualByComparingTo("1.10")
         // The gateway was hit at /close_position with the ticket — NOT /order.
         server.takeRequest() // state recovery
         server.takeRequest() // position poller seed
@@ -294,11 +302,11 @@ class MT5BrokerIntegrationTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/close_position")
         assertThat(recorded.method).isEqualTo("POST")
-        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":{"ticket":424242,"volume":0.1}}""")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":{"ticket":424242,"volume":0.10}}""")
     }
 
     @Test
-    fun `closesTicket close failure is rejected`() {
+    fun `closesTicket close failure surfaces as OrderRejected`() {
         server.enqueue(
             MockResponse().setResponseCode(400).setBody("""{"error":"Failed to close position"}"""),
         )
@@ -313,9 +321,12 @@ class MT5BrokerIntegrationTest {
                 strategyId = "s1",
                 closesTicket = "999",
             )
+        // Like async placement, the ack is optimistic; the venue's refusal lands as an event.
         val ack = broker.submit(req)
-        assertThat(ack.accepted).isFalse
+        assertThat(ack.accepted).isTrue
+        awaitCaptured { captured.any { it is BrokerEvent.OrderRejected } }
         assertThat(captured.any { it is BrokerEvent.OrderRejected }).isTrue
+        assertThat(captured.none { it is BrokerEvent.OrderFilled }).isTrue
     }
 
     @Test
@@ -797,7 +808,7 @@ class MT5BrokerIntegrationTest {
         // hedge-straddle sizing footgun that crashed live 02:55 / 09:55 placements.
         server.enqueue(
             MockResponse().setBody(
-                """{"result":{"retcode":10009,"order":11,"deal":0,"price":"1.1234","comment":"ok"}}""",
+                """{"result":{"retcode":10009,"order":11,"deal":0,"price":"1.1234","volume":"0.19","comment":"ok"}}""",
             ),
         )
         val req =
@@ -817,6 +828,9 @@ class MT5BrokerIntegrationTest {
         val body = server.takeRequest().body.readUtf8()
         assertThat(body).contains("\"volume\":0.19")
         assertThat(body).doesNotContain("0.1944")
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>().single().quantity)
+            .isEqualByComparingTo("0.19")
     }
 
     @Test

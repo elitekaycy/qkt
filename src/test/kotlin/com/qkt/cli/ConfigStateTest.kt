@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.persistence.AsyncStatePersistor
 import com.qkt.persistence.FileStatePersistor
 import com.qkt.persistence.NoopStatePersistor
 import java.nio.file.Files
@@ -37,7 +38,7 @@ class ConfigStateTest {
     }
 
     @Test
-    fun `state enabled true produces FileStatePersistor`(
+    fun `state enabled defaults to the async persistor`(
         @TempDir tmp: Path,
     ) {
         val cfg = tmp.resolve("qkt.config.yaml")
@@ -50,6 +51,25 @@ class ConfigStateTest {
         )
         val c = Config.load(cfg)
         assertThat(c.stateEnabled).isTrue
+        assertThat(c.stateAsync).isTrue
+        assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(AsyncStatePersistor::class.java)
+    }
+
+    @Test
+    fun `state async false produces the synchronous FileStatePersistor`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            state:
+              enabled: true
+              async: false
+            """.trimIndent(),
+        )
+        val c = Config.load(cfg)
+        assertThat(c.stateAsync).isFalse
         assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(FileStatePersistor::class.java)
     }
 
@@ -64,6 +84,8 @@ class ConfigStateTest {
         val persistor = c.statePersistor(root)
 
         persistor.saveBracketPairs("hedge-straddle", emptyList())
+        // The default persistor is async — close() drains its queue before we assert the file.
+        (persistor as? AutoCloseable)?.close()
 
         assertThat(root.resolve("hedge-straddle").resolve("bracket-pairs.json")).exists()
     }

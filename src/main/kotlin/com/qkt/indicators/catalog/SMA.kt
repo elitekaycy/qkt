@@ -23,6 +23,11 @@ class SMA(
 
     private val window: ArrayDeque<BigDecimal> = ArrayDeque(period)
     private var sum: BigDecimal = BigDecimal.ZERO
+    private val periodDivisor = BigDecimal(period)
+
+    // Computed once per update; value() is read once per referencing expression node per bar,
+    // and each read allocated a fresh divide/setScale chain.
+    private var lastValue: BigDecimal? = null
 
     override val warmupBars: Int = period
 
@@ -35,12 +40,15 @@ class SMA(
         if (window.size > period) {
             sum = sum.subtract(window.removeFirst(), Money.CONTEXT)
         }
+        lastValue =
+            if (window.size >= period) {
+                sum
+                    .divide(periodDivisor, Money.CONTEXT)
+                    .setScale(Money.SCALE, Money.ROUNDING)
+            } else {
+                null
+            }
     }
 
-    override fun value(): BigDecimal? {
-        if (!isReady) return null
-        return sum
-            .divide(BigDecimal(period), Money.CONTEXT)
-            .setScale(Money.SCALE, Money.ROUNDING)
-    }
+    override fun value(): BigDecimal? = lastValue
 }

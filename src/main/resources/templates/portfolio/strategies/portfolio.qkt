@@ -1,0 +1,8 @@
+PORTFOLIO balanced_research VERSION 1 CAPITAL 100000
+
+IMPORT 'trend.qkt' AS trend
+IMPORT 'mean_reversion.qkt' AS meanrev
+
+RULES
+    RUN trend WEIGHT 0.60
+    RUN meanrev WEIGHT 0.40

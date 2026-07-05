@@ -69,6 +69,11 @@ class MT5BrokerSimulator(
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
+
+    // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
+    // Shareable because the simulator is single-threaded and fill callbacks never re-enter onTick.
+    private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
+    private val gtdExpiredScratch: MutableList<OrderRequest> = mutableListOf()
     private val delayedSubmissions: MutableList<DelayedSubmission> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = HashMap()
     private var submittedOrdinal: Int = 0
@@ -169,10 +174,42 @@ class MT5BrokerSimulator(
         lastTickBySymbol[tick.symbol] = tick
         drainDelayedSubmissions(clock.now())
         if (working.isEmpty()) return
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
-        for (wo in toFill) {
-            working.remove(wo)
+        expireGtd(tick)
+        if (working.isEmpty()) return
+        toFillScratch.clear()
+        for (i in working.indices) {
+            val req = working[i]
+            if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
+        }
+        for (i in toFillScratch.indices) {
+            val wo = toFillScratch[i]
+            // A synchronous fill callback may cancel an OCO sibling that is also present in
+            // this tick's trigger snapshot. Never fill an order that is no longer working.
+            if (!working.remove(wo)) continue
             fillFromTrigger(wo, tick)
+        }
+    }
+
+    private fun expireGtd(tick: Tick) {
+        gtdExpiredScratch.clear()
+        for (i in working.indices) {
+            val request = working[i]
+            if (request.symbol != tick.symbol) continue
+            val expiresAt = request.expiresAt ?: continue
+            if (tick.timestamp >= expiresAt) gtdExpiredScratch.add(request)
+        }
+        for (i in gtdExpiredScratch.indices) {
+            val request = gtdExpiredScratch[i]
+            if (!working.remove(request)) continue
+            bus.publish(
+                BrokerEvent.OrderCancelled(
+                    clientOrderId = request.id,
+                    brokerOrderId = request.id,
+                    reason = "GTD expired",
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
         }
     }
 
@@ -200,33 +237,52 @@ class MT5BrokerSimulator(
                     reject(req, "no InstrumentMeta for symbol ${req.symbol} at fill time")
                     return
                 }
-        val (rawFair, side, qty) =
+        if (req is OrderRequest.StopLimit) {
+            activateLimit(
+                OrderRequest.Limit(
+                    id = req.id,
+                    symbol = req.symbol,
+                    side = req.side,
+                    quantity = req.quantity,
+                    limitPrice = req.limitPrice,
+                    timeInForce = req.timeInForce,
+                    timestamp = req.timestamp,
+                    strategyId = req.strategyId,
+                    expiresAt = req.expiresAt,
+                ),
+                triggeringTick,
+                meta,
+            )
+            return
+        }
+        if (req is OrderRequest.IfTouched && req.onTrigger == TriggerType.LIMIT) {
+            activateLimit(
+                OrderRequest.Limit(
+                    id = req.id,
+                    symbol = req.symbol,
+                    side = req.side,
+                    quantity = req.quantity,
+                    limitPrice = requireNotNull(req.limitPrice),
+                    timeInForce = req.timeInForce,
+                    timestamp = req.timestamp,
+                    strategyId = req.strategyId,
+                    expiresAt = req.expiresAt,
+                ),
+                triggeringTick,
+                meta,
+            )
+            return
+        }
+        val rawFair =
             when (req) {
                 is OrderRequest.Limit ->
-                    Triple(
-                        sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta),
-                        req.side,
-                        req.quantity,
-                    )
+                    sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta)
                 is OrderRequest.Stop ->
-                    Triple(
-                        sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta),
-                        req.side,
-                        req.quantity,
-                    )
-                is OrderRequest.StopLimit ->
-                    Triple(req.limitPrice, req.side, req.quantity)
+                    sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta)
                 is OrderRequest.IfTouched ->
-                    if (req.onTrigger == TriggerType.MARKET) {
-                        Triple(
-                            sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta),
-                            req.side,
-                            req.quantity,
-                        )
-                    } else {
-                        Triple(req.limitPrice!!, req.side, req.quantity)
-                    }
+                    sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta)
                 is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
+                is OrderRequest.StopLimit -> error("StopLimit should activate a Limit")
                 else -> error("MT5BrokerSimulator fillFromTrigger unexpected type: ${req::class.simpleName}")
             }
         val fair =
@@ -234,8 +290,42 @@ class MT5BrokerSimulator(
                 reject(req, "no fill price for ${req.symbol} on trigger")
                 return
             }
-        val withSlip = slippage.adjust(fair, side, meta)
-        publishFill(req.id, req.symbol, side, withSlip, qty, req.strategyId, meta)
+        val limit = (req as? OrderRequest.Limit)?.limitPrice
+        val fillPrice =
+            if (limit == null) {
+                slippage.adjust(fair, req.side, meta)
+            } else if (req.side == Side.BUY) {
+                fair.min(limit)
+            } else {
+                fair.max(limit)
+            }
+        publishFill(req.id, req.symbol, req.side, fillPrice, req.quantity, req.strategyId, meta)
+    }
+
+    private fun activateLimit(
+        limit: OrderRequest.Limit,
+        triggeringTick: Tick,
+        meta: InstrumentMeta,
+    ) {
+        if (checkTrigger(limit, triggeringTick)) {
+            val execution =
+                requireNotNull(
+                    sidedFillPrice(limit.side, triggeringTick, fallback = triggeringTick.price, meta),
+                )
+            val fillPrice =
+                if (limit.side == Side.BUY) execution.min(limit.limitPrice) else execution.max(limit.limitPrice)
+            publishFill(
+                limit.id,
+                limit.symbol,
+                limit.side,
+                fillPrice,
+                limit.quantity,
+                limit.strategyId,
+                meta,
+            )
+        } else {
+            working.add(limit)
+        }
     }
 
     /**
@@ -362,7 +452,7 @@ class MT5BrokerSimulator(
                 meta = meta,
             ) ?: return null
         val minDistance = meta.pointSize.multiply(BigDecimal(meta.tradeStopsLevelPoints))
-        for ((label, price) in protectedPrices(request)) {
+        for ((label, price) in pendingPrices(request)) {
             val distance = price.subtract(ref).abs()
             if (distance < minDistance) {
                 return "$label ${price.toPlainString()} is inside tradeStopsLevel " +
@@ -370,10 +460,26 @@ class MT5BrokerSimulator(
                     "(tradeStopsLevel=${meta.tradeStopsLevelPoints}, pointSize=${meta.pointSize.toPlainString()})"
             }
         }
+        if (request is OrderRequest.Bracket) {
+            val entry = entryPrice(request.entry) ?: ref
+            val exits =
+                buildList {
+                    add("takeProfit" to request.takeProfit)
+                    (request.stopLoss as? com.qkt.execution.StopLossSpec.Fixed)
+                        ?.let { add("stopLoss" to it.price) }
+                }
+            for ((label, price) in exits) {
+                val distance = price.subtract(entry).abs()
+                if (distance < minDistance) {
+                    return "$label ${price.toPlainString()} is inside tradeStopsLevel " +
+                        "${minDistance.toPlainString()} from entry ${entry.toPlainString()}"
+                }
+            }
+        }
         return null
     }
 
-    private fun protectedPrices(request: OrderRequest): List<Pair<String, BigDecimal>> =
+    private fun pendingPrices(request: OrderRequest): List<Pair<String, BigDecimal>> =
         when (request) {
             is OrderRequest.Limit -> listOf("limitPrice" to request.limitPrice)
             is OrderRequest.Stop -> listOf("stopPrice" to request.stopPrice)
@@ -384,7 +490,17 @@ class MT5BrokerSimulator(
                     request.limitPrice?.let { "limitPrice" to it },
                 )
             is OrderRequest.Market -> emptyList()
+            is OrderRequest.Bracket -> pendingPrices(request.entry)
             else -> emptyList()
+        }
+
+    private fun entryPrice(request: OrderRequest): BigDecimal? =
+        when (request) {
+            is OrderRequest.Limit -> request.limitPrice
+            is OrderRequest.Stop -> request.stopPrice
+            is OrderRequest.StopLimit -> request.stopPrice
+            is OrderRequest.IfTouched -> request.triggerPrice
+            else -> null
         }
 
     // Side-aware like MT5 itself: BUY_STOP fires on the ask, SELL_STOP on the bid.

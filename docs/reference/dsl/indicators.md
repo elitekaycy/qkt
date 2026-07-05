@@ -312,6 +312,33 @@ THEN BUY gold
 
 It is `null` for a given hour until `<window>` earlier bars of that hour have been seen.
 
+`seasonal_range_stdev(<stream>.candle, <window>)` is the companion sample standard deviation (n-1 divisor) of the same per-hour range window. Together they z-score a bar against its own hour, so the trigger fires on a bar that is wide relative to the normal *spread* of its hour, not just its mean:
+
+```qkt
+-- Continue an outlier that clears ~2.5 sigma above its hour's own range baseline.
+LET hourz = ((gold.high - gold.low) - seasonal_range(gold.candle, 20)) / seasonal_range_stdev(gold.candle, 20)
+WHEN hourz > 2.5 AND POSITION.gold = 0
+THEN BUY gold
+```
+
+`seasonal_range_stdev` needs `<window>` > 1 (the sample stddev needs at least two occurrences) and is `null` for a given hour until that many earlier bars of the hour have been seen.
+
+### Run length (same-direction streak)
+
+```qkt
+runlength(<value>)   -- signed count of the current same-direction run in the series
+```
+
+`runlength` is the signed length of the current run of same-direction changes: `+k` after `k` consecutive rises, `-k` after `k` consecutive falls, and `0` when the last change was flat (an unchanged value breaks the run). There is no lookback window — the streak accumulates from the last direction change. Fed `<stream>.close` on a daily stream it counts a daily-close streak; fed any expression it counts that expression's run.
+
+```qkt
+-- Continuation: enter with a 4+ up-close streak, but stand down past an 8-close blow-off.
+WHEN runlength(eur.close) >= 4 AND runlength(eur.close) <= 8 AND POSITION.eur = 0
+THEN BUY eur
+```
+
+It is `null` until the first change is seen (one prior value is needed).
+
 ### Session momentum
 
 ```qkt
@@ -327,6 +354,77 @@ THEN BUY eur
 ```
 
 It is `null` until `<nDays>` in-window days have completed.
+
+### Anchored return (sub-bar, grid-anchored)
+
+```qkt
+anchored_return(<stream>.candle, <bucketMinutes>)   -- return since the current bucket's open
+```
+
+`anchored_return` measures `close / bucket_open - 1`, where `bucket_open` is the open of the first bar of the current `<bucketMinutes>` cell on the UTC grid; it resets at each bucket boundary. Bind it on a fine stream with a coarser bucket to read the **forming** coarse bar's intra-bar move — invisible to plain completed-bar indicators — so a rule can compare two symbols' beta-scaled intra-bar moves on the same grid.
+
+```qkt
+-- Intra-30m lead: GBP's beta-scaled move outrunning EUR's, on 1m bars.
+WHEN beta(gbp.close, eur.close, 96) * anchored_return(gbp.candle, 30) - anchored_return(eur.candle, 30) > 0.0005
+THEN BUY eur
+```
+
+It is `null` until the first bar of a bucket is seen.
+
+### Reopen gap (session-boundary gap)
+
+```qkt
+reopen_gap(<stream>.candle, <minGapHours>)          -- signed gap across a trading break
+reopen_gap_origin(<stream>.candle, <minGapHours>)   -- the pre-break close a full fill returns to
+gap_fill_fraction(<stream>.candle, <minGapHours>)   -- retracement toward origin, in gap units
+```
+
+A "reopen" is the first bar whose start follows the previous bar's end by more than `<minGapHours>` — the market was closed in between (the weekend). At that bar `reopen_gap` latches the signed gap (reopen open minus the last pre-break close), `reopen_gap_origin` latches that pre-break close (a stop level), and `gap_fill_fraction` tracks how far price has since retraced toward origin — 0 at the reopen, 1 at a full fill. All three hold until the next reopen.
+
+```qkt
+-- Large, unfilled weekend gap → trade the continuation, stop at the gap origin.
+WHEN abs(reopen_gap(g.candle, 12)) > 2 * atr(g.candle, 14) AND gap_fill_fraction(g.candle, 12) < 0.5
+     AND reopen_gap(g.candle, 12) > 0 AND POSITION.g = 0
+THEN BUY g
+WHEN POSITION.g > 0 AND g.close < reopen_gap_origin(g.candle, 12) THEN CLOSE g
+```
+
+All three are `null` until the first reopen; `gap_fill_fraction` is also `null` on a zero-size gap.
+
+### Failed breakout (fakeout latch)
+
+```qkt
+failed_break_high(<stream>.candle, <rangeLen>, <reclaimBars>, <armBars>)
+failed_break_low(<stream>.candle, <rangeLen>, <reclaimBars>, <armBars>)
+```
+
+`failed_break_high` reads 1 for `<armBars>` bars after the high of the prior `<rangeLen>` bars is pierced and then a bar within `<reclaimBars>` closes back **inside** — a trapped-breakout fakeout that tends to precede a larger second expansion. A pierce that keeps closing outside is a real break and never arms. `failed_break_low` is the downside mirror.
+
+```qkt
+-- Arm a straddle only after a failed first break, not on compression alone.
+WHEN failed_break_high(gbp.candle, 20, 3, 6) > 0 AND POSITION.gbp = 0 THEN BUY gbp
+WHEN failed_break_low(gbp.candle, 20, 3, 6) > 0 AND POSITION.gbp = 0 THEN SELL gbp
+```
+
+It is `null` until the range window fills.
+
+### Initial-balance prior defense
+
+```qkt
+ib_defended_high(<stream>.candle, <sessionStartHour>, <ibMinutes>)
+ib_defended_low(<stream>.candle, <sessionStartHour>, <ibMinutes>)
+```
+
+The Initial Balance (IB) is the high/low of the session's first `<ibMinutes>` from `<sessionStartHour>` UTC. `ib_defended_high` reads 1 once the IB high has been **tested and held** earlier this session — a bar traded through it but closed back inside — else 0, and resets daily. It's the per-session memory that separates an initiative late break from a naive opening-range breakout. Pair it with `session_range_high`/`session_range_low` for the level itself.
+
+```qkt
+-- Late IB break that was defended earlier, confirmed dollar-wide by GBP.
+WHEN eur.close > session_range_high(eur.candle, 8, 0, 9, 0) AND ib_defended_high(eur.candle, 8, 60) > 0
+     AND gbp.close > session_range_high(gbp.candle, 8, 0, 9, 0) AND POSITION.eur = 0
+THEN BUY eur
+```
+
+It is `null` until the IB window has elapsed with an IB captured this session.
 
 ### Percentile rank
 
@@ -489,7 +587,13 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `session_range_*(stream, …)` | until the first window completes |
 | `pivot_p`/`pivot_r1`/`pivot_s1(stream.candle)` | until the first UTC day completes |
 | `seasonal_range(stream.candle, N)` | N bars of the current bar's UTC hour |
+| `seasonal_range_stdev(stream.candle, N)` | N bars of the current bar's UTC hour (N > 1) |
+| `runlength(value)` | 1 bar (needs one prior value) |
 | `session_momentum(stream.candle, sh, eh, N)` | until N in-window days complete |
+| `anchored_return(stream.candle, bucketMinutes)` | 1 bar (the first bar of a bucket) |
+| `reopen_gap`/`reopen_gap_origin`/`gap_fill_fraction(stream.candle, h)` | until the first reopen |
+| `failed_break_high`/`failed_break_low(stream.candle, rangeLen, …)` | rangeLen + 1 bars |
+| `ib_defended_high`/`ib_defended_low(stream.candle, sh, ibMin)` | until the IB window elapses each session |
 
 During warmup the indicator returns `null`. Comparisons with `null` are `false` — your rule won't fire, but it won't crash either.
 

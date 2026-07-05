@@ -328,16 +328,19 @@ class Backtest(
             // Synthesize O->L->H->C ticks from OHLC bars (the forced research tier, or the bars-only
             // fallback for venues like crypto).
             if (MarketSourceCapability.BARS in caps && window != null) {
-                return BarTickFeed(source.bars(symbol, window, range))
+                val iter = source.bars(symbol, window, range).iterator()
+                require(iter.hasNext()) {
+                    "no market data for $symbol in requested range ${range.from}..${range.to}"
+                }
+                return BarTickFeed(sequenceOf(iter.next()) + iter.asSequence())
             }
             if (forceBars) {
                 error("--bars: cannot replay bars for $symbol (source has no BARS capability or no candle window)")
             }
-            // A tick-capable source with an empty range is a legitimate gap (e.g. a market-closed day).
             require(ticksAvailable) {
                 "bar-based backtest for $symbol needs a candle window (timeframe) — pass candleWindow"
             }
-            return SequenceTickFeed(emptySequence())
+            error("no market data for $symbol in requested range ${range.from}..${range.to}")
         }
     }
 }

@@ -185,10 +185,13 @@ data class Config(
     /**
      * Effective `state.async`. When `true`, wraps the file persistor in [com.qkt.persistence.AsyncStatePersistor]
      * so disk I/O runs on a background thread instead of the bus dispatch thread. Defaults to
-     * `false` — synchronous is fine for typical trade-event rates.
+     * `true` — a single fill otherwise pays several synchronous DSYNC flushes on the engine
+     * thread (order state, leg book, PnL, risk state), stalling tick processing behind disk
+     * latency. Set `state.async: false` where the async writer's ~1s crash-loss window is
+     * unacceptable.
      */
     val stateAsync: Boolean
-        get() = state["async"]?.lowercase() == "true"
+        get() = state["async"]?.lowercase() != "false"
 
     /**
      * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under

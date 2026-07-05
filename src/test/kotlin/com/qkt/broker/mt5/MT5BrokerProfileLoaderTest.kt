@@ -58,6 +58,14 @@ class MT5BrokerProfileLoaderTest {
     }
 
     @Test
+    fun `api key loads from the profile environment override`() {
+        val raw = mapOf("exness" to mapOf("type" to "mt5"))
+        val env = mapOf("QKT_BROKER_EXNESS_API_KEY" to "secret-token")
+        val profile = loader.load(raw, MT5DefaultProfiles.all, env).single()
+        assertThat(profile.apiKey).isEqualTo("secret-token")
+    }
+
+    @Test
     fun `non-mt5 type is filtered out`() {
         val raw =
             mapOf(

@@ -53,6 +53,10 @@ class BacktestDataProvisioner(
                 report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
             }
 
+            val requested = report.days.count { it.status != DayCompleteness.Status.NON_TRADING }
+            val covered = report.days.count { it.status == DayCompleteness.Status.COMPLETE }
+            System.err.println("qkt: tick coverage ${report.symbol} $covered/$requested trading days")
+
             if (report.hasHoles && !allowIncomplete) {
                 throw IncompleteDataException(describe(report.symbol, report.holes))
             }

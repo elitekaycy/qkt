@@ -1,15 +1,16 @@
 package com.qkt.marketdata.live.mt5
 
+import com.qkt.broker.mt5.mt5RequestBuilder
 import java.math.BigDecimal
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
-import okhttp3.Request
 
 class Mt5TickClient(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
+    private val apiKey: String? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -52,7 +53,7 @@ class Mt5TickClient(
         capturedAtMs: Long,
     ): Mt5Tick {
         val url = "$baseUrl/symbol_info_tick/$symbol"
-        val req = Request.Builder().url(url).build()
+        val req = mt5RequestBuilder(url, apiKey).build()
         val raw =
             http.newCall(req).execute().use { resp ->
                 check(resp.isSuccessful) { "MT5 gateway HTTP ${resp.code} for $url: ${resp.body?.string()}" }

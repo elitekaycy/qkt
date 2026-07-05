@@ -52,6 +52,13 @@ class LexerTest {
     }
 
     @Test
+    fun `tokenizes both not-equal spellings`() {
+        // conditions.md documents `!=` and `<>` as equivalent; both must lex to NEQ.
+        val tokens = Lexer("a != b <> c").tokenize()
+        assertThat(tokens.map { it.kind }.filter { it == TokenKind.NEQ }).hasSize(2)
+    }
+
+    @Test
     fun `tokenizes integers and decimals`() {
         val tokens = Lexer("100 100.5 0.001").tokenize()
         assertThat(tokens.dropLast(1).map { it.lexeme }).containsExactly("100", "100.5", "0.001")

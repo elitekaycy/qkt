@@ -1,88 +1,88 @@
 # Scaffold a new project
 
-`qkt create template` writes a complete, working project tree so you go from
-"qkt is installed" to "the daemon is running on docker-compose" in two
-commands.
+`qkt create template` generates a complete project with pinned images, sample
+configuration, strategies, `.env.example`, and operational commands.
 
-## TL;DR
+## Quick start
 
 ```bash
-qkt create template ./my-strategies            # default --kind mt5
+qkt create template ./my-strategies
 cd my-strategies
-cp .env.example .env                           # edit .env with your broker creds
-make up                                        # start qkt + mt5-gateway
-make deploy STRAT=ema_cross                    # deploy the sample strategy
-make logs                                      # follow daemon output
+cp .env.example .env
+# Replace the credential placeholders in .env.
+make up
+make deploy STRAT=full_strategy
 ```
 
-That's the entire happy path.
+The default is the full MT5 stack. Generated `.env` files, state, market data,
+reports, and logs are ignored by Git.
 
-## Kinds
+## Template kinds
 
 ```bash
-qkt create template <path> [--kind mt5|minimal]
+qkt create template <path> \
+  [--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit]
 ```
 
-| Kind | What you get |
+| Kind | Contents |
 |---|---|
-| `mt5` *(default)* | Full stack: qkt daemon + `mt5-gateway` container for MT5 (Exness, IC Markets, FTMO, Pepperstone). One-time VNC login through the gateway, then qkt talks to it over the internal Docker network. |
-| `minimal` | qkt daemon only, no broker. Useful for backtest exploration or paper-trading against `BACKTEST:<symbol>` streams. Add a broker later by extending `qkt.config.yaml` + `docker-compose.yml`. |
+| `mt5` *(default)* | QKT, authenticated MT5 gateway, Docker Compose, an EMA example, and a production-shaped bracketed strategy. |
+| `mt5-ci` | Everything in `mt5`, plus a GitHub Actions deployment workflow and server setup instructions. |
+| `backtest` | Local-data research configuration and a runnable single-strategy backtest. |
+| `portfolio` | Local-data research configuration, book risk limits, a weighted portfolio, and two child strategies. |
+| `minimal` | Broker-free QKT daemon and a small sample strategy. |
+| `bybit` | QKT configured for Bybit REST, using testnet by default. |
 
-## Generated tree
+Specialized templates are layered on tested base projects, so `mt5-ci` retains
+the complete MT5 deployment and the research templates retain the standard
+container and ignore-file setup.
 
+## Configuration model
+
+Only deployment-specific values need changing:
+
+- Copy `.env.example` to `.env` for local Docker deployment.
+- Replace broker/API credentials and any notification credentials.
+- Keep the image defaults pinned, or deliberately update them during an upgrade.
+- `qkt.config.yaml` references environment variables and provides defaults for
+  non-secret values such as the internal gateway URL, magic number, data root,
+  and starting balance.
+
+The generated MT5 gateway requires `MT5_API_KEY`; QKT receives the same value as
+`QKT_BROKER_EXNESS_API_KEY`. Credentials are never stored in `qkt.config.yaml`.
+
+## GitHub deployment
+
+The `mt5-ci` template deploys pushes to `main` through a GitHub environment named
+`production`. Configure these environment secrets:
+
+- `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`
+- `MT5_LOGIN`, `MT5_PASSWORD`, `MT5_API_KEY`, `MT5_VNC_PASSWORD`
+- optionally `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+
+Optional environment variables include `DEPLOY_PORT`, `DEPLOY_PATH`,
+`MT5_SERVER`, `MT5_VNC_USER`, `QKT_EXNESS_MAGIC`, and `TELEGRAM_ENABLED`.
+The workflow validates required secrets, renders a mode-600 `.env`, validates
+Compose, transfers the project without deleting persistent state/data, then
+pulls and starts the pinned images.
+
+See the generated `DEPLOYMENT.md` for server prerequisites and initial setup.
+
+## Research templates
+
+For `backtest` or `portfolio`, place data under `data/` as described by the
+generated README, then run:
+
+```bash
+cp .env.example .env
+make backtest
 ```
-my-strategies/
-├── .env.example          # secrets template (QKT_IMAGE_TAG, broker creds, ...)
-├── Makefile              # up / down / deploy / logs / audit-ticks shortcuts
-├── docker-compose.yml    # qkt + (mt5-gateway when --kind mt5)
-├── qkt.config.yaml       # broker profiles + state + notifications
-└── strategies/
-    ├── README.md
-    └── ema_cross.qkt     # sample strategy
-```
 
-`state/` and `logs/` get created on first `make up` (mounted bind volumes).
+## Safety and lifecycle
 
-## Image-tag pinning
+The scaffolder refuses to overwrite a non-empty target. `make down` retains
+state. Strategy files are bind-mounted, so `make deploy STRAT=<name>` can
+hot-deploy an edited strategy without rebuilding an image.
 
-The generated `.env.example` pins `QKT_IMAGE_TAG=v<current-version>` —
-matching the qkt binary that ran `qkt create template`. Bump it manually when
-you want to move to a newer release; the compose file requires it to be set, so
-a missing value fails the deploy loud (no silent downgrades — see
-[Production deploy](../operations/deploy.md) for the rationale).
-
-## Makefile targets
-
-The bundled `Makefile` is a thin wrapper around the docker-compose + qkt CLI
-commands you'd run anyway:
-
-| Target | What it does |
-|---|---|
-| `make up` | `docker compose up -d` |
-| `make down` | `docker compose down` (state survives) |
-| `make logs` | `docker compose logs -f --tail 200 qkt` |
-| `make status` / `make list` | `qkt list` inside the container |
-| `make deploy STRAT=<name>` | Deploy `strategies/<name>.qkt` |
-| `make stop STRAT=<name>` | Stop a deployed strategy |
-| `make audit-ticks SYMBOL=<sym> [DUR=5m]` | *(mt5 only)* Capture live ticks + write JSON audit |
-| `make shell` | Shell into the qkt container |
-
-## Adding your own strategies
-
-Drop `.qkt` files in `strategies/` and `make deploy STRAT=<name>`. The
-directory is bind-mounted into the container, so edits are visible immediately
-— no rebuild required. Re-running deploy hot-swaps the strategy.
-
-## Refusing to overwrite
-
-`qkt create template` refuses to write into a non-empty directory. To start
-fresh, point it at a new path or remove the old tree first.
-
-## Where to next
-
-- [Deploy MT5](deploy-mt5.md) — the full broker setup that this scaffold
-  builds on.
-- [Production deploy (qkt-prod)](../operations/deploy.md) — the runbook for
-  the managed Dokploy host that runs qkt for elitekaycy in production.
-- [DSL reference](../reference/dsl/index.md) — when you're ready to write your
-  own strategies.
+For detailed operations, see [Deploy MT5](deploy-mt5.md) and
+[Production deploy](../operations/deploy.md).

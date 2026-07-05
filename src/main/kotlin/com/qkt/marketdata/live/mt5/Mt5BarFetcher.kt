@@ -3,6 +3,7 @@ package com.qkt.marketdata.live.mt5
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
+import java.time.ZoneOffset
 import okhttp3.OkHttpClient
 
 /**
@@ -15,23 +16,47 @@ import okhttp3.OkHttpClient
 class Mt5BarFetcher(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
+    private val serverTzOffsetHours: Int = 0,
+    private val normalizeBidBarsToMid: Boolean = false,
+    private val apiKey: String? = null,
 ) {
+    private val pointBySymbol = java.util.concurrent.ConcurrentHashMap<String, java.math.BigDecimal>()
+
     fun fetchRange(
         symbol: String,
         window: TimeWindow,
         range: TimeRange,
     ): Sequence<Candle> {
         val tf = windowToTimeframe(window)
-        val startIso = range.from.toString().removeSuffix("Z")
-        val endIso = range.to.toString().removeSuffix("Z")
-        val client = Mt5DataClient(baseUrl, http)
+        val offset = ZoneOffset.ofHours(serverTzOffsetHours)
+        val startIso =
+            range.from
+                .atOffset(offset)
+                .toLocalDateTime()
+                .toString()
+        val endIso =
+            range.to
+                .atOffset(offset)
+                .toLocalDateTime()
+                .toString()
+        val client = Mt5DataClient(baseUrl, http, serverTzOffsetHours, apiKey)
+        val midPoint =
+            if (normalizeBidBarsToMid) {
+                pointBySymbol[symbol]
+                    ?: client.fetchSymbolPoint(symbol)?.also { pointBySymbol[symbol] = it }
+                    ?: error(
+                        "MT5 gateway did not provide point metadata for $symbol; cannot normalize warmup bars to mid",
+                    )
+            } else {
+                null
+            }
         // The gateway includes the currently-open bar when `end` lands inside it;
         // match Bybit / TradingView / Local boundary semantics so consumers never
         // see an unclosed bar.
         val fromMs = range.from.toEpochMilli()
         val toMs = range.to.toEpochMilli()
         return client
-            .fetchBarsByRange(symbol, tf, startIso, endIso)
+            .fetchBarsByRange(symbol, tf, startIso, endIso, midPoint)
             .asSequence()
             .filter { it.startTime in fromMs until toMs }
     }

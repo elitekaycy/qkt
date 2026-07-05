@@ -7,6 +7,7 @@ import com.qkt.strategy.EveryNthTickBuyStrategy
 import java.nio.file.Path
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class BacktestFromStoreTest {
@@ -100,7 +101,7 @@ class BacktestFromStoreTest {
     }
 
     @Test
-    fun `BTCUSD empty Saturday produces no fills for that day`() {
+    fun `BTCUSD empty requested range fails closed`() {
         val store = DefaultDataStore(root = sample)
         val request =
             MarketRequest(
@@ -108,14 +109,15 @@ class BacktestFromStoreTest {
                 from = Instant.parse("2024-01-16T00:00:00Z"),
                 to = Instant.parse("2024-01-17T00:00:00Z"),
             )
-        val result =
+        assertThatThrownBy {
             Backtest
                 .fromStore(
                     strategies = listOf("test" to EveryNthTickBuyStrategy(symbol = "BTCUSD", n = 1)),
                     rules = emptyList(),
                     store = store,
                     request = request,
-                ).run()
-        assertThat(result.global.tradeCount).isEqualTo(0)
+                )
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("no market data for BTCUSD")
     }
 }

@@ -1,0 +1,21 @@
+source: local
+data_root: /data
+starting_balance: ${QKT_STARTING_BALANCE:-100000}
+
+runtime:
+  mode: research
+
+state:
+  enabled: false
+
+brokers: {}
+
+book_risk:
+  capital: ${QKT_STARTING_BALANCE:-100000}
+  limits:
+    max_gross_exposure: "300000"
+    max_net_exposure: "150000"
+    max_symbol_concentration: "0.60"
+  allocation:
+    method: FIXED
+    max_leverage: "1"

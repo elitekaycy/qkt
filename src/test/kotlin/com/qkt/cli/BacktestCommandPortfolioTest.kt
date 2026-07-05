@@ -97,4 +97,41 @@ class BacktestCommandPortfolioTest {
         assertThat(out).contains("\"bookAnalytics\":{")
         assertThat(out).contains("\"bookRisk\":{")
     }
+
+    @Test
+    fun `portfolio backtest rejects unsupported bar replay flags`(
+        @TempDir tmp: Path,
+    ) {
+        Files.writeString(tmp.resolve("child.qkt"), child("child", "gold", "XAUUSD"))
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'child.qkt' AS child
+            RULES
+              RUN child
+            """.trimIndent(),
+        )
+
+        for (flag in listOf(listOf("--bars"), listOf("--bar-tf", "1m"), listOf("--tick-fills"))) {
+            val args =
+                Args(
+                    (
+                        listOf(
+                            "backtest",
+                            portfolio.toString(),
+                            "--from",
+                            "2024-01-15",
+                            "--to",
+                            "2024-01-17",
+                        ) + flag
+                    ).toTypedArray(),
+                )
+
+            assertThat(BacktestCommand(args).run())
+                .describedAs("flag %s", flag.joinToString(" "))
+                .isEqualTo(ExitCodes.USER_ERROR)
+        }
+    }
 }
