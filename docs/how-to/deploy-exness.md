@@ -27,6 +27,7 @@ Edit `.env` with your MT5 credentials:
 MT5_LOGIN=12345678
 MT5_PASSWORD=your-mt5-password
 MT5_SERVER=Exness-MT5Trial
+MT5_ENABLE_ALGO_TRADING=1
 VNC_PASSWORD=pickanything
 EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```

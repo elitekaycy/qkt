@@ -94,11 +94,12 @@ version: '3.9'
 
 services:
   mt5-gateway:
-    image: elitekaycy/mt5-gateway-api:0.3.1
+    image: elitekaycy/mt5-gateway-api:0.3.2
     environment:
       - MT5_LOGIN=${MT5_LOGIN}
       - MT5_PASSWORD=${MT5_PASSWORD}
       - MT5_SERVER=${MT5_SERVER}
+      - MT5_ENABLE_ALGO_TRADING=${MT5_ENABLE_ALGO_TRADING:-1}
       - API_KEY=${MT5_API_KEY}
       - PASSWORD=${VNC_PASSWORD}
     ports:
@@ -147,6 +148,7 @@ BYBIT_API_SECRET=xxx
 MT5_LOGIN=12345678
 MT5_PASSWORD=demo-password
 MT5_SERVER=Exness-MT5Trial
+MT5_ENABLE_ALGO_TRADING=1
 MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=changeme
 EXNESS_GATEWAY_URL=http://mt5-gateway:5001
