@@ -52,7 +52,7 @@ jobs:
           umask 077
           {
             printf 'QKT_IMAGE_TAG=v%s\n' '{{QKT_VERSION}}'
-            printf 'MT5_GATEWAY_IMAGE=%s\n' 'elitekaycy/mt5-gateway-api:0.3.0'
+            printf 'MT5_GATEWAY_IMAGE=%s\n' 'elitekaycy/mt5-gateway-api:0.3.1'
             printf 'QKT_EXNESS_MAGIC=%s\n' "$QKT_EXNESS_MAGIC"
             printf 'MT5_API_KEY=%s\n' "$MT5_API_KEY"
             printf 'MT5_VNC_USER=%s\n' "$MT5_VNC_USER"

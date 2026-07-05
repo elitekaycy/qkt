@@ -52,7 +52,7 @@ class CreateCommandTest {
         invoke("create", "template", target.toString())
         val envContent = Files.readString(target.resolve(".env.example"))
         assertThat(envContent).contains("QKT_IMAGE_TAG=v${BuildInfo.VERSION}")
-        assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.0")
+        assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.1")
         assertThat(envContent).contains("MT5_API_KEY=replace-with-a-long-random-value")
     }
 
