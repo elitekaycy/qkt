@@ -247,7 +247,7 @@ You've gone backtest → paper → live demo. To go to **live real money**:
 
 ## If something went wrong
 
-- **The gateway image cannot be pulled** — verify access to `elitekaycy/mt5-gateway-api:0.3.0`.
+- **The gateway image cannot be pulled** — verify access to `elitekaycy/mt5-gateway-api:0.3.1`.
 - **`/health/ready` returns 503** — inspect gateway logs for resolver/login errors; use VNC only if headless login cannot resolve the broker.
 - **Strategy deploys but doesn't trade** — see [debug a strategy that isn't firing](../how-to/debug-not-firing.md). Most often the EMAs haven't warmed up yet — the first 21 candles produce no signal.
 - **MT5 logs out periodically** — some brokers force daily re-auth. VNC back in. Add a healthcheck alert in production.

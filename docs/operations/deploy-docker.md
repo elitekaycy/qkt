@@ -5,7 +5,7 @@ The repo ships a [`docker-compose.yml`](https://github.com/elitekaycy/qkt/blob/m
 ## Prerequisites
 
 - Docker + Docker Compose v2
-- An `mt5-gateway:latest` image — build from [github.com/elitekaycy/mt5-gateway](https://github.com/elitekaycy/mt5-gateway) or pull from your private registry
+- The published MT5 gateway image: `elitekaycy/mt5-gateway-api:0.3.1` (or `elitekaycy/mt5-gateway-api:latest`, which tracks the newest release)
 - `.env` populated with broker credentials (copy from `.env.example`)
 - `qkt.config.yaml` with at least one broker profile (copy from `qkt.config.yaml.example`)
 
@@ -71,7 +71,7 @@ docker compose down -v         # also wipes the volume (state + logs lost)
 ## Common issues
 
 - **`qkt brokers list` shows the profile but `gateway: down`.** MT5 isn't logged in. VNC at `:3000` and log in.
-- **Compose can't pull `mt5-gateway:latest`.** The image isn't on Docker Hub. Build it locally or use a private registry.
+- **Compose can't pull the gateway image.** Verify Docker Hub access to `elitekaycy/mt5-gateway-api:0.3.1`, or override `MT5_GATEWAY_IMAGE` with a digest-pinned/private-registry image.
 - **Symbol not found errors.** Verify the broker's actual symbol via the MT5 market watch. The default `exness` profile assumes the `m` suffix; other brokers vary.
 - **Container loses ports on restart.** Add `restart: unless-stopped` to both services (already in the shipped compose file).
 
