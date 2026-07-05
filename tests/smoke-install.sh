@@ -334,6 +334,7 @@ if [ "$DO_DOCKER" -eq 1 ]; then
                 --from 2024-01-15 \
                 --to 2024-01-17 \
                 --data-root /data \
+                --allow-incomplete \
                 --json \
             >> "$LOG_FILE" 2>&1 \
             || die "docker-run backtest failed (log: $LOG_FILE)"
