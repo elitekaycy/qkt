@@ -97,6 +97,7 @@ Edit `.env` with your Exness demo credentials (you got them when you signed up a
 MT5_LOGIN=12345678
 MT5_PASSWORD=your-demo-password
 MT5_SERVER=Exness-MT5Trial
+MT5_ENABLE_ALGO_TRADING=1
 VNC_PASSWORD=changeme
 EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
@@ -247,7 +248,7 @@ You've gone backtest → paper → live demo. To go to **live real money**:
 
 ## If something went wrong
 
-- **The gateway image cannot be pulled** — verify access to `elitekaycy/mt5-gateway-api:0.3.1`.
+- **The gateway image cannot be pulled** — verify access to `elitekaycy/mt5-gateway-api:0.3.2`.
 - **`/health/ready` returns 503** — inspect gateway logs for resolver/login errors; use VNC only if headless login cannot resolve the broker.
 - **Strategy deploys but doesn't trade** — see [debug a strategy that isn't firing](../how-to/debug-not-firing.md). Most often the EMAs haven't warmed up yet — the first 21 candles produce no signal.
 - **MT5 logs out periodically** — some brokers force daily re-auth. VNC back in. Add a healthcheck alert in production.
