@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.broker.mt5.MT5BrokerProfileLoader
 import com.qkt.broker.mt5.MT5DefaultProfiles
+import com.qkt.broker.mt5.MT5Symbol
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
@@ -201,6 +202,7 @@ class FetchCommand(
                         normalizeBidBarsToMid = true,
                         apiKey = profile.apiKey,
                     ),
+                    MT5Symbol(profile.symbolPolicy),
                 )
             }
         }
@@ -216,12 +218,13 @@ class FetchCommand(
 
     private class Mt5Fetcher(
         private val inner: Mt5BarFetcher,
+        private val symbols: MT5Symbol,
     ) : BarFetcher {
         override fun fetch(
             symbol: String,
             window: TimeWindow,
             range: TimeRange,
-        ): List<Candle> = inner.fetchRange(symbol, window, range).toList()
+        ): List<Candle> = inner.fetchRange(symbols.toBroker(symbol), window, range).toList()
     }
 
     private class BybitFetcher(
