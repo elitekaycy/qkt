@@ -94,7 +94,7 @@ version: '3.9'
 
 services:
   mt5-gateway:
-    image: elitekaycy/mt5-gateway-api:0.3.0
+    image: elitekaycy/mt5-gateway-api:0.3.1
     environment:
       - MT5_LOGIN=${MT5_LOGIN}
       - MT5_PASSWORD=${MT5_PASSWORD}
