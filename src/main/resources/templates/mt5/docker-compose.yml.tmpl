@@ -11,7 +11,7 @@ services:
     restart: "no"
 
   mt5-gateway:
-    image: ${MT5_GATEWAY_IMAGE:-elitekaycy/mt5-gateway-api:0.3.1}
+    image: ${MT5_GATEWAY_IMAGE:-elitekaycy/mt5-gateway-api:0.3.2}
     container_name: qkt-mt5
     restart: unless-stopped
     depends_on:
@@ -30,6 +30,7 @@ services:
       MT5_LOGIN: ${MT5_LOGIN:-}
       MT5_PASSWORD: ${MT5_PASSWORD:-}
       MT5_SERVER: ${MT5_SERVER:-}
+      MT5_ENABLE_ALGO_TRADING: ${MT5_ENABLE_ALGO_TRADING:-1}
       MT5_RESOLVER_URL: ${MT5_RESOLVER_URL:-https://mt5.mtapi.io}
       API_KEY: ${MT5_API_KEY:?MT5_API_KEY must be set in .env}
     ports:
