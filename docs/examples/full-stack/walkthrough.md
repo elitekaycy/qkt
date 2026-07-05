@@ -42,6 +42,7 @@ BYBIT_TESTNET=true                     # important — testnet first
 MT5_LOGIN=12345678
 MT5_PASSWORD=your-exness-demo-password
 MT5_SERVER=Exness-MT5Trial
+MT5_ENABLE_ALGO_TRADING=1
 MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=changeme
 
@@ -216,7 +217,7 @@ docker compose down -v              # full wipe — state + logs gone
 
 ## Common gotchas
 
-- **Compose can't pull the gateway image.** Verify Docker Hub access to `elitekaycy/mt5-gateway-api:0.3.1`, or override `MT5_GATEWAY_IMAGE` with a digest-pinned/private-registry image.
+- **Compose can't pull the gateway image.** Verify Docker Hub access to `elitekaycy/mt5-gateway-api:0.3.2`, or override `MT5_GATEWAY_IMAGE` with a digest-pinned/private-registry image.
 - **MT5 logs out periodically.** Some brokers force daily re-auth. VNC back in, or restart `mt5-gateway` to trigger a re-login attempt.
 - **Bybit testnet vs mainnet.** `BYBIT_TESTNET=true` routes to testnet; positions/keys/symbols all live there. Don't mix testnet and mainnet keys in the same `.env`.
 - **Bind-mount path issues on Mac/Windows.** Docker Desktop sometimes needs explicit file-sharing permissions for paths outside your home directory. Keep the project under `~/`.

@@ -38,6 +38,7 @@ BYBIT_TESTNET=false                # set true for paper-testing first
 MT5_LOGIN=
 MT5_PASSWORD=
 MT5_SERVER=Exness-MT5Trial
+MT5_ENABLE_ALGO_TRADING=1
 MT5_API_KEY=replace-with-a-long-random-value
 
 # ---- VNC for one-time MT5 login ----
@@ -55,12 +56,13 @@ version: '3.9'
 
 services:
   mt5-gateway:
-    image: elitekaycy/mt5-gateway-api:0.3.1
+    image: elitekaycy/mt5-gateway-api:0.3.2
     container_name: mt5-gateway
     environment:
       MT5_LOGIN: ${MT5_LOGIN}
       MT5_PASSWORD: ${MT5_PASSWORD}
       MT5_SERVER: ${MT5_SERVER}
+      MT5_ENABLE_ALGO_TRADING: ${MT5_ENABLE_ALGO_TRADING:-1}
       API_KEY: ${MT5_API_KEY}
       PASSWORD: ${VNC_PASSWORD}
     ports:
