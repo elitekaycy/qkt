@@ -29,6 +29,7 @@ class PortfolioRiskAggregator(
     private val bookRiskState: RiskState,
     private val haltRules: List<HaltRule>,
     private val clock: Clock,
+    private val onSample: (Long) -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger(PortfolioRiskAggregator::class.java)
 
@@ -42,6 +43,7 @@ class PortfolioRiskAggregator(
     private var trippedDay: Long = 0L
 
     fun evaluate() {
+        onSample(clock.now())
         if (tripped) {
             if (trippedScope == HaltScope.DAILY && epochDay() > trippedDay) {
                 tripped = false

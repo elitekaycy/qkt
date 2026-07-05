@@ -68,8 +68,8 @@ class SessionVwapTest {
     @Test
     fun `resets at the midnight anchor`() {
         val s = SessionVwap(anchorHour = 0)
-        s.update(flat("2026-01-01T00:30:00Z", "10", "10"))
-        s.update(flat("2026-01-02T00:30:00Z", "50", "5"))
+        s.update(flat("2026-01-01T00:00:00Z", "10", "10"))
+        s.update(flat("2026-01-02T00:00:00Z", "50", "5"))
         // New UTC day → accumulators reset → vwap is just the day-2 candle.
         assertThat(s.value()).isEqualByComparingTo("50")
     }
@@ -77,9 +77,17 @@ class SessionVwapTest {
     @Test
     fun `noon anchor splits the day at twelve UTC`() {
         val s = SessionVwap(anchorHour = 12)
-        s.update(flat("2026-01-01T11:00:00Z", "10", "10")) // belongs to prior session (anchored 12:00 Dec-31)
-        s.update(flat("2026-01-01T13:00:00Z", "20", "10")) // new session anchored 12:00 Jan-01 → reset
+        s.update(flat("2025-12-31T12:00:00Z", "10", "10"))
+        s.update(flat("2026-01-01T12:00:00Z", "20", "10"))
         assertThat(s.value()).isEqualByComparingTo("20")
+    }
+
+    @Test
+    fun `first partial session stays undefined`() {
+        val s = SessionVwap(anchorHour = 0)
+        s.update(flat("2026-01-01T03:00:00Z", "10", "10"))
+        s.update(flat("2026-01-01T20:00:00Z", "20", "10"))
+        assertThat(s.value()).isNull()
     }
 
     @Test

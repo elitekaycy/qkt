@@ -26,6 +26,7 @@ class TickAssemblerTest {
         assertEquals(bd("1711.75300000"), tick.price)
         assertEquals(bd("1711.50400000"), tick.bid)
         assertEquals(bd("1712.00200000"), tick.ask)
+        assertEquals(bd("0.00030000"), tick.volume)
     }
 
     @Test

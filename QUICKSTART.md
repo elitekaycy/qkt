@@ -76,9 +76,15 @@ docker compose up -d
 
 (See [`docker-compose.yml`](docker-compose.yml) at repo root for the stack: qkt daemon + mt5-gateway.)
 
-### 5b. Log in to MT5
+### 5b. Verify the headless login
 
-Connect to VNC at `localhost:3000`, log in to your broker account through the MT5 GUI. The gateway's `/health` endpoint becomes ready once you're logged in.
+Set `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER` in `.env`; the gateway resolves the broker and logs in on boot. Verify readiness with:
+
+```sh
+curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
+```
+
+VNC at `localhost:3000` remains available for diagnosis when automatic resolution fails.
 
 ### 5c. Configure the broker profile
 
@@ -89,6 +95,7 @@ brokers:
   exness:
     type: mt5
     gateway_url: http://localhost:5001
+    api_key: ${QKT_BROKER_EXNESS_API_KEY}
 ```
 
 Built-in defaults already cover Exness's symbol suffix (`m`), aliases (NAS100→USTEC), TZ, and magic. Override only what differs.

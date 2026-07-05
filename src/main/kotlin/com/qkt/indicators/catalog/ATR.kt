@@ -65,7 +65,12 @@ class ATR(
                     .add(tr, Money.CONTEXT)
                     .divide(periodBd, Money.CONTEXT)
         }
+        lastValue = atr?.setScale(Money.SCALE, Money.ROUNDING)
     }
 
-    override fun value(): BigDecimal? = atr?.setScale(Money.SCALE, Money.ROUNDING)
+    // The rounded read, computed once per update — value() is read once per referencing
+    // expression node per bar, and each read allocated a fresh setScale.
+    private var lastValue: BigDecimal? = null
+
+    override fun value(): BigDecimal? = lastValue
 }

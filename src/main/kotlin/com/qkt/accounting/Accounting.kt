@@ -148,6 +148,10 @@ class AccountingEngine(
     private val conversions: MutableMap<String, FxConversion> = ConcurrentHashMap()
     private val warnings: MutableMap<String, String> = ConcurrentHashMap()
 
+    // Quote currencies never change within a run; caches the per-symbol string parse that
+    // pnlCurrencyFor otherwise repeats on every per-tick unrealized-PnL mark.
+    private val pnlCurrencyCache: MutableMap<String, String> = ConcurrentHashMap()
+
     val accountCurrency: String get() = config.accountCurrency.normalized
 
     fun canConvertSymbol(symbol: String): Boolean {
@@ -172,6 +176,25 @@ class AccountingEngine(
             contextSymbol = symbol,
             referencePrice = referencePrice,
         )
+    }
+
+    /**
+     * The account-currency amount [convertPnl] would return, without building the
+     * [MoneyAmount]/[ConvertedMoney]/[FxConversion] wrappers on the no-conversion path. The
+     * per-tick unrealized-PnL walk calls this once per open symbol; on same-currency accounts
+     * the identity path's wrapper churn dominated its allocation profile. Always equal to
+     * `convertPnl(symbol, nativeAmount, timestamp, referencePrice).account.amount`.
+     */
+    fun convertPnlAmount(
+        symbol: String,
+        nativeAmount: BigDecimal,
+        timestamp: Long,
+        referencePrice: BigDecimal?,
+    ): BigDecimal {
+        val from = pnlCurrencyCache.getOrPut(symbol) { pnlCurrencyFor(symbol) }
+        val scaled = nativeAmount.setScale(Money.SCALE, Money.ROUNDING)
+        if (scaled.signum() == 0 || compatible(from, accountCurrency)) return scaled
+        return convertPnl(symbol, nativeAmount, timestamp, referencePrice).account.amount
     }
 
     fun convertNotional(

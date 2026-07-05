@@ -94,6 +94,31 @@ class CompiledStrategyAutoWarmupTest {
     }
 
     @Test
+    fun `seeded history warms indicator state before first live close`() {
+        val s =
+            compile(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = EXNESS:XAUUSD EVERY 1m WARMUP 3 BARS
+                RULES
+                  WHEN ema(g.close, 3) > g.close THEN FLATTEN
+                """.trimIndent(),
+            )
+        val hub = CandleHub()
+        val key = s.declaredStreams.values.single()
+        hub.register(key, retention = 10, strategyId = "test")
+        hub.seed(key, (0..2).map { candle("EXNESS:XAUUSD", it * 60_000L, "100") })
+        val received = mutableListOf<Signal>()
+        s.bindToHub(hub, testStrategyContext()) { received += it }
+
+        hub.feed(com.qkt.marketdata.Tick("EXNESS:XAUUSD", BigDecimal("90"), 3 * 60_000L))
+        hub.feed(com.qkt.marketdata.Tick("EXNESS:XAUUSD", BigDecimal("90"), 4 * 60_000L))
+
+        assertThat(received).isNotEmpty()
+    }
+
+    @Test
     fun `multi-stream DSL strategy produces per-stream warmup specs at distinct windows`() {
         val s =
             compile(

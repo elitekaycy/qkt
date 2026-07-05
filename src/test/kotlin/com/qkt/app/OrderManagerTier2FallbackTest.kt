@@ -1,7 +1,10 @@
 package com.qkt.app
 
+import com.qkt.broker.Broker
 import com.qkt.broker.FakeBroker
+import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
+import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -189,5 +192,58 @@ class OrderManagerTier2FallbackTest {
         bus.publish(TickEvent(Tick("EURUSD", Money.of("1.080"), 2L)))
 
         assertThat(broker.submits).hasSize(1)
+    }
+
+    @Test
+    fun `trigger snapshot does not submit an order cancelled by an earlier trigger`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val submitted = mutableListOf<String>()
+        lateinit var om: OrderManager
+        val broker =
+            object : Broker {
+                override val name = "cancelling"
+                override val capabilities = tier1Only
+
+                override fun submit(request: OrderRequest): SubmitAck {
+                    submitted += request.id
+                    if (request.id == "first") om.cancel("second")
+                    return SubmitAck(request.id, request.id, accepted = true)
+                }
+
+                override fun cancel(orderId: String) {
+                    bus.publish(
+                        com.qkt.events.BrokerEvent.OrderCancelled(
+                            clientOrderId = orderId,
+                            brokerOrderId = orderId,
+                            reason = "sibling resolved",
+                            timestamp = clock.now(),
+                        ),
+                    )
+                }
+
+                override fun modify(
+                    orderId: String,
+                    changes: OrderModification,
+                ) = SubmitAck(orderId, orderId, accepted = false)
+            }
+        om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        for (id in listOf("first", "second")) {
+            om.submit(
+                OrderRequest.Stop(
+                    id = id,
+                    symbol = "EURUSD",
+                    side = Side.SELL,
+                    quantity = Money.of("1"),
+                    stopPrice = Money.of("1.09"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+        }
+
+        bus.publish(TickEvent(Tick("EURUSD", Money.of("1.08"), 1L)))
+
+        assertThat(submitted).containsExactly("first")
     }
 }

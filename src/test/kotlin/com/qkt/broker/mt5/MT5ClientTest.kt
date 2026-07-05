@@ -53,6 +53,8 @@ class MT5ClientTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/order")
         assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.getHeader("Idempotency-Key")).isEqualTo("ord-1")
+        assertThat(recorded.body.readUtf8()).contains("\"client_order_id\":\"ord-1\"")
     }
 
     @Test
@@ -167,7 +169,7 @@ class MT5ClientTest {
         )
         val body = server.takeRequest().body.readUtf8()
         assertThat(body).contains("\"comment\":\"${longId.take(MT5_COMMENT_MAX_LENGTH)}\"")
-        assertThat(body).doesNotContain(longId)
+        assertThat(body).contains("\"client_order_id\":\"$longId\"")
     }
 
     @Test
@@ -193,9 +195,8 @@ class MT5ClientTest {
     }
 
     @Test
-    fun `getPositions parses list and applies tz offset`() {
+    fun `getPositions preserves raw UTC epoch time_msc`() {
         val serverEpochMs = 1_700_000_000_000L
-        val expectedUtcMs = serverEpochMs - 2L * 3600L * 1000L
         server.enqueue(
             MockResponse().setBody(
                 """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$serverEpochMs,"comment":"x"}]""",
@@ -204,10 +205,20 @@ class MT5ClientTest {
         val positions = client.getPositions(magic = 10001)!!
         assertThat(positions).hasSize(1)
         assertThat(positions[0].ticket).isEqualTo(1L)
-        assertThat(positions[0].openTime).isEqualTo(expectedUtcMs)
+        assertThat(positions[0].openTime).isEqualTo(serverEpochMs)
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/get_positions?magic=10001")
         assertThat(recorded.method).isEqualTo("GET")
+    }
+
+    @Test
+    fun `getPositions accepts the current data envelope`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ok":true,"data":[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":1700000000000,"comment":"x"}]}""",
+            ),
+        )
+        assertThat(client.getPositions()).hasSize(1)
     }
 
     @Test
@@ -247,7 +258,7 @@ class MT5ClientTest {
     }
 
     @Test
-    fun `getTick hits symbol_info_tick and applies tz offset`() {
+    fun `getTick hits symbol_info_tick and preserves epoch time`() {
         val serverEpochMs = 1_700_000_000L
         server.enqueue(
             MockResponse().setBody(
@@ -257,14 +268,16 @@ class MT5ClientTest {
         val tick = client.getTick("XAUUSDm")!!
         assertThat(tick.bid).isEqualByComparingTo("4561.510")
         assertThat(tick.ask).isEqualByComparingTo("4561.818")
+        assertThat(tick.time).isEqualTo(serverEpochMs)
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/symbol_info_tick/XAUUSDm")
     }
 
     @Test
     fun `isReady returns true on 200`() {
-        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"ok"}"""))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"ready","ok":true}"""))
         assertThat(client.isReady()).isTrue
+        assertThat(server.takeRequest().path).isEqualTo("/health/ready")
     }
 
     @Test
@@ -294,6 +307,26 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `getPendingOrders parses the current data envelope`() {
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":[$pendingOrderJson]}"""))
+        assertThat(client.getPendingOrders()).hasSize(1)
+    }
+
+    @Test
+    fun `configured api key authenticates readiness and data requests`() {
+        client =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                tzOffsetHours = 0,
+                retryAttempts = 0,
+                apiKey = "secret-token",
+            )
+        server.enqueue(MockResponse().setBody("""{"status":"ready"}"""))
+        assertThat(client.isReady()).isTrue
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer secret-token")
+    }
+
+    @Test
     fun `getPendingOrders returns empty for an object without orders`() {
         server.enqueue(MockResponse().setBody("""{"total":0}"""))
         assertThat(client.getPendingOrders(magic = 10001)).isEmpty()
@@ -314,7 +347,7 @@ class MT5ClientTest {
         server.enqueue(
             MockResponse().setBody(
                 """{"ask":4561.818,"bid":4561.51,"digits":3,"point":0.001,""" +
-                    """"trade_stops_level":0,"volume_min":0.01,"volume_step":0.01,""" +
+                    """"trade_stops_level":0,"trade_freeze_level":25,"volume_min":0.01,"volume_step":0.01,""" +
                     """"trade_contract_size":100.0}""",
             ),
         )
@@ -323,6 +356,7 @@ class MT5ClientTest {
         assertThat(info.volumeMin).isEqualByComparingTo("0.01")
         assertThat(info.point).isEqualByComparingTo("0.001")
         assertThat(info.digits).isEqualTo(3)
+        assertThat(info.tradeFreezeLevel).isEqualTo(25)
         assertThat(info.contractSize).isEqualByComparingTo("100")
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/symbol_info/XAUUSDm")
@@ -489,8 +523,7 @@ class MT5ClientTest {
         assertThat(opened.entry).isEqualTo(0)
         assertThat(opened.volume).isEqualByComparingTo("0.01")
         assertThat(opened.price).isEqualByComparingTo("2300.5")
-        // time_msc is venue-clock millis; the client shifts it back to UTC (tz offset 2h).
-        assertThat(opened.timeMs).isEqualTo(1_700_040_000_000L - 2L * 3600L * 1000L)
+        assertThat(opened.timeMs).isEqualTo(1_700_040_000_000L)
         val closed = deals[1]
         assertThat(closed.entry).isEqualTo(1)
         assertThat(closed.profit).isEqualByComparingTo("9.7")
@@ -499,7 +532,7 @@ class MT5ClientTest {
         assertThat(closed.fee).isEqualByComparingTo("0")
         assertThat(closed.magic).isEqualTo(10001)
         assertThat(closed.comment).isEqualTo("dsl-hedge_straddle")
-        assertThat(closed.timeMs).isEqualTo(1_700_050_000_000L - 2L * 3600L * 1000L)
+        assertThat(closed.timeMs).isEqualTo(1_700_050_000_000L)
         val recorded = server.takeRequest()
         assertThat(recorded.method).isEqualTo("GET")
         // Range bounds go on the wire as venue-clock ISO instants (UTC + 2h offset).

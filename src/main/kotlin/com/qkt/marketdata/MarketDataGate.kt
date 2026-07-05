@@ -29,8 +29,23 @@ class MarketDataGate(
     private class SymbolState {
         var lastSeenMs: Long = 0L
         var ewmaGapMs: Double = 0.0
-        val window = ArrayDeque<Double>()
+
+        // Primitive ring of the last WINDOW_SIZE prices, oldest at [windowHead] — the boxed
+        // ArrayDeque<Double> allocated a wrapper per tick on the live hot path.
+        val window = DoubleArray(WINDOW_SIZE)
+        var windowHead = 0
+        var windowSize = 0
         var staleAlerted = false
+
+        fun push(price: Double) {
+            if (windowSize < WINDOW_SIZE) {
+                window[(windowHead + windowSize) % WINDOW_SIZE] = price
+                windowSize++
+            } else {
+                window[windowHead] = price
+                windowHead = (windowHead + 1) % WINDOW_SIZE
+            }
+        }
     }
 
     private val bySymbol: MutableMap<String, SymbolState> = ConcurrentHashMap()
@@ -67,8 +82,7 @@ class MarketDataGate(
         }
 
         touch(state, now)
-        state.window.addLast(price)
-        while (state.window.size > WINDOW_SIZE) state.window.removeFirst()
+        state.push(price)
         if (state.staleAlerted) {
             state.staleAlerted = false
             log.info("market data for {} healthy again", tick.symbol)
@@ -92,10 +106,21 @@ class MarketDataGate(
         state: SymbolState,
         price: Double,
     ): Boolean {
+        val n = state.windowSize
+        if (n < MIN_WINDOW_FOR_OUTLIER) return false
+        // Two passes in oldest-to-newest order, matching the deque version's summation order
+        // exactly so the double math is unchanged.
         val window = state.window
-        if (window.size < MIN_WINDOW_FOR_OUTLIER) return false
-        val mean = window.sum() / window.size
-        val variance = window.sumOf { (it - mean) * (it - mean) } / window.size
+        val head = state.windowHead
+        var sum = 0.0
+        for (k in 0 until n) sum += window[(head + k) % WINDOW_SIZE]
+        val mean = sum / n
+        var ssd = 0.0
+        for (k in 0 until n) {
+            val d = window[(head + k) % WINDOW_SIZE] - mean
+            ssd += d * d
+        }
+        val variance = ssd / n
         val sigma = kotlin.math.sqrt(variance)
         // A flat window (sigma ~ 0) cannot judge deviation meaningfully — use a small
         // relative floor so a constant-price series doesn't flag the first real move.

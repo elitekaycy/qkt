@@ -1,0 +1,3 @@
+# Additions applied after the complete mt5 project template.
+.github/workflows/deploy.yml.tmpl
+DEPLOYMENT.md.tmpl

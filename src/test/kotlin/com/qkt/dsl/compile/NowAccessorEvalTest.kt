@@ -19,7 +19,10 @@ class NowAccessorEvalTest {
             .parse("2026-05-11T13:45:00Z")
             .toEpochMilli()
 
-    private fun ec(clock: FixedClock): EvalContext =
+    private fun ec(
+        clock: FixedClock,
+        evaluationTimeMs: Long? = null,
+    ): EvalContext =
         EvalContext(
             candle =
                 Candle(
@@ -35,11 +38,20 @@ class NowAccessorEvalTest {
             streams = emptyMap(),
             lets = emptyMap(),
             strategyContext = testStrategyContext(clock = clock),
+            evaluationTimeMs = evaluationTimeMs,
         )
 
     @Test
     fun `NOW hour_utc returns the UTC hour from FixedClock`() {
         val ctx = ec(FixedClock(time = mondayMs))
+        val compiled = ExprCompiler().compile(NowAccessor(NowField.HOUR_UTC))
+        assertThat((compiled.evaluate(ctx) as Value.Num).v).isEqualByComparingTo("13")
+    }
+
+    @Test
+    fun `bar event time overrides a later flush clock`() {
+        val later = FixedClock(time = mondayMs + 12 * 3_600_000L)
+        val ctx = ec(later, evaluationTimeMs = mondayMs)
         val compiled = ExprCompiler().compile(NowAccessor(NowField.HOUR_UTC))
         assertThat((compiled.evaluate(ctx) as Value.Num).v).isEqualByComparingTo("13")
     }

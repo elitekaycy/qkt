@@ -15,6 +15,13 @@ class SweepCommand(
     private val fetcherOverride: DataFetcher? = null,
 ) {
     fun run(): Int {
+        if (args.flag("tick-fills")) {
+            System.err.println(
+                "qkt: error: --tick-fills is not supported by sweep fan-out; " +
+                    "run a single backtest until resolved-feed fan-out is wired",
+            )
+            return ExitCodes.USER_ERROR
+        }
         val file = args.requirePositional(0, "<strategy.qkt>")
         val path = Path.of(file)
         if (!Files.exists(path)) {

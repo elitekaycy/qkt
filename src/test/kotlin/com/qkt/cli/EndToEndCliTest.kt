@@ -76,6 +76,7 @@ class EndToEndCliTest {
                 "2024-01-16",
                 "--data-root",
                 "src/test/resources/cli/data",
+                "--allow-incomplete",
             )
         assertThat(code).withFailMessage("stderr=$stderr").isEqualTo(ExitCodes.SUCCESS)
         assertThat(stdout).contains("Trades:")

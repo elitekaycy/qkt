@@ -1,9 +1,11 @@
 package com.qkt.marketdata
 
+import com.qkt.common.Money
 import java.io.OutputStreamWriter
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.GZIPOutputStream
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -55,5 +57,24 @@ class BinaryTickParityTest {
         val viaBin = drain(BinaryTickFeed(bin))
 
         assertEquals(viaCsv, viaBin)
+    }
+
+    @Test
+    fun `binary feed drops a crossed quote and continues`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("crossed.bin")
+        BinaryTickWriter().write(
+            file,
+            "X",
+            listOf(
+                Tick("X", Money.of("100"), 1L, bid = Money.of("101"), ask = Money.of("99")),
+                Tick("X", Money.of("100"), 2L, bid = Money.of("99"), ask = Money.of("101")),
+            ),
+        )
+        BinaryTickFeed(file).use { feed ->
+            assertThat(feed.next()!!.timestamp).isEqualTo(2L)
+            assertThat(feed.droppedCrossedQuotes).isEqualTo(1L)
+        }
     }
 }

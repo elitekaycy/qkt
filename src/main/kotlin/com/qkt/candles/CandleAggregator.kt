@@ -21,6 +21,9 @@ class CandleAggregator private constructor(
     )
 
     private val open = mutableMapOf<String, MutableCandle>()
+    private val lastClosedEnd = mutableMapOf<String, Long>()
+    var droppedLateTicks: Long = 0
+        private set
 
     init {
         bus?.subscribe<TickEvent> { event -> onTick(event.tick) }
@@ -28,13 +31,23 @@ class CandleAggregator private constructor(
     }
 
     fun onTick(tick: Tick) {
+        // A heartbeat can close a window while older ticks remain queued. Never reopen
+        // or mutate an already-emitted window: doing so double-feeds every indicator.
+        if (tick.timestamp < (lastClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {
+            droppedLateTicks++
+            return
+        }
         val state = open[tick.symbol]
         if (state == null) {
             open[tick.symbol] = newState(tick)
             return
         }
+        if (tick.timestamp < state.startTime) {
+            droppedLateTicks++
+            return
+        }
         if (tick.timestamp >= state.endTime) {
-            emit(state.toCandle())
+            emitClosed(state)
             open[tick.symbol] = newState(tick)
             return
         }
@@ -54,10 +67,15 @@ class CandleAggregator private constructor(
         while (it.hasNext()) {
             val (_, state) = it.next()
             if (nowMs >= state.endTime) {
-                emit(state.toCandle())
+                emitClosed(state)
                 it.remove()
             }
         }
+    }
+
+    private fun emitClosed(state: MutableCandle) {
+        emit(state.toCandle())
+        lastClosedEnd[state.symbol] = state.endTime
     }
 
     private fun newState(tick: Tick): MutableCandle {

@@ -24,7 +24,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 
 | Command | What it does |
 |---|---|
-| `qkt create template <path> [--kind mt5\|minimal]` | Scaffold a new qkt project tree (compose + Makefile + sample strategy). Default kind is `mt5`. See [Scaffold a project](../get-started/scaffold.md). |
+| `qkt create template <path> [--kind mt5\|mt5-ci\|backtest\|portfolio\|minimal\|bybit]` | Scaffold a deployable or research project tree. Default kind is `mt5`. See [Scaffold a project](../get-started/scaffold.md). |
 
 ## Strategy authoring
 

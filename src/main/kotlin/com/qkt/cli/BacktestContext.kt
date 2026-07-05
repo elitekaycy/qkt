@@ -282,23 +282,33 @@ class BacktestContext private constructor(
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
-                val provisionStreams =
+                val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (_, bare) -> DukascopyInstrument.ofOrNull(bare) != null }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
+                val (fetchableStreams, validateOnlyStreams) =
+                    allProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
                 // completeness validation: it would otherwise scan the tick store and warn on holiday
                 // holes the bar run doesn't care about (pure waste + log noise every gate run).
-                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && allProvisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
-                        streams = provisionStreams,
+                        streams = fetchableStreams,
                         from = provisionFrom,
                         to = provisionTo,
                         fetchEnabled = !noFetch,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { defaultCalendars().calendarFor(it) },
+                    )
+                    BacktestDataProvisioner(store).ensure(
+                        streams = validateOnlyStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = false,
                         allowIncomplete = args.flag("allow-incomplete"),
                         calendarFor = { defaultCalendars().calendarFor(it) },
                     )
@@ -336,6 +346,20 @@ class BacktestContext private constructor(
             val tickFills = args.flag("tick-fills")
             require(!tickFills || forceBars) {
                 "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
+            }
+            require(!tickFills || executionConfig.latencyMs == 0L) {
+                "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
+                    "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
+            }
+            require(
+                !tickFills ||
+                    ast.streams
+                        .map { it.timeframe }
+                        .distinct()
+                        .size <= 1,
+            ) {
+                "--tick-fills is not valid for mixed-timeframe strategies: a finer-stream close can place " +
+                    "a cross-symbol order after the other symbol's bar was already resolved"
             }
             val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
             val finestDeclared: Map<String, TimeWindow> =
@@ -376,16 +400,36 @@ class BacktestContext private constructor(
             if (forceBars) {
                 val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                val days = generateSequence(fromDay) { it.plusDays(1) }.takeWhile { !it.isAfter(toDay) }.toList()
                 for (sym in symbols) {
                     val tf = barWindows[sym] ?: candleWindow ?: continue
                     val (broker, bare) = brokerAndBare(sym)
-                    if (days.none { binaryBarStore.hasDay(broker, bare, tf, it) }) {
-                        throw SetupError(
-                            "--bars: no built bars usable for $sym (need a built tf that divides " +
-                                "${tf.canonicalSpec()}); run: qkt data build-bars $bare --tf 1m " +
-                                "--from $fromDay --to ${toDay.plusDays(1)}",
+                    val coverage =
+                        com.qkt.marketdata.store.BarCompletenessValidator.validate(
+                            binaryBarStore,
+                            broker,
+                            bare,
+                            tf,
+                            fromDay,
+                            toDay,
+                            defaultCalendars().calendarFor(bare),
                         )
+                    System.err.println(
+                        "qkt: bar coverage $sym ${coverage.coveredTradingDays}/${coverage.requestedTradingDays} " +
+                            "trading days (${tf.canonicalSpec()})",
+                    )
+                    if (coverage.missingDays.isNotEmpty()) {
+                        val message =
+                            "--bars: incomplete built bars for $sym: ${coverage.coveredTradingDays}/" +
+                                "${coverage.requestedTradingDays} trading days; missing " +
+                                coverage.missingDays.joinToString(",") +
+                                ". Run: qkt data build-bars $bare --tf ${tf.canonicalSpec()} " +
+                                "--from $fromDay --to ${toDay.plusDays(1)}"
+                        if (!args.flag("allow-incomplete")) {
+                            throw com.qkt.backtest.IncompleteDataException(
+                                "$message\n  re-run with --allow-incomplete to proceed anyway",
+                            )
+                        }
+                        System.err.println("qkt: WARNING — $message")
                     }
                 }
                 System.err.println("qkt: --bars research tier — bar-approximated intrabar fills; not for grading")
@@ -426,6 +470,32 @@ class BacktestContext private constructor(
             compiled: com.qkt.dsl.portfolio.PortfolioCompiled,
             fetcherOverride: DataFetcher? = null,
         ): BacktestContext {
+            val hasRegimeGates =
+                compiled.ast.rules.any { it is com.qkt.dsl.ast.WhenRun }
+            val hasAllocatedCapital = compiled.ast.capital != null
+            if (hasRegimeGates || hasAllocatedCapital) {
+                throw SetupError(
+                    "portfolio backtest cannot truthfully model " +
+                        listOfNotNull(
+                            "WHEN..RUN gates".takeIf { hasRegimeGates },
+                            "CAPITAL/WEIGHT allocation".takeIf { hasAllocatedCapital },
+                        ).joinToString(" and ") +
+                        " with the live per-child topology; refusing a misleading result",
+                )
+            }
+            val unsupportedBarsFlag =
+                when {
+                    args.flag("bars") -> "--bars"
+                    args.option("bar-tf") != null -> "--bar-tf"
+                    args.flag("tick-fills") -> "--tick-fills"
+                    else -> null
+                }
+            if (unsupportedBarsFlag != null) {
+                throw SetupError(
+                    "$unsupportedBarsFlag is not supported for portfolio backtests; " +
+                        "run the validated full-tick tier until portfolio bar replay is wired",
+                )
+            }
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
             val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
@@ -485,21 +555,30 @@ class BacktestContext private constructor(
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
-                val provisionStreams =
+                val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (_, bare) -> DukascopyInstrument.ofOrNull(bare) != null }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
+                val (fetchableStreams, validateOnlyStreams) =
+                    allProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                // --bars never reads ticks; skip tick fetch + completeness validation (see build()).
-                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && provisionStreams.isNotEmpty()) {
+                if (!provisionTo.isBefore(provisionFrom) && allProvisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
-                        streams = provisionStreams,
+                        streams = fetchableStreams,
                         from = provisionFrom,
                         to = provisionTo,
                         fetchEnabled = !noFetch,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { defaultCalendars().calendarFor(it) },
+                    )
+                    BacktestDataProvisioner(store).ensure(
+                        streams = validateOnlyStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = false,
                         allowIncomplete = args.flag("allow-incomplete"),
                         calendarFor = { defaultCalendars().calendarFor(it) },
                     )

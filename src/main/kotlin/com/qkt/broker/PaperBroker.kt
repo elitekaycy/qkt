@@ -47,6 +47,12 @@ class PaperBroker(
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
+    private val lastTickTimestampBySymbol: MutableMap<String, Long> = mutableMapOf()
+
+    // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
+    // Shareable because the broker is single-threaded and fill callbacks never re-enter onTick.
+    private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
+    private val gtdExpiredScratch: MutableList<OrderRequest> = mutableListOf()
 
     init {
         bus.subscribe<TickEvent> { e -> onTick(e.tick) }
@@ -106,11 +112,51 @@ class PaperBroker(
     }
 
     fun onTick(tick: Tick) {
+        val previousTimestamp = lastTickTimestampBySymbol.put(tick.symbol, tick.timestamp)
         if (working.isEmpty()) return
-        val toFill = working.filter { req -> req.symbol == tick.symbol && checkTrigger(req, tick) }
-        for (wo in toFill) {
-            working.remove(wo)
-            fillFromTrigger(wo, tick.price)
+        expireGtd(tick)
+        if (working.isEmpty()) return
+        // BarTickFeed closes a bar at endTime-1 and opens the next contiguous bar at endTime.
+        // A larger timestamp jump therefore identifies a session/data gap. Stops that gap
+        // through their level fill at the adverse opening print, not optimistically at the level.
+        val isGapOpen =
+            fillAtTriggerPrice &&
+                previousTimestamp != null &&
+                tick.timestamp > previousTimestamp + 1
+        toFillScratch.clear()
+        for (i in working.indices) {
+            val req = working[i]
+            if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
+        }
+        for (i in toFillScratch.indices) {
+            val wo = toFillScratch[i]
+            // A synchronous fill callback may cancel an OCO sibling that is also present in
+            // this tick's trigger snapshot. Never fill an order that is no longer working.
+            if (!working.remove(wo)) continue
+            fillFromTrigger(wo, tick, isGapOpen)
+        }
+    }
+
+    private fun expireGtd(tick: Tick) {
+        gtdExpiredScratch.clear()
+        for (i in working.indices) {
+            val request = working[i]
+            if (request.symbol != tick.symbol) continue
+            val expiresAt = request.expiresAt ?: continue
+            if (tick.timestamp >= expiresAt) gtdExpiredScratch.add(request)
+        }
+        for (i in gtdExpiredScratch.indices) {
+            val request = gtdExpiredScratch[i]
+            if (!working.remove(request)) continue
+            bus.publish(
+                BrokerEvent.OrderCancelled(
+                    clientOrderId = request.id,
+                    brokerOrderId = request.id,
+                    reason = "GTD expired",
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
         }
     }
 
@@ -133,25 +179,88 @@ class PaperBroker(
 
     private fun fillFromTrigger(
         req: OrderRequest,
-        tickPrice: BigDecimal,
+        tick: Tick,
+        isGapOpen: Boolean,
     ) {
+        if (req is OrderRequest.StopLimit) {
+            activateLimit(
+                OrderRequest.Limit(
+                    id = req.id,
+                    symbol = req.symbol,
+                    side = req.side,
+                    quantity = req.quantity,
+                    limitPrice = req.limitPrice,
+                    timeInForce = req.timeInForce,
+                    timestamp = req.timestamp,
+                    strategyId = req.strategyId,
+                    expiresAt = req.expiresAt,
+                ),
+                tick,
+            )
+            return
+        }
+        if (req is OrderRequest.IfTouched && req.onTrigger == TriggerType.LIMIT) {
+            activateLimit(
+                OrderRequest.Limit(
+                    id = req.id,
+                    symbol = req.symbol,
+                    side = req.side,
+                    quantity = req.quantity,
+                    limitPrice = requireNotNull(req.limitPrice),
+                    timeInForce = req.timeInForce,
+                    timestamp = req.timestamp,
+                    strategyId = req.strategyId,
+                    expiresAt = req.expiresAt,
+                ),
+                tick,
+            )
+            return
+        }
+        val tickPrice = tick.price
         val (fillPrice, side, qty) =
             when (req) {
                 is OrderRequest.Limit ->
                     Triple(if (fillAtTriggerPrice) req.limitPrice else tickPrice, req.side, req.quantity)
                 is OrderRequest.Stop ->
-                    Triple(if (fillAtTriggerPrice) req.stopPrice else tickPrice, req.side, req.quantity)
-                is OrderRequest.StopLimit -> Triple(req.limitPrice, req.side, req.quantity)
+                    Triple(
+                        if (fillAtTriggerPrice && !isGapOpen) req.stopPrice else tickPrice,
+                        req.side,
+                        req.quantity,
+                    )
                 is OrderRequest.IfTouched ->
-                    if (req.onTrigger == TriggerType.MARKET) {
-                        Triple(if (fillAtTriggerPrice) req.triggerPrice else tickPrice, req.side, req.quantity)
-                    } else {
-                        Triple(req.limitPrice!!, req.side, req.quantity)
-                    }
+                    Triple(if (fillAtTriggerPrice) req.triggerPrice else tickPrice, req.side, req.quantity)
                 is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
+                is OrderRequest.StopLimit -> error("StopLimit should activate a Limit")
                 else -> error("PaperBroker fillFromTrigger received unexpected type: ${req::class.simpleName}")
             }
         publishFill(req.id, req.symbol, side, fillPrice, qty, req.strategyId)
+    }
+
+    private fun activateLimit(
+        limit: OrderRequest.Limit,
+        tick: Tick,
+    ) {
+        if (checkTrigger(limit, tick)) {
+            val execution = if (limit.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
+            val fillPrice =
+                if (fillAtTriggerPrice) {
+                    limit.limitPrice
+                } else if (limit.side == Side.BUY) {
+                    execution.min(limit.limitPrice)
+                } else {
+                    execution.max(limit.limitPrice)
+                }
+            publishFill(
+                limit.id,
+                limit.symbol,
+                limit.side,
+                fillPrice,
+                limit.quantity,
+                limit.strategyId,
+            )
+        } else {
+            working.add(limit)
+        }
     }
 
     private fun publishFill(

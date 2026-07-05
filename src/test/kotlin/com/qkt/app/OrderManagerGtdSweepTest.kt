@@ -4,6 +4,7 @@ import com.qkt.broker.Broker
 import com.qkt.broker.FakeBroker
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
+import com.qkt.broker.PaperBroker
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
@@ -103,5 +104,50 @@ class OrderManagerGtdSweepTest {
         om.submit(pendingLimit(expiresAt = null))
         bus.publish(TickEvent(Tick("X", BigDecimal("100"), 9_999_999L)))
         assertThat(cancellations).isEmpty()
+    }
+
+    @Test
+    fun `deadline wins when a broker-held order is touched at the deadline instant`() {
+        val clock = FixedClock(1_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val broker = PaperBroker(bus, clock, MarketPriceTracker())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val cancellations = mutableListOf<BrokerEvent.OrderCancelled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { cancellations.add(it) }
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        om.submit(pendingLimit(expiresAt = 2_000L))
+
+        clock.time = 2_000L
+        bus.publish(TickEvent(Tick("X", BigDecimal("99"), 2_000L)))
+
+        assertThat(fills).isEmpty()
+        assertThat(cancellations.map { it.clientOrderId }).containsExactly("ord-1")
+    }
+
+    @Test
+    fun `deadline wins when an engine-held order is touched at the deadline instant`() {
+        val clock = FixedClock(1_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        om.submit(
+            OrderRequest.Stop(
+                id = "ord-1",
+                symbol = "X",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("99"),
+                timeInForce = TimeInForce.GTD,
+                timestamp = 0L,
+                expiresAt = 2_000L,
+            ),
+        )
+
+        clock.time = 2_000L
+        bus.publish(TickEvent(Tick("X", BigDecimal("98"), 2_000L)))
+
+        assertThat(broker.submits).isEmpty()
+        assertThat(om.getOrder("ord-1")).isNull()
     }
 }

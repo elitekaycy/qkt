@@ -47,7 +47,6 @@ import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.windowMs
 import java.time.Duration
 import java.time.Instant
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -81,6 +80,7 @@ class LiveSession(
     private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
     private val onSignal: (Signal) -> Unit = {},
     private val gate: () -> Boolean = { true },
+    private val bookRiskController: com.qkt.risk.book.BookRiskController? = null,
     private val brokerFactories: Map<String, BrokerFactory> = emptyMap(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /**
@@ -430,7 +430,11 @@ class LiveSession(
                 com.qkt.marketdata.source.SymbolPattern
                     .exactSet(syms.toSet()) to instance
             }
-        return CompositeBroker(routes = routes, fallback = paperBroker, bus = bus)
+        // A configured live session must fail closed. Any symbol outside the declared route set
+        // is a typo, stale profile, or incomplete deployment — paper-filling it creates a phantom
+        // position that exists only inside qkt. Explicit paper sessions returned above still use
+        // PaperBroker directly.
+        return CompositeBroker(routes = routes, fallback = null, bus = bus)
     }
 
     /**
@@ -453,7 +457,13 @@ class LiveSession(
         }
     }
 
-    /** Every order-lifecycle event lands in the append-only journal, in bus order. */
+    /**
+     * Every order-lifecycle event lands in the append-only journal, in bus order.
+     *
+     * An [com.qkt.events.OrderEvent] only exists because risk approved the request, so the
+     * submit path writes ONE `"submit"` line with `"approved":"true"` instead of separate
+     * `risk-approved` + `submit` lines — one durable write per submit, not two (#648).
+     */
     private fun wireJournal(
         bus: EventBus,
         journal: com.qkt.observe.OrderJournal,
@@ -468,11 +478,10 @@ class LiveSession(
             )
 
         bus.subscribe<com.qkt.events.OrderEvent> { e ->
-            journal.append(e.request.strategyId, "risk-approved", orderFields(e.request))
             journal.append(
                 e.request.strategyId,
                 "submit",
-                orderFields(e.request),
+                orderFields(e.request) + ("approved" to "true"),
             )
         }
         bus.subscribe<BrokerEvent.OrderAccepted> { e ->
@@ -877,13 +886,19 @@ class LiveSession(
         val riskEngine =
             RiskEngine(
                 rules + perStrategyRiskRules + preTradeRules + marginRules + measuredRules +
+                    listOfNotNull(
+                        bookRiskController?.let {
+                            com.qkt.risk.rules
+                                .BookExposureLimit(it, priceTracker, instruments)
+                        },
+                    ) +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
                 haltRules + perStrategyHaltRules,
                 positions,
                 riskState,
             )
 
-        val trades: MutableList<Trade> = CopyOnWriteArrayList()
+        val trades = RecentTrades()
 
         val pipelineCandleHub =
             candleHub ?: com.qkt.dsl.compile
@@ -949,6 +964,7 @@ class LiveSession(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: java.math.BigDecimal.ONE },
                 mode = Mode.LIVE,
                 calendar = calendar,
                 source = source,
@@ -1171,6 +1187,9 @@ class LiveSession(
                     Thread.currentThread().interrupt()
                 } finally {
                     running.set(false)
+                    // Journal appends run on this thread (bus dispatch), so its channels
+                    // close here — the last event is already durable when we count down.
+                    runCatching { journal?.close() }
                     terminated.countDown()
                     if (mdcStrategy != null) org.slf4j.MDC.remove("strategy")
                 }
@@ -1338,7 +1357,7 @@ class LiveSession(
             override fun awaitTermination(timeout: Duration): Boolean =
                 terminated.await(timeout.toMillis(), TimeUnit.MILLISECONDS)
 
-            override fun recentTrades(): List<Trade> = trades.toList()
+            override fun recentTrades(): List<Trade> = trades.snapshot()
 
             override fun positionsFor(strategyId: String): List<com.qkt.positions.Position> =
                 strategyPositions.positionsFor(strategyId).values.toList()
@@ -1370,6 +1389,15 @@ class LiveSession(
                     realized = strategyPnL.realizedFor(strategyId),
                     unrealized = strategyPnL.unrealizedTotalFor(strategyId),
                 )
+
+            override fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> =
+                strategyPositions.positionsFor(strategyId).values.mapNotNull { position ->
+                    if (position.quantity.signum() == 0) return@mapNotNull null
+                    val price = priceTracker.lastPrice(position.symbol) ?: position.avgEntryPrice
+                    val contractSize = instruments.lookup(position.symbol)?.contractSize ?: java.math.BigDecimal.ONE
+                    com.qkt.risk.book
+                        .Leg(strategyId, position.symbol, position.quantity, price, contractSize)
+                }
 
             override fun halt(reason: String) {
                 riskState.halt(reason)

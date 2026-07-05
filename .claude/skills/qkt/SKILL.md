@@ -21,7 +21,7 @@ This skill is the source of truth for **how** we work in the qkt repository. The
 
 Weigh every change on five axes, not just "does it work". Most are enforced in detail elsewhere in this skill; this is the reminder to consider all five before calling work done.
 
-- **Best practices.** Default to the patterns already here — §7 invariants, §10 idioms, §11 testing. When no pattern fits, add the new one to this skill in the same PR rather than forking a parallel convention.
+- **Best practices.** Default to the patterns already here — §7 invariants, §9 hot-path rules, §11 idioms, §12 testing. When no pattern fits, add the new one to this skill in the same PR rather than forking a parallel convention.
 - **Scalability.** Hot-path cost scales with the *active working set*, not the historical total. Key per-tick/per-event scans by symbol or account; never iterate all orders to act on one. (cf. the symbol-keyed trigger scan and per-account sharding.)
 - **Efficiency.** No per-event allocation or O(n) rescans on the hot path. Precompute bindings, reuse buffers, prefer O(1) rolling state over recompute-from-scratch.
 - **Latency.** The hot path is tick → strategy → signal → order → broker. Keep blocking I/O and unbounded work off the consumer thread; order sends are async and the live engine is a single-consumer queue.
@@ -33,17 +33,14 @@ This is judgment, not a gate — a docs typo needs no latency analysis. But a ho
 
 ## 1. Phases
 
-Trading-engine work is structured in numbered phases. Each phase has its own spec and plan.
+Large trading-engine efforts are structured in numbered phases, each with its own spec and
+plan under `docs/superpowers/` and a changelog under `docs/phases/`. The authoritative list
+of shipped phases lives in `docs/backlog.md` (the table that used to sit here froze at
+Phase 5 while the repo passed Phase 30 — the backlog is maintained, this file was not).
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Core engine MVP — tick → strategy → signal → order → broker → trade | shipped |
-| 2 | Event bus, candle aggregator, multi-strategy support, SLF4J | planned |
-| 3 | Risk engine, position tracking, P&L, `BigDecimal` for prices | planned |
-| 4 | Backtest replay engine — deterministic execution against historical data | planned |
-| 5 | DSL — internal Kotlin DSL first, then external SQL-like parser | planned |
-
-Every PR title and body must reference the phase it contributes to (see PR template below). Cross-phase work is not normally permitted; if a Phase 2 PR touches Phase 1 code, justify it in the PR description.
+Not all work is phase-scoped: bug fixes, audit findings, and capability-gap batches are
+issue-driven (see the `issue-flow` skill) and carry no phase. A PR references whichever it
+belongs to — its phase, or its issue(s).
 
 ---
 
@@ -82,6 +79,16 @@ The pipeline is specified in
 ## 3. Commit conventions
 
 We use **Conventional Commits** with strict project rules.
+
+For routine commits, use the repository helper. It validates the branch,
+message, staged patch, and forbidden attribution before committing:
+
+```bash
+./scripts/agent-workflow.sh commit --message "fix(engine): reject invalid route"
+# Review the dry run, then repeat with --apply.
+```
+
+Use `./scripts/agent-workflow.sh status` for compact repository context.
 
 ### Format
 
@@ -174,13 +181,16 @@ Every PR has a title, a description following the template, and links to its spe
 
 Same format as a commit subject: `<type>(<scope>): <subject>`. Maximum 70 characters.
 
-Plus a phase prefix in brackets at the start: `[phase 2] feat(engine): add event bus`.
+Phase-scoped work adds a phase prefix in brackets: `[phase 2] feat(engine): add event bus`.
+Issue-driven work uses the plain conventional title and closes its issues from the body
+(`Closes #NN`).
 
 ### PR description template
 
 ```markdown
 ## Phase
-Phase <N>. Spec: <link to docs/superpowers/specs/...>. Plan: <link to docs/superpowers/plans/...>.
+Phase <N> with spec/plan links — or, for issue-driven work, the issue(s) this closes and
+the audit/backlog section they came from.
 
 ## Summary
 <1–3 sentences. The why.>
@@ -284,6 +294,38 @@ Things that must remain true regardless of phase. Violations require a design di
 - **No backwards compatibility cruft.** Phase 1 has no production users. We do not maintain compatibility shims, deprecated aliases, or transitional code paths. Refactors break things, and that's fine.
 - **Strategies do not see brokers.** A strategy that imports `com.qkt.broker.*` is a design bug. The dependency arrow goes one way only — see the architecture spec for each phase.
 
+The 2026-07-02 parity audit traced nearly every backtest↔live divergence to violations of
+four structural rules. They are invariants now:
+
+- **Mode symmetry is explicit, never accidental.** Backtest and live share one pipeline
+  (`TradingPipeline`); that symmetry is the parity contract. Any component wired in only
+  one mode — a subscriber, a risk rule, a config consumer — is a *declared divergence*:
+  wire it in both `LiveSession` and `ReplayEngine`, or add it to the divergence catalog
+  (`docs/parity/backtest-vs-live.md`) in the same PR, with the reason. A behavior that
+  exists in one assembly file and not the other is the single largest historical source
+  of parity bugs (a risk layer that only ran in backtest; a halt kill-switch that only
+  ran live). If you touch one wiring path, open the other and check.
+- **Translate at exactly one boundary per venue.** Each external system gets one
+  translation layer that owns units, volume quantization, time-base normalization, and
+  cost attachment — and each engine-facing event type is constructed in exactly one
+  function. Never normalize (or skip normalizing) at individual call sites: scattered
+  translation is how live fills booked unquantized volumes while the wire was quantized,
+  and how three code paths disagreed about whether `time_msc` is UTC. If an event can be
+  built in three places, one of them is wrong.
+- **One writer per derived quantity.** Equity, positions, realized PnL, marks: each is
+  computed by one service per event and read by everyone else. A consumer that recomputes
+  a quantity a tracker already owns will eventually disagree with it (and pay for the
+  recompute per tick — see §9).
+- **Lifecycles are sealed state machines; linkage lives in the type.** Where an execution
+  object has a lifecycle (order → bracket → exits, leg → close, trail arm → fire), model
+  the states as a sealed hierarchy and put the relationships in fields — a bracket whose
+  exit ids are fields cannot orphan its trail the way a side map someone forgot to write
+  can. Exhaustive `when` then forces every consumer to handle a new state at compile time.
+- **A claim without a test is unproven.** Any parity, fidelity, or byte-identical claim in
+  docs or KDoc must cite the test that enforces it. A doc row marked FIXED links its
+  regression test or reads UNPROVEN — the audit's most repeated finding was documentation
+  claims exceeding what any test actually pinned.
+
 ---
 
 ## 8. Quant-system principles (do / don't)
@@ -306,9 +348,103 @@ Things that must remain true regardless of phase. Violations require a design di
 - **Don't invent symbol formats.** Use whatever string the data feed produces. A symbol registry is a Phase 5+ concern.
 - **Don't introduce premature concurrency.** Phase 1 is single-threaded. Adding coroutines, channels, or threads is a phased decision, not a per-feature one.
 
+### Money, units, and null semantics — the consistency layer
+
+The mechanical conventions every function definition follows, so code from any contributor
+composes without subtle drift:
+
+- **Money math is `BigDecimal` through `Money.CONTEXT`, scaled at boundaries only.**
+  Every price/PnL arithmetic step passes `Money.CONTEXT`; `setScale(Money.SCALE,
+  Money.ROUNDING)` is applied where a value crosses a boundary (an event, persistence, a
+  report, a tracker's stored total) — never on intermediates, where repeated rounding
+  compounds into drift.
+- **Compare `BigDecimal` with `compareTo`/`signum()`, never `equals`.** `equals` is
+  scale-sensitive (`1.0 != 1.00`). Tests assert with `isEqualByComparingTo`. Zero checks
+  are `signum() == 0`, sign checks `signum() > 0` — not comparisons against a fresh
+  `BigDecimal.ZERO`.
+- **`Double` never touches money.** It is allowed only in explicitly non-monetary judgment
+  statistics (e.g. the market-data outlier gate) and reporting ratios, and the KDoc says so.
+- **Timestamps are UTC epoch millis, `Long`, named with an `Ms` suffix.** One time base per
+  component; venue time is normalized to UTC at the venue's translation boundary (§7),
+  never at call sites. `java.time` types appear at presentation edges only.
+- **Quantities carry their sign convention in the type.** Position legs are `Side` +
+  absolute quantity; net positions are signed quantity. Never infer side from a sign in
+  leg-land or carry `Side` alongside a signed value — pick the representation the
+  surrounding types already use.
+- **Execution decisions use sided prices; marks use mid.** BUY triggers/fills evaluate
+  against ask (`buyExecPrice()`), SELL against bid (`sellExecPrice()`); mid (`tick.price`)
+  is for indicator feeds and mark-to-market. A trigger checked on mid is a parity bug (A4).
+- **`null`/`Undefined` means "cannot compute" — never zero.** An indicator returns null
+  until genuinely ready (its `warmupBars` must reflect its true state horizon, not 1); a
+  rule reading `Undefined` does not fire; a broker that can't price returns rejection. The
+  moment "no data" silently becomes `0`, every downstream comparison lies.
+- **Functions take domain types, not primitives-in-trench-coats.** Pass `Side`, `HubKey`,
+  `TimeWindow`, `OrderRequest` — not a `String` that three call sites interpret three ways.
+  New shared vocabulary goes in the owning package, once, with KDoc.
+
 ---
 
-## 9. DSL principles (deferred to Phase 5; recorded so we don't drift)
+## 9. Hot-path performance (do / don't)
+
+The §0 posture in concrete form. The **hot path** is everything that runs per tick or per
+bar close: feed decode → `TradingPipeline.ingest` → bus dispatch → every `TickEvent`
+subscriber (broker fills, trigger scan, candle aggregation, strategy/DSL evaluation, risk +
+equity) plus the per-bar `updatePerAlias`/rule-firing pass. Everything else — config, deploy,
+reporting, teardown — is cold and exempt. A change is "in the hot path" if it adds work to
+any of those per-event flows, even indirectly (a new subscriber, a new field the fill handler
+computes, a new rule the risk engine walks).
+
+### Do
+
+- **Classify every new feature: hot or cold.** Cold features (a CLI command, a report
+  field, a deploy check) owe this section nothing further — say "cold path" in the PR's
+  Risk line and move on. A feature that adds per-event work states its cost in one
+  sentence: what runs per tick/bar, O(1) or O(n), and n = what. If the answer is "O(all
+  orders)" or "O(all strategies)", key it by symbol/account first (the working-set rule
+  from §0).
+- **Compute in `update()`, cache the read.** An indicator's `value()` is read once per
+  referencing expression node per bar — it must be a field read, never a recompute.
+  `SeasonalRangeStdev` is the canonical shape.
+- **Reuse scratch, precompute indexes, guard empty loops.** Per-tick `.filter{}`/`.map{}`/
+  `.toMap()`/`copy()` chains are the historical top allocator. Patterns to copy:
+  `OrderManager`'s cleared-per-pass scratch lists + `liveBySymbol`/`gtdLive` indexes,
+  `PaperBroker.toFillScratch`, `isEmpty()` early-returns before any iterator over a
+  usually-empty collection.
+- **Hoist what the compiler knows.** Literals, divisors (`BigDecimal(period)`), map keys, and
+  resolved lookups move out of compiled closures and per-event bodies into fields —
+  `ExprCompiler` literal hoisting and `Value.of` Bool singletons are the shape.
+- **Keep blocking I/O off the engine thread.** Disk goes through `AsyncStatePersistor` or a
+  held-open channel (`OrderJournal`); broker HTTP is async with results returning as bus
+  events (`placeOrderAsync` / `closePositionAsync` pattern); anything polled belongs on the
+  poller's thread, cached for the engine to read.
+- **Use integer time math on per-tick paths.** `Math.floorDiv(now, MS_PER_DAY)` and friends —
+  never an `Instant`→`ZonedDateTime`→`LocalDate` chain per tick (`DailyPnLTracker` pattern).
+  Full `java.time` is fine per bar close and colder.
+- **Profile before optimizing, then fix what the profile names.** JFR on a representative
+  backtest. Three campaigns of evidence say the cost is plumbing and allocation, not
+  BigDecimal math — assume the same until a profile says otherwise.
+- **Ship every hot-path change behind a byte-identical A/B** — same build, same harness, full
+  trade tape + metrics compared. Parity outranks speed, always. A fix that changes results is
+  a bug, not an optimization.
+
+### Don't
+
+- **Don't re-attempt the measured dead-ends** without new evidence: symbol→int interning,
+  query-time columnar decode (wash), `setScale` removal (not parity-safe), JNI/native math
+  (the hot path is object traversal, not a numeric kernel; boundary crossings lose), and
+  intra-run threading (breaks the determinism the parity contract stands on).
+- **Don't micro-optimize before the profile.** The measured speed levers, in order: fan-out
+  across cores (sweeps/scenarios sharing one decode), data tiering (`--bars` for ranking,
+  `--bars --tick-fills` for exact runs, full-tick for final), data layout (binary store,
+  mmap), and only then code micro-opt.
+- **Don't log per tick.** Cadence-gate it (first + every Nth) or guard the level; a per-tick
+  log line is never actionable.
+- **Don't trade readability for single-digit gains outside the hot path.** Cold code follows
+  §11 idioms, full stop.
+
+---
+
+## 10. DSL principles (deferred to Phase 5; recorded so we don't drift)
 
 - The DSL exists to compile into the same `Strategy` objects we hand-write today. There is no separate runtime for DSL strategies.
 - Internal Kotlin DSL first (`strategy { whenCondition { ema(9) > ema(21) }; buy("XAUUSD", 1.0) }`). External SQL-like parser only after the internal DSL stabilizes.
@@ -320,7 +456,7 @@ This section will grow when Phase 5 begins.
 
 ---
 
-## 10. Kotlin idioms (do / don't)
+## 11. Kotlin idioms (do / don't)
 
 ### Do
 
@@ -350,7 +486,7 @@ This section will grow when Phase 5 begins.
 
 ---
 
-## 11. Testing standards
+## 12. Testing standards
 
 - **Use real types.** No Mockito, no MockK, no test-doubles libraries. Anonymous objects (`object : Strategy { ... }`) and capture lists (`val captured = mutableListOf<Trade>()`) are sufficient.
 - **JUnit 5 + AssertJ.** No other frameworks until justified.
@@ -364,7 +500,7 @@ This section will grow when Phase 5 begins.
 
 ---
 
-## 12. Code style
+## 13. Code style
 
 - **File size: aim for under 150 lines per source file.** Tests may exceed by ~10% if the alternative is splitting a tightly coupled test class. Anything over 200 lines needs a refactor.
 - **One top-level concept per file** — exception: tightly coupled types like `MarketPriceProvider` (interface) + `MarketPriceTracker` (impl), or a sealed class with its variants.
@@ -374,9 +510,19 @@ This section will grow when Phase 5 begins.
 - **Comments.** Default to none. Only when the **why** is non-obvious — a workaround, a subtle invariant, a constraint that won't survive a casual reader. Never comment to describe what the next line of code does.
 - **No dead code.** Unused imports, unused functions, commented-out blocks all get deleted before commit. `git` remembers; the file shouldn't.
 
+### ktlint — clean from the first line, not fixed at the end
+
+ktlint is the enforced formatter for every `.kt` file (main and test). Ktlint-compliance is part of **done**, exactly like a passing test — not a cleanup pass afterward. Write it clean as you type; don't accumulate violations and reformat later.
+
+- **TDD loop is RED → GREEN → ktlint-clean → refactor.** When you write the failing test, write it ktlint-clean. When you write the passing code, write it ktlint-clean. A cycle isn't GREEN until both the assertion passes *and* ktlint is silent. Treat a ktlint violation the same as a failing test: fix it before moving on.
+- **The two commands.** `./gradlew ktlintFormat` auto-fixes what it can (import order, spacing, trailing commas, wildcard-import expansion); `./gradlew ktlintCheck` verifies and is what CI runs. Format, then check, as part of the same beat you run the test.
+- **Know the rules that bite before you write, so there's nothing to fix.** No wildcard imports; imports grouped and ordered; trailing commas on multi-line argument/parameter lists; 4-space indent, no tabs; max line length is enforced (wrap long signatures and string concatenations — see the `error("… " +` continuation style already in `IndicatorRegistry`/`ExprCompiler`); one blank line between declarations, none at file start/end; `*` in a `when`/expression spaced as an operator.
+- **CI gate.** `dev`'s essentials CI runs ktlint (see §2) — a violation red-fails the build the same as a compile error. There is no "reformat in a follow-up PR."
+- **Generated/vendored code** is the only exception, and it lives under an explicit ktlint exclude — never hand-disable a rule inline to dodge a violation in code you wrote.
+
 ---
 
-## 13. Living-document protocol
+## 14. Living-document protocol
 
 When this skill is wrong or incomplete:
 
