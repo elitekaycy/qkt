@@ -135,6 +135,36 @@ class EventBusTest {
     }
 
     @Test
+    fun `subscribeAll sees every stamped event after exact subscribers`() {
+        val bus = newBus()
+        val order = mutableListOf<String>()
+        val tapped = mutableListOf<Event>()
+        bus.subscribe<TickEvent> { order.add("exact:${it.sequenceId}") }
+        bus.subscribeAll {
+            order.add("tap:${it.sequenceId}")
+            tapped.add(it)
+        }
+
+        bus.publish(TickEvent(tick()))
+        bus.publish(SignalEvent(Signal.Buy("XAUUSD", Money.of("1"))))
+
+        assertThat(order).containsExactly("exact:0", "tap:0", "tap:1")
+        assertThat(tapped.map { it.sequenceId }).containsExactly(0L, 1L)
+    }
+
+    @Test
+    fun `subscribeAll failure does not fail publish or skip event subscribers`() {
+        val bus = newBus()
+        val received = mutableListOf<TickEvent>()
+        bus.subscribeAll { error("audit sink down") }
+        bus.subscribe<TickEvent> { received.add(it) }
+
+        bus.publish(TickEvent(tick()))
+
+        assertThat(received).hasSize(1)
+    }
+
+    @Test
     fun `multiple subscribers to same event run in registration order`() {
         val bus = newBus()
         val order = mutableListOf<String>()

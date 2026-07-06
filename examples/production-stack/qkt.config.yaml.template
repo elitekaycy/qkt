@@ -1,0 +1,71 @@
+source: local
+starting_balance: ${QKT_STARTING_BALANCE:-10000}
+log_level: ${QKT_LOG_LEVEL:-info}
+
+runtime:
+  # Keep this as paper until the strategy has passed your paper validation gate.
+  # Switch to production only after controls, alerts, and broker login are verified.
+  mode: ${QKT_RUNTIME_MODE:-paper}
+
+state:
+  enabled: true
+  async: ${QKT_STATE_ASYNC:-true}
+
+account:
+  currency: USD
+
+fx_conversion:
+  source: market
+  missing_policy: warn
+
+execution:
+  preset: mt5-realistic
+  seed: 42
+
+risk:
+  max_daily_loss: "500"
+  max_order_qty: "1.0"
+  max_order_notional: "50000"
+  price_collar_pct: "5"
+  margin_floor_pct: "200"
+  measured_usage_hours: "24"
+  measured_usage_max_qty: "0.01"
+  max_drawdown_pct: "10"
+  max_daily_drawdown_pct: "4"
+  total_dd_basis: static
+  daily_dd_basis: balance
+
+brokers:
+  exness:
+    type: mt5
+    extends: exness
+    gateway_url: ${EXNESS_GATEWAY_URL:-http://mt5-gateway:5001}
+    api_key: ${QKT_BROKER_EXNESS_API_KEY}
+    magic: ${QKT_MAGIC:-4242}
+    deviation_points: 30
+    poll_interval_ms: 1000
+    http_timeout_ms: 5000
+    retry_attempts: 3
+    calendars:
+      "BTC*": crypto
+      "ETH*": crypto
+      "*": fx
+    capability_restrictions: []
+
+insights:
+  enabled: true
+  url: "http://qkt-insights:8420/ingest"
+  instance_id: ${QKT_INSTANCE_ID:-qkt-prod}
+  token: ${INGEST_TOKEN}
+  events: [trade, order, signal, risk, position, state, deal, lifecycle, log]
+  flush_interval_ms: 250
+  batch_size: 200
+  queue_capacity: 10000
+  journal_enabled: ${QKT_INSIGHTS_JOURNAL_ENABLED:-true}
+  journal_dir: ${QKT_INSIGHTS_JOURNAL_DIR:-/var/lib/qkt/state/insights-journal}
+  state_poll_ms: 10000
+  deal_backfill_days: 30
+
+notify:
+  telegram:
+    enabled: false
