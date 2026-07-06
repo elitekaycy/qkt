@@ -63,6 +63,7 @@ import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
@@ -87,7 +88,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
-            is AccountRef, is StateAccessor, StackEntryRef, EntryQty,
+            is AccountRef, is StateAccessor, is StreakRef, StackEntryRef, EntryQty,
             LastTradingDayOfMonth,
             -> Unit
             is PositionRef -> out.add(e.stream)

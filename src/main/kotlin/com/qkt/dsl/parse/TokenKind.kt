@@ -129,6 +129,7 @@ enum class TokenKind {
     SUM,
 
     ACCOUNT,
+    STREAK,
     SYMBOL,
     NOW,
     OCO_ENTRY,

@@ -7,8 +7,7 @@ import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.Test
 
 /**
- * Surface test: the new ACCOUNT accessors (`last_trade_at`, `last_trade_pnl`,
- * `win_streak`, `loss_streak`, `dd_pct`) parse and compile without error.
+ * Surface test: account and streak accessors parse and compile without error.
  *
  * Runtime semantics are covered by [com.qkt.pnl.TradeHistoryTest] (streak math)
  * and the existing `RiskView.drawdown` plumbing.
@@ -126,6 +125,23 @@ class AccountStateAccessorsTest {
     }
 
     @Test
+    fun `STREAK wins losses and banked parse and compile`() {
+        val src =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+              g = X:Y EVERY 1m
+            RULES
+              WHEN STREAK.losses < 2
+              THEN BUY g SIZING RISK $ (100 + 0.30 * STREAK.banked)
+                   BRACKET { STOP LOSS BY 40, TAKE PROFIT BY 90 }
+            """.trimIndent()
+        assertThatCode {
+            AstCompiler().compile(parse(src).value)
+        }.doesNotThrowAnyException()
+    }
+
+    @Test
     fun `ACCOUNT unsupported field is rejected at compile time`() {
         val src =
             """
@@ -168,7 +184,7 @@ class AccountStateAccessorsTest {
             SYMBOLS
               g = X:Y EVERY 1m
             RULES
-              WHEN ACCOUNT.win_streak + ACCOUNT.loss_streak >= 0 THEN FLATTEN
+              WHEN STREAK.wins + STREAK.losses >= 0 THEN FLATTEN
             """.trimIndent()
         val s = AstCompiler().compile(parse(src).value)
         assertThat(s).isNotNull

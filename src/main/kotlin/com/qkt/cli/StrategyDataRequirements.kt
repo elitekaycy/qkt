@@ -73,6 +73,7 @@ import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
@@ -196,6 +197,7 @@ internal object StrategyDataRequirementScanner {
                 is SessionWindow,
                 StackEntryRef,
                 is StateAccessor,
+                is StreakRef,
                 is StringLit,
                 null,
                 -> Unit

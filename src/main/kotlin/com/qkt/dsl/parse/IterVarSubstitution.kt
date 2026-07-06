@@ -58,6 +58,7 @@ import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TrailingBy
@@ -109,6 +110,7 @@ private fun subst(
             )
         is Aggregate -> expr.copy(series = subst(expr.series, v, alias))
         is IsNull -> expr.copy(expr = subst(expr.expr, v, alias))
+        is StreakRef -> expr
         else -> expr
     }
 

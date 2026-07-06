@@ -50,7 +50,55 @@ class FileStatePersistor(
         const val TRAILING_STOPS_FILE = "trailing-stops.json"
         const val RISK_STATE_FILE = "risk-state.json"
         const val PNL_FILE = "pnl.json"
+        const val TRADE_HISTORY_FILE = "trade-history.json"
         const val SCHEMA_VERSION = 1
+    }
+
+    override fun saveTradeHistory(
+        strategyId: String,
+        state: PersistedTradeHistory,
+    ) {
+        val dto =
+            TradeHistoryDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                outcomes =
+                    state.outcomes.map {
+                        TradeOutcomeDto(
+                            timestamp = it.timestamp,
+                            pnl = it.pnl.toPlainString(),
+                            symbol = it.symbol,
+                        )
+                    },
+            )
+        runCatching { json.encodeToString(TradeHistoryDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, TRADE_HISTORY_FILE, it) }
+            .onFailure { e -> log.warn("saveTradeHistory encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadTradeHistory(strategyId: String): PersistedTradeHistory? {
+        val raw = writer.read(strategyId, TRADE_HISTORY_FILE) ?: return null
+        val dto =
+            try {
+                json.decodeFromString(TradeHistoryDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadTradeHistory parse failed for $strategyId: ${e.message}")
+                return null
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadTradeHistory schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return null
+        }
+        return PersistedTradeHistory(
+            outcomes =
+                dto.outcomes.map {
+                    PersistedTradeOutcome(
+                        timestamp = it.timestamp,
+                        pnl = it.pnl.toBigDecimal(),
+                        symbol = it.symbol,
+                    )
+                },
+        )
     }
 
     override fun savePnl(
@@ -897,6 +945,20 @@ private data class PnlDto(
     val version: Int,
     val strategyId: String,
     val realized: String,
+)
+
+@Serializable
+private data class TradeHistoryDto(
+    val version: Int,
+    val strategyId: String,
+    val outcomes: List<TradeOutcomeDto>,
+)
+
+@Serializable
+private data class TradeOutcomeDto(
+    val timestamp: Long,
+    val pnl: String,
+    val symbol: String,
 )
 
 @Serializable
