@@ -6,11 +6,57 @@ on:
     tags: ['v*']
 
 jobs:
+  runtime-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build runtime image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          load: true
+          tags: qkt:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke runtime image
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/strategies"
+          cat > "$tmp/strategies/smoke.qkt" <<'STRAT'
+          STRATEGY smoke VERSION 1
+
+          SYMBOLS
+              btc = BACKTEST:BTCUSD EVERY 1m
+
+          RULES
+              WHEN btc.close > 0
+              THEN LOG "tick"
+          STRAT
+          docker run --rm --entrypoint qkt qkt:ci --version
+          docker run --rm --entrypoint qkt -v "$tmp/strategies:/strategies:ro" qkt:ci parse /strategies/smoke.qkt
+          docker run --rm --entrypoint qkt \
+            -v "$PWD/data/sample:/data:ro" \
+            -v "$tmp/strategies:/strategies:ro" \
+            qkt:ci backtest /strategies/smoke.qkt \
+              --from 2024-01-15 \
+              --to 2024-01-16 \
+              --data-root /data \
+              --allow-incomplete \
+              --json >/tmp/qkt-docker-smoke.json
+
   build-and-push:
+    needs: runtime-smoke
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -25,6 +71,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/qkt
           tags: |
             type=ref,event=tag
+            type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
       # Runtime image: `:latest` on a main push, `:vX.Y.Z` on a version tag.
       - name: build and push runtime image
@@ -37,6 +84,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # Developer image (`:dev`) — runtime + editor + shell, for authoring and
@@ -52,6 +101,8 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/qkt:dev
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # Edge image (`:edge`) — the runtime built from the `testing` branch, which is
@@ -68,5 +119,7 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/qkt:edge
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max

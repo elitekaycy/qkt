@@ -229,7 +229,7 @@ class TradingPipeline(
                 )
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 val t0 = if (latencyEnabled) System.nanoTime() else 0L
-                bus.publish(SignalEvent(sig))
+                bus.publish(SignalEvent(sig, strategyId = strategyId))
                 if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
                     orderManager.cancelPendingForSymbol(sig.symbol)
                 } else if (sig is com.qkt.strategy.Signal.ArmLatch) {

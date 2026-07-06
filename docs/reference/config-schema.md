@@ -398,7 +398,7 @@ Unknown notify channel keys are passed through as provider settings.
 
 ## `insights`
 
-Optional egress to a qkt-insights collector. Disabled config wires no queue and no worker thread.
+Optional egress to a qkt-insights collector. Disabled config wires no queue and no worker thread. Enable `journal_enabled` for production so collector outages leave unacked batches on disk for replay instead of dropping them after retry exhaustion. Daemon live sessions also write a full engine audit JSONL under `state/audit-journal/<strategy>/audit-YYYY-MM-DD.jsonl`; the audit writer uses a bounded queue and its own daemon thread so durable file I/O does not run on the event bus thread.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
@@ -406,10 +406,12 @@ Optional egress to a qkt-insights collector. Disabled config wires no queue and 
 | `insights.url` | URL | empty | Collector ingest URL. |
 | `insights.instance_id` | string | `qkt` fallback at daemon wire time | Instance label sent with events. |
 | `insights.token` | string | empty | Bearer or collector token as expected by the sink. |
-| `insights.events` | list | all families when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`. `snapshot` is retained for old configs and wires nothing. |
+| `insights.events` | list | all families when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`, `lifecycle`. `snapshot` is retained for old configs and wires nothing. |
 | `insights.flush_interval_ms` | long | `250` | Batch flush cadence. |
 | `insights.batch_size` | int | `200` | Max events per HTTP batch. |
-| `insights.queue_capacity` | int | `10000` | In-memory queue bound. |
+| `insights.queue_capacity` | int | `10000` | In-memory queue bound before the sink worker drains events. |
+| `insights.journal_enabled` | boolean | `false` | When true, the sink worker spools serialized envelopes locally and replays unacked rows after collector downtime. |
+| `insights.journal_dir` | path | daemon state `state/insights-journal` fallback when journal is enabled | Optional journal directory. Blank uses the daemon state directory fallback. |
 | `insights.state_poll_ms` | long | `10000` | Broker state polling cadence. |
 | `insights.deal_backfill_days` | long | `30` | Broker deal backfill window on startup. |
 

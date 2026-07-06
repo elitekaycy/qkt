@@ -21,6 +21,7 @@ import com.qkt.execution.Trade
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
+import com.qkt.marketdata.live.MarketDataLifecycleFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailyRollingTracker
 import com.qkt.notify.EventTranslator
@@ -142,6 +143,8 @@ class LiveSession(
         com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
     /** Append-only order-event journal (#400); null disables (tests, backtest replays). */
     private val journal: com.qkt.observe.OrderJournal? = null,
+    /** Append-only all-event engine audit journal; null disables (tests, backtest replays). */
+    private val auditJournal: com.qkt.observe.EngineAuditJournal? = null,
     /**
      * Best-effort egress to a qkt-insights collector; null disables (the default).
      * The daemon constructs one shared [com.qkt.observe.insights.InsightsSink] from
@@ -151,6 +154,8 @@ class LiveSession(
     private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
     /** Event families to stream; empty wires nothing even when a sink is present. */
     private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
+    /** Per-strategy runtime/source metadata to attach to `strategy.started` insights envelopes. */
+    private val insightsStrategyMetadata: Map<String, Map<String, Any?>> = emptyMap(),
     /** Broker state poller cadence (insights `state_poll_ms`); active when the STATE family is enabled. */
     private val insightsStatePollMs: Long = 10_000L,
     /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
@@ -663,6 +668,10 @@ class LiveSession(
             bus.subscribe<BrokerEvent.BalancesUpdated> { e -> sink.offer(t.fromBalancesUpdated(e)) }
             bus.subscribe<BrokerEvent.GatewayUnreachable> { e -> sink.offer(t.fromGatewayUnreachable(e)) }
         }
+        if (com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents) {
+            bus.subscribe<BrokerEvent.GatewayUnreachable> { e -> sink.offer(t.fromBrokerGatewayUnreachable(e)) }
+            bus.subscribe<BrokerEvent.ConnectionChanged> { e -> sink.offer(t.fromBrokerConnectionChanged(e)) }
+        }
     }
 
     /**
@@ -1005,6 +1014,7 @@ class LiveSession(
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
         journal?.let { wireJournal(bus, it) }
+        auditJournal?.let { audit -> bus.subscribeAll { e -> audit.append(e) } }
 
         // Register notifier handlers before the warmup phase so a warmup-time risk halt
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
@@ -1055,6 +1065,48 @@ class LiveSession(
         riskState.warmupComplete = true
 
         val feed = source.liveTicks(symbols)
+        if (insightsSink != null &&
+            com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
+        ) {
+            val nowTs = clock.now()
+            val brokerNames = (builtBrokers.ifEmpty { listOf(broker) }).map { it.name }.distinct()
+            for (brokerName in brokerNames) {
+                insightsSink.offer(
+                    com.qkt.observe.insights.InsightsTranslate.brokerConnected(
+                        broker = brokerName,
+                        ts = nowTs,
+                    ),
+                )
+            }
+            insightsSink.offer(
+                com.qkt.observe.insights.InsightsTranslate.marketDataConnected(
+                    source = source.name,
+                    symbols = symbols,
+                    ts = nowTs,
+                ),
+            )
+            if (feed is MarketDataLifecycleFeed) {
+                feed.onDisconnect {
+                    insightsSink.offer(
+                        com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
+                            source = source.name,
+                            symbols = symbols,
+                            ts = clock.now(),
+                            reason = "source-disconnected",
+                        ),
+                    )
+                }
+                feed.onReconnect {
+                    insightsSink.offer(
+                        com.qkt.observe.insights.InsightsTranslate.marketDataReconnected(
+                            source = source.name,
+                            symbols = symbols,
+                            ts = clock.now(),
+                        ),
+                    )
+                }
+            }
+        }
 
         val terminated = CountDownLatch(1)
         // Control events (bus events from pollers, flatten, heartbeat, feed-end) are
@@ -1190,6 +1242,7 @@ class LiveSession(
                     // Journal appends run on this thread (bus dispatch), so its channels
                     // close here — the last event is already durable when we count down.
                     runCatching { journal?.close() }
+                    runCatching { auditJournal?.close() }
                     terminated.countDown()
                     if (mdcStrategy != null) org.slf4j.MDC.remove("strategy")
                 }
@@ -1213,6 +1266,18 @@ class LiveSession(
                     Thread.currentThread().interrupt()
                 } finally {
                     runCatching { feed.close() }
+                    if (insightsSink != null &&
+                        com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
+                    ) {
+                        insightsSink.offer(
+                            com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
+                                source = source.name,
+                                symbols = symbols,
+                                ts = clock.now(),
+                                reason = "feed-ended",
+                            ),
+                        )
+                    }
                     // Non-blocking: tell the consumer the feed is done so it drains-then-stops.
                     control.offer(Inbound.FeedEnded)
                 }
@@ -1292,6 +1357,19 @@ class LiveSession(
                 }.onFailure { t -> recordNotificationFailure(strategyId, "StrategyStarted", t) }
             }
         }
+        if (insightsSink != null &&
+            com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
+        ) {
+            for ((strategyId, _) in strategies) {
+                insightsSink.offer(
+                    com.qkt.observe.insights.InsightsTranslate.strategyStarted(
+                        strategyId = strategyId,
+                        ts = clock.now(),
+                        metadata = insightsStrategyMetadata[strategyId].orEmpty(),
+                    ),
+                )
+            }
+        }
 
         return object : LiveSessionHandle {
             override val running: Boolean get() = running.get()
@@ -1350,6 +1428,19 @@ class LiveSession(
                                 ),
                             )
                         }.onFailure { t -> recordNotificationFailure(strategyId, "StrategyStopped", t) }
+                    }
+                }
+                if (insightsSink != null &&
+                    com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
+                ) {
+                    for ((strategyId, _) in strategies) {
+                        insightsSink.offer(
+                            com.qkt.observe.insights.InsightsTranslate.strategyStopped(
+                                strategyId = strategyId,
+                                ts = clock.now(),
+                                flatten = false,
+                            ),
+                        )
                     }
                 }
             }

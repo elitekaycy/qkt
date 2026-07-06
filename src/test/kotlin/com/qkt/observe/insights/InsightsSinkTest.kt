@@ -1,5 +1,6 @@
 package com.qkt.observe.insights
 
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -7,6 +8,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class InsightsSinkTest {
     private lateinit var server: MockWebServer
@@ -26,6 +28,9 @@ class InsightsSinkTest {
         flushIntervalMs: Long = 50L,
         queueCapacity: Int = 100,
         failureBackoffMs: Long = 10L,
+        healthIntervalMs: Long = 30_000L,
+        maxPostAttempts: Int = 3,
+        journalDir: Path? = null,
     ) = InsightsSink(
         url = server.url("/ingest").toString(),
         token = "secret",
@@ -34,6 +39,9 @@ class InsightsSinkTest {
         flushIntervalMs = flushIntervalMs,
         queueCapacity = queueCapacity,
         failureBackoffMs = failureBackoffMs,
+        maxPostAttempts = maxPostAttempts,
+        healthIntervalMs = healthIntervalMs,
+        journalDir = journalDir,
     )
 
     private fun envelope(n: Long): InsightsEnvelope =
@@ -132,5 +140,71 @@ class InsightsSinkTest {
         assertThat(s.failed.get()).isEqualTo(3L)
         assertThat(s.dropped.get()).isEqualTo(1L)
         assertThat(s.sent.get()).isEqualTo(1L)
+    }
+
+    @Test
+    fun `journaled sink keeps failed batches for replay instead of dropping`(
+        @TempDir journalDir: Path,
+    ) {
+        server.enqueue(MockResponse().setResponseCode(500))
+        val first =
+            sink(
+                flushIntervalMs = 20L,
+                failureBackoffMs = 10L,
+                healthIntervalMs = 0L,
+                maxPostAttempts = 1,
+                journalDir = journalDir,
+            )
+        first.offer(envelope(1))
+        assertThat(server.takeRequest(2, TimeUnit.SECONDS)).isNotNull
+        first.close()
+        assertThat(first.dropped.get()).isEqualTo(0L)
+
+        server.shutdown()
+        server = MockWebServer().also { it.start() }
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}"""))
+        val replay =
+            sink(
+                flushIntervalMs = 20L,
+                failureBackoffMs = 10L,
+                healthIntervalMs = 0L,
+                maxPostAttempts = 1,
+                journalDir = journalDir,
+            )
+        val replayed = server.takeRequest(2, TimeUnit.SECONDS)
+        assertThat(replayed).isNotNull
+        assertThat(replayed!!.body.readUtf8()).contains("\"id\":\"e1\"")
+        assertThat(awaitUntil { replay.sent.get() == 1L }).isTrue()
+        replay.close()
+        assertThat(replay.sent.get()).isEqualTo(1L)
+    }
+
+    @Test
+    fun `emits periodic health snapshot with sink counters`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}"""))
+        val s = sink(flushIntervalMs = 20L, healthIntervalMs = 20L)
+        val req = server.takeRequest(2, TimeUnit.SECONDS)
+        assertThat(req).isNotNull
+        val body = req!!.body.readUtf8()
+        assertThat(body).contains(""""type":"insights.health""")
+        assertThat(body).contains(""""sent":0""")
+        assertThat(body).contains(""""failed":0""")
+        assertThat(body).contains(""""dropped":0""")
+        assertThat(body).contains(""""queued":0""")
+        assertThat(body).contains(""""queueCapacity":100""")
+        s.close()
+        assertThat(s.sent.get()).isEqualTo(1L)
+    }
+
+    private fun awaitUntil(
+        timeoutMs: Long = 2_000L,
+        predicate: () -> Boolean,
+    ): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (System.nanoTime() < deadline) {
+            if (predicate()) return true
+            Thread.sleep(10)
+        }
+        return predicate()
     }
 }

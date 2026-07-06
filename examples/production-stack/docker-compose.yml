@@ -1,0 +1,87 @@
+name: qkt-production-stack
+
+services:
+  qkt-insights:
+    image: ${QKT_INSIGHTS_IMAGE:-ghcr.io/elitekaycy/qkt-insights:latest}
+    container_name: qkt-insights
+    restart: unless-stopped
+    command: run
+    environment:
+      INSIGHTS_DB: /data/insights.db
+      INGEST_TOKEN: ${INGEST_TOKEN}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      PORT: 8420
+    ports:
+      - "${INSIGHTS_PORT:-8420}:8420"
+    volumes:
+      - qkt-insights-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8420/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks: [qkt-net]
+
+  mt5-gateway:
+    image: elitekaycy/mt5-gateway-api:0.3.2
+    container_name: qkt-mt5-gateway
+    restart: unless-stopped
+    environment:
+      MT5_LOGIN: ${MT5_LOGIN}
+      MT5_PASSWORD: ${MT5_PASSWORD}
+      MT5_SERVER: ${MT5_SERVER}
+      MT5_ENABLE_ALGO_TRADING: ${MT5_ENABLE_ALGO_TRADING:-1}
+      API_KEY: ${MT5_API_KEY}
+      PASSWORD: ${VNC_PASSWORD}
+    ports:
+      - "127.0.0.1:${MT5_VNC_PORT:-3000}:3000"
+      - "127.0.0.1:${MT5_HTTP_PORT:-5001}:5001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer $$API_KEY\" http://localhost:5001/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+    networks: [qkt-net]
+
+  qkt:
+    image: ${QKT_IMAGE:-ghcr.io/elitekaycy/qkt:latest}
+    container_name: qkt-daemon
+    restart: unless-stopped
+    command: ["--config", "/etc/qkt/qkt.config.yaml"]
+    depends_on:
+      qkt-insights:
+        condition: service_healthy
+      mt5-gateway:
+        condition: service_healthy
+    environment:
+      QKT_STATE_DIR: /var/lib/qkt
+      QKT_BROKER_EXNESS_API_KEY: ${MT5_API_KEY}
+      EXNESS_GATEWAY_URL: ${EXNESS_GATEWAY_URL:-http://mt5-gateway:5001}
+      INGEST_TOKEN: ${INGEST_TOKEN}
+      QKT_INSTANCE_ID: ${QKT_INSTANCE_ID:-qkt-prod}
+      QKT_STARTING_BALANCE: ${QKT_STARTING_BALANCE:-10000}
+      QKT_RUNTIME_MODE: ${QKT_RUNTIME_MODE:-paper}
+      QKT_MAGIC: ${QKT_MAGIC:-4242}
+      QKT_LOG_LEVEL: ${QKT_LOG_LEVEL:-info}
+      QKT_STATE_ASYNC: ${QKT_STATE_ASYNC:-true}
+      QKT_INSIGHTS_JOURNAL_ENABLED: ${QKT_INSIGHTS_JOURNAL_ENABLED:-true}
+      QKT_INSIGHTS_JOURNAL_DIR: ${QKT_INSIGHTS_JOURNAL_DIR:-/var/lib/qkt/state/insights-journal}
+    volumes:
+      - ./strategies:/strategies:ro
+      - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
+      - qkt-state:/var/lib/qkt
+    ports:
+      - "127.0.0.1:47000-47100:47000-47100"
+    networks: [qkt-net]
+
+networks:
+  qkt-net:
+    driver: bridge
+
+volumes:
+  qkt-state:
+  qkt-insights-data:
