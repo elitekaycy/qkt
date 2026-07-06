@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.EntryQty
@@ -48,6 +49,7 @@ import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -65,9 +67,11 @@ import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -103,7 +107,8 @@ internal fun collectMetaRefs(
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
-            is AccountRef, is PositionRef, is StateAccessor,
+            is AccountRef, is StreakRef, is TradesRef, is CooldownRef, is PositionRef, is StateAccessor,
+            is SequenceAccessor,
             StackEntryRef, EntryQty, LastTradingDayOfMonth,
             -> Unit
             is StreamFieldRef -> {
@@ -232,6 +237,7 @@ internal fun collectMetaRefs(
         walkStack(opts.stack)
         opts.stackAts.forEach { clause ->
             walkExpr(clause.mfeThreshold)
+            clause.maeRecoverDistance?.let { walkExpr(it) }
             walkSizing(clause.sizing)
             walkBracket(clause.bracket)
         }
@@ -277,6 +283,7 @@ internal fun collectMetaRefs(
 
     ast.lets.forEach { walkExpr(it.expr) }
     ast.rules.forEach { walkRule(it) }
+    ast.sequences.forEach { sequence -> sequence.stages.forEach { walkExpr(it.condition) } }
 
     return out.distinct()
 }

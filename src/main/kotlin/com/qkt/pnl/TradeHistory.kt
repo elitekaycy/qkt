@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class TradeHistory(
     private val maxHistory: Int = 64,
+    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
 ) {
     init {
         require(maxHistory > 0) { "TradeHistory.maxHistory must be > 0: $maxHistory" }
@@ -50,6 +51,25 @@ class TradeHistory(
         synchronized(q) {
             q.addLast(TradeOutcome(timestamp, pnl, symbol))
             while (q.size > maxHistory) q.removeFirst()
+            persist(strategyId, q)
+        }
+    }
+
+    /**
+     * Rehydrate the bounded trade-outcome buffer persisted by a prior process. Call once
+     * at strategy startup, before any fills are recorded.
+     */
+    fun restore(strategyId: String) {
+        if (strategyId.isBlank()) return
+        val persisted = runCatching { persistor.loadTradeHistory(strategyId) }.getOrNull() ?: return
+        val q = byStrategy.getOrPut(strategyId) { ArrayDeque(maxHistory) }
+        synchronized(q) {
+            q.clear()
+            for (outcome in persisted.outcomes.takeLast(maxHistory)) {
+                if (outcome.pnl.signum() != 0) {
+                    q.addLast(TradeOutcome(outcome.timestamp, outcome.pnl, outcome.symbol))
+                }
+            }
         }
     }
 
@@ -62,6 +82,20 @@ class TradeHistory(
     fun winStreak(strategyId: String): Int = streak(strategyId) { it.isWin }
 
     fun lossStreak(strategyId: String): Int = streak(strategyId) { !it.isWin }
+
+    /** Realized profit accumulated during the current consecutive win streak. */
+    fun banked(strategyId: String): BigDecimal {
+        val q = byStrategy[strategyId] ?: return Money.ZERO
+        synchronized(q) {
+            var total = Money.ZERO
+            for (i in q.indices.reversed()) {
+                val outcome = q[i]
+                if (!outcome.isWin) return total
+                total = total.add(outcome.pnl)
+            }
+            return total
+        }
+    }
 
     /**
      * Trades recorded at or after [sinceMs]. Caller picks the cutoff — DSL `TRADES_TODAY`
@@ -124,6 +158,24 @@ class TradeHistory(
             return count
         }
     }
+
+    private fun persist(
+        strategyId: String,
+        outcomes: ArrayDeque<TradeOutcome>,
+    ) {
+        val state =
+            com.qkt.persistence.PersistedTradeHistory(
+                outcomes =
+                    outcomes.map {
+                        com.qkt.persistence.PersistedTradeOutcome(
+                            timestamp = it.timestamp,
+                            pnl = it.pnl,
+                            symbol = it.symbol,
+                        )
+                    },
+            )
+        runCatching { persistor.saveTradeHistory(strategyId, state) }
+    }
 }
 
 /** Per-strategy read-only window over [TradeHistory]. */
@@ -135,6 +187,9 @@ interface TradeHistoryView {
     fun winStreak(): Int
 
     fun lossStreak(): Int
+
+    /** Realized profit accumulated during the current consecutive win streak. */
+    fun banked(): BigDecimal
 
     /** Trades recorded since the most recent UTC midnight prior to [nowEpochMs]. */
     fun tradesToday(nowEpochMs: Long): Int
@@ -167,6 +222,8 @@ class TradeHistoryViewImpl(
 
     override fun lossStreak(): Int = history.lossStreak(strategyId)
 
+    override fun banked(): BigDecimal = history.banked(strategyId)
+
     override fun tradesToday(nowEpochMs: Long): Int = history.tradesSince(strategyId, utcMidnight(nowEpochMs))
 
     override fun winsToday(nowEpochMs: Long): Int = history.winsSince(strategyId, utcMidnight(nowEpochMs))
@@ -197,6 +254,8 @@ class NoOpTradeHistoryView : TradeHistoryView {
     override fun winStreak(): Int = 0
 
     override fun lossStreak(): Int = 0
+
+    override fun banked(): BigDecimal = Money.ZERO
 
     override fun tradesToday(nowEpochMs: Long): Int = 0
 

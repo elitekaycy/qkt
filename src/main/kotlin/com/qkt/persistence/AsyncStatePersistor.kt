@@ -187,6 +187,23 @@ class AsyncStatePersistor(
 
     override fun loadPnl(strategyId: String): PersistedPnl? = delegate.loadPnl(strategyId)
 
+    override fun saveSequences(
+        strategyId: String,
+        states: Map<String, PersistedSequenceState>,
+    ) {
+        val snapshot =
+            states.mapValues { (_, state) ->
+                state.copy(
+                    snapshots = state.snapshots.toList(),
+                    lastValues = state.lastValues.toMap(),
+                )
+            }
+        submit("saveSequences($strategyId)") { delegate.saveSequences(strategyId, snapshot) }
+    }
+
+    override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> =
+        delegate.loadSequences(strategyId)
+
     override fun clearStrategy(strategyId: String) {
         submit("clearStrategy $strategyId") { delegate.clearStrategy(strategyId) }
     }

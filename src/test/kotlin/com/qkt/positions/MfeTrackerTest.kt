@@ -28,6 +28,20 @@ class MfeTrackerTest {
     }
 
     @Test
+    fun `BUY adverse move updates MAE and adverse extreme`() {
+        val t = MfeTracker(Side.BUY, BigDecimal("100"))
+        t.onTick(BigDecimal("95"))
+        assertThat(t.mae()).isEqualByComparingTo("5")
+        assertThat(t.adverseExtremePrice()).isEqualByComparingTo("95")
+        t.onTick(BigDecimal("97"))
+        assertThat(t.mae()).isEqualByComparingTo("5")
+        assertThat(t.adverseExtremePrice()).isEqualByComparingTo("95")
+        t.onTick(BigDecimal("90"))
+        assertThat(t.mae()).isEqualByComparingTo("10")
+        assertThat(t.adverseExtremePrice()).isEqualByComparingTo("90")
+    }
+
+    @Test
     fun `BUY MFE never decreases on subsequent ticks`() {
         val t = MfeTracker(Side.BUY, BigDecimal("1.10"))
         t.onTick(BigDecimal("1.15")) // MFE = 0.05
@@ -46,6 +60,8 @@ class MfeTrackerTest {
         assertThat(t.value()).isEqualByComparingTo("0.05")
         t.onTick(BigDecimal("1.15")) // adverse for SELL
         assertThat(t.value()).isEqualByComparingTo("0.05")
+        assertThat(t.mae()).isEqualByComparingTo("0.05")
+        assertThat(t.adverseExtremePrice()).isEqualByComparingTo("1.15")
         t.onTick(BigDecimal("1.00"))
         assertThat(t.value()).isEqualByComparingTo("0.10")
     }

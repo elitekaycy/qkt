@@ -129,6 +129,17 @@ ACCOUNT.loss_streak      -- consecutive closed losses
 ACCOUNT.dd_pct           -- current drawdown from this strategy's equity peak, as a percent (5.0 = 5%)
 ```
 
+`STREAK` exposes the same outcome stream through the issue-facing ladder namespace:
+
+```qkt
+STREAK.wins       -- consecutive closed wins
+STREAK.losses     -- consecutive closed losses
+STREAK.banked     -- realized P&L banked during the current win streak
+
+TRADES.today            -- entry fills recorded for this strategy since UTC midnight
+COOLDOWN.remaining_s    -- seconds left in the configured after-loss cooldown, or 0
+```
+
 `last_trade_at` and `last_trade_pnl` return `Value.Undefined` until the strategy has closed at least one trade — compose with `IS NULL` for safe gating:
 
 ```qkt
@@ -141,13 +152,21 @@ THEN BUY btc SIZING 0.5 PCT RISK
 WHEN signal AND ACCOUNT.dd_pct < 5 THEN BUY btc SIZING 0.5 PCT RISK
 
 -- Loss-streak-aware sizing: scale down after consecutive losses.
-WHEN signal AND ACCOUNT.loss_streak < 2 THEN BUY btc SIZING 1.0 PCT RISK
-WHEN signal AND ACCOUNT.loss_streak >= 2 THEN BUY btc SIZING 0.5 PCT RISK
+WHEN signal AND STREAK.losses < 2 THEN BUY btc SIZING 1.0 PCT RISK
+WHEN signal AND STREAK.losses >= 2 THEN BUY btc SIZING 0.5 PCT RISK
 ```
 
-Win and loss streaks are exclusive — a `loss_streak >= 1` implies `win_streak = 0` and vice versa. Both return `0` until the strategy has closed at least one trade. Counts are session-scoped: engine restart resets them (the trade-history buffer is in-memory).
+Win and loss streaks are exclusive — `STREAK.losses >= 1` implies `STREAK.wins = 0` and vice versa. Both return `0` until the strategy has closed at least one trade. The bounded trade-history buffer is persisted with engine state when persistence is enabled; otherwise a fresh process starts with empty streak state.
 
 A "win" is `realized_pnl > 0` for the closing fill; "loss" is `< 0`. Position-opening fills (zero realized) are skipped entirely — they don't count toward either streak.
+
+`STREAK.banked` sums only the consecutive winning closes at the end of history. A loss resets it to `0`, so it can be used to press with banked profit without increasing base risk after a losing close:
+
+```qkt
+THEN BUY btc SIZING RISK $ (100 + 0.30 * STREAK.banked)
+```
+
+`TRADES.today` and `COOLDOWN.remaining_s` read the same PACER ledger used by configured per-strategy throttles. `TRADES.today` counts entry fills, not closed round trips.
 
 ## Position references
 
@@ -160,6 +179,7 @@ POSITION.<stream>.realized_pnl              -- strategy-level realized P&L (see 
 POSITION.<stream>.unrealized_pnl            -- open P&L on this position
 POSITION.<stream>.holding_duration          -- seconds since the position was opened
 POSITION.<stream>.mfe                       -- max favorable excursion of the PRIMARY leg (price units)
+POSITION.<stream>.mae                       -- max adverse excursion of the PRIMARY leg (price units)
 ```
 
 ```qkt
@@ -169,6 +189,8 @@ THEN CLOSE btc
 ```
 
 `POSITION.<stream>.mfe` reads the high-water mark of `current_price - entry_price` (for BUY) or `entry_price - current_price` (for SELL) on the PRIMARY leg since it opened. Returns `0` if no primary exists. Same value the stack engine uses for `STACK_AT MFE >= ...` threshold checks; see [STACK_AT](stack-at.md).
+
+`POSITION.<stream>.mae` reads the high-water mark of `entry_price - current_price` (for BUY) or `current_price - entry_price` (for SELL) on the PRIMARY leg since it opened. Returns `0` if no primary exists. Same value the stack engine uses for `STACK_AT MAE >= ... RECOVER ...` arming checks.
 
 `POSITION.<stream>` returns a signed quantity. `POSITION.btc > 0` means long; `POSITION.btc < 0` means short; `POSITION.btc = 0` means flat. Most entry rules guard with `POSITION.btc = 0`.
 

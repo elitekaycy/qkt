@@ -12,8 +12,10 @@ import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.DurationAst
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
+import com.qkt.dsl.ast.LatchCloseBeyond
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
+import com.qkt.dsl.ast.LatchMarket
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
@@ -56,12 +58,15 @@ import org.junit.jupiter.api.Test
  */
 class LatchBacktestTest {
     private val symbol = "BACKTEST:XAUUSD"
+    private val silverSymbol = "BACKTEST:XAGUSD"
     private val streamAlias = "gold"
+    private val silverAlias = "silver"
     private val strategyId = "alpha"
 
     // 1m candle window: closes after 60s, which is well within the 5m arm window
     // when clock.now() is fixed at 0 (arm expires at 300_000ms).
     private val hubKey = HubKey("BACKTEST", "XAUUSD", "1m")
+    private val silverHubKey = HubKey("BACKTEST", "XAGUSD", "1m")
 
     // Latch AST: ENTER LIMIT RETRACE 4 BRACKET { SL AGAINST 12, TP WITH 5 }, no explicit sizing
     private val latchAst =
@@ -89,9 +94,11 @@ class LatchBacktestTest {
      * Stub DSL strategy that arms the latch once on the first candle close.
      * Mirrors the stub shape from TradingPipelineStackTest.
      */
-    private inner class LatchStubStrategy : DslCompiledStrategy {
-        override val declaredStreams: Map<String, HubKey> = mapOf(streamAlias to hubKey)
-        override val retentionByKey: Map<HubKey, Int> = mapOf(hubKey to 1)
+    private inner class LatchStubStrategy(
+        private val ast: Latch,
+        override val declaredStreams: Map<String, HubKey> = mapOf(streamAlias to hubKey),
+    ) : DslCompiledStrategy {
+        override val retentionByKey: Map<HubKey, Int> = declaredStreams.values.associateWith { 1 }
         override val pendingStacks: PendingStacks = PendingStacks()
 
         override fun bindToHub(
@@ -104,11 +111,11 @@ class LatchBacktestTest {
                 val sizingCompiler = SizingCompiler(exprCompiler)
                 val ids = SequentialIdGenerator(prefix = "latch-e2e-")
                 val compiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
-                val compiled = compiler.compile(latchAst, ctx.strategyId)
+                val compiled = compiler.compile(ast, ctx.strategyId)
                 val ec =
                     EvalContext(
                         candle = candle,
-                        streams = mapOf(streamAlias to hubKey),
+                        streams = declaredStreams,
                         lets = emptyMap(),
                         strategyContext = ctx,
                     )
@@ -126,10 +133,14 @@ class LatchBacktestTest {
     private data class Harness(
         val pipeline: TradingPipeline,
         val strategyPnL: StrategyPnL,
+        val strategyPositions: StrategyPositionTracker,
         val clock: FixedClock,
     )
 
-    private fun harness(): Harness {
+    private fun harness(
+        ast: Latch = latchAst,
+        declaredStreams: Map<String, HubKey> = mapOf(streamAlias to hubKey),
+    ): Harness {
         val clock = FixedClock(time = 0L)
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
@@ -143,7 +154,7 @@ class LatchBacktestTest {
         val engine = Engine(bus, priceTracker)
         val riskState = RiskState(pnl, strategyPnL, clock, bus)
         val riskEngine = RiskEngine(rules = emptyList(), positions = positions)
-        val strategy = LatchStubStrategy()
+        val strategy = LatchStubStrategy(ast, declaredStreams)
         val pipeline =
             TradingPipeline(
                 clock = clock,
@@ -165,7 +176,7 @@ class LatchBacktestTest {
                 source = NullMarketSource,
                 candleWindow = null,
             )
-        return Harness(pipeline, strategyPnL, clock)
+        return Harness(pipeline, strategyPnL, strategyPositions, clock)
     }
 
     @Test
@@ -215,5 +226,56 @@ class LatchBacktestTest {
         assertThat(realized)
             .withFailMessage("expected zero realized PnL with no wire cross, got $realized")
             .isEqualByComparingTo(BigDecimal.ZERO)
+    }
+
+    @Test
+    fun `CLOSE_BEYOND fakeout spike does not fire until a candle closes beyond the wire`() {
+        val ast =
+            Latch(
+                stream = streamAlias,
+                sensor = BreakOffset(reference = null, offset = NumLit(BigDecimal("0.50"))),
+                armWindow = DurationAst(300_000L),
+                name = null,
+                entries = listOf(LatchEntry(order = LatchMarket)),
+                confirm = LatchCloseBeyond,
+            )
+        val h = harness(ast)
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 0L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 60_001L))
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2001.00"), 60_002L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.40"), 60_003L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.40"), 120_001L))
+        assertThat(h.strategyPositions.positionFor(strategyId, symbol)).isNull()
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 120_002L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 180_001L))
+        assertThat(h.strategyPositions.positionFor(strategyId, symbol)).isNotNull
+    }
+
+    @Test
+    fun `gold CLOSE_BEYOND can enter silver from silver price snapshot`() {
+        val ast =
+            Latch(
+                stream = streamAlias,
+                sensor = BreakOffset(reference = null, offset = NumLit(BigDecimal("0.50"))),
+                armWindow = DurationAst(300_000L),
+                name = null,
+                entries = listOf(LatchEntry(order = LatchMarket, stream = silverAlias)),
+                confirm = LatchCloseBeyond,
+            )
+        val h = harness(ast, mapOf(streamAlias to hubKey, silverAlias to silverHubKey))
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 0L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 60_001L))
+        h.pipeline.ingest(Tick(silverSymbol, BigDecimal("30.00"), 60_002L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 60_003L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 120_001L))
+
+        val silver = h.strategyPositions.positionFor(strategyId, silverSymbol)
+        assertThat(silver).isNotNull
+        assertThat(silver!!.quantity).isEqualByComparingTo("1")
+        assertThat(silver.avgEntryPrice).isEqualByComparingTo("30.00")
     }
 }

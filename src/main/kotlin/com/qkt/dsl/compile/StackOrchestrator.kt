@@ -68,6 +68,7 @@ class StackOrchestrator(
                     stackQuantity = c.resolveStackQuantity(parentQty),
                     slDistance = c.slDistance,
                     tpDistance = c.tpDistance,
+                    maeRecoverDistance = c.maeRecoverDistance,
                 )
             }
         engines[parentLegId] =
@@ -119,6 +120,7 @@ class StackOrchestrator(
                         stackQuantity = it.stackQuantity,
                         slDistance = it.slDistance,
                         tpDistance = it.tpDistance,
+                        maeRecoverDistance = it.maeRecoverDistance,
                     )
                 }
         engines[parentLegId] =
@@ -148,6 +150,10 @@ class StackOrchestrator(
                         .filter { it.abandoned }
                         .map { it.index }
                         .toSet(),
+                initialArmedAdverseExtremes =
+                    persisted.tiers
+                        .mapNotNull { t -> t.armedAdverseExtreme?.let { t.index to it } }
+                        .toMap(),
                 initialOpenedAtMs = persisted.openedAtMs,
             )
     }

@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.EntryQty
@@ -47,6 +48,7 @@ import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -63,9 +65,11 @@ import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -87,7 +91,8 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
-            is AccountRef, is StateAccessor, StackEntryRef, EntryQty,
+            is AccountRef, is StateAccessor, is StreakRef, is TradesRef, is CooldownRef, StackEntryRef, EntryQty,
+            is SequenceAccessor,
             LastTradingDayOfMonth,
             -> Unit
             is PositionRef -> out.add(e.stream)
@@ -210,6 +215,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
         walkStack(opts.stack)
         opts.stackAts.forEach { clause ->
             walkExpr(clause.mfeThreshold)
+            clause.maeRecoverDistance?.let { walkExpr(it) }
             walkSizing(clause.sizing)
             walkBracket(clause.bracket)
         }
@@ -253,7 +259,10 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
                 walkSizing(a.target)
                 a.minStep?.let { walkExpr(it) }
             }
-            is com.qkt.dsl.ast.Latch -> out.add(a.stream)
+            is com.qkt.dsl.ast.Latch -> {
+                out.add(a.stream)
+                a.entries.mapNotNullTo(out) { it.stream }
+            }
         }
     }
 

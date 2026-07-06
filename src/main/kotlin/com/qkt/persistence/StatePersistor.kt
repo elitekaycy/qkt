@@ -103,6 +103,24 @@ interface StatePersistor {
     /** The last persisted lifetime PnL, or null when none exists. */
     fun loadPnl(strategyId: String): PersistedPnl? = null
 
+    /** Persist the bounded closed-trade outcome buffer for streak and cooldown accessors. */
+    fun saveTradeHistory(
+        strategyId: String,
+        state: PersistedTradeHistory,
+    ) {}
+
+    /** The last persisted closed-trade outcome buffer, or null when none exists. */
+    fun loadTradeHistory(strategyId: String): PersistedTradeHistory? = null
+
+    /** Persist DSL `SEQUENCE` progress for deterministic restart recovery. */
+    fun saveSequences(
+        strategyId: String,
+        states: Map<String, PersistedSequenceState>,
+    ) {}
+
+    /** Restore DSL `SEQUENCE` progress for [strategyId]; empty when none persisted. */
+    fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> = emptyMap()
+
     fun clearStrategy(strategyId: String)
 }
 
@@ -112,6 +130,39 @@ interface StatePersistor {
  */
 data class PersistedPnl(
     val realized: BigDecimal,
+)
+
+/** On-disk shape of one non-zero closed-trade outcome used by streak accessors. */
+data class PersistedTradeOutcome(
+    val timestamp: Long,
+    val pnl: BigDecimal,
+    val symbol: String,
+)
+
+/** On-disk shape of the bounded closed-trade outcome buffer for one strategy. */
+data class PersistedTradeHistory(
+    val outcomes: List<PersistedTradeOutcome>,
+)
+
+/** Persisted snapshot captured when a DSL `SEQUENCE` stage completed. */
+data class PersistedSequenceSnapshot(
+    val stage: String,
+    val price: BigDecimal,
+    val timeMs: Long,
+)
+
+/**
+ * Persisted runtime state for one DSL `SEQUENCE`.
+ *
+ * [lastValues] preserves stage edge detection across restart. [completePulse]
+ * preserves the one-pass completion window until rules consume it.
+ */
+data class PersistedSequenceState(
+    val name: String,
+    val stage: Int,
+    val snapshots: List<PersistedSequenceSnapshot>,
+    val lastValues: Map<String, Boolean> = emptyMap(),
+    val completePulse: Boolean = false,
 )
 
 data class PersistedLeg(
@@ -174,6 +225,8 @@ data class PersistedTier(
     val stackQuantity: BigDecimal,
     val slDistance: BigDecimal,
     val tpDistance: BigDecimal,
+    val maeRecoverDistance: BigDecimal? = null,
+    val armedAdverseExtreme: BigDecimal? = null,
     val fired: Boolean,
     val firedAt: Long?,
     val firedLegId: String?,

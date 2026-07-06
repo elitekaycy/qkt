@@ -9,6 +9,8 @@ import com.qkt.pnl.NoOpTradeHistoryView
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.pnl.TradeHistoryView
 import com.qkt.positions.StrategyPositionView
+import com.qkt.risk.NoOpPacerView
+import com.qkt.risk.PacerView
 import com.qkt.risk.RiskView
 
 /**
@@ -46,4 +48,6 @@ data class StrategyContext(
      * accessors working unchanged.
      */
     val tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
+    /** Per-strategy pacing state exposed to DSL via `TRADES.*` and `COOLDOWN.*`. */
+    val pacer: PacerView = NoOpPacerView(),
 )

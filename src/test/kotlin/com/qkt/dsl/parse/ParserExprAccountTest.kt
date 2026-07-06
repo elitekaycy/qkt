@@ -1,11 +1,14 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.StreakRef
+import com.qkt.dsl.ast.TradesRef
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -19,6 +22,24 @@ class ParserExprAccountTest {
     fun `parses ACCOUNT field`() {
         val e = expr("ACCOUNT.equity") as AccountRef
         assertThat(e.field).isEqualTo("equity")
+    }
+
+    @Test
+    fun `parses STREAK field`() {
+        val e = expr("STREAK.banked") as StreakRef
+        assertThat(e.field).isEqualTo("banked")
+    }
+
+    @Test
+    fun `parses TRADES field`() {
+        val e = expr("TRADES.today") as TradesRef
+        assertThat(e.field).isEqualTo("today")
+    }
+
+    @Test
+    fun `parses COOLDOWN field`() {
+        val e = expr("COOLDOWN.remaining_s") as CooldownRef
+        assertThat(e.field).isEqualTo("remaining_s")
     }
 
     @Test
@@ -88,6 +109,13 @@ class ParserExprAccountTest {
     fun `parses POSITION dot mfe`() {
         val e = expr("POSITION.btc.mfe") as StateAccessor
         assertThat(e.source).isEqualTo(StateSource.POSITION_MFE)
+        assertThat(e.key).isEqualTo("btc")
+    }
+
+    @Test
+    fun `parses POSITION dot mae`() {
+        val e = expr("POSITION.btc.mae") as StateAccessor
+        assertThat(e.source).isEqualTo(StateSource.POSITION_MAE)
         assertThat(e.key).isEqualTo("btc")
     }
 

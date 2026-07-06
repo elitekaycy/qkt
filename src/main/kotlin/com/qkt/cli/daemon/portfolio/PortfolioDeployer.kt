@@ -53,6 +53,7 @@ class PortfolioDeployer(
     private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
     private val riskIntervalMs: Long = 1000L,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
+    private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
@@ -255,6 +256,7 @@ class PortfolioDeployer(
         // Match the shared-account portfolio backtest: this cap is book-wide, not N
         // independent child budgets that multiply the configured loss limit.
         val haltRules: List<com.qkt.risk.HaltRule> = emptyList()
+        val perStrategyOverride = perStrategyRisk[compiledChild.strategyId]
         val session =
             LiveSession(
                 strategies = listOf(compiledChild.strategyId to compiledChild.compiled),
@@ -289,6 +291,18 @@ class PortfolioDeployer(
                 insightsEvents = insightsEvents,
                 insightsStatePollMs = insightsStatePollMs,
                 insightsDealBackfillDays = insightsDealBackfillDays,
+                perStrategyMaxDailyLoss = perStrategyOverride?.maxDailyLoss,
+                perStrategyMaxPositionSize = perStrategyOverride?.maxPositionSize,
+                perStrategyMaxOpenPositions = perStrategyOverride?.maxOpenPositions,
+                perStrategyMaxDrawdownPct = perStrategyOverride?.maxDrawdownPct,
+                perStrategyMaxDailyDrawdownPct = perStrategyOverride?.maxDailyDrawdownPct,
+                perStrategyMaxTradesPerDay = perStrategyOverride?.maxTradesPerDay,
+                perStrategyCooldownAfterLossMs = perStrategyOverride?.cooldownAfterLossMs,
+                perStrategyCooldownAfterLossAfterConsecutive =
+                    perStrategyOverride?.cooldownAfterLossAfterConsecutive ?: 1,
+                perStrategyLossStreakHalt = perStrategyOverride?.lossStreakHalt,
+                perStrategyLossStreakHaltScope =
+                    perStrategyOverride?.lossStreakHaltScope ?: com.qkt.risk.HaltScope.PERSISTENT,
                 startingBalances =
                     allocatedCapital?.let { mapOf(compiledChild.strategyId to it) } ?: emptyMap(),
             ).start()

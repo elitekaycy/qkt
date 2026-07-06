@@ -11,6 +11,7 @@ import com.qkt.common.IdGenerator
 import com.qkt.common.Money
 import com.qkt.common.SequenceGenerator
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.ast.SeriesSymbols
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
@@ -98,7 +99,12 @@ class TradingPipeline(
      * is a fresh tracker per pipeline so backtests get isolated state; the daemon's
      * per-strategy `LiveSession` similarly gets its own.
      */
-    val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(),
+    val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(persistor = persistor),
+    val pacerLedger: com.qkt.risk.PacerLedger = com.qkt.risk.PacerLedger(),
+    private val pacerCooldownDurationMs: Long? = null,
+    private val pacerCooldownAfterConsecutive: Int = 1,
+    private val pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
+    private val pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
     /**
      * Hot-path latency observation. Default reads `QKT_LATENCY_TRACKING` once at construction;
      * unset → disabled → every observe call short-circuits on the first line, no allocation
@@ -143,6 +149,26 @@ class TradingPipeline(
         if (com.qkt.risk.isRiskReducing(req, positions)) return req
         if (f.signum() <= 0) return null
         return req.scaleQuantity(f)
+    }
+
+    private fun isRiskIncreasingFill(
+        before: com.qkt.positions.Position?,
+        after: com.qkt.positions.Position?,
+    ): Boolean {
+        val beforeQty = before?.quantity ?: BigDecimal.ZERO
+        val afterQty = after?.quantity ?: BigDecimal.ZERO
+        val flipped = beforeQty.signum() != 0 && afterQty.signum() != 0 && beforeQty.signum() != afterQty.signum()
+        return afterQty.abs() > beforeQty.abs() || flipped
+    }
+
+    private fun closesExposure(
+        before: com.qkt.positions.Position?,
+        after: com.qkt.positions.Position?,
+    ): Boolean {
+        val beforeQty = before?.quantity ?: BigDecimal.ZERO
+        val afterQty = after?.quantity ?: BigDecimal.ZERO
+        val flipped = beforeQty.signum() != 0 && afterQty.signum() != 0 && beforeQty.signum() != afterQty.signum()
+        return beforeQty.abs() > BigDecimal.ZERO && (afterQty.abs() < beforeQty.abs() || flipped)
     }
 
     /** The primary-window aggregator (candle events on the bus); null when no window configured. */
@@ -194,6 +220,15 @@ class TradingPipeline(
         com.qkt.dsl.compile
             .ScheduleRunner(brokerZoneIdFor = brokerZoneIdFor)
 
+    private val hasAccountEquitySeries: Boolean =
+        strategies.any { (_, strategy) ->
+            (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)
+                ?.declaredStreams
+                ?.values
+                ?.any { it.broker == SeriesSymbols.BROKER && it.symbol == SeriesSymbols.ACCOUNT_EQUITY_SYMBOL }
+                ?: false
+        }
+
     /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
     val latency: com.qkt.observability.LatencyRegistry =
         com.qkt.observability.LatencyRegistry(
@@ -214,6 +249,7 @@ class TradingPipeline(
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick.symbol, e.tick.price) }
 
         strategies.forEach { (strategyId, strategy) ->
+            tradeHistory.restore(strategyId)
             val ctx =
                 StrategyContext(
                     strategyId = strategyId,
@@ -226,6 +262,13 @@ class TradingPipeline(
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                     instruments = instruments,
                     tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(tradeHistory, strategyId),
+                    pacer =
+                        com.qkt.risk.PacerViewImpl(
+                            pacerLedger,
+                            strategyId,
+                            pacerCooldownDurationMsFor?.invoke(strategyId) ?: pacerCooldownDurationMs,
+                            pacerCooldownAfterConsecutiveFor?.invoke(strategyId) ?: pacerCooldownAfterConsecutive,
+                        ),
                 )
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 val t0 = if (latencyEnabled) System.nanoTime() else 0L
@@ -267,7 +310,14 @@ class TradingPipeline(
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
                 requireMultiPositionCapability(strategyId, strategy)
                 requireVolumeCapability(strategyId, strategy)
-                for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention, strategyId)
+                strategy.bindStatePersistor(strategyId, persistor)
+                val hubKeys = strategy.declaredStreams.values.toSet() + strategy.retentionByKey.keys
+                for (key in hubKeys) {
+                    candleHub.register(key, strategy.retentionByKey[key] ?: 1, strategyId)
+                }
+                for (key in strategy.declaredStreams.values) {
+                    candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
+                }
                 strategy.bindToHub(candleHub, ctx, emit)
                 strategy.bindSchedules(scheduleRunner, ctx, clock.now(), emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
@@ -278,6 +328,7 @@ class TradingPipeline(
             }
         }
         bus.subscribe<TickEvent> { e -> latchManager.onTick(e.tick) }
+        bus.subscribe<CandleEvent> { e -> latchManager.onCandle(e.candle) }
         bus.subscribe<TickEvent> { e ->
             strategyPositions.onTick(e.tick.symbol, e.tick.price)
             riskState.onTick()
@@ -342,10 +393,18 @@ class TradingPipeline(
                         timestamp = e.timestamp,
                         referencePrice = e.price,
                     ).account.amount
-            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(costs))
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, accountStratRealized, e.symbol)
-            riskState.onFill(e.strategyId, accountStratRealized.subtract(costs))
-            if (accountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
+            val netAccountStratRealized = accountStratRealized.subtract(costs)
+            strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
+            val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
+            if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
+                pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
+            }
+            if (closesExposure(strategyBefore, strategyAfter)) {
+                pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
+            }
+            riskState.onFill(e.strategyId, netAccountStratRealized)
+            if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
 
             val trade =
@@ -387,6 +446,7 @@ class TradingPipeline(
                     typedVenueCosts = e.typedVenueCosts,
                 )
             val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             val venueCosts =
                 if (e.typedVenueCosts.isNotEmpty()) {
@@ -417,10 +477,18 @@ class TradingPipeline(
                         timestamp = e.timestamp,
                         referencePrice = e.price,
                     ).account.amount
-            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(costs))
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, accountStratRealized, e.symbol)
-            riskState.onFill(e.strategyId, accountStratRealized.subtract(costs))
-            if (accountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
+            val netAccountStratRealized = accountStratRealized.subtract(costs)
+            strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
+            val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
+            if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
+                pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
+            }
+            if (closesExposure(strategyBefore, strategyAfter)) {
+                pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
+            }
+            riskState.onFill(e.strategyId, netAccountStratRealized)
+            if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
             val trade =
                 Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
@@ -465,8 +533,21 @@ class TradingPipeline(
         // dropped before it can poison indicators, marks, or triggers (#395).
         if (marketDataGate?.observe(tick) == com.qkt.marketdata.MarketDataGate.Verdict.OUTLIER) return
         engine.onTick(tick)
+        sampleAccountEquitySeries(tick.timestamp)
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
+    }
+
+    private fun sampleAccountEquitySeries(nowMs: Long) {
+        if (!hasAccountEquitySeries) return
+        candleHub.feed(
+            Tick(
+                symbol = "${SeriesSymbols.BROKER}:${SeriesSymbols.ACCOUNT_EQUITY_SYMBOL}",
+                price = riskState.equityTracker.currentEquity(),
+                timestamp = nowMs,
+                volume = Money.ZERO,
+            ),
+        )
     }
 
     private companion object {
@@ -497,6 +578,7 @@ class TradingPipeline(
      */
     fun scheduleHeartbeat(nowMs: Long) {
         scheduleRunner.tick(nowMs)
+        sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
         // ends, not when the next tick eventually arrives (live only — the heartbeat
         // doesn't run in backtest, where event-time is the only clock).

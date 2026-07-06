@@ -28,6 +28,7 @@ import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.CrossDir
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
@@ -47,11 +48,16 @@ import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
+import com.qkt.dsl.ast.LatchCloseBeyond
+import com.qkt.dsl.ast.LatchConfirm
 import com.qkt.dsl.ast.LatchEntry
+import com.qkt.dsl.ast.LatchFirstTick
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
 import com.qkt.dsl.ast.LatchOrder
+import com.qkt.dsl.ast.LatchRetestHold
 import com.qkt.dsl.ast.LatchStop
+import com.qkt.dsl.ast.LatchTimeInBreach
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
@@ -71,6 +77,11 @@ import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
+import com.qkt.dsl.ast.SequenceDecl
+import com.qkt.dsl.ast.SequenceStageDecl
+import com.qkt.dsl.ast.SeriesDecl
+import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
@@ -99,6 +110,7 @@ import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
@@ -106,6 +118,7 @@ import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TimeOfDay
 import com.qkt.dsl.ast.Timezone
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnOp
@@ -276,7 +289,7 @@ class Parser(
         var version = 0
         try {
             expect(TokenKind.STRATEGY, "expected STRATEGY")
-            name = expect(TokenKind.IDENT, "expected strategy name").lexeme
+            name = expectName("expected strategy name").lexeme
             expect(TokenKind.VERSION, "expected VERSION")
             val v = expect(TokenKind.NUMBER, "expected integer version")
             version = v.lexeme.toIntOrNull() ?: error("VERSION must be an integer, got '${v.lexeme}'")
@@ -300,6 +313,7 @@ class Parser(
         val streams = symbolsBlock.streams
         val syncGroups = symbolsBlock.syncGroups
         val baskets = symbolsBlock.baskets
+        val series = symbolsBlock.series
 
         val params =
             run {
@@ -324,6 +338,15 @@ class Parser(
                 emptyList()
             }
 
+        val sequences =
+            run {
+                val acc = mutableListOf<SequenceDecl>()
+                while (peek().kind == TokenKind.SEQUENCE) {
+                    tryParse { parseSequence() }?.let { acc.add(it) }
+                }
+                acc
+            }
+
         val rules =
             if (peek().kind == TokenKind.RULES) {
                 tryParse { parseRules() } ?: emptyList()
@@ -346,6 +369,8 @@ class Parser(
                 syncGroups = syncGroups,
                 schedules = schedules,
                 baskets = baskets,
+                series = series,
+                sequences = sequences,
             ),
         )
     }
@@ -572,6 +597,34 @@ class Parser(
                 expect(TokenKind.DOT, "expected '.' after ACCOUNT")
                 AccountRef(expectFieldName().lexeme)
             }
+            TokenKind.STREAK -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after STREAK")
+                StreakRef(expectFieldName().lexeme)
+            }
+            TokenKind.TRADES -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after TRADES")
+                TradesRef(expectFieldName().lexeme)
+            }
+            TokenKind.COOLDOWN -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after COOLDOWN")
+                CooldownRef(expectFieldName().lexeme)
+            }
+            TokenKind.SEQUENCE -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after SEQUENCE")
+                val sequenceName = expectFieldName().lexeme
+                expect(TokenKind.DOT, "expected '.' after SEQUENCE name")
+                val first = expectFieldName().lexeme
+                if (first == "stage" || first == "complete") {
+                    SequenceAccessor(sequenceName, null, first)
+                } else {
+                    expect(TokenKind.DOT, "expected '.' after SEQUENCE stage name")
+                    SequenceAccessor(sequenceName, first, expectFieldName().lexeme)
+                }
+            }
             TokenKind.POSITION -> {
                 advance()
                 expect(TokenKind.DOT, "expected '.' after POSITION")
@@ -588,6 +641,7 @@ class Parser(
                         "unrealized_pnl" -> StateAccessor(StateSource.POSITION_UNREALIZED_PNL, streamAlias)
                         "holding_duration" -> StateAccessor(StateSource.POSITION_HOLDING_DURATION, streamAlias)
                         "mfe" -> StateAccessor(StateSource.POSITION_MFE, streamAlias)
+                        "mae" -> StateAccessor(StateSource.POSITION_MAE, streamAlias)
                         "count", "open_count" -> StateAccessor(StateSource.POSITION_OPEN_COUNT, streamAlias)
                         "longs", "long_count" -> StateAccessor(StateSource.POSITION_LONG_COUNT, streamAlias)
                         "shorts", "short_count" -> StateAccessor(StateSource.POSITION_SHORT_COUNT, streamAlias)
@@ -1104,6 +1158,12 @@ class Parser(
             } else {
                 null
             }
+        val confirm =
+            if (match(TokenKind.CONFIRM)) {
+                parseLatchConfirm()
+            } else {
+                LatchFirstTick
+            }
         expect(TokenKind.LBRACE, "expected '{' to open LATCH block")
         val entries = mutableListOf(parseLatchEntry())
 
@@ -1111,11 +1171,36 @@ class Parser(
             entries.add(parseLatchEntry())
         }
         expect(TokenKind.RBRACE, "expected '}' to close LATCH block")
-        return Latch(stream, BreakOffset(reference, offset), armWindow, name, entries)
+        return Latch(stream, BreakOffset(reference, offset), armWindow, name, entries, confirm)
     }
+
+    private fun parseLatchConfirm(): LatchConfirm =
+        when (peek().kind) {
+            TokenKind.CLOSE_BEYOND -> {
+                advance()
+                LatchCloseBeyond
+            }
+            TokenKind.TIME_IN_BREACH -> {
+                advance()
+                LatchTimeInBreach(parseDuration())
+            }
+            TokenKind.RETEST_HOLD -> {
+                advance()
+                val distance = parseExpr()
+                expect(TokenKind.WITHIN, "expected WITHIN after RETEST_HOLD distance")
+                LatchRetestHold(distance, parseDuration())
+            }
+            else -> error("expected CLOSE_BEYOND, TIME_IN_BREACH, or RETEST_HOLD after CONFIRM")
+        }
 
     private fun parseLatchEntry(): LatchEntry {
         expect(TokenKind.ENTER, "expected ENTER in LATCH block")
+        val entryStream =
+            if (match(TokenKind.ON)) {
+                expect(TokenKind.IDENT, "expected stream alias after ENTER ON").lexeme
+            } else {
+                null
+            }
         val order = parseLatchOrder()
         var bracket: LatchBracket? = null
         var sizing: SizingAst? = null
@@ -1137,7 +1222,7 @@ class Parser(
                 else -> break@loop
             }
         }
-        return LatchEntry(order, bracket, sizing, expire)
+        return LatchEntry(order, bracket, sizing, expire, entryStream)
     }
 
     private fun parseLatchOrder(): LatchOrder =
@@ -1315,16 +1400,31 @@ class Parser(
 
     /**
      * Phase 27: `STACK_AT MFE >= <expr> WITHIN <duration> SIZING <sizing> BRACKET { ... }`.
+     * Phase 38: `STACK_AT MAE >= <expr> RECOVER <expr> WITHIN <duration> ...`.
      *
      * The clause attaches to its parent BUY/SELL action. The stack engine fires the stack
      * when the parent leg's MFE crosses the threshold within the duration window.
      */
     private fun parseStackAtClause(): StackAtClause {
         expect(TokenKind.STACK_AT, "expected STACK_AT")
-        expect(TokenKind.MFE, "expected MFE after STACK_AT")
-        expect(TokenKind.GE, "expected '>=' after MFE in STACK_AT")
+        val trigger = peek().kind
+        when (trigger) {
+            TokenKind.MFE, TokenKind.MAE -> advance()
+            else -> {
+                errors += ParseError(peek().line, peek().col, "expected MFE or MAE after STACK_AT")
+                advance()
+            }
+        }
+        expect(TokenKind.GE, "expected '>=' after MFE/MAE in STACK_AT")
         val threshold = parseExpr()
-        expect(TokenKind.WITHIN, "expected WITHIN after MFE threshold in STACK_AT")
+        val recoverDistance =
+            if (trigger == TokenKind.MAE) {
+                expect(TokenKind.RECOVER, "expected RECOVER after MAE threshold in STACK_AT")
+                parseExpr()
+            } else {
+                null
+            }
+        expect(TokenKind.WITHIN, "expected WITHIN after STACK_AT threshold")
         val duration = parseDuration()
         expect(TokenKind.SIZING, "expected SIZING in STACK_AT clause")
         val sizing = parseSizing()
@@ -1335,6 +1435,7 @@ class Parser(
             withinDuration = duration,
             sizing = sizing,
             bracket = bracket,
+            maeRecoverDistance = recoverDistance,
         )
     }
 
@@ -1658,11 +1759,13 @@ class Parser(
         val streams: List<StreamDecl>,
         val syncGroups: List<SyncGroupDecl>,
         val baskets: List<com.qkt.dsl.ast.BasketDecl> = emptyList(),
+        val series: List<SeriesDecl> = emptyList(),
     )
 
     private fun parseSymbols(): SymbolsBlock {
         val out = mutableListOf<StreamDecl>()
         val baskets = mutableListOf<com.qkt.dsl.ast.BasketDecl>()
+        val series = mutableListOf<SeriesDecl>()
         expect(TokenKind.SYMBOLS, "expected SYMBOLS")
         do {
             val alias = expect(TokenKind.IDENT, "expected stream alias").lexeme
@@ -1671,6 +1774,8 @@ class Parser(
             // (`<broker>:<symbol> ...`). A basket combines already-declared streams.
             if (peek().kind == TokenKind.BASKET) {
                 baskets.add(parseBasket(alias))
+            } else if (peek().kind == TokenKind.SERIES) {
+                series.add(parseSeries(alias))
             } else {
                 out.add(parseStream(alias))
             }
@@ -1687,7 +1792,7 @@ class Parser(
         val groups = mutableListOf<SyncGroupDecl>()
         // A basket alias is a valid sync member too: a strategy may synchronize a real
         // stream with a basket so a cross-stream condition reads same-window bars.
-        val declaredAliases = (out.map { it.alias } + baskets.map { it.alias }).toSet()
+        val declaredAliases = (out.map { it.alias } + baskets.map { it.alias } + series.map { it.alias }).toSet()
         val claimed = mutableMapOf<String, Int>()
         while (peek().kind == TokenKind.SYNCHRONIZE) {
             advance()
@@ -1721,7 +1826,48 @@ class Parser(
             groups.add(SyncGroupDecl(aliases = aliases.toList(), timeoutMs = timeoutMs))
         }
 
-        return SymbolsBlock(streams = out, syncGroups = groups, baskets = baskets)
+        return SymbolsBlock(streams = out, syncGroups = groups, baskets = baskets, series = series)
+    }
+
+    /** Parse the series body after `<alias> =`: `SERIES ACCOUNT.EQUITY EVERY <tf>`. */
+    private fun parseSeries(alias: String): SeriesDecl {
+        expect(TokenKind.SERIES, "expected SERIES")
+        val source =
+            when (peek().kind) {
+                TokenKind.ACCOUNT -> {
+                    advance()
+                    expect(TokenKind.DOT, "expected '.' after ACCOUNT in SERIES declaration")
+                    expect(TokenKind.EQUITY, "expected EQUITY after ACCOUNT. in SERIES declaration")
+                    SeriesSource.ACCOUNT_EQUITY
+                }
+                else -> error("expected ACCOUNT.EQUITY after SERIES, got '${peek().lexeme}'")
+            }
+        expect(TokenKind.EVERY, "expected EVERY after SERIES source")
+        val timeframe = parseTimeframe()
+        val windowMs =
+            com.qkt.candles.TimeWindow
+                .parse(timeframe)
+                .durationMs
+        if (windowMs < 60_000L) error("SERIES '$alias' timeframe must be >= 1m, got '$timeframe'")
+        return SeriesDecl(alias = alias, source = source, timeframe = timeframe)
+    }
+
+    private fun parseSequence(): SequenceDecl {
+        expect(TokenKind.SEQUENCE, "expected SEQUENCE")
+        val name = expect(TokenKind.IDENT, "expected sequence name after SEQUENCE").lexeme
+        expect(TokenKind.ON, "expected ON after SEQUENCE name")
+        val stream = expect(TokenKind.IDENT, "expected stream alias after SEQUENCE ON").lexeme
+        expect(TokenKind.LBRACE, "expected '{' to open SEQUENCE block")
+        val stages = mutableListOf<SequenceStageDecl>()
+        while (peek().kind != TokenKind.RBRACE && peek().kind != TokenKind.EOF) {
+            expect(TokenKind.STAGE, "expected STAGE in SEQUENCE block")
+            val stageName = expect(TokenKind.IDENT, "expected stage name after STAGE").lexeme
+            val within = if (match(TokenKind.WITHIN)) parseDuration() else null
+            expect(TokenKind.COLON, "expected ':' after SEQUENCE stage header")
+            stages += SequenceStageDecl(stageName, within, parseExpr())
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close SEQUENCE block")
+        return SequenceDecl(name, stream, stages)
     }
 
     /** Parse the stream body after `<alias> =`: `<broker>:<symbol> EVERY <tf> [WARMUP <n> BARS]`. */
@@ -1969,6 +2115,14 @@ class Parser(
             return advance()
         }
         error("expected field name, got '${t.lexeme}'")
+    }
+
+    private fun expectName(msg: String): Token {
+        val t = peek()
+        if (t.kind == TokenKind.IDENT || isIdentLikeLexeme(t.lexeme)) {
+            return advance()
+        }
+        error("$msg, got '${t.lexeme}'")
     }
 
     private fun isIdentLikeLexeme(s: String): Boolean {
