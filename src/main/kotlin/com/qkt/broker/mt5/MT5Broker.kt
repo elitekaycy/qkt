@@ -15,6 +15,7 @@ import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
 /**
@@ -78,6 +79,7 @@ class MT5Broker(
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
+    private val gatewayDown = AtomicBoolean(false)
     internal val poller =
         MT5PositionPoller(
             client,
@@ -91,6 +93,7 @@ class MT5Broker(
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onGatewayUnreachable = ::publishGatewayUnreachable,
+            onGatewayRecovered = ::publishGatewayRecovered,
             onPollRound = ::refreshMarginLevelIfStale,
         )
     internal val pendingPoller =
@@ -101,6 +104,7 @@ class MT5Broker(
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onPendingDisappeared = ::onPendingDisappeared,
             onGatewayUnreachable = ::publishGatewayUnreachable,
+            onGatewayRecovered = ::publishGatewayRecovered,
         )
     private val stateRecovery =
         MT5StateRecovery(
@@ -312,9 +316,23 @@ class MT5Broker(
     }
 
     private fun publishGatewayUnreachable(consecutiveFailures: Int) {
+        if (!gatewayDown.compareAndSet(false, true)) return
         bus.publish(
             BrokerEvent.GatewayUnreachable(
                 broker = profile.name,
+                consecutiveFailures = consecutiveFailures,
+                timestamp = clock.now(),
+            ),
+        )
+    }
+
+    private fun publishGatewayRecovered(consecutiveFailures: Int) {
+        if (!gatewayDown.compareAndSet(true, false)) return
+        bus.publish(
+            BrokerEvent.ConnectionChanged(
+                broker = profile.name,
+                state = BrokerEvent.ConnectionState.RECONNECTED,
+                reason = "gateway-recovered",
                 consecutiveFailures = consecutiveFailures,
                 timestamp = clock.now(),
             ),
@@ -1128,7 +1146,8 @@ class MT5Broker(
             BrokerEvent.OrderModified(
                 clientOrderId = orderId,
                 brokerOrderId = ticket.toString(),
-                strategyId = "",
+                changes = changes,
+                strategyId = pendingByTicket[ticket]?.strategyId ?: "",
                 timestamp = clock.now(),
             ),
         )

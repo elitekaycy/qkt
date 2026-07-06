@@ -83,6 +83,16 @@ class LiveSessionInsightsTest {
                 calendar = TradingCalendar.crypto(),
                 insightsSink = sink,
                 insightsEvents = InsightsEventFamily.entries.toSet(),
+                insightsStrategyMetadata =
+                    mapOf(
+                        "roundtrip" to
+                            mapOf(
+                                "sourcePath" to "/srv/qkt/strategies/roundtrip.qkt",
+                                "dslVersion" to 1,
+                                "runtimeMode" to "paper",
+                                "symbols" to listOf("X"),
+                            ),
+                    ),
             )
 
         val handle = session.start()
@@ -96,6 +106,7 @@ class LiveSessionInsightsTest {
                 "\"type\":\"order.submit\"",
                 "\"type\":\"trade\"",
                 "\"type\":\"trade.closed\"",
+                "\"type\":\"strategy.started\"",
             )
         val bodies = StringBuilder()
         val deadline = System.currentTimeMillis() + 5_000
@@ -113,6 +124,9 @@ class LiveSessionInsightsTest {
         assertThat(all).contains("\"type\":\"order.submit\"")
         assertThat(all).contains("\"type\":\"trade\"")
         assertThat(all).contains("\"type\":\"trade.closed\"")
+        assertThat(all).contains("\"type\":\"strategy.started\"")
+        assertThat(all).contains("\"sourcePath\":\"/srv/qkt/strategies/roundtrip.qkt\"")
+        assertThat(all).contains("\"runtimeMode\":\"paper\"")
         assertThat(all).contains("\"realized\":")
         assertThat(all).contains("\"symbol\":\"X\"")
     }

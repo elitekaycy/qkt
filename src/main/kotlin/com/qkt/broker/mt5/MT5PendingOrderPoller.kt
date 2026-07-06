@@ -35,6 +35,8 @@ class MT5PendingOrderPoller(
     private val onPendingDisappeared: ((Long) -> Unit)? = null,
     /** See [MT5PositionPoller]'s hook of the same name. */
     private val onGatewayUnreachable: ((Int) -> Unit)? = null,
+    /** See [MT5PositionPoller]'s hook of the same name. */
+    private val onGatewayRecovered: ((Int) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5PendingOrderPoller::class.java)
     private val running = AtomicBoolean(false)
@@ -96,6 +98,10 @@ class MT5PendingOrderPoller(
                 }
                 return
             }
+        if (consecutiveFailures >= GATEWAY_FAILURE_ALERT_THRESHOLD) {
+            log.info("MT5 pending poller for {} gateway recovered after {} failures", profile.name, consecutiveFailures)
+            onGatewayRecovered?.invoke(consecutiveFailures)
+        }
         consecutiveFailures = 0
         val current = snapshot.associateBy { it.ticket }
         val disappeared = lastSnapshot.keys - current.keys
