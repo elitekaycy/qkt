@@ -1,10 +1,34 @@
 package com.qkt.observe.insights
 
+import com.qkt.broker.OrderModification
 import com.qkt.common.Side
+import com.qkt.dsl.ast.ChildArmedTrail
+import com.qkt.dsl.ast.ChildBy
+import com.qkt.dsl.ast.ChildRr
+import com.qkt.dsl.ast.Limit as AstLimit
+import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.SizeQty
+import com.qkt.dsl.ast.StackDirection
 import com.qkt.events.BrokerEvent
+import com.qkt.events.OrderEvent
+import com.qkt.events.RiskEvent
+import com.qkt.events.SignalEvent
 import com.qkt.events.TradeEvent
+import com.qkt.execution.At
+import com.qkt.execution.ExpiryAction
+import com.qkt.execution.Immediate
+import com.qkt.execution.LayerSpec
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.ScaleOutLeg
+import com.qkt.execution.StackPlan
+import com.qkt.execution.StopLossSpec
+import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
+import com.qkt.execution.TrailMode
+import com.qkt.execution.TriggerType
+import com.qkt.strategy.Signal
 import java.math.BigDecimal
+import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -31,6 +55,66 @@ class InsightsTranslateTest {
         assertThat(env.id).isEqualTo("e42")
         assertThat(env.payload["orderId"]).isEqualTo("o1")
         assertThat(env.payload["side"]).isEqualTo("BUY")
+    }
+
+    @Test
+    fun `global risk events omit blank strategy attribution`() {
+        val halted =
+            RiskEvent.Halted(
+                reason = "operator",
+                strategyId = null,
+                timestamp = 1718000000000L,
+                sequenceId = 9L,
+            )
+        val resumed =
+            RiskEvent.Resumed(
+                strategyId = null,
+                timestamp = 1718000001000L,
+                sequenceId = 10L,
+            )
+
+        val haltedEnv = InsightsTranslate.fromRiskHalted(halted)
+        val haltedJson = haltedEnv.toJson("qkt-prod")
+        val resumedJson = InsightsTranslate.fromRiskResumed(resumed).toJson("qkt-prod")
+
+        assertThat(haltedEnv.strategyId).isNull()
+        assertThat(haltedJson).contains(""""type":"risk.halted""")
+        assertThat(haltedJson).doesNotContain("strategyId")
+        assertThat(resumedJson).contains(""""type":"risk.resumed""")
+        assertThat(resumedJson).doesNotContain("strategyId")
+    }
+
+    @Test
+    fun `strategy lifecycle events use deterministic ids and strategy attribution`() {
+        val started =
+            InsightsTranslate.strategyStarted(
+                strategyId = "hedge_straddle",
+                ts = 1718000000000L,
+                metadata =
+                    mapOf(
+                        "sourcePath" to "/srv/qkt/strategies/hedge.qkt",
+                        "dslVersion" to 1,
+                        "symbols" to listOf("EXNESS:XAUUSD"),
+                    ),
+            )
+        val stopped =
+            InsightsTranslate.strategyStopped(
+                strategyId = "hedge_straddle",
+                ts = 1718000005000L,
+                flatten = false,
+            )
+
+        assertThat(started.id).isEqualTo("strategy-started-hedge_straddle-1718000000000")
+        assertThat(started.seq).isEqualTo(0L)
+        assertThat(started.type).isEqualTo("strategy.started")
+        assertThat(started.strategyId).isEqualTo("hedge_straddle")
+        assertThat(started.toJson("qkt-prod")).contains(""""strategyId":"hedge_straddle"""")
+        assertThat(started.toJson("qkt-prod")).contains(""""sourcePath":"/srv/qkt/strategies/hedge.qkt"""")
+        assertThat(started.toJson("qkt-prod")).contains(""""dslVersion":1""")
+        assertThat(started.toJson("qkt-prod")).contains(""""symbols":["EXNESS:XAUUSD"]""")
+        assertThat(stopped.id).isEqualTo("strategy-stopped-hedge_straddle-1718000005000")
+        assertThat(stopped.type).isEqualTo("strategy.stopped")
+        assertThat(stopped.toJson("qkt-prod")).contains("\"flatten\":false")
     }
 
     @Test
@@ -63,6 +147,44 @@ class InsightsTranslateTest {
         val e = BrokerEvent.GatewayUnreachable(broker = "mt5", consecutiveFailures = 3, timestamp = 1L, sequenceId = 9L)
         val env = InsightsTranslate.fromGatewayUnreachable(e)
         assertThat(env.payload["detail"].toString()).contains("mt5").contains("3")
+    }
+
+    @Test
+    fun `broker and marketdata lifecycle envelopes carry source health context`() {
+        val down =
+            InsightsTranslate.fromBrokerGatewayUnreachable(
+                BrokerEvent.GatewayUnreachable(
+                    broker = "EXNESS",
+                    consecutiveFailures = 3,
+                    timestamp = 1718000000000L,
+                    sequenceId = 41L,
+                ),
+            )
+        assertThat(down.type).isEqualTo("broker.disconnected")
+        assertThat(down.payload).containsEntry("broker", "EXNESS")
+        assertThat(down.payload).containsEntry("consecutiveFailures", 3)
+
+        val recovered =
+            InsightsTranslate.fromBrokerConnectionChanged(
+                BrokerEvent.ConnectionChanged(
+                    broker = "EXNESS",
+                    state = BrokerEvent.ConnectionState.RECONNECTED,
+                    reason = "gateway-recovered",
+                    consecutiveFailures = 4,
+                    timestamp = 1718000000100L,
+                    sequenceId = 42L,
+                ),
+            )
+        assertThat(recovered.type).isEqualTo("broker.reconnected")
+        assertThat(recovered.payload).containsEntry("reason", "gateway-recovered")
+
+        val connected = InsightsTranslate.brokerConnected("paper", 1718000000200L)
+        assertThat(connected.type).isEqualTo("broker.connected")
+        assertThat(connected.payload).containsEntry("state", "connected")
+
+        val md = InsightsTranslate.marketDataReconnected("tradingview", listOf("XAUUSD"), 1718000000300L)
+        assertThat(md.type).isEqualTo("marketdata.reconnected")
+        assertThat(md.payload["symbols"]).isEqualTo(listOf("XAUUSD"))
     }
 
     @Test
@@ -229,5 +351,381 @@ class InsightsTranslateTest {
         assertThat(json).doesNotContain("strategyId")
         assertThat(json).doesNotContain("positionTicket")
         assertThat(json).doesNotContain("null")
+    }
+
+    @Test
+    fun `signal event includes strategy attribution and size`() {
+        val env =
+            InsightsTranslate.fromSignal(
+                SignalEvent(
+                    signal = Signal.Buy("XAUUSD", BigDecimal("0.25")),
+                    strategyId = "latch",
+                    timestamp = 1718000000000L,
+                    sequenceId = 11L,
+                ),
+            )!!
+
+        assertThat(env.type).isEqualTo("signal")
+        assertThat(env.strategyId).isEqualTo("latch")
+        assertThat(env.payload).containsEntry("intent", "BUY")
+        assertThat(env.payload).containsEntry("symbol", "XAUUSD")
+        assertThat(env.payload).containsEntry("side", "BUY")
+        assertThat(env.payload["qty"]).isEqualTo(BigDecimal("0.25"))
+    }
+
+    @Test
+    fun `order submit preserves bracket prices and child order metadata`() {
+        val entry =
+            OrderRequest.Market(
+                id = "entry",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1718000000000L,
+                strategyId = "latch",
+            )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "br1",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                entry = entry,
+                takeProfit = BigDecimal("2360.00"),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("2340.00")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1718000000001L,
+                strategyId = "latch",
+                takeProfitAst = ChildRr(NumLit(BigDecimal("2"))),
+                stopLossAst = ChildBy(NumLit(BigDecimal("10"))),
+            )
+
+        val env = InsightsTranslate.fromOrderSubmit(OrderEvent(bracket, timestamp = 1L, sequenceId = 12L))
+        assertThat(env.payload).containsEntry("orderType", "Bracket")
+        assertThat(env.payload).containsEntry("timeInForce", "GTC")
+        assertThat(env.payload).containsEntry("strategyId", "latch")
+        assertThat(env.payload).containsEntry("takeProfit", BigDecimal("2360.00"))
+        assertThat(env.payload["entry"]).isInstanceOf(Map::class.java)
+        assertThat(env.payload["stopLoss"]).isInstanceOf(Map::class.java)
+        @Suppress("UNCHECKED_CAST")
+        val stop = env.payload["stopLoss"] as Map<String, Any?>
+        assertThat(stop).containsEntry("type", "Fixed")
+        assertThat(stop).containsEntry("price", BigDecimal("2340.00"))
+        @Suppress("UNCHECKED_CAST")
+        val tpAst = env.payload["takeProfitAst"] as Map<String, Any?>
+        assertThat(tpAst).containsEntry("type", "Rr")
+        @Suppress("UNCHECKED_CAST")
+        val slAst = env.payload["stopLossAst"] as Map<String, Any?>
+        assertThat(slAst).containsEntry("type", "By")
+    }
+
+    @Test
+    fun `order submit payload covers every order request subtype`() {
+        fun market(
+            id: String = "m1",
+            side: Side = Side.BUY,
+        ) = OrderRequest.Market(
+            id = id,
+            symbol = "XAUUSD",
+            side = side,
+            quantity = BigDecimal("0.10"),
+            timeInForce = TimeInForce.GTC,
+            timestamp = 1718000000000L,
+            strategyId = "latch",
+        )
+
+        val requests =
+            listOf(
+                market().copy(closesTicket = "ticket-1", closesLegId = "leg-1"),
+                OrderRequest.Limit(
+                    "lim",
+                    "XAUUSD",
+                    Side.BUY,
+                    BigDecimal("0.10"),
+                    BigDecimal("2349.5"),
+                    TimeInForce.GTD,
+                    1L,
+                    "latch",
+                    2L,
+                ),
+                OrderRequest.Stop(
+                    "stop",
+                    "XAUUSD",
+                    Side.BUY,
+                    BigDecimal("0.10"),
+                    BigDecimal("2355"),
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.StopLimit(
+                    "slim",
+                    "XAUUSD",
+                    Side.BUY,
+                    BigDecimal("0.10"),
+                    BigDecimal("2355"),
+                    BigDecimal("2356"),
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.IfTouched(
+                    "touch",
+                    "XAUUSD",
+                    Side.SELL,
+                    BigDecimal("0.10"),
+                    BigDecimal("2360"),
+                    TriggerType.LIMIT,
+                    BigDecimal("2359"),
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.TrailingStop(
+                    "trail",
+                    "XAUUSD",
+                    Side.SELL,
+                    BigDecimal("0.10"),
+                    BigDecimal("10"),
+                    TrailMode.ABSOLUTE,
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.ArmedTrailingStop(
+                    "armed",
+                    "XAUUSD",
+                    Side.SELL,
+                    BigDecimal("0.10"),
+                    BigDecimal("2350"),
+                    BigDecimal("8"),
+                    BigDecimal("12"),
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.TrailingStopLimit(
+                    "tsl",
+                    "XAUUSD",
+                    Side.SELL,
+                    BigDecimal("0.10"),
+                    BigDecimal("1.5"),
+                    TrailMode.PERCENT,
+                    BigDecimal("0.2"),
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.StandaloneOCO(
+                    "oco",
+                    "XAUUSD",
+                    Side.BUY,
+                    BigDecimal("0.10"),
+                    market("oco-a"),
+                    market("oco-b", Side.SELL),
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.OTO(
+                    "oto",
+                    "XAUUSD",
+                    Side.BUY,
+                    BigDecimal("0.10"),
+                    market("oto-parent"),
+                    listOf(market("oto-child", Side.SELL)),
+                    TimeInForce.GTC,
+                    1L,
+                    "latch",
+                ),
+                OrderRequest.Bracket(
+                    id = "br",
+                    symbol = "XAUUSD",
+                    side = Side.BUY,
+                    quantity = BigDecimal("0.10"),
+                    entry = market("br-entry"),
+                    takeProfit = BigDecimal("2360"),
+                    stopLoss = StopLossSpec.ArmedTrail(BigDecimal("8"), BigDecimal("12")),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
+                    takeProfitAst = ChildRr(NumLit(BigDecimal("2"))),
+                    stopLossAst = ChildArmedTrail(NumLit(BigDecimal("8")), NumLit(BigDecimal("12"))),
+                ),
+                OrderRequest.ScaleOut(
+                    id = "scale",
+                    symbol = "XAUUSD",
+                    side = Side.SELL,
+                    quantity = BigDecimal("0.10"),
+                    basis = market("scale-basis"),
+                    legs = listOf(ScaleOutLeg(BigDecimal("2360"), BigDecimal("0.5"))),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
+                ),
+                OrderRequest.TimeExit(
+                    id = "time",
+                    symbol = "XAUUSD",
+                    side = Side.SELL,
+                    quantity = BigDecimal("0.10"),
+                    target = market("time-target"),
+                    deadline = Instant.ofEpochMilli(1718000060000L),
+                    onExpiry = ExpiryAction.CLOSE_AT_MARKET,
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
+                ),
+                OrderRequest.Stack(
+                    id = "stack",
+                    symbol = "XAUUSD",
+                    side = Side.BUY,
+                    quantity = BigDecimal("0.30"),
+                    plan =
+                        StackPlan(
+                            layers =
+                                listOf(
+                                    LayerSpec(
+                                        0,
+                                        SizeQty(NumLit(BigDecimal("0.10"))),
+                                        com.qkt.dsl.ast.Market,
+                                        Immediate,
+                                        BigDecimal("0.10"),
+                                    ),
+                                    LayerSpec(
+                                        1,
+                                        SizeQty(NumLit(BigDecimal("0.20"))),
+                                        AstLimit(NumLit(BigDecimal("2345"))),
+                                        At(NumLit(BigDecimal("2345")), StackDirection.BELOW),
+                                        BigDecimal("0.20"),
+                                    ),
+                                ),
+                            outerBracket =
+                                com.qkt.dsl.ast.BracketAst(
+                                    takeProfit = ChildRr(NumLit(BigDecimal("2"))),
+                                    stopLoss = ChildBy(NumLit(BigDecimal("10"))),
+                                ),
+                            withinMillis = 60_000L,
+                        ),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
+                ),
+            )
+
+        val byType =
+            requests.associate { request ->
+                request.javaClass.simpleName to
+                    InsightsTranslate
+                        .fromOrderSubmit(
+                            OrderEvent(request, timestamp = 1L, sequenceId = request.id.hashCode().toLong()),
+                        ).payload
+            }
+
+        assertThat(byType.keys)
+            .containsExactlyInAnyOrder(
+                "Market",
+                "Limit",
+                "Stop",
+                "StopLimit",
+                "IfTouched",
+                "TrailingStop",
+                "ArmedTrailingStop",
+                "TrailingStopLimit",
+                "StandaloneOCO",
+                "OTO",
+                "Bracket",
+                "ScaleOut",
+                "TimeExit",
+                "Stack",
+            )
+        assertThat(byType.getValue("Market")).containsEntry("closesTicket", "ticket-1")
+        assertThat(
+            byType.getValue("Limit"),
+        ).containsEntry("limitPrice", BigDecimal("2349.5")).containsEntry("expiresAt", 2L)
+        assertThat(byType.getValue("Stop")).containsEntry("stopPrice", BigDecimal("2355"))
+        assertThat(
+            byType.getValue("StopLimit"),
+        ).containsEntry("stopPrice", BigDecimal("2355")).containsEntry("limitPrice", BigDecimal("2356"))
+        assertThat(
+            byType.getValue("IfTouched"),
+        ).containsEntry("onTrigger", "LIMIT").containsEntry("triggerPrice", BigDecimal("2360"))
+        assertThat(
+            byType.getValue("TrailingStop"),
+        ).containsEntry("trailMode", "ABSOLUTE").containsEntry("trailAmount", BigDecimal("10"))
+        assertThat(
+            byType.getValue("ArmedTrailingStop"),
+        ).containsEntry("entryPrice", BigDecimal("2350")).containsEntry("mfeThreshold", BigDecimal("12"))
+        assertThat(
+            byType.getValue("TrailingStopLimit"),
+        ).containsEntry("trailMode", "PERCENT").containsEntry("limitOffset", BigDecimal("0.2"))
+        assertThat(byType.getValue("StandaloneOCO")["leg1"]).isInstanceOf(Map::class.java)
+        assertThat(byType.getValue("OTO")["children"]).isInstanceOf(List::class.java)
+        assertThat(byType.getValue("Bracket")["stopLossAst"]).isInstanceOf(Map::class.java)
+        assertThat(byType.getValue("ScaleOut")["legs"]).isInstanceOf(List::class.java)
+        assertThat(
+            byType.getValue("TimeExit"),
+        ).containsEntry("deadline", 1718000060000L).containsEntry("onExpiry", "CLOSE_AT_MARKET")
+        assertThat(byType.getValue("Stack")["stackLayers"]).isInstanceOf(List::class.java)
+        @Suppress("UNCHECKED_CAST")
+        val stackLayers = byType.getValue("Stack")["stackLayers"] as List<Map<String, Any?>>
+        assertThat(stackLayers).hasSize(2)
+        assertThat(stackLayers[1]["trigger"]).isInstanceOf(Map::class.java)
+        assertThat(byType.getValue("Stack")["outerBracket"]).isInstanceOf(Map::class.java)
+    }
+
+    @Test
+    fun `partial fill preserves broker id side and costs`() {
+        val env =
+            InsightsTranslate.fromOrderPartiallyFilled(
+                BrokerEvent.OrderPartiallyFilled(
+                    clientOrderId = "o1",
+                    brokerOrderId = "b1",
+                    symbol = "XAUUSD",
+                    side = Side.SELL,
+                    price = BigDecimal("2351.25"),
+                    quantity = BigDecimal("0.03"),
+                    cumulativeFilled = BigDecimal("0.07"),
+                    strategyId = "latch",
+                    venueCosts = BigDecimal("0.12"),
+                    timestamp = 1L,
+                    sequenceId = 13L,
+                ),
+            )
+
+        assertThat(env.payload).containsEntry("brokerOrderId", "b1")
+        assertThat(env.payload).containsEntry("side", "SELL")
+        assertThat(env.payload).containsEntry("venueCosts", BigDecimal("0.12"))
+    }
+
+    @Test
+    fun `order modified preserves accepted change set`() {
+        val env =
+            InsightsTranslate.fromOrderModified(
+                BrokerEvent.OrderModified(
+                    clientOrderId = "o1",
+                    brokerOrderId = "b1",
+                    changes =
+                        OrderModification(
+                            newQuantity = BigDecimal("0.20"),
+                            newLimitPrice = BigDecimal("2355.50"),
+                        ),
+                    strategyId = "latch",
+                    timestamp = 1L,
+                    sequenceId = 14L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("order.modified")
+        assertThat(env.strategyId).isEqualTo("latch")
+        assertThat(env.payload).containsEntry("orderId", "o1")
+        assertThat(env.payload).containsEntry("brokerOrderId", "b1")
+        @Suppress("UNCHECKED_CAST")
+        val changes = env.payload["changes"] as Map<String, Any?>
+        assertThat(changes).containsEntry("newQuantity", BigDecimal("0.20"))
+        assertThat(changes).containsEntry("newLimitPrice", BigDecimal("2355.50"))
+        assertThat(env.toJson("qkt-prod")).contains(""""newQuantity":0.20""")
+        assertThat(env.toJson("qkt-prod")).contains(""""newLimitPrice":2355.50""")
+        assertThat(env.toJson("qkt-prod")).doesNotContain("newStopPrice")
     }
 }

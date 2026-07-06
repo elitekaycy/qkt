@@ -1,6 +1,7 @@
 package com.qkt.events
 
 import com.qkt.accounting.VenueCost
+import com.qkt.broker.OrderModification
 import com.qkt.common.Side
 import java.math.BigDecimal
 
@@ -13,6 +14,12 @@ import java.math.BigDecimal
  * responses back to the originating [com.qkt.execution.OrderRequest].
  */
 sealed interface BrokerEvent : Event {
+    enum class ConnectionState {
+        CONNECTED,
+        DISCONNECTED,
+        RECONNECTED,
+    }
+
     /**
      * The subset of broker events that report on a specific submitted order.
      *
@@ -111,12 +118,13 @@ sealed interface BrokerEvent : Event {
      *
      * Brokers publish this after [com.qkt.broker.Broker.modify] succeeds. The qkt-side
      * order manager updates its tracked SL/TP/trigger from the [OrderModification] the
-     * caller supplied — the event itself doesn't carry the new values to keep the
-     * payload small.
+     * caller supplied; the event carries the same accepted change set so observability
+     * can explain what changed.
      */
     data class OrderModified(
         override val clientOrderId: String,
         override val brokerOrderId: String?,
+        val changes: OrderModification = OrderModification(),
         override val strategyId: String = "",
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
@@ -145,6 +153,19 @@ sealed interface BrokerEvent : Event {
     data class GatewayUnreachable(
         val broker: String,
         val consecutiveFailures: Int,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
+
+    /**
+     * Broker transport/gateway connection lifecycle. Used for real-time operator visibility;
+     * order and position events remain the source of trade truth.
+     */
+    data class ConnectionChanged(
+        val broker: String,
+        val state: ConnectionState,
+        val reason: String? = null,
+        val consecutiveFailures: Int? = null,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : BrokerEvent

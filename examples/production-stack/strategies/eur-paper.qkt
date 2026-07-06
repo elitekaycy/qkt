@@ -1,0 +1,14 @@
+STRATEGY eur_paper VERSION 1
+
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 5m
+
+RULES
+    WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)
+     AND POSITION.eur = 0
+    THEN BUY eur SIZING 0.01
+         BRACKET { STOP LOSS BY 30, TAKE PROFIT BY 60 } ; LOG "paper long entry" price=eur.close
+
+    WHEN ema(eur.close, 9) CROSSES BELOW ema(eur.close, 21)
+     AND POSITION.eur > 0
+    THEN CLOSE eur ; LOG "paper exit" price=eur.close
