@@ -14,11 +14,14 @@ import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.WhenThen
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class AstCompilerTest {
@@ -117,5 +120,22 @@ class AstCompilerTest {
             )
         strategy.onCandle(c, testStrategyContext(), captured::add)
         assertThat(captured).isEmpty()
+    }
+
+    @Test
+    fun `series aliases are read-only order targets`() {
+        val parsed =
+            Dsl.parse(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS
+                  eq = SERIES ACCOUNT.EQUITY EVERY 1m
+                RULES
+                  WHEN eq.close > 0 THEN BUY eq SIZING 1
+                """.trimIndent(),
+            ) as ParseResult.Success
+
+        assertThatThrownBy { AstCompiler().compile(parsed.value) }
+            .hasMessageContaining("read-only")
     }
 }

@@ -72,6 +72,8 @@ import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SeriesDecl
+import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SinceTPast
@@ -303,6 +305,7 @@ class Parser(
         val streams = symbolsBlock.streams
         val syncGroups = symbolsBlock.syncGroups
         val baskets = symbolsBlock.baskets
+        val series = symbolsBlock.series
 
         val params =
             run {
@@ -349,6 +352,7 @@ class Parser(
                 syncGroups = syncGroups,
                 schedules = schedules,
                 baskets = baskets,
+                series = series,
             ),
         )
     }
@@ -1676,11 +1680,13 @@ class Parser(
         val streams: List<StreamDecl>,
         val syncGroups: List<SyncGroupDecl>,
         val baskets: List<com.qkt.dsl.ast.BasketDecl> = emptyList(),
+        val series: List<SeriesDecl> = emptyList(),
     )
 
     private fun parseSymbols(): SymbolsBlock {
         val out = mutableListOf<StreamDecl>()
         val baskets = mutableListOf<com.qkt.dsl.ast.BasketDecl>()
+        val series = mutableListOf<SeriesDecl>()
         expect(TokenKind.SYMBOLS, "expected SYMBOLS")
         do {
             val alias = expect(TokenKind.IDENT, "expected stream alias").lexeme
@@ -1689,6 +1695,8 @@ class Parser(
             // (`<broker>:<symbol> ...`). A basket combines already-declared streams.
             if (peek().kind == TokenKind.BASKET) {
                 baskets.add(parseBasket(alias))
+            } else if (peek().kind == TokenKind.SERIES) {
+                series.add(parseSeries(alias))
             } else {
                 out.add(parseStream(alias))
             }
@@ -1705,7 +1713,7 @@ class Parser(
         val groups = mutableListOf<SyncGroupDecl>()
         // A basket alias is a valid sync member too: a strategy may synchronize a real
         // stream with a basket so a cross-stream condition reads same-window bars.
-        val declaredAliases = (out.map { it.alias } + baskets.map { it.alias }).toSet()
+        val declaredAliases = (out.map { it.alias } + baskets.map { it.alias } + series.map { it.alias }).toSet()
         val claimed = mutableMapOf<String, Int>()
         while (peek().kind == TokenKind.SYNCHRONIZE) {
             advance()
@@ -1739,7 +1747,30 @@ class Parser(
             groups.add(SyncGroupDecl(aliases = aliases.toList(), timeoutMs = timeoutMs))
         }
 
-        return SymbolsBlock(streams = out, syncGroups = groups, baskets = baskets)
+        return SymbolsBlock(streams = out, syncGroups = groups, baskets = baskets, series = series)
+    }
+
+    /** Parse the series body after `<alias> =`: `SERIES ACCOUNT.EQUITY EVERY <tf>`. */
+    private fun parseSeries(alias: String): SeriesDecl {
+        expect(TokenKind.SERIES, "expected SERIES")
+        val source =
+            when (peek().kind) {
+                TokenKind.ACCOUNT -> {
+                    advance()
+                    expect(TokenKind.DOT, "expected '.' after ACCOUNT in SERIES declaration")
+                    expect(TokenKind.EQUITY, "expected EQUITY after ACCOUNT. in SERIES declaration")
+                    SeriesSource.ACCOUNT_EQUITY
+                }
+                else -> error("expected ACCOUNT.EQUITY after SERIES, got '${peek().lexeme}'")
+            }
+        expect(TokenKind.EVERY, "expected EVERY after SERIES source")
+        val timeframe = parseTimeframe()
+        val windowMs =
+            com.qkt.candles.TimeWindow
+                .parse(timeframe)
+                .durationMs
+        if (windowMs < 60_000L) error("SERIES '$alias' timeframe must be >= 1m, got '$timeframe'")
+        return SeriesDecl(alias = alias, source = source, timeframe = timeframe)
     }
 
     /** Parse the stream body after `<alias> =`: `<broker>:<symbol> EVERY <tf> [WARMUP <n> BARS]`. */
