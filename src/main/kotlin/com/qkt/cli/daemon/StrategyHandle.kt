@@ -6,7 +6,12 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
+import com.qkt.dsl.ast.BoolLit
+import com.qkt.dsl.ast.DefaultsBlock
+import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
@@ -14,7 +19,9 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
+import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
@@ -115,6 +122,8 @@ class StrategyHandle(
             com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
         /** Order-event journal root; null disables journaling (tests). */
         private val journalRoot: java.nio.file.Path? = null,
+        /** Full engine audit journal root; null disables journaling (tests). */
+        private val auditJournalRoot: java.nio.file.Path? = null,
         private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
         /**
          * Telegram alert sink shared across every strategy this daemon hosts. Default
@@ -129,6 +138,82 @@ class StrategyHandle(
         private val insightsStatePollMs: Long = 10_000L,
         private val insightsDealBackfillDays: Long = 30L,
     ) : Factory {
+        private fun literalPayload(expr: ExprAst): Any =
+            when (expr) {
+                is NumLit -> expr.value
+                is BoolLit -> expr.value
+                is StringLit -> expr.value
+                else -> expr.toString()
+            }
+
+        private fun defaultsPayload(defaults: DefaultsBlock?): Map<String, String>? {
+            if (defaults == null) return null
+            val out = linkedMapOf<String, String>()
+            defaults.sizing?.let { out["sizing"] = it::class.simpleName ?: it.toString() }
+            defaults.orderType?.let { out["orderType"] = it::class.simpleName ?: it.toString() }
+            defaults.tif?.let { out["tif"] = it::class.simpleName ?: it.toString() }
+            defaults.stopLoss?.let { out["stopLoss"] = it::class.simpleName ?: it.toString() }
+            defaults.takeProfit?.let { out["takeProfit"] = it::class.simpleName ?: it.toString() }
+            defaults.trailing?.let { out["trailing"] = it::class.simpleName ?: it.toString() }
+            return out.takeIf { it.isNotEmpty() }
+        }
+
+        private fun sha256(path: Path): String? =
+            runCatching {
+                val digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))
+                digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            }.getOrNull()
+
+        private fun strategyMetadata(
+            deployName: String,
+            file: Path,
+            ast: StrategyAst,
+            symbols: List<String>,
+            perStrategyOverride: com.qkt.cli.PerStrategyRisk?,
+        ): Map<String, Any?> =
+            linkedMapOf(
+                "deployName" to deployName,
+                "sourcePath" to file.toAbsolutePath().normalize().toString(),
+                "sourceSha256" to sha256(file),
+                "dslVersion" to ast.version,
+                "runtimeMode" to if (brokerFactories.isEmpty()) "paper" else "live",
+                "brokers" to brokerFactories.keys.sorted(),
+                "symbols" to symbols,
+                "streams" to
+                    ast.streams.map {
+                        linkedMapOf(
+                            "alias" to it.alias,
+                            "broker" to it.broker,
+                            "symbol" to it.symbol,
+                            "qktSymbol" to it.qktSymbol,
+                            "timeframe" to it.timeframe,
+                            "warmupBars" to it.warmupBars,
+                        )
+                    },
+                "params" to ast.params.associate { it.name to literalPayload(it.value) },
+                "defaults" to defaultsPayload(ast.defaults),
+                "risk" to
+                    linkedMapOf(
+                        "startingBalance" to startingBalance,
+                        "maxDailyLoss" to maxDailyLoss,
+                        "maxDrawdownPct" to maxDrawdownPct,
+                        "maxDailyDrawdownPct" to maxDailyDrawdownPct,
+                        "totalDdBasis" to totalDdBasis.name,
+                        "dailyDdBasis" to dailyDdBasis.name,
+                        "maxOrderQty" to maxOrderQty,
+                        "maxOrderNotional" to maxOrderNotional,
+                        "priceCollarFrac" to priceCollarFrac,
+                        "marginFloorPct" to marginFloorPct,
+                        "measuredUsageHours" to measuredUsageHours,
+                        "measuredUsageMaxQty" to measuredUsageMaxQty,
+                        "perStrategyMaxDailyLoss" to perStrategyOverride?.maxDailyLoss,
+                        "perStrategyMaxPositionSize" to perStrategyOverride?.maxPositionSize,
+                        "perStrategyMaxOpenPositions" to perStrategyOverride?.maxOpenPositions,
+                        "perStrategyMaxDrawdownPct" to perStrategyOverride?.maxDrawdownPct,
+                        "perStrategyMaxDailyDrawdownPct" to perStrategyOverride?.maxDailyDrawdownPct,
+                    ),
+            )
+
         override fun create(
             name: String,
             file: Path,
@@ -165,6 +250,7 @@ class StrategyHandle(
                     startingBalance = startingBalance,
                 )
             val perStrategyOverride = perStrategyRisk[ast.name]
+            val metadata = strategyMetadata(name, file, ast, symbols, perStrategyOverride)
             val session =
                 LiveSession(
                     strategies = listOf(ast.name to strategy),
@@ -212,8 +298,13 @@ class StrategyHandle(
                         journalRoot?.let {
                             com.qkt.observe.OrderJournal(it, com.qkt.common.SystemClock())
                         },
+                    auditJournal =
+                        auditJournalRoot?.let {
+                            com.qkt.observe.EngineAuditJournal(it, ast.name, com.qkt.common.SystemClock())
+                        },
                     insightsSink = insightsSink,
                     insightsEvents = insightsEvents,
+                    insightsStrategyMetadata = mapOf(ast.name to metadata),
                     insightsStatePollMs = insightsStatePollMs,
                     insightsDealBackfillDays = insightsDealBackfillDays,
                 ).start()

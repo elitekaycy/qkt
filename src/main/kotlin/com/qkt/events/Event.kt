@@ -48,6 +48,8 @@ data class CandleEvent(
 /** A strategy-produced trading intent. The risk engine and order manager react to these. */
 data class SignalEvent(
     val signal: Signal,
+    /** Strategy that produced the signal; blank only for legacy/manual publishes. */
+    val strategyId: String = "",
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,
 ) : Event

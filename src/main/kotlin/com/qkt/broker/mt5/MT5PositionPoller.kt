@@ -62,6 +62,8 @@ class MT5PositionPoller(
      * the operator-alert hook. The poller keeps skipping diffs until a clean read.
      */
     private val onGatewayUnreachable: ((Int) -> Unit)? = null,
+    /** Invoked after an outage threshold was crossed and a clean read succeeds. */
+    private val onGatewayRecovered: ((Int) -> Unit)? = null,
     /**
      * Invoked once per in-session poll round, on the poller thread, after the position diff.
      * [MT5Broker] uses it to keep the margin-level cache warm so the risk engine's approve
@@ -149,6 +151,7 @@ class MT5PositionPoller(
             }
         if (consecutiveFailures >= GATEWAY_FAILURE_ALERT_THRESHOLD) {
             log.info("MT5 poller for {} gateway recovered after {} failures", profile.name, consecutiveFailures)
+            onGatewayRecovered?.invoke(consecutiveFailures)
         }
         consecutiveFailures = 0
         // A ticket we've already reported closed cannot legitimately reappear, so drop any

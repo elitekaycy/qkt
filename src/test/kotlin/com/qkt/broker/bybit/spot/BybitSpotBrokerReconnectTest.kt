@@ -18,6 +18,29 @@ class BybitSpotBrokerReconnectTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
 
     @Test
+    fun `transport disconnect and reconnect publish broker lifecycle events`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+        client.responses["/v5/execution/list"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+
+        val bus = newBus()
+        val lifecycle = mutableListOf<BrokerEvent.ConnectionChanged>()
+        bus.subscribe<BrokerEvent.ConnectionChanged> { lifecycle.add(it) }
+        BybitSpotBroker(client, bus, FixedClock(1_000_000L))
+
+        client.emitDisconnect("closed:1006")
+        client.fireOnReconnect()
+
+        assertThat(lifecycle).hasSize(2)
+        assertThat(lifecycle[0].state).isEqualTo(BrokerEvent.ConnectionState.DISCONNECTED)
+        assertThat(lifecycle[0].reason).isEqualTo("closed:1006")
+        assertThat(lifecycle[1].state).isEqualTo(BrokerEvent.ConnectionState.RECONNECTED)
+        assertThat(lifecycle[1].reason).isEqualTo("private-ws-reconnected")
+    }
+
+    @Test
     fun `reconnect reconciles missed fills via execution list`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =

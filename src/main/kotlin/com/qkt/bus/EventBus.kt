@@ -35,6 +35,7 @@ class EventBus(
 
     @PublishedApi
     internal val subscribers = mutableMapOf<Class<out Event>, MutableList<(Event) -> Unit>>()
+    private val taps = mutableListOf<(Event) -> Unit>()
 
     /**
      * Live-mode binding: the single engine-loop thread and a sink that hands an event to that
@@ -102,6 +103,14 @@ class EventBus(
     }
 
     /**
+     * Registers a handler that sees every stamped event after exact-type subscribers.
+     * Intended for audit/telemetry sinks that need a complete ordered timeline.
+     */
+    fun subscribeAll(handler: (Event) -> Unit) {
+        taps.add(handler)
+    }
+
+    /**
      * Stamps [event] with the current clock time + next sequence id, then dispatches it
      * to every subscriber registered for the event's concrete class.
      *
@@ -131,7 +140,7 @@ class EventBus(
         // never reached the book-applier leaves the engine permanently diverged. Every
         // subscriber runs; the first failure then rethrows so the caller's fault
         // handling (engine-loop halt + alert in live, loud failure in backtest) still fires.
-        val handlers = subscribers[stamped.javaClass] ?: return
+        val handlers = subscribers[stamped.javaClass].orEmpty()
         var firstFailure: Exception? = null
         for (i in handlers.indices) {
             try {
@@ -139,6 +148,13 @@ class EventBus(
             } catch (e: Exception) {
                 log.error("subscriber {} for {} failed", i, stamped::class.simpleName, e)
                 if (firstFailure == null) firstFailure = e
+            }
+        }
+        for (i in taps.indices) {
+            try {
+                taps[i](stamped)
+            } catch (e: Exception) {
+                log.error("tap {} for {} failed", i, stamped::class.simpleName, e)
             }
         }
         if (firstFailure != null) throw firstFailure
@@ -163,6 +179,7 @@ class EventBus(
             is BrokerEvent.OrderModified -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.BalancesUpdated -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.GatewayUnreachable -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.ConnectionChanged -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.PositionReconciled -> event.copy(timestamp = ts, sequenceId = seq)
             is RiskEvent.Halted -> event.copy(timestamp = ts, sequenceId = seq)
             is RiskEvent.Resumed -> event.copy(timestamp = ts, sequenceId = seq)

@@ -47,7 +47,9 @@ class ConfigInsightsTest {
               url: http://insights:8420/ingest
               instance_id: qkt-prod
               token: ${'$'}{INSIGHTS_TOKEN_TESTVAR:-}
-              events: [trade, order, snapshot, log]
+              events: [trade, order, snapshot, lifecycle, log]
+              journal_enabled: true
+              journal_dir: ./journal
             """.trimIndent(),
         )
         val ins = Config.load(cfg).insights
@@ -55,11 +57,14 @@ class ConfigInsightsTest {
         assertThat(ins.url).isEqualTo("http://insights:8420/ingest")
         assertThat(ins.instanceId).isEqualTo("qkt-prod")
         assertThat(ins.token).isEqualTo("tok123")
+        assertThat(ins.journalEnabled).isTrue()
+        assertThat(ins.journalDir).isEqualTo("./journal")
         assertThat(ins.events)
             .containsExactlyInAnyOrder(
                 InsightsEventFamily.TRADE,
                 InsightsEventFamily.ORDER,
                 InsightsEventFamily.SNAPSHOT,
+                InsightsEventFamily.LIFECYCLE,
                 InsightsEventFamily.LOG,
             )
     }

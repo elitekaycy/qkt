@@ -96,13 +96,27 @@ class DaemonCommand(
         // Disabled config (the default) constructs nothing: no queue, no thread.
         val insightsSink: com.qkt.observe.insights.InsightsSink? =
             if (cfg.insights.enabled && cfg.insights.url.isNotBlank()) {
+                val insightsInstanceId = cfg.insights.instanceId.ifBlank { "qkt" }
+                val insightsJournalDir =
+                    if (cfg.insights.journalEnabled) {
+                        cfg.insights.journalDir
+                            .takeIf { it.isNotBlank() }
+                            ?.let {
+                                java.nio.file.Path
+                                    .of(it)
+                            }
+                            ?: stateDir.stateRoot.resolve("insights-journal")
+                    } else {
+                        null
+                    }
                 com.qkt.observe.insights.InsightsSink(
                     url = cfg.insights.url,
                     token = cfg.insights.token,
-                    instanceId = cfg.insights.instanceId.ifBlank { "qkt" },
+                    instanceId = insightsInstanceId,
                     batchSize = cfg.insights.batchSize,
                     flushIntervalMs = cfg.insights.flushIntervalMs,
                     queueCapacity = cfg.insights.queueCapacity,
+                    journalDir = insightsJournalDir,
                 )
             } else {
                 null
@@ -221,6 +235,7 @@ class DaemonCommand(
                     measuredUsageHours = cfg.measuredUsageHours,
                     measuredUsageMaxQty = cfg.measuredUsageMaxQty,
                     journalRoot = stateDir.stateRoot.resolve("journal"),
+                    auditJournalRoot = stateDir.stateRoot.resolve("audit-journal"),
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,

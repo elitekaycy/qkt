@@ -77,7 +77,27 @@ class BybitSpotBroker(
                 lastFillTimeProvider = lastFillTime::get,
                 seenExecIds = seenExecIds,
             )
-        transport.onReconnect { recovery.reconcile() }
+        transport.onDisconnect { reason ->
+            bus.publish(
+                BrokerEvent.ConnectionChanged(
+                    broker = name,
+                    state = BrokerEvent.ConnectionState.DISCONNECTED,
+                    reason = reason,
+                    timestamp = clock.now(),
+                ),
+            )
+        }
+        transport.onReconnect {
+            bus.publish(
+                BrokerEvent.ConnectionChanged(
+                    broker = name,
+                    state = BrokerEvent.ConnectionState.RECONNECTED,
+                    reason = "private-ws-reconnected",
+                    timestamp = clock.now(),
+                ),
+            )
+            recovery.reconcile()
+        }
 
         recovery.reconcile()
 
@@ -206,7 +226,52 @@ class BybitSpotBroker(
             } catch (e: Exception) {
                 return SubmitAck(orderId, null, accepted = false, rejectReason = e.message ?: "transport failure")
             }
-        return parseSubmitResponse(orderId, response, strategyId)
+        return parseModifyResponse(orderId, response, strategyId, changes)
+    }
+
+    private fun parseModifyResponse(
+        clientOrderId: String,
+        responseBody: String,
+        strategyId: String,
+        changes: OrderModification,
+    ): SubmitAck {
+        val tree = json.parseToJsonElement(responseBody).jsonObject
+        val retCode = tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: -1
+        val retMsg = tree["retMsg"]?.jsonPrimitive?.content ?: ""
+        val brokerOrderId =
+            tree["result"]
+                ?.jsonObject
+                ?.get("orderId")
+                ?.jsonPrimitive
+                ?.content
+        if (retCode != 0) {
+            log.warn(
+                "Bybit order modify rejected: clientOrderId={} retCode={} retMsg={}",
+                clientOrderId,
+                retCode,
+                retMsg,
+            )
+            bus.publish(
+                BrokerEvent.OrderRejected(
+                    clientOrderId = clientOrderId,
+                    brokerOrderId = brokerOrderId,
+                    reason = "$retCode: $retMsg",
+                    strategyId = strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+            return SubmitAck(clientOrderId, brokerOrderId, accepted = false, rejectReason = "$retCode: $retMsg")
+        }
+        bus.publish(
+            BrokerEvent.OrderModified(
+                clientOrderId = clientOrderId,
+                brokerOrderId = brokerOrderId,
+                changes = changes,
+                strategyId = strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        return SubmitAck(clientOrderId, brokerOrderId, accepted = true)
     }
 
     private fun parseSubmitResponse(

@@ -93,6 +93,7 @@ class MT5PollerSessionGateTest {
 
         val disappeared = mutableListOf<Long>()
         val unreachable = mutableListOf<Int>()
+        val recovered = mutableListOf<Int>()
         val poller =
             MT5PendingOrderPoller(
                 client = client,
@@ -101,6 +102,7 @@ class MT5PollerSessionGateTest {
                 sessionGate = null,
                 onPendingDisappeared = { disappeared.add(it) },
                 onGatewayUnreachable = { unreachable.add(it) },
+                onGatewayRecovered = { recovered.add(it) },
             )
         poller.tickForTesting() // sees 9001 pending
         repeat(3) { poller.tickForTesting() } // outage
@@ -108,6 +110,7 @@ class MT5PollerSessionGateTest {
         assertThat(unreachable).containsExactly(3)
 
         poller.tickForTesting() // clean read, genuinely gone now
+        assertThat(recovered).containsExactly(3)
         assertThat(disappeared).containsExactly(9001L)
     }
 

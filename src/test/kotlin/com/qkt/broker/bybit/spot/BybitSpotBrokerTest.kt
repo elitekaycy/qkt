@@ -327,7 +327,10 @@ class BybitSpotBrokerTest {
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c1"}}"""
         client.responses["/v5/order/amend"] =
             """{"retCode":0,"retMsg":"OK","result":{"orderId":"abc","orderLinkId":"c1"}}"""
-        val broker = BybitSpotBroker(client, newBus(), FixedClock(0L)).also { client.posts.clear() }
+        val bus = newBus()
+        val modified = mutableListOf<BrokerEvent.OrderModified>()
+        bus.subscribe<BrokerEvent.OrderModified> { e -> modified.add(e) }
+        val broker = BybitSpotBroker(client, bus, FixedClock(0L)).also { client.posts.clear() }
 
         broker.submit(
             OrderRequest.Limit(
@@ -351,5 +354,9 @@ class BybitSpotBrokerTest {
         assertThat(client.posts.last().path).isEqualTo("/v5/order/amend")
         assertThat(client.posts.last().body).contains("\"price\":\"80500")
         assertThat(client.posts.last().body).contains("\"orderLinkId\":\"c1\"")
+        assertThat(modified).hasSize(1)
+        assertThat(modified.single().clientOrderId).isEqualTo("c1")
+        assertThat(modified.single().brokerOrderId).isEqualTo("abc")
+        assertThat(modified.single().changes.newLimitPrice).isEqualByComparingTo(Money.of("80500"))
     }
 }
