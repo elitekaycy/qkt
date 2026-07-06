@@ -65,6 +65,21 @@ class EvalContext(
             evaluationTimeMs,
             historyAsOfMs,
         )
+
+    /** A copy of this context evaluated at [timeMs], used for delayed signal builders. */
+    fun atEvaluationTime(timeMs: Long): EvalContext =
+        EvalContext(
+            candle,
+            streams,
+            lets,
+            strategyContext,
+            snapshotStore,
+            hub,
+            currentAlias,
+            entryPrice,
+            timeMs,
+            historyAsOfMs,
+        )
 }
 
 fun interface CompiledExpr {

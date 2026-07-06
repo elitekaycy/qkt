@@ -311,6 +311,9 @@ class TradingPipeline(
                 requireMultiPositionCapability(strategyId, strategy)
                 requireVolumeCapability(strategyId, strategy)
                 for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention, strategyId)
+                for (key in strategy.declaredStreams.values) {
+                    candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
+                }
                 strategy.bindToHub(candleHub, ctx, emit)
                 strategy.bindSchedules(scheduleRunner, ctx, clock.now(), emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
@@ -321,6 +324,7 @@ class TradingPipeline(
             }
         }
         bus.subscribe<TickEvent> { e -> latchManager.onTick(e.tick) }
+        bus.subscribe<CandleEvent> { e -> latchManager.onCandle(e.candle) }
         bus.subscribe<TickEvent> { e ->
             strategyPositions.onTick(e.tick.symbol, e.tick.price)
             riskState.onTick()

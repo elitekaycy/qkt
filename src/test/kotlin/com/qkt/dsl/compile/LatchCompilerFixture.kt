@@ -37,7 +37,11 @@ object LatchCompilerFixture {
             )
         return EvalContext(
             candle = candle,
-            streams = mapOf("gold" to HubKey(broker, sym, "1m")),
+            streams =
+                mapOf(
+                    "gold" to HubKey(broker, sym, "1m"),
+                    "silver" to HubKey(broker, "XAGUSD", "1m"),
+                ),
             lets = emptyMap(),
             strategyContext = testStrategyContext(clock = clock),
         )

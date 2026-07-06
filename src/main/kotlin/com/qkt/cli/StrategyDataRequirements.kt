@@ -40,6 +40,7 @@ import com.qkt.dsl.ast.LatchBracket
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
+import com.qkt.dsl.ast.LatchRetestHold
 import com.qkt.dsl.ast.LatchSensor
 import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.Limit
@@ -295,6 +296,7 @@ internal object StrategyDataRequirementScanner {
 
         fun walkLatch(latch: Latch) {
             walkLatchSensor(latch.sensor)
+            if (latch.confirm is LatchRetestHold) walk(latch.confirm.distance)
             latch.entries.forEach(::walkLatchEntry)
         }
 

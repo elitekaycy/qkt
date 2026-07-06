@@ -257,7 +257,10 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
                 walkSizing(a.target)
                 a.minStep?.let { walkExpr(it) }
             }
-            is com.qkt.dsl.ast.Latch -> out.add(a.stream)
+            is com.qkt.dsl.ast.Latch -> {
+                out.add(a.stream)
+                a.entries.mapNotNullTo(out) { it.stream }
+            }
         }
     }
 

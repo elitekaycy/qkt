@@ -1,6 +1,6 @@
 # LATCH — directional-trigger entry
 
-Arm a pair of price trip-wires (`ref ± offset`) and wait. The first wire the market crosses sets a direction (BUY on the up-wire, SELL on the down-wire) and locks in an anchor price `O`. All entries in the `LATCH` block then resolve relative to `O` and that direction. If no wire is crossed before the arm window elapses, the latch is silently dropped.
+Arm a pair of price trip-wires (`ref ± offset`) and wait. By default, the first wire the market crosses sets a direction (BUY on the up-wire, SELL on the down-wire) and locks in an anchor price `O`. Optional `CONFIRM` modes can require bar-close, dwell-time, or retest evidence before direction commits. If no side confirms before the arm window elapses, the latch is silently dropped.
 
 The classic use case: a session level sits at $2,000. You don't want to trade the level itself — you want to trade the first confirmed break above or below. `LATCH` arms two wires, waits for the break, then places a retrace limit at a defined distance so you enter after the breakout pullback, not at the spike.
 
@@ -8,8 +8,9 @@ The classic use case: a session level sits at $2,000. You don't want to trade th
 
 ```qkt
 WHEN <condition>
-THEN LATCH <stream> OFFSET <d> [ FROM <ref_expr> ] [ ARM <duration> ] [ AS <name> ] {
-    ENTER MARKET | LIMIT <dir_rel> | STOP <dir_rel>
+THEN LATCH <stream> OFFSET <d> [ FROM <ref_expr> ] [ ARM <duration> ] [ AS <name> ]
+    [ CONFIRM CLOSE_BEYOND | TIME_IN_BREACH <duration> | RETEST_HOLD <d> WITHIN <duration> ] {
+    ENTER [ ON <stream> ] MARKET | LIMIT <dir_rel> | STOP <dir_rel>
         [ BRACKET { [ STOP LOSS <dir_rel>, ] [ TAKE PROFIT <dir_rel> ] } ]
         [ SIZING <spec> ]
         [ EXPIRE <duration> ]
@@ -22,6 +23,7 @@ THEN LATCH <stream> OFFSET <d> [ FROM <ref_expr> ] [ ARM <duration> ] [ AS <name
 - `FROM <ref_expr>` — optional: overrides the reference. Omit to use `<stream>.close` (the most recent bar's close). e.g. `FROM gold.high`.
 - `ARM <duration>` — how long the wires stay active after arming. Defaults to `5m`. Supported suffixes: `s`, `m`, `h`, `d`.
 - `AS <name>` — optional name, useful for logging and future addressing.
+- `CONFIRM ...` — optional evidence requirement. Omit for the historical first-tick behavior.
 - `{ ENTER ... }` — one or more entry clauses separated by `;`.
 
 A `WHEN` condition fires the latch arm on each matching candle close. If the condition fires while an arm is already active for this stream, a second arm is queued independently — each arm is tracked separately and fires at most once.
@@ -76,6 +78,26 @@ The same source text adapts automatically to whichever direction breaks first.
 
 Inverted geometry (a BUY LIMIT above the anchor, or a BUY LIMIT above the SL) is skipped at runtime with a WARN log. The remaining entries in the block still fire.
 
+### `ENTER ON <stream>`
+
+By default entries submit on the latch stream. `ENTER ON <stream>` watches one stream for the break and submits the entry on another declared stream:
+
+```qkt
+LATCH gold OFFSET 2 FROM gold.high ARM 10m CONFIRM TIME_IN_BREACH 10s {
+    ENTER ON silver MARKET SIZING 0.5
+    ENTER ON silver LIMIT AGAINST 5 SIZING 0.5 BRACKET { STOP LOSS AGAINST 8, TAKE PROFIT WITH 20 }
+}
+```
+
+Direction maps directly: an up-break on `gold` submits BUY entries on `silver`; a down-break submits SELL entries. Inverse mapping is not part of v2.
+
+For same-stream entries, `O` remains the trigger wire price for backward compatibility. For `ENTER ON <stream>` entries, the runtime uses two anchors:
+
+- `O_trigger` — the watched stream's wire price; sets direction only.
+- `O_entry` — the entry stream's latest price snapshot at the direction-commit instant; all `WITH` / `AGAINST` / `RETRACE`, SL, and TP distances resolve from this price in entry-stream points.
+
+The entry stream must be declared in `SYMBOLS`. `SYNCHRONIZE` is recommended for tightly coupled lead-lag systems, but not required.
+
 ## Modifiers
 
 ### `OFFSET <d>` and `FROM <ref_expr>`
@@ -96,6 +118,22 @@ How long the wires stay armed after the signal fires. Starts at the clock time o
 LATCH gold OFFSET 0.50 ARM 5m { ... }   -- 5-minute arm window
 LATCH gold OFFSET 0.50 ARM 1h { ... }   -- 1-hour arm window
 ```
+
+### `CONFIRM`
+
+Confirmation is bounded by the same `ARM` window. `EXPIRE` on emitted LIMIT/STOP entries starts from the confirmation instant, not from the original arm time.
+
+```qkt
+LATCH gold OFFSET 0.50 ARM 15m CONFIRM CLOSE_BEYOND { ... }
+LATCH gold OFFSET 0.50 ARM 15m CONFIRM TIME_IN_BREACH 10s { ... }
+LATCH gold OFFSET 0.50 ARM 15m CONFIRM RETEST_HOLD 0.25 WITHIN 2m { ... }
+```
+
+- `CLOSE_BEYOND` — direction commits only when the watched stream's completed bar closes beyond a wire. A spike through the wire that closes back inside does not fire.
+- `TIME_IN_BREACH <duration>` — price must remain beyond the same wire continuously for the duration. A tick back inside the wires resets the timer.
+- `RETEST_HOLD <d> WITHIN <duration>` — after a breach, price must return to within `d` of the breached wire without crossing back through it, before the retest window elapses.
+
+If one side starts confirmation and then the other wire breaches first, pending direction hands over. The first side to satisfy its confirmation wins.
 
 ### `EXPIRE <duration>` on entries
 
@@ -132,9 +170,11 @@ If a single tick straddles both wires (i.e., crosses both up and down simultaneo
 ## Constraints
 
 - **Distances must be compile-time constants.** `OFFSET`, `RETRACE`, `WITH`, and `AGAINST` distances must resolve to a constant — a numeric literal, or a `LET` bound to one (`LET near = 4` then `RETRACE near` works; the `LET` is inlined before compilation). Genuine runtime expressions — indicator calls, `NOW.<field>`, price refs — are rejected with a compile error, because the risk-sizing stop distance (`|SL_dist − entry_dist|`) is computed statically at compile time.
+- **`RETEST_HOLD` distance must be constant.** Same constant-distance rule as entry/bracket distances.
 - **Geometry validation.** A BUY LIMIT above the entry anchor, or a SL above a BUY entry, is skipped at runtime with an WARN log. The compiler cannot detect this because the direction is only known at wire-cross time.
 - **Transient arm — no persistence.** Armed latches live in memory only. A restart mid-arm drops them silently. The strategy re-arms on the next qualifying candle close.
-- **At most one fire per arm.** A latch fires on the first wire cross, then removes itself. It does not re-arm automatically.
+- **At most one fire per arm.** A latch fires on the first confirmed side, then removes itself. It does not re-arm automatically.
+- **No price snapshot, no cross-entry.** `ENTER ON <stream>` needs a latest price for the entry stream. If direction confirms before that stream has printed a price, that entry is skipped with a WARN log.
 
 ## Full example
 
