@@ -27,6 +27,7 @@ import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.UnOp
@@ -56,6 +57,7 @@ class ExprCompiler(
             is StreamFieldRef -> compileStreamField(expr)
             is IndicatorCall -> compileIndicator(expr)
             is AccountRef -> compileAccountRef(expr)
+            is StreakRef -> compileStreakRef(expr)
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
             is Between -> compileBetween(expr, ruleAlias)
@@ -513,6 +515,20 @@ class ExprCompiler(
                             .toLong()
                     Value.Num(BigDecimal.valueOf(count))
                 }
+                else -> error("unreachable")
+            }
+        }
+    }
+
+    private fun compileStreakRef(ref: StreakRef): CompiledExpr {
+        val fields = setOf("wins", "losses", "banked")
+        require(ref.field in fields) { "Unsupported STREAK field: ${ref.field}" }
+        return CompiledExpr { ctx ->
+            val history = ctx.strategyContext.tradeHistory
+            when (ref.field) {
+                "wins" -> Value.Num(BigDecimal.valueOf(history.winStreak().toLong()))
+                "losses" -> Value.Num(BigDecimal.valueOf(history.lossStreak().toLong()))
+                "banked" -> Value.Num(history.banked())
                 else -> error("unreachable")
             }
         }

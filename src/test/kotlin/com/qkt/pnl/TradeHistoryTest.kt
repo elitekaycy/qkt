@@ -61,6 +61,35 @@ class TradeHistoryTest {
     }
 
     @Test
+    fun `banked sums current win streak pnl and resets after a loss`() {
+        val h = TradeHistory()
+        h.recordTrade("s", 100L, BigDecimal("-5"), "X")
+        h.recordTrade("s", 200L, BigDecimal("10.50"), "X")
+        h.recordTrade("s", 300L, BigDecimal("15.25"), "X")
+        assertThat(h.banked("s")).isEqualByComparingTo("25.75")
+
+        h.recordTrade("s", 400L, BigDecimal("-1"), "X")
+        assertThat(h.banked("s")).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `restore reloads persisted streak state`() {
+        val persistor = com.qkt.persistence.NoopStatePersistor()
+        val first = TradeHistory(persistor = persistor)
+        first.recordTrade("s", 100L, BigDecimal("-5"), "X")
+        first.recordTrade("s", 200L, BigDecimal("10"), "X")
+        first.recordTrade("s", 300L, BigDecimal("15"), "X")
+
+        val restarted = TradeHistory(persistor = persistor)
+        restarted.restore("s")
+
+        assertThat(restarted.winStreak("s")).isEqualTo(2)
+        assertThat(restarted.lossStreak("s")).isZero
+        assertThat(restarted.banked("s")).isEqualByComparingTo("25")
+        assertThat(restarted.lastTradeAt("s")).isEqualTo(300L)
+    }
+
+    @Test
     fun `streak breaks at the first non-matching outcome`() {
         val h = TradeHistory()
         h.recordTrade("s", 100L, BigDecimal("10"), "X") // W
@@ -100,6 +129,7 @@ class TradeHistoryTest {
         assertThat(view.lastTradeAt()).isEqualTo(100L)
         assertThat(view.lastTradePnl()).isEqualByComparingTo("10")
         assertThat(view.winStreak()).isEqualTo(1)
+        assertThat(view.banked()).isEqualByComparingTo("10")
     }
 
     @Test
@@ -109,6 +139,7 @@ class TradeHistoryTest {
         assertThat(view.lastTradePnl()).isNull()
         assertThat(view.winStreak()).isZero
         assertThat(view.lossStreak()).isZero
+        assertThat(view.banked()).isEqualByComparingTo("0")
         assertThat(view.tradesToday(1_000_000_000_000L)).isZero
         assertThat(view.winsToday(1_000_000_000_000L)).isZero
         assertThat(view.lossesToday(1_000_000_000_000L)).isZero

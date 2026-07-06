@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.StreakRef
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -19,6 +20,12 @@ class ParserExprAccountTest {
     fun `parses ACCOUNT field`() {
         val e = expr("ACCOUNT.equity") as AccountRef
         assertThat(e.field).isEqualTo("equity")
+    }
+
+    @Test
+    fun `parses STREAK field`() {
+        val e = expr("STREAK.banked") as StreakRef
+        assertThat(e.field).isEqualTo("banked")
     }
 
     @Test

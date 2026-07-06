@@ -65,6 +65,7 @@ import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
@@ -103,7 +104,7 @@ internal fun collectMetaRefs(
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
-            is AccountRef, is PositionRef, is StateAccessor,
+            is AccountRef, is StreakRef, is PositionRef, is StateAccessor,
             StackEntryRef, EntryQty, LastTradingDayOfMonth,
             -> Unit
             is StreamFieldRef -> {

@@ -98,7 +98,7 @@ class TradingPipeline(
      * is a fresh tracker per pipeline so backtests get isolated state; the daemon's
      * per-strategy `LiveSession` similarly gets its own.
      */
-    val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(),
+    val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(persistor = persistor),
     /**
      * Hot-path latency observation. Default reads `QKT_LATENCY_TRACKING` once at construction;
      * unset → disabled → every observe call short-circuits on the first line, no allocation
@@ -214,6 +214,7 @@ class TradingPipeline(
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick.symbol, e.tick.price) }
 
         strategies.forEach { (strategyId, strategy) ->
+            tradeHistory.restore(strategyId)
             val ctx =
                 StrategyContext(
                     strategyId = strategyId,
@@ -342,10 +343,11 @@ class TradingPipeline(
                         timestamp = e.timestamp,
                         referencePrice = e.price,
                     ).account.amount
-            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(costs))
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, accountStratRealized, e.symbol)
-            riskState.onFill(e.strategyId, accountStratRealized.subtract(costs))
-            if (accountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
+            val netAccountStratRealized = accountStratRealized.subtract(costs)
+            strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
+            riskState.onFill(e.strategyId, netAccountStratRealized)
+            if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
 
             val trade =
@@ -417,10 +419,11 @@ class TradingPipeline(
                         timestamp = e.timestamp,
                         referencePrice = e.price,
                     ).account.amount
-            strategyPnL.recordRealized(e.strategyId, accountStratRealized.subtract(costs))
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, accountStratRealized, e.symbol)
-            riskState.onFill(e.strategyId, accountStratRealized.subtract(costs))
-            if (accountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
+            val netAccountStratRealized = accountStratRealized.subtract(costs)
+            strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
+            tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
+            riskState.onFill(e.strategyId, netAccountStratRealized)
+            if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
             val trade =
                 Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)

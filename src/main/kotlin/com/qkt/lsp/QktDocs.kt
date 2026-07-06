@@ -411,6 +411,7 @@ object QktDocs {
             "FLATTEN" to "Action: close every open position for the strategy.",
             "SIZING" to "Position size for an entry: `SIZING <units>`, `SIZING RISK $ <amount>`, or `SIZING <pct>`.",
             "RISK" to "Risk-based sizing: `SIZING RISK $ <amount>` sizes so the stop loses that amount.",
+            "STREAK" to "Trade-streak state namespace: `STREAK.wins`, `STREAK.losses`, `STREAK.banked`.",
             "BRACKET" to "Attaches a stop loss and/or take profit to an entry.",
             "ON_FILL" to
                 "OTO: child BUY/SELL orders placed only when the parent fills: " +

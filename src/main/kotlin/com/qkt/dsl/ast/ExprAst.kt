@@ -144,6 +144,11 @@ data class AccountRef(
     val field: String,
 ) : ExprAst
 
+/** Account-level trade-streak state exposed through the `STREAK.<field>` DSL namespace. */
+data class StreakRef(
+    val field: String,
+) : ExprAst
+
 data class PositionRef(
     val stream: String,
 ) : ExprAst

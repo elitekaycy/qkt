@@ -99,6 +99,7 @@ import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
@@ -571,6 +572,11 @@ class Parser(
                 advance()
                 expect(TokenKind.DOT, "expected '.' after ACCOUNT")
                 AccountRef(expectFieldName().lexeme)
+            }
+            TokenKind.STREAK -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after STREAK")
+                StreakRef(expectFieldName().lexeme)
             }
             TokenKind.POSITION -> {
                 advance()

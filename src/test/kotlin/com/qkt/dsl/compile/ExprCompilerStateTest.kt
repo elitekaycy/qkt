@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.marketdata.Candle
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.positions.Position
@@ -75,6 +76,33 @@ class ExprCompilerStateTest {
     @Test
     fun `unsupported ACCOUNT field is rejected at compile time`() {
         assertThatThrownBy { ExprCompiler().compile(AccountRef("drawdown")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `STREAK accessors read current trade history streak state`() {
+        val history = com.qkt.pnl.TradeHistory()
+        history.recordTrade("test", 100L, BigDecimal("-5"), "BACKTEST:BTCUSDT")
+        history.recordTrade("test", 200L, BigDecimal("10.50"), "BACKTEST:BTCUSDT")
+        history.recordTrade("test", 300L, BigDecimal("15.25"), "BACKTEST:BTCUSDT")
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(history, "test")),
+            )
+
+        fun read(field: String) = (ExprCompiler().compile(StreakRef(field)).evaluate(ec) as Value.Num).v
+
+        assertThat(read("wins")).isEqualByComparingTo("2")
+        assertThat(read("losses")).isEqualByComparingTo("0")
+        assertThat(read("banked")).isEqualByComparingTo("25.75")
+    }
+
+    @Test
+    fun `unsupported STREAK field is rejected at compile time`() {
+        assertThatThrownBy { ExprCompiler().compile(StreakRef("drawdown")) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 

@@ -103,6 +103,15 @@ interface StatePersistor {
     /** The last persisted lifetime PnL, or null when none exists. */
     fun loadPnl(strategyId: String): PersistedPnl? = null
 
+    /** Persist the bounded closed-trade outcome buffer for streak and cooldown accessors. */
+    fun saveTradeHistory(
+        strategyId: String,
+        state: PersistedTradeHistory,
+    ) {}
+
+    /** The last persisted closed-trade outcome buffer, or null when none exists. */
+    fun loadTradeHistory(strategyId: String): PersistedTradeHistory? = null
+
     fun clearStrategy(strategyId: String)
 }
 
@@ -112,6 +121,18 @@ interface StatePersistor {
  */
 data class PersistedPnl(
     val realized: BigDecimal,
+)
+
+/** On-disk shape of one non-zero closed-trade outcome used by streak accessors. */
+data class PersistedTradeOutcome(
+    val timestamp: Long,
+    val pnl: BigDecimal,
+    val symbol: String,
+)
+
+/** On-disk shape of the bounded closed-trade outcome buffer for one strategy. */
+data class PersistedTradeHistory(
+    val outcomes: List<PersistedTradeOutcome>,
 )
 
 data class PersistedLeg(

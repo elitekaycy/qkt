@@ -66,6 +66,7 @@ import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
@@ -106,7 +107,7 @@ class ExprTransform(
             is Aggregate -> Aggregate(e.fn, expr(e.series), e.window)
             is FuncCall -> FuncCall(e.name, e.args.map(::expr))
             is IsNull -> IsNull(expr(e.expr), e.negated)
-            is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
+            is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef, is StreakRef,
             is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
             is CalendarWindow,
             is SessionWindow,
