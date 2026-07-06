@@ -11,6 +11,7 @@ import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
@@ -23,12 +24,15 @@ import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.stdlib.FuncRegistry
@@ -56,8 +60,12 @@ class ExprCompiler(
             is StreamFieldRef -> compileStreamField(expr)
             is IndicatorCall -> compileIndicator(expr)
             is AccountRef -> compileAccountRef(expr)
+            is StreakRef -> compileStreakRef(expr)
+            is TradesRef -> compileTradesRef(expr)
+            is CooldownRef -> compileCooldownRef(expr)
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
+            is SequenceAccessor -> compileSequenceAccessor(expr)
             is Between -> compileBetween(expr, ruleAlias)
             is InList -> compileInList(expr, ruleAlias)
             is IsNull -> compileIsNull(expr, ruleAlias)
@@ -411,6 +419,12 @@ class ExprCompiler(
                     val mfe = ctx.strategyContext.positions.mfeFor(symbol) ?: BigDecimal.ZERO
                     Value.Num(mfe)
                 }
+            StateSource.POSITION_MAE ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    val mae = ctx.strategyContext.positions.maeFor(symbol) ?: BigDecimal.ZERO
+                    Value.Num(mae)
+                }
             StateSource.POSITION_OPEN_COUNT ->
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
@@ -449,6 +463,30 @@ class ExprCompiler(
                         ?.let { Value.Num(BigDecimal.valueOf(it)) } ?: Value.Undefined
                 }
             else -> throw IllegalArgumentException("StateAccessor source ${ref.source} is not supported")
+        }
+
+    private fun compileSequenceAccessor(ref: SequenceAccessor): CompiledExpr =
+        when {
+            ref.stage == null && ref.field == "stage" ->
+                CompiledExpr { ctx ->
+                    Value.Num(BigDecimal.valueOf(ctx.sequences.stage(ref.sequence).toLong()))
+                }
+            ref.stage == null && ref.field == "complete" ->
+                CompiledExpr { ctx ->
+                    Value.of(ctx.sequences.complete(ref.sequence))
+                }
+            ref.stage != null && ref.field == "price" ->
+                CompiledExpr { ctx ->
+                    Value.Num(ctx.sequences.stagePrice(ref.sequence, ref.stage) ?: BigDecimal.ZERO)
+                }
+            ref.stage != null && ref.field == "time" ->
+                CompiledExpr { ctx ->
+                    Value.Num(BigDecimal.valueOf(ctx.sequences.stageTime(ref.sequence, ref.stage) ?: 0L))
+                }
+            ref.stage == null ->
+                error("Unknown SEQUENCE accessor: SEQUENCE.${ref.sequence}.${ref.field}")
+            else ->
+                error("Unknown SEQUENCE stage accessor: SEQUENCE.${ref.sequence}.${ref.stage}.${ref.field}")
         }
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {
@@ -518,6 +556,40 @@ class ExprCompiler(
         }
     }
 
+    private fun compileStreakRef(ref: StreakRef): CompiledExpr {
+        val fields = setOf("wins", "losses", "banked")
+        require(ref.field in fields) { "Unsupported STREAK field: ${ref.field}" }
+        return CompiledExpr { ctx ->
+            val history = ctx.strategyContext.tradeHistory
+            when (ref.field) {
+                "wins" -> Value.Num(BigDecimal.valueOf(history.winStreak().toLong()))
+                "losses" -> Value.Num(BigDecimal.valueOf(history.lossStreak().toLong()))
+                "banked" -> Value.Num(history.banked())
+                else -> error("unreachable")
+            }
+        }
+    }
+
+    private fun compileTradesRef(ref: TradesRef): CompiledExpr {
+        require(ref.field == "today") { "Unsupported TRADES field: ${ref.field}" }
+        return CompiledExpr { ctx ->
+            Value.Num(
+                BigDecimal.valueOf(
+                    ctx.strategyContext.pacer
+                        .tradesToday(ctx.nowMs())
+                        .toLong(),
+                ),
+            )
+        }
+    }
+
+    private fun compileCooldownRef(ref: CooldownRef): CompiledExpr {
+        require(ref.field == "remaining_s") { "Unsupported COOLDOWN field: ${ref.field}" }
+        return CompiledExpr { ctx ->
+            Value.Num(BigDecimal.valueOf(ctx.strategyContext.pacer.cooldownRemainingSeconds(ctx.nowMs())))
+        }
+    }
+
     private fun compileIndicator(call: IndicatorCall): CompiledExpr {
         if (call.name.equals("RESID", ignoreCase = true)) return compileResidual(call)
         if (call.name.equals("CONFIRM_RATIO", ignoreCase = true)) return compileConfirmRatio(call)
@@ -535,19 +607,16 @@ class ExprCompiler(
             } else {
                 when (val seriesArg = call.args.firstOrNull()) {
                     is StreamFieldRef, null -> bindings.bind(call)
-                    // A registry indicator nested inside another (e.g. zscore(ema(...), N)) chains
-                    // through the registry. RESID lives outside the registry, so feed the outer
-                    // indicator its value each bar via the expression-fed path instead — this is what
-                    // makes zscore(resid(...), N), the residual z-score, compose.
+                    // A registry indicator nested inside another (e.g. zscore(ema(...), N)) feeds
+                    // the outer indicator from the compiled inner expression. This also covers
+                    // expression-fed inner indicators such as runlength_where(close < sma(...)).
                     is IndicatorCall ->
-                        if (seriesArg.name.equals("RESID", ignoreCase = true)) {
-                            val primaryAlias =
-                                streamAliasesIn(seriesArg).firstOrNull()
-                                    ?: error("Indicator ${call.name} series must reference a stream")
-                            bindings.bindExpression(call, compile(seriesArg, null), primaryAlias)
-                        } else {
-                            bindings.bind(call)
-                        }
+                        bindings.bindExpression(
+                            call,
+                            compile(seriesArg, null),
+                            streamAliasesIn(seriesArg).firstOrNull()
+                                ?: error("Indicator ${call.name} series must reference a stream"),
+                        )
                     else -> {
                         // #174 expression-fed: compile the series expression and bind via
                         // primary alias. Gate on the first StreamFieldRef the expression

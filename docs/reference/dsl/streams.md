@@ -17,6 +17,9 @@ Three parts after `=`:
 
 The `<alias>` is what your strategy code uses. Pick something short and meaningful.
 
+Synthetic read-only streams also live in `SYMBOLS`. For account equity, use
+`<alias> = SERIES ACCOUNT.EQUITY EVERY <timeframe>`; see [Synthetic series](series.md).
+
 ## Single-stream example
 
 ```qkt

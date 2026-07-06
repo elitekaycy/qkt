@@ -70,6 +70,22 @@ class WarmupRequirementsTest {
     }
 
     @Test
+    fun `indicator over account equity series derives warmup`() {
+        val s =
+            ast(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                  eq = SERIES ACCOUNT.EQUITY EVERY 1h
+                RULES
+                  WHEN g.close > 0 AND eq.close > ema(eq.close, 24) THEN FLATTEN
+                """.trimIndent(),
+            )
+        assertThat(WarmupRequirements.compute(s)).containsEntry("eq", 24)
+    }
+
+    @Test
     fun `MACD warmup is the indicator's true requirement, not the max literal`() {
         val s =
             ast(
@@ -176,6 +192,23 @@ class WarmupRequirementsTest {
                 """.trimIndent(),
             )
         assertThat(WarmupRequirements.compute(s)).containsExactly(java.util.Map.entry("g", 21))
+    }
+
+    @Test
+    fun `indicator over boolean dwell condition derives warmup through let references`() {
+        val s =
+            ast(
+                """
+                STRATEGY dwell VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 30m
+                LET calm = atr(g.candle, 14) < percentile_rank(atr(g.candle, 14), 200)
+                RULES
+                  WHEN zscore(runlength_where(calm), 20) > 1 THEN FLATTEN
+                """.trimIndent(),
+            )
+
+        assertThat(WarmupRequirements.compute(s).getValue("g")).isGreaterThanOrEqualTo(200)
     }
 
     @Test

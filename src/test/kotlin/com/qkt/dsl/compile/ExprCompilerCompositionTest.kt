@@ -1,5 +1,7 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.ast.Cmp
+import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
@@ -58,5 +60,33 @@ class ExprCompilerCompositionTest {
             )
         bindings.updateAll(ec)
         assertThat(compiled.evaluate(ec)).isEqualTo(Value.Undefined)
+    }
+
+    @Test
+    fun `statistical indicator can consume boolean dwell counter`() {
+        val bindings = IndicatorBinding.Bag()
+        val condition =
+            CmpOp(
+                Cmp.LT,
+                StreamFieldRef("btc", "close"),
+                NumLit(BigDecimal("105")),
+            )
+        val dwell = IndicatorCall("RUNLENGTH_WHERE", listOf(condition))
+        val outer = IndicatorCall("ZSCORE", listOf(dwell, NumLit(BigDecimal("3"))))
+        val compiled = ExprCompiler(bindings).compile(outer)
+        var ec: EvalContext? = null
+
+        for (price in listOf("100", "101", "102", "110", "100", "101")) {
+            ec =
+                EvalContext(
+                    candle = candle(price),
+                    streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                    lets = emptyMap(),
+                    strategyContext = testStrategyContext(),
+                )
+            bindings.updateAll(ec)
+        }
+
+        assertThat(compiled.evaluate(ec!!)).isInstanceOf(Value.Num::class.java)
     }
 }

@@ -199,6 +199,12 @@ object QktDocs {
                         "consecutive falls, 0 when the last change was flat (a flat value breaks the run). No " +
                         "lookback — the streak accumulates from the last direction change. Null until one prior value.",
                 ),
+            "RUNLENGTH_WHERE" to
+                doc(
+                    "runlength_where(condition)",
+                    "Consecutive-bar dwell counter for a boolean condition: increments while the condition is true " +
+                        "and resets to 0 when false. Use it for state-duration filters such as calm-volatility dwell.",
+                ),
             "VARIANCE_RATIO" to
                 doc(
                     "variance_ratio(value, k, lookback)",
@@ -405,6 +411,7 @@ object QktDocs {
             "FLATTEN" to "Action: close every open position for the strategy.",
             "SIZING" to "Position size for an entry: `SIZING <units>`, `SIZING RISK $ <amount>`, or `SIZING <pct>`.",
             "RISK" to "Risk-based sizing: `SIZING RISK $ <amount>` sizes so the stop loses that amount.",
+            "STREAK" to "Trade-streak state namespace: `STREAK.wins`, `STREAK.losses`, `STREAK.banked`.",
             "BRACKET" to "Attaches a stop loss and/or take profit to an entry.",
             "ON_FILL" to
                 "OTO: child BUY/SELL orders placed only when the parent fills: " +

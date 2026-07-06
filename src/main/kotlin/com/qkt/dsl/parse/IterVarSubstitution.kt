@@ -19,6 +19,7 @@ import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.ExprAst
@@ -29,10 +30,12 @@ import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
+import com.qkt.dsl.ast.LatchConfirm
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
 import com.qkt.dsl.ast.LatchOrder
+import com.qkt.dsl.ast.LatchRetestHold
 import com.qkt.dsl.ast.LatchSensor
 import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.Limit
@@ -58,8 +61,10 @@ import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -109,6 +114,9 @@ private fun subst(
             )
         is Aggregate -> expr.copy(series = subst(expr.series, v, alias))
         is IsNull -> expr.copy(expr = subst(expr.expr, v, alias))
+        is StreakRef -> expr
+        is TradesRef -> expr
+        is CooldownRef -> expr
         else -> expr
     }
 
@@ -129,6 +137,7 @@ private fun subst(
                 stream = if (action.stream == v) alias else action.stream,
                 sensor = subst(action.sensor, v, alias),
                 entries = action.entries.map { subst(it, v, alias) },
+                confirm = subst(action.confirm, v, alias),
             )
         is com.qkt.dsl.ast.Resize ->
             action.copy(
@@ -260,7 +269,18 @@ private fun subst(
         mfeThreshold = subst(c.mfeThreshold, v, alias),
         sizing = subst(c.sizing, v, alias),
         bracket = subst(c.bracket, v, alias),
+        maeRecoverDistance = c.maeRecoverDistance?.let { subst(it, v, alias) },
     )
+
+private fun subst(
+    c: LatchConfirm,
+    v: String,
+    alias: String,
+): LatchConfirm =
+    when (c) {
+        is LatchRetestHold -> c.copy(distance = subst(c.distance, v, alias))
+        else -> c
+    }
 
 private fun subst(
     s: LatchSensor,
@@ -284,6 +304,7 @@ private fun subst(
         order = subst(e.order, v, alias),
         bracket = e.bracket?.let { subst(it, v, alias) },
         sizing = e.sizing?.let { subst(it, v, alias) },
+        stream = if (e.stream == v) alias else e.stream,
     )
 
 private fun subst(

@@ -26,6 +26,11 @@ data class PerStrategyRisk(
     val maxOpenPositions: Int? = null,
     val maxDrawdownPct: BigDecimal? = null,
     val maxDailyDrawdownPct: BigDecimal? = null,
+    val maxTradesPerDay: Int? = null,
+    val cooldownAfterLossMs: Long? = null,
+    val cooldownAfterLossAfterConsecutive: Int = 1,
+    val lossStreakHalt: Int? = null,
+    val lossStreakHaltScope: com.qkt.risk.HaltScope = com.qkt.risk.HaltScope.PERSISTENT,
 ) {
     init {
         if (maxDailyLoss != null) {
@@ -46,6 +51,20 @@ data class PerStrategyRisk(
             require(maxDailyDrawdownPct.signum() > 0 && maxDailyDrawdownPct <= BigDecimal.ONE) {
                 "PerStrategyRisk.maxDailyDrawdownPct must be in (0, 1]: $maxDailyDrawdownPct"
             }
+        }
+        if (maxTradesPerDay != null) {
+            require(maxTradesPerDay > 0) { "PerStrategyRisk.maxTradesPerDay must be > 0: $maxTradesPerDay" }
+        }
+        if (cooldownAfterLossMs != null) {
+            require(cooldownAfterLossMs > 0) {
+                "PerStrategyRisk.cooldownAfterLossMs must be > 0: $cooldownAfterLossMs"
+            }
+        }
+        require(cooldownAfterLossAfterConsecutive > 0) {
+            "PerStrategyRisk.cooldownAfterLossAfterConsecutive must be > 0: $cooldownAfterLossAfterConsecutive"
+        }
+        if (lossStreakHalt != null) {
+            require(lossStreakHalt > 0) { "PerStrategyRisk.lossStreakHalt must be > 0: $lossStreakHalt" }
         }
     }
 }

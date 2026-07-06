@@ -2,8 +2,11 @@ package com.qkt.app
 
 import com.qkt.common.FixedClock
 import com.qkt.common.Side
+import com.qkt.dsl.ast.LatchConfirm
+import com.qkt.dsl.ast.LatchFirstTick
 import com.qkt.dsl.compile.CompiledExpr
 import com.qkt.dsl.compile.CompiledLatch
+import com.qkt.dsl.compile.CompiledLatchEntry
 import com.qkt.dsl.compile.EvalContext
 import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.compile.LatchEntryBuilder
@@ -35,7 +38,11 @@ object LatchManagerFixture {
             )
         return EvalContext(
             candle = candle,
-            streams = mapOf("s" to HubKey("BACKTEST", symbol, "1m")),
+            streams =
+                mapOf(
+                    "s" to HubKey("BACKTEST", symbol, "1m"),
+                    "silver" to HubKey("BACKTEST", "XAGUSD", "1m"),
+                ),
             lets = emptyMap(),
             strategyContext = testStrategyContext(),
         )
@@ -45,6 +52,7 @@ object LatchManagerFixture {
         ref: String,
         offset: String,
         windowMs: Long,
+        confirm: LatchConfirm = LatchFirstTick,
     ): CompiledLatch {
         val refVal = BigDecimal(ref)
         val offVal = BigDecimal(offset)
@@ -54,24 +62,45 @@ object LatchManagerFixture {
             offset = CompiledExpr { Value.Num(offVal) },
             armWindowMs = windowMs,
             name = null,
-            entryBuilders =
+            entries =
                 listOf(
-                    LatchEntryBuilder { direction, anchor, ec ->
-                        val side = if (direction > 0) Side.BUY else Side.SELL
-                        OrderRequest.Limit(
-                            id = "test-entry",
-                            symbol = ec.candle.symbol,
-                            side = side,
-                            quantity = BigDecimal.ONE,
-                            limitPrice = anchor,
-                            timeInForce = TimeInForce.GTC,
-                            timestamp = 0L,
-                            strategyId = "test",
-                        )
-                    },
+                    CompiledLatchEntry(
+                        streamAlias = "s",
+                        builder =
+                            LatchEntryBuilder { direction, anchor, ec ->
+                                val side = if (direction > 0) Side.BUY else Side.SELL
+                                OrderRequest.Limit(
+                                    id = "test-entry",
+                                    symbol = ec.candle.symbol,
+                                    side = side,
+                                    quantity = BigDecimal.ONE,
+                                    limitPrice = anchor,
+                                    timeInForce = TimeInForce.GTC,
+                                    timestamp = 0L,
+                                    strategyId = "test",
+                                )
+                            },
+                    ),
                 ),
+            confirm = confirm,
         )
     }
+
+    fun candle(
+        symbol: String,
+        close: String,
+        endTime: Long,
+    ): Candle =
+        Candle(
+            symbol = symbol,
+            open = BigDecimal(close),
+            high = BigDecimal(close),
+            low = BigDecimal(close),
+            close = BigDecimal(close),
+            volume = BigDecimal.ZERO,
+            startTime = endTime - 60_000L,
+            endTime = endTime,
+        )
 
     fun tick(
         symbol: String,

@@ -216,6 +216,8 @@ class PortfolioSupervisor(
         override fun positionFor(symbol: String): Position? = null
 
         override fun allPositions(): Map<String, Position> = emptyMap()
+
+        override fun maeFor(symbol: String): BigDecimal? = null
     }
 
     private object EmptyPnL : StrategyPnLView {

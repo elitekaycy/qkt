@@ -12,7 +12,9 @@ import com.qkt.pnl.StrategyPnLView
 import com.qkt.pnl.TradeHistoryView
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
+import com.qkt.risk.NoOpPacerView
 import com.qkt.risk.NoOpRiskView
+import com.qkt.risk.PacerView
 import com.qkt.risk.RiskView
 import java.math.BigDecimal
 
@@ -29,6 +31,8 @@ private val emptyPositions =
         override fun positionFor(symbol: String): Position? = null
 
         override fun allPositions(): Map<String, Position> = emptyMap()
+
+        override fun maeFor(symbol: String): BigDecimal? = null
 
         override fun legsFor(symbol: String): List<com.qkt.positions.PositionLeg> = emptyList()
     }
@@ -78,6 +82,7 @@ fun testStrategyContext(
     risk: RiskView = NoOpRiskView(),
     instruments: InstrumentRegistry = UnitContractRegistry,
     tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
+    pacer: PacerView = NoOpPacerView(),
 ): StrategyContext =
     StrategyContext(
         strategyId = strategyId,
@@ -90,4 +95,5 @@ fun testStrategyContext(
         risk = risk,
         instruments = instruments,
         tradeHistory = tradeHistory,
+        pacer = pacer,
     )

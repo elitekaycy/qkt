@@ -1,12 +1,17 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.CooldownRef
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.StreakRef
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.marketdata.Candle
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
+import com.qkt.risk.PacerView
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -44,6 +49,42 @@ class ExprCompilerStateTest {
     }
 
     @Test
+    fun `SEQUENCE accessors read sequence runtime view`() {
+        val sequences =
+            object : SequenceStateView {
+                override fun stage(sequence: String): Int = if (sequence == "sweep") 2 else 0
+
+                override fun complete(sequence: String): Boolean = sequence == "sweep"
+
+                override fun stagePrice(
+                    sequence: String,
+                    stage: String,
+                ): BigDecimal? = if (sequence == "sweep" && stage == "swept") BigDecimal("98.50") else null
+
+                override fun stageTime(
+                    sequence: String,
+                    stage: String,
+                ): Long? = if (sequence == "sweep" && stage == "swept") 1_000L else null
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+                sequences = sequences,
+            )
+
+        fun num(accessor: SequenceAccessor) = (ExprCompiler().compile(accessor).evaluate(ec) as Value.Num).v
+
+        assertThat(num(SequenceAccessor("sweep", null, "stage"))).isEqualByComparingTo("2")
+        assertThat((ExprCompiler().compile(SequenceAccessor("sweep", null, "complete")).evaluate(ec) as Value.Bool).v)
+            .isTrue
+        assertThat(num(SequenceAccessor("sweep", "swept", "price"))).isEqualByComparingTo("98.50")
+        assertThat(num(SequenceAccessor("sweep", "swept", "time"))).isEqualByComparingTo("1000")
+    }
+
+    @Test
     fun `ACCOUNT realized_pnl reads from pnl view`() {
         val v =
             ExprCompiler()
@@ -75,6 +116,64 @@ class ExprCompilerStateTest {
     @Test
     fun `unsupported ACCOUNT field is rejected at compile time`() {
         assertThatThrownBy { ExprCompiler().compile(AccountRef("drawdown")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `STREAK accessors read current trade history streak state`() {
+        val history = com.qkt.pnl.TradeHistory()
+        history.recordTrade("test", 100L, BigDecimal("-5"), "BACKTEST:BTCUSDT")
+        history.recordTrade("test", 200L, BigDecimal("10.50"), "BACKTEST:BTCUSDT")
+        history.recordTrade("test", 300L, BigDecimal("15.25"), "BACKTEST:BTCUSDT")
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(history, "test")),
+            )
+
+        fun read(field: String) = (ExprCompiler().compile(StreakRef(field)).evaluate(ec) as Value.Num).v
+
+        assertThat(read("wins")).isEqualByComparingTo("2")
+        assertThat(read("losses")).isEqualByComparingTo("0")
+        assertThat(read("banked")).isEqualByComparingTo("25.75")
+    }
+
+    @Test
+    fun `unsupported STREAK field is rejected at compile time`() {
+        assertThatThrownBy { ExprCompiler().compile(StreakRef("drawdown")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `TRADES and COOLDOWN accessors read pacer state`() {
+        val pacer =
+            object : PacerView {
+                override fun tradesToday(nowMs: Long): Int = 4
+
+                override fun cooldownRemainingSeconds(nowMs: Long): Long = 90
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(pacer = pacer),
+            )
+
+        val trades = ExprCompiler().compile(TradesRef("today")).evaluate(ec) as Value.Num
+        val cooldown = ExprCompiler().compile(CooldownRef("remaining_s")).evaluate(ec) as Value.Num
+
+        assertThat(trades.v).isEqualByComparingTo("4")
+        assertThat(cooldown.v).isEqualByComparingTo("90")
+    }
+
+    @Test
+    fun `unsupported pacer fields are rejected at compile time`() {
+        assertThatThrownBy { ExprCompiler().compile(TradesRef("week")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { ExprCompiler().compile(CooldownRef("remaining_ms")) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 
@@ -337,6 +436,47 @@ class ExprCompilerStateTest {
         val v =
             ExprCompiler()
                 .compile(StateAccessor(StateSource.POSITION_MFE, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `POSITION_MAE reads from positions view maeFor`() {
+        val pos =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String): Position? = null
+
+                override fun allPositions(): Map<String, Position> = emptyMap()
+
+                override fun maeFor(symbol: String): BigDecimal =
+                    if (symbol == "BACKTEST:BTCUSDT") BigDecimal("7.50") else BigDecimal.ZERO
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_MAE, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("7.50")
+    }
+
+    @Test
+    fun `POSITION_MAE returns zero when view has no mae data`() {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_MAE, "btc"))
                 .evaluate(ec) as Value.Num
         assertThat(v.v).isEqualByComparingTo("0")
     }

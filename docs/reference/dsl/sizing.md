@@ -74,7 +74,7 @@ You can multiply, divide, or do any arithmetic on `POSITION.<stream>`.
 
 ```qkt
 BUY btc SIZING 0.5 PCT RISK
-    BRACKET { STOP_LOSS AT btc.close - atr(btc, 14) * 2, TAKE_PROFIT RR 3 }
+    BRACKET { STOP LOSS AT btc.close - atr(btc, 14) * 2, TAKE PROFIT RR 3 }
 ```
 
 Sizes the position so that, if the stop hits, the loss is exactly N% of equity. `SIZING 0.5 PCT RISK` is sugar for `SIZING RISK 0.005` — both compile to the same engine path. Use the PCT form to avoid decimal-shift bugs when expressing small risk fractions: `0.5 PCT RISK` is unambiguous; `RISK 0.005` invites typos.
@@ -95,10 +95,24 @@ LET riskQty  = riskUsd / stopDist              # size that loses riskUsd if stop
 RULES
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
     THEN BUY btc SIZING riskQty
-         BRACKET { STOP_LOSS AT btc.close - stopDist, TAKE_PROFIT AT btc.close + stopDist * 3 }
+         BRACKET { STOP LOSS AT btc.close - stopDist, TAKE PROFIT AT btc.close + stopDist * 3 }
 ```
 
 This is equivalent to `SIZING 1.0 PCT RISK` with the same bracket — you compute the size from `equity_at_risk / stop_distance` yourself. Reach for the manual form only when you need a sizing expression `PCT RISK` doesn't express.
+
+## Streak-Adjusted Risk
+
+Risk sizing accepts any numeric expression, including the trade-streak ledger:
+
+```qkt
+RULES
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+     AND STREAK.losses < 2
+    THEN BUY btc SIZING RISK $ (100 + 0.30 * STREAK.banked)
+         BRACKET { STOP LOSS BY 40, TAKE PROFIT BY 90 }
+```
+
+This is anti-martingale sizing: base risk remains `$100`, and only current win-streak profit is pressed. `STREAK.banked` resets to `0` after a losing close.
 
 ## Defaults via DEFAULTS
 

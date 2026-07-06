@@ -63,12 +63,14 @@ class TradingPipelineStackTest {
         qty: String = "0.05",
         sl: String = "0.005",
         tp: String = "0.020",
+        recover: String? = null,
     ) = CompiledStackTier(
         mfeThreshold = BigDecimal(threshold),
         withinMs = 30 * 60 * 1000L,
         resolveStackQuantity = { _ -> BigDecimal(qty) },
         slDistance = BigDecimal(sl),
         tpDistance = BigDecimal(tp),
+        maeRecoverDistance = recover?.let(::BigDecimal),
     )
 
     private fun newPipeline(strategy: DslCompiledStrategy): Pair<TradingPipeline, EventBus> {
@@ -180,6 +182,50 @@ class TradingPipelineStackTest {
         )
         bus.publish(TickEvent(Tick("EURUSD", BigDecimal("1.1500"), 100L))) // huge move
         assertThat(stackOrders).isEmpty()
+    }
+
+    @Test
+    fun `pending MAE recovery stack fires after adverse move recovers`() {
+        val pendingStacks = PendingStacks()
+        pendingStacks.register(
+            PendingStack(
+                parentClientOrderId = "parent-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                tiers = listOf(tier(threshold = "0.010", recover = "0.006")),
+            ),
+        )
+        val strategy = StubDslStrategy(pendingStacks)
+        val (_, bus) = newPipeline(strategy)
+        val stackOrders = mutableListOf<OrderRequest>()
+        bus.subscribe<OrderEvent> { e ->
+            if (e.request is OrderRequest.Bracket) stackOrders.add(e.request)
+        }
+
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "parent-1",
+                brokerOrderId = "parent-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                price = BigDecimal("1.1000"),
+                quantity = BigDecimal("0.10"),
+                strategyId = "alpha",
+                timestamp = 0L,
+            ),
+        )
+
+        bus.publish(TickEvent(Tick("EURUSD", BigDecimal("1.0900"), 100L)))
+        assertThat(stackOrders).isEmpty()
+        bus.publish(TickEvent(Tick("EURUSD", BigDecimal("1.0950"), 200L)))
+        assertThat(stackOrders).isEmpty()
+        bus.publish(TickEvent(Tick("EURUSD", BigDecimal("1.0960"), 300L)))
+
+        assertThat(stackOrders).hasSize(1)
+        val stack = stackOrders.single() as OrderRequest.Bracket
+        assertThat(stack.symbol).isEqualTo("EURUSD")
+        assertThat(stack.side).isEqualTo(Side.BUY)
+        assertThat(stack.quantity).isEqualByComparingTo("0.05")
     }
 
     @Test

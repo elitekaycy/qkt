@@ -1,5 +1,7 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.ast.Cmp
+import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
@@ -85,5 +87,52 @@ class ExprCompilerIndicatorTest {
             ExprCompiler(IndicatorBinding.Bag())
                 .compile(IndicatorCall("EMA", listOf(StreamFieldRef("btc", "close"))))
         }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `RUNLENGTH_WHERE counts consecutive true expression bars`() {
+        val bindings = IndicatorBinding.Bag()
+        val expr =
+            IndicatorCall(
+                "RUNLENGTH_WHERE",
+                listOf(
+                    CmpOp(
+                        Cmp.LT,
+                        StreamFieldRef("btc", "close"),
+                        NumLit(BigDecimal("105")),
+                    ),
+                ),
+            )
+        val compiled = ExprCompiler(bindings).compile(expr)
+        val values = mutableListOf<BigDecimal>()
+
+        for (price in listOf("100", "101", "110", "102")) {
+            val ctx =
+                EvalContext(
+                    candle =
+                        Candle(
+                            "BACKTEST:BTCUSDT",
+                            BigDecimal(price),
+                            BigDecimal(price),
+                            BigDecimal(price),
+                            BigDecimal(price),
+                            BigDecimal.ZERO,
+                            0L,
+                            1L,
+                        ),
+                    streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                    lets = emptyMap(),
+                    strategyContext = testStrategyContext(),
+                )
+            bindings.updateAll(ctx)
+            values.add((compiled.evaluate(ctx) as Value.Num).v)
+        }
+
+        assertThat(values).containsExactly(
+            BigDecimal("1"),
+            BigDecimal("2"),
+            BigDecimal("0"),
+            BigDecimal("1"),
+        )
     }
 }

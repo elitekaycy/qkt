@@ -6,9 +6,11 @@ import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.Latch
+import com.qkt.dsl.ast.LatchConfirm
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
+import com.qkt.dsl.ast.LatchRetestHold
 import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
@@ -32,7 +34,16 @@ class CompiledLatch(
     val reference: CompiledExpr,
     val armWindowMs: Long,
     val name: String?,
-    val entryBuilders: List<LatchEntryBuilder>,
+    val entries: List<CompiledLatchEntry>,
+    val confirm: LatchConfirm,
+) {
+    val entryBuilders: List<LatchEntryBuilder> = entries.map { it.builder }
+}
+
+/** One compiled latch entry and the stream it submits orders on when the latch confirms. */
+data class CompiledLatchEntry(
+    val streamAlias: String,
+    val builder: LatchEntryBuilder,
 )
 
 /**
@@ -73,23 +84,30 @@ class LatchCompiler(
         strategyId: String,
     ): CompiledLatch {
         val sensor = latch.sensor as BreakOffset
+        if (latch.confirm is LatchRetestHold) {
+            require(latch.confirm.distance is NumLit) {
+                "LATCH RETEST_HOLD distance must be compile-time constant (literal or LET); got ${latch.confirm.distance}"
+            }
+        }
         val referenceExpr = sensor.reference ?: StreamFieldRef(latch.stream, "close")
-        val builders = latch.entries.map { compileEntry(latch.stream, it, strategyId) }
+        val entries = latch.entries.map { compileEntry(latch.stream, it, strategyId) }
         return CompiledLatch(
             streamAlias = latch.stream,
             offset = exprCompiler.compile(sensor.offset),
             reference = exprCompiler.compile(referenceExpr),
             armWindowMs = latch.armWindow.millis,
             name = latch.name,
-            entryBuilders = builders,
+            entries = entries,
+            confirm = latch.confirm,
         )
     }
 
     private fun compileEntry(
-        stream: String,
+        latchStream: String,
         entry: LatchEntry,
         strategyId: String,
-    ): LatchEntryBuilder {
+    ): CompiledLatchEntry {
+        val entryStream = entry.stream ?: latchStream
         // Signed contribution in "direction units": WITH = +d, AGAINST = -d, MARKET = 0.
         val entryRel: DirRel? = (entry.order as? LatchLimit)?.price ?: (entry.order as? LatchStop)?.price
         val entryContrib: BigDecimal = signedDist(entryRel)
@@ -103,90 +121,93 @@ class LatchCompiler(
             } else {
                 null
             }
-        val compiledSize = entry.sizing?.let { sizingCompiler.compile(it, stopDistance, stream) }
+        val compiledSize = entry.sizing?.let { sizingCompiler.compile(it, stopDistance, entryStream) }
         val expiresInMs = entry.expire?.millis
 
-        return LatchEntryBuilder { direction, anchor, ec ->
-            val dir = BigDecimal(direction)
-            val side = if (direction > 0) Side.BUY else Side.SELL
-            val now = ec.nowMs()
-            val id = ids.next()
+        val builder =
+            LatchEntryBuilder { direction, anchor, ec ->
+                val symbol = ec.streams[entryStream]?.qktSymbol ?: error("Unknown stream alias: $entryStream")
+                val dir = BigDecimal(direction)
+                val side = if (direction > 0) Side.BUY else Side.SELL
+                val now = ec.nowMs()
+                val id = ids.next()
 
-            fun resolve(rel: DirRel): BigDecimal {
-                val d = (exprCompiler.compile(rel.dist).evaluate(ec) as Value.Num).v
-                return if (rel.sense == DirSense.WITH) anchor + dir * d else anchor - dir * d
-            }
-
-            val entryReq: OrderRequest =
-                when (val o = entry.order) {
-                    is LatchMarket ->
-                        OrderRequest.Market(
-                            id,
-                            ec.candle.symbol,
-                            side,
-                            BigDecimal.ONE,
-                            TimeInForce.GTC,
-                            now,
-                            strategyId,
-                        )
-                    is LatchLimit ->
-                        OrderRequest.Limit(
-                            id,
-                            ec.candle.symbol,
-                            side,
-                            BigDecimal.ONE,
-                            resolve(o.price),
-                            TimeInForce.GTC,
-                            now,
-                            strategyId,
-                            expiresAt(now, expiresInMs),
-                        )
-                    is LatchStop ->
-                        OrderRequest.Stop(
-                            id,
-                            ec.candle.symbol,
-                            side,
-                            BigDecimal.ONE,
-                            resolve(o.price),
-                            TimeInForce.GTC,
-                            now,
-                            strategyId,
-                            expiresAt(now, expiresInMs),
-                        )
+                fun resolve(rel: DirRel): BigDecimal {
+                    val d = (exprCompiler.compile(rel.dist).evaluate(ec) as Value.Num).v
+                    return if (rel.sense == DirSense.WITH) anchor + dir * d else anchor - dir * d
                 }
 
-            val entryPrice =
-                when (val o = entry.order) {
-                    is LatchMarket -> anchor
-                    is LatchLimit -> resolve(o.price)
-                    is LatchStop -> resolve(o.price)
+                val entryReq: OrderRequest =
+                    when (val o = entry.order) {
+                        is LatchMarket ->
+                            OrderRequest.Market(
+                                id,
+                                symbol,
+                                side,
+                                BigDecimal.ONE,
+                                TimeInForce.GTC,
+                                now,
+                                strategyId,
+                            )
+                        is LatchLimit ->
+                            OrderRequest.Limit(
+                                id,
+                                symbol,
+                                side,
+                                BigDecimal.ONE,
+                                resolve(o.price),
+                                TimeInForce.GTC,
+                                now,
+                                strategyId,
+                                expiresAt(now, expiresInMs),
+                            )
+                        is LatchStop ->
+                            OrderRequest.Stop(
+                                id,
+                                symbol,
+                                side,
+                                BigDecimal.ONE,
+                                resolve(o.price),
+                                TimeInForce.GTC,
+                                now,
+                                strategyId,
+                                expiresAt(now, expiresInMs),
+                            )
+                    }
+
+                val entryPrice =
+                    when (val o = entry.order) {
+                        is LatchMarket -> anchor
+                        is LatchLimit -> resolve(o.price)
+                        is LatchStop -> resolve(o.price)
+                    }
+                val qty = compiledSize?.evaluate(ec, entryPrice) ?: BigDecimal.ONE
+
+                if (slRel == null && tpRel == null) {
+                    return@LatchEntryBuilder withQty(entryReq, qty)
                 }
-            val qty = compiledSize?.evaluate(ec, entryPrice) ?: BigDecimal.ONE
+                val slPrice = slRel?.let { resolve(it) }
+                val tpPrice = tpRel?.let { resolve(it) } ?: entryPrice
 
-            if (slRel == null && tpRel == null) {
-                return@LatchEntryBuilder withQty(entryReq, qty)
+                if (slPrice != null && invalidStop(side, entryPrice, slPrice)) {
+                    log.warn("latch entry skipped (inverted geometry): entry=$entryPrice sl=$slPrice side=$side")
+                    return@LatchEntryBuilder null
+                }
+                OrderRequest.Bracket(
+                    id,
+                    symbol,
+                    side,
+                    qty,
+                    entry = withQty(entryReq, qty),
+                    takeProfit = tpPrice,
+                    stopLoss = StopLossSpec.Fixed(slPrice ?: entryPrice),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = now,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt(now, expiresInMs),
+                )
             }
-            val slPrice = slRel?.let { resolve(it) }
-            val tpPrice = tpRel?.let { resolve(it) } ?: entryPrice
-
-            if (slPrice != null && invalidStop(side, entryPrice, slPrice)) {
-                log.warn("latch entry skipped (inverted geometry): entry=$entryPrice sl=$slPrice side=$side")
-                return@LatchEntryBuilder null
-            }
-            OrderRequest.Bracket(
-                id,
-                ec.candle.symbol,
-                side,
-                qty,
-                entry = withQty(entryReq, qty),
-                takeProfit = tpPrice,
-                stopLoss = StopLossSpec.Fixed(slPrice ?: entryPrice),
-                timeInForce = TimeInForce.GTC,
-                timestamp = now,
-                strategyId = strategyId,
-                expiresAt = expiresAt(now, expiresInMs),
-            )
-        }
+        return CompiledLatchEntry(entryStream, builder)
     }
 
     /**

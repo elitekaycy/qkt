@@ -15,12 +15,14 @@ class StackEnginePersistenceTest {
         qty: String = "0.06",
         sl: String = "200",
         tp: String = "2000",
+        recover: String? = null,
     ) = ResolvedStackTier(
         mfeThreshold = BigDecimal(threshold),
         withinMs = withinMs,
         stackQuantity = BigDecimal(qty),
         slDistance = BigDecimal(sl),
         tpDistance = BigDecimal(tp),
+        maeRecoverDistance = recover?.let(::BigDecimal),
     )
 
     @Test
@@ -85,6 +87,37 @@ class StackEnginePersistenceTest {
         val second = persistor.loadPendingStacks("hedge")
         assertThat(second["leg-primary"]!!.tiers[0].fired).isTrue
         assertThat(second["leg-primary"]!!.tiers[1].fired).isTrue
+    }
+
+    @Test
+    fun `MAE recovery tier persists armed adverse extreme before firing`() {
+        val persistor = NoopStatePersistor()
+        val clock = FixedClock(time = 1_000L)
+        val engine =
+            StackEngine(
+                parentLegId = "leg-recoil",
+                parentSymbol = "XAUUSDm",
+                parentSide = Side.BUY,
+                parentEntryPrice = BigDecimal("4700"),
+                tiers = listOf(tier("20", recover = "15")),
+                clock = clock,
+                emit = {},
+                strategyId = "hedge",
+                persistor = persistor,
+                primaryClientOrderId = "c-recoil",
+            )
+
+        engine.onTick(BigDecimal("4680"))
+
+        val tier =
+            persistor
+                .loadPendingStacks("hedge")
+                .getValue("leg-recoil")
+                .tiers
+                .single()
+        assertThat(tier.maeRecoverDistance).isEqualByComparingTo("15")
+        assertThat(tier.armedAdverseExtreme).isEqualByComparingTo("4680")
+        assertThat(tier.fired).isFalse()
     }
 
     @Test

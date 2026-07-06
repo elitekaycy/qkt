@@ -14,6 +14,12 @@ interface StrategyPositionView {
      */
     fun mfeFor(symbol: String): BigDecimal? = null
 
+    /**
+     * Current max-adverse-excursion of the PRIMARY leg on [symbol], or null if no
+     * PRIMARY exists. Returned in price units and backs `POSITION.<stream>.mae`.
+     */
+    fun maeFor(symbol: String): BigDecimal? = null
+
     /** Real number of open positions (legs) on [symbol] — not the net. Backs `POSITION.<stream>.count`. */
     fun openCountFor(symbol: String): Int = 0
 
@@ -43,6 +49,8 @@ internal class StrategyPositionViewImpl(
     override fun allPositions(): Map<String, Position> = tracker.positionsFor(strategyId)
 
     override fun mfeFor(symbol: String): BigDecimal? = tracker.primaryMfeFor(strategyId, symbol)
+
+    override fun maeFor(symbol: String): BigDecimal? = tracker.primaryMaeFor(strategyId, symbol)
 
     override fun openCountFor(symbol: String): Int = tracker.openCountFor(strategyId, symbol)
 

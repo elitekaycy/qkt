@@ -417,6 +417,18 @@ data class Config(
                     maxOpenPositions = m["max_open_positions"]?.toString()?.toIntOrNull(),
                     maxDrawdownPct = pctFraction(m["max_drawdown_pct"]?.toString()),
                     maxDailyDrawdownPct = pctFraction(m["max_daily_drawdown_pct"]?.toString()),
+                    maxTradesPerDay = m["max_trades_per_day"]?.toString()?.toIntOrNull(),
+                    cooldownAfterLossMs =
+                        (m["cooldown_after_loss"] ?: m["cooldown_after_loss_ms"])
+                            ?.toString()
+                            ?.let(::durationMs),
+                    cooldownAfterLossAfterConsecutive =
+                        m["cooldown_after_loss_after_consecutive"]
+                            ?.toString()
+                            ?.toIntOrNull()
+                            ?: 1,
+                    lossStreakHalt = m["loss_streak_halt"]?.toString()?.toIntOrNull(),
+                    lossStreakHaltScope = parseHaltScope(m["loss_streak_halt_scope"]?.toString()),
                 )
             }
         }
@@ -479,6 +491,21 @@ data class Config(
             require(pct.signum() > 0 && pct <= BigDecimal(100)) { "drawdown pct must be in (0, 100]: $raw" }
             return pct.divide(BigDecimal(100), java.math.MathContext.DECIMAL64)
         }
+
+        private fun durationMs(raw: String): Long =
+            raw.toLongOrNull()
+                ?: com.qkt.candles.TimeWindow
+                    .parse(raw)
+                    .durationMs
+
+        private fun parseHaltScope(raw: String?): com.qkt.risk.HaltScope =
+            when (raw?.trim()?.lowercase()) {
+                null, "", "persistent" -> com.qkt.risk.HaltScope.PERSISTENT
+                "daily" -> com.qkt.risk.HaltScope.DAILY
+                else -> throw IllegalArgumentException(
+                    "unknown loss_streak_halt_scope '$raw' (valid: daily, persistent)",
+                )
+            }
 
         private fun expandVars(s: String): String =
             varRegex.replace(s) { m ->

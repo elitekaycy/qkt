@@ -52,6 +52,11 @@ class ConfigPerStrategyRiskTest {
                           max_daily_loss: "500"
                           max_position_size: "1.0"
                           max_open_positions: 3
+                          max_trades_per_day: 5
+                          cooldown_after_loss: 30m
+                          cooldown_after_loss_after_consecutive: 2
+                          loss_streak_halt: 4
+                          loss_streak_halt_scope: daily
                     """,
                 ),
             )
@@ -60,6 +65,11 @@ class ConfigPerStrategyRiskTest {
         assertThat(ema!!.maxDailyLoss).isEqualByComparingTo("500")
         assertThat(ema.maxPositionSize).isEqualByComparingTo("1.0")
         assertThat(ema.maxOpenPositions).isEqualTo(3)
+        assertThat(ema.maxTradesPerDay).isEqualTo(5)
+        assertThat(ema.cooldownAfterLossMs).isEqualTo(1_800_000L)
+        assertThat(ema.cooldownAfterLossAfterConsecutive).isEqualTo(2)
+        assertThat(ema.lossStreakHalt).isEqualTo(4)
+        assertThat(ema.lossStreakHaltScope).isEqualTo(com.qkt.risk.HaltScope.DAILY)
     }
 
     @Test
@@ -115,6 +125,14 @@ class ConfigPerStrategyRiskTest {
             .hasMessageContaining("maxPositionSize")
         assertThatThrownBy { PerStrategyRisk(maxOpenPositions = 0) }
             .hasMessageContaining("maxOpenPositions")
+        assertThatThrownBy { PerStrategyRisk(maxTradesPerDay = 0) }
+            .hasMessageContaining("maxTradesPerDay")
+        assertThatThrownBy { PerStrategyRisk(cooldownAfterLossMs = 0) }
+            .hasMessageContaining("cooldownAfterLossMs")
+        assertThatThrownBy { PerStrategyRisk(cooldownAfterLossAfterConsecutive = 0) }
+            .hasMessageContaining("cooldownAfterLossAfterConsecutive")
+        assertThatThrownBy { PerStrategyRisk(lossStreakHalt = 0) }
+            .hasMessageContaining("lossStreakHalt")
     }
 
     @Test

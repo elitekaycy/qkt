@@ -77,6 +77,11 @@ class ReplayEngine(
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     brokerKind: BrokerKind = BrokerKind.PAPER,
     private val executionConfig: ExecutionSimulationConfig = ExecutionSimulationConfig.forBrokerKind(brokerKind),
+    private val pacerLedger: com.qkt.risk.PacerLedger = com.qkt.risk.PacerLedger(),
+    private val pacerCooldownDurationMs: Long? = null,
+    private val pacerCooldownAfterConsecutive: Int = 1,
+    private val pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
+    private val pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
      * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
@@ -313,6 +318,11 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                pacerLedger = pacerLedger,
+                pacerCooldownDurationMs = pacerCooldownDurationMs,
+                pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
+                pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
+                pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
                 bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: BigDecimal.ONE },
                 mode = Mode.BACKTEST,
                 calendar = calendar,

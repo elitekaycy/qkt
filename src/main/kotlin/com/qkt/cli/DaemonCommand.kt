@@ -271,6 +271,7 @@ class DaemonCommand(
                     totalDdBasis = cfg.totalDdBasis,
                     dailyDdBasis = cfg.dailyDdBasis,
                     bookRiskConfig = cfg.bookRisk,
+                    perStrategyRisk = cfg.perStrategyRisk,
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,

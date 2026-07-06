@@ -50,7 +50,119 @@ class FileStatePersistor(
         const val TRAILING_STOPS_FILE = "trailing-stops.json"
         const val RISK_STATE_FILE = "risk-state.json"
         const val PNL_FILE = "pnl.json"
+        const val TRADE_HISTORY_FILE = "trade-history.json"
+        const val SEQUENCES_FILE = "sequences.json"
         const val SCHEMA_VERSION = 1
+    }
+
+    override fun saveSequences(
+        strategyId: String,
+        states: Map<String, PersistedSequenceState>,
+    ) {
+        val dto =
+            SequencesDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                sequences =
+                    states.values.map { state ->
+                        SequenceStateDto(
+                            name = state.name,
+                            stage = state.stage,
+                            snapshots =
+                                state.snapshots.map {
+                                    SequenceSnapshotDto(
+                                        stage = it.stage,
+                                        price = it.price.toPlainString(),
+                                        timeMs = it.timeMs,
+                                    )
+                                },
+                            lastValues = state.lastValues,
+                            completePulse = state.completePulse,
+                        )
+                    },
+            )
+        runCatching { json.encodeToString(SequencesDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, SEQUENCES_FILE, it) }
+            .onFailure { e -> log.warn("saveSequences encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> {
+        val raw = writer.read(strategyId, SEQUENCES_FILE) ?: return emptyMap()
+        val dto =
+            try {
+                json.decodeFromString(SequencesDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadSequences parse failed for $strategyId: ${e.message}")
+                return emptyMap()
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadSequences schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return emptyMap()
+        }
+        return dto.sequences.associate { state ->
+            state.name to
+                PersistedSequenceState(
+                    name = state.name,
+                    stage = state.stage,
+                    snapshots =
+                        state.snapshots.map {
+                            PersistedSequenceSnapshot(
+                                stage = it.stage,
+                                price = it.price.toBigDecimal(),
+                                timeMs = it.timeMs,
+                            )
+                        },
+                    lastValues = state.lastValues,
+                    completePulse = state.completePulse,
+                )
+        }
+    }
+
+    override fun saveTradeHistory(
+        strategyId: String,
+        state: PersistedTradeHistory,
+    ) {
+        val dto =
+            TradeHistoryDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                outcomes =
+                    state.outcomes.map {
+                        TradeOutcomeDto(
+                            timestamp = it.timestamp,
+                            pnl = it.pnl.toPlainString(),
+                            symbol = it.symbol,
+                        )
+                    },
+            )
+        runCatching { json.encodeToString(TradeHistoryDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, TRADE_HISTORY_FILE, it) }
+            .onFailure { e -> log.warn("saveTradeHistory encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadTradeHistory(strategyId: String): PersistedTradeHistory? {
+        val raw = writer.read(strategyId, TRADE_HISTORY_FILE) ?: return null
+        val dto =
+            try {
+                json.decodeFromString(TradeHistoryDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadTradeHistory parse failed for $strategyId: ${e.message}")
+                return null
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadTradeHistory schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return null
+        }
+        return PersistedTradeHistory(
+            outcomes =
+                dto.outcomes.map {
+                    PersistedTradeOutcome(
+                        timestamp = it.timestamp,
+                        pnl = it.pnl.toBigDecimal(),
+                        symbol = it.symbol,
+                    )
+                },
+        )
     }
 
     override fun savePnl(
@@ -460,6 +572,29 @@ private data class TrailingStopDto(
 )
 
 @Serializable
+private data class SequencesDto(
+    val version: Int,
+    val strategyId: String,
+    val sequences: List<SequenceStateDto>,
+)
+
+@Serializable
+private data class SequenceStateDto(
+    val name: String,
+    val stage: Int,
+    val snapshots: List<SequenceSnapshotDto>,
+    val lastValues: Map<String, Boolean> = emptyMap(),
+    val completePulse: Boolean = false,
+)
+
+@Serializable
+private data class SequenceSnapshotDto(
+    val stage: String,
+    val price: String,
+    val timeMs: Long,
+)
+
+@Serializable
 private data class OrderRequestDto(
     val type: String,
     val id: String,
@@ -782,6 +917,8 @@ private data class TierDto(
     val stackQuantity: String,
     val slDistance: String,
     val tpDistance: String,
+    val maeRecoverDistance: String? = null,
+    val armedAdverseExtreme: String? = null,
     val fired: Boolean,
     val firedAt: Long? = null,
     val firedLegId: String? = null,
@@ -795,6 +932,8 @@ private data class TierDto(
             stackQuantity = BigDecimal(stackQuantity),
             slDistance = BigDecimal(slDistance),
             tpDistance = BigDecimal(tpDistance),
+            maeRecoverDistance = maeRecoverDistance?.let(::BigDecimal),
+            armedAdverseExtreme = armedAdverseExtreme?.let(::BigDecimal),
             fired = fired,
             firedAt = firedAt,
             firedLegId = firedLegId,
@@ -810,6 +949,8 @@ private data class TierDto(
                 stackQuantity = t.stackQuantity.toPlainString(),
                 slDistance = t.slDistance.toPlainString(),
                 tpDistance = t.tpDistance.toPlainString(),
+                maeRecoverDistance = t.maeRecoverDistance?.toPlainString(),
+                armedAdverseExtreme = t.armedAdverseExtreme?.toPlainString(),
                 fired = t.fired,
                 firedAt = t.firedAt,
                 firedLegId = t.firedLegId,
@@ -897,6 +1038,20 @@ private data class PnlDto(
     val version: Int,
     val strategyId: String,
     val realized: String,
+)
+
+@Serializable
+private data class TradeHistoryDto(
+    val version: Int,
+    val strategyId: String,
+    val outcomes: List<TradeOutcomeDto>,
+)
+
+@Serializable
+private data class TradeOutcomeDto(
+    val timestamp: Long,
+    val pnl: String,
+    val symbol: String,
 )
 
 @Serializable

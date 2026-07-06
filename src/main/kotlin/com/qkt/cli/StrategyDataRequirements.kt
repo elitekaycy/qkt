@@ -24,6 +24,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.EntryQty
@@ -39,6 +40,7 @@ import com.qkt.dsl.ast.LatchBracket
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
+import com.qkt.dsl.ast.LatchRetestHold
 import com.qkt.dsl.ast.LatchSensor
 import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.Limit
@@ -54,6 +56,7 @@ import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -73,9 +76,11 @@ import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -193,9 +198,13 @@ internal object StrategyDataRequirementScanner {
                 is NumLit,
                 is PositionRef,
                 is Ref,
+                is SequenceAccessor,
                 is SessionWindow,
                 StackEntryRef,
                 is StateAccessor,
+                is StreakRef,
+                is TradesRef,
+                is CooldownRef,
                 is StringLit,
                 null,
                 -> Unit
@@ -289,6 +298,7 @@ internal object StrategyDataRequirementScanner {
 
         fun walkLatch(latch: Latch) {
             walkLatchSensor(latch.sensor)
+            if (latch.confirm is LatchRetestHold) walk(latch.confirm.distance)
             latch.entries.forEach(::walkLatchEntry)
         }
 
@@ -308,6 +318,7 @@ internal object StrategyDataRequirementScanner {
 
         fun walkStackAt(clause: StackAtClause) {
             walk(clause.mfeThreshold)
+            clause.maeRecoverDistance?.let { walk(it) }
             walkSizing(clause.sizing)
             walkBracket(clause.bracket)
         }
@@ -361,6 +372,7 @@ internal object StrategyDataRequirementScanner {
         ast.params.forEach { walk(it.value) }
         ast.rules.forEach(::walkRule)
         ast.schedules.forEach { walkAction(it.action) }
+        ast.sequences.forEach { sequence -> sequence.stages.forEach { walk(it.condition) } }
         return StrategyDataRequirements(
             quoteAliases = quoteAliases,
             volumeAliases = volumeAliases,

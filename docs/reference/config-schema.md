@@ -299,6 +299,11 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `per_strategy.<name>.max_open_positions` | unset | daemon pre-trade controls | Caps non-zero symbols for one strategy. |
 | `per_strategy.<name>.max_drawdown_pct` | unset | halt rules | Per-strategy total drawdown percent. |
 | `per_strategy.<name>.max_daily_drawdown_pct` | unset | halt rules | Per-strategy daily drawdown percent. |
+| `per_strategy.<name>.max_trades_per_day` | unset | PACER pre-trade controls | Rejects risk-increasing entries after N entry fills in the current UTC day. |
+| `per_strategy.<name>.cooldown_after_loss` | unset | PACER pre-trade controls and DSL | Duration such as `30m`, `1h`, or integer milliseconds. Rejects new risk after losses while active. |
+| `per_strategy.<name>.cooldown_after_loss_after_consecutive` | `1` | PACER pre-trade controls and DSL | Number of consecutive losing closes required before cooldown starts. |
+| `per_strategy.<name>.loss_streak_halt` | unset | halt rules | Halts the strategy once consecutive losing closes reach N. |
+| `per_strategy.<name>.loss_streak_halt_scope` | `persistent` | halt rules | `daily` auto-resumes at next UTC day; `persistent` requires operator resume. |
 
 Per-strategy rules layer on top of global rules. A global breach halts the whole daemon. A per-strategy breach halts only that strategy.
 

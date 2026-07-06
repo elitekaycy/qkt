@@ -3,8 +3,10 @@ package com.qkt.dsl.parse
 import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.Latch
+import com.qkt.dsl.ast.LatchCloseBeyond
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
+import com.qkt.dsl.ast.LatchTimeInBreach
 import com.qkt.dsl.ast.WhenThen
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -60,6 +62,42 @@ class ParserLatchTest {
             ) as Latch
         assertThat(latch.name).isEqualTo("brk")
         assertThat((latch.sensor as BreakOffset).reference).isNotNull
+    }
+
+    @Test
+    fun `parses latch confirmation modes`() {
+        val closeBeyond =
+            action(
+                """
+                LATCH gold OFFSET 0.50 ARM 5m CONFIRM CLOSE_BEYOND {
+                    ENTER MARKET
+                }
+                """.trimIndent(),
+            ) as Latch
+        assertThat(closeBeyond.confirm).isEqualTo(LatchCloseBeyond)
+
+        val timeInBreach =
+            action(
+                """
+                LATCH gold OFFSET 0.50 ARM 5m CONFIRM TIME_IN_BREACH 10s {
+                    ENTER MARKET
+                }
+                """.trimIndent(),
+            ) as Latch
+        assertThat((timeInBreach.confirm as LatchTimeInBreach).duration.millis).isEqualTo(10_000L)
+    }
+
+    @Test
+    fun `parses ENTER ON stream in latch entry`() {
+        val latch =
+            action(
+                """
+                LATCH gold OFFSET 0.50 ARM 5m {
+                    ENTER ON silver LIMIT AGAINST 4 SIZING 0.5
+                }
+                """.trimIndent(),
+            ) as Latch
+        assertThat(latch.entries.single().stream).isEqualTo("silver")
     }
 
     @Test

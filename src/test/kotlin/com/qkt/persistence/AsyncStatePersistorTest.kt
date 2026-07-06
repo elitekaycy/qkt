@@ -82,6 +82,32 @@ class AsyncStatePersistorTest {
     }
 
     @Test
+    fun `saveSequences is queued and eventually flushed to delegate`() {
+        val delegate = NoopStatePersistor()
+        AsyncStatePersistor(delegate).use { async ->
+            async.saveSequences(
+                "alpha",
+                mapOf(
+                    "sweep" to
+                        PersistedSequenceState(
+                            name = "sweep",
+                            stage = 1,
+                            snapshots =
+                                listOf(
+                                    PersistedSequenceSnapshot("swept", BigDecimal("98.50"), 1_000L),
+                                ),
+                            lastValues = mapOf("swept" to true),
+                        ),
+                ),
+            )
+            assertThat(async.awaitDrain()).isTrue
+            val loaded = delegate.loadSequences("alpha")
+            assertThat(loaded["sweep"]!!.stage).isEqualTo(1)
+            assertThat(loaded["sweep"]!!.snapshots.single().price).isEqualByComparingTo("98.50")
+        }
+    }
+
+    @Test
     fun `close drains pending writes before returning`(
         @TempDir tmp: Path,
     ) {

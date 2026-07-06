@@ -16,12 +16,14 @@ class StackEngineTest {
         stackQuantity: String = "0.05",
         sl: String = "0.005",
         tp: String = "0.020",
+        recover: String? = null,
     ) = ResolvedStackTier(
         mfeThreshold = BigDecimal(mfeThreshold),
         withinMs = withinMs,
         stackQuantity = BigDecimal(stackQuantity),
         slDistance = BigDecimal(sl),
         tpDistance = BigDecimal(tp),
+        maeRecoverDistance = recover?.let(::BigDecimal),
     )
 
     private fun newEngine(
@@ -152,6 +154,60 @@ class StackEngineTest {
         engine.onTick(BigDecimal("1.1100")) // MFE = 0.010
         engine.onTick(BigDecimal("1.0900")) // MFE stays 0.010
         assertThat(engine.mfe()).isEqualByComparingTo("0.010")
+    }
+
+    @Test
+    fun `BUY MAE recovery tier arms on adverse move and fires after recovery`() {
+        val (engine, captured) =
+            newEngine(
+                listOf(tier("20", sl = "2", tp = "20", recover = "15")),
+                parentEntryPrice = "100",
+            )
+        engine.onTick(BigDecimal("80"))
+        assertThat(engine.mae()).isEqualByComparingTo("20")
+        assertThat(captured).isEmpty()
+        engine.onTick(BigDecimal("94"))
+        assertThat(captured).isEmpty()
+        engine.onTick(BigDecimal("95"))
+        assertThat(captured).hasSize(1)
+        val bracket = (captured.single() as Signal.Submit).request as OrderRequest.Bracket
+        assertThat(bracket.side).isEqualTo(Side.BUY)
+        assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("93")
+        assertThat(bracket.takeProfit).isEqualByComparingTo("115")
+    }
+
+    @Test
+    fun `MAE recovery tier follows deeper adverse extremes before firing`() {
+        val (engine, captured) =
+            newEngine(
+                listOf(tier("20", recover = "15")),
+                parentEntryPrice = "100",
+            )
+        engine.onTick(BigDecimal("80"))
+        engine.onTick(BigDecimal("75"))
+        engine.onTick(BigDecimal("89"))
+        assertThat(captured).isEmpty()
+        engine.onTick(BigDecimal("90"))
+        assertThat(captured).hasSize(1)
+    }
+
+    @Test
+    fun `SELL MAE recovery tier measures recovery downward from adverse high`() {
+        val (engine, captured) =
+            newEngine(
+                listOf(tier("20", sl = "2", tp = "20", recover = "15")),
+                parentSide = Side.SELL,
+                parentEntryPrice = "100",
+            )
+        engine.onTick(BigDecimal("120"))
+        engine.onTick(BigDecimal("106"))
+        assertThat(captured).isEmpty()
+        engine.onTick(BigDecimal("105"))
+        assertThat(captured).hasSize(1)
+        val bracket = (captured.single() as Signal.Submit).request as OrderRequest.Bracket
+        assertThat(bracket.side).isEqualTo(Side.SELL)
+        assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("107")
+        assertThat(bracket.takeProfit).isEqualByComparingTo("85")
     }
 
     @Test

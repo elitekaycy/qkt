@@ -27,6 +27,7 @@ import com.qkt.indicators.catalog.ReopenGap
 import com.qkt.indicators.catalog.RollingHigh
 import com.qkt.indicators.catalog.RollingLow
 import com.qkt.indicators.catalog.RunLength
+import com.qkt.indicators.catalog.RunLengthWhere
 import com.qkt.indicators.catalog.SMA
 import com.qkt.indicators.catalog.SeasonalRange
 import com.qkt.indicators.catalog.SeasonalRangeStdev
@@ -51,10 +52,16 @@ import java.math.BigDecimal
  *
  * - [NUMERIC_SERIES] — single `BigDecimal` per closed candle (close, open, …).
  * - [CANDLE_SERIES] — the whole closed candle (e.g. ATR needs all of OHLC).
+ * - [BOOLEAN_SERIES] — single `Boolean` per closed candle, from a condition expression.
  * - [TICK_SERIES] — every raw tick, not just candle-close values (e.g. VWAP).
  *   The DSL exposes this via the synthetic `<alias>.tick` series argument.
  */
-enum class IndicatorInput { NUMERIC_SERIES, CANDLE_SERIES, TICK_SERIES }
+enum class IndicatorInput {
+    NUMERIC_SERIES,
+    CANDLE_SERIES,
+    BOOLEAN_SERIES,
+    TICK_SERIES,
+}
 
 data class IndicatorSpec(
     val name: String,
@@ -160,6 +167,10 @@ object IndicatorRegistry {
             // ---- same-direction run length (signed streak counter) ----
             "RUNLENGTH" to
                 IndicatorSpec("RUNLENGTH", IndicatorInput.NUMERIC_SERIES, arity = 1) { RunLength() },
+            "RUNLENGTH_WHERE" to
+                IndicatorSpec("RUNLENGTH_WHERE", IndicatorInput.BOOLEAN_SERIES, arity = 1) {
+                    RunLengthWhere()
+                },
             // ---- cross-series (two-input) ----
             "CORRELATION" to
                 IndicatorSpec("CORRELATION", IndicatorInput.NUMERIC_SERIES, arity = 3, seriesCount = 2) { args ->

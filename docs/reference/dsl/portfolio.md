@@ -166,10 +166,12 @@ To express per-child risk limits, use `qkt.config.yaml`'s `risk.per_strategy` bl
 ```yaml
 risk:
   per_strategy:
-    - type: max-trades-per-day
-      count: 5
-    - type: cooloff-after-loss
-      duration: 1h
+    btc_regimes:trend:
+      max_trades_per_day: 5
+      cooldown_after_loss: 1h
+      cooldown_after_loss_after_consecutive: 1
+      loss_streak_halt: 3
+      loss_streak_halt_scope: persistent
 ```
 
 These apply independently to each strategy hosted in the daemon — including portfolio children.

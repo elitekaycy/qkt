@@ -65,8 +65,14 @@ class IndicatorBinding private constructor(
         // per bar with the latest known value from each stream.
         if (seriesExpr != null) {
             val v = seriesExpr.evaluate(ctx)
-            if (v is Value.Num) {
-                (indicator as Indicator<BigDecimal>).update(v.v)
+            when (inputKind) {
+                IndicatorInput.NUMERIC_SERIES -> {
+                    if (v is Value.Num) (indicator as Indicator<BigDecimal>).update(v.v)
+                }
+                IndicatorInput.BOOLEAN_SERIES -> {
+                    if (v is Value.Bool) (indicator as Indicator<Boolean>).update(v.v)
+                }
+                IndicatorInput.CANDLE_SERIES, IndicatorInput.TICK_SERIES -> Unit
             }
             return
         }
@@ -88,6 +94,9 @@ class IndicatorBinding private constructor(
             }
             IndicatorInput.CANDLE_SERIES -> {
                 (indicator as Indicator<Candle>).update(ctx.candle)
+            }
+            IndicatorInput.BOOLEAN_SERIES -> {
+                error("Boolean indicator ${call.name} requires a condition expression")
             }
             IndicatorInput.TICK_SERIES -> {
                 // Tick-fed indicators update on each raw tick via [updateFromTick],
@@ -141,13 +150,14 @@ class IndicatorBinding private constructor(
             indicator: IndicatorOutput,
             primaryAlias: String,
             seriesExpr: CompiledExpr,
+            inputKind: IndicatorInput,
         ): IndicatorBinding =
             IndicatorBinding(
                 call,
                 indicator,
                 streamAlias = primaryAlias,
                 field = null,
-                inputKind = IndicatorInput.NUMERIC_SERIES,
+                inputKind = inputKind,
                 source = null,
                 seriesExpr = seriesExpr,
             )
@@ -278,9 +288,9 @@ class IndicatorBinding private constructor(
          *
          * [primaryAlias] gates updates: the binding fires once per bar when the closing
          * bar belongs to that stream. Cross-stream expressions evaluate against the
-         * latest known candle for each referenced stream. Only [IndicatorInput.NUMERIC_SERIES]
-         * specs are supported; CANDLE_SERIES / TICK_SERIES indicators (e.g. ATR, VWAP)
-         * still require their native stream-field path.
+         * latest known candle for each referenced stream. [IndicatorInput.NUMERIC_SERIES] and
+         * [IndicatorInput.BOOLEAN_SERIES] specs are supported; CANDLE_SERIES / TICK_SERIES
+         * indicators (e.g. ATR, VWAP) still require their native stream-field path.
          */
         fun bindExpression(
             call: IndicatorCall,
@@ -291,9 +301,12 @@ class IndicatorBinding private constructor(
             require(call.args.size == spec.arity) {
                 "Indicator ${call.name} expects ${spec.arity} args, got ${call.args.size}"
             }
-            require(spec.inputKind == IndicatorInput.NUMERIC_SERIES) {
+            require(
+                spec.inputKind == IndicatorInput.NUMERIC_SERIES ||
+                    spec.inputKind == IndicatorInput.BOOLEAN_SERIES,
+            ) {
                 "Indicator ${call.name} requires ${spec.inputKind}; expression-fed binding only " +
-                    "supports NUMERIC_SERIES indicators"
+                    "supports NUMERIC_SERIES and BOOLEAN_SERIES indicators"
             }
             val constArgs =
                 call.args.drop(1).map {
@@ -303,7 +316,7 @@ class IndicatorBinding private constructor(
                     it.value
                 }
             val ind = IndicatorRegistry.create(call.name, constArgs)
-            val binding = expressionFed(call, ind, primaryAlias, seriesExpr)
+            val binding = expressionFed(call, ind, primaryAlias, seriesExpr, spec.inputKind)
             bindings.add(binding)
             return binding
         }
@@ -326,6 +339,9 @@ class IndicatorBinding private constructor(
                         "Indicator ${call.name} series arg must be the whole stream (use stream.candle or atr(stream))"
                     }
                     streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
+                }
+                IndicatorInput.BOOLEAN_SERIES -> {
+                    error("Indicator ${call.name} requires a condition expression")
                 }
                 IndicatorInput.TICK_SERIES -> {
                     require(seriesArg.field == "tick") {

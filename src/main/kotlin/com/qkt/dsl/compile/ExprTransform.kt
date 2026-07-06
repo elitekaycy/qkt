@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
@@ -48,6 +49,7 @@ import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -66,9 +68,11 @@ import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -106,8 +110,9 @@ class ExprTransform(
             is Aggregate -> Aggregate(e.fn, expr(e.series), e.window)
             is FuncCall -> FuncCall(e.name, e.args.map(::expr))
             is IsNull -> IsNull(expr(e.expr), e.negated)
-            is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
-            is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
+            is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef, is StreakRef, is TradesRef,
+            is CooldownRef, is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
+            is SequenceAccessor,
             is CalendarWindow,
             is SessionWindow,
             LastTradingDayOfMonth,
@@ -165,7 +170,13 @@ class ExprTransform(
         StackLayer(sizing(l.sizing), l.orderType?.let(::orderType), l.at?.let(::expr))
 
     fun stackAt(c: StackAtClause): StackAtClause =
-        StackAtClause(expr(c.mfeThreshold), c.withinDuration, sizing(c.sizing), bracket(c.bracket))
+        StackAtClause(
+            expr(c.mfeThreshold),
+            c.withinDuration,
+            sizing(c.sizing),
+            bracket(c.bracket),
+            c.maeRecoverDistance?.let(::expr),
+        )
 
     fun opts(o: ActionOpts): ActionOpts =
         ActionOpts(
@@ -203,6 +214,11 @@ class ExprTransform(
                             .BreakOffset(s.reference?.let(::expr), expr(s.offset))
                 },
             entries = a.entries.map(::latchEntry),
+            confirm =
+                when (val c = a.confirm) {
+                    is com.qkt.dsl.ast.LatchRetestHold -> c.copy(distance = expr(c.distance))
+                    else -> c
+                },
         )
 
     private fun latchEntry(e: com.qkt.dsl.ast.LatchEntry): com.qkt.dsl.ast.LatchEntry =

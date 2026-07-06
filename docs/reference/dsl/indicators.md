@@ -166,6 +166,23 @@ SYMBOLS
 
 Without the `SYNCHRONIZE`, the spread is still computed, but `silver.close` may lag `gold.close` by one bar — the same cross-stream alignment caveat that applies to `sma(silver.close, …)` inside a gold-anchored rule.
 
+### State dwell
+
+```qkt
+runlength_where(<condition>)   -- consecutive bars where condition is true
+```
+
+`runlength_where` counts an uninterrupted boolean state. Each bar where `<condition>` is true increments the counter; the first false bar resets it to `0`. This is different from a rolling fraction such as `mean(CASE WHEN condition THEN 1 ELSE 0 END, N)`: it preserves escape-time / dwell semantics.
+
+```qkt
+LET calm = atr(gold.candle, 14) < percentile_rank(atr(gold.candle, 14), 200)
+WHEN runlength_where(calm) > percentile_rank(runlength_where(calm), 100)
+ AND SESSION_WINDOW(11, 30, 14, 0)
+THEN BUY gold
+```
+
+The condition may reference any stream expression. Cross-stream conditions follow the same primary-alias and `SYNCHRONIZE` alignment rules as expression-fed numeric indicators.
+
 ### Cross-series (two-stream)
 
 Two indicators take **two** series and measure how a pair of streams move together over a rolling window. They follow the same primary-alias / `SYNCHRONIZE` alignment rules as a cross-stream `zscore` — put the two streams in a shared `SYNCHRONIZE` group so each bar reads the same-window value from both.
