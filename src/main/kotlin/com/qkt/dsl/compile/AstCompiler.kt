@@ -11,6 +11,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SeriesSymbols
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SnapshotOpen
 import com.qkt.dsl.ast.StrategyAst
@@ -33,7 +34,8 @@ class AstCompiler {
         // `BASKET:` identity whose composite candle is written into the hub at sync time.
         val streams: Map<String, HubKey> =
             ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) } +
-                ast.baskets.associate { it.alias to HubKey("BASKET", it.alias.uppercase(), it.timeframe) }
+                ast.baskets.associate { it.alias to HubKey("BASKET", it.alias.uppercase(), it.timeframe) } +
+                ast.series.associate { it.alias to HubKey(it.source.broker, it.source.symbol, it.timeframe) }
         // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
         val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
         val resolver = LetResolver(ast.lets)
@@ -52,8 +54,8 @@ class AstCompiler {
             }
         // Macro series (MACRO:) are read-only — they carry a published statistic, not a tradeable
         // price. Reject any order action targeting one at compile time (#440).
-        val macroAliases = streams.filterValues { it.broker == "MACRO" }.keys
-        whenThens.forEach { rejectMacroOrders(it.action, macroAliases) }
+        val readOnlyAliases = streams.filterValues { it.broker == "MACRO" || it.broker == SeriesSymbols.BROKER }.keys
+        whenThens.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
         val resolvedConditions: List<ExprAst> = whenThens.map { resolver.resolve(it.cond) }
         val plan = SnapshotPlan.scan(resolvedConditions)
@@ -127,7 +129,11 @@ class AstCompiler {
 
         // Symbols whose feed must supply volume because a VWAP/OBV binds to them (#301).
         val volumeRequiringSymbols: Set<String> =
-            bindings.volumeRequiringAliases.mapNotNull { streams[it]?.qktSymbol }.toSet()
+            bindings.volumeRequiringAliases
+                .mapNotNull { alias ->
+                    val key = streams[alias] ?: return@mapNotNull null
+                    if (key.broker == SeriesSymbols.BROKER) null else key.qktSymbol
+                }.toSet()
 
         val metaRefs = collectMetaRefs(ast, streams)
         val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions)
@@ -139,6 +145,7 @@ class AstCompiler {
             perStreamWarmup
                 .mapNotNull { (alias, bars) ->
                     val key = streams[alias] ?: return@mapNotNull null
+                    if (key.broker == SeriesSymbols.BROKER) return@mapNotNull null
                     val window =
                         com.qkt.candles.TimeWindow
                             .parse(key.timeframe)
@@ -254,13 +261,13 @@ class AstCompiler {
         return out
     }
 
-    private fun rejectMacroOrders(
+    private fun rejectReadOnlyOrders(
         action: ActionAst,
-        macroAliases: Set<String>,
+        readOnlyAliases: Set<String>,
     ) {
         fun reject(stream: String) =
-            require(stream !in macroAliases) {
-                "MACRO series '$stream' is read-only — it has no tradeable price; remove the order " +
+            require(stream !in readOnlyAliases) {
+                "Series '$stream' is read-only — it has no tradeable price; remove the order " +
                     "action targeting it (BUY/SELL/CLOSE/CANCEL)."
             }
         when (action) {
@@ -269,10 +276,10 @@ class AstCompiler {
             is Close -> reject(action.stream)
             is Cancel -> reject(action.stream)
             is OcoEntry -> {
-                rejectMacroOrders(action.leg1, macroAliases)
-                rejectMacroOrders(action.leg2, macroAliases)
+                rejectReadOnlyOrders(action.leg1, readOnlyAliases)
+                rejectReadOnlyOrders(action.leg2, readOnlyAliases)
             }
-            is Block -> action.actions.forEach { rejectMacroOrders(it, macroAliases) }
+            is Block -> action.actions.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
             else -> {} // CloseAll/CancelAll (global) and Log: nothing to reject
         }
     }

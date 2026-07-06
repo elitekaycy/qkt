@@ -11,6 +11,7 @@ import com.qkt.common.IdGenerator
 import com.qkt.common.Money
 import com.qkt.common.SequenceGenerator
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.ast.SeriesSymbols
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
@@ -218,6 +219,15 @@ class TradingPipeline(
     val scheduleRunner: com.qkt.dsl.compile.ScheduleRunner =
         com.qkt.dsl.compile
             .ScheduleRunner(brokerZoneIdFor = brokerZoneIdFor)
+
+    private val hasAccountEquitySeries: Boolean =
+        strategies.any { (_, strategy) ->
+            (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)
+                ?.declaredStreams
+                ?.values
+                ?.any { it.broker == SeriesSymbols.BROKER && it.symbol == SeriesSymbols.ACCOUNT_EQUITY_SYMBOL }
+                ?: false
+        }
 
     /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
     val latency: com.qkt.observability.LatencyRegistry =
@@ -515,8 +525,21 @@ class TradingPipeline(
         // dropped before it can poison indicators, marks, or triggers (#395).
         if (marketDataGate?.observe(tick) == com.qkt.marketdata.MarketDataGate.Verdict.OUTLIER) return
         engine.onTick(tick)
+        sampleAccountEquitySeries(tick.timestamp)
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
+    }
+
+    private fun sampleAccountEquitySeries(nowMs: Long) {
+        if (!hasAccountEquitySeries) return
+        candleHub.feed(
+            Tick(
+                symbol = "${SeriesSymbols.BROKER}:${SeriesSymbols.ACCOUNT_EQUITY_SYMBOL}",
+                price = riskState.equityTracker.currentEquity(),
+                timestamp = nowMs,
+                volume = Money.ZERO,
+            ),
+        )
     }
 
     private companion object {
@@ -547,6 +570,7 @@ class TradingPipeline(
      */
     fun scheduleHeartbeat(nowMs: Long) {
         scheduleRunner.tick(nowMs)
+        sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
         // ends, not when the next tick eventually arrives (live only — the heartbeat
         // doesn't run in backtest, where event-time is the only clock).

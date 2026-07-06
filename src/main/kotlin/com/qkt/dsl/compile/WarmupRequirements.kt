@@ -68,10 +68,13 @@ import com.qkt.dsl.ast.WhenThen
 object WarmupRequirements {
     fun compute(ast: StrategyAst): Map<String, Int> {
         timeframeMinutes.set(
-            ast.streams.associate { stream ->
-                stream.alias to
+            (
+                ast.streams.map { stream -> stream.alias to stream.timeframe } +
+                    ast.series.map { series -> series.alias to series.timeframe }
+            ).associate { (alias, timeframe) ->
+                alias to
                     com.qkt.candles.TimeWindow
-                        .parse(stream.timeframe)
+                        .parse(timeframe)
                         .durationMs
                         .div(60_000L)
                         .coerceAtLeast(1L)

@@ -24,6 +24,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: Streams](streams.md)
 
+- :material-chart-timeline-variant:{ .lg .middle } **Synthetic series**
+
+    ---
+
+    Read-only engine state as candle streams, starting with account equity for indicator-based meta-risk filters.
+
+    [:octicons-arrow-right-24: Synthetic series](series.md)
+
 - :material-variable:{ .lg .middle } **LET and DEFAULTS**
 
     ---

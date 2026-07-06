@@ -14,6 +14,7 @@ data class StrategyAst(
     val syncGroups: List<SyncGroupDecl> = emptyList(),
     val schedules: List<ScheduleDecl> = emptyList(),
     val baskets: List<BasketDecl> = emptyList(),
+    val series: List<SeriesDecl> = emptyList(),
 ) {
     init {
         require(name.isNotBlank()) { "StrategyAst.name must not be blank" }
@@ -22,6 +23,33 @@ data class StrategyAst(
         require(paramNames.distinct().size == paramNames.size) { "duplicate PARAM name in: $paramNames" }
         val letNames = lets.map { it.name }.toSet()
         for (n in paramNames) require(n !in letNames) { "PARAM '$n' collides with a LET of the same name" }
+    }
+}
+
+/** Well-known broker/symbol identity used for synthetic DSL series streams. */
+object SeriesSymbols {
+    const val BROKER: String = "SERIES"
+    const val ACCOUNT_EQUITY_SYMBOL: String = "ACCOUNT_EQUITY"
+}
+
+/** Synthetic series source exposed as a read-only stream alias. */
+enum class SeriesSource(
+    val broker: String,
+    val symbol: String,
+) {
+    /** Account-level equity from the runtime's single equity tracker. */
+    ACCOUNT_EQUITY(SeriesSymbols.BROKER, SeriesSymbols.ACCOUNT_EQUITY_SYMBOL),
+}
+
+/** Declaration for read-only synthetic series such as `SERIES ACCOUNT.EQUITY EVERY 1h`. */
+data class SeriesDecl(
+    val alias: String,
+    val source: SeriesSource,
+    val timeframe: String,
+) {
+    init {
+        require(alias.isNotBlank()) { "SeriesDecl.alias must not be blank" }
+        require(timeframe.isNotBlank()) { "SeriesDecl.timeframe must not be blank" }
     }
 }
 
