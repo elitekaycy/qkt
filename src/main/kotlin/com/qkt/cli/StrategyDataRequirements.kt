@@ -24,6 +24,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.EntryQty
@@ -77,6 +78,7 @@ import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -198,6 +200,8 @@ internal object StrategyDataRequirementScanner {
                 StackEntryRef,
                 is StateAccessor,
                 is StreakRef,
+                is TradesRef,
+                is CooldownRef,
                 is StringLit,
                 null,
                 -> Unit

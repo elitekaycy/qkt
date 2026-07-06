@@ -211,6 +211,12 @@ class StrategyHandle(
                         "perStrategyMaxOpenPositions" to perStrategyOverride?.maxOpenPositions,
                         "perStrategyMaxDrawdownPct" to perStrategyOverride?.maxDrawdownPct,
                         "perStrategyMaxDailyDrawdownPct" to perStrategyOverride?.maxDailyDrawdownPct,
+                        "perStrategyMaxTradesPerDay" to perStrategyOverride?.maxTradesPerDay,
+                        "perStrategyCooldownAfterLossMs" to perStrategyOverride?.cooldownAfterLossMs,
+                        "perStrategyCooldownAfterLossAfterConsecutive" to
+                            perStrategyOverride?.cooldownAfterLossAfterConsecutive,
+                        "perStrategyLossStreakHalt" to perStrategyOverride?.lossStreakHalt,
+                        "perStrategyLossStreakHaltScope" to perStrategyOverride?.lossStreakHaltScope?.name,
                     ),
             )
 
@@ -285,6 +291,13 @@ class StrategyHandle(
                     perStrategyMaxOpenPositions = perStrategyOverride?.maxOpenPositions,
                     perStrategyMaxDrawdownPct = perStrategyOverride?.maxDrawdownPct,
                     perStrategyMaxDailyDrawdownPct = perStrategyOverride?.maxDailyDrawdownPct,
+                    perStrategyMaxTradesPerDay = perStrategyOverride?.maxTradesPerDay,
+                    perStrategyCooldownAfterLossMs = perStrategyOverride?.cooldownAfterLossMs,
+                    perStrategyCooldownAfterLossAfterConsecutive =
+                        perStrategyOverride?.cooldownAfterLossAfterConsecutive ?: 1,
+                    perStrategyLossStreakHalt = perStrategyOverride?.lossStreakHalt,
+                    perStrategyLossStreakHaltScope =
+                        perStrategyOverride?.lossStreakHaltScope ?: com.qkt.risk.HaltScope.PERSISTENT,
                     initialBalance = startingBalance,
                     totalDdBasis = totalDdBasis,
                     dailyDdBasis = dailyDdBasis,

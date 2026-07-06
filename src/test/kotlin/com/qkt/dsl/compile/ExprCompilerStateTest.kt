@@ -1,13 +1,16 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.AccountRef
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StreakRef
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.marketdata.Candle
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
+import com.qkt.risk.PacerView
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -103,6 +106,37 @@ class ExprCompilerStateTest {
     @Test
     fun `unsupported STREAK field is rejected at compile time`() {
         assertThatThrownBy { ExprCompiler().compile(StreakRef("drawdown")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `TRADES and COOLDOWN accessors read pacer state`() {
+        val pacer =
+            object : PacerView {
+                override fun tradesToday(nowMs: Long): Int = 4
+
+                override fun cooldownRemainingSeconds(nowMs: Long): Long = 90
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = emptyMap(),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(pacer = pacer),
+            )
+
+        val trades = ExprCompiler().compile(TradesRef("today")).evaluate(ec) as Value.Num
+        val cooldown = ExprCompiler().compile(CooldownRef("remaining_s")).evaluate(ec) as Value.Num
+
+        assertThat(trades.v).isEqualByComparingTo("4")
+        assertThat(cooldown.v).isEqualByComparingTo("90")
+    }
+
+    @Test
+    fun `unsupported pacer fields are rejected at compile time`() {
+        assertThatThrownBy { ExprCompiler().compile(TradesRef("week")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { ExprCompiler().compile(CooldownRef("remaining_ms")) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 

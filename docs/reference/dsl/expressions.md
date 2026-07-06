@@ -135,6 +135,9 @@ ACCOUNT.dd_pct           -- current drawdown from this strategy's equity peak, a
 STREAK.wins       -- consecutive closed wins
 STREAK.losses     -- consecutive closed losses
 STREAK.banked     -- realized P&L banked during the current win streak
+
+TRADES.today            -- entry fills recorded for this strategy since UTC midnight
+COOLDOWN.remaining_s    -- seconds left in the configured after-loss cooldown, or 0
 ```
 
 `last_trade_at` and `last_trade_pnl` return `Value.Undefined` until the strategy has closed at least one trade — compose with `IS NULL` for safe gating:
@@ -162,6 +165,8 @@ A "win" is `realized_pnl > 0` for the closing fill; "loss" is `< 0`. Position-op
 ```qkt
 THEN BUY btc SIZING RISK $ (100 + 0.30 * STREAK.banked)
 ```
+
+`TRADES.today` and `COOLDOWN.remaining_s` read the same PACER ledger used by configured per-strategy throttles. `TRADES.today` counts entry fills, not closed round trips.
 
 ## Position references
 

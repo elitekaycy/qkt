@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.EntryQty
@@ -69,6 +70,7 @@ import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -104,7 +106,7 @@ internal fun collectMetaRefs(
         when (e) {
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
-            is AccountRef, is StreakRef, is PositionRef, is StateAccessor,
+            is AccountRef, is StreakRef, is TradesRef, is CooldownRef, is PositionRef, is StateAccessor,
             StackEntryRef, EntryQty, LastTradingDayOfMonth,
             -> Unit
             is StreamFieldRef -> {

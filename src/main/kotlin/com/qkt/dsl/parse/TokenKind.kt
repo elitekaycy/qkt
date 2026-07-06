@@ -130,6 +130,8 @@ enum class TokenKind {
 
     ACCOUNT,
     STREAK,
+    TRADES,
+    COOLDOWN,
     SYMBOL,
     NOW,
     OCO_ENTRY,

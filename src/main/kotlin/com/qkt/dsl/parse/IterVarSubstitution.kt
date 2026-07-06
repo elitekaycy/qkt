@@ -19,6 +19,7 @@ import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.ExprAst
@@ -61,6 +62,7 @@ import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -111,6 +113,8 @@ private fun subst(
         is Aggregate -> expr.copy(series = subst(expr.series, v, alias))
         is IsNull -> expr.copy(expr = subst(expr.expr, v, alias))
         is StreakRef -> expr
+        is TradesRef -> expr
+        is CooldownRef -> expr
         else -> expr
     }
 

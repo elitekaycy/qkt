@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.ExprAst
@@ -30,6 +31,7 @@ import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.UnaryOp
 
 data class SnapshotPlan(
@@ -106,7 +108,8 @@ data class SnapshotPlan(
                 is FuncCall -> expr.args.forEach { walk(it, onBuy, onSell, onOpen, rolling) }
                 is IsNull -> walk(expr.expr, onBuy, onSell, onOpen, rolling)
                 is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
-                is PositionRef, is StateAccessor, is StreakRef, is StackEntryRef, is NowAccessor,
+                is PositionRef, is StateAccessor, is StreakRef, is TradesRef, is CooldownRef, is StackEntryRef,
+                is NowAccessor,
                 is CalendarWindow,
                 is SessionWindow,
                 LastTradingDayOfMonth,
