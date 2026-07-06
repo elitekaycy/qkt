@@ -27,6 +27,15 @@ class IndicatorRegistryTest {
     }
 
     @Test
+    fun `RUNLENGTH_WHERE spec wants a boolean series`() {
+        val spec = IndicatorRegistry.spec("RUNLENGTH_WHERE")!!
+        assertThat(spec.inputKind).isEqualTo(IndicatorInput.BOOLEAN_SERIES)
+        assertThat(spec.arity).isEqualTo(1)
+        assertThat(IndicatorRegistry.create("RUNLENGTH_WHERE", emptyList()))
+            .isInstanceOf(com.qkt.indicators.catalog.RunLengthWhere::class.java)
+    }
+
+    @Test
     fun `EMA spec wants a numeric series and one period arg`() {
         val spec = IndicatorRegistry.spec("EMA")!!
         assertThat(spec.inputKind).isEqualTo(IndicatorInput.NUMERIC_SERIES)

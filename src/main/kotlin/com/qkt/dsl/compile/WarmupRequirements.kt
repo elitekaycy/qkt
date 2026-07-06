@@ -26,6 +26,7 @@ import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
+import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeNotional
@@ -76,6 +77,7 @@ object WarmupRequirements {
                         .coerceAtLeast(1L)
             },
         )
+        lets.set(ast.lets.associate { it.name to it.expr })
         val out = mutableMapOf<String, Int>()
         try {
             for (s in ast.streams) {
@@ -87,6 +89,7 @@ object WarmupRequirements {
             return out.toMap()
         } finally {
             timeframeMinutes.remove()
+            lets.remove()
         }
     }
 
@@ -308,14 +311,26 @@ object WarmupRequirements {
             .filterIsInstance<NumLit>()
             .maxOfOrNull { it.value.toInt() }
 
-    private fun aliasFor(call: IndicatorCall): String? {
-        val first = call.args.firstOrNull() ?: return null
-        return when (first) {
-            is StreamFieldRef -> first.stream
-            is IndicatorCall -> aliasFor(first)
+    private fun aliasFor(expr: ExprAst): String? =
+        when (expr) {
+            is StreamFieldRef -> expr.stream
+            is IndicatorCall -> expr.args.firstOrNull()?.let(::aliasFor)
+            is BinaryOp -> aliasFor(expr.lhs) ?: aliasFor(expr.rhs)
+            is UnaryOp -> aliasFor(expr.arg)
+            is CmpOp -> aliasFor(expr.lhs) ?: aliasFor(expr.rhs)
+            is Between -> aliasFor(expr.v) ?: aliasFor(expr.lo) ?: aliasFor(expr.hi)
+            is InList -> aliasFor(expr.v) ?: expr.members.firstNotNullOfOrNull(::aliasFor)
+            is Crosses -> aliasFor(expr.lhs) ?: aliasFor(expr.rhs)
+            is CaseWhen ->
+                expr.branches.firstNotNullOfOrNull { (condition, value) ->
+                    aliasFor(condition) ?: aliasFor(value)
+                } ?: aliasFor(expr.elseExpr)
+            is Aggregate -> aliasFor(expr.series)
+            is FuncCall -> expr.args.firstNotNullOfOrNull(::aliasFor)
+            is IsNull -> aliasFor(expr.expr)
+            is Ref -> lets.get()[expr.name]?.let(::aliasFor)
             else -> null
         }
-    }
 
     private fun merge(
         out: MutableMap<String, Int>,
@@ -326,4 +341,5 @@ object WarmupRequirements {
     }
 
     private val timeframeMinutes = ThreadLocal.withInitial<Map<String, Long>> { emptyMap() }
+    private val lets = ThreadLocal.withInitial<Map<String, ExprAst>> { emptyMap() }
 }

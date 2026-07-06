@@ -179,6 +179,23 @@ class WarmupRequirementsTest {
     }
 
     @Test
+    fun `indicator over boolean dwell condition derives warmup through let references`() {
+        val s =
+            ast(
+                """
+                STRATEGY dwell VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 30m
+                LET calm = atr(g.candle, 14) < percentile_rank(atr(g.candle, 14), 200)
+                RULES
+                  WHEN zscore(runlength_where(calm), 20) > 1 THEN FLATTEN
+                """.trimIndent(),
+            )
+
+        assertThat(WarmupRequirements.compute(s).getValue("g")).isGreaterThanOrEqualTo(200)
+    }
+
+    @Test
     fun `indicator with non-literal period is silently skipped`() {
         // Defensive: indicators always have NumLit periods, but if a future surface
         // allows expressions, we don't crash.

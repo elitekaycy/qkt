@@ -535,19 +535,16 @@ class ExprCompiler(
             } else {
                 when (val seriesArg = call.args.firstOrNull()) {
                     is StreamFieldRef, null -> bindings.bind(call)
-                    // A registry indicator nested inside another (e.g. zscore(ema(...), N)) chains
-                    // through the registry. RESID lives outside the registry, so feed the outer
-                    // indicator its value each bar via the expression-fed path instead — this is what
-                    // makes zscore(resid(...), N), the residual z-score, compose.
+                    // A registry indicator nested inside another (e.g. zscore(ema(...), N)) feeds
+                    // the outer indicator from the compiled inner expression. This also covers
+                    // expression-fed inner indicators such as runlength_where(close < sma(...)).
                     is IndicatorCall ->
-                        if (seriesArg.name.equals("RESID", ignoreCase = true)) {
-                            val primaryAlias =
-                                streamAliasesIn(seriesArg).firstOrNull()
-                                    ?: error("Indicator ${call.name} series must reference a stream")
-                            bindings.bindExpression(call, compile(seriesArg, null), primaryAlias)
-                        } else {
-                            bindings.bind(call)
-                        }
+                        bindings.bindExpression(
+                            call,
+                            compile(seriesArg, null),
+                            streamAliasesIn(seriesArg).firstOrNull()
+                                ?: error("Indicator ${call.name} series must reference a stream"),
+                        )
                     else -> {
                         // #174 expression-fed: compile the series expression and bind via
                         // primary alias. Gate on the first StreamFieldRef the expression
