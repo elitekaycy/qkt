@@ -71,6 +71,7 @@ enum class TokenKind {
 
     BRACKET,
     OCO,
+    ON,
     TAKE,
     PROFIT,
     LOSS,
@@ -85,6 +86,10 @@ enum class TokenKind {
     RETRACE,
     FROM,
     EXPIRE,
+    CONFIRM,
+    CLOSE_BEYOND,
+    TIME_IN_BREACH,
+    RETEST_HOLD,
 
     TIF,
     GTC,

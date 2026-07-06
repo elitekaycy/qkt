@@ -48,11 +48,16 @@ import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
+import com.qkt.dsl.ast.LatchCloseBeyond
+import com.qkt.dsl.ast.LatchConfirm
 import com.qkt.dsl.ast.LatchEntry
+import com.qkt.dsl.ast.LatchFirstTick
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
 import com.qkt.dsl.ast.LatchOrder
+import com.qkt.dsl.ast.LatchRetestHold
 import com.qkt.dsl.ast.LatchStop
+import com.qkt.dsl.ast.LatchTimeInBreach
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
@@ -1127,6 +1132,12 @@ class Parser(
             } else {
                 null
             }
+        val confirm =
+            if (match(TokenKind.CONFIRM)) {
+                parseLatchConfirm()
+            } else {
+                LatchFirstTick
+            }
         expect(TokenKind.LBRACE, "expected '{' to open LATCH block")
         val entries = mutableListOf(parseLatchEntry())
 
@@ -1134,11 +1145,36 @@ class Parser(
             entries.add(parseLatchEntry())
         }
         expect(TokenKind.RBRACE, "expected '}' to close LATCH block")
-        return Latch(stream, BreakOffset(reference, offset), armWindow, name, entries)
+        return Latch(stream, BreakOffset(reference, offset), armWindow, name, entries, confirm)
     }
+
+    private fun parseLatchConfirm(): LatchConfirm =
+        when (peek().kind) {
+            TokenKind.CLOSE_BEYOND -> {
+                advance()
+                LatchCloseBeyond
+            }
+            TokenKind.TIME_IN_BREACH -> {
+                advance()
+                LatchTimeInBreach(parseDuration())
+            }
+            TokenKind.RETEST_HOLD -> {
+                advance()
+                val distance = parseExpr()
+                expect(TokenKind.WITHIN, "expected WITHIN after RETEST_HOLD distance")
+                LatchRetestHold(distance, parseDuration())
+            }
+            else -> error("expected CLOSE_BEYOND, TIME_IN_BREACH, or RETEST_HOLD after CONFIRM")
+        }
 
     private fun parseLatchEntry(): LatchEntry {
         expect(TokenKind.ENTER, "expected ENTER in LATCH block")
+        val entryStream =
+            if (match(TokenKind.ON)) {
+                expect(TokenKind.IDENT, "expected stream alias after ENTER ON").lexeme
+            } else {
+                null
+            }
         val order = parseLatchOrder()
         var bracket: LatchBracket? = null
         var sizing: SizingAst? = null
@@ -1160,7 +1196,7 @@ class Parser(
                 else -> break@loop
             }
         }
-        return LatchEntry(order, bracket, sizing, expire)
+        return LatchEntry(order, bracket, sizing, expire, entryStream)
     }
 
     private fun parseLatchOrder(): LatchOrder =

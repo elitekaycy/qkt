@@ -74,6 +74,25 @@ class RuleAliasScanTest {
     }
 
     @Test
+    fun `latch includes watched stream and ENTER ON stream`() {
+        val r =
+            rule(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  gold = X:XAUUSD EVERY 1m,
+                  silver = X:XAGUSD EVERY 1m
+                RULES
+                  WHEN NOW.hour_utc = 10 THEN
+                    LATCH gold OFFSET 0.50 ARM 5m {
+                      ENTER ON silver MARKET
+                    }
+                """.trimIndent(),
+            )
+        assertThat(collectStreamAliases(r)).containsExactlyInAnyOrder("gold", "silver")
+    }
+
+    @Test
     fun `NOW-only condition with no action target returns empty`() {
         val r =
             rule(

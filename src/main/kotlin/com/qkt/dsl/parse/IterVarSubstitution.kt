@@ -30,10 +30,12 @@ import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
+import com.qkt.dsl.ast.LatchConfirm
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.LatchMarket
 import com.qkt.dsl.ast.LatchOrder
+import com.qkt.dsl.ast.LatchRetestHold
 import com.qkt.dsl.ast.LatchSensor
 import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.Limit
@@ -135,6 +137,7 @@ private fun subst(
                 stream = if (action.stream == v) alias else action.stream,
                 sensor = subst(action.sensor, v, alias),
                 entries = action.entries.map { subst(it, v, alias) },
+                confirm = subst(action.confirm, v, alias),
             )
         is com.qkt.dsl.ast.Resize ->
             action.copy(
@@ -270,6 +273,16 @@ private fun subst(
     )
 
 private fun subst(
+    c: LatchConfirm,
+    v: String,
+    alias: String,
+): LatchConfirm =
+    when (c) {
+        is LatchRetestHold -> c.copy(distance = subst(c.distance, v, alias))
+        else -> c
+    }
+
+private fun subst(
     s: LatchSensor,
     v: String,
     alias: String,
@@ -291,6 +304,7 @@ private fun subst(
         order = subst(e.order, v, alias),
         bracket = e.bracket?.let { subst(it, v, alias) },
         sizing = e.sizing?.let { subst(it, v, alias) },
+        stream = if (e.stream == v) alias else e.stream,
     )
 
 private fun subst(

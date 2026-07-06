@@ -212,6 +212,11 @@ class ExprTransform(
                             .BreakOffset(s.reference?.let(::expr), expr(s.offset))
                 },
             entries = a.entries.map(::latchEntry),
+            confirm =
+                when (val c = a.confirm) {
+                    is com.qkt.dsl.ast.LatchRetestHold -> c.copy(distance = expr(c.distance))
+                    else -> c
+                },
         )
 
     private fun latchEntry(e: com.qkt.dsl.ast.LatchEntry): com.qkt.dsl.ast.LatchEntry =

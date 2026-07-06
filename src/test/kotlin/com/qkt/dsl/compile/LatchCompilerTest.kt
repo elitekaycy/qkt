@@ -95,4 +95,37 @@ class LatchCompilerTest {
         val req = compiled.entryBuilders.single().build(1, BigDecimal("2000.50"), ec) as OrderRequest.Bracket
         assertThat(req.quantity).isEqualByComparingTo("31.25")
     }
+
+    @Test
+    fun `ENTER ON routes order to entry stream and resolves geometry from entry anchor`() {
+        val latch =
+            Latch(
+                stream = "gold",
+                sensor = BreakOffset(reference = null, offset = NumLit(BigDecimal("0.50"))),
+                armWindow = DurationAst(300_000L),
+                name = null,
+                entries =
+                    listOf(
+                        LatchEntry(
+                            order = LatchLimit(DirRel(DirSense.AGAINST, NumLit(BigDecimal("2")))),
+                            bracket =
+                                LatchBracket(
+                                    stopLoss = DirRel(DirSense.AGAINST, NumLit(BigDecimal("5"))),
+                                    takeProfit = DirRel(DirSense.WITH, NumLit(BigDecimal("4"))),
+                                ),
+                            stream = "silver",
+                        ),
+                    ),
+            )
+        val compiled = LatchCompilerFixture.compile(latch)
+        val ec = LatchCompilerFixture.ctx(symbol = "XAUUSD", close = BigDecimal("2000.00"))
+
+        val req = compiled.entryBuilders.single().build(1, BigDecimal("30.00"), ec) as OrderRequest.Bracket
+
+        assertThat(req.symbol).isEqualTo("BACKTEST:XAGUSD")
+        val entry = req.entry as OrderRequest.Limit
+        assertThat(entry.limitPrice).isEqualByComparingTo("28.00")
+        assertThat((req.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("25.00")
+        assertThat(req.takeProfit).isEqualByComparingTo("34.00")
+    }
 }

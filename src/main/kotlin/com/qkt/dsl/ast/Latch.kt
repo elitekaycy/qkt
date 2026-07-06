@@ -13,7 +13,28 @@ data class Latch(
     val armWindow: DurationAst,
     val name: String?,
     val entries: List<LatchEntry>,
+    val confirm: LatchConfirm = LatchFirstTick,
 ) : ActionAst
+
+/** How a latch confirms a wire breach before committing direction. */
+sealed interface LatchConfirm
+
+/** Current behavior: the first tick through either wire commits direction immediately. */
+data object LatchFirstTick : LatchConfirm
+
+/** Commit only when the watched stream closes a bar beyond either wire. */
+data object LatchCloseBeyond : LatchConfirm
+
+/** Commit when price remains beyond one wire continuously for [duration]. */
+data class LatchTimeInBreach(
+    val duration: DurationAst,
+) : LatchConfirm
+
+/** Commit when price breaches a wire, then retests within [distance] before [within] elapses. */
+data class LatchRetestHold(
+    val distance: ExprAst,
+    val within: DurationAst,
+) : LatchConfirm
 
 /** How a latch decides it has tripped. Sealed so future sensors add as members. */
 sealed interface LatchSensor
@@ -30,6 +51,7 @@ data class LatchEntry(
     val bracket: LatchBracket? = null,
     val sizing: SizingAst? = null,
     val expire: DurationAst? = null,
+    val stream: String? = null,
 )
 
 sealed interface LatchOrder
