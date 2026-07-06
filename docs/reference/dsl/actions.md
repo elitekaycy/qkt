@@ -261,7 +261,7 @@ When you stack modifiers on a `BUY`/`SELL`, the order matters but the parser is 
 3. Order-type modifier (`LIMIT AT`, `STOP AT`) — defaults to market
 4. `BRACKET { ... }` (or `STOP_LOSS ... TAKE_PROFIT ...` bare)
 5. `STACK <n> SPACING <points> ABOVE|BELOW [WITHIN <duration>]` — pyramiding
-6. `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <qty> BRACKET { ... }` — conditional bracketed stacks (multiple per action allowed; see [STACK_AT](stack-at.md))
+6. `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <qty> BRACKET { ... }` or `STACK_AT MAE >= <threshold> RECOVER <distance> WITHIN <duration> ...` — conditional bracketed stacks (multiple per action allowed; see [STACK_AT](stack-at.md))
 7. `TIF <mode>` — time-in-force
 8. `LOG ...` — usually a separate action after `;` but can be inline-chained
 

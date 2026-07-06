@@ -23,12 +23,14 @@ data class ActionOpts(
 )
 
 /**
- * One `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <sizing> BRACKET {...}`
- * clause attached to a BUY/SELL action.
+ * One `STACK_AT` clause attached to a BUY/SELL action.
  *
- * Phase 27: the clause fires (emits a stack order) when the parent leg's MFE crosses
- * [mfeThreshold] within [withinDuration] of the parent's open. Each stack has its own
- * [bracket] and tracks independently as a STACK leg in the [com.qkt.positions.LegBook].
+ * Phase 27: MFE clauses fire when the parent leg's favorable excursion crosses
+ * [mfeThreshold] within [withinDuration] of the parent's open. Recoil clauses set
+ * [maeRecoverDistance], treating [mfeThreshold] as the MAE arming threshold; after
+ * arming, the stack fires once price recovers by [maeRecoverDistance] from the worst
+ * adverse extreme. Each stack has its own [bracket] and tracks independently as a
+ * STACK leg in the [com.qkt.positions.LegBook].
  *
  * [sizing] uses the same `SizingAst` shape as the parent's sizing; the stack engine
  * resolves it at fire time using the parent's filled quantity as the reference. A
@@ -40,6 +42,7 @@ data class StackAtClause(
     val withinDuration: DurationAst,
     val sizing: SizingAst,
     val bracket: BracketAst,
+    val maeRecoverDistance: ExprAst? = null,
 )
 
 sealed interface SizingAst

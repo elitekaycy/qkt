@@ -168,7 +168,13 @@ class ExprTransform(
         StackLayer(sizing(l.sizing), l.orderType?.let(::orderType), l.at?.let(::expr))
 
     fun stackAt(c: StackAtClause): StackAtClause =
-        StackAtClause(expr(c.mfeThreshold), c.withinDuration, sizing(c.sizing), bracket(c.bracket))
+        StackAtClause(
+            expr(c.mfeThreshold),
+            c.withinDuration,
+            sizing(c.sizing),
+            bracket(c.bracket),
+            c.maeRecoverDistance?.let(::expr),
+        )
 
     fun opts(o: ActionOpts): ActionOpts =
         ActionOpts(

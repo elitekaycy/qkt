@@ -417,6 +417,12 @@ class ExprCompiler(
                     val mfe = ctx.strategyContext.positions.mfeFor(symbol) ?: BigDecimal.ZERO
                     Value.Num(mfe)
                 }
+            StateSource.POSITION_MAE ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    val mae = ctx.strategyContext.positions.maeFor(symbol) ?: BigDecimal.ZERO
+                    Value.Num(mae)
+                }
             StateSource.POSITION_OPEN_COUNT ->
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")

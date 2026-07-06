@@ -404,6 +404,47 @@ class ExprCompilerStateTest {
     }
 
     @Test
+    fun `POSITION_MAE reads from positions view maeFor`() {
+        val pos =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String): Position? = null
+
+                override fun allPositions(): Map<String, Position> = emptyMap()
+
+                override fun maeFor(symbol: String): BigDecimal =
+                    if (symbol == "BACKTEST:BTCUSDT") BigDecimal("7.50") else BigDecimal.ZERO
+            }
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = pos),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_MAE, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("7.50")
+    }
+
+    @Test
+    fun `POSITION_MAE returns zero when view has no mae data`() {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(),
+            )
+        val v =
+            ExprCompiler()
+                .compile(StateAccessor(StateSource.POSITION_MAE, "btc"))
+                .evaluate(ec) as Value.Num
+        assertThat(v.v).isEqualByComparingTo("0")
+    }
+
+    @Test
     fun `POSITION_TRADES_TODAY counts only fills today on the stream's symbol`() {
         val history = com.qkt.pnl.TradeHistory()
         val midnight = 1_705_276_800_000L

@@ -79,6 +79,21 @@ class ParserStackAtTest {
     }
 
     @Test
+    fun `STACK_AT MAE RECOVER parses arm threshold and recovery distance`() {
+        val buy =
+            parsedAction(
+                """BUY btc SIZING 0.1
+                STACK_AT MAE >= 20 RECOVER 15 WITHIN 1h
+                    SIZING 0.05
+                    BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }""",
+            )
+        val clause = buy.opts.stackAts.single()
+        assertThat((clause.mfeThreshold as NumLit).value).isEqualByComparingTo("20")
+        assertThat((clause.maeRecoverDistance as NumLit).value).isEqualByComparingTo("15")
+        assertThat(clause.withinDuration.millis).isEqualTo(60L * 60 * 1000)
+    }
+
+    @Test
     fun `STACK_AT missing MFE keyword fails parse`() {
         val src =
             """

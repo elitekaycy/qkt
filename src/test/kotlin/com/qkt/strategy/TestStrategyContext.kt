@@ -32,6 +32,8 @@ private val emptyPositions =
 
         override fun allPositions(): Map<String, Position> = emptyMap()
 
+        override fun maeFor(symbol: String): BigDecimal? = null
+
         override fun legsFor(symbol: String): List<com.qkt.positions.PositionLeg> = emptyList()
     }
 

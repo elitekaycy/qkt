@@ -138,6 +138,8 @@ enum class TokenKind {
     OCO_ENTRY,
     STACK_AT,
     MFE,
+    MAE,
+    RECOVER,
     ENTRY_QTY,
 
     WARMUP,

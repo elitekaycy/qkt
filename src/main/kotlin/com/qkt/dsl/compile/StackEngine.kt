@@ -25,6 +25,7 @@ data class CompiledStackTier(
     val resolveStackQuantity: (BigDecimal) -> BigDecimal,
     val slDistance: BigDecimal,
     val tpDistance: BigDecimal,
+    val maeRecoverDistance: BigDecimal? = null,
 )
 
 /**
@@ -38,6 +39,7 @@ data class ResolvedStackTier(
     val stackQuantity: BigDecimal,
     val slDistance: BigDecimal,
     val tpDistance: BigDecimal,
+    val maeRecoverDistance: BigDecimal? = null,
 )
 
 /**
@@ -72,6 +74,7 @@ class StackEngine(
     initialFiredTierIndices: Set<Int> = emptySet(),
     initialFiredLegIds: Map<Int, String> = emptyMap(),
     initialAbandonedTierIndices: Set<Int> = emptySet(),
+    initialArmedAdverseExtremes: Map<Int, BigDecimal> = emptyMap(),
     /**
      * The parent's ORIGINAL open time when restoring after a restart — MFE `WITHIN`
      * windows keep counting from the real open, not from the restart. Null (fresh
@@ -84,6 +87,7 @@ class StackEngine(
     private val firedAtBy: MutableMap<Int, Long> = mutableMapOf()
     private val firedLegIdBy: MutableMap<Int, String> = initialFiredLegIds.toMutableMap()
     private val abandonedTierIndices: MutableSet<Int> = initialAbandonedTierIndices.toMutableSet()
+    private val armedAdverseExtremeBy: MutableMap<Int, BigDecimal> = initialArmedAdverseExtremes.toMutableMap()
     private val openedAt: Long = initialOpenedAtMs ?: clock.now()
 
     init {
@@ -95,13 +99,20 @@ class StackEngine(
     fun onTick(price: BigDecimal) {
         mfeTracker.onTick(price)
         val mfe = mfeTracker.value()
+        val mae = mfeTracker.mae()
+        val adverseExtreme = mfeTracker.adverseExtremePrice()
         val elapsed = clock.now() - openedAt
         var firedAny = false
         var abandonedAny = false
+        var armedAny = false
         for ((idx, tier) in tiers.withIndex()) {
             if (idx in firedTierIndices || idx in abandonedTierIndices) continue
             when {
-                mfe >= tier.mfeThreshold && elapsed <= tier.withinMs -> {
+                elapsed > tier.withinMs -> {
+                    abandonedTierIndices += idx
+                    abandonedAny = true
+                }
+                tier.maeRecoverDistance == null && mfe >= tier.mfeThreshold -> {
                     val (signal, stackLegId) = buildStackSignal(idx, tier, price)
                     emit(signal)
                     firedTierIndices += idx
@@ -109,16 +120,48 @@ class StackEngine(
                     firedLegIdBy[idx] = stackLegId
                     firedAny = true
                 }
-                elapsed > tier.withinMs -> {
-                    abandonedTierIndices += idx
-                    abandonedAny = true
+                tier.maeRecoverDistance != null && adverseExtreme != null -> {
+                    if (mae >= tier.mfeThreshold) {
+                        val previousExtreme = armedAdverseExtremeBy[idx]
+                        if (previousExtreme == null || isDeeperAdverseExtreme(adverseExtreme, previousExtreme)) {
+                            armedAdverseExtremeBy[idx] = adverseExtreme
+                            armedAny = true
+                        }
+                    }
+                    val armedExtreme = armedAdverseExtremeBy[idx]
+                    if (armedExtreme != null && recoveredFrom(armedExtreme, price) >= tier.maeRecoverDistance) {
+                        val (signal, stackLegId) = buildStackSignal(idx, tier, price)
+                        emit(signal)
+                        firedTierIndices += idx
+                        firedAtBy[idx] = clock.now()
+                        firedLegIdBy[idx] = stackLegId
+                        firedAny = true
+                    }
                 }
             }
         }
-        if ((firedAny || abandonedAny) && strategyId.isNotBlank()) {
+        if ((firedAny || abandonedAny || armedAny) && strategyId.isNotBlank()) {
             runCatching { persistTiers() }
         }
     }
+
+    private fun isDeeperAdverseExtreme(
+        candidate: BigDecimal,
+        current: BigDecimal,
+    ): Boolean =
+        when (parentSide) {
+            Side.BUY -> candidate < current
+            Side.SELL -> candidate > current
+        }
+
+    private fun recoveredFrom(
+        adverseExtreme: BigDecimal,
+        currentPrice: BigDecimal,
+    ): BigDecimal =
+        when (parentSide) {
+            Side.BUY -> currentPrice.subtract(adverseExtreme)
+            Side.SELL -> adverseExtreme.subtract(currentPrice)
+        }
 
     private fun persistTiers() {
         val persistedTiers =
@@ -130,6 +173,8 @@ class StackEngine(
                     stackQuantity = tier.stackQuantity,
                     slDistance = tier.slDistance,
                     tpDistance = tier.tpDistance,
+                    maeRecoverDistance = tier.maeRecoverDistance,
+                    armedAdverseExtreme = armedAdverseExtremeBy[idx],
                     fired = idx in firedTierIndices,
                     firedAt = firedAtBy[idx],
                     firedLegId = firedLegIdBy[idx],
@@ -146,6 +191,8 @@ class StackEngine(
     }
 
     fun mfe(): BigDecimal = mfeTracker.value()
+
+    fun mae(): BigDecimal = mfeTracker.mae()
 
     fun firedCount(): Int = firedTierIndices.size
 

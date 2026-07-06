@@ -54,10 +54,11 @@ class StrategyPositionTracker(
     private val primaryLegSeq = AtomicLong()
 
     /**
-     * Per-(strategyId, symbol) MFE trackers for the current PRIMARY leg. Maintained in
+     * Per-(strategyId, symbol) excursion trackers for the current PRIMARY leg. Maintained in
      * sync with the leg-book by [syncPrimaryMfeTracker] after every fill, and updated on
      * each market tick via [onTick]. Reads land via [primaryMfeFor], which backs the DSL
-     * accessor `POSITION.<stream>.mfe`.
+     * accessor `POSITION.<stream>.mfe`, and [primaryMaeFor], which backs
+     * `POSITION.<stream>.mae`.
      *
      * Same-direction averaging fills re-anchor the tracker to the new weighted entry —
      * MFE resets to zero from the new reference point, matching the "favorable excursion
@@ -222,6 +223,20 @@ class StrategyPositionTracker(
         strategyId: String,
         symbol: String,
     ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.value()
+
+    /**
+     * Current MAE of the PRIMARY leg on [symbol] for [strategyId], or null if no primary
+     * exists. Backs the DSL accessor `POSITION.<stream>.mae`.
+     */
+    fun primaryMaeFor(
+        strategyId: String,
+        symbol: String,
+    ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.mae()
+
+    internal fun primaryAdverseExtremePriceFor(
+        strategyId: String,
+        symbol: String,
+    ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.adverseExtremePrice()
 
     private fun syncPrimaryMfeTracker(
         strategyId: String,

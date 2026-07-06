@@ -53,6 +53,18 @@ class StrategyPositionTrackerMfeTest {
     }
 
     @Test
+    fun `BUY primary MAE rises on adverse ticks and never decreases`() {
+        val tracker = StrategyPositionTracker()
+        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        tracker.onTick("BTCUSDT", BigDecimal("95"))
+        assertThat(tracker.primaryMaeFor("alpha", "BTCUSDT")).isEqualByComparingTo("5")
+        tracker.onTick("BTCUSDT", BigDecimal("98"))
+        assertThat(tracker.primaryMaeFor("alpha", "BTCUSDT")).isEqualByComparingTo("5")
+        tracker.onTick("BTCUSDT", BigDecimal("90"))
+        assertThat(tracker.primaryMaeFor("alpha", "BTCUSDT")).isEqualByComparingTo("10")
+    }
+
+    @Test
     fun `SELL primary MFE rises on downward ticks`() {
         val tracker = StrategyPositionTracker()
         tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.SELL, "1", "100"))
