@@ -28,6 +28,7 @@ import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.CrossDir
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
@@ -107,6 +108,7 @@ import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TimeOfDay
 import com.qkt.dsl.ast.Timezone
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnOp
@@ -577,6 +579,16 @@ class Parser(
                 advance()
                 expect(TokenKind.DOT, "expected '.' after STREAK")
                 StreakRef(expectFieldName().lexeme)
+            }
+            TokenKind.TRADES -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after TRADES")
+                TradesRef(expectFieldName().lexeme)
+            }
+            TokenKind.COOLDOWN -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after COOLDOWN")
+                CooldownRef(expectFieldName().lexeme)
             }
             TokenKind.POSITION -> {
                 advance()

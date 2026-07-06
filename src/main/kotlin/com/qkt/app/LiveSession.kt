@@ -111,6 +111,11 @@ class LiveSession(
     private val perStrategyMaxOpenPositions: Int? = null,
     private val perStrategyMaxDrawdownPct: java.math.BigDecimal? = null,
     private val perStrategyMaxDailyDrawdownPct: java.math.BigDecimal? = null,
+    private val perStrategyMaxTradesPerDay: Int? = null,
+    private val perStrategyCooldownAfterLossMs: Long? = null,
+    private val perStrategyCooldownAfterLossAfterConsecutive: Int = 1,
+    private val perStrategyLossStreakHalt: Int? = null,
+    private val perStrategyLossStreakHaltScope: com.qkt.risk.HaltScope = com.qkt.risk.HaltScope.PERSISTENT,
     /**
      * Account starting balance — the basis for static total drawdown and the daily-drawdown
      * reference. Prop-firm limits measure against this. Defaults to zero (drawdown halts inert).
@@ -812,6 +817,8 @@ class LiveSession(
             }
         }
 
+        val pacerLedger = com.qkt.risk.PacerLedger()
+
         // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
         // The daemon creates one LiveSession per deployed strategy, so the first entry is
         // the only one. If the caller didn't set per-strategy caps, these stay empty.
@@ -848,6 +855,35 @@ class LiveSession(
                 perStrategyHaltRules.add(
                     com.qkt.risk.rules
                         .MaxStrategyDailyDrawdown(riskOwnerStrategyId, it),
+                )
+            }
+            perStrategyMaxTradesPerDay?.let {
+                perStrategyRiskRules.add(
+                    com.qkt.risk.rules
+                        .MaxTradesPerDay(it, pacerLedger, clock, riskOwnerStrategyId),
+                )
+            }
+            perStrategyCooldownAfterLossMs?.let {
+                perStrategyRiskRules.add(
+                    com.qkt.risk.rules
+                        .CooldownAfterLoss(
+                            durationMs = it,
+                            ledger = pacerLedger,
+                            clock = clock,
+                            afterConsecutive = perStrategyCooldownAfterLossAfterConsecutive,
+                            strategyId = riskOwnerStrategyId,
+                        ),
+                )
+            }
+            perStrategyLossStreakHalt?.let {
+                perStrategyHaltRules.add(
+                    com.qkt.risk.rules
+                        .LossStreakHalt(
+                            strategyId = riskOwnerStrategyId,
+                            maxLosses = it,
+                            ledger = pacerLedger,
+                            scope = perStrategyLossStreakHaltScope,
+                        ),
                 )
             }
         }
@@ -973,6 +1009,9 @@ class LiveSession(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                pacerLedger = pacerLedger,
+                pacerCooldownDurationMs = perStrategyCooldownAfterLossMs,
+                pacerCooldownAfterConsecutive = perStrategyCooldownAfterLossAfterConsecutive,
                 bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: java.math.BigDecimal.ONE },
                 mode = Mode.LIVE,
                 calendar = calendar,

@@ -78,6 +78,7 @@ class BacktestContext private constructor(
     private val replaySymbols: List<String> = symbols,
     private val strategiesOverride: ((Map<String, String>) -> List<Pair<String, com.qkt.strategy.Strategy>>)? = null,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
+    private val perStrategyRisk: Map<String, PerStrategyRisk> = emptyMap(),
     private val forceBars: Boolean = false,
     private val barWindows: Map<String, TimeWindow> = emptyMap(),
     private val binaryBarStore: BinaryBarStore? = null,
@@ -135,9 +136,44 @@ class BacktestContext private constructor(
                 totalDdBasis = haltConfig.totalDdBasis,
                 startingBalance = startingBalance,
             )
+        val pacerLedger = com.qkt.risk.PacerLedger()
+        val pacerRiskRules = mutableListOf<com.qkt.risk.RiskRule>()
+        val pacerHaltRules = mutableListOf<com.qkt.risk.HaltRule>()
+        val pacerClock = com.qkt.common.FixedClock(range.from.toEpochMilli())
+        for ((strategyId, _) in strats) {
+            val cfg = perStrategyRisk[strategyId] ?: continue
+            cfg.maxTradesPerDay?.let {
+                pacerRiskRules.add(
+                    com.qkt.risk.rules
+                        .MaxTradesPerDay(it, pacerLedger, pacerClock, strategyId),
+                )
+            }
+            cfg.cooldownAfterLossMs?.let {
+                pacerRiskRules.add(
+                    com.qkt.risk.rules.CooldownAfterLoss(
+                        durationMs = it,
+                        ledger = pacerLedger,
+                        clock = pacerClock,
+                        afterConsecutive = cfg.cooldownAfterLossAfterConsecutive,
+                        strategyId = strategyId,
+                    ),
+                )
+            }
+            cfg.lossStreakHalt?.let {
+                pacerHaltRules.add(
+                    com.qkt.risk.rules.LossStreakHalt(
+                        strategyId = strategyId,
+                        maxLosses = it,
+                        ledger = pacerLedger,
+                        scope = cfg.lossStreakHaltScope,
+                    ),
+                )
+            }
+        }
         return Backtest.fromStore(
             strategies = strats,
-            haltRules = haltRules,
+            rules = pacerRiskRules,
+            haltRules = haltRules + pacerHaltRules,
             calendar = calendar,
             store = store,
             request = MarketRequest(symbols = replaySymbols, from = range.from, to = range.to),
@@ -150,6 +186,11 @@ class BacktestContext private constructor(
             brokerKind = effectiveExecution.brokerKind,
             executionConfig = effectiveExecution,
             bookRiskConfig = bookRiskConfig,
+            pacerLedger = pacerLedger,
+            pacerCooldownDurationMsFor = { id -> perStrategyRisk[id]?.cooldownAfterLossMs },
+            pacerCooldownAfterConsecutiveFor = { id ->
+                perStrategyRisk[id]?.cooldownAfterLossAfterConsecutive ?: 1
+            },
             forceBars = forceBars,
             barWindows = barWindows,
             binaryBarStore = binaryBarStore,
@@ -453,6 +494,7 @@ class BacktestContext private constructor(
                 provisioner = provisioner,
                 replaySymbols = replaySymbols,
                 bookRiskConfig = cfg.bookRisk,
+                perStrategyRisk = cfg.perStrategyRisk,
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
@@ -612,6 +654,7 @@ class BacktestContext private constructor(
                 replaySymbols = replaySymbols,
                 strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
                 bookRiskConfig = cfg.bookRisk,
+                perStrategyRisk = cfg.perStrategyRisk,
             )
         }
 

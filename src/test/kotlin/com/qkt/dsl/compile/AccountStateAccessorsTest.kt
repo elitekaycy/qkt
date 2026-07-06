@@ -142,6 +142,21 @@ class AccountStateAccessorsTest {
     }
 
     @Test
+    fun `TRADES and COOLDOWN accessors parse and compile`() {
+        val src =
+            """
+            STRATEGY t VERSION 1
+            SYMBOLS
+              g = X:Y EVERY 1m
+            RULES
+              WHEN TRADES.today < 5 AND COOLDOWN.remaining_s = 0 THEN FLATTEN
+            """.trimIndent()
+        assertThatCode {
+            AstCompiler().compile(parse(src).value)
+        }.doesNotThrowAnyException()
+    }
+
+    @Test
     fun `ACCOUNT unsupported field is rejected at compile time`() {
         val src =
             """

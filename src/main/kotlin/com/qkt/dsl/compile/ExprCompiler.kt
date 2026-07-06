@@ -11,6 +11,7 @@ import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
@@ -30,6 +31,7 @@ import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.stdlib.FuncRegistry
@@ -58,6 +60,8 @@ class ExprCompiler(
             is IndicatorCall -> compileIndicator(expr)
             is AccountRef -> compileAccountRef(expr)
             is StreakRef -> compileStreakRef(expr)
+            is TradesRef -> compileTradesRef(expr)
+            is CooldownRef -> compileCooldownRef(expr)
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
             is Between -> compileBetween(expr, ruleAlias)
@@ -531,6 +535,26 @@ class ExprCompiler(
                 "banked" -> Value.Num(history.banked())
                 else -> error("unreachable")
             }
+        }
+    }
+
+    private fun compileTradesRef(ref: TradesRef): CompiledExpr {
+        require(ref.field == "today") { "Unsupported TRADES field: ${ref.field}" }
+        return CompiledExpr { ctx ->
+            Value.Num(
+                BigDecimal.valueOf(
+                    ctx.strategyContext.pacer
+                        .tradesToday(ctx.nowMs())
+                        .toLong(),
+                ),
+            )
+        }
+    }
+
+    private fun compileCooldownRef(ref: CooldownRef): CompiledExpr {
+        require(ref.field == "remaining_s") { "Unsupported COOLDOWN field: ${ref.field}" }
+        return CompiledExpr { ctx ->
+            Value.Num(BigDecimal.valueOf(ctx.strategyContext.pacer.cooldownRemainingSeconds(ctx.nowMs())))
         }
     }
 

@@ -23,6 +23,7 @@ import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
+import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
@@ -70,6 +71,7 @@ import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
@@ -107,8 +109,8 @@ class ExprTransform(
             is Aggregate -> Aggregate(e.fn, expr(e.series), e.window)
             is FuncCall -> FuncCall(e.name, e.args.map(::expr))
             is IsNull -> IsNull(expr(e.expr), e.negated)
-            is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef, is StreakRef,
-            is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
+            is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef, is StreakRef, is TradesRef,
+            is CooldownRef, is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
             is CalendarWindow,
             is SessionWindow,
             LastTradingDayOfMonth,

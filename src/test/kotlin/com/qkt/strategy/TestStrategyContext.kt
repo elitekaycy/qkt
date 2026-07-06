@@ -12,7 +12,9 @@ import com.qkt.pnl.StrategyPnLView
 import com.qkt.pnl.TradeHistoryView
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
+import com.qkt.risk.NoOpPacerView
 import com.qkt.risk.NoOpRiskView
+import com.qkt.risk.PacerView
 import com.qkt.risk.RiskView
 import java.math.BigDecimal
 
@@ -78,6 +80,7 @@ fun testStrategyContext(
     risk: RiskView = NoOpRiskView(),
     instruments: InstrumentRegistry = UnitContractRegistry,
     tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
+    pacer: PacerView = NoOpPacerView(),
 ): StrategyContext =
     StrategyContext(
         strategyId = strategyId,
@@ -90,4 +93,5 @@ fun testStrategyContext(
         risk = risk,
         instruments = instruments,
         tradeHistory = tradeHistory,
+        pacer = pacer,
     )

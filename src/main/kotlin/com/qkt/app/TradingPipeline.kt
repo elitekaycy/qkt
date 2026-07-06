@@ -99,6 +99,11 @@ class TradingPipeline(
      * per-strategy `LiveSession` similarly gets its own.
      */
     val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(persistor = persistor),
+    val pacerLedger: com.qkt.risk.PacerLedger = com.qkt.risk.PacerLedger(),
+    private val pacerCooldownDurationMs: Long? = null,
+    private val pacerCooldownAfterConsecutive: Int = 1,
+    private val pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
+    private val pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
     /**
      * Hot-path latency observation. Default reads `QKT_LATENCY_TRACKING` once at construction;
      * unset → disabled → every observe call short-circuits on the first line, no allocation
@@ -143,6 +148,26 @@ class TradingPipeline(
         if (com.qkt.risk.isRiskReducing(req, positions)) return req
         if (f.signum() <= 0) return null
         return req.scaleQuantity(f)
+    }
+
+    private fun isRiskIncreasingFill(
+        before: com.qkt.positions.Position?,
+        after: com.qkt.positions.Position?,
+    ): Boolean {
+        val beforeQty = before?.quantity ?: BigDecimal.ZERO
+        val afterQty = after?.quantity ?: BigDecimal.ZERO
+        val flipped = beforeQty.signum() != 0 && afterQty.signum() != 0 && beforeQty.signum() != afterQty.signum()
+        return afterQty.abs() > beforeQty.abs() || flipped
+    }
+
+    private fun closesExposure(
+        before: com.qkt.positions.Position?,
+        after: com.qkt.positions.Position?,
+    ): Boolean {
+        val beforeQty = before?.quantity ?: BigDecimal.ZERO
+        val afterQty = after?.quantity ?: BigDecimal.ZERO
+        val flipped = beforeQty.signum() != 0 && afterQty.signum() != 0 && beforeQty.signum() != afterQty.signum()
+        return beforeQty.abs() > BigDecimal.ZERO && (afterQty.abs() < beforeQty.abs() || flipped)
     }
 
     /** The primary-window aggregator (candle events on the bus); null when no window configured. */
@@ -227,6 +252,13 @@ class TradingPipeline(
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                     instruments = instruments,
                     tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(tradeHistory, strategyId),
+                    pacer =
+                        com.qkt.risk.PacerViewImpl(
+                            pacerLedger,
+                            strategyId,
+                            pacerCooldownDurationMsFor?.invoke(strategyId) ?: pacerCooldownDurationMs,
+                            pacerCooldownAfterConsecutiveFor?.invoke(strategyId) ?: pacerCooldownAfterConsecutive,
+                        ),
                 )
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 val t0 = if (latencyEnabled) System.nanoTime() else 0L
@@ -346,6 +378,13 @@ class TradingPipeline(
             val netAccountStratRealized = accountStratRealized.subtract(costs)
             strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
             tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
+            val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
+            if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
+                pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
+            }
+            if (closesExposure(strategyBefore, strategyAfter)) {
+                pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
+            }
             riskState.onFill(e.strategyId, netAccountStratRealized)
             if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
@@ -389,6 +428,7 @@ class TradingPipeline(
                     typedVenueCosts = e.typedVenueCosts,
                 )
             val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             val venueCosts =
                 if (e.typedVenueCosts.isNotEmpty()) {
@@ -422,6 +462,13 @@ class TradingPipeline(
             val netAccountStratRealized = accountStratRealized.subtract(costs)
             strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
             tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
+            val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
+            if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
+                pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
+            }
+            if (closesExposure(strategyBefore, strategyAfter)) {
+                pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
+            }
             riskState.onFill(e.strategyId, netAccountStratRealized)
             if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
