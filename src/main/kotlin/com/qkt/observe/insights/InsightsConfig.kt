@@ -19,6 +19,7 @@ enum class InsightsEventFamily(
     LOG("log"),
     STATE("state"),
     DEAL("deal"),
+    LIFECYCLE("lifecycle"),
     ;
 
     companion object {
@@ -36,10 +37,12 @@ enum class InsightsEventFamily(
  *   url: "http://insights-host:8420/ingest"
  *   instance_id: "qkt-prod"
  *   token: "${INGEST_TOKEN}"
- *   events: [trade, order, signal, risk, position, state, deal]
+ *   events: [trade, order, signal, risk, position, state, deal, lifecycle]
  *   flush_interval_ms: 250
  *   batch_size: 200
  *   queue_capacity: 10000
+ *   journal_enabled: true
+ *   journal_dir: "./state/insights-journal"
  *   state_poll_ms: 10000
  *   deal_backfill_days: 30
  * ```
@@ -53,6 +56,10 @@ data class InsightsConfig(
     val flushIntervalMs: Long,
     val batchSize: Int,
     val queueCapacity: Int,
+    /** When enabled, qkt spools accepted envelopes locally and replays unacked rows. */
+    val journalEnabled: Boolean,
+    /** Optional journal directory. Blank means the daemon state directory default is used. */
+    val journalDir: String,
     /** Cadence of the broker state poller (account/positions/deals), milliseconds. */
     val statePollMs: Long,
     /** How far back the poller backfills broker deal history on startup, in days. */
@@ -69,6 +76,8 @@ data class InsightsConfig(
                 flushIntervalMs = 250L,
                 batchSize = 200,
                 queueCapacity = 10_000,
+                journalEnabled = false,
+                journalDir = "",
                 statePollMs = 10_000L,
                 dealBackfillDays = 30L,
             )
@@ -93,6 +102,8 @@ data class InsightsConfig(
                 flushIntervalMs = map["flush_interval_ms"]?.toString()?.toLongOrNull() ?: DISABLED.flushIntervalMs,
                 batchSize = map["batch_size"]?.toString()?.toIntOrNull() ?: DISABLED.batchSize,
                 queueCapacity = map["queue_capacity"]?.toString()?.toIntOrNull() ?: DISABLED.queueCapacity,
+                journalEnabled = map["journal_enabled"] == true,
+                journalDir = map["journal_dir"]?.toString().orEmpty(),
                 statePollMs = map["state_poll_ms"]?.toString()?.toLongOrNull() ?: DISABLED.statePollMs,
                 dealBackfillDays =
                     map["deal_backfill_days"]?.toString()?.toLongOrNull() ?: DISABLED.dealBackfillDays,

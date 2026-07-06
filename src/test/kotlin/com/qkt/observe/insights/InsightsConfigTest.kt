@@ -55,9 +55,14 @@ class InsightsConfigTest {
     fun `state and deal family names parse`() {
         val cfg =
             InsightsConfig.parse(
-                mapOf("enabled" to true, "url" to "http://h/ingest", "events" to listOf("state", "deal")),
+                mapOf("enabled" to true, "url" to "http://h/ingest", "events" to listOf("state", "deal", "lifecycle")),
             )
-        assertThat(cfg.events).containsExactlyInAnyOrder(InsightsEventFamily.STATE, InsightsEventFamily.DEAL)
+        assertThat(cfg.events)
+            .containsExactlyInAnyOrder(
+                InsightsEventFamily.STATE,
+                InsightsEventFamily.DEAL,
+                InsightsEventFamily.LIFECYCLE,
+            )
     }
 
     @Test

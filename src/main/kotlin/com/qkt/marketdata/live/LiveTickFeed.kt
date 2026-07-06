@@ -4,11 +4,18 @@ import com.qkt.common.Clock
 import com.qkt.common.SystemClock
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import org.slf4j.LoggerFactory
+
+interface MarketDataLifecycleFeed {
+    fun onDisconnect(handler: () -> Unit)
+
+    fun onReconnect(handler: () -> Unit)
+}
 
 /**
  * Pull-based [TickFeed] over a [LiveTickSource]. A transient source disconnect does not end the feed:
@@ -22,13 +29,16 @@ class LiveTickFeed(
     private val pollIntervalMs: Long = 200L,
     private val clock: Clock = SystemClock(),
     private val reconnectBudgetMs: Long = 120_000L,
-) : TickFeed {
+) : TickFeed,
+    MarketDataLifecycleFeed {
     private val log = LoggerFactory.getLogger(LiveTickFeed::class.java)
 
     private val queue: LinkedBlockingQueue<Tick> = LinkedBlockingQueue(queueCapacity)
     private val closed: AtomicBoolean = AtomicBoolean(false)
     private val sourceDisconnected: AtomicBoolean = AtomicBoolean(false)
     private val disconnectedSinceMs: AtomicLong = AtomicLong(0)
+    private val disconnectHandlers: CopyOnWriteArrayList<() -> Unit> = CopyOnWriteArrayList()
+    private val reconnectHandlers: CopyOnWriteArrayList<() -> Unit> = CopyOnWriteArrayList()
 
     val droppedTicks: AtomicLong = AtomicLong(0)
 
@@ -49,12 +59,22 @@ class LiveTickFeed(
                 log.warn("LiveTickFeed source disconnected; waiting up to ${reconnectBudgetMs}ms for reconnect")
                 disconnectedSinceMs.set(clock.now())
                 sourceDisconnected.set(true)
+                disconnectHandlers.forEach { h -> runCatching { h() } }
             },
             onReconnect = {
                 log.info("LiveTickFeed source reconnected; resuming")
                 sourceDisconnected.set(false)
+                reconnectHandlers.forEach { h -> runCatching { h() } }
             },
         )
+    }
+
+    override fun onDisconnect(handler: () -> Unit) {
+        disconnectHandlers.add(handler)
+    }
+
+    override fun onReconnect(handler: () -> Unit) {
+        reconnectHandlers.add(handler)
     }
 
     override fun next(): Tick? {

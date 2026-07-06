@@ -115,6 +115,7 @@ class MT5PositionPollerCloseTest {
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
 
         val unreachable = mutableListOf<Int>()
+        val recovered = mutableListOf<Int>()
         val poller =
             MT5PositionPoller(
                 client = client,
@@ -125,6 +126,7 @@ class MT5PositionPollerCloseTest {
                 closedTicketMeta = { ClosedPositionMeta("ord", "alpha") },
                 priceProvider = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) },
                 onGatewayUnreachable = { unreachable.add(it) },
+                onGatewayRecovered = { recovered.add(it) },
             )
         poller.tick() // sees 7001 open
         repeat(3) { poller.tick() } // outage: diffs suspended
@@ -133,6 +135,7 @@ class MT5PositionPollerCloseTest {
 
         poller.tick() // recovered, 7001 still open — still no close
         assertThat(fills).isEmpty()
+        assertThat(recovered).containsExactly(3)
 
         server.enqueue(MockResponse().setBody("[]")) // deals lookup for the close
         poller.tick() // 7001 genuinely closed now
