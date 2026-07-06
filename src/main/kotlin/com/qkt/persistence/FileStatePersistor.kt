@@ -51,7 +51,71 @@ class FileStatePersistor(
         const val RISK_STATE_FILE = "risk-state.json"
         const val PNL_FILE = "pnl.json"
         const val TRADE_HISTORY_FILE = "trade-history.json"
+        const val SEQUENCES_FILE = "sequences.json"
         const val SCHEMA_VERSION = 1
+    }
+
+    override fun saveSequences(
+        strategyId: String,
+        states: Map<String, PersistedSequenceState>,
+    ) {
+        val dto =
+            SequencesDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                sequences =
+                    states.values.map { state ->
+                        SequenceStateDto(
+                            name = state.name,
+                            stage = state.stage,
+                            snapshots =
+                                state.snapshots.map {
+                                    SequenceSnapshotDto(
+                                        stage = it.stage,
+                                        price = it.price.toPlainString(),
+                                        timeMs = it.timeMs,
+                                    )
+                                },
+                            lastValues = state.lastValues,
+                            completePulse = state.completePulse,
+                        )
+                    },
+            )
+        runCatching { json.encodeToString(SequencesDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, SEQUENCES_FILE, it) }
+            .onFailure { e -> log.warn("saveSequences encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> {
+        val raw = writer.read(strategyId, SEQUENCES_FILE) ?: return emptyMap()
+        val dto =
+            try {
+                json.decodeFromString(SequencesDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadSequences parse failed for $strategyId: ${e.message}")
+                return emptyMap()
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn("loadSequences schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
+            return emptyMap()
+        }
+        return dto.sequences.associate { state ->
+            state.name to
+                PersistedSequenceState(
+                    name = state.name,
+                    stage = state.stage,
+                    snapshots =
+                        state.snapshots.map {
+                            PersistedSequenceSnapshot(
+                                stage = it.stage,
+                                price = it.price.toBigDecimal(),
+                                timeMs = it.timeMs,
+                            )
+                        },
+                    lastValues = state.lastValues,
+                    completePulse = state.completePulse,
+                )
+        }
     }
 
     override fun saveTradeHistory(
@@ -505,6 +569,29 @@ private data class TrailingStopDto(
     val request: OrderRequestDto,
     val armed: Boolean,
     val hwm: String,
+)
+
+@Serializable
+private data class SequencesDto(
+    val version: Int,
+    val strategyId: String,
+    val sequences: List<SequenceStateDto>,
+)
+
+@Serializable
+private data class SequenceStateDto(
+    val name: String,
+    val stage: Int,
+    val snapshots: List<SequenceSnapshotDto>,
+    val lastValues: Map<String, Boolean> = emptyMap(),
+    val completePulse: Boolean = false,
+)
+
+@Serializable
+private data class SequenceSnapshotDto(
+    val stage: String,
+    val price: String,
+    val timeMs: Long,
 )
 
 @Serializable

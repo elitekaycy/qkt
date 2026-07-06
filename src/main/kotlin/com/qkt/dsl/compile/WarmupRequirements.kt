@@ -88,6 +88,9 @@ object WarmupRequirements {
                 if (w > 0) merge(out, s.alias, w)
             }
             for (rule in ast.rules) walkRule(rule, ast, out)
+            for (sequence in ast.sequences) {
+                for (stage in sequence.stages) walkExpr(stage.condition, out)
+            }
             for (let in ast.lets) walkExpr(let.expr, out)
             return out.toMap()
         } finally {

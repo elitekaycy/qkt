@@ -54,6 +54,12 @@ object ParamSubstitution {
                     }
                 },
             schedules = ast.schedules.map { it.copy(action = t.action(it.action)) },
+            sequences =
+                ast.sequences.map { sequence ->
+                    sequence.copy(
+                        stages = sequence.stages.map { stage -> stage.copy(condition = t.expr(stage.condition)) },
+                    )
+                },
             defaults = ast.defaults?.let { t.defaultsBlock(it) },
         )
     }

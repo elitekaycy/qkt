@@ -310,7 +310,11 @@ class TradingPipeline(
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
                 requireMultiPositionCapability(strategyId, strategy)
                 requireVolumeCapability(strategyId, strategy)
-                for ((key, retention) in strategy.retentionByKey) candleHub.register(key, retention, strategyId)
+                strategy.bindStatePersistor(strategyId, persistor)
+                val hubKeys = strategy.declaredStreams.values.toSet() + strategy.retentionByKey.keys
+                for (key in hubKeys) {
+                    candleHub.register(key, strategy.retentionByKey[key] ?: 1, strategyId)
+                }
                 for (key in strategy.declaredStreams.values) {
                     candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
                 }

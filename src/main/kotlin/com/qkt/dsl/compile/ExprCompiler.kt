@@ -24,6 +24,7 @@ import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StateAccessor
@@ -64,6 +65,7 @@ class ExprCompiler(
             is CooldownRef -> compileCooldownRef(expr)
             is PositionRef -> compilePositionRef(expr)
             is StateAccessor -> compileStateAccessor(expr)
+            is SequenceAccessor -> compileSequenceAccessor(expr)
             is Between -> compileBetween(expr, ruleAlias)
             is InList -> compileInList(expr, ruleAlias)
             is IsNull -> compileIsNull(expr, ruleAlias)
@@ -461,6 +463,30 @@ class ExprCompiler(
                         ?.let { Value.Num(BigDecimal.valueOf(it)) } ?: Value.Undefined
                 }
             else -> throw IllegalArgumentException("StateAccessor source ${ref.source} is not supported")
+        }
+
+    private fun compileSequenceAccessor(ref: SequenceAccessor): CompiledExpr =
+        when {
+            ref.stage == null && ref.field == "stage" ->
+                CompiledExpr { ctx ->
+                    Value.Num(BigDecimal.valueOf(ctx.sequences.stage(ref.sequence).toLong()))
+                }
+            ref.stage == null && ref.field == "complete" ->
+                CompiledExpr { ctx ->
+                    Value.of(ctx.sequences.complete(ref.sequence))
+                }
+            ref.stage != null && ref.field == "price" ->
+                CompiledExpr { ctx ->
+                    Value.Num(ctx.sequences.stagePrice(ref.sequence, ref.stage) ?: BigDecimal.ZERO)
+                }
+            ref.stage != null && ref.field == "time" ->
+                CompiledExpr { ctx ->
+                    Value.Num(BigDecimal.valueOf(ctx.sequences.stageTime(ref.sequence, ref.stage) ?: 0L))
+                }
+            ref.stage == null ->
+                error("Unknown SEQUENCE accessor: SEQUENCE.${ref.sequence}.${ref.field}")
+            else ->
+                error("Unknown SEQUENCE stage accessor: SEQUENCE.${ref.sequence}.${ref.stage}.${ref.field}")
         }
 
     private fun compileAccountRef(ref: AccountRef): CompiledExpr {

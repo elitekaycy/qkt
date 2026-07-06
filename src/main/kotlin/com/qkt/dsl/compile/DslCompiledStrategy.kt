@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
@@ -60,6 +61,14 @@ interface DslCompiledStrategy : Strategy {
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     )
+
+    /** Bind optional durable state for DSL runtime features that need restart recovery. */
+    fun bindStatePersistor(
+        strategyId: String,
+        persistor: StatePersistor,
+    ) {
+        // default no-op
+    }
 
     /**
      * Register every `SCHEDULE` clause this strategy declared with [runner]. Called

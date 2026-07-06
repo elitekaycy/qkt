@@ -56,6 +56,7 @@ import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -197,6 +198,7 @@ internal object StrategyDataRequirementScanner {
                 is NumLit,
                 is PositionRef,
                 is Ref,
+                is SequenceAccessor,
                 is SessionWindow,
                 StackEntryRef,
                 is StateAccessor,
@@ -370,6 +372,7 @@ internal object StrategyDataRequirementScanner {
         ast.params.forEach { walk(it.value) }
         ast.rules.forEach(::walkRule)
         ast.schedules.forEach { walkAction(it.action) }
+        ast.sequences.forEach { sequence -> sequence.stages.forEach { walk(it.condition) } }
         return StrategyDataRequirements(
             quoteAliases = quoteAliases,
             volumeAliases = volumeAliases,

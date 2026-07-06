@@ -10,6 +10,7 @@ enum class TokenKind {
     SERIES,
     EQUAL_WEIGHT,
     SCHEDULE,
+    SEQUENCE,
     LET,
     PARAM,
     RULES,
@@ -35,6 +36,7 @@ enum class TokenKind {
     DEBUG,
 
     STACK,
+    STAGE,
     SPACING,
     WITHIN,
     AFTER,
