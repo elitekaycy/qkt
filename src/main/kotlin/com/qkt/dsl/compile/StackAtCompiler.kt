@@ -40,7 +40,13 @@ object StackAtCompiler {
     fun compileAll(clauses: List<StackAtClause>): List<CompiledStackTier> = clauses.map(::compile)
 
     fun compile(clause: StackAtClause): CompiledStackTier {
-        val threshold = evalConstant(clause.mfeThreshold, context = "STACK_AT MFE threshold")
+        val thresholdContext =
+            if (clause.maeRecoverDistance == null) "STACK_AT MFE threshold" else "STACK_AT MAE threshold"
+        val threshold = evalConstant(clause.mfeThreshold, context = thresholdContext)
+        val recoverDistance =
+            clause.maeRecoverDistance?.let {
+                evalConstant(it, context = "STACK_AT MAE RECOVER distance")
+            }
         val withinMs = clause.withinDuration.millis
         val resolve = compileSizing(clause.sizing)
         val (sl, tp) = compileBracket(clause.bracket)
@@ -50,6 +56,7 @@ object StackAtCompiler {
             resolveStackQuantity = resolve,
             slDistance = sl,
             tpDistance = tp,
+            maeRecoverDistance = recoverDistance,
         )
     }
 

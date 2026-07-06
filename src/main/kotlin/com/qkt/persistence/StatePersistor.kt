@@ -195,6 +195,8 @@ data class PersistedTier(
     val stackQuantity: BigDecimal,
     val slDistance: BigDecimal,
     val tpDistance: BigDecimal,
+    val maeRecoverDistance: BigDecimal? = null,
+    val armedAdverseExtreme: BigDecimal? = null,
     val fired: Boolean,
     val firedAt: Long?,
     val firedLegId: String?,

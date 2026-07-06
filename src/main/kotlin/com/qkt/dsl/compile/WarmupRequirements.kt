@@ -155,6 +155,7 @@ object WarmupRequirements {
         }
         for (tier in opts.stackAts) {
             walkExpr(tier.mfeThreshold, out)
+            tier.maeRecoverDistance?.let { walkExpr(it, out) }
             walkSizing(tier.sizing, out)
             tier.bracket.stopLoss?.let { walkChildPrice(it, out) }
             tier.bracket.takeProfit?.let { walkChildPrice(it, out) }

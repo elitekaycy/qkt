@@ -266,6 +266,7 @@ private fun subst(
         mfeThreshold = subst(c.mfeThreshold, v, alias),
         sizing = subst(c.sizing, v, alias),
         bracket = subst(c.bracket, v, alias),
+        maeRecoverDistance = c.maeRecoverDistance?.let { subst(it, v, alias) },
     )
 
 private fun subst(

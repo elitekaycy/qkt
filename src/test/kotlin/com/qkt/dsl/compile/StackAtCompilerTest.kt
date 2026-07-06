@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test
 class StackAtCompilerTest {
     private fun clause(
         threshold: com.qkt.dsl.ast.ExprAst = NumLit(BigDecimal("0.005")),
+        recover: com.qkt.dsl.ast.ExprAst? = null,
         withinMs: Long = 30 * 60 * 1000L,
         sizing: com.qkt.dsl.ast.SizingAst = SizeQty(NumLit(BigDecimal("0.05"))),
         bracket: BracketAst =
@@ -33,6 +34,7 @@ class StackAtCompilerTest {
         withinDuration = DurationAst(withinMs),
         sizing = sizing,
         bracket = bracket,
+        maeRecoverDistance = recover,
     )
 
     @Test
@@ -52,6 +54,19 @@ class StackAtCompilerTest {
                 clause(threshold = BinaryOp(BinOp.MUL, NumLit(BigDecimal("10")), NumLit(BigDecimal("5")))),
             )
         assertThat(tier.mfeThreshold).isEqualByComparingTo("50")
+    }
+
+    @Test
+    fun `compiles MAE recovery distance as a constant`() {
+        val tier =
+            StackAtCompiler.compile(
+                clause(
+                    threshold = NumLit(BigDecimal("20")),
+                    recover = BinaryOp(BinOp.ADD, NumLit(BigDecimal("10")), NumLit(BigDecimal("5"))),
+                ),
+            )
+        assertThat(tier.mfeThreshold).isEqualByComparingTo("20")
+        assertThat(tier.maeRecoverDistance).isEqualByComparingTo("15")
     }
 
     @Test
@@ -84,6 +99,14 @@ class StackAtCompilerTest {
         assertThatThrownBy { StackAtCompiler.compile(clause(threshold = Ref("foo"))) }
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("STACK_AT MFE threshold")
+            .hasMessageContaining("compile-time constant")
+    }
+
+    @Test
+    fun `non-constant recovery expression is rejected at compile time`() {
+        assertThatThrownBy { StackAtCompiler.compile(clause(recover = Ref("foo"))) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("STACK_AT MAE RECOVER distance")
             .hasMessageContaining("compile-time constant")
     }
 

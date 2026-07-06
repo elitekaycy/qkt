@@ -179,6 +179,7 @@ POSITION.<stream>.realized_pnl              -- strategy-level realized P&L (see 
 POSITION.<stream>.unrealized_pnl            -- open P&L on this position
 POSITION.<stream>.holding_duration          -- seconds since the position was opened
 POSITION.<stream>.mfe                       -- max favorable excursion of the PRIMARY leg (price units)
+POSITION.<stream>.mae                       -- max adverse excursion of the PRIMARY leg (price units)
 ```
 
 ```qkt
@@ -188,6 +189,8 @@ THEN CLOSE btc
 ```
 
 `POSITION.<stream>.mfe` reads the high-water mark of `current_price - entry_price` (for BUY) or `entry_price - current_price` (for SELL) on the PRIMARY leg since it opened. Returns `0` if no primary exists. Same value the stack engine uses for `STACK_AT MFE >= ...` threshold checks; see [STACK_AT](stack-at.md).
+
+`POSITION.<stream>.mae` reads the high-water mark of `entry_price - current_price` (for BUY) or `current_price - entry_price` (for SELL) on the PRIMARY leg since it opened. Returns `0` if no primary exists. Same value the stack engine uses for `STACK_AT MAE >= ... RECOVER ...` arming checks.
 
 `POSITION.<stream>` returns a signed quantity. `POSITION.btc > 0` means long; `POSITION.btc < 0` means short; `POSITION.btc = 0` means flat. Most entry rules guard with `POSITION.btc = 0`.
 

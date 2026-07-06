@@ -314,6 +314,7 @@ internal object StrategyDataRequirementScanner {
 
         fun walkStackAt(clause: StackAtClause) {
             walk(clause.mfeThreshold)
+            clause.maeRecoverDistance?.let { walk(it) }
             walkSizing(clause.sizing)
             walkBracket(clause.bracket)
         }

@@ -610,6 +610,7 @@ class Parser(
                         "unrealized_pnl" -> StateAccessor(StateSource.POSITION_UNREALIZED_PNL, streamAlias)
                         "holding_duration" -> StateAccessor(StateSource.POSITION_HOLDING_DURATION, streamAlias)
                         "mfe" -> StateAccessor(StateSource.POSITION_MFE, streamAlias)
+                        "mae" -> StateAccessor(StateSource.POSITION_MAE, streamAlias)
                         "count", "open_count" -> StateAccessor(StateSource.POSITION_OPEN_COUNT, streamAlias)
                         "longs", "long_count" -> StateAccessor(StateSource.POSITION_LONG_COUNT, streamAlias)
                         "shorts", "short_count" -> StateAccessor(StateSource.POSITION_SHORT_COUNT, streamAlias)
@@ -1337,16 +1338,31 @@ class Parser(
 
     /**
      * Phase 27: `STACK_AT MFE >= <expr> WITHIN <duration> SIZING <sizing> BRACKET { ... }`.
+     * Phase 38: `STACK_AT MAE >= <expr> RECOVER <expr> WITHIN <duration> ...`.
      *
      * The clause attaches to its parent BUY/SELL action. The stack engine fires the stack
      * when the parent leg's MFE crosses the threshold within the duration window.
      */
     private fun parseStackAtClause(): StackAtClause {
         expect(TokenKind.STACK_AT, "expected STACK_AT")
-        expect(TokenKind.MFE, "expected MFE after STACK_AT")
-        expect(TokenKind.GE, "expected '>=' after MFE in STACK_AT")
+        val trigger = peek().kind
+        when (trigger) {
+            TokenKind.MFE, TokenKind.MAE -> advance()
+            else -> {
+                errors += ParseError(peek().line, peek().col, "expected MFE or MAE after STACK_AT")
+                advance()
+            }
+        }
+        expect(TokenKind.GE, "expected '>=' after MFE/MAE in STACK_AT")
         val threshold = parseExpr()
-        expect(TokenKind.WITHIN, "expected WITHIN after MFE threshold in STACK_AT")
+        val recoverDistance =
+            if (trigger == TokenKind.MAE) {
+                expect(TokenKind.RECOVER, "expected RECOVER after MAE threshold in STACK_AT")
+                parseExpr()
+            } else {
+                null
+            }
+        expect(TokenKind.WITHIN, "expected WITHIN after STACK_AT threshold")
         val duration = parseDuration()
         expect(TokenKind.SIZING, "expected SIZING in STACK_AT clause")
         val sizing = parseSizing()
@@ -1357,6 +1373,7 @@ class Parser(
             withinDuration = duration,
             sizing = sizing,
             bracket = bracket,
+            maeRecoverDistance = recoverDistance,
         )
     }
 

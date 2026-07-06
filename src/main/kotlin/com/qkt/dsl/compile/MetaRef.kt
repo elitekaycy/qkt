@@ -235,6 +235,7 @@ internal fun collectMetaRefs(
         walkStack(opts.stack)
         opts.stackAts.forEach { clause ->
             walkExpr(clause.mfeThreshold)
+            clause.maeRecoverDistance?.let { walkExpr(it) }
             walkSizing(clause.sizing)
             walkBracket(clause.bracket)
         }
