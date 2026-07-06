@@ -70,6 +70,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: Expressions](expressions.md)
 
+- :material-timeline-check:{ .lg .middle } **SEQUENCE**
+
+    ---
+
+    Ordered multi-stage setups with per-stage timeouts, snapshots, and a one-pass completion edge.
+
+    [:octicons-arrow-right-24: SEQUENCE](sequence.md)
+
 </div>
 
 ## Actions — what to do
@@ -163,9 +171,12 @@ When you run `qkt parse strategy.qkt`, the compiler walks the file in this order
 1. **Header** — `STRATEGY name VERSION n` or `PORTFOLIO ...`
 2. **DEFAULTS** (optional) — captures default values for all later actions
 3. **SYMBOLS** — declares every stream the strategy listens to
-4. **LET** (optional) — name-bound expressions for reuse
-5. **RULES** — pairs of `WHEN <condition> THEN <action>`
-6. **FOR EACH** (optional, end of file) — macro expansion that emits additional rules
+4. **PARAM** (optional) — numeric strategy inputs and overrides
+5. **LET** (optional) — name-bound expressions for reuse
+6. **SCHEDULE** (optional) — clock-driven actions
+7. **SEQUENCE** (optional) — ordered setup state machines
+8. **RULES** — pairs of `WHEN <condition> THEN <action>`
+9. **FOR EACH** (optional, end of file) — macro expansion that emits additional rules
 
 Errors are line/column tagged. A typo in `WHEN` or a missing `THEN` produces a clear error pointing to the line, not a cryptic stack trace.
 

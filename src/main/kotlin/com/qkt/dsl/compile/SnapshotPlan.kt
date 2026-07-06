@@ -21,6 +21,7 @@ import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SnapshotBuy
 import com.qkt.dsl.ast.SnapshotOpen
@@ -109,6 +110,7 @@ data class SnapshotPlan(
                 is IsNull -> walk(expr.expr, onBuy, onSell, onOpen, rolling)
                 is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef,
                 is PositionRef, is StateAccessor, is StreakRef, is TradesRef, is CooldownRef, is StackEntryRef,
+                is SequenceAccessor,
                 is NowAccessor,
                 is CalendarWindow,
                 is SessionWindow,

@@ -77,6 +77,9 @@ import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
+import com.qkt.dsl.ast.SequenceDecl
+import com.qkt.dsl.ast.SequenceStageDecl
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.SessionWindow
@@ -286,7 +289,7 @@ class Parser(
         var version = 0
         try {
             expect(TokenKind.STRATEGY, "expected STRATEGY")
-            name = expect(TokenKind.IDENT, "expected strategy name").lexeme
+            name = expectName("expected strategy name").lexeme
             expect(TokenKind.VERSION, "expected VERSION")
             val v = expect(TokenKind.NUMBER, "expected integer version")
             version = v.lexeme.toIntOrNull() ?: error("VERSION must be an integer, got '${v.lexeme}'")
@@ -335,6 +338,15 @@ class Parser(
                 emptyList()
             }
 
+        val sequences =
+            run {
+                val acc = mutableListOf<SequenceDecl>()
+                while (peek().kind == TokenKind.SEQUENCE) {
+                    tryParse { parseSequence() }?.let { acc.add(it) }
+                }
+                acc
+            }
+
         val rules =
             if (peek().kind == TokenKind.RULES) {
                 tryParse { parseRules() } ?: emptyList()
@@ -358,6 +370,7 @@ class Parser(
                 schedules = schedules,
                 baskets = baskets,
                 series = series,
+                sequences = sequences,
             ),
         )
     }
@@ -598,6 +611,19 @@ class Parser(
                 advance()
                 expect(TokenKind.DOT, "expected '.' after COOLDOWN")
                 CooldownRef(expectFieldName().lexeme)
+            }
+            TokenKind.SEQUENCE -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after SEQUENCE")
+                val sequenceName = expectFieldName().lexeme
+                expect(TokenKind.DOT, "expected '.' after SEQUENCE name")
+                val first = expectFieldName().lexeme
+                if (first == "stage" || first == "complete") {
+                    SequenceAccessor(sequenceName, null, first)
+                } else {
+                    expect(TokenKind.DOT, "expected '.' after SEQUENCE stage name")
+                    SequenceAccessor(sequenceName, first, expectFieldName().lexeme)
+                }
             }
             TokenKind.POSITION -> {
                 advance()
@@ -1826,6 +1852,24 @@ class Parser(
         return SeriesDecl(alias = alias, source = source, timeframe = timeframe)
     }
 
+    private fun parseSequence(): SequenceDecl {
+        expect(TokenKind.SEQUENCE, "expected SEQUENCE")
+        val name = expect(TokenKind.IDENT, "expected sequence name after SEQUENCE").lexeme
+        expect(TokenKind.ON, "expected ON after SEQUENCE name")
+        val stream = expect(TokenKind.IDENT, "expected stream alias after SEQUENCE ON").lexeme
+        expect(TokenKind.LBRACE, "expected '{' to open SEQUENCE block")
+        val stages = mutableListOf<SequenceStageDecl>()
+        while (peek().kind != TokenKind.RBRACE && peek().kind != TokenKind.EOF) {
+            expect(TokenKind.STAGE, "expected STAGE in SEQUENCE block")
+            val stageName = expect(TokenKind.IDENT, "expected stage name after STAGE").lexeme
+            val within = if (match(TokenKind.WITHIN)) parseDuration() else null
+            expect(TokenKind.COLON, "expected ':' after SEQUENCE stage header")
+            stages += SequenceStageDecl(stageName, within, parseExpr())
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close SEQUENCE block")
+        return SequenceDecl(name, stream, stages)
+    }
+
     /** Parse the stream body after `<alias> =`: `<broker>:<symbol> EVERY <tf> [WARMUP <n> BARS]`. */
     private fun parseStream(alias: String): StreamDecl {
         val broker = expect(TokenKind.IDENT, "expected broker prefix").lexeme
@@ -2071,6 +2115,14 @@ class Parser(
             return advance()
         }
         error("expected field name, got '${t.lexeme}'")
+    }
+
+    private fun expectName(msg: String): Token {
+        val t = peek()
+        if (t.kind == TokenKind.IDENT || isIdentLikeLexeme(t.lexeme)) {
+            return advance()
+        }
+        error("$msg, got '${t.lexeme}'")
     }
 
     private fun isIdentLikeLexeme(s: String): Boolean {

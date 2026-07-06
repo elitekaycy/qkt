@@ -48,6 +48,8 @@ class EvalContext(
     val evaluationTimeMs: Long? = null,
     /** Warmup replay frontier for cross-stream reads; null uses the live latest value. */
     val historyAsOfMs: Long? = null,
+    /** DSL `SEQUENCE` state visible during the current rule evaluation pass. */
+    val sequences: SequenceStateView = NoopSequenceStateView,
 ) {
     fun nowMs(): Long = evaluationTimeMs ?: strategyContext.clock.now()
 
@@ -64,6 +66,7 @@ class EvalContext(
             entryPrice,
             evaluationTimeMs,
             historyAsOfMs,
+            sequences,
         )
 
     /** A copy of this context evaluated at [timeMs], used for delayed signal builders. */
@@ -79,6 +82,7 @@ class EvalContext(
             entryPrice,
             timeMs,
             historyAsOfMs,
+            sequences,
         )
 }
 

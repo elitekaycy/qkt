@@ -48,6 +48,7 @@ import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -91,6 +92,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
             is AccountRef, is StateAccessor, is StreakRef, is TradesRef, is CooldownRef, StackEntryRef, EntryQty,
+            is SequenceAccessor,
             LastTradingDayOfMonth,
             -> Unit
             is PositionRef -> out.add(e.stream)

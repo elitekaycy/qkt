@@ -49,6 +49,7 @@ import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
@@ -107,6 +108,7 @@ internal fun collectMetaRefs(
             is NumLit, is BoolLit, is StringLit -> Unit
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
             is AccountRef, is StreakRef, is TradesRef, is CooldownRef, is PositionRef, is StateAccessor,
+            is SequenceAccessor,
             StackEntryRef, EntryQty, LastTradingDayOfMonth,
             -> Unit
             is StreamFieldRef -> {
@@ -281,6 +283,7 @@ internal fun collectMetaRefs(
 
     ast.lets.forEach { walkExpr(it.expr) }
     ast.rules.forEach { walkRule(it) }
+    ast.sequences.forEach { sequence -> sequence.stages.forEach { walkExpr(it.condition) } }
 
     return out.distinct()
 }

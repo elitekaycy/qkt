@@ -11,6 +11,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SequenceDecl
 import com.qkt.dsl.ast.SeriesSymbols
 import com.qkt.dsl.ast.SinceOpen
 import com.qkt.dsl.ast.SnapshotOpen
@@ -58,7 +59,9 @@ class AstCompiler {
         whenThens.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
         val resolvedConditions: List<ExprAst> = whenThens.map { resolver.resolve(it.cond) }
-        val plan = SnapshotPlan.scan(resolvedConditions)
+        val resolvedSequenceConditions: List<ExprAst> =
+            ast.sequences.flatMap { sequence -> sequence.stages.map { resolver.resolve(it.condition) } }
+        val plan = SnapshotPlan.scan(resolvedConditions + resolvedSequenceConditions)
 
         val maxRollingPerName: Map<String, Int> = plan.rollingMaxN
         val snapshotStore = SnapshotStore(maxRollingPerName)
@@ -126,6 +129,7 @@ class AstCompiler {
             whenThens
                 .flatMap { collectStackAtSymbols(it.action, streams) }
                 .toSet()
+        val sequenceRuntime = compileSequences(ast.sequences, streams, exprCompiler, resolver)
 
         // Symbols whose feed must supply volume because a VWAP/OBV binds to them (#301).
         val volumeRequiringSymbols: Set<String> =
@@ -136,7 +140,7 @@ class AstCompiler {
                 }.toSet()
 
         val metaRefs = collectMetaRefs(ast, streams)
-        val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions)
+        val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions + resolvedSequenceConditions)
 
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
         val warmupGate = WarmupGate(perStreamWarmup)
@@ -182,7 +186,97 @@ class AstCompiler {
             schedules = compiledSchedules,
             quoteFieldStreams = quoteFieldStreams,
             baskets = ast.baskets,
+            sequenceRuntime = sequenceRuntime,
         )
+    }
+
+    private fun compileSequences(
+        sequences: List<SequenceDecl>,
+        streams: Map<String, HubKey>,
+        exprCompiler: ExprCompiler,
+        resolver: LetResolver,
+    ): SequenceRuntime {
+        require(sequences.map { it.name }.toSet().size == sequences.size) {
+            "Duplicate SEQUENCE name in: ${sequences.map { it.name }}"
+        }
+        return SequenceRuntime(
+            sequences.map { sequence ->
+                val key = streams[sequence.stream] ?: error("Unknown SEQUENCE stream alias: ${sequence.stream}")
+                require(
+                    sequence.stages
+                        .map { it.name }
+                        .toSet()
+                        .size == sequence.stages.size,
+                ) {
+                    "Duplicate STAGE name in SEQUENCE '${sequence.name}': ${sequence.stages.map { it.name }}"
+                }
+                val resolvedStages = sequence.stages.map { it.name to resolver.resolve(it.condition) }
+                CompiledSequence(
+                    name = sequence.name,
+                    streamAlias = sequence.stream,
+                    streamSymbol = key.qktSymbol,
+                    stages =
+                        sequence.stages.zip(resolvedStages).map { (stage, resolved) ->
+                            CompiledSequenceStage(
+                                name = stage.name,
+                                withinMs = stage.within?.millis,
+                                condition = exprCompiler.compile(resolved.second, ruleAlias = sequence.stream),
+                            )
+                        },
+                    referencedAliases =
+                        (
+                            resolvedStages.flatMap { collectExprStreamAliases(it.second) } + sequence.stream
+                        ).toSet(),
+                )
+            },
+        )
+    }
+
+    private fun collectExprStreamAliases(expr: ExprAst): Set<String> {
+        val out = mutableSetOf<String>()
+
+        fun walk(e: ExprAst) {
+            when (e) {
+                is com.qkt.dsl.ast.StreamFieldRef -> out.add(e.stream)
+                is com.qkt.dsl.ast.PositionRef -> out.add(e.stream)
+                is com.qkt.dsl.ast.BinaryOp -> {
+                    walk(e.lhs)
+                    walk(e.rhs)
+                }
+                is com.qkt.dsl.ast.UnaryOp -> walk(e.arg)
+                is com.qkt.dsl.ast.CmpOp -> {
+                    walk(e.lhs)
+                    walk(e.rhs)
+                }
+                is com.qkt.dsl.ast.Crosses -> {
+                    walk(e.lhs)
+                    walk(e.rhs)
+                }
+                is com.qkt.dsl.ast.FuncCall -> e.args.forEach(::walk)
+                is com.qkt.dsl.ast.IndicatorCall -> e.args.forEach(::walk)
+                is com.qkt.dsl.ast.Aggregate -> walk(e.series)
+                is com.qkt.dsl.ast.Between -> {
+                    walk(e.v)
+                    walk(e.lo)
+                    walk(e.hi)
+                }
+                is com.qkt.dsl.ast.InList -> {
+                    walk(e.v)
+                    e.members.forEach(::walk)
+                }
+                is com.qkt.dsl.ast.CaseWhen -> {
+                    e.branches.forEach { (c, b) ->
+                        walk(c)
+                        walk(b)
+                    }
+                    walk(e.elseExpr)
+                }
+                is com.qkt.dsl.ast.IsNull -> walk(e.expr)
+                else -> Unit
+            }
+        }
+        walk(expr)
+        return out
     }
 
     /** Aliases whose conditions read `bid`/`ask`/`spread` — see [DslCompiledStrategy.quoteFieldStreams]. */
@@ -336,6 +430,7 @@ private class CompiledStrategy(
     private val schedules: List<CompiledSchedule>,
     override val quoteFieldStreams: Set<String>,
     private val baskets: List<com.qkt.dsl.ast.BasketDecl>,
+    private val sequenceRuntime: SequenceRuntime,
 ) : DslCompiledStrategy,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
@@ -343,6 +438,13 @@ private class CompiledStrategy(
     private var boundHub: CandleHub? = null
 
     override val declaredStreams: Map<String, HubKey> get() = streams
+
+    override fun bindStatePersistor(
+        strategyId: String,
+        persistor: com.qkt.persistence.StatePersistor,
+    ) {
+        sequenceRuntime.bindPersistor(strategyId, persistor)
+    }
 
     override fun bindSchedules(
         runner: ScheduleRunner,
@@ -386,6 +488,7 @@ private class CompiledStrategy(
                 hub = hub,
                 currentAlias = null,
                 evaluationTimeMs = fireAt,
+                sequences = sequenceRuntime,
             )
         for (sig in sched.action(ec)) emit(sig)
         return true
@@ -458,8 +561,13 @@ private class CompiledStrategy(
                 }
                 for (alias in group.aliases) {
                     if (alias in basketAliases) continue
+                    runSequencesForAlias(alias, bars.getValue(alias), hub, ctx)
+                }
+                for (alias in group.aliases) {
+                    if (alias in basketAliases) continue
                     fireRulesForAlias(alias, bars.getValue(alias), hub, ctx, emit)
                 }
+                sequenceRuntime.afterRulePass()
             }
         }
 
@@ -489,7 +597,9 @@ private class CompiledStrategy(
                 val composite = compositor.onAligned(bars) ?: return@onSyncClosed
                 hub.publish(basketKey, composite)
                 updatePerAlias(basket.alias, composite, hub, ctx)
+                runSequencesForAlias(basket.alias, composite, hub, ctx)
                 fireRulesForAlias(basket.alias, composite, hub, ctx, emit)
+                sequenceRuntime.afterRulePass()
             }
         }
     }
@@ -515,7 +625,9 @@ private class CompiledStrategy(
         emit: (Signal) -> Unit,
     ) {
         updatePerAlias(alias, candle, hub, ctx)
+        runSequencesForAlias(alias, candle, hub, ctx)
         fireRulesForAlias(alias, candle, hub, ctx, emit)
+        sequenceRuntime.afterRulePass()
     }
 
     /**
@@ -585,6 +697,27 @@ private class CompiledStrategy(
     // rule with a string compare to find the alias's few was per-bar overhead.
     private val rulesByAlias: Map<String, List<CompiledRule>> by lazy { rules.groupBy { it.ruleAlias } }
 
+    private fun runSequencesForAlias(
+        alias: String,
+        candle: Candle,
+        hub: CandleHub,
+        ctx: StrategyContext,
+    ) {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = streams,
+                lets = emptyMap(),
+                strategyContext = ctx,
+                snapshotStore = snapshotStore,
+                hub = hub,
+                currentAlias = alias,
+                evaluationTimeMs = candle.endTime,
+                sequences = sequenceRuntime,
+            )
+        sequenceRuntime.onCandle(candle, ec, streamAlias = alias) { aliases -> warmupGate.isWarm(aliases) }
+    }
+
     /**
      * Fire every rule whose `ruleAlias` matches [alias] and whose referenced streams
      * are warm. Must run after [updatePerAlias] so the rule body sees current state.
@@ -607,6 +740,7 @@ private class CompiledStrategy(
                 hub = hub,
                 currentAlias = alias,
                 evaluationTimeMs = candle.endTime,
+                sequences = sequenceRuntime,
             )
         for (rule in aliasRules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
@@ -705,10 +839,14 @@ private class CompiledStrategy(
             }
         }
 
-        // 5. Rules
+        // 5. Sequence state machines
+        sequenceRuntime.onCandle(candle, ec) { aliases -> warmupGate.isWarm(aliases) }
+
+        // 6. Rules
         for (rule in rules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
             for (sig in rule.fire(ec, ctx)) emit(sig)
         }
+        sequenceRuntime.afterRulePass()
     }
 }
