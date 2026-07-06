@@ -301,6 +301,40 @@ following are likely to surface as the second/third strategy gets written:
   done via `WHEN NOW.minute_utc = N`, which works but is awkward).
   ([#77](https://github.com/elitekaycy/qkt/issues/77))
 
+2026-07-06 execution-expressiveness batch — order-coverage primitives and prop-firm
+meta-layer, scoped from the shipped surface (latch/stack/stack_at/brackets/book-risk):
+
+- `tbd` — ON_EXIT hooks: stop/TP/close events arm follow-on actions with `EXIT.*`
+  context (stop-and-reverse, TP-retrace re-entry).
+  ([#674](https://github.com/elitekaycy/qkt/issues/674))
+- `tbd` — EVAL profile: prop-firm evaluation state machine (target, consistency rule,
+  min days) with `EVAL.*` accessors and ConsistencyGovernor.
+  ([#675](https://github.com/elitekaycy/qkt/issues/675))
+- `tbd` — CPPI cushion sizing (`SIZING CPPI m X CUSHION`) and profit vault partition.
+  ([#676](https://github.com/elitekaycy/qkt/issues/676))
+- `tbd` — Stop ratchets: step-to-breakeven milestones and time-tightening stops as new
+  `StopLossSpec` members. ([#677](https://github.com/elitekaycy/qkt/issues/677))
+- `tbd` — RECOIL tiers: MAE-then-recovery scale-in, the STACK_AT mirror; adds
+  `POSITION.<stream>.mae`. ([#678](https://github.com/elitekaycy/qkt/issues/678))
+- `tbd` — LATCH v2: wire confirmation modes (close-beyond, time-in-breach,
+  retest-hold) and cross-instrument `ENTER ON`.
+  ([#679](https://github.com/elitekaycy/qkt/issues/679))
+- `tbd` — SEQUENCE: multi-step setup state machine with per-step timeouts and stage
+  snapshots. ([#680](https://github.com/elitekaycy/qkt/issues/680))
+- `tbd` — GATE: hold order release until execution-quality conditions pass; adds
+  `spread()`/`quote_age()`. ([#681](https://github.com/elitekaycy/qkt/issues/681))
+- `tbd` — WINDOW POLICY: account-wide posture in calendar/session windows
+  (block entries, cancel pending, stops to breakeven, flatten).
+  ([#682](https://github.com/elitekaycy/qkt/issues/682))
+- `tbd` — STREAK ledger: anti-martingale ladder sizing from banked profit via
+  `STREAK.*` accessors. ([#683](https://github.com/elitekaycy/qkt/issues/683))
+- `tbd` — PACER throttles: max-trades-per-day, cooldown-after-loss, loss-streak halt
+  risk rules + `TRADES.today`/`COOLDOWN.remaining_s`; fixes portfolio.md drift.
+  ([#684](https://github.com/elitekaycy/qkt/issues/684))
+- `tbd` — Equity as a series: `SERIES ACCOUNT.EQUITY EVERY <tf>` synthetic stream so
+  indicators run on the account's own equity curve.
+  ([#685](https://github.com/elitekaycy/qkt/issues/685))
+
 ### Tier 8 — Platform maturity (post-research-platform)
 
 - `tbd` — Inbound Telegram bot commands (`/status`, `/halt`, `/resume` from phone) —
