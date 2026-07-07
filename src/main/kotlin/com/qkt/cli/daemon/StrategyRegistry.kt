@@ -24,6 +24,36 @@ class StrategyRegistry(
         return handle
     }
 
+    /**
+     * Replace an already-deployed standalone strategy under the same operator-facing name.
+     *
+     * The old session is halted before the replacement is created, so it cannot submit new
+     * risk while the daemon validates and starts the replacement. If replacement creation
+     * fails, the old session is resumed and remains registered. The old handle is closed only
+     * after the new handle has been installed in the registry.
+     */
+    fun resyncStrategy(
+        name: String,
+        file: Path,
+        ignoreMismatches: Boolean = false,
+    ): StrategyHandle {
+        require(name.matches(NAME_REGEX)) { "invalid strategy name: $name" }
+        check(!portfolios.containsKey(name)) { "name '$name' is deployed as portfolio" }
+        val old = handles[name] ?: error("strategy '$name' is not deployed")
+        check(old.childMeta == null) { "strategy '$name' is a portfolio child; resync the parent portfolio" }
+        old.live.halt("operator resync")
+        val replacement =
+            try {
+                factory.create(name, file, ignoreMismatches)
+            } catch (e: Exception) {
+                old.live.resume()
+                throw e
+            }
+        handles[name] = replacement
+        runCatching { old.close() }
+        return replacement
+    }
+
     fun stop(name: String): Boolean {
         val h = handles.remove(name) ?: return false
         h.close()
@@ -51,6 +81,57 @@ class StrategyRegistry(
         }
         portfolios[record.name] = record
         for (child in record.children) handles[child.name] = child
+    }
+
+    /**
+     * Replace an already-deployed portfolio and its child handles as one registry mutation.
+     *
+     * The existing supervisor is stopped and children are halted before the swap. If the
+     * replacement cannot be installed, the previous supervisor and children are resumed.
+     * Replacement children are closed on install failure so a failed resync does not leak
+     * sessions or observability ports.
+     */
+    fun resyncPortfolio(record: PortfolioRecord): PortfolioRecord {
+        require(record.name.matches(NAME_REGEX)) { "invalid portfolio name: ${record.name}" }
+        require(!record.name.contains('/')) { "portfolio name must not contain '/': ${record.name}" }
+        if (handles.containsKey(record.name)) {
+            closeReplacement(record)
+            error("name '${record.name}' already deployed as strategy")
+        }
+        val old = portfolios[record.name] ?: error("portfolio '${record.name}' is not deployed")
+        var oldStopped = false
+        return try {
+            val oldChildNames = old.children.map { it.name }.toSet()
+            val conflictingChild =
+                record.children.firstOrNull { child ->
+                    handles.containsKey(child.name) && child.name !in oldChildNames
+                }
+            check(conflictingChild == null) { "child name '${conflictingChild!!.name}' already in use" }
+
+            old.supervisor.stop()
+            old.children.forEach { it.live.halt("operator resync") }
+            oldStopped = true
+            portfolios.remove(old.name)
+            old.children.forEach { handles.remove(it.name) }
+            portfolios[record.name] = record
+            record.children.forEach { handles[it.name] = it }
+            old.children.forEach { runCatching { it.close() } }
+            record
+        } catch (e: RuntimeException) {
+            closeReplacement(record)
+            portfolios[old.name] = old
+            old.children.forEach { handles[it.name] = it }
+            if (oldStopped) {
+                old.children.forEach { it.live.resume() }
+                old.supervisor.start()
+            }
+            throw e
+        }
+    }
+
+    private fun closeReplacement(record: PortfolioRecord) {
+        runCatching { record.supervisor.stop() }
+        record.children.forEach { runCatching { it.close() } }
     }
 
     fun getPortfolio(name: String): PortfolioRecord? = portfolios[name]

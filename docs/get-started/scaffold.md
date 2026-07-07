@@ -12,6 +12,8 @@ cp .env.example .env
 # Replace the credential placeholders in .env.
 make up
 make deploy STRAT=full_strategy
+make resync-dry-run STRAT=full_strategy
+make resync STRAT=full_strategy
 ```
 
 The default is the full MT5 stack. Generated `.env` files, state, market data,
@@ -78,11 +80,17 @@ cp .env.example .env
 make backtest
 ```
 
+The `portfolio` template also includes daemon targets for whole-book lifecycle
+checks: `make up`, `make deploy BOOK=<name>`, `make resync-dry-run BOOK=<name>`,
+`make resync BOOK=<name>`, and `make reconcile BOOK=<name>`.
+
 ## Safety and lifecycle
 
 The scaffolder refuses to overwrite a non-empty target. `make down` retains
-state. Strategy files are bind-mounted, so `make deploy STRAT=<name>` can
-hot-deploy an edited strategy without rebuilding an image.
+state. Strategy files are bind-mounted, so `make deploy STRAT=<name>` starts a
+new daemon entry and `make resync-dry-run STRAT=<name>` followed by
+`make resync STRAT=<name>` validates and replaces an edited running strategy
+without rebuilding an image or stopping unrelated strategies.
 
 For detailed operations, see [Deploy MT5](deploy-mt5.md) and
 [Production deploy](../operations/deploy.md).

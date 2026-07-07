@@ -22,6 +22,16 @@ qkt status momentum
 qkt logs momentum --follow
 ```
 
+After editing a deployed strategy, validate and replace only that running entry:
+
+```bash
+qkt resync momentum.qkt --as momentum --dry-run
+qkt resync momentum.qkt --as momentum
+```
+
+If parsing, promotion checks, or reconciliation fail, the previous `momentum`
+deployment remains registered and unrelated strategies keep running.
+
 Stop one strategy without stopping the daemon:
 
 ```bash

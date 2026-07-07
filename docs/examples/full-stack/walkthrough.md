@@ -210,7 +210,7 @@ docker compose down -v              # full wipe — state + logs gone
 
 ## What to do next
 
-- **Adapt the strategies.** Change parameters, swap symbols, try different timeframes. Re-deploy with `qkt deploy --as <name>`.
+- **Adapt the strategies.** Change parameters, swap symbols, try different timeframes. Validate with `qkt resync --dry-run`, then apply with `qkt resync --as <name>`.
 - **Add more strategies.** Drop more `.qkt` files into `strategies/` and deploy them. The daemon hosts as many as you have (within the port range).
 - **Backtest first.** Don't deploy a strategy you haven't backtested. Run `qkt backtest strategies/btc-trend.qkt --from 2024-01-01 --to 2024-06-01` to validate.
 - **Set up alerts.** The observability HTTP endpoints (`/status`, `/events`, `/health`) are scrape-able by Prometheus. See [operations/logging](../../operations/logging.md).

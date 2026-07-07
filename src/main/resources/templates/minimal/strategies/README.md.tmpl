@@ -3,6 +3,11 @@
 Drop `.qkt` files in this directory. They're mounted into the running daemon at
 `/strategies` (read-only). Deploy with `make deploy STRAT=<name>`.
 
+After editing a deployed strategy, run `make resync-dry-run STRAT=<name>` and
+then `make resync STRAT=<name>` to replace only that daemon entry.
+Use `make reconcile STRAT=<name>` when you want an explicit ledger check after
+replacement.
+
 This is the **minimal** template — no broker configured. Strategies run
 paper-only. Add a broker to `qkt.config.yaml` + `docker-compose.yml` when ready
 to go live.

@@ -1,10 +1,33 @@
-.PHONY: backtest shell
+BOOK ?= portfolio
+
+.PHONY: up down logs backtest deploy resync-dry-run resync reconcile shell
+
+up:
+	docker compose up -d
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f --tail 200 qkt
 
 backtest:
 	@test -f .env || (echo "copy .env.example to .env first"; exit 1)
 	@set -a; . ./.env; set +a; \
 	docker compose run --rm qkt qkt backtest /strategies/portfolio.qkt \
 	  --from "$$BACKTEST_FROM" --to "$$BACKTEST_TO" --data-root /data
+
+deploy:
+	docker compose exec qkt qkt deploy /strategies/portfolio.qkt --as $(BOOK)
+
+resync-dry-run:
+	docker compose exec qkt qkt resync /strategies/portfolio.qkt --as $(BOOK) --dry-run
+
+resync:
+	docker compose exec qkt qkt resync /strategies/portfolio.qkt --as $(BOOK)
+
+reconcile:
+	docker compose exec qkt qkt reconcile $(BOOK)
 
 shell:
 	docker compose run --rm qkt sh
