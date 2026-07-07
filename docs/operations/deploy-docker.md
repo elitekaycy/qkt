@@ -47,6 +47,17 @@ docker compose up -d
     docker compose exec qkt qkt deploy /strategies/momentum.qkt --as momentum
     ```
 
+    For a later edit to the same running name, validate and replace it with
+    `resync` instead of stopping the daemon:
+
+    ```bash
+    docker compose exec qkt qkt resync /strategies/momentum.qkt --as momentum --dry-run
+    docker compose exec qkt qkt resync /strategies/momentum.qkt --as momentum
+    ```
+
+    A failed parse, promotion gate, or reconciliation check leaves the previous
+    `momentum` session registered and keeps other strategies running.
+
 ## Persistence
 
 The compose file declares a named volume `qkt-state` mounted at `/var/lib/qkt`. Logs land at `qkt-state:/logs/<name>.log`; the control port + state files live there too.

@@ -100,7 +100,11 @@ qkt list
 #     breakout        child      47294    5        inactive
 ```
 
-Each child appears as its own row, with its own port for `/status` and its own log file. The portfolio row aggregates.
+Each child appears as its own row, with its own port for `/status` and its own
+log file. The portfolio row aggregates. After editing the portfolio file, run
+`qkt resync strategies/portfolio.qkt --as btc-regimes --dry-run` and then
+`qkt resync strategies/portfolio.qkt --as btc-regimes` to replace the whole
+portfolio entry under the same name.
 
 ## What to expect
 

@@ -94,7 +94,13 @@ This strategy uses three things every qkt strategy uses:
 2. **A `WHEN ... THEN ...` rule** — the condition is evaluated on every candle close; the action fires on the first tick after the rule transitions from `false` to `true` (edge-triggered).
 3. **A bracket** — the entry, stop-loss, and take-profit go in as one atomic group. The broker handles all three; the engine never sees orphaned legs.
 
-The same file you just ran in backtest will paper-trade with `qkt run strategies/ema-cross.qkt` and live-trade with `qkt deploy strategies/ema-cross.qkt`. The [parity contract](../concepts/determinism.md) guarantees the trades match.
+The same file you just ran in backtest will paper-trade with
+`qkt run strategies/ema-cross.qkt` and start in the daemon with
+`qkt deploy strategies/ema-cross.qkt`. After editing a deployed copy, use
+`qkt resync strategies/ema-cross.qkt --as <name> --dry-run` and then
+`qkt resync strategies/ema-cross.qkt --as <name>`. The
+[parity contract](../concepts/determinism.md) explains which backtest and live
+paths share the same engine pipeline.
 
 ## See also
 

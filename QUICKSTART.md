@@ -58,6 +58,8 @@ qkt deploy momentum.qkt --as momentum
 qkt list                                      # shows momentum running
 qkt status momentum                           # current PnL, positions, last trade
 qkt logs momentum --follow                    # live log stream
+qkt resync momentum.qkt --as momentum --dry-run # validate an edited file
+qkt resync momentum.qkt --as momentum         # replace only this running name
 qkt stop momentum                             # stop one strategy
 qkt daemon stop                               # stop the daemon
 ```
@@ -119,6 +121,8 @@ The `EXNESS:` prefix routes orders to the configured profile (MT5 today, any oth
 
 ```sh
 qkt deploy live_eur.qkt --as live_eur
+qkt resync live_eur.qkt --as live_eur --dry-run
+qkt resync live_eur.qkt --as live_eur
 qkt status live_eur
 qkt logs live_eur --follow
 ```

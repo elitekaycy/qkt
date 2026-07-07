@@ -90,6 +90,28 @@ UI, or the image label of any saved container:
 docker images ghcr.io/elitekaycy/qkt --format '{{.Tag}} {{.CreatedAt}}'
 ```
 
+## Applying a strategy change
+
+Use `deploy` only for a new daemon name. For an edit to an already-running
+strategy or portfolio, resync the same name so unrelated strategies keep
+running and a failed replacement leaves the previous session registered:
+
+```bash
+ssh root@173.249.58.247 \
+  'docker exec qkt qkt resync /strategies/<strategy>.qkt --as <strategy> --dry-run'
+ssh root@173.249.58.247 \
+  'docker exec qkt qkt resync /strategies/<strategy>.qkt --as <strategy>'
+ssh root@173.249.58.247 'docker exec qkt qkt status <strategy>'
+```
+
+Production gates are evaluated on resync the same way they are on deploy. Use a
+waiver only with an explicit reason:
+
+```bash
+docker exec qkt qkt resync /strategies/<strategy>.qkt --as <strategy> \
+  --waive all --reason "emergency broker-side fix"
+```
+
 ## Tailing logs
 
 ```bash

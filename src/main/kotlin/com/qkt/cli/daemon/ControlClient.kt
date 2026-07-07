@@ -216,6 +216,39 @@ open class ControlClient(
         return readOrThrow(resp)
     }
 
+    /**
+     * Ask the daemon to validate and replace a deployed strategy or portfolio under its current name.
+     */
+    open fun resync(
+        name: String,
+        file: Path,
+        dryRun: Boolean = false,
+        ignoreMismatches: Boolean = false,
+        waiver: String? = null,
+        waiverReason: String? = null,
+    ): String {
+        val body =
+            """{"file":"${file.toAbsolutePath()}","name":"$name","dryRun":$dryRun}"""
+                .toRequestBody(JSON_MEDIA)
+        val q =
+            buildList {
+                if (ignoreMismatches) add("reconcile" to "ignore-mismatches")
+                if (!waiver.isNullOrBlank()) add("waive" to waiver)
+                if (!waiverReason.isNullOrBlank()) add("reason" to waiverReason)
+            }.joinToString("&") { (k, v) -> "${urlEncode(k)}=${urlEncode(v)}" }
+                .let { if (it.isEmpty()) "" else "?$it" }
+        val resp =
+            http
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("${baseUrl()}/resync$q")
+                        .post(body)
+                        .build(),
+                ).execute()
+        return readOrThrow(resp)
+    }
+
     private fun urlEncode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8)
 
     private fun readOrThrow(resp: Response): String {

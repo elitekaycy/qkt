@@ -17,6 +17,7 @@ internal fun runMain(argv: Array<String>): Int {
             "research" -> ResearchCommand(args).run()
             "run" -> RunCommand(args).run()
             "deploy" -> DeployCommand(args).run()
+            "resync" -> ResyncCommand(args).run()
             "list" -> ListCommand(args).run()
             "stop" -> StopCommand(args).run()
             "start" -> StartCommand(args).run()
@@ -85,6 +86,7 @@ private fun printHelp() {
 
         DAEMON OPERATIONS
             deploy <file> --as <n>  register and start a strategy in the daemon
+            resync <file> --as <n>  safely replace a running daemon deployment
             list                    list deployed strategies
             status [<name>]         show status of one strategy or all
             status --deep           aggregated health check (exit 1 if unhealthy)
