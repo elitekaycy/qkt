@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.common.Side
+import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
@@ -70,6 +71,25 @@ class OrderTypeCompilerTest {
     }
 
     @Test
+    fun `Limit with undefined price returns no request or entry price`() {
+        val c = compiler().compile(Limit(AccountRef("last_trade_pnl")))
+
+        assertThat(c.entryPrice.evaluate(ec("100"))).isNull()
+        assertThat(
+            c.buildRequest.evaluate(
+                ec = ec("100"),
+                id = "id-limit-null",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.BUY,
+                qty = BigDecimal.ONE,
+                tif = TimeInForce.GTC,
+                strategyId = "s",
+                ts = 0L,
+            ),
+        ).isNull()
+    }
+
+    @Test
     fun `Stop builds Stop OrderRequest`() {
         val c = compiler().compile(Stop(NumLit(BigDecimal("95"))))
         val req =
@@ -84,6 +104,25 @@ class OrderTypeCompilerTest {
                 ts = 0L,
             ) as OrderRequest.Stop
         assertThat(req.stopPrice).isEqualByComparingTo("95")
+    }
+
+    @Test
+    fun `Stop with undefined price returns no request or entry price`() {
+        val c = compiler().compile(Stop(AccountRef("last_trade_pnl")))
+
+        assertThat(c.entryPrice.evaluate(ec("100"))).isNull()
+        assertThat(
+            c.buildRequest.evaluate(
+                ec = ec("100"),
+                id = "id-stop-null",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.SELL,
+                qty = BigDecimal.ONE,
+                tif = TimeInForce.GTC,
+                strategyId = "s",
+                ts = 0L,
+            ),
+        ).isNull()
     }
 
     @Test
@@ -102,6 +141,25 @@ class OrderTypeCompilerTest {
             ) as OrderRequest.StopLimit
         assertThat(req.stopPrice).isEqualByComparingTo("95")
         assertThat(req.limitPrice).isEqualByComparingTo("94")
+    }
+
+    @Test
+    fun `StopLimit with undefined price returns no request or entry price`() {
+        val c = compiler().compile(StopLimit(AccountRef("last_trade_pnl"), NumLit(BigDecimal("94"))))
+
+        assertThat(c.entryPrice.evaluate(ec("100"))).isNull()
+        assertThat(
+            c.buildRequest.evaluate(
+                ec = ec("100"),
+                id = "id-stop-limit-null",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.SELL,
+                qty = BigDecimal.ONE,
+                tif = TimeInForce.GTC,
+                strategyId = "s",
+                ts = 0L,
+            ),
+        ).isNull()
     }
 
     @Test

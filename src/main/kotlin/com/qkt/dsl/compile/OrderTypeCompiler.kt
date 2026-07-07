@@ -20,7 +20,7 @@ data class CompiledOrderType(
 )
 
 fun interface EntryPriceRef {
-    fun evaluate(ec: EvalContext): BigDecimal
+    fun evaluate(ec: EvalContext): BigDecimal?
 }
 
 fun interface BuildRequest {
@@ -33,7 +33,7 @@ fun interface BuildRequest {
         tif: TimeInForce,
         strategyId: String,
         ts: Long,
-    ): OrderRequest
+    ): OrderRequest?
 }
 
 /**
@@ -100,10 +100,10 @@ class OrderTypeCompiler(
         val priceEval = exprCompiler.compile(o.price)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val p = (priceEval.evaluate(ec) as Value.Num).v
+                val p = priceEval.evaluateNumber(ec) ?: return@BuildRequest null
                 OrderRequest.Limit(id, symbol, side, qty, p, tif, ts, strategyId)
             }
-        val entry = EntryPriceRef { ec -> (priceEval.evaluate(ec) as Value.Num).v }
+        val entry = EntryPriceRef { ec -> priceEval.evaluateNumber(ec) }
         return CompiledOrderType(build, entry)
     }
 
@@ -111,10 +111,10 @@ class OrderTypeCompiler(
         val priceEval = exprCompiler.compile(o.price)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val p = (priceEval.evaluate(ec) as Value.Num).v
+                val p = priceEval.evaluateNumber(ec) ?: return@BuildRequest null
                 OrderRequest.Stop(id, symbol, side, qty, p, tif, ts, strategyId)
             }
-        val entry = EntryPriceRef { ec -> (priceEval.evaluate(ec) as Value.Num).v }
+        val entry = EntryPriceRef { ec -> priceEval.evaluateNumber(ec) }
         return CompiledOrderType(build, entry)
     }
 
@@ -123,11 +123,11 @@ class OrderTypeCompiler(
         val limitEval = exprCompiler.compile(o.limitPrice)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val sp = (stopEval.evaluate(ec) as Value.Num).v
-                val lp = (limitEval.evaluate(ec) as Value.Num).v
+                val sp = stopEval.evaluateNumber(ec) ?: return@BuildRequest null
+                val lp = limitEval.evaluateNumber(ec) ?: return@BuildRequest null
                 OrderRequest.StopLimit(id, symbol, side, qty, sp, lp, tif, ts, strategyId)
             }
-        val entry = EntryPriceRef { ec -> (stopEval.evaluate(ec) as Value.Num).v }
+        val entry = EntryPriceRef { ec -> stopEval.evaluateNumber(ec) }
         return CompiledOrderType(build, entry)
     }
 
@@ -135,7 +135,7 @@ class OrderTypeCompiler(
         val distEval = exprCompiler.compile(o.distance)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val d = (distEval.evaluate(ec) as Value.Num).v
+                val d = distEval.evaluateNumber(ec) ?: return@BuildRequest null
                 OrderRequest.TrailingStop(
                     id,
                     symbol,
@@ -156,7 +156,7 @@ class OrderTypeCompiler(
         val fracEval = exprCompiler.compile(o.frac)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val f = (fracEval.evaluate(ec) as Value.Num).v
+                val f = fracEval.evaluateNumber(ec) ?: return@BuildRequest null
                 val percent = f.multiply(BigDecimal("100"), Money.CONTEXT)
                 OrderRequest.TrailingStop(
                     id,
@@ -173,4 +173,6 @@ class OrderTypeCompiler(
         val entry = EntryPriceRef { ec -> ec.candle.close }
         return CompiledOrderType(build, entry)
     }
+
+    private fun CompiledExpr.evaluateNumber(ec: EvalContext): BigDecimal? = (evaluate(ec) as? Value.Num)?.v
 }
