@@ -1,4 +1,4 @@
-.PHONY: up down restart logs status deploy stop shell
+.PHONY: up down restart logs status deploy resync resync-dry-run reconcile stop shell
 
 up:
 	docker compose up -d
@@ -18,6 +18,18 @@ status:
 deploy:
 	@test -n "$(STRAT)" || (echo "usage: make deploy STRAT=<name>"; exit 1)
 	docker compose exec qkt qkt deploy /strategies/$(STRAT).qkt --as $(STRAT)
+
+resync-dry-run:
+	@test -n "$(STRAT)" || (echo "usage: make resync-dry-run STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt resync /strategies/$(STRAT).qkt --as $(STRAT) --dry-run
+
+resync:
+	@test -n "$(STRAT)" || (echo "usage: make resync STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt resync /strategies/$(STRAT).qkt --as $(STRAT)
+
+reconcile:
+	@test -n "$(STRAT)" || (echo "usage: make reconcile STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt reconcile $(STRAT)
 
 stop:
 	@test -n "$(STRAT)" || (echo "usage: make stop STRAT=<name>"; exit 1)

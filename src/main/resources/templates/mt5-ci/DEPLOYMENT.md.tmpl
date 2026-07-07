@@ -28,3 +28,15 @@ Optional environment variables have safe defaults:
 
 The remote account must have Docker Compose access. No repository secret is
 stored in Git, and `state/`/`data/` are preserved between deployments.
+
+After the stack is running, use resync for strategy edits:
+
+```bash
+ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+  "cd ${DEPLOY_PATH:-/opt/qkt} && docker compose exec qkt qkt resync /strategies/<strategy>.qkt --as <strategy> --dry-run"
+ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+  "cd ${DEPLOY_PATH:-/opt/qkt} && docker compose exec qkt qkt resync /strategies/<strategy>.qkt --as <strategy>"
+```
+
+Run the dry-run first. A failed replacement leaves the previous strategy
+registered, and unrelated strategies keep running.

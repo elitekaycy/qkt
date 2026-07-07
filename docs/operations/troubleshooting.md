@@ -80,7 +80,16 @@ qkt status --deep || echo "qkt is unhealthy — check logs"
 | `unknown broker prefix: FOO` | The prefix isn't a built-in and isn't in your `qkt.config.yaml` | Add a `brokers:` entry or use a built-in (BACKTEST, BYBIT_SPOT, EXNESS, etc.) |
 | `Unknown indicator: ADX` | The indicator isn't registered with the DSL | Check the [indicator catalog](../reference/dsl/indicators.md); `ADX` is on the backlog |
 | `Daemon not running` | You forgot to start the daemon | `qkt daemon &` or `docker compose up -d` |
-| `Strategy with name X already exists` | Already deployed under that name | `qkt stop X` first, or pass `--as <newname>` |
+| `Strategy with name X already exists` | Already deployed under that name | For edits, use `qkt resync <file> --as X`; for a separate copy, pass `--as <newname>` |
+
+## `qkt resync` fails
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `unknown strategy: X` | No deployed strategy or portfolio has that name | Use `qkt deploy <file> --as X` for the first start, then resync future edits |
+| `parse failed` | The replacement file is invalid | Run `qkt parse <file>` and fix the DSL before retrying |
+| `production resync blocked` | Promotion gates do not approve the replacement hash | Promote the replacement through the normal pipeline, or use `--waive ... --reason ...` only for an operator-approved emergency |
+| `reconcile-mismatch` | Live broker/account state does not match the replacement assumptions | Investigate positions and pending orders before using `--reconcile=ignore-mismatches` |
 
 ## Strategy stuck in a non-running state
 

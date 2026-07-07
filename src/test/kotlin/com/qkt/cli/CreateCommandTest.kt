@@ -42,6 +42,12 @@ class CreateCommandTest {
                 .withFailMessage("expected $entry at $target")
                 .exists()
         }
+        val makefile = Files.readString(target.resolve("Makefile"))
+        assertThat(makefile).contains("resync-dry-run")
+        assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
+        assertThat(makefile).contains("qkt reconcile $(STRAT)")
+        val readme = Files.readString(target.resolve("strategies/README.md"))
+        assertThat(readme).contains("make resync STRAT=ema_cross")
     }
 
     @Test
@@ -92,6 +98,9 @@ class CreateCommandTest {
         assertThat(makefile)
             .withFailMessage("minimal Makefile should not declare audit-ticks target")
             .doesNotContain("audit-ticks")
+        assertThat(makefile).contains("resync-dry-run")
+        assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
+        assertThat(makefile).contains("qkt reconcile $(STRAT)")
     }
 
     @Test
@@ -137,6 +146,10 @@ class CreateCommandTest {
         assertThat(env).contains("BYBIT_TESTNET=true")
         val strat = Files.readString(target.resolve("strategies/ema_cross.qkt"))
         assertThat(strat).contains("BYBIT_LINEAR:BTCUSDT")
+        val makefile = Files.readString(target.resolve("Makefile"))
+        assertThat(makefile).contains("resync-dry-run")
+        assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
+        assertThat(makefile).contains("qkt reconcile $(STRAT)")
     }
 
     @Test
@@ -166,6 +179,9 @@ class CreateCommandTest {
                 val portfolio = Files.readString(target.resolve("strategies/portfolio.qkt"))
                 assertThat(Parser(Lexer(portfolio).tokenize()).parseFile())
                     .isInstanceOf(ParseResult.Success::class.java)
+                val makefile = Files.readString(target.resolve("Makefile"))
+                assertThat(makefile).contains("qkt resync /strategies/portfolio.qkt --as $(BOOK)")
+                assertThat(makefile).contains("qkt reconcile $(BOOK)")
             }
         }
     }
@@ -186,6 +202,8 @@ class CreateCommandTest {
         assertThat(workflow).contains("docker compose --env-file .env config --quiet")
         assertThat(workflow).doesNotContain("replace-with-a-long-random-value")
         assertThat(target.resolve("DEPLOYMENT.md")).exists()
+        val deployment = Files.readString(target.resolve("DEPLOYMENT.md"))
+        assertThat(deployment).contains("qkt resync /strategies/<strategy>.qkt")
     }
 
     @Test

@@ -55,6 +55,8 @@ qkt deploy momentum.qkt --as momentum
 qkt list                                      # shows momentum running
 qkt status momentum                           # current PnL, positions, last trade
 qkt logs momentum --follow                    # live log stream
+qkt resync momentum.qkt --as momentum --dry-run # validate an edited file
+qkt resync momentum.qkt --as momentum         # replace only this running name
 qkt stop momentum
 qkt daemon stop
 ```

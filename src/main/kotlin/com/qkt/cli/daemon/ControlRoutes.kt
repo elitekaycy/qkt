@@ -9,6 +9,10 @@ import com.qkt.cli.PromotionState
 import com.qkt.cli.PromotionStore
 import com.qkt.cli.PromotionWaiver
 import com.qkt.cli.UserDirs
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
+import com.qkt.dsl.parse.ParsedFile
+import com.qkt.dsl.portfolio.PortfolioLoader
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
 import java.net.URLDecoder
@@ -19,6 +23,7 @@ import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -44,6 +49,8 @@ object ControlRoutes {
                     method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
                     method == "POST" && path == "/deploy" ->
                         handleDeploy(ex, registry, stateDir, portfolioDeployer, promotionGates)
+                    method == "POST" && path == "/resync" ->
+                        handleResync(ex, registry, stateDir, portfolioDeployer, promotionGates)
                     method == "GET" && path == "/list" -> handleList(ex, registry, stateDir, promotionGates)
                     method == "POST" && path.startsWith("/stop/") -> handleStop(ex, registry, stateDir, path)
                     method == "POST" && path.startsWith("/start/") -> handleStart(ex, registry, stateDir, path)
@@ -895,6 +902,218 @@ object ControlRoutes {
                     )
             }
         }
+    }
+
+    private fun handleResync(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        stateDir: StateDir?,
+        portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer?,
+        promotionGates: PromotionGateConfig,
+    ) {
+        val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
+        val obj =
+            try {
+                json.parseToJsonElement(body) as? JsonObject
+                    ?: return respond(ex, 400, """{"error":"body must be a JSON object"}""")
+            } catch (_: Exception) {
+                return respond(ex, 400, """{"error":"invalid JSON body"}""")
+            }
+        val file = obj["file"]?.jsonPrimitive?.contentOrNull
+        val name = obj["name"]?.jsonPrimitive?.contentOrNull
+        val dryRun = obj["dryRun"]?.jsonPrimitive?.booleanOrNull ?: false
+        if (file.isNullOrBlank() || name.isNullOrBlank()) {
+            return respond(ex, 400, """{"error":"missing 'file' or 'name'}""")
+        }
+        if (name.contains('/')) {
+            return respond(ex, 400, """{"error":"top-level name must not contain '/': $name"}""")
+        }
+        val path = Path.of(file)
+        if (!Files.exists(path)) {
+            return respond(ex, 400, """{"error":"file not found: $file"}""")
+        }
+        val params = parseQuery(ex.requestURI.rawQuery)
+        val ignoreMismatches = params["reconcile"] == "ignore-mismatches"
+        val promotionResult =
+            evaluateDeployPromotion(
+                ex = ex,
+                name = name,
+                path = path,
+                stateDir = stateDir,
+                gates = promotionGates,
+                params = params,
+            ) ?: return
+        if (promotionResult.blocked) {
+            return respond(
+                ex,
+                409,
+                """{"error":"production resync blocked","kind":"promotion-gate",""" +
+                    """"promotion":${PromotionJson.encode(promotionResult)}}""",
+            )
+        }
+
+        val parsed =
+            when (val r = Dsl.parseFileAny(path)) {
+                is ParseResult.Success -> r.value
+                is ParseResult.Failure -> {
+                    val msg = r.errors.joinToString(";") { it.message }.replace("\"", "'")
+                    return respond(ex, 400, """{"error":"parse failed: $msg"}""")
+                }
+            }
+
+        when (parsed) {
+            is ParsedFile.StrategyFile ->
+                handleStrategyResync(
+                    ex = ex,
+                    registry = registry,
+                    stateDir = stateDir,
+                    name = name,
+                    path = path,
+                    dryRun = dryRun,
+                    ignoreMismatches = ignoreMismatches,
+                    promotionResult = promotionResult,
+                )
+            is ParsedFile.PortfolioFile ->
+                handlePortfolioResync(
+                    ex = ex,
+                    registry = registry,
+                    stateDir = stateDir,
+                    portfolioDeployer = portfolioDeployer,
+                    name = name,
+                    path = path,
+                    dryRun = dryRun,
+                    promotionResult = promotionResult,
+                )
+        }
+    }
+
+    private fun handleStrategyResync(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        stateDir: StateDir?,
+        name: String,
+        path: Path,
+        dryRun: Boolean,
+        ignoreMismatches: Boolean,
+        promotionResult: PromotionGateResult,
+    ) {
+        val existing =
+            registry.get(name)
+                ?: return respond(ex, 404, """{"error":"unknown strategy: $name"}""")
+        if (existing.childMeta != null) {
+            return respond(ex, 409, """{"error":"strategy '$name' is a portfolio child; resync the parent"}""")
+        }
+        if (dryRun) {
+            return respond(
+                ex,
+                200,
+                """{"name":"$name","kind":"strategy","state":"planned","dryRun":true,""" +
+                    """"affected":["$name"],"promotion":${PromotionJson.encode(promotionResult)}}""",
+            )
+        }
+        val handle =
+            try {
+                registry.resyncStrategy(name, path, ignoreMismatches)
+            } catch (e: com.qkt.app.ReconcileException) {
+                val msg = (e.message ?: "reconcile mismatch").replace("\"", "'")
+                return respond(ex, 409, """{"error":"$msg","kind":"reconcile-mismatch"}""")
+            } catch (e: IllegalStateException) {
+                val msg = (e.message ?: "conflict").replace("\"", "'")
+                return respond(ex, 409, """{"error":"$msg"}""")
+            } catch (e: IllegalArgumentException) {
+                val msg = (e.message ?: "invalid").replace("\"", "'")
+                return respond(ex, 400, """{"error":"$msg"}""")
+            } catch (e: Exception) {
+                val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                return respond(ex, 500, """{"error":"$msg"}""")
+            }
+        OperatorJournal
+            .from(stateDir, "http")
+            ?.record(
+                "resync",
+                target = name,
+                affected = listOf(handle.name),
+                details =
+                    mapOf(
+                        "kind" to "strategy",
+                        "file" to path.toAbsolutePath().normalize().toString(),
+                        "promotionState" to promotionResult.state,
+                        "promotionEligible" to promotionResult.eligibleForProduction.toString(),
+                    ),
+            )
+        respond(
+            ex,
+            200,
+            """{"name":"${handle.name}","kind":"strategy","port":${handle.port},""" +
+                """"state":"running","dryRun":false,"startedAt":"${handle.startedAt}",""" +
+                """"affected":["${handle.name}"],"promotion":${PromotionJson.encode(promotionResult)}}""",
+        )
+    }
+
+    private fun handlePortfolioResync(
+        ex: HttpExchange,
+        registry: StrategyRegistry,
+        stateDir: StateDir?,
+        portfolioDeployer: com.qkt.cli.daemon.portfolio.PortfolioDeployer?,
+        name: String,
+        path: Path,
+        dryRun: Boolean,
+        promotionResult: PromotionGateResult,
+    ) {
+        if (registry.get(name) != null) {
+            return respond(ex, 409, """{"error":"strategy '$name' is not a portfolio"}""")
+        }
+        registry.getPortfolio(name)
+            ?: return respond(ex, 404, """{"error":"unknown portfolio: $name"}""")
+        if (portfolioDeployer == null) {
+            return respond(ex, 501, """{"error":"portfolio resync not configured on this daemon"}""")
+        }
+        if (dryRun) {
+            return respond(
+                ex,
+                200,
+                """{"name":"$name","kind":"portfolio","state":"planned","dryRun":true,""" +
+                    """"affected":["$name"],"promotion":${PromotionJson.encode(promotionResult)}}""",
+            )
+        }
+        val record =
+            try {
+                val compiled = PortfolioLoader.load(path)
+                val replacement = portfolioDeployer.deploy(name, compiled)
+                registry.resyncPortfolio(replacement)
+            } catch (e: IllegalStateException) {
+                val msg = (e.message ?: "conflict").replace("\"", "'")
+                return respond(ex, 409, """{"error":"$msg"}""")
+            } catch (e: IllegalArgumentException) {
+                val msg = (e.message ?: "invalid").replace("\"", "'")
+                return respond(ex, 400, """{"error":"$msg"}""")
+            } catch (e: Exception) {
+                val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
+                return respond(ex, 500, """{"error":"$msg"}""")
+            }
+        val affected = listOf(record.name) + record.children.map { it.name }
+        OperatorJournal
+            .from(stateDir, "http")
+            ?.record(
+                action = "resync",
+                target = name,
+                affected = affected,
+                details =
+                    mapOf(
+                        "kind" to "portfolio",
+                        "file" to path.toAbsolutePath().normalize().toString(),
+                        "promotionState" to promotionResult.state,
+                        "promotionEligible" to promotionResult.eligibleForProduction.toString(),
+                    ),
+            )
+        val affectedJson = affected.joinToString(",", "[", "]") { """"$it"""" }
+        respond(
+            ex,
+            200,
+            """{"name":"${record.name}","kind":"portfolio","state":"running",""" +
+                """"dryRun":false,"startedAt":"${record.startedAt}","affected":$affectedJson,""" +
+                """"promotion":${PromotionJson.encode(promotionResult)}}""",
+        )
     }
 
     private fun evaluateDeployPromotion(

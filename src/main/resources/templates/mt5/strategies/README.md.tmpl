@@ -12,6 +12,18 @@ make deploy STRAT=ema_cross
 That runs `qkt deploy /strategies/ema_cross.qkt --as ema_cross` inside the
 container. The daemon registers it and starts evaluating rules on the next tick.
 
+After editing a deployed strategy, validate and replace only that running name:
+
+```bash
+make resync-dry-run STRAT=ema_cross
+make resync STRAT=ema_cross
+```
+
+`resync` keeps unrelated strategies running. If validation or reconciliation
+fails, the previous strategy remains registered.
+Run `make reconcile STRAT=ema_cross` after live replacements to compare qkt's
+ledger with the broker/account view.
+
 To stop one:
 
 ```bash
