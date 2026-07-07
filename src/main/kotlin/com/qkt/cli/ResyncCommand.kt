@@ -1,0 +1,75 @@
+package com.qkt.cli
+
+import com.qkt.cli.daemon.ControlClient
+import com.qkt.cli.daemon.StateDir
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+
+/** `qkt resync <strategy-or-portfolio.qkt> --as <name>` replaces a running daemon deployment. */
+class ResyncCommand(
+    private val args: Args,
+    private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },
+) {
+    fun run(): Int {
+        val file = args.requirePositional(0, "<strategy-or-portfolio.qkt>")
+        val path = Path.of(file).toAbsolutePath()
+        if (!Files.exists(path)) {
+            System.err.println("qkt: error: file not found: $file")
+            return ExitCodes.USER_ERROR
+        }
+        val name = args.option("as") ?: path.fileName.toString().removeSuffix(".qkt")
+        val stateDir = StateDir.resolve(args.option("state-dir"))
+        val client = clientFactory(stateDir)
+        val ignoreMismatches = args.option("reconcile") == "ignore-mismatches"
+        val rawWaiver = args.option("waive")
+        val waiver =
+            when {
+                !args.flag("waive") -> null
+                rawWaiver == null || rawWaiver.startsWith("--") -> "all"
+                else -> rawWaiver
+            }
+        val waiverReason = args.option("reason")
+        if (waiver != null && waiverReason.isNullOrBlank()) {
+            System.err.println("qkt: error: --waive requires --reason")
+            return ExitCodes.ARG_ERROR
+        }
+        val body =
+            try {
+                client.resync(
+                    name = name,
+                    file = path,
+                    dryRun = args.flag("dry-run"),
+                    ignoreMismatches = ignoreMismatches,
+                    waiver = waiver,
+                    waiverReason = waiverReason,
+                )
+            } catch (e: ControlClient.NoDaemonRunningException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            } catch (e: ControlClient.DaemonError) {
+                System.err.println("qkt: error: resync failed (${e.code}): ${e.body}")
+                return ExitCodes.USER_ERROR
+            }
+
+        if (args.flag("json")) {
+            println(body)
+            return ExitCodes.SUCCESS
+        }
+        val obj = Json.parseToJsonElement(body) as? JsonObject
+        if (obj == null) {
+            println(body)
+            return ExitCodes.SUCCESS
+        }
+        val n = obj["name"]?.jsonPrimitive?.contentOrNull ?: name
+        val kind = obj["kind"]?.jsonPrimitive?.contentOrNull ?: "?"
+        val state = obj["state"]?.jsonPrimitive?.contentOrNull ?: "?"
+        val dryRun = obj["dryRun"]?.jsonPrimitive?.contentOrNull ?: "false"
+        println("NAME          KIND       STATE       DRY_RUN")
+        println("%-13s %-10s %-11s %s".format(n, kind, state, dryRun))
+        return ExitCodes.SUCCESS
+    }
+}

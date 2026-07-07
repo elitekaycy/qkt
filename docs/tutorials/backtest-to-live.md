@@ -195,6 +195,14 @@ NAME              KIND       UPTIME    PORT     TRADES   STATE
 momentum-live     strategy   00:00:18  47291    0        running
 ```
 
+When you change `momentum-live.qkt`, validate and replace the running entry
+instead of stopping the daemon:
+
+```bash
+docker compose exec qkt qkt resync /strategies/momentum-live.qkt --as momentum-live --dry-run
+docker compose exec qkt qkt resync /strategies/momentum-live.qkt --as momentum-live
+```
+
 ### Watch it work
 
 Tail the logs:

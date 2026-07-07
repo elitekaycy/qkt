@@ -82,6 +82,18 @@ docker compose exec qkt qkt status live_eur
 docker compose exec qkt qkt logs live_eur --follow
 ```
 
+For later strategy edits, do not stop unrelated daemon work. Validate the
+replacement first, then resync the same deployed name:
+
+```bash
+docker compose exec qkt qkt resync /strategies/live_eur.qkt --as live_eur --dry-run
+docker compose exec qkt qkt resync /strategies/live_eur.qkt --as live_eur
+```
+
+`resync` creates a replacement session through the same live pipeline, swaps it
+under `live_eur`, and leaves the old session registered if validation or
+reconciliation fails.
+
 ## 7. Pre-launch tick audit
 
 Before committing real money, run the tick-feed drift check:

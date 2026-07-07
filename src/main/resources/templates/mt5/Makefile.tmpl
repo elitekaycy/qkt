@@ -1,4 +1,4 @@
-.PHONY: up down restart logs status list deploy stop audit-ticks shell
+.PHONY: up down restart logs status list deploy resync resync-dry-run reconcile stop audit-ticks shell
 
 # Bring up qkt + mt5-gateway. First boot takes ~5 min while MT5 loads in the VNC desktop.
 up:
@@ -27,6 +27,21 @@ list:
 deploy:
 	@test -n "$(STRAT)" || (echo "usage: make deploy STRAT=<name>"; exit 1)
 	docker compose exec qkt qkt deploy /strategies/$(STRAT).qkt --as $(STRAT)
+
+# Validate a replacement without changing the running strategy.
+resync-dry-run:
+	@test -n "$(STRAT)" || (echo "usage: make resync-dry-run STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt resync /strategies/$(STRAT).qkt --as $(STRAT) --dry-run
+
+# Replace a running strategy under the same daemon name. Usage: make resync STRAT=ema_cross
+resync:
+	@test -n "$(STRAT)" || (echo "usage: make resync STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt resync /strategies/$(STRAT).qkt --as $(STRAT)
+
+# Check qkt's ledger against the live broker/account view.
+reconcile:
+	@test -n "$(STRAT)" || (echo "usage: make reconcile STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt reconcile $(STRAT)
 
 # Stop a deployed strategy. Usage: make stop STRAT=ema_cross
 stop:

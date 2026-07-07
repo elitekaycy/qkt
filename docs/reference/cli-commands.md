@@ -13,6 +13,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt daemon stop` | Stop a running daemon. |
 | `qkt daemon status` | Health + uptime of a running daemon. |
 | `qkt deploy <file> [--as <name>]` | Deploy a strategy or portfolio. |
+| `qkt resync <file> [--as <name>] [--dry-run]` | Validate and replace a deployed strategy or portfolio under the same daemon name. |
 | `qkt list` | List deployed strategies + portfolios. |
 | `qkt status [<name>]` | Snapshot of one strategy, or all if no name given. |
 | `qkt status --deep` | Aggregated health check: daemon + control plane + every deployed strategy. Single-screen human output. Exit 0 if all green, exit 1 with reasons if anything is unhealthy. First-thing-to-run when something feels off. |
@@ -50,6 +51,10 @@ Most commands accept:
 - `--state-dir <path>` — override `~/.local/state/qkt/`
 - `--config <path>` — override `./qkt.config.yaml`
 - `--json` — emit machine-readable JSON instead of human-readable text
+
+`qkt resync` also accepts `--dry-run`, `--reconcile=ignore-mismatches`, and the
+same production-gate waiver form as deploy: `--waive <gate> --reason <text>`.
+Use `--dry-run` before applying an edited live strategy.
 
 ## Exit codes
 

@@ -142,6 +142,13 @@ NAME              KIND       UPTIME   PORT     TRADES   STATE
 eur-paper         strategy   00:00:42 47291    0        running
 ```
 
+For later edits, validate the replacement before applying it:
+
+```bash
+docker compose exec qkt qkt resync /strategies/eur-paper.qkt --as eur-paper --dry-run
+docker compose exec qkt qkt resync /strategies/eur-paper.qkt --as eur-paper
+```
+
 ## 7. Watch it work
 
 Tail the logs:
