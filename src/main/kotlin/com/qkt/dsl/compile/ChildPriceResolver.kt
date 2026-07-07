@@ -20,7 +20,7 @@ fun interface CompiledChildPrice {
         side: Side,
         entry: BigDecimal,
         stopDistance: BigDecimal?,
-    ): BigDecimal
+    ): BigDecimal?
 }
 
 /**
@@ -35,7 +35,7 @@ sealed interface CompiledStopLoss {
             ec: EvalContext,
             side: Side,
             entry: BigDecimal,
-        ): StopLossSpec.Fixed
+        ): StopLossSpec.Fixed?
     }
 
     data class Static(
@@ -72,7 +72,7 @@ class ChildPriceResolver(
             else -> {
                 val priced = compile(child, ChildKind.STOP_LOSS)
                 CompiledStopLoss.Dynamic { ec, side, entry ->
-                    StopLossSpec.Fixed(priced.evaluate(ec, side, entry, stopDistance = null))
+                    priced.evaluate(ec, side, entry, stopDistance = null)?.let { StopLossSpec.Fixed(it) }
                 }
             }
         }
@@ -85,25 +85,21 @@ class ChildPriceResolver(
             is ChildAt -> {
                 val priceExpr = exprCompiler.compile(child.price)
                 CompiledChildPrice { ec, _, _, _ ->
-                    val v = priceExpr.evaluate(ec)
-                    require(v is Value.Num) { "child AT expression must be numeric" }
-                    v.v
+                    priceExpr.evaluateNumber(ec)
                 }
             }
             is ChildBy -> {
                 val distExpr = exprCompiler.compile(child.distance)
                 CompiledChildPrice { ec, side, entry, _ ->
-                    val v = distExpr.evaluate(ec)
-                    require(v is Value.Num) { "child BY expression must be numeric" }
-                    applyDistance(side, entry, v.v, kind)
+                    val v = distExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
+                    applyDistance(side, entry, v, kind)
                 }
             }
             is ChildPct -> {
                 val fracExpr = exprCompiler.compile(child.frac)
                 CompiledChildPrice { ec, side, entry, _ ->
-                    val v = fracExpr.evaluate(ec)
-                    require(v is Value.Num) { "child PCT expression must be numeric" }
-                    val dist = entry.multiply(v.v, Money.CONTEXT)
+                    val v = fracExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
+                    val dist = entry.multiply(v, Money.CONTEXT)
                     applyDistance(side, entry, dist, kind)
                 }
             }
@@ -116,9 +112,8 @@ class ChildPriceResolver(
                     val sd =
                         stopDistance
                             ?: error("RR take-profit requires a resolvable stop distance from BRACKET STOP LOSS")
-                    val v = multExpr.evaluate(ec)
-                    require(v is Value.Num) { "child RR expression must be numeric" }
-                    applyDistance(side, entry, v.v.multiply(sd, Money.CONTEXT), ChildKind.TAKE_PROFIT)
+                    val v = multExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
+                    applyDistance(side, entry, v.multiply(sd, Money.CONTEXT), ChildKind.TAKE_PROFIT)
                 }
             }
             is ChildArmedTrail -> {
@@ -132,9 +127,8 @@ class ChildPriceResolver(
                 }
                 val distExpr = exprCompiler.compile(child.trailDistance)
                 CompiledChildPrice { ec, side, entry, _ ->
-                    val v = distExpr.evaluate(ec)
-                    require(v is Value.Num) { "TRAILING <distance> must be numeric" }
-                    applyDistance(side, entry, v.v, ChildKind.STOP_LOSS)
+                    val v = distExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
+                    applyDistance(side, entry, v, ChildKind.STOP_LOSS)
                 }
             }
         }
@@ -155,4 +149,6 @@ class ChildPriceResolver(
             }
         return entry.add(sign.multiply(dist, Money.CONTEXT), Money.CONTEXT)
     }
+
+    private fun CompiledExpr.evaluateNumber(ec: EvalContext): BigDecimal? = (evaluate(ec) as? Value.Num)?.v
 }

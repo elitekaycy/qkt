@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.common.Side
+import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
@@ -73,6 +74,30 @@ class ChildPriceResolverTest {
         val r = resolver.compile(ChildRr(NumLit(BigDecimal("3"))), kind = ChildKind.TAKE_PROFIT)
         assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = BigDecimal("5")))
             .isEqualByComparingTo("115")
+    }
+
+    @Test
+    fun `AT returns null when expression is undefined`() {
+        val r = resolver.compile(ChildAt(AccountRef("last_trade_pnl")), kind = ChildKind.STOP_LOSS)
+        assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = null)).isNull()
+    }
+
+    @Test
+    fun `BY returns null when expression is undefined`() {
+        val r = resolver.compile(ChildBy(AccountRef("last_trade_pnl")), kind = ChildKind.STOP_LOSS)
+        assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = null)).isNull()
+    }
+
+    @Test
+    fun `PCT returns null when expression is undefined`() {
+        val r = resolver.compile(ChildPct(AccountRef("last_trade_pnl")), kind = ChildKind.STOP_LOSS)
+        assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = null)).isNull()
+    }
+
+    @Test
+    fun `RR returns null when expression is undefined`() {
+        val r = resolver.compile(ChildRr(AccountRef("last_trade_pnl")), kind = ChildKind.TAKE_PROFIT)
+        assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = BigDecimal("5"))).isNull()
     }
 
     @Test

@@ -139,9 +139,20 @@ class ActionCompiler(
     private fun compileOcoEntry(action: OcoEntry): (EvalContext) -> List<Signal> {
         val leg1Compiled = compile(action.leg1)
         val leg2Compiled = compile(action.leg2)
-        return { ctx ->
+        var skippedUndefinedLogged = false
+        return ocoEntry@{ ctx ->
             val sigs1 = leg1Compiled(ctx)
             val sigs2 = leg2Compiled(ctx)
+            if (sigs1.isEmpty() || sigs2.isEmpty()) {
+                if (!skippedUndefinedLogged) {
+                    strategyLogger.warn(
+                        "order skipped: OCO_ENTRY leg price undefined during warm-up " +
+                            "(strategy=${ctx.strategyContext.strategyId})",
+                    )
+                    skippedUndefinedLogged = true
+                }
+                return@ocoEntry emptyList()
+            }
             val req1 =
                 (sigs1.singleOrNull() as? Signal.Submit)?.request
                     ?: error("OCO_ENTRY leg1 must compile to exactly one Signal.Submit, got $sigs1")
@@ -394,13 +405,35 @@ class ActionCompiler(
         val compiledOcoLeg1 = opts.oco?.stop?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
         val compiledOcoLeg2 = opts.oco?.limit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
 
-        return { ctx ->
+        var skippedUndefinedLogged = false
+        return buySell@{ ctx ->
             val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
             val ts = ctx.strategyContext.clock.now()
-            val entry = compiledOrderType.entryPrice.evaluate(ctx)
+            val entry =
+                compiledOrderType.entryPrice.evaluate(ctx)
+                    ?: run {
+                        if (!skippedUndefinedLogged) {
+                            strategyLogger.warn(
+                                "order skipped: entry price undefined during warm-up " +
+                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                            )
+                            skippedUndefinedLogged = true
+                        }
+                        return@buySell emptyList()
+                    }
             val qty = compiledSize.evaluate(ctx, entry)
             val entryReq =
                 compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
+                    ?: run {
+                        if (!skippedUndefinedLogged) {
+                            strategyLogger.warn(
+                                "order skipped: pending order price undefined during warm-up " +
+                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                            )
+                            skippedUndefinedLogged = true
+                        }
+                        return@buySell emptyList()
+                    }
 
             val request: OrderRequest =
                 when {
@@ -410,7 +443,18 @@ class ActionCompiler(
                         val slSpec: com.qkt.execution.StopLossSpec =
                             when (sl) {
                                 is CompiledStopLoss.Static -> sl.spec
-                                is CompiledStopLoss.Dynamic -> sl.evaluate(ctx, side, entry)
+                                is CompiledStopLoss.Dynamic ->
+                                    sl.evaluate(ctx, side, entry)
+                                        ?: run {
+                                            if (!skippedUndefinedLogged) {
+                                                strategyLogger.warn(
+                                                    "order skipped: bracket stop price undefined during warm-up " +
+                                                        "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                                                )
+                                                skippedUndefinedLogged = true
+                                            }
+                                            return@buySell emptyList()
+                                        }
                             }
                         // For RR take-profit, derive the stop distance from the Fixed-shaped
                         // stop. Armed trails carry their distance explicitly.
@@ -419,7 +463,18 @@ class ActionCompiler(
                                 is com.qkt.execution.StopLossSpec.Fixed -> (entry - slSpec.price).abs()
                                 is com.qkt.execution.StopLossSpec.ArmedTrail -> slSpec.trailDistance
                             }
-                        val tpPrice = tp.evaluate(ctx, side, entry, stopDistance = sd)
+                        val tpPrice =
+                            tp.evaluate(ctx, side, entry, stopDistance = sd)
+                                ?: run {
+                                    if (!skippedUndefinedLogged) {
+                                        strategyLogger.warn(
+                                            "order skipped: bracket take-profit price undefined during warm-up " +
+                                                "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                                        )
+                                        skippedUndefinedLogged = true
+                                    }
+                                    return@buySell emptyList()
+                                }
                         OrderRequest.Bracket(
                             id = ids.next(),
                             symbol = symbol,
@@ -438,8 +493,30 @@ class ActionCompiler(
                         val l1 = requireNotNull(compiledOcoLeg1) { "OCO requires STOP leg" }
                         val l2 = requireNotNull(compiledOcoLeg2) { "OCO requires LIMIT leg" }
                         val exitSide = if (side == Side.BUY) Side.SELL else Side.BUY
-                        val stopPrice = l1.evaluate(ctx, side, entry, stopDistance = null)
-                        val limitPrice = l2.evaluate(ctx, side, entry, stopDistance = null)
+                        val stopPrice =
+                            l1.evaluate(ctx, side, entry, stopDistance = null)
+                                ?: run {
+                                    if (!skippedUndefinedLogged) {
+                                        strategyLogger.warn(
+                                            "order skipped: OCO stop price undefined during warm-up " +
+                                                "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                                        )
+                                        skippedUndefinedLogged = true
+                                    }
+                                    return@buySell emptyList()
+                                }
+                        val limitPrice =
+                            l2.evaluate(ctx, side, entry, stopDistance = null)
+                                ?: run {
+                                    if (!skippedUndefinedLogged) {
+                                        strategyLogger.warn(
+                                            "order skipped: OCO limit price undefined during warm-up " +
+                                                "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                                        )
+                                        skippedUndefinedLogged = true
+                                    }
+                                    return@buySell emptyList()
+                                }
                         val stopLeg =
                             OrderRequest.Stop(
                                 id = ids.next(),
@@ -513,7 +590,7 @@ class ActionCompiler(
         fun build(
             childCtx: EvalContext,
             ts: Long,
-        ): OrderRequest
+        ): OrderRequest?
     }
 
     /**
@@ -541,14 +618,47 @@ class ActionCompiler(
         val compiledOrderType = orderTypeCompiler.compile(opts.orderType ?: Market, targetAlias = stream)
         val compiledSize = sizingCompiler.compile(sizing, null, stream)
         val children = opts.onFill.map { compileOtoChild(it) }
-        return { ctx ->
+        var skippedUndefinedLogged = false
+        return oto@{ ctx ->
             val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
             val ts = ctx.strategyContext.clock.now()
-            val entry = compiledOrderType.entryPrice.evaluate(ctx)
+            val entry =
+                compiledOrderType.entryPrice.evaluate(ctx)
+                    ?: run {
+                        if (!skippedUndefinedLogged) {
+                            strategyLogger.warn(
+                                "order skipped: OTO parent entry price undefined during warm-up " +
+                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                            )
+                            skippedUndefinedLogged = true
+                        }
+                        return@oto emptyList()
+                    }
             val qty = compiledSize.evaluate(ctx, entry)
-            val parentReq = compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
+            val parentReq =
+                compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
+                    ?: run {
+                        if (!skippedUndefinedLogged) {
+                            strategyLogger.warn(
+                                "order skipped: OTO parent pending price undefined during warm-up " +
+                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                            )
+                            skippedUndefinedLogged = true
+                        }
+                        return@oto emptyList()
+                    }
             val childCtx = ctx.withEntryPrice(entry)
             val childReqs = children.map { it.build(childCtx, ts) }
+            if (childReqs.any { it == null }) {
+                if (!skippedUndefinedLogged) {
+                    strategyLogger.warn(
+                        "order skipped: OTO child pending price undefined during warm-up " +
+                            "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                    )
+                    skippedUndefinedLogged = true
+                }
+                return@oto emptyList()
+            }
             val oto =
                 OrderRequest.OTO(
                     id = ids.next(),
@@ -556,7 +666,7 @@ class ActionCompiler(
                     side = side,
                     quantity = qty,
                     parent = parentReq,
-                    children = childReqs,
+                    children = childReqs.filterNotNull(),
                     timeInForce = tif,
                     timestamp = ts,
                 )
@@ -596,7 +706,7 @@ class ActionCompiler(
         val childTif = TifTranslator.translate(null)
         return CompiledOtoChild { childCtx, ts ->
             val sym = childCtx.streams[childStream]?.qktSymbol ?: error("Unknown stream alias: $childStream")
-            val childEntry = compiledOrderType.entryPrice.evaluate(childCtx)
+            val childEntry = compiledOrderType.entryPrice.evaluate(childCtx) ?: return@CompiledOtoChild null
             val childQty = compiledSize.evaluate(childCtx, childEntry)
             compiledOrderType.buildRequest.evaluate(childCtx, ids.next(), sym, childSide, childQty, childTif, "", ts)
         }
