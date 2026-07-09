@@ -116,4 +116,50 @@ class PreflightCommandTest {
         assertThat(text).contains("WARN notify.alerts: waived: integration test")
         assertThat(text).doesNotContain("FAIL")
     }
+
+    @Test
+    fun `production preflight fails when enabled telegram lacks credentials`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            runtime:
+              mode: production
+            risk:
+              max_daily_loss: 100
+            brokers:
+              bybit:
+                type: bybit
+            notify:
+              telegram:
+                enabled: true
+                bot_token:
+                chat_id:
+            """.trimIndent(),
+        )
+        val out = ByteArrayOutputStream()
+        val original = System.out
+        try {
+            System.setOut(PrintStream(out))
+            val code =
+                PreflightCommand(
+                    Args(
+                        arrayOf(
+                            "preflight",
+                            strategy(tmp).toString(),
+                            "--config",
+                            cfg.toString(),
+                            "--state-dir",
+                            tmp.resolve("state").toString(),
+                        ),
+                    ),
+                ).run()
+            assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        } finally {
+            System.setOut(original)
+        }
+        assertThat(out.toString()).contains("FAIL notify.alerts: enabled alert channel is missing required credentials")
+    }
 }
