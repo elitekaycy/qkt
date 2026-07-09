@@ -1,0 +1,37 @@
+# Configuration Guide
+
+This minimal project has three main configuration files:
+
+```text
+.env               private local values; never commit it
+docker-compose.yml starts one QKT daemon container
+qkt.config.yaml    QKT runtime behavior for local strategy work
+```
+
+## .env
+
+The generated values are enough for a first local run:
+
+```dotenv
+QKT_IMAGE_TAG=v{{QKT_VERSION}}
+QKT_STARTING_BALANCE=10000
+```
+
+`QKT_IMAGE_TAG` selects the QKT Docker image. `QKT_STARTING_BALANCE` is the
+local account balance used by generated examples and config defaults.
+
+## docker-compose.yml
+
+Compose starts one `qkt` service. There is no live broker in this template.
+That makes it useful for learning the CLI, testing strategy files, and building
+custom integrations.
+
+## qkt.config.yaml
+
+The generated config uses local/default runtime settings. It does not connect to
+MT5 or any other live venue.
+
+## State
+
+QKT writes local runtime state under `./state`. You can delete it during local
+experiments, but do not treat that habit as safe for live deployments.

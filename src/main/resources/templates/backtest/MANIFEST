@@ -1,6 +1,7 @@
 # Overrides/additions applied after the minimal project template.
 .env.example.tmpl
 README.md.tmpl
+CONFIG.md.tmpl
 Makefile.tmpl
 qkt.config.yaml.tmpl
 strategies/backtest.qkt

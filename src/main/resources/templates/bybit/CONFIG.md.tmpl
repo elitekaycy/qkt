@@ -1,0 +1,51 @@
+# Configuration Guide
+
+This project has three main configuration files:
+
+```text
+.env               private Bybit keys and deployment values; never commit it
+docker-compose.yml starts the QKT daemon container
+qkt.config.yaml    QKT runtime behavior and Bybit broker profile
+```
+
+## .env
+
+Start with testnet:
+
+```dotenv
+QKT_IMAGE_TAG=v{{QKT_VERSION}}
+BYBIT_TESTNET=true
+BYBIT_API_KEY=
+BYBIT_API_SECRET=
+```
+
+`BYBIT_API_KEY` and `BYBIT_API_SECRET` come from Bybit. Use restricted API keys
+and testnet first. Set `BYBIT_TESTNET=false` only when you intentionally want to
+connect to real funds.
+
+Optional alerts:
+
+```dotenv
+TELEGRAM_ENABLED=false
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+```
+
+## docker-compose.yml
+
+Compose starts one `qkt` service. There is no separate gateway container because
+QKT talks to Bybit REST directly through the configured broker.
+
+## qkt.config.yaml
+
+The broker block points QKT at Bybit. Strategy files should use the configured
+broker path and let QKT handle order/risk/accounting flow.
+
+Keep risk limits explicit before using real funds. Testnet passing is not proof
+that a strategy is safe for live money.
+
+## State
+
+QKT writes runtime state under `./state`. Keep it when you care about deployed
+strategy state, reconciliation, or restart recovery.
+
