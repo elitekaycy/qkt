@@ -5,6 +5,15 @@
 state:
   enabled: true
 
+runtime:
+  mode: production
+
+risk:
+  max_daily_loss: ${QKT_MAX_DAILY_LOSS}
+  max_order_qty: ${QKT_MAX_ORDER_QTY}
+  max_order_notional: ${QKT_MAX_ORDER_NOTIONAL}
+  price_collar_pct: ${QKT_PRICE_COLLAR_PCT}
+
 brokers:
   exness:
     type: mt5

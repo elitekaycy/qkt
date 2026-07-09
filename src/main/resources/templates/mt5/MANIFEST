@@ -3,9 +3,12 @@
 # and the .tmpl suffix stripped on write.
 .env.example.tmpl
 gitignore.tmpl
+README.md.tmpl
 Makefile.tmpl
 docker-compose.yml.tmpl
 qkt.config.yaml.tmpl
 strategies/README.md.tmpl
-strategies/ema_cross.qkt
-strategies/full_strategy.qkt
+strategies/.gitkeep
+examples/strategies/README.md.tmpl
+examples/strategies/ema_cross.qkt
+examples/strategies/full_strategy.qkt

@@ -18,6 +18,7 @@ services:
       init-perms:
         condition: service_completed_successfully
     environment:
+      # VNC is diagnostic-only; MT5_LOGIN/PASSWORD/SERVER below are the normal headless path.
       CUSTOM_USER: ${MT5_VNC_USER:-admin}
       PASSWORD: ${MT5_VNC_PASSWORD:-changeme}
       MT5_API_PORT: 5001
@@ -25,8 +26,7 @@ services:
       MT5_RECONNECT_ATTEMPTS: 5
       MT5_RECONNECT_BASE_DELAY: "2.0"
       LOG_LEVEL: ${MT5_LOG_LEVEL:-INFO}
-      # Headless broker login. Set MT5_LOGIN/PASSWORD/SERVER in .env; VNC is
-      # retained as a diagnostic fallback.
+      # Headless broker login. Set MT5_LOGIN/PASSWORD/SERVER in .env.
       MT5_LOGIN: ${MT5_LOGIN:-}
       MT5_PASSWORD: ${MT5_PASSWORD:-}
       MT5_SERVER: ${MT5_SERVER:-}
@@ -36,7 +36,7 @@ services:
     ports:
       # MT5 REST API. Bind to loopback; bearer auth is also enabled.
       - "127.0.0.1:5020:5001"
-      # VNC web UI for one-time MT5 broker login.
+      # VNC web UI for diagnostic/manual fallback only.
       # SSH-tunnel `-L 3020:127.0.0.1:3020 <host>` and open http://127.0.0.1:3020.
       - "127.0.0.1:3020:3000"
     volumes:
