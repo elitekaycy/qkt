@@ -12,7 +12,10 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
+import com.qkt.instrument.InstrumentMeta
+import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -81,25 +84,33 @@ class OrderManagerTest {
     private fun bracket(
         id: String,
         entryId: String,
+        symbol: String = "EURUSD",
+        entry: String = "1.10",
+        stop: String = "1.09",
     ) = OrderRequest.Bracket(
         id = id,
-        symbol = "EURUSD",
+        symbol = symbol,
         side = Side.BUY,
         quantity = Money.of("1"),
         entry =
             OrderRequest.Market(
                 id = entryId,
-                symbol = "EURUSD",
+                symbol = symbol,
                 side = Side.BUY,
                 quantity = Money.of("1"),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 0L,
             ),
-        takeProfit = Money.of("1.12"),
-        stopLoss = StopLossSpec.Fixed(Money.of("1.09")),
+        takeProfit = Money.of(entry).add(Money.of("20")),
+        stopLoss = StopLossSpec.Fixed(Money.of(stop)),
         timeInForce = TimeInForce.GTC,
         timestamp = 0L,
     )
+
+    private fun registry(meta: InstrumentMeta): InstrumentRegistry =
+        object : InstrumentRegistry {
+            override fun lookup(qktSymbol: String): InstrumentMeta? = if (qktSymbol == meta.qktSymbol) meta else null
+        }
 
     @Test
     fun `risk is not recorded when tracking is off, so the live map does not leak`() {
@@ -127,6 +138,40 @@ class OrderManagerTest {
 
         // risk = |entry 1.10 - stop 1.09| * qty 1 = 0.01
         assertThat(om.riskUsdFor("e1")).isEqualByComparingTo("0.01")
+    }
+
+    @Test
+    fun `risk report scales price distance by instrument contract size`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val broker = LogBroker(bus, clock)
+        val tracker = MarketPriceTracker().apply { update("BACKTEST:XAUUSD", Money.of("2010")) }
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                tracker,
+                clock,
+                instruments =
+                    registry(
+                        InstrumentMeta(
+                            qktSymbol = "BACKTEST:XAUUSD",
+                            contractSize = BigDecimal("100"),
+                            volumeStep = BigDecimal("0.01"),
+                            volumeMin = BigDecimal("0.01"),
+                            volumeMax = BigDecimal("200"),
+                            pointSize = BigDecimal("0.001"),
+                            digits = 3,
+                            tradeStopsLevelPoints = 0,
+                        ),
+                    ),
+                trackRisk = true,
+            )
+
+        om.submit(bracket("b1", "e1", symbol = "BACKTEST:XAUUSD", entry = "2010", stop = "2000"))
+
+        // risk = |entry 2010 - stop 2000| * qty 1 * contractSize 100 = 1000.
+        assertThat(om.riskUsdFor("e1")).isEqualByComparingTo("1000")
     }
 
     @Test
