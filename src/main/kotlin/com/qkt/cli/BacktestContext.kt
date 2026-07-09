@@ -79,6 +79,9 @@ class BacktestContext private constructor(
     private val strategiesOverride: ((Map<String, String>) -> List<Pair<String, com.qkt.strategy.Strategy>>)? = null,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val perStrategyRisk: Map<String, PerStrategyRisk> = emptyMap(),
+    private val maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+    private val maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+    private val priceCollarFrac: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
     private val forceBars: Boolean = false,
     private val barWindows: Map<String, TimeWindow> = emptyMap(),
     private val binaryBarStore: BinaryBarStore? = null,
@@ -191,6 +194,9 @@ class BacktestContext private constructor(
             pacerCooldownAfterConsecutiveFor = { id ->
                 perStrategyRisk[id]?.cooldownAfterLossAfterConsecutive ?: 1
             },
+            maxOrderQty = maxOrderQty,
+            maxOrderNotional = maxOrderNotional,
+            priceCollarFrac = priceCollarFrac,
             forceBars = forceBars,
             barWindows = barWindows,
             binaryBarStore = binaryBarStore,
@@ -495,6 +501,9 @@ class BacktestContext private constructor(
                 replaySymbols = replaySymbols,
                 bookRiskConfig = cfg.bookRisk,
                 perStrategyRisk = cfg.perStrategyRisk,
+                maxOrderQty = cfg.maxOrderQty,
+                maxOrderNotional = cfg.maxOrderNotional,
+                priceCollarFrac = cfg.priceCollarFrac,
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
@@ -655,6 +664,9 @@ class BacktestContext private constructor(
                 strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
                 bookRiskConfig = cfg.bookRisk,
                 perStrategyRisk = cfg.perStrategyRisk,
+                maxOrderQty = cfg.maxOrderQty,
+                maxOrderNotional = cfg.maxOrderNotional,
+                priceCollarFrac = cfg.priceCollarFrac,
             )
         }
 

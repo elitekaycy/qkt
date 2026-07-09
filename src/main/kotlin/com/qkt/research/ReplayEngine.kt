@@ -82,6 +82,9 @@ class ReplayEngine(
     private val pacerCooldownAfterConsecutive: Int = 1,
     private val pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
     private val pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
+    private val maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+    private val maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+    private val priceCollarFrac: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
      * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
@@ -240,6 +243,9 @@ class ReplayEngine(
             com.qkt.risk.rules.PreTradeControls.standard(
                 prices = priceTracker,
                 instruments = instruments,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                priceCollarFrac = priceCollarFrac,
                 accounting = accounting,
             )
         val bookAnnualization =

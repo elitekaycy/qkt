@@ -389,4 +389,44 @@ class BacktestCommandTest {
         val obj = Json.parseToJsonElement(stdout.trim().lines().last()) as JsonObject
         assertThat(obj["trades"]?.jsonPrimitive?.intOrNull).isNotNull.isGreaterThan(0)
     }
+
+    @Test
+    fun `backtest applies configured pre-trade notional cap`(
+        @TempDir tmp: Path,
+    ) {
+        val config = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            config,
+            """
+            risk:
+              max_order_notional: "1"
+            """.trimIndent(),
+        )
+        val reportDir = tmp.resolve("report")
+
+        val (code, stdout, stderr) =
+            runBacktest(
+                "backtest",
+                "src/test/resources/cli/valid_strategy.qkt",
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                "src/test/resources/cli/data",
+                "--allow-incomplete",
+                "--json",
+                "--config",
+                config.toString(),
+                "--report-dir",
+                reportDir.toString(),
+            )
+
+        assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
+        val obj = Json.parseToJsonElement(stdout.trim().lines().last()) as JsonObject
+        assertThat(obj["trades"]?.jsonPrimitive?.intOrNull).isEqualTo(0)
+        assertThat(Files.readString(reportDir.resolve("rejections.csv")))
+            .contains("exceeds cap 1")
+            .contains("BACKTEST:BTCUSDT")
+    }
 }
