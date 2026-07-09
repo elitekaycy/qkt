@@ -1,0 +1,92 @@
+# Configuration Guide
+
+This project has three main configuration files:
+
+```text
+.env               private values for this deployment; never commit it
+docker-compose.yml container wiring: QKT, MT5 gateway, optional qkt-insights
+qkt.config.yaml    QKT runtime behavior: broker, risk, alerts, state
+```
+
+## .env
+
+`.env` is where you put values that change per VPS or account.
+
+```dotenv
+MT5_LOGIN=
+MT5_PASSWORD=
+MT5_SERVER=Exness-MT5Trial9
+MT5_API_KEY=replace-with-a-long-random-value
+```
+
+`MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER` are your broker login details.
+`MT5_API_KEY` is not from the broker; it is a private token shared between QKT
+and the local MT5 gateway.
+
+The generated risk defaults are intentionally simple starting points:
+
+```dotenv
+QKT_MAX_DAILY_LOSS=100
+QKT_MAX_ORDER_QTY=1
+QKT_MAX_ORDER_NOTIONAL=50000
+QKT_PRICE_COLLAR_PCT=5
+```
+
+Treat these as guardrails. Tighten or loosen them only after you understand the
+account size, instrument contract sizes, and strategy sizing.
+
+## docker-compose.yml
+
+Compose starts the services:
+
+```text
+mt5-gateway  logs into MT5 headlessly and exposes a local REST API
+qkt          runs the QKT daemon and strategy control plane
+qkt-insights optional dashboard/event collector, enabled with the insights profile
+```
+
+The ports bind to `127.0.0.1` by default. Use SSH tunnels for access instead of
+opening MT5 or QKT operator ports to the public internet.
+
+If one VPS runs multiple QKT projects, change these together:
+
+```dotenv
+COMPOSE_PROJECT_NAME=qkt-mt5
+MT5_API_HOST_PORT=5020
+MT5_VNC_HOST_PORT=3020
+QKT_INSIGHTS_HOST_PORT=8420
+```
+
+## qkt.config.yaml
+
+`runtime.mode: production` makes QKT fail closed. The daemon should refuse to
+start or deploy when important production controls are missing.
+
+The `risk:` block controls account-level safety limits. The values are expanded
+from `.env`, so operators can change limits without editing YAML:
+
+```yaml
+risk:
+  max_daily_loss: ${QKT_MAX_DAILY_LOSS}
+  max_order_qty: ${QKT_MAX_ORDER_QTY}
+  max_order_notional: ${QKT_MAX_ORDER_NOTIONAL}
+  price_collar_pct: ${QKT_PRICE_COLLAR_PCT}
+```
+
+The `brokers.exness` block tells QKT to send orders to the local MT5 gateway.
+Strategies should use the configured broker profile instead of calling external
+systems directly.
+
+The `notify.telegram` block is for operational alerts. For real capital, prefer
+real alerts. `QKT_ALERTS_WAIVER_REASON` is only for explicit non-production or
+temporary validation environments.
+
+The `insights:` block is optional. When enabled, QKT streams order, trade, risk,
+position, lifecycle, and log events to qkt-insights and keeps a local journal.
+
+## State
+
+QKT writes runtime state under `./state`, mounted into the container at
+`/var/lib/qkt`. Do not delete it casually: it is what lets the daemon recover
+ledger, strategy, and runtime state after restarts.
+

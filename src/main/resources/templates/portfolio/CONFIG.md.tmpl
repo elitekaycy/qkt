@@ -1,0 +1,45 @@
+# Configuration Guide
+
+This project is for portfolio research: testing several strategies together as
+one book.
+
+```text
+.env            research dates, image tag, and simulated portfolio capital
+qkt.config.yaml data source and portfolio runtime settings
+data/           local market data mounted into the QKT container
+strategies/     portfolio and component strategy files
+```
+
+## .env
+
+Edit the research window and simulated portfolio capital:
+
+```dotenv
+QKT_IMAGE_TAG=v{{QKT_VERSION}}
+BACKTEST_FROM=2024-01-01
+BACKTEST_TO=2024-02-01
+QKT_STARTING_BALANCE=10000
+```
+
+`QKT_STARTING_BALANCE` is the allocation base for the portfolio research run.
+
+## qkt.config.yaml
+
+The generated config points QKT at local data and portfolio-oriented defaults.
+Use it to keep the research setup reproducible instead of hiding assumptions in
+one-off shell commands.
+
+## Strategy Files
+
+`strategies/portfolio.qkt` is the book. It references component strategies such
+as `trend.qkt` and `mean_reversion.qkt`.
+
+Run the book after edits:
+
+```bash
+make backtest
+```
+
+Before any live deployment, evaluate both individual strategy behavior and the
+combined portfolio behavior.
+
