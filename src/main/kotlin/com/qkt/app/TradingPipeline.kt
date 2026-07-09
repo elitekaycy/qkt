@@ -190,6 +190,7 @@ class TradingPipeline(
                 strategyPositions.ticketForPrimary(strategyId, symbol)
             },
             requireArmedTrailTicket = mode == Mode.LIVE,
+            instruments = instruments,
             // Risk-per-trade is a backtest-report feature; only record it there so the live
             // daemon's risk map doesn't grow unbounded.
             trackRisk = mode == Mode.BACKTEST,
