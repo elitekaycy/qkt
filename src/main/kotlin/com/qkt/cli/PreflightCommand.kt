@@ -181,8 +181,24 @@ object ProductionPreflight {
         production: Boolean,
     ): PreflightCheck {
         val enabled = cfg.notify.enabledChannels()
+        val valid =
+            enabled.filter { channel ->
+                when (channel.type) {
+                    "telegram" ->
+                        channel.settings["bot_token"]?.isNotBlank() == true &&
+                            channel.settings["chat_id"]?.isNotBlank() == true
+                    else -> true
+                }
+            }
+        if (valid.isNotEmpty()) {
+            return PreflightCheck("notify.alerts", PreflightStatus.PASS, "${valid.size} enabled channel(s)")
+        }
         if (enabled.isNotEmpty()) {
-            return PreflightCheck("notify.alerts", PreflightStatus.PASS, "${enabled.size} enabled channel(s)")
+            return PreflightCheck(
+                "notify.alerts",
+                if (production) PreflightStatus.FAIL else PreflightStatus.WARN,
+                "enabled alert channel is missing required credentials",
+            )
         }
         val waiver = cfg.runtimeWaiver("alerts")
         if (waiver != null) return PreflightCheck("notify.alerts", PreflightStatus.WARN, "waived: $waiver")

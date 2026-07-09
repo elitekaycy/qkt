@@ -16,6 +16,10 @@ Create these GitHub environment secrets:
 - `MT5_API_KEY`
 
 Optional secrets: `MT5_VNC_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+When `TELEGRAM_ENABLED=true`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are
+required.
+When `QKT_INSIGHTS_ENABLED=true`, also set `QKT_INSIGHTS_INGEST_TOKEN`,
+`QKT_INSIGHTS_ADMIN_PASSWORD`, and `QKT_INSIGHTS_SESSION_SECRET`.
 
 Optional environment variables have safe defaults:
 
@@ -24,17 +28,35 @@ Optional environment variables have safe defaults:
 - `MT5_SERVER=Exness-MT5Trial9`
 - `MT5_VNC_USER=admin`
 - `MT5_VNC_PASSWORD=changeme`
+- `COMPOSE_PROJECT_NAME=qkt-mt5`
+- `QKT_BIND_HOST=127.0.0.1`
+- `MT5_API_HOST_PORT=5020`
+- `MT5_VNC_HOST_PORT=3020`
 - `QKT_EXNESS_MAGIC=10001`
 - `TELEGRAM_ENABLED=false`
+- `QKT_ALERTS_WAIVER_REASON=` (set only if you intentionally run without alerts)
 - `QKT_MAX_DAILY_LOSS=100`
 - `QKT_MAX_ORDER_QTY=1`
 - `QKT_MAX_ORDER_NOTIONAL=50000`
 - `QKT_PRICE_COLLAR_PCT=5`
+- `QKT_INSIGHTS_ENABLED=false`
+- `COMPOSE_PROFILES=insights` when `QKT_INSIGHTS_ENABLED=true`
+- `QKT_INSIGHTS_HOST_PORT=8420`
+- `QKT_INSIGHTS_IMAGE=ghcr.io/elitekaycy/qkt-insights:latest`
+- `QKT_INSIGHTS_INSTANCE_ID=qkt-mt5`
+- `QKT_INSIGHTS_ADMIN_USERNAME=admin`
 
 The remote account must have Docker Compose access. No repository secret is
 stored in Git, and `state/`/`data/` are preserved between deployments. MT5 logs
 in headlessly from `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`; VNC is only a
 diagnostic fallback over an SSH tunnel.
+
+Production preflight requires an alert path. Enable Telegram for normal live
+use, or set `QKT_ALERTS_WAIVER_REASON` as an explicit operator waiver.
+
+For multiple deployments on one VPS, use a unique `DEPLOY_PATH`,
+`COMPOSE_PROJECT_NAME`, `MT5_API_HOST_PORT`, `MT5_VNC_HOST_PORT`, and
+`QKT_INSIGHTS_HOST_PORT` per repo.
 
 The workflow does the following:
 
@@ -42,9 +64,10 @@ The workflow does the following:
 2. Verifies required production secrets are present.
 3. Renders `.env` from GitHub environment secrets/variables.
 4. Runs `docker compose --env-file .env config --quiet`.
-5. Syncs this repo to `DEPLOY_PATH`, excluding `.git/`, `state/`, and `data/`.
-6. Runs `docker compose pull`.
-7. Runs `docker compose up -d --remove-orphans`.
+5. Parses every `strategies/*.qkt` file and runs production preflight.
+6. Syncs this repo to `DEPLOY_PATH`, excluding `.git/`, `state/`, and `data/`.
+7. Runs `docker compose pull`.
+8. Runs `docker compose up -d --remove-orphans`.
 
 Before deploying a strategy, run:
 
