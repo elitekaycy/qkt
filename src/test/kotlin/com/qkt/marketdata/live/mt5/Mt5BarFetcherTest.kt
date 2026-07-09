@@ -118,6 +118,38 @@ class Mt5BarFetcherTest {
     }
 
     @Test
+    fun `fetchRange supports 30 minute MT5 warmup bars`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"close":1.1425,"high":1.143,"low":1.141,"open":1.142,"tick_volume":100,"time":"2026-07-09T12:00:00Z"}]""",
+                ),
+            )
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+            val candle =
+                fetcher
+                    .fetchRange(
+                        symbol = "EURUSDm",
+                        window = TimeWindow.parse("30m"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-07-09T12:00:00Z"),
+                                to = Instant.parse("2026-07-09T12:30:00Z"),
+                            ),
+                    ).single()
+
+            assertThat(candle.endTime).isEqualTo(Instant.parse("2026-07-09T12:30:00Z").toEpochMilli())
+            val request = server.takeRequest()
+            assertThat(request.path).contains("/fetch_data_range")
+            assertThat(request.path).contains("symbol=EURUSDm")
+            assertThat(request.path).contains("timeframe=M30")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `fetchRange drops bars whose startTime is at or beyond range to (#181)`() {
         // The gateway returns three 1h bars when asked for [16:00, 18:00) — the
         // 16:00 and 17:00 bars (closed) plus the 18:00 bar (currently open).
