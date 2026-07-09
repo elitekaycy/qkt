@@ -4,6 +4,7 @@
 .env.example.tmpl
 gitignore.tmpl
 README.md.tmpl
+CONFIG.md.tmpl
 Makefile.tmpl
 docker-compose.yml.tmpl
 qkt.config.yaml.tmpl

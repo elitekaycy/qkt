@@ -1,0 +1,44 @@
+# Configuration Guide
+
+This project is for research/backtesting, not live trading.
+
+```text
+.env            backtest dates, image tag, and simulated capital
+qkt.config.yaml data source and backtest runtime settings
+data/           local market data mounted into the QKT container
+strategies/     strategy files to test
+```
+
+## .env
+
+Edit the research window and simulated starting capital:
+
+```dotenv
+QKT_IMAGE_TAG=v{{QKT_VERSION}}
+BACKTEST_FROM=2024-01-01
+BACKTEST_TO=2024-02-01
+QKT_STARTING_BALANCE=10000
+```
+
+`BACKTEST_FROM` and `BACKTEST_TO` choose the dates. `QKT_STARTING_BALANCE` is
+only simulated capital for the run.
+
+## qkt.config.yaml
+
+The generated config uses local market data from `/data`, which is mounted from
+the project `data/` folder. If QKT cannot find data for the requested date or
+symbol, the backtest cannot prove anything useful.
+
+## Data
+
+Put market data under `data/` in the format expected by QKT. Keep raw data and
+generated reports separate so you can reproduce a run later.
+
+## Strategy Files
+
+`strategies/backtest.qkt` is the sample strategy. Replace or edit it, then run:
+
+```bash
+make backtest
+```
+

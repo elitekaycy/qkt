@@ -57,15 +57,20 @@ class CreateCommandTest {
         assertThat(compose).doesNotContain("container_name:")
         val topReadme = Files.readString(target.resolve("README.md"))
         assertThat(topReadme).contains("VPS Setup")
-        assertThat(topReadme).contains("make preflight STRAT=<name>")
-        assertThat(topReadme).contains("make resync-dry-run STRAT=<name>")
+        assertThat(topReadme).contains("make preflight STRAT=ema_cross")
+        assertThat(topReadme).contains("make resync-dry-run STRAT=ema_cross")
         assertThat(topReadme).contains("QKT_INSIGHTS_ENABLED")
+        assertThat(topReadme).contains("CONFIG.md")
+        assertThat(Files.readString(target.resolve("CONFIG.md")))
+            .contains("Configuration Guide")
+            .contains("QKT_MAX_DAILY_LOSS")
+            .contains("docker-compose.yml")
         val readme = Files.readString(target.resolve("strategies/README.md"))
         assertThat(readme).contains("Only reviewed, live-ready")
         assertThat(readme).contains("make resync STRAT=ema_cross")
         assertThat(Files.readString(target.resolve("README.md")))
             .contains("qkt MT5 deployment")
-            .contains("Required to boot and connect headlessly")
+            .contains("```dotenv")
     }
 
     @Test
@@ -114,6 +119,12 @@ class CreateCommandTest {
         assertThat(config).contains("journal_dir: /var/lib/qkt/insights-journal")
         assertThat(config).doesNotContain("kind: mt5")
         assertThat(config).doesNotContain("botToken:")
+
+        val compose = Files.readString(target.resolve("docker-compose.yml"))
+        assertThat(compose).contains("QKT_MAX_DAILY_LOSS: \${QKT_MAX_DAILY_LOSS")
+        assertThat(compose).contains("QKT_MAX_ORDER_QTY: \${QKT_MAX_ORDER_QTY")
+        assertThat(compose).contains("QKT_MAX_ORDER_NOTIONAL: \${QKT_MAX_ORDER_NOTIONAL")
+        assertThat(compose).contains("QKT_PRICE_COLLAR_PCT: \${QKT_PRICE_COLLAR_PCT")
     }
 
     @Test
@@ -309,6 +320,7 @@ class CreateCommandTest {
                 ".env.example",
                 ".gitignore",
                 "README.md",
+                "CONFIG.md",
                 "Makefile",
                 "docker-compose.yml",
                 "qkt.config.yaml",
@@ -323,6 +335,7 @@ class CreateCommandTest {
                 ".env.example",
                 ".gitignore",
                 "README.md",
+                "CONFIG.md",
                 "Makefile",
                 "docker-compose.yml",
                 "qkt.config.yaml",
