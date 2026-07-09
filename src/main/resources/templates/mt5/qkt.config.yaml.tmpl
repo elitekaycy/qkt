@@ -7,6 +7,9 @@ state:
 
 runtime:
   mode: production
+  waivers:
+    alerts:
+      reason: ${QKT_ALERTS_WAIVER_REASON:-}
 
 risk:
   max_daily_loss: ${QKT_MAX_DAILY_LOSS}
@@ -32,3 +35,14 @@ notify:
       - strategy_error
       - halted
       - resumed
+
+insights:
+  enabled: ${QKT_INSIGHTS_ENABLED}
+  url: http://qkt-insights:8420/ingest
+  instance_id: ${QKT_INSIGHTS_INSTANCE_ID}
+  token: ${QKT_INSIGHTS_INGEST_TOKEN}
+  events: [trade, order, signal, risk, position, state, deal, lifecycle, log]
+  journal_enabled: true
+  journal_dir: /var/lib/qkt/insights-journal
+  state_poll_ms: 10000
+  deal_backfill_days: 30

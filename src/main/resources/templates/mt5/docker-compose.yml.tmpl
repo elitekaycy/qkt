@@ -12,7 +12,6 @@ services:
 
   mt5-gateway:
     image: ${MT5_GATEWAY_IMAGE:-elitekaycy/mt5-gateway-api:0.3.2}
-    container_name: qkt-mt5
     restart: unless-stopped
     depends_on:
       init-perms:
@@ -35,10 +34,10 @@ services:
       API_KEY: ${MT5_API_KEY:?MT5_API_KEY must be set in .env}
     ports:
       # MT5 REST API. Bind to loopback; bearer auth is also enabled.
-      - "127.0.0.1:5020:5001"
+      - "${QKT_BIND_HOST:-127.0.0.1}:${MT5_API_HOST_PORT:-5020}:5001"
       # VNC web UI for diagnostic/manual fallback only.
-      # SSH-tunnel `-L 3020:127.0.0.1:3020 <host>` and open http://127.0.0.1:3020.
-      - "127.0.0.1:3020:3000"
+      # SSH-tunnel `-L 3020:127.0.0.1:${MT5_VNC_HOST_PORT:-3020} <host>` and open http://127.0.0.1:3020.
+      - "${QKT_BIND_HOST:-127.0.0.1}:${MT5_VNC_HOST_PORT:-3020}:3000"
     volumes:
       - mt5_config:/config
     healthcheck:
@@ -59,7 +58,6 @@ services:
 
   qkt:
     image: ghcr.io/elitekaycy/qkt:${QKT_IMAGE_TAG:?QKT_IMAGE_TAG must be set in .env}
-    container_name: qkt
     restart: unless-stopped
     depends_on:
       init-perms:
@@ -75,6 +73,10 @@ services:
       TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      QKT_ALERTS_WAIVER_REASON: ${QKT_ALERTS_WAIVER_REASON:-}
+      QKT_INSIGHTS_ENABLED: ${QKT_INSIGHTS_ENABLED:-false}
+      QKT_INSIGHTS_INSTANCE_ID: ${QKT_INSIGHTS_INSTANCE_ID:-qkt-mt5}
+      QKT_INSIGHTS_INGEST_TOKEN: ${QKT_INSIGHTS_INGEST_TOKEN:-}
     volumes:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
@@ -95,6 +97,34 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  qkt-insights:
+    image: ${QKT_INSIGHTS_IMAGE:-ghcr.io/elitekaycy/qkt-insights:latest}
+    restart: unless-stopped
+    command: run
+    profiles: ["insights"]
+    ports:
+      # Dashboard/API. Bind to loopback; use an SSH tunnel for operator access.
+      - "${QKT_BIND_HOST:-127.0.0.1}:${QKT_INSIGHTS_HOST_PORT:-8420}:8420"
+    environment:
+      INSIGHTS_DB: /data/insights.db
+      INGEST_TOKEN: ${QKT_INSIGHTS_INGEST_TOKEN:-}
+      ADMIN_USERNAME: ${QKT_INSIGHTS_ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${QKT_INSIGHTS_ADMIN_PASSWORD:-}
+      SESSION_SECRET: ${QKT_INSIGHTS_SESSION_SECRET:-}
+    volumes:
+      - insights_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8420/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   mt5_config:
-    name: qkt-mt5-config
+  insights_data:

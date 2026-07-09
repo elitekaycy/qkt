@@ -28,14 +28,27 @@ jobs:
       MT5_API_KEY: ${{ secrets.MT5_API_KEY }}
       MT5_VNC_USER: ${{ vars.MT5_VNC_USER || 'admin' }}
       MT5_VNC_PASSWORD: ${{ secrets.MT5_VNC_PASSWORD || vars.MT5_VNC_PASSWORD || 'changeme' }}
+      COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'qkt-mt5' }}
+      QKT_BIND_HOST: ${{ vars.QKT_BIND_HOST || '127.0.0.1' }}
+      MT5_API_HOST_PORT: ${{ vars.MT5_API_HOST_PORT || '5020' }}
+      MT5_VNC_HOST_PORT: ${{ vars.MT5_VNC_HOST_PORT || '3020' }}
       QKT_EXNESS_MAGIC: ${{ vars.QKT_EXNESS_MAGIC || '10001' }}
       TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      QKT_ALERTS_WAIVER_REASON: ${{ vars.QKT_ALERTS_WAIVER_REASON || '' }}
       QKT_MAX_DAILY_LOSS: ${{ vars.QKT_MAX_DAILY_LOSS || '100' }}
       QKT_MAX_ORDER_QTY: ${{ vars.QKT_MAX_ORDER_QTY || '1' }}
       QKT_MAX_ORDER_NOTIONAL: ${{ vars.QKT_MAX_ORDER_NOTIONAL || '50000' }}
       QKT_PRICE_COLLAR_PCT: ${{ vars.QKT_PRICE_COLLAR_PCT || '5' }}
+      QKT_INSIGHTS_ENABLED: ${{ vars.QKT_INSIGHTS_ENABLED || 'false' }}
+      QKT_INSIGHTS_HOST_PORT: ${{ vars.QKT_INSIGHTS_HOST_PORT || '8420' }}
+      QKT_INSIGHTS_IMAGE: ${{ vars.QKT_INSIGHTS_IMAGE || 'ghcr.io/elitekaycy/qkt-insights:latest' }}
+      QKT_INSIGHTS_INSTANCE_ID: ${{ vars.QKT_INSIGHTS_INSTANCE_ID || 'qkt-mt5' }}
+      QKT_INSIGHTS_INGEST_TOKEN: ${{ secrets.QKT_INSIGHTS_INGEST_TOKEN }}
+      QKT_INSIGHTS_ADMIN_USERNAME: ${{ vars.QKT_INSIGHTS_ADMIN_USERNAME || 'admin' }}
+      QKT_INSIGHTS_ADMIN_PASSWORD: ${{ secrets.QKT_INSIGHTS_ADMIN_PASSWORD }}
+      QKT_INSIGHTS_SESSION_SECRET: ${{ secrets.QKT_INSIGHTS_SESSION_SECRET }}
 
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -48,6 +61,16 @@ jobs:
             MT5_LOGIN MT5_PASSWORD MT5_API_KEY; do
             test -n "${!name:-}" || { echo "::error::$name is required in the production environment"; exit 1; }
           done
+          if [ "${TELEGRAM_ENABLED}" = "true" ]; then
+            for name in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+              test -n "${!name:-}" || { echo "::error::$name is required when TELEGRAM_ENABLED=true"; exit 1; }
+            done
+          fi
+          if [ "${QKT_INSIGHTS_ENABLED}" = "true" ]; then
+            for name in QKT_INSIGHTS_INGEST_TOKEN QKT_INSIGHTS_ADMIN_PASSWORD QKT_INSIGHTS_SESSION_SECRET; do
+              test -n "${!name:-}" || { echo "::error::$name is required when QKT_INSIGHTS_ENABLED=true"; exit 1; }
+            done
+          fi
 
       - name: Render deployment environment
         shell: bash
@@ -66,13 +89,31 @@ jobs:
             printf 'MT5_SERVER=%s\n' "$MT5_SERVER"
             printf 'MT5_RESOLVER_URL=%s\n' 'https://mt5.mtapi.io'
             printf 'MT5_LOG_LEVEL=%s\n' 'INFO'
+            printf 'COMPOSE_PROJECT_NAME=%s\n' "$COMPOSE_PROJECT_NAME"
+            printf 'QKT_BIND_HOST=%s\n' "$QKT_BIND_HOST"
+            printf 'MT5_API_HOST_PORT=%s\n' "$MT5_API_HOST_PORT"
+            printf 'MT5_VNC_HOST_PORT=%s\n' "$MT5_VNC_HOST_PORT"
             printf 'TELEGRAM_ENABLED=%s\n' "$TELEGRAM_ENABLED"
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
             printf 'TELEGRAM_CHAT_ID=%s\n' "$TELEGRAM_CHAT_ID"
+            printf 'QKT_ALERTS_WAIVER_REASON=%s\n' "$QKT_ALERTS_WAIVER_REASON"
             printf 'QKT_MAX_DAILY_LOSS=%s\n' "$QKT_MAX_DAILY_LOSS"
             printf 'QKT_MAX_ORDER_QTY=%s\n' "$QKT_MAX_ORDER_QTY"
             printf 'QKT_MAX_ORDER_NOTIONAL=%s\n' "$QKT_MAX_ORDER_NOTIONAL"
             printf 'QKT_PRICE_COLLAR_PCT=%s\n' "$QKT_PRICE_COLLAR_PCT"
+            printf 'QKT_INSIGHTS_ENABLED=%s\n' "$QKT_INSIGHTS_ENABLED"
+            if [ "$QKT_INSIGHTS_ENABLED" = "true" ]; then
+              printf 'COMPOSE_PROFILES=%s\n' 'insights'
+            else
+              printf 'COMPOSE_PROFILES=\n'
+            fi
+            printf 'QKT_INSIGHTS_HOST_PORT=%s\n' "$QKT_INSIGHTS_HOST_PORT"
+            printf 'QKT_INSIGHTS_IMAGE=%s\n' "$QKT_INSIGHTS_IMAGE"
+            printf 'QKT_INSIGHTS_INSTANCE_ID=%s\n' "$QKT_INSIGHTS_INSTANCE_ID"
+            printf 'QKT_INSIGHTS_INGEST_TOKEN=%s\n' "$QKT_INSIGHTS_INGEST_TOKEN"
+            printf 'QKT_INSIGHTS_ADMIN_USERNAME=%s\n' "$QKT_INSIGHTS_ADMIN_USERNAME"
+            printf 'QKT_INSIGHTS_ADMIN_PASSWORD=%s\n' "$QKT_INSIGHTS_ADMIN_PASSWORD"
+            printf 'QKT_INSIGHTS_SESSION_SECRET=%s\n' "$QKT_INSIGHTS_SESSION_SECRET"
           } > .env
 
       - name: Configure SSH
@@ -88,6 +129,23 @@ jobs:
       - name: Validate generated deployment
         shell: bash
         run: docker compose --env-file .env config --quiet
+
+      - name: Validate QKT strategies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t strategies < <(find strategies -maxdepth 1 -type f -name '*.qkt' | sort)
+          if [ "${#strategies[@]}" -eq 0 ]; then
+            echo "No strategies/*.qkt files to validate"
+            exit 0
+          fi
+          docker compose --env-file .env pull qkt
+          for file in "${strategies[@]}"; do
+            target="/strategies/$(basename "$file")"
+            docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt parse "$target"
+            docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt preflight "$target" \
+              --production --config /etc/qkt/qkt.config.yaml --state-dir /tmp/qkt-preflight-state
+          done
 
       - name: Deploy atomically
         shell: bash

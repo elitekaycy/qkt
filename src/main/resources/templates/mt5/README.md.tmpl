@@ -48,6 +48,12 @@ Required before real capital:
 
 Usually keep defaults:
 
+- `COMPOSE_PROJECT_NAME`: Compose project/instance name. Change this when
+  running multiple generated deployments on one VPS.
+- `QKT_BIND_HOST`: host interface for published operator ports. Keep
+  `127.0.0.1` unless you intentionally expose through another private layer.
+- `MT5_API_HOST_PORT`, `MT5_VNC_HOST_PORT`: host ports for MT5 REST and VNC.
+  Change these when multiple deployments share a VPS.
 - `QKT_EXNESS_MAGIC`: deployment-level MT5 magic number.
 - `MT5_ENABLE_ALGO_TRADING`: keep enabled for automated trading.
 - `MT5_RESOLVER_URL`: server resolver fallback list.
@@ -57,6 +63,13 @@ Optional:
 
 - `MT5_VNC_USER`, `MT5_VNC_PASSWORD`: VNC fallback access for diagnostics.
 - `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: alerts.
+- `QKT_ALERTS_WAIVER_REASON`: explicit production waiver if you deliberately
+  run without Telegram alerts. Prefer enabling alerts.
+- `QKT_INSIGHTS_ENABLED`, `COMPOSE_PROFILES`, `QKT_INSIGHTS_*`: local
+  qkt-insights dashboard and durable event egress. Set
+  `QKT_INSIGHTS_ENABLED=true` and `COMPOSE_PROFILES=insights` after the admin
+  password, session secret, and ingest token are set. Use
+  `QKT_INSIGHTS_HOST_PORT` when more than one deployment runs on a VPS.
 
 Keep `.env` out of Git.
 
@@ -77,6 +90,12 @@ Keep `.env` out of Git.
 
 `resync` is the safe edit path: if validation or reconciliation fails, the old
 deployment remains registered and unrelated strategies keep running.
+
+To inspect qkt-insights when enabled, tunnel the dashboard:
+
+```bash
+ssh -L 8420:127.0.0.1:8420 <user>@<host>
+```
 
 ## Strategy Flow
 
