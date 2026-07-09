@@ -28,6 +28,8 @@ import com.qkt.execution.TriggerType
 import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.execution.withStrategyId
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.buyExecPrice
@@ -62,6 +64,8 @@ class OrderManager(
     private val closePrimaryTicketFor: ((String, String) -> String?)? = null,
     /** Live hedging sessions must never turn a missing close ticket into an opposite market order. */
     private val requireArmedTrailTicket: Boolean = false,
+    /** Venue metadata used to report bracket risk in account units (`price distance x qty x contractSize`). */
+    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     /**
      * Record per-bracket risk into [riskByClientOrderId] for the backtest report to read via
      * [riskUsdFor]. Only the backtest path consumes it, so live leaves this false — otherwise the
@@ -181,11 +185,18 @@ class OrderManager(
         quantity: BigDecimal,
         entry: BigDecimal,
         stop: BigDecimal,
+        symbol: String,
     ) {
         // Risk-per-trade is consumed only by the backtest report (via [riskUsdFor] in ReplayEngine).
         // In live nothing reads it, so recording would just leak ~2 entries per bracket forever.
         if (!trackRisk) return
-        val risk = entry.subtract(stop).abs().multiply(quantity)
+        val contractSize = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
+        val risk =
+            entry
+                .subtract(stop)
+                .abs()
+                .multiply(quantity, Money.CONTEXT)
+                .multiply(contractSize, Money.CONTEXT)
         for (id in clientOrderIds) riskByClientOrderId[id] = risk
     }
 
@@ -467,6 +478,7 @@ class OrderManager(
                         quantity = request.quantity,
                         entry = entryEstimate,
                         stop = riskStop,
+                        symbol = request.symbol,
                     )
                 }
                 val caps = broker.capabilitiesFor(request.symbol)
