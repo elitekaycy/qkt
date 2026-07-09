@@ -3,6 +3,7 @@
 # and the .tmpl suffix stripped on write.
 .env.example.tmpl
 gitignore.tmpl
+README.md.tmpl
 Makefile.tmpl
 docker-compose.yml.tmpl
 qkt.config.yaml.tmpl

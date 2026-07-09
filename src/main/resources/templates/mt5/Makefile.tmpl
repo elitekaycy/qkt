@@ -1,6 +1,6 @@
-.PHONY: up down restart logs status list deploy resync resync-dry-run reconcile stop audit-ticks shell
+.PHONY: up down restart logs status list preflight deploy resync resync-dry-run reconcile stop audit-ticks shell
 
-# Bring up qkt + mt5-gateway. First boot takes ~5 min while MT5 loads in the VNC desktop.
+# Bring up qkt + mt5-gateway. First boot can take several minutes while MT5 initializes under Wine.
 up:
 	docker compose up -d
 
@@ -22,6 +22,11 @@ status:
 # Per-strategy detail.
 list:
 	docker compose exec qkt qkt list
+
+# Production readiness check before deploy/resync. Usage: make preflight STRAT=ema_cross
+preflight:
+	@test -n "$(STRAT)" || (echo "usage: make preflight STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt preflight /strategies/$(STRAT).qkt --production --config /etc/qkt/qkt.config.yaml
 
 # Hot-deploy a strategy. Usage: make deploy STRAT=ema_cross
 deploy:
