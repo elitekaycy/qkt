@@ -50,6 +50,9 @@ class Backtest(
     private val pacerCooldownAfterConsecutive: Int = 1,
     private val pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
     private val pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
+    private val maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+    private val maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+    private val priceCollarFrac: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
     /** See [com.qkt.app.TradingPipeline.latencyEnabled]; defaults to the env-var read. */
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
@@ -95,6 +98,9 @@ class Backtest(
         pacerCooldownAfterConsecutive: Int = 1,
         pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
         pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
+        maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+        maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+        priceCollarFrac: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
         latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     ) : this(
         strategies = strategies,
@@ -116,6 +122,9 @@ class Backtest(
         pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
         pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
         pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
+        maxOrderQty = maxOrderQty,
+        maxOrderNotional = maxOrderNotional,
+        priceCollarFrac = priceCollarFrac,
         latencyEnabled = latencyEnabled,
     )
 
@@ -150,6 +159,9 @@ class Backtest(
             pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
             pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
             pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
+            maxOrderQty = maxOrderQty,
+            maxOrderNotional = maxOrderNotional,
+            priceCollarFrac = priceCollarFrac,
             latencyEnabled = latencyEnabled,
             barFills = barFills,
             tickResolvedBars = tickResolvedBars,
@@ -189,6 +201,9 @@ class Backtest(
             pacerCooldownAfterConsecutive: Int = 1,
             pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
             pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
+            maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+            maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+            priceCollarFrac: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
             forceBars: Boolean = false,
             barWindows: Map<String, TimeWindow> = emptyMap(),
             binaryBarStore: com.qkt.marketdata.store.BinaryBarStore? = null,
@@ -240,6 +255,9 @@ class Backtest(
                 pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
                 pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
                 pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                priceCollarFrac = priceCollarFrac,
                 forceBars = forceBars,
                 barWindows = barWindows,
                 tickFills = tickFills,
@@ -268,6 +286,9 @@ class Backtest(
             pacerCooldownAfterConsecutive: Int = 1,
             pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
             pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
+            maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+            maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+            priceCollarFrac: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
             forceBars: Boolean = false,
             barWindows: Map<String, TimeWindow> = emptyMap(),
             tickFills: Boolean = false,
@@ -332,6 +353,9 @@ class Backtest(
                 pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
                 pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
                 pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                priceCollarFrac = priceCollarFrac,
                 // Tick-resolved fills use the full-tick fill model (fill at the real tick price, not
                 // the trigger level): fills only ever occur on bars fed real ticks, so the bar-tier
                 // fill-at-trigger-price guard is both unnecessary and wrong here.
