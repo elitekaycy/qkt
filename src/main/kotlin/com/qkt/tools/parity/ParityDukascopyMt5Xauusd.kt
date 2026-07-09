@@ -118,6 +118,7 @@ private fun windowToMt5(window: TimeWindow): String =
         60_000L -> "M1"
         300_000L -> "M5"
         900_000L -> "M15"
+        1_800_000L -> "M30"
         3_600_000L -> "H1"
         14_400_000L -> "H4"
         86_400_000L -> "D1"
