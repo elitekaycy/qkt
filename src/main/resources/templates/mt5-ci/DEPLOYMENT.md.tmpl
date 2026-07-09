@@ -1,8 +1,9 @@
 # Production deployment
 
 This project deploys on pushes to `main` through the GitHub `production`
-environment. The workflow renders `.env` from protected environment secrets,
-validates Compose, syncs the project, and starts the pinned images.
+environment. The workflow renders `.env` from protected environment
+secrets/variables, validates Compose, syncs the project, pulls images, and
+starts the stack.
 
 Create these GitHub environment secrets:
 
@@ -13,9 +14,8 @@ Create these GitHub environment secrets:
 - `MT5_LOGIN`
 - `MT5_PASSWORD`
 - `MT5_API_KEY`
-- `MT5_VNC_PASSWORD`
 
-Optional secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+Optional secrets: `MT5_VNC_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
 
 Optional environment variables have safe defaults:
 
@@ -23,11 +23,37 @@ Optional environment variables have safe defaults:
 - `DEPLOY_PATH=/opt/qkt`
 - `MT5_SERVER=Exness-MT5Trial9`
 - `MT5_VNC_USER=admin`
+- `MT5_VNC_PASSWORD=changeme`
 - `QKT_EXNESS_MAGIC=10001`
 - `TELEGRAM_ENABLED=false`
+- `QKT_MAX_DAILY_LOSS=100`
+- `QKT_MAX_ORDER_QTY=1`
+- `QKT_MAX_ORDER_NOTIONAL=50000`
+- `QKT_PRICE_COLLAR_PCT=5`
 
 The remote account must have Docker Compose access. No repository secret is
-stored in Git, and `state/`/`data/` are preserved between deployments.
+stored in Git, and `state/`/`data/` are preserved between deployments. MT5 logs
+in headlessly from `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`; VNC is only a
+diagnostic fallback over an SSH tunnel.
+
+The workflow does the following:
+
+1. Checks out the repo.
+2. Verifies required production secrets are present.
+3. Renders `.env` from GitHub environment secrets/variables.
+4. Runs `docker compose --env-file .env config --quiet`.
+5. Syncs this repo to `DEPLOY_PATH`, excluding `.git/`, `state/`, and `data/`.
+6. Runs `docker compose pull`.
+7. Runs `docker compose up -d --remove-orphans`.
+
+Before deploying a strategy, run:
+
+```bash
+make preflight STRAT=<strategy>
+make audit-ticks SYMBOL=XAUUSD DUR=5m
+make deploy STRAT=<strategy>
+make reconcile STRAT=<strategy>
+```
 
 After the stack is running, use resync for strategy edits:
 

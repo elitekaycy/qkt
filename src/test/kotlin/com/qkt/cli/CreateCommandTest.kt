@@ -42,12 +42,23 @@ class CreateCommandTest {
                 .withFailMessage("expected $entry at $target")
                 .exists()
         }
+        assertThat(target.resolve("strategies/ema_cross.qkt")).doesNotExist()
+        assertThat(target.resolve("strategies/full_strategy.qkt")).doesNotExist()
         val makefile = Files.readString(target.resolve("Makefile"))
+        assertThat(makefile).contains("preflight")
         assertThat(makefile).contains("resync-dry-run")
         assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
         assertThat(makefile).contains("qkt reconcile $(STRAT)")
+        val topReadme = Files.readString(target.resolve("README.md"))
+        assertThat(topReadme).contains("VPS Setup")
+        assertThat(topReadme).contains("make preflight STRAT=<name>")
+        assertThat(topReadme).contains("make resync-dry-run STRAT=<name>")
         val readme = Files.readString(target.resolve("strategies/README.md"))
+        assertThat(readme).contains("Only reviewed, live-ready")
         assertThat(readme).contains("make resync STRAT=ema_cross")
+        assertThat(Files.readString(target.resolve("README.md")))
+            .contains("qkt MT5 deployment")
+            .contains("Required to boot and connect headlessly")
     }
 
     @Test
@@ -59,8 +70,13 @@ class CreateCommandTest {
         val envContent = Files.readString(target.resolve(".env.example"))
         assertThat(envContent).contains("QKT_IMAGE_TAG=v${BuildInfo.VERSION}")
         assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.2")
+        assertThat(envContent).contains("Required: headless MT5 login")
+        assertThat(envContent).contains("Usually keep defaults")
+        assertThat(envContent).contains("Diagnostic fallback only")
         assertThat(envContent).contains("MT5_ENABLE_ALGO_TRADING=1")
         assertThat(envContent).contains("MT5_API_KEY=replace-with-a-long-random-value")
+        assertThat(envContent).contains("QKT_MAX_DAILY_LOSS=100")
+        assertThat(envContent).contains("QKT_MAX_ORDER_NOTIONAL=50000")
     }
 
     @Test
@@ -70,6 +86,9 @@ class CreateCommandTest {
         val target = tmp.resolve("project")
         invoke("create", "template", target.toString())
         val config = Files.readString(target.resolve("qkt.config.yaml"))
+        assertThat(config).contains("mode: production")
+        assertThat(config).contains("max_daily_loss: \${QKT_MAX_DAILY_LOSS}")
+        assertThat(config).contains("max_order_notional: \${QKT_MAX_ORDER_NOTIONAL}")
         assertThat(config).contains("type: mt5")
         assertThat(config).contains("gateway_url: \${QKT_EXNESS_URL:-http://mt5-gateway:5001}")
         assertThat(config).contains("api_key: \${QKT_BROKER_EXNESS_API_KEY}")
@@ -172,6 +191,7 @@ class CreateCommandTest {
             assertThat(code).isEqualTo(ExitCodes.SUCCESS)
             assertThat(stdout).contains("make backtest")
             assertThat(target.resolve(".gitignore")).exists()
+            assertThat(target.resolve("README.md")).exists()
             assertThat(target.resolve("data/README.md")).exists()
             strategies.forEach { assertThat(target.resolve(it)).exists() }
             assertThat(Files.readString(target.resolve("qkt.config.yaml"))).contains("source: local")
@@ -199,10 +219,21 @@ class CreateCommandTest {
         assertThat(workflow).contains("\${{ secrets.MT5_PASSWORD }}")
         assertThat(workflow).contains("printf 'QKT_IMAGE_TAG=v%s")
         assertThat(workflow).contains("'${BuildInfo.VERSION}'")
+        assertThat(workflow).contains("MT5_GATEWAY_IMAGE=%s\\n' 'elitekaycy/mt5-gateway-api:0.3.2'")
+        assertThat(workflow)
+            .contains(
+                "MT5_VNC_PASSWORD: \${{ secrets.MT5_VNC_PASSWORD || vars.MT5_VNC_PASSWORD || 'changeme' }}",
+            )
+        assertThat(workflow).doesNotContain("MT5_API_KEY MT5_VNC_PASSWORD")
+        assertThat(workflow).contains("QKT_MAX_DAILY_LOSS")
+        assertThat(workflow).contains("QKT_MAX_ORDER_NOTIONAL")
         assertThat(workflow).contains("docker compose --env-file .env config --quiet")
         assertThat(workflow).doesNotContain("replace-with-a-long-random-value")
         assertThat(target.resolve("DEPLOYMENT.md")).exists()
         val deployment = Files.readString(target.resolve("DEPLOYMENT.md"))
+        assertThat(deployment).contains("QKT_MAX_DAILY_LOSS")
+        assertThat(deployment).contains("MT5 logs")
+        assertThat(deployment).contains("make preflight STRAT=<strategy>")
         assertThat(deployment).contains("qkt resync /strategies/<strategy>.qkt")
     }
 
@@ -241,14 +272,27 @@ class CreateCommandTest {
             listOf(
                 ".env.example",
                 ".gitignore",
+                "README.md",
+                "Makefile",
+                "docker-compose.yml",
+                "qkt.config.yaml",
+                "examples/strategies/README.md",
+                "examples/strategies/ema_cross.qkt",
+                "examples/strategies/full_strategy.qkt",
+                "strategies/.gitkeep",
+                "strategies/README.md",
+            )
+        private val MINIMAL_EXPECTED_FILES =
+            listOf(
+                ".env.example",
+                ".gitignore",
+                "README.md",
                 "Makefile",
                 "docker-compose.yml",
                 "qkt.config.yaml",
                 "strategies/README.md",
                 "strategies/ema_cross.qkt",
-                "strategies/full_strategy.qkt",
             )
-        private val MINIMAL_EXPECTED_FILES = MT5_EXPECTED_FILES - "strategies/full_strategy.qkt"
         private val BYBIT_EXPECTED_FILES = MINIMAL_EXPECTED_FILES
     }
 }

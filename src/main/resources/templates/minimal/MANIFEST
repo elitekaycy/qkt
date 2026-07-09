@@ -1,6 +1,7 @@
 # Files copied by `qkt create template --kind minimal`.
 .env.example.tmpl
 gitignore.tmpl
+README.md.tmpl
 Makefile.tmpl
 docker-compose.yml.tmpl
 qkt.config.yaml.tmpl

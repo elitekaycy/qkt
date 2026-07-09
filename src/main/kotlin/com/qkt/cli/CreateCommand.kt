@@ -5,7 +5,7 @@ import java.nio.file.Path
 /**
  * `qkt create template <path> [--kind <kind>]` — scaffold a new qkt project.
  *
- * Writes a working tree (compose stack, sample strategy, Makefile, `.env.example`)
+ * Writes a working tree (compose stack, examples, Makefile, `.env.example`)
  * so a new operator can go from "I have qkt installed" to "I have a daemon running
  * on docker-compose" in two commands. Default kind is `mt5` — the canonical full
  * stack with `mt5-gateway`; `minimal` skips the gateway for paper-only / backtest
@@ -55,7 +55,8 @@ class CreateCommand(
                     println("  make backtest         # run the included research strategy")
                 } else {
                     println("  make up               # start the qkt daemon")
-                    println("  make deploy STRAT=ema_cross")
+                    println("  # copy a live-ready .qkt into strategies/, then:")
+                    println("  make deploy STRAT=<name>")
                     println("  make logs")
                 }
                 ExitCodes.SUCCESS
