@@ -8,6 +8,7 @@ CONFIG.md.tmpl
 Makefile.tmpl
 docker-compose.yml.tmpl
 qkt.config.yaml.tmpl
+scripts/verify-live.sh.tmpl
 strategies/README.md.tmpl
 strategies/.gitkeep
 examples/strategies/README.md.tmpl

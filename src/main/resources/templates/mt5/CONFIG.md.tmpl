@@ -59,6 +59,11 @@ QKT_INSIGHTS_HOST_PORT=8420
 
 ## qkt.config.yaml
 
+`source: local` means QKT does not open a TradingView fallback feed for unknown
+symbols. This does not disable MT5 data. Streams such as `EXNESS:EURUSD` still
+route through `brokers.exness`, so the same MT5 account provides both market data
+and execution.
+
 `runtime.mode: production` makes QKT fail closed. The daemon should refuse to
 start or deploy when important production controls are missing.
 

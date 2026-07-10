@@ -68,6 +68,8 @@ The workflow does the following:
 6. Syncs this repo to `DEPLOY_PATH`, excluding `.git/`, `state/`, and `data/`.
 7. Runs `docker compose pull`.
 8. Runs `docker compose up -d --remove-orphans`.
+9. Runs `verify-live` inside the QKT container until every `strategies/*.qkt`
+   file is visible in `qkt status --deep` as a running strategy.
 
 Before deploying a strategy, run:
 
@@ -75,6 +77,7 @@ Before deploying a strategy, run:
 make preflight STRAT=<strategy>
 make audit-ticks SYMBOL=XAUUSD DUR=5m
 make deploy STRAT=<strategy>
+make verify-live
 make reconcile STRAT=<strategy>
 ```
 
