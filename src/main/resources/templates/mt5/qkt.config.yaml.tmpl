@@ -1,6 +1,12 @@
 # qkt daemon config. Defaults assume the docker-compose.yml that ships with this
 # template. Edit broker.exness.* to point at your live MT5 account; or rename the
 # profile and point a different DSL strategy at it.
+#
+# `source` controls only the fallback for symbols that do not match a broker
+# route. EXNESS:* streams still use brokers.exness for MT5 market data and
+# execution. Keep this local for MT5-first production deploys so an unused
+# TradingView WebSocket cannot hide routing mistakes or spam reconnect logs.
+source: local
 
 state:
   enabled: true
