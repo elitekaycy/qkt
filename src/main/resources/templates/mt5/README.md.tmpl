@@ -22,6 +22,7 @@ cp .env.example .env
 $EDITOR .env
 docker compose --env-file .env config --quiet
 make up
+make verify-live
 ```
 
 The first MT5 boot can take several minutes while the terminal starts and logs
@@ -89,7 +90,9 @@ Use these commands from the project directory:
 ```bash
 make up                         # start MT5 gateway and QKT daemon
 make logs                       # tail QKT daemon logs
-make status                     # show deployed strategies
+make status                     # deep daemon and loaded-strategy health
+make list                       # show deployed strategies
+make verify-live                # CI-safe live verification
 make preflight STRAT=ema_cross  # production preflight
 make deploy STRAT=ema_cross     # deploy strategies/ema_cross.qkt
 make resync-dry-run STRAT=ema_cross
@@ -120,7 +123,7 @@ ssh -L 8420:127.0.0.1:8420 <user>@<host>
 2. Copy the live-ready `.qkt` file into `strategies/`.
 3. Run `make preflight STRAT=<name>`.
 4. Deploy with `make deploy STRAT=<name>`.
-5. Confirm ticks, status, logs, and reconcile output.
+5. Confirm `make verify-live`, ticks, logs, and reconcile output.
 6. For edits, run `make resync-dry-run`, then `make resync`, then `make reconcile`.
 
 Examples live in `examples/strategies/`; they are not auto-loaded.

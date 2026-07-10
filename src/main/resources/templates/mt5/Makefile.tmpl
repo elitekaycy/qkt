@@ -1,4 +1,4 @@
-.PHONY: up down restart logs status list preflight deploy resync resync-dry-run reconcile stop audit-ticks shell
+.PHONY: up down restart logs status list verify-live preflight deploy resync resync-dry-run reconcile stop audit-ticks shell
 
 # Bring up qkt + mt5-gateway. First boot can take several minutes while MT5 initializes under Wine.
 up:
@@ -15,13 +15,17 @@ restart:
 logs:
 	docker compose logs -f --tail 200 qkt
 
-# Snapshot of all deployed strategies.
+# Deep daemon and strategy health. Fails if strategies/*.qkt exists but is not running.
 status:
-	docker compose exec qkt qkt list
+	docker compose exec qkt /bin/sh /deploy-scripts/verify-live.sh
 
-# Per-strategy detail.
+# Snapshot of all deployed strategies.
 list:
 	docker compose exec qkt qkt list
+
+# Same as status, named for CI/deploy scripts.
+verify-live:
+	docker compose exec qkt /bin/sh /deploy-scripts/verify-live.sh
 
 # Production readiness check before deploy/resync. Usage: make preflight STRAT=ema_cross
 preflight:

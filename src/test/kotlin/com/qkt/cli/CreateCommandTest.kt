@@ -47,9 +47,11 @@ class CreateCommandTest {
         val makefile = Files.readString(target.resolve("Makefile"))
         assertThat(makefile).contains("preflight")
         assertThat(makefile).contains("resync-dry-run")
+        assertThat(makefile).contains("verify-live")
         assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
         assertThat(makefile).contains("qkt reconcile $(STRAT)")
         val compose = Files.readString(target.resolve("docker-compose.yml"))
+        assertThat(compose).contains("/deploy-scripts/verify-live.sh")
         assertThat(compose).contains("qkt-insights")
         assertThat(compose).contains("ghcr.io/elitekaycy/qkt-insights:latest")
         assertThat(compose).contains("\${QKT_BIND_HOST:-127.0.0.1}:\${QKT_INSIGHTS_HOST_PORT:-8420}:8420")
@@ -71,6 +73,9 @@ class CreateCommandTest {
         assertThat(Files.readString(target.resolve("README.md")))
             .contains("qkt MT5 deployment")
             .contains("```dotenv")
+        assertThat(Files.readString(target.resolve("scripts/verify-live.sh")))
+            .contains("qkt status --deep")
+            .contains("expected strategy")
     }
 
     @Test
@@ -107,6 +112,7 @@ class CreateCommandTest {
         invoke("create", "template", target.toString())
         val config = Files.readString(target.resolve("qkt.config.yaml"))
         assertThat(config).contains("mode: production")
+        assertThat(config).contains("source: local")
         assertThat(config).contains("QKT_ALERTS_WAIVER_REASON")
         assertThat(config).contains("max_daily_loss: \${QKT_MAX_DAILY_LOSS}")
         assertThat(config).contains("max_order_notional: \${QKT_MAX_ORDER_NOTIONAL}")
@@ -271,6 +277,7 @@ class CreateCommandTest {
         assertThat(workflow).contains("qkt parse \"\$target\"")
         assertThat(workflow).contains("qkt preflight \"\$target\"")
         assertThat(workflow).contains("--state-dir /tmp/qkt-preflight-state")
+        assertThat(workflow).contains("/deploy-scripts/verify-live.sh")
         assertThat(workflow).doesNotContain("replace-with-a-long-random-value")
         assertThat(target.resolve("DEPLOYMENT.md")).exists()
         val deployment = Files.readString(target.resolve("DEPLOYMENT.md"))
@@ -282,6 +289,7 @@ class CreateCommandTest {
         assertThat(deployment).contains("MT5 logs")
         assertThat(deployment).contains("make preflight STRAT=<strategy>")
         assertThat(deployment).contains("qkt resync /strategies/<strategy>.qkt")
+        assertThat(deployment).contains("verify-live")
     }
 
     @Test
@@ -324,6 +332,7 @@ class CreateCommandTest {
                 "Makefile",
                 "docker-compose.yml",
                 "qkt.config.yaml",
+                "scripts/verify-live.sh",
                 "examples/strategies/README.md",
                 "examples/strategies/ema_cross.qkt",
                 "examples/strategies/full_strategy.qkt",
