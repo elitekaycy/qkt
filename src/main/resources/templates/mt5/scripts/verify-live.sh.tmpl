@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+expected=""
+for file in /strategies/*.qkt; do
+  [ -e "$file" ] || continue
+  name=${file##*/}
+  name=${name%.qkt}
+  expected="$expected $name"
+done
+
+if ! status=$(qkt status --deep 2>&1); then
+  printf '%s\n' "$status"
+  exit 1
+fi
+printf '%s\n' "$status"
+
+if [ -z "${expected# }" ]; then
+  exit 0
+fi
+
+failed=0
+for name in $expected; do
+  if ! printf '%s\n' "$status" | grep -Eq "^[[:space:]]+$name[[:space:]]+running,"; then
+    printf 'verify-live: expected strategy "%s" from /strategies/%s.qkt to be deployed and running\n' "$name" "$name" >&2
+    failed=1
+  fi
+done
+
+exit "$failed"
