@@ -381,14 +381,15 @@ class MT5Broker(
                 is VolumeResult.Reject -> return reject(request, result.reason)
             }
         recentlyClosedByTicket[ticket] = clock.now()
-        client.closePositionAsync(ticket, volume = closeQuantity) { resp ->
+        client.closePositionAsync(ticket, volume = closeQuantity, partial = request.partialClose) { resp ->
             if (!isOrderSuccessful(resp.result.retcode)) {
                 recentlyClosedByTicket.remove(ticket)
                 reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
                 return@closePositionAsync
             }
-            val partial = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
-            if (partial) {
+            val partiallyFilled = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
+            val positionRemainsOpen = request.partialClose || partiallyFilled
+            if (positionRemainsOpen) {
                 recentlyClosedByTicket.remove(ticket)
             } else {
                 positionMetaByTicket.remove(ticket)
@@ -398,7 +399,7 @@ class MT5Broker(
             val filledQuantity =
                 if (reportedVolume != null) {
                     reportedVolume
-                } else if (!partial) {
+                } else if (!partiallyFilled) {
                     closeQuantity
                 } else {
                     // The venue changed state, so a rejection would invite a duplicate close.

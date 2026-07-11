@@ -547,6 +547,7 @@ object InsightsTranslate {
             is OrderRequest.Market -> {
                 base["closesTicket"] = request.closesTicket
                 base["closesLegId"] = request.closesLegId
+                base["partialClose"] = request.partialClose
             }
             is OrderRequest.Limit -> base["limitPrice"] = request.limitPrice
             is OrderRequest.Stop -> base["stopPrice"] = request.stopPrice

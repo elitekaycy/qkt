@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.execution.OrderRequest
@@ -103,6 +104,53 @@ class ActionCompilerTest {
         // Long leg closes with a SELL, short leg with a BUY.
         assertThat(closes.first { it.closesLegId == "leg-A" }.side).isEqualTo(Side.SELL)
         assertThat(closes.first { it.closesLegId == "leg-B" }.side).isEqualTo(Side.BUY)
+    }
+
+    @Test
+    fun `RESIZE shrink marks only a nonzero target as a partial close`() {
+        val primary =
+            PositionLeg(
+                legId = "primary",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                entryPrice = BigDecimal("1"),
+                openedAt = 0L,
+                role = LegRole.PRIMARY,
+                brokerTicket = "ticket-1",
+            )
+        val view =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String): Position? = null
+
+                override fun allPositions(): Map<String, Position> = emptyMap()
+
+                override fun legsFor(symbol: String): List<PositionLeg> = listOf(primary)
+            }
+        val resizeContext =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = view),
+            )
+
+        fun compileTarget(target: String): OrderRequest.Market {
+            val signal =
+                ActionCompiler(ExprCompiler())
+                    .compile(Resize("btc", SizeQty(NumLit(BigDecimal(target)))))
+                    .invoke(resizeContext)
+                    .single() as Signal.Submit
+            return signal.request as OrderRequest.Market
+        }
+
+        val shrink = compileTarget("0.04")
+        val flatten = compileTarget("0")
+
+        assertThat(shrink.quantity).isEqualByComparingTo("0.06")
+        assertThat(shrink.partialClose).isTrue
+        assertThat(flatten.quantity).isEqualByComparingTo("0.10")
+        assertThat(flatten.partialClose).isFalse
     }
 
     @Test

@@ -308,6 +308,43 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `partial closesTicket uses the gateway partial-close route`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":778,"price":"1.1050","volume":"0.60","comment":"ok"}}""",
+            ),
+        )
+        server.enqueue(MockResponse().setBody("[]"))
+        val req =
+            OrderRequest.Market(
+                id = "resize-shrink",
+                symbol = "EXNESS:EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.60"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+                closesTicket = "424242",
+                closesLegId = "primary",
+                partialClose = true,
+            )
+
+        val ack = broker.submit(req)
+
+        assertThat(ack.accepted).isTrue
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        val filled = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(filled.quantity).isEqualByComparingTo("0.60")
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/position_close_partial")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"ticket":424242,"volume":0.60}""")
+    }
+
+    @Test
     fun `closesTicket close failure surfaces as OrderRejected`() {
         server.enqueue(
             MockResponse().setResponseCode(400).setBody("""{"error":"Failed to close position"}"""),
