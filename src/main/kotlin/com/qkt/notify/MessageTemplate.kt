@@ -62,10 +62,11 @@ object MessageTemplate {
                 """.trimIndent()
 
             is NotificationEvent.StrategyStopped ->
-                """
-                $tag qkt stopped ${event.strategyId} (flatten=${event.flatten})
-                $t
-                """.trimIndent()
+                listOfNotNull(
+                    "$tag qkt stopped ${event.strategyId} (flatten=${event.flatten})",
+                    event.reason?.let { "reason: $it" },
+                    t,
+                ).joinToString("\n")
 
             is NotificationEvent.StrategyError ->
                 """

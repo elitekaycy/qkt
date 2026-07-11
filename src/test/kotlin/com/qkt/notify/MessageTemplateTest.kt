@@ -79,6 +79,17 @@ class MessageTemplateTest {
             .contains("[INFO] qkt started x")
         assertThat(MessageTemplate.format(NotificationEvent.StrategyStopped("x", flatten = true, ts)))
             .contains("[INFO] qkt stopped x (flatten=true)")
+        assertThat(
+            MessageTemplate.format(
+                NotificationEvent.StrategyStopped(
+                    "x",
+                    flatten = false,
+                    ts,
+                    unexpected = true,
+                    reason = "feed lost",
+                ),
+            ),
+        ).contains("[CRITICAL] qkt stopped x").contains("reason: feed lost")
         assertThat(MessageTemplate.format(NotificationEvent.StrategyError("x", "boom", ts)))
             .contains("[CRITICAL] qkt strategy error x")
     }
