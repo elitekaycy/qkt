@@ -35,8 +35,8 @@ RULES
     WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
     THEN BUY btc SIZING 0.1
          BRACKET {
-           STOP_LOSS BY 50 PCT,
-           TAKE_PROFIT BY 50 * rrRatio PCT
+           STOP_LOSS BY 1 PCT,
+           TAKE_PROFIT BY 1 * rrRatio PCT
          }
 ```
 

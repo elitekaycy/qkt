@@ -18,7 +18,7 @@ The headline acceptance test: a DSL strategy with `LIMIT entry + BRACKET { STOP 
 - Per-strategy `IdGenerator` — `AstCompiler` builds `SequentialIdGenerator(prefix = "dsl-${ast.name}-")` and threads it into `ActionCompiler`. Every emitted `OrderRequest` gets a unique ID prefixed by strategy name.
 - Kotlin DSL helpers:
   - Order types: `market`, `limitAt(price)`, `stopAt(price)`, `stopLimit(stop, limit)`, `trailingBy(distance)`, `trailingPct(frac)`.
-  - Child prices: `childAt(price)`, `childBy(distance)`, `childPct(frac)`, `childRr(multiplier)`.
+  - Child prices: `childAt(price)`, `childBy(distance)`, `childPct(percent)`, `childRr(multiplier)`.
   - Brackets / OCO: `bracket(stopLoss, takeProfit)`, `oco(stop, limit)`.
   - Sizing: `usdNotional(usd)`, `riskAbs(amount)`, `positionFull(stream)`. Plus existing `1.bd` direct-quantity.
   - TIF: `gtc`, `ioc`, `fok`, `day` constants.
