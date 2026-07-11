@@ -236,20 +236,34 @@ class MT5Client(
     }
 
     /**
-     * Close a position WITHOUT blocking the caller — the async sibling of [closePosition],
-     * with the same contract as [placeOrderAsync]: [onResult] runs on an OkHttp dispatcher
-     * thread with the parsed response, or a synthetic retcode -1 failure. Not retried.
+     * Close a position without blocking the caller.
+     *
+     * With [partial] set, [volume] is required and the request uses the gateway's dedicated
+     * `/position_close_partial` route. Otherwise it uses `/close_position`, the async sibling
+     * of [closePosition]. [onResult] runs on an OkHttp dispatcher thread with the parsed
+     * response, or a synthetic retcode -1 failure. Not retried.
      * Closes ride the engine thread (CLOSE rules, trailing stops, flattens), where a
      * blocking gateway round-trip stalls tick processing exactly when exits matter.
      */
     fun closePositionAsync(
         ticket: Long,
         volume: BigDecimal? = null,
+        partial: Boolean = false,
         onResult: (MT5OrderResponse) -> Unit,
     ) {
-        val body = encodeClosePosition(ticket, volume).toRequestBody(JSON_MEDIA)
+        val path: String
+        val payload: String
+        if (partial) {
+            val closeVolume = requireNotNull(volume) { "partial close requires volume" }
+            path = "/position_close_partial"
+            payload = encodePartialClosePosition(ticket, closeVolume)
+        } else {
+            path = "/close_position"
+            payload = encodeClosePosition(ticket, volume)
+        }
+        val body = payload.toRequestBody(JSON_MEDIA)
         val request =
-            mt5RequestBuilder("$gatewayUrl/close_position", apiKey)
+            mt5RequestBuilder("$gatewayUrl$path", apiKey)
                 .post(body)
                 .build()
         http.newCall(request).enqueue(
@@ -275,6 +289,11 @@ class MT5Client(
             },
         )
     }
+
+    private fun encodePartialClosePosition(
+        ticket: Long,
+        volume: BigDecimal,
+    ): String = "{\"ticket\":$ticket,\"volume\":${volume.toPlainString()}}"
 
     private fun encodeClosePosition(
         ticket: Long,
