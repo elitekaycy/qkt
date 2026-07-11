@@ -437,7 +437,7 @@ class InsightsTranslateTest {
 
         val requests =
             listOf(
-                market().copy(closesTicket = "ticket-1", closesLegId = "leg-1"),
+                market().copy(closesTicket = "ticket-1", closesLegId = "leg-1", partialClose = true),
                 OrderRequest.Limit(
                     "lim",
                     "XAUUSD",
@@ -640,6 +640,7 @@ class InsightsTranslateTest {
                 "Stack",
             )
         assertThat(byType.getValue("Market")).containsEntry("closesTicket", "ticket-1")
+        assertThat(byType.getValue("Market")).containsEntry("partialClose", true)
         assertThat(
             byType.getValue("Limit"),
         ).containsEntry("limitPrice", BigDecimal("2349.5")).containsEntry("expiresAt", 2L)

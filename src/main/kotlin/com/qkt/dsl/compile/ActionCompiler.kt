@@ -130,6 +130,7 @@ class ActionCompiler(
                         strategyId = ctx.strategyContext.strategyId,
                         closesTicket = if (grow) null else primary.brokerTicket,
                         closesLegId = if (grow) null else primary.legId,
+                        partialClose = !grow && target.signum() > 0,
                     ),
                 ),
             )
