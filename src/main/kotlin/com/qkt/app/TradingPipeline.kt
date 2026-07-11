@@ -100,6 +100,8 @@ class TradingPipeline(
      * per-strategy `LiveSession` similarly gets its own.
      */
     val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(persistor = persistor),
+    /** Operator alert hook for a filled stack layer whose venue-side protection failed. */
+    val onProtectionFailure: (strategyId: String, message: String) -> Unit = { _, _ -> },
     val pacerLedger: com.qkt.risk.PacerLedger = com.qkt.risk.PacerLedger(),
     private val pacerCooldownDurationMs: Long? = null,
     private val pacerCooldownAfterConsecutive: Int = 1,
@@ -194,6 +196,7 @@ class TradingPipeline(
             // Risk-per-trade is a backtest-report feature; only record it there so the live
             // daemon's risk map doesn't grow unbounded.
             trackRisk = mode == Mode.BACKTEST,
+            onProtectionFailure = onProtectionFailure,
         )
     val latchManager: LatchManager =
         LatchManager(

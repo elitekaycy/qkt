@@ -1053,6 +1053,17 @@ class LiveSession(
                 persistor = persistor,
                 instruments = instruments,
                 brokerZoneIdFor = brokerZoneIdFor,
+                onProtectionFailure = { strategyId, message ->
+                    runCatching {
+                        notifier.notify(
+                            NotificationEvent.StrategyError(
+                                strategyId = strategyId,
+                                message = message,
+                                timestamp = clock.now(),
+                            ),
+                        )
+                    }.onFailure { t -> recordNotificationFailure(strategyId, "ProtectionFailure", t) }
+                },
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
