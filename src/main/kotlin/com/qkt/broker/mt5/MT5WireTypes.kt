@@ -163,6 +163,10 @@ data class MT5SymbolInfo(
  * [slDistance] is set for trailing stops — the distance in MT5 *points* that the
  * server-side trail follows the favorable price. Mutually exclusive with [sl]
  * (server manages the trail; clients shouldn't also set a fixed SL).
+ *
+ * [clientOrderId] identifies one placement attempt to the gateway. It is deliberately
+ * separate from [comment], which remains the stable engine order id used to correlate
+ * venue state during recovery.
  */
 data class MT5OrderRequest(
     val symbol: String,
@@ -176,6 +180,7 @@ data class MT5OrderRequest(
     val deviation: Int = 20,
     val magic: Int,
     val comment: String,
+    val clientOrderId: String = comment,
     val expiration: Long? = null,
     val typeTime: String? = null,
 )
