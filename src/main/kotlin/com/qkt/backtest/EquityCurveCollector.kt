@@ -16,6 +16,11 @@ class EquityCurveCollector(
     strategyIds: List<String>,
     curveCap: Int = DEFAULT_CURVE_CAP,
     /**
+     * Symbols expected at each candle boundary. When nonempty, candle-close cadence
+     * samples once after every symbol has closed that boundary instead of once per symbol.
+     */
+    private val candleSymbols: Set<String> = emptySet(),
+    /**
      * Account starting balance — anchors the curve at true equity. A 0-based PnL curve
      * makes every derived metric capital-blind: a $500 peak dipping to $250 reads as a
      * 50% drawdown when the account is $10k (really 2.5%), and Sharpe's returns are
@@ -27,11 +32,13 @@ class EquityCurveCollector(
     private val globalCurve = DecimatedCurve(curveCap)
     private val strategyMetricsAcc: Map<String, EquityMetrics> = strategyIds.associateWith { EquityMetrics() }
     private val strategyCurve: Map<String, DecimatedCurve> = strategyIds.associateWith { DecimatedCurve(curveCap) }
+    private var pendingCandleEndTime: Long? = null
+    private val symbolsClosedAtBoundary = mutableSetOf<String>()
 
     init {
         when (cadence) {
             SampleCadence.CANDLE_CLOSE ->
-                bus.subscribe<CandleEvent> { e -> sample(e.candle.endTime) }
+                bus.subscribe<CandleEvent> { e -> onCandleClose(e) }
             SampleCadence.TICK ->
                 bus.subscribe<TickEvent> { e -> sample(e.tick.timestamp) }
             SampleCadence.FILL ->
@@ -50,6 +57,22 @@ class EquityCurveCollector(
 
     /** Full-resolution metrics for a strategy, or null for an unknown strategy. */
     fun metricsFor(strategyId: String): EquityMetrics? = strategyMetricsAcc[strategyId]
+
+    private fun onCandleClose(event: CandleEvent) {
+        if (candleSymbols.isEmpty()) {
+            sample(event.candle.endTime)
+            return
+        }
+        if (pendingCandleEndTime != event.candle.endTime) {
+            pendingCandleEndTime = event.candle.endTime
+            symbolsClosedAtBoundary.clear()
+        }
+        symbolsClosedAtBoundary.add(event.candle.symbol)
+        if (!symbolsClosedAtBoundary.containsAll(candleSymbols)) return
+        sample(event.candle.endTime)
+        pendingCandleEndTime = null
+        symbolsClosedAtBoundary.clear()
+    }
 
     private fun sample(timestamp: Long) {
         val globalEquity: BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
