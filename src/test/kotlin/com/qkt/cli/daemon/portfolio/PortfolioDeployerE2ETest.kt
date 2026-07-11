@@ -6,6 +6,8 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.observe.insights.InsightsEventFamily
+import com.qkt.observe.insights.InsightsSink
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -14,6 +16,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -163,6 +167,63 @@ class PortfolioDeployerE2ETest {
         } finally {
             record.supervisor.stop()
             for (child in record.children) runCatching { child.close() }
+        }
+    }
+
+    @Test
+    fun `portfolio child lifecycle insights include parent alias and allocation metadata`(
+        @TempDir tmp: Path,
+    ) {
+        val server = MockWebServer().also { it.start() }
+        repeat(5) { server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}""")) }
+        val sink =
+            InsightsSink(
+                url = server.url("/ingest").toString(),
+                token = "secret",
+                instanceId = "qkt-test",
+                batchSize = 100,
+                flushIntervalMs = 20L,
+                queueCapacity = 1000,
+            )
+        val stateDir = StateDir.resolve(tmp.toString())
+        val deployer =
+            PortfolioDeployer(
+                stateDir = stateDir,
+                marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+                insightsSink = sink,
+                insightsEvents = setOf(InsightsEventFamily.LIFECYCLE),
+            )
+        val record =
+            deployer.deploy(
+                "weighted_book",
+                PortfolioLoader.load(
+                    Path.of("src/test/resources/dsl/portfolio_weighted.qkt"),
+                ),
+            )
+
+        try {
+            val bodies = StringBuilder()
+            val deadline = System.currentTimeMillis() + 5_000
+            while (System.currentTimeMillis() < deadline) {
+                val req = server.takeRequest(250, TimeUnit.MILLISECONDS) ?: continue
+                bodies.append(req.body.readUtf8())
+                if (bodies.contains("weighted_book:a") && bodies.contains("weighted_book:b")) break
+            }
+            sink.close()
+            val all = bodies.toString()
+            assertThat(all).contains("\"type\":\"strategy.started\"")
+            assertThat(all).contains("\"strategyId\":\"weighted_book:a\"")
+            assertThat(all).contains("\"strategyId\":\"weighted_book:b\"")
+            assertThat(all).contains("\"kind\":\"portfolio_child\"")
+            assertThat(all).contains("\"portfolioId\":\"weighted_book\"")
+            assertThat(all).contains("\"portfolioAlias\":\"a\"")
+            assertThat(all).contains("\"portfolioWeight\":0.6")
+            assertThat(all).contains("\"allocatedCapital\":60000.00000000")
+        } finally {
+            record.supervisor.stop()
+            for (child in record.children) runCatching { child.close() }
+            sink.close()
+            server.shutdown()
         }
     }
 
