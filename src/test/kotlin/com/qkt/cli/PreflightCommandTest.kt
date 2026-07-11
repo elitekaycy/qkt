@@ -118,6 +118,75 @@ class PreflightCommandTest {
     }
 
     @Test
+    fun `production preflight validates portfolio roots and children`(
+        @TempDir tmp: Path,
+    ) {
+        Files.writeString(
+            tmp.resolve("child.qkt"),
+            """
+            STRATEGY child VERSION 1
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            RULES
+                WHEN gold.close > 0 THEN BUY gold SIZING 0.1
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'child.qkt' AS child
+            RULES
+                RUN child
+            """.trimIndent(),
+        )
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            runtime:
+              mode: production
+              waivers:
+                alerts:
+                  reason: "integration test"
+            risk:
+              max_daily_loss: 100
+            brokers:
+              bybit:
+                type: bybit
+            """.trimIndent(),
+        )
+
+        val out = ByteArrayOutputStream()
+        val original = System.out
+        try {
+            System.setOut(PrintStream(out))
+            val code =
+                PreflightCommand(
+                    Args(
+                        arrayOf(
+                            "preflight",
+                            portfolio.toString(),
+                            "--config",
+                            cfg.toString(),
+                            "--state-dir",
+                            tmp.resolve("state").toString(),
+                        ),
+                    ),
+                ).run()
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        } finally {
+            System.setOut(original)
+        }
+
+        val text = out.toString()
+        assertThat(text).contains("PASS strategy.parse: book portfolio v1 (1 child strategies)")
+        assertThat(text).contains("PASS symbol.metadata")
+        assertThat(text).doesNotContain("FAIL")
+    }
+
+    @Test
     fun `production preflight fails when enabled telegram lacks credentials`(
         @TempDir tmp: Path,
     ) {

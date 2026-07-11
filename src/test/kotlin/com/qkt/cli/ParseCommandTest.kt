@@ -2,8 +2,11 @@ package com.qkt.cli
 
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.nio.file.Files
+import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class ParseCommandTest {
     private fun runParse(file: String): Pair<Int, String> {
@@ -27,6 +30,58 @@ class ParseCommandTest {
         val (code, out) = runParse("src/test/resources/cli/valid_strategy.qkt")
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
         assertThat(out).contains("ok")
+    }
+
+    @Test
+    fun `valid portfolio exits 0 and validates imports`(
+        @TempDir tmp: Path,
+    ) {
+        Files.writeString(
+            tmp.resolve("child.qkt"),
+            """
+            STRATEGY child VERSION 1
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            RULES
+                WHEN gold.close > 0 THEN BUY gold SIZING 0.1
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'child.qkt' AS child
+            RULES
+                RUN child
+            """.trimIndent(),
+        )
+
+        val (code, out) = runParse(portfolio.toString())
+
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out).contains("ok")
+    }
+
+    @Test
+    fun `portfolio with missing child exits 1`(
+        @TempDir tmp: Path,
+    ) {
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'missing.qkt' AS child
+            RULES
+                RUN child
+            """.trimIndent(),
+        )
+
+        val (code, out) = runParse(portfolio.toString())
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(out).contains("error")
     }
 
     @Test

@@ -2,10 +2,12 @@ package com.qkt.cli
 
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.dsl.parse.ParsedFile
+import com.qkt.dsl.portfolio.PortfolioLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** `qkt parse <strategy.qkt>` — parse-only DSL check, prints errors with line:col coordinates. */
+/** `qkt parse <file.qkt>` — parse-only DSL check, prints errors with line:col coordinates. */
 class ParseCommand(
     private val args: Args,
 ) {
@@ -16,10 +18,24 @@ class ParseCommand(
             System.err.println("qkt: error: file not found: $file")
             return ExitCodes.USER_ERROR
         }
-        return when (val result = Dsl.parseFile(path)) {
+        return when (val result = Dsl.parseFileAny(path)) {
             is ParseResult.Success -> {
-                println("ok")
-                ExitCodes.SUCCESS
+                when (result.value) {
+                    is ParsedFile.StrategyFile -> {
+                        println("ok")
+                        ExitCodes.SUCCESS
+                    }
+                    is ParsedFile.PortfolioFile ->
+                        try {
+                            PortfolioLoader.load(path)
+                            println("ok")
+                            ExitCodes.SUCCESS
+                        } catch (e: Exception) {
+                            System.err.println("$file:1:1 — ${e.message ?: e.toString()}")
+                            System.err.println("1 error")
+                            ExitCodes.USER_ERROR
+                        }
+                }
             }
             is ParseResult.Failure -> {
                 for (e in result.errors) {

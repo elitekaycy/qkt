@@ -4,6 +4,8 @@ import com.qkt.cli.daemon.StateDir
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.dsl.parse.ParsedFile
+import com.qkt.dsl.portfolio.PortfolioLoader
 import com.qkt.instrument.StandardInstrumentRegistry
 import java.nio.file.Files
 import java.nio.file.Path
@@ -19,6 +21,11 @@ data class PreflightCheck(
     val name: String,
     val status: PreflightStatus,
     val detail: String,
+)
+
+private data class PreflightTarget(
+    val strategyAsts: List<StrategyAst>,
+    val portfolioSymbols: List<String> = emptyList(),
 )
 
 object ProductionPreflight {
@@ -50,35 +57,63 @@ object ProductionPreflight {
             ),
         )
 
-        val ast = strategyPath?.let { checks.parseStrategy(it) }
+        val target = strategyPath?.let { checks.parseTarget(it) }
         checks.add(stateCheck(cfg, stateDir, production))
         checks.add(journalCheck(stateDir, production))
         checks.add(riskCheck(cfg, production))
         checks.add(brokerConfigCheck(cfg, production))
         checks.add(brokerProfileCheck(cfg, production))
         checks.add(alertsCheck(cfg, production))
-        if (ast != null) {
-            checks.add(symbolMetadataCheck(ast, production))
-            checks.add(dataFieldCheck(ast))
+        if (target != null) {
+            checks.add(symbolMetadataCheck(target, production))
+            checks.add(dataFieldCheck(target))
         }
         return checks
     }
 
-    private fun MutableList<PreflightCheck>.parseStrategy(path: Path): StrategyAst? {
+    private fun MutableList<PreflightCheck>.parseTarget(path: Path): PreflightTarget? {
         if (!Files.exists(path)) {
             add(PreflightCheck("strategy.parse", PreflightStatus.FAIL, "file not found: $path"))
             return null
         }
-        return when (val parsed = Dsl.parseFile(path)) {
+        return when (val parsed = Dsl.parseFileAny(path)) {
             is ParseResult.Success -> {
-                add(
-                    PreflightCheck(
-                        "strategy.parse",
-                        PreflightStatus.PASS,
-                        "${parsed.value.name} v${parsed.value.version}",
-                    ),
-                )
-                parsed.value
+                when (val file = parsed.value) {
+                    is ParsedFile.StrategyFile -> {
+                        add(
+                            PreflightCheck(
+                                "strategy.parse",
+                                PreflightStatus.PASS,
+                                "${file.ast.name} v${file.ast.version}",
+                            ),
+                        )
+                        PreflightTarget(strategyAsts = listOf(file.ast))
+                    }
+                    is ParsedFile.PortfolioFile ->
+                        try {
+                            val compiled = PortfolioLoader.load(path)
+                            add(
+                                PreflightCheck(
+                                    "strategy.parse",
+                                    PreflightStatus.PASS,
+                                    "${file.ast.name} portfolio v${file.ast.version} (${compiled.children.size} child strategies)",
+                                ),
+                            )
+                            PreflightTarget(
+                                strategyAsts = compiled.children.map { it.ast },
+                                portfolioSymbols = compiled.ast.streams.map { it.qktSymbol },
+                            )
+                        } catch (e: Exception) {
+                            add(
+                                PreflightCheck(
+                                    "strategy.parse",
+                                    PreflightStatus.FAIL,
+                                    e.message ?: e.toString(),
+                                ),
+                            )
+                            null
+                        }
+                }
             }
             is ParseResult.Failure -> {
                 val msg = parsed.errors.joinToString("; ") { "${it.line}:${it.col} ${it.message}" }
@@ -210,20 +245,16 @@ object ProductionPreflight {
     }
 
     private fun symbolMetadataCheck(
-        ast: StrategyAst,
+        target: PreflightTarget,
         production: Boolean,
     ): PreflightCheck {
-        val missing =
-            ast.streams
-                .map { it.qktSymbol }
+        val symbols =
+            (target.strategyAsts.flatMap { ast -> ast.streams.map { it.qktSymbol } } + target.portfolioSymbols)
                 .distinct()
-                .filter { StandardInstrumentRegistry.lookup(it) == null && !it.startsWith("MACRO:") }
+                .filter { it.isNotBlank() }
+        val missing = symbols.filter { StandardInstrumentRegistry.lookup(it) == null && !it.startsWith("MACRO:") }
         return if (missing.isEmpty()) {
-            val symbolCount =
-                ast.streams
-                    .map { it.qktSymbol }
-                    .distinct()
-                    .size
+            val symbolCount = symbols.size
             PreflightCheck(
                 "symbol.metadata",
                 PreflightStatus.PASS,
@@ -238,8 +269,16 @@ object ProductionPreflight {
         }
     }
 
-    private fun dataFieldCheck(ast: StrategyAst): PreflightCheck {
-        val requirements = StrategyDataRequirementScanner.scan(ast)
+    private fun dataFieldCheck(target: PreflightTarget): PreflightCheck {
+        val requirements =
+            target.strategyAsts
+                .map { StrategyDataRequirementScanner.scan(it) }
+                .fold(StrategyDataRequirements(emptySet(), emptySet())) { acc, next ->
+                    StrategyDataRequirements(
+                        quoteAliases = acc.quoteAliases + next.quoteAliases,
+                        volumeAliases = acc.volumeAliases + next.volumeAliases,
+                    )
+                }
         val parts = mutableListOf<String>()
         if (requirements.quoteAliases.isNotEmpty()) {
             parts.add(
