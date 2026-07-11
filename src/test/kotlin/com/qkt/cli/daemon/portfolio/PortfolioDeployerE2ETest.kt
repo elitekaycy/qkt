@@ -139,6 +139,35 @@ class PortfolioDeployerE2ETest {
     }
 
     @Test
+    fun `always-run portfolio does not request a book-level market feed`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val sourceRequests = AtomicInteger(0)
+        val deployer =
+            PortfolioDeployer(
+                stateDir = stateDir,
+                marketSourceProvider = { symbols ->
+                    val request = sourceRequests.incrementAndGet()
+                    check(request <= 2) { "unexpected supervisor market feed request for $symbols" }
+                    FakeSource(ticksFor(symbols.first()))
+                },
+            )
+
+        val compiled = PortfolioLoader.load(Path.of("src/test/resources/dsl/portfolio_two_children.qkt"))
+        val record = deployer.deploy("two_children", compiled)
+
+        try {
+            assertThat(record.children).hasSize(2)
+            assertThat(record.supervisor.running).isTrue
+            assertThat(sourceRequests.get()).isEqualTo(2)
+        } finally {
+            record.supervisor.stop()
+            for (child in record.children) runCatching { child.close() }
+        }
+    }
+
+    @Test
     fun `weighted portfolio allocates capital times weight to each child's equity`(
         @TempDir tmp: Path,
     ) {
