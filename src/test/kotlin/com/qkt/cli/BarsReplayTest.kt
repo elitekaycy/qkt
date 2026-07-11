@@ -305,6 +305,26 @@ class BarsReplayTest {
     }
 
     @Test
+    fun `plain bars reject mt5-sim because synthetic ticks void its fill model`(
+        @TempDir dir: Path,
+    ) {
+        val originalErr = System.err
+        val err = ByteArrayOutputStream()
+        val code =
+            try {
+                System.setErr(PrintStream(err))
+                runBarsArgs(dir, dir.resolve("data"), arrayOf("--broker", "mt5-sim"))
+            } finally {
+                System.setErr(originalErr)
+            }
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(err.toString())
+            .contains("--bars with --broker mt5-sim is unsafe")
+            .contains("Use --bars --tick-fills or full tick replay")
+    }
+
+    @Test
     fun `backtest --bars ignores tick-store holes without --allow-incomplete`(
         @TempDir dir: Path,
     ) {
