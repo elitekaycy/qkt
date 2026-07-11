@@ -5,6 +5,7 @@ import com.qkt.broker.mt5.MT5TradeMode
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
+import com.qkt.cli.daemon.DaemonInstanceLock
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
 import com.qkt.cli.daemon.StateDir
@@ -27,6 +28,7 @@ import com.qkt.notify.NotificationEvent
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.aggregateDailySummary
+import java.nio.file.Files
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
@@ -64,7 +66,27 @@ class DaemonCommand(
 
     private fun startDaemon(): Int {
         val stateDir = StateDir.resolve(args.option("state-dir"))
+        val instanceLock = stateDir.acquireDaemonLock()
+        if (instanceLock == null) {
+            val owner =
+                runCatching {
+                    Files
+                        .readString(stateDir.pidFile)
+                        .trim()
+                }.getOrNull()
+            System.err.println(
+                "qkt: daemon already running for state directory ${stateDir.root}" +
+                    owner?.takeIf { it.isNotEmpty() }?.let { " (pid $it)" }.orEmpty(),
+            )
+            return ExitCodes.USER_ERROR
+        }
+        return instanceLock.use { startDaemonLocked(stateDir, it) }
+    }
 
+    private fun startDaemonLocked(
+        stateDir: StateDir,
+        instanceLock: DaemonInstanceLock,
+    ): Int {
         val configPathEarly =
             args.option("config")?.let {
                 java.nio.file.Path
@@ -319,7 +341,7 @@ class DaemonCommand(
                 promotionGates = cfg.promotionGateConfig,
             )
         plane.start()
-        stateDir.writeControlPort(plane.boundPort)
+        instanceLock.writeControlPort(plane.boundPort)
         commandChannels.forEach { it.start() }
 
         println("[INFO] qkt ${BuildInfo.VERSION} daemon starting")

@@ -128,7 +128,9 @@ class DeployCommandTest {
         val plane = ControlPlane(registry, port = 0, stateDir = routeStateDir, promotionGates = promotionGates)
         plane.start()
         opened.add(plane)
-        stateDir.writeControlPort(plane.boundPort)
+        val instanceLock = stateDir.acquireDaemonLock()!!
+        instanceLock.writeControlPort(plane.boundPort)
+        opened.add(instanceLock)
         return TestPlane(plane, registry)
     }
 
