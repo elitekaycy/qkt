@@ -1,12 +1,12 @@
 package com.qkt.marketdata.live.mt5
 
+import com.qkt.broker.mt5.MT5ServerTimeZone
 import com.qkt.broker.mt5.mt5RequestBuilder
 import com.qkt.broker.mt5.unwrapMT5Data
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -19,7 +19,7 @@ import okhttp3.OkHttpClient
 class Mt5DataClient(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
-    private val serverTzOffsetHours: Int = 0,
+    private val serverTimeZone: MT5ServerTimeZone = MT5ServerTimeZone.UTC,
     private val apiKey: String? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -142,12 +142,17 @@ class Mt5DataClient(
                 ?: row["timestamp"]?.jsonPrimitive?.contentOrNull
                 ?: error("MT5 bar row missing time/timestamp: $row")
         rawTime.toLongOrNull()?.let { epoch ->
-            return if (epoch > 100_000_000_000L) epoch else epoch * 1000L
+            val epochMs = if (epoch > 100_000_000_000L) epoch else epoch * 1000L
+            return serverTimeZone.serverEpochToUtc(epochMs)
         }
-        runCatching { return Instant.parse(rawTime).toEpochMilli() }
-        val s = rawTime.replace('T', ' ').substringBefore('.')
-        val ldt = LocalDateTime.parse(s, NAIVE_FORMAT)
-        return ldt.toInstant(ZoneOffset.ofHours(serverTzOffsetHours)).toEpochMilli()
+        val wallTime =
+            runCatching {
+                LocalDateTime.ofInstant(Instant.parse(rawTime), java.time.ZoneOffset.UTC)
+            }.getOrElse {
+                val s = rawTime.replace('T', ' ').substringBefore('.')
+                LocalDateTime.parse(s, NAIVE_FORMAT)
+            }
+        return serverTimeZone.toUtc(wallTime).toEpochMilli()
     }
 
     private fun timeframeToMillis(tf: String): Long =

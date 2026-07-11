@@ -8,7 +8,7 @@ package com.qkt.broker.mt5
  * differs (gateway URL, magic number, restrictions).
  */
 object MT5DefaultProfiles {
-    /** Exness — adds `m` suffix to FX, maps NAS100→USTEC, server clock is UTC+2. */
+    /** Exness — adds `m` suffix to FX, maps NAS100→USTEC, and uses a New York-close clock. */
     val exness =
         MT5BrokerProfile(
             name = "exness",
@@ -25,7 +25,7 @@ object MT5DefaultProfiles {
                             "NGAS" to "XNGUSD",
                         ),
                 ),
-            serverTzOffsetHours = 2,
+            serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
             magic = 10001,
         )
 
@@ -34,7 +34,7 @@ object MT5DefaultProfiles {
             name = "icmarkets",
             gatewayUrl = "http://localhost:5002",
             symbolPolicy = SymbolPolicy(suffix = ".raw"),
-            serverTzOffsetHours = 3,
+            serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
             magic = 10002,
         )
 
@@ -43,7 +43,7 @@ object MT5DefaultProfiles {
             name = "ftmo",
             gatewayUrl = "http://localhost:5003",
             symbolPolicy = SymbolPolicy(suffix = ""),
-            serverTzOffsetHours = 2,
+            serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
             magic = 10003,
         )
 
@@ -52,7 +52,7 @@ object MT5DefaultProfiles {
             name = "pepperstone",
             gatewayUrl = "http://localhost:5004",
             symbolPolicy = SymbolPolicy(suffix = ".cmd"),
-            serverTzOffsetHours = 2,
+            serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
             magic = 10004,
         )
 

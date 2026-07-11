@@ -198,7 +198,7 @@ class FetchCommand(
                 Mt5Fetcher(
                     Mt5BarFetcher(
                         profile.gatewayUrl,
-                        serverTzOffsetHours = profile.serverTzOffsetHours,
+                        serverTimeZone = profile.serverTimeZone,
                         normalizeBidBarsToMid = true,
                         apiKey = profile.apiKey,
                     ),

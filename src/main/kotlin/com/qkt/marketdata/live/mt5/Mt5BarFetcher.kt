@@ -1,22 +1,22 @@
 package com.qkt.marketdata.live.mt5
 
+import com.qkt.broker.mt5.MT5ServerTimeZone
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
-import java.time.ZoneOffset
 import okhttp3.OkHttpClient
 
 /**
  * Fetches historical bars from the `mt5-gateway` `/fetch_data_range` endpoint.
  *
  * Translates qkt [TimeWindow] (e.g. 5m → "M5") and [TimeRange] (Instant from/to) into
- * the wire format the gateway expects (naive ISO without zone designator — the gateway
- * interprets in broker-local time).
+ * the wire format the gateway expects (naive ISO without zone designator). Bar responses
+ * are normalized from broker wall time to UTC using [serverTimeZone].
  */
 class Mt5BarFetcher(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
-    private val serverTzOffsetHours: Int = 0,
+    private val serverTimeZone: MT5ServerTimeZone = MT5ServerTimeZone.UTC,
     private val normalizeBidBarsToMid: Boolean = false,
     private val apiKey: String? = null,
 ) {
@@ -28,18 +28,15 @@ class Mt5BarFetcher(
         range: TimeRange,
     ): Sequence<Candle> {
         val tf = windowToTimeframe(window)
-        val offset = ZoneOffset.ofHours(serverTzOffsetHours)
         val startIso =
-            range.from
-                .atOffset(offset)
-                .toLocalDateTime()
+            serverTimeZone
+                .toServerLocal(range.from)
                 .toString()
         val endIso =
-            range.to
-                .atOffset(offset)
-                .toLocalDateTime()
+            serverTimeZone
+                .toServerLocal(range.to)
                 .toString()
-        val client = Mt5DataClient(baseUrl, http, serverTzOffsetHours, apiKey)
+        val client = Mt5DataClient(baseUrl, http, serverTimeZone, apiKey)
         val midPoint =
             if (normalizeBidBarsToMid) {
                 pointBySymbol[symbol]

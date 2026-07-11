@@ -9,7 +9,8 @@ import java.math.BigDecimal
  * [name] is the venue identifier strategies use to route (`EXNESS:EURUSD`); [magic]
  * tags every order so the daemon can identify its own positions on restart;
  * [symbolPolicy] handles suffix differences between brokers (Exness adds `m`, others
- * don't). [capabilityRestrictions] subtracts from [MT5Protocol.capabilities] to model
+ * don't); [serverTimeZone] converts broker wall time to UTC with DST-aware rules.
+ * [capabilityRestrictions] subtracts from [MT5Protocol.capabilities] to model
  * brokers that disable certain order types. [symbolCalendars] picks the trading-session
  * calendar per symbol, so one broker can offer FX, crypto, and index CFDs at once; it
  * defaults to all-FX, matching the historical single-calendar behaviour.
@@ -18,7 +19,7 @@ data class MT5BrokerProfile(
     val name: String,
     val gatewayUrl: String,
     val symbolPolicy: SymbolPolicy,
-    val serverTzOffsetHours: Int = 0,
+    val serverTimeZone: MT5ServerTimeZone = MT5ServerTimeZone.UTC,
     val magic: Int,
     val instrumentOverrides: Map<String, InstrumentSpec> = emptyMap(),
     val pollIntervalMs: Long = 1000,

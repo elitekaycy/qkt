@@ -8,7 +8,7 @@ object MT5AccountVerifier {
         client: MT5Client =
             MT5Client(
                 gatewayUrl = profile.gatewayUrl,
-                tzOffsetHours = profile.serverTzOffsetHours,
+                serverTimeZone = profile.serverTimeZone,
                 httpTimeoutMs = profile.httpTimeoutMs,
                 retryAttempts = profile.retryAttempts,
                 apiKey = profile.apiKey,
