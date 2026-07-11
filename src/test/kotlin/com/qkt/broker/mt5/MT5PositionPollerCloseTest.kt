@@ -192,13 +192,46 @@ class MT5PositionPollerCloseTest {
                 bus = bus,
                 clock = clock,
                 closedTicketMeta = { ClosedPositionMeta("ord", "alpha") },
-                closedByEngine = { it == 7001L },
+                engineCloseState = {
+                    if (it == 7001L) EngineCloseState.CONFIRMED else EngineCloseState.NONE
+                },
                 priceProvider = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) },
             )
         poller.tick() // observes 7001 open
         poller.tick() // observes 7001 gone — but the engine already published this close
 
         assertThat(fills).isEmpty()
+    }
+
+    @Test
+    fun `poller defers a provisional engine close and publishes it after rejection`() {
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        server.enqueue(MockResponse().setBody("[]"))
+        var closeState = EngineCloseState.PENDING
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = { ClosedPositionMeta("ord", "alpha") },
+                engineCloseState = { closeState },
+                priceProvider = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) },
+            )
+
+        poller.tick()
+        poller.tick()
+        assertThat(fills).isEmpty()
+
+        closeState = EngineCloseState.NONE
+        poller.tick()
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().clientOrderId).isEqualTo("ord")
+        assertThat(fills.single().strategyId).isEqualTo("alpha")
     }
 
     @Test
