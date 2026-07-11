@@ -26,6 +26,15 @@ class BarResolvedFeedTest {
         return out
     }
 
+    private fun drainTimestamps(f: BarResolvedFeed): List<Long> {
+        val out = mutableListOf<Long>()
+        while (true) {
+            val tick = f.next() ?: break
+            out.add(tick.timestamp)
+        }
+        return out
+    }
+
     @Test
     fun `ALL_TICKS bar streams all real ticks`() {
         val real = sequenceOf(Tick("X", Money.of("100"), 0), Tick("X", Money.of("101"), 500))
@@ -78,6 +87,25 @@ class BarResolvedFeedTest {
             Money.of("105"),
             Money.of("101"),
         )
+    }
+
+    @Test
+    fun `EXTREMES retains quote extrema when the mid price is unchanged`() {
+        val real =
+            sequenceOf(
+                Tick("X", Money.of("100"), 0, bid = Money.of("99"), ask = Money.of("101")),
+                Tick("X", Money.of("100"), 100, bid = Money.of("99.5"), ask = Money.of("100.5")),
+                Tick("X", Money.of("100"), 200, bid = Money.of("99.25"), ask = Money.of("100.75")),
+                Tick("X", Money.of("100"), 999, bid = Money.of("99.25"), ask = Money.of("100.75")),
+            )
+        val feed =
+            BarResolvedFeed(
+                perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "100", "100", "100"))),
+                sliceProvider = { _, _, _ -> real },
+                intrabarFill = { _, _, _, _ -> IntrabarFill.EXTREMES },
+            )
+
+        assertThat(drainTimestamps(feed)).containsExactly(0L, 100L, 999L)
     }
 
     @Test
