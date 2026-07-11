@@ -778,7 +778,14 @@ class OrderManager(
             }
             is com.qkt.dsl.ast.ChildAt -> evaluateAt(childPrice.price, fillPrice).setScale(Money.SCALE, Money.ROUNDING)
             is com.qkt.dsl.ast.ChildPct -> {
-                val distance = fillPrice.multiply(evaluateAt(childPrice.frac, fillPrice), Money.CONTEXT)
+                val percent = evaluateAt(childPrice.percent, fillPrice)
+                require(percent.signum() > 0) { "bracket PCT must be greater than 0, was $percent" }
+                if (isStopLoss) {
+                    require(percent < BigDecimal("50")) {
+                        "STOP LOSS PCT must be less than 50, was $percent"
+                    }
+                }
+                val distance = fillPrice.multiply(percent.divide(BigDecimal("100"), Money.CONTEXT), Money.CONTEXT)
                 (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
             }
             is com.qkt.dsl.ast.ChildRr -> {

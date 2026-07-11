@@ -272,7 +272,7 @@ The most common patterns:
 
 ```qkt
 -- Simple market buy with bracket
-BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 
 -- Limit entry with bracket
 BUY btc SIZING 0.1 LIMIT AT 67000 BRACKET { ... }

@@ -110,8 +110,9 @@ data class ChildBy(
     val distance: ExprAst,
 ) : ChildPriceAst
 
+/** Relative bracket child price in percentage points, so `1` means one percent. */
 data class ChildPct(
-    val frac: ExprAst,
+    val percent: ExprAst,
 ) : ChildPriceAst
 
 data class ChildRr(

@@ -214,7 +214,7 @@ private fun subst(
     when (cp) {
         is ChildAt -> cp.copy(price = subst(cp.price, v, alias))
         is ChildBy -> cp.copy(distance = subst(cp.distance, v, alias))
-        is ChildPct -> cp.copy(frac = subst(cp.frac, v, alias))
+        is ChildPct -> cp.copy(percent = subst(cp.percent, v, alias))
         is ChildRr -> cp.copy(multiplier = subst(cp.multiplier, v, alias))
         is ChildArmedTrail ->
             cp.copy(
