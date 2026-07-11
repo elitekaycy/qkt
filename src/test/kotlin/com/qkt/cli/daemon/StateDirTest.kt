@@ -31,8 +31,10 @@ class StateDirTest {
         @TempDir tmp: Path,
     ) {
         val dir = StateDir.resolve(tmp.toString())
-        dir.writeControlPort(47291)
-        assertThat(dir.readControlPort()).isEqualTo(47291)
+        dir.acquireDaemonLock()!!.use { lock ->
+            lock.writeControlPort(47291)
+            assertThat(dir.readControlPort()).isEqualTo(47291)
+        }
     }
 
     @Test
@@ -57,9 +59,11 @@ class StateDirTest {
         @TempDir tmp: Path,
     ) {
         val dir = StateDir.resolve(tmp.toString())
-        dir.writeControlPort(47291)
-        dir.deleteControlPort()
-        assertThat(dir.readControlPort()).isNull()
+        dir.acquireDaemonLock()!!.use { lock ->
+            lock.writeControlPort(47291)
+            dir.deleteControlPort()
+            assertThat(dir.readControlPort()).isNull()
+        }
         assertThat(Files.exists(dir.controlPortFile)).isFalse
     }
 
@@ -68,9 +72,54 @@ class StateDirTest {
         @TempDir tmp: Path,
     ) {
         val dir = StateDir.resolve(tmp.toString())
-        dir.writeControlPort(40000)
-        dir.writeControlPort(50000)
-        assertThat(dir.readControlPort()).isEqualTo(50000)
+        dir.acquireDaemonLock()!!.use { lock ->
+            lock.writeControlPort(40000)
+            lock.writeControlPort(50000)
+            assertThat(dir.readControlPort()).isEqualTo(50000)
+        }
+    }
+
+    @Test
+    fun `second daemon lock is refused until the owner closes`(
+        @TempDir tmp: Path,
+    ) {
+        val firstDir = StateDir.resolve(tmp.toString())
+        val secondDir = StateDir.resolve(tmp.toString())
+        val first = firstDir.acquireDaemonLock()
+
+        assertThat(first).isNotNull()
+        assertThat(secondDir.acquireDaemonLock()).isNull()
+
+        first!!.close()
+        val reacquired = secondDir.acquireDaemonLock()
+        assertThat(reacquired).isNotNull()
+        reacquired!!.close()
+    }
+
+    @Test
+    fun `acquiring daemon lock clears stale control discovery`(
+        @TempDir tmp: Path,
+    ) {
+        val dir = StateDir.resolve(tmp.toString())
+        Files.writeString(dir.controlPortFile, "49999")
+
+        val lock = dir.acquireDaemonLock()
+
+        assertThat(lock).isNotNull()
+        assertThat(dir.readControlPort()).isNull()
+        lock!!.close()
+    }
+
+    @Test
+    fun `closing daemon lock removes control discovery but leaves reusable lock file`(
+        @TempDir tmp: Path,
+    ) {
+        val dir = StateDir.resolve(tmp.toString())
+        dir.acquireDaemonLock()!!.use { it.writeControlPort(47291) }
+
+        assertThat(dir.readControlPort()).isNull()
+        assertThat(Files.exists(dir.pidFile)).isTrue()
+        assertThat(Files.readString(dir.pidFile)).isEmpty()
     }
 
     @Test

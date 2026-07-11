@@ -2,6 +2,7 @@ package com.qkt.cli.daemon
 
 import com.qkt.cli.Args
 import com.qkt.cli.DaemonCommand
+import com.qkt.cli.ExitCodes
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
@@ -80,6 +81,28 @@ class DaemonStartupTest {
         } finally {
             daemonThread.interrupt()
             daemonThread.join(5_000)
+        }
+        assertThat(Files.readString(stateDir.pidFile)).isEmpty()
+        assertThat(stateDir.readControlPort()).isNull()
+    }
+
+    @Test
+    fun `second daemon refuses the state directory before startup`(
+        @TempDir tmp: Path,
+    ) {
+        val owner = StateDir.resolve(tmp.toString()).acquireDaemonLock()!!
+        try {
+            val result =
+                DaemonCommand(
+                    Args(arrayOf("daemon", "--state-dir", tmp.toString())),
+                    sourceFactory = { IdleSource() },
+                ).run()
+
+            assertThat(result).isEqualTo(ExitCodes.USER_ERROR)
+            owner.writeControlPort(47291)
+            assertThat(StateDir.resolve(tmp.toString()).readControlPort()).isEqualTo(47291)
+        } finally {
+            owner.close()
         }
     }
 }
