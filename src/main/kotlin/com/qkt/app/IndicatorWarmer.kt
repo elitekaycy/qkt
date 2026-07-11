@@ -6,6 +6,7 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.candleToTicks
 import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 import java.time.Instant
 import org.slf4j.LoggerFactory
 
@@ -27,23 +28,29 @@ class IndicatorWarmer(
         symbols: List<String>,
         spec: WarmupSpec,
         now: Instant,
-    ) = warmup(symbols.associateWith { spec }, now)
+    ) {
+        val resolved = resolveBarSpec(spec) ?: return
+        for (symbol in symbols) warmupSymbol(symbol, resolved, now)
+    }
 
     /**
-     * Per-stream form: each qkt symbol carries its own [WarmupSpec]. Used by DSL
-     * strategies that span multiple timeframes — e.g. 5m gold + 1h spx — where one
-     * spec across all symbols would over- or under-fetch on at least one stream.
+     * Per-stream form: each exact [WarmupStream] carries its own [WarmupSpec]. Used by DSL
+     * strategies that span multiple timeframes — including the same symbol at two windows —
+     * where one spec per symbol would overwrite one stream.
      *
      * Symbols mapped to [WarmupSpec.None] are skipped silently. Failures from
      * `source.bars(...)` propagate (callers wrap them in `WarmupFailedException`).
      */
     fun warmup(
-        perStream: Map<String, WarmupSpec>,
+        perStream: Map<WarmupStream, WarmupSpec>,
         now: Instant,
     ) {
-        for ((symbol, spec) in perStream) {
+        for ((stream, spec) in perStream) {
             val resolved = resolveBarSpec(spec) ?: continue
-            warmupSymbol(symbol, resolved, now)
+            require(resolved.window == stream.window) {
+                "warmup window mismatch: key=${stream.window} spec=${resolved.window} symbol=${stream.symbol}"
+            }
+            warmupSymbol(stream.symbol, resolved, now)
         }
     }
 

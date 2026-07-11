@@ -61,6 +61,16 @@ class CandleHubSeedTest {
     }
 
     @Test
+    fun `seed rejects candles from the wrong timeframe`() {
+        val hub = CandleHub()
+        hub.register(key, retention = 10, strategyId = "s")
+        val hourly = candle(0L).copy(endTime = 3_600_000L)
+
+        assertThatThrownBy { hub.seed(key, listOf(hourly)) }
+            .hasMessageContaining("timeframe mismatch")
+    }
+
+    @Test
     fun `seed truncates to retention keeping the newest bars`() {
         val hub = CandleHub()
         hub.register(key, retention = 3, strategyId = "s")

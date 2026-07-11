@@ -9,20 +9,21 @@ class PerStreamWarmableTest {
     fun `empty per-stream map means no warmup`() {
         val w =
             object : PerStreamWarmable {
-                override val perStreamWarmup = emptyMap<String, WarmupSpec>()
+                override val perStreamWarmup = emptyMap<WarmupStream, WarmupSpec>()
             }
         assertThat(w.perStreamWarmup).isEmpty()
     }
 
     @Test
-    fun `per-stream warmup specs are addressable by qkt symbol`() {
+    fun `per-stream warmup specs are addressable by symbol and window`() {
         val spec = WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 50)
+        val stream = WarmupStream("BACKTEST:BTCUSDT", TimeWindow.ONE_MINUTE)
         val w =
             object : PerStreamWarmable {
-                override val perStreamWarmup = mapOf("BACKTEST:BTCUSDT" to spec)
+                override val perStreamWarmup = mapOf(stream to spec)
             }
-        assertThat(w.perStreamWarmup["BACKTEST:BTCUSDT"]).isEqualTo(spec)
-        assertThat(w.perStreamWarmup["EXNESS:XAUUSD"]).isNull()
+        assertThat(w.perStreamWarmup[stream]).isEqualTo(spec)
+        assertThat(w.perStreamWarmup[WarmupStream("BACKTEST:BTCUSDT", TimeWindow.ONE_HOUR)]).isNull()
     }
 
     @Test
@@ -31,12 +32,14 @@ class PerStreamWarmableTest {
             object : PerStreamWarmable {
                 override val perStreamWarmup =
                     mapOf(
-                        "EXNESS:XAUUSD" to WarmupSpec.Bars(TimeWindow.FIVE_MINUTES, 50),
-                        "BACKTEST:SPX500" to WarmupSpec.Bars(TimeWindow.ONE_HOUR, 24),
+                        WarmupStream("EXNESS:XAUUSD", TimeWindow.FIVE_MINUTES) to
+                            WarmupSpec.Bars(TimeWindow.FIVE_MINUTES, 50),
+                        WarmupStream("BACKTEST:SPX500", TimeWindow.ONE_HOUR) to
+                            WarmupSpec.Bars(TimeWindow.ONE_HOUR, 24),
                     )
             }
         assertThat(w.perStreamWarmup).hasSize(2)
-        assertThat(w.perStreamWarmup["EXNESS:XAUUSD"]).isInstanceOf(WarmupSpec.Bars::class.java)
-        assertThat(w.perStreamWarmup["BACKTEST:SPX500"]).isInstanceOf(WarmupSpec.Bars::class.java)
+        assertThat(w.perStreamWarmup.keys.map { it.window })
+            .containsExactlyInAnyOrder(TimeWindow.FIVE_MINUTES, TimeWindow.ONE_HOUR)
     }
 }

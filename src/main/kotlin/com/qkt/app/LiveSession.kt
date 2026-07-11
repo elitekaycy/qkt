@@ -12,6 +12,7 @@ import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.HubKey
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
 import com.qkt.events.RiskEvent
@@ -45,6 +46,7 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 import com.qkt.strategy.windowMs
 import java.time.Duration
 import java.time.Instant
@@ -225,16 +227,16 @@ class LiveSession(
     private fun seedHubFromHistory(
         strategies: List<Pair<String, Strategy>>,
         hub: com.qkt.dsl.compile.CandleHub,
-        perStreamSpecs: Map<String, WarmupSpec>,
+        perStreamSpecs: Map<WarmupStream, WarmupSpec>,
         now: Instant,
     ) {
-        // Map qkt symbol → owning DSL strategy's HubKey (multiple strategies may
-        // declare the same symbol on different timeframes; seed each).
+        // Resolve each owning DSL alias by exact symbol + timeframe; same-symbol aliases on
+        // different windows must fetch and seed independently.
         for ((sessionStrategyName, strategy) in strategies) {
             if (strategy !is DslCompiledStrategy) continue
             for ((alias, key) in strategy.declaredStreams) {
                 val symbol = key.qktSymbol
-                val spec = perStreamSpecs[symbol] ?: continue
+                val spec = perStreamSpecs[warmupStream(key)] ?: continue
                 val barSpec =
                     when (spec) {
                         is WarmupSpec.Bars -> spec
@@ -262,6 +264,8 @@ class LiveSession(
             }
         }
     }
+
+    private fun warmupStream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
 
     /**
      * Three-way reconcile: persisted leg state + broker positions → attached LegBook
@@ -959,17 +963,18 @@ class LiveSession(
         // registration extends these slots rather than replacing them. Retention is
         // widened to the warmup bar count so the seeded history survives the ring.
         // Fail-fast: any broker error here aborts deploy with a typed exception.
-        val perStreamSpecs: Map<String, WarmupSpec> =
+        val perStreamSpecs: Map<WarmupStream, WarmupSpec> =
             strategies
                 .map { it.second }
                 .filterIsInstance<PerStreamWarmable>()
                 .flatMap { it.perStreamWarmup.entries }
-                .associate { it.key to it.value }
+                .groupBy(keySelector = { it.key }, valueTransform = { it.value })
+                .mapValues { (_, specs) -> specs.maxBy { it.windowMs(now) } }
         if (perStreamSpecs.isNotEmpty()) {
             for ((strategyId, strategy) in strategies) {
                 if (strategy !is DslCompiledStrategy) continue
                 for ((key, retention) in strategy.retentionByKey) {
-                    val warmupBars = (perStreamSpecs[key.qktSymbol] as? WarmupSpec.Bars)?.count ?: 0
+                    val warmupBars = (perStreamSpecs[warmupStream(key)] as? WarmupSpec.Bars)?.count ?: 0
                     pipelineCandleHub.register(key, maxOf(retention, warmupBars), strategyId)
                 }
             }
