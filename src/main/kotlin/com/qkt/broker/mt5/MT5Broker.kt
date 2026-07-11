@@ -6,6 +6,7 @@ import com.qkt.broker.BrokerDeal
 import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
@@ -209,9 +210,12 @@ class MT5Broker(
         val protection: PositionProtection? = null,
     )
 
+    @Volatile
+    private var accountingMode: PositionAccountingMode? = null
+
     init {
         if (profile.hasExpectedAccount) {
-            MT5AccountVerifier.fetchAndVerify(profile, client)
+            recordAccountingMode(MT5AccountVerifier.fetchAndVerify(profile, client))
         }
         // Pollers start UNCONDITIONALLY: if recovery throws (one malformed gateway
         // response) but the pollers never start, the broker still accepts orders and
@@ -235,10 +239,22 @@ class MT5Broker(
     @Volatile
     private var marginLevelCache: Pair<Long, java.math.BigDecimal?>? = null
 
-    override fun accountEquity(): java.math.BigDecimal? = runCatching { client.getAccount()?.equity }.getOrNull()
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode =
+        accountingMode
+            ?: runCatching { client.getAccount() }
+                .getOrNull()
+                ?.let(::recordAccountingMode)
+            ?: PositionAccountingMode.UNKNOWN
+
+    override fun accountEquity(): java.math.BigDecimal? =
+        runCatching { client.getAccount() }
+            .getOrNull()
+            ?.also(::recordAccountingMode)
+            ?.equity
 
     override fun accountState(): BrokerAccountState? {
         val acct = runCatching { client.getAccount() }.getOrNull() ?: return null
+        recordAccountingMode(acct)
         return BrokerAccountState(
             broker = profile.name.uppercase(),
             currency = acct.currency,
@@ -252,6 +268,17 @@ class MT5Broker(
             server = acct.server,
             name = acct.name,
         )
+    }
+
+    private fun recordAccountingMode(account: MT5AccountInfo): PositionAccountingMode {
+        val mode =
+            when (account.marginMode) {
+                MARGIN_MODE_NETTING -> PositionAccountingMode.NETTING
+                MARGIN_MODE_HEDGING -> PositionAccountingMode.HEDGING
+                else -> PositionAccountingMode.UNKNOWN
+            }
+        accountingMode = mode
+        return mode
     }
 
     override fun deals(

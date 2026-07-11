@@ -3,6 +3,7 @@ package com.qkt.broker.bybit.spot
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
 import com.qkt.broker.bybit.BybitOrderTranslator
 import com.qkt.broker.bybit.BybitSymbol
@@ -51,6 +52,8 @@ class BybitSpotBroker(
     private val reconciler: PeriodicReconciler
 
     override val name: String = "BybitSpot"
+
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
 
     override val capabilities: Set<OrderTypeCapability> =
         setOf(

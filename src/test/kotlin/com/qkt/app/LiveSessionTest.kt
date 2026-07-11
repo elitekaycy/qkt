@@ -4,6 +4,10 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.compile.CandleHub
+import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.HubKey
+import com.qkt.dsl.compile.PendingStacks
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
@@ -17,6 +21,7 @@ import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -535,6 +540,72 @@ class LiveSessionTest {
         handle.awaitTermination(Duration.ofSeconds(2))
 
         assertThat(handle.recentTrades().size).isEqualTo(2)
+    }
+
+    @Test
+    fun `reconcile attributes live fills when insights are disabled`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("EXNESS:X", listOf(Tick("EXNESS:X", Money.of("100"), now.toEpochMilli())))
+        val tickets = java.util.concurrent.CopyOnWriteArrayList<com.qkt.broker.BrokerPositionTicket>()
+        val factory: BrokerFactory = { bus, clock, prices, _, _ ->
+            bus.subscribe<com.qkt.events.BrokerEvent.OrderFilled> { fill ->
+                tickets.clear()
+                tickets.add(
+                    com.qkt.broker.BrokerPositionTicket(
+                        ticket = requireNotNull(fill.brokerOrderId),
+                        symbol = fill.symbol,
+                        side = fill.side,
+                        qty = fill.quantity,
+                        entryPrice = fill.price,
+                        currentPrice = fill.price,
+                        profit = BigDecimal.ZERO,
+                        swap = BigDecimal.ZERO,
+                        openedAt = fill.timestamp,
+                        comment = fill.clientOrderId,
+                    ),
+                )
+            }
+            object : com.qkt.broker.Broker by com.qkt.broker.PaperBroker(bus, clock, prices) {
+                override fun positionTickets(): List<com.qkt.broker.BrokerPositionTicket> = tickets.toList()
+            }
+        }
+        val strategy =
+            object : DslCompiledStrategy {
+                override val declaredStreams: Map<String, HubKey> =
+                    mapOf("x" to HubKey("EXNESS", "X", "1m"))
+                override val multiPositionPerSymbolSymbols: Set<String> = emptySet()
+                override val retentionByKey: Map<HubKey, Int> = emptyMap()
+                override val pendingStacks: PendingStacks = PendingStacks()
+
+                override fun bindToHub(
+                    hub: CandleHub,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {}
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("EXNESS:X", Money.of("1")))
+                }
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                source = src,
+                symbols = listOf("EXNESS:X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                brokerFactories = mapOf("exness" to factory),
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        val report = handle.reconcile()!!
+        assertThat(report.deltas).describedAs(report.toString()).isEmpty()
+        assertThat(report.protectionDeltas).isEmpty()
+        assertThat(report.clean).isTrue()
     }
 
     @Test

@@ -1118,14 +1118,12 @@ class LiveSession(
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
         // so any publish that happens after this line will see the new subscribers.
         wireNotifierSubscriptions(bus, pipeline.orderManager)
-        insightsSink?.let { sink ->
-            wireInsights(bus, sink)
-            // Every fill names its venue ticket: mirror it so the state poller can
-            // attribute that ticket's open position and deals to the strategy.
-            bus.subscribe<BrokerEvent.OrderFilled> { e ->
-                ticketAttribution.record(e.brokerOrderId, e.strategyId)
-            }
+        // Every fill names its venue ticket. Reconciliation needs this attribution even when
+        // insights are disabled, or every live ticket is misclassified as an orphan.
+        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            ticketAttribution.record(e.brokerOrderId, e.strategyId)
         }
+        insightsSink?.let { sink -> wireInsights(bus, sink) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
@@ -1491,8 +1489,19 @@ class LiveSession(
                 // getOpenPositions() is magic-global and ticketless, which made the old diff
                 // double-count (prefixed vs bare key) and cry wolf on a shared account (#413).
                 val brokerTickets = runCatching { broker.positionTickets() }.getOrElse { emptyList() }
+                val accountingModes =
+                    symbols.associate { symbol ->
+                        symbol.substringAfter(":") to broker.positionAccountingMode(symbol)
+                    }
                 return ReconcileReport(
-                    deltas = reconcileDeltas(ownerId, brokerTickets, ticketAttribution, positions.allPositions()),
+                    deltas =
+                        reconcileDeltas(
+                            ownerId,
+                            brokerTickets,
+                            ticketAttribution,
+                            strategyPositions.allLegsFor(ownerId),
+                            accountingModes,
+                        ),
                     engineEquity = strategyPnL.equityFor(ownerId),
                     brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
                     protectionDeltas = reconcileProtectionDeltas(ownerId, brokerTickets, ticketAttribution),

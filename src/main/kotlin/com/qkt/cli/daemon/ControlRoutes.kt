@@ -442,7 +442,8 @@ object ControlRoutes {
         val deltas =
             report.deltas.joinToString(",", "[", "]") {
                 """{"symbol":"${it.symbol}","engineQty":"${it.engineQty.toPlainString()}",""" +
-                    """"brokerQty":"${it.brokerQty.toPlainString()}"}"""
+                    """"brokerQty":"${it.brokerQty.toPlainString()}",""" +
+                    """"side":${it.side?.let { side -> "\"${side.name}\"" } ?: "null"}}"""
             }
         val protectionDeltas =
             report.protectionDeltas.joinToString(",", "[", "]") {
