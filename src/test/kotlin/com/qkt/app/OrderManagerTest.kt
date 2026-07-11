@@ -366,6 +366,43 @@ class OrderManagerTest {
     }
 
     @Test
+    fun `cancelPendingForSymbol cancels venue-resting working orders`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = LogBroker(bus, clock)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val eurusd =
+            OrderRequest.Limit(
+                id = "eurusd-resting",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("1.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            )
+        val xauusd =
+            OrderRequest.Limit(
+                id = "xauusd-resting",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("2000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            )
+        om.submit(eurusd)
+        om.submit(xauusd)
+        assertThat(om.getOrder(eurusd.id)?.state).isEqualTo(OrderState.WORKING)
+        assertThat(om.getOrder(xauusd.id)?.state).isEqualTo(OrderState.WORKING)
+
+        om.cancelPendingForSymbol("EURUSD")
+
+        assertThat(om.getOrder(eurusd.id)?.state).isEqualTo(OrderState.CANCELLED)
+        assertThat(om.getOrder(xauusd.id)?.state).isEqualTo(OrderState.WORKING)
+    }
+
+    @Test
     fun `cancel of unknown order is a no-op`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)

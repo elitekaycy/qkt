@@ -265,12 +265,14 @@ class OrderManager(
                     (managed.request as? OrderRequest.Stack)?.symbol == symbol
                 }.map { it.id }
         for (id in stackIds) cancel(id)
-        // Cancel any remaining (non-stack) pending orders for the symbol that aren't already
-        // children of a stack we just cancelled.
+        // Cancel any remaining (non-stack) engine-held or venue-resting orders for the symbol
+        // that aren't already children of a stack we just cancelled.
         val pending =
             orders.values
-                .filter { it.state == OrderState.PENDING && it.request.symbol == symbol }
-                .map { it.id }
+                .filter {
+                    (it.state == OrderState.PENDING || it.state == OrderState.WORKING) &&
+                        it.request.symbol == symbol
+                }.map { it.id }
         for (id in pending) cancel(id)
     }
 
