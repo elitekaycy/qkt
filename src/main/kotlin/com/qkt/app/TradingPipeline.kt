@@ -712,7 +712,7 @@ class TradingPipeline(
     }
 
     /**
-     * A `CLOSE` of an independent leg is emitted as a market tagged with `closesLegId`
+     * A `CLOSE` of a tracked position leg is emitted as a market tagged with `closesLegId`
      * ([com.qkt.dsl.compile.ActionCompiler.closeSignalsFor]). Register the fill so the tracker
      * realizes that specific leg instead of netting into the primary. Works in backtest and
      * live; the venue-side close (by ticket) is handled separately by the MT5 broker.

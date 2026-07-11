@@ -83,7 +83,10 @@ The order type modifier replaces the default `MARKET` and goes right after the s
 
 ## `CLOSE <stream>` and `CLOSE_ALL`
 
-`CLOSE <stream>` flattens the position on that stream at market. No sizing needed — it closes the full current position.
+`CLOSE <stream>` flattens the position on that stream at market. No sizing needed — it closes the
+full current position. When the position has venue ticket metadata, qkt targets that ticket
+explicitly. This closes the position on MT5 hedging accounts instead of opening an offsetting
+counter-position; netting accounts reach the same flat result.
 
 ```qkt
 WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)

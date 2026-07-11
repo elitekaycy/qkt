@@ -224,8 +224,9 @@ class ActionCompiler(
      * Signals that flatten [symbol]. When the position is held as independent legs (e.g. a
      * filled straddle), each leg is closed individually and attributed to its leg id — so a
      * net-zero pair still closes both sides, and on a hedging venue each close targets the
-     * exact ticket instead of opening a counter. A plain single position (no independent legs)
-     * keeps the net-quantity close. Both reach the same net position, so backtest == live.
+     * exact ticket instead of opening a counter. A PRIMARY leg is likewise closed by ticket;
+     * this is required on hedging venues and remains valid on netting venues. The net-quantity
+     * fallback exists only for legacy position views without leg metadata.
      */
     private fun closeSignalsFor(
         ctx: EvalContext,
@@ -248,6 +249,24 @@ class ActionCompiler(
                     ),
                 )
             }
+        }
+        val primary = legs.firstOrNull { it.role == com.qkt.positions.LegRole.PRIMARY }
+        if (primary != null) {
+            val exitSide = if (primary.side == Side.BUY) Side.SELL else Side.BUY
+            return listOf(
+                Signal.Submit(
+                    OrderRequest.Market(
+                        id = ids.next(),
+                        symbol = symbol,
+                        side = exitSide,
+                        quantity = primary.quantity,
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = ctx.strategyContext.clock.now(),
+                        closesTicket = primary.brokerTicket,
+                        closesLegId = primary.legId,
+                    ),
+                ),
+            )
         }
         val qty =
             ctx.strategyContext.positions
