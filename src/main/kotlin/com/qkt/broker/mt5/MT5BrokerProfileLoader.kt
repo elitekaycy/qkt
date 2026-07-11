@@ -137,6 +137,18 @@ class MT5BrokerProfileLoader {
             apiKey = pick("api_key", fields, env, name, base?.apiKey),
             capabilityRestrictions = capabilityRestrictions,
             symbolCalendars = symbolCalendars,
+            expectedAccountLogin =
+                pick("expected_account_login", fields, env, name, base?.expectedAccountLogin?.toString())?.toLong(),
+            expectedAccountServer =
+                pick("expected_account_server", fields, env, name, base?.expectedAccountServer),
+            expectedTradeMode =
+                pick("expected_trade_mode", fields, env, name, base?.expectedTradeMode?.name)
+                    ?.let(MT5TradeMode::parse),
+            expectedAccountCurrency =
+                pick("expected_account_currency", fields, env, name, base?.expectedAccountCurrency)
+                    ?.uppercase(),
+            expectedLeverage =
+                pick("expected_leverage", fields, env, name, base?.expectedLeverage?.toString())?.toInt(),
         )
     }
 

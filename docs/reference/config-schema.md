@@ -378,6 +378,11 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `http_timeout_ms` | long | no | `5000` | Gateway HTTP timeout. |
 | `retry_attempts` | int | no | `3` | Gateway retry attempts. |
 | `deviation_points` | int | no | `20` | Market-order price deviation tolerance. |
+| `expected_account_login` | long | production MT5 | none | Refuses startup when `/account.login` differs. |
+| `expected_account_server` | string | production MT5 | none | Refuses startup when `/account.server` differs. |
+| `expected_trade_mode` | `demo`, `contest`, or `real` | production MT5 | none | Prevents demo/real environment inversion. |
+| `expected_account_currency` | currency code | no | none | Optional profile-level currency assertion; global `account.currency` is also checked by preflight. |
+| `expected_leverage` | int | production MT5 | none | Refuses startup when venue leverage differs. |
 | `calendars` | map pattern to `fx`, `crypto`, or `nyse` | no | inherited or FX default | First matching pattern wins. |
 | `aliases` | map qkt symbol to broker symbol | no | inherited plus overrides | Example `NAS100: USTEC`. |
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |

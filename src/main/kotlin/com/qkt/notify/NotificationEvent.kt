@@ -81,6 +81,7 @@ sealed interface NotificationEvent {
         val version: String,
         val strategies: List<String>,
         override val timestamp: Long,
+        val accounts: List<String> = emptyList(),
     ) : NotificationEvent {
         override val severity = Severity.INFO
     }

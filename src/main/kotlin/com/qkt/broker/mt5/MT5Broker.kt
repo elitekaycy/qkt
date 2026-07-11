@@ -200,6 +200,9 @@ class MT5Broker(
     )
 
     init {
+        if (profile.hasExpectedAccount) {
+            MT5AccountVerifier.fetchAndVerify(profile, client)
+        }
         // Pollers start UNCONDITIONALLY: if recovery throws (one malformed gateway
         // response) but the pollers never start, the broker still accepts orders and
         // the session trades all day with no fill/close detection. Only recovery may
