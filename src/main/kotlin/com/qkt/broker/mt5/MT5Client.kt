@@ -465,15 +465,16 @@ class MT5Client(
     }
 
     /**
-     * Cancel a pending order WITHOUT blocking the caller — the async sibling of [cancelOrder].
-     * [onResult] receives the raw body on 2xx, an empty string on a non-2xx (logged, matching
-     * [cancelOrder]), or null when the send itself failed with an IO error. OCO sibling-cancels
-     * and the halt kill-switch's per-symbol sweep run on the engine thread, where serialized
-     * blocking cancels stall it exactly when it must stop fast.
+     * Cancel a pending order without blocking the caller.
+     *
+     * [onResult] receives a parsed venue result. HTTP and I/O failures are represented by a
+     * response with retcode `-1` and a populated [MT5OrderResponse.errorMessage], matching
+     * [placeOrderAsync]. Legacy gateways that confirm cancellation with only a success message
+     * are normalized to [MT5_TRADE_RETCODE_DONE].
      */
     fun cancelOrderAsync(
         ticket: Long,
-        onResult: (String?) -> Unit,
+        onResult: (MT5OrderResponse) -> Unit,
     ) {
         val request =
             mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
@@ -486,7 +487,7 @@ class MT5Client(
                     e: java.io.IOException,
                 ) {
                     log.warn("MT5Client cancelOrder($ticket) IO error: ${e.message}")
-                    onResult(null)
+                    onResult(errorResponse("IO error: ${e.message}"))
                 }
 
                 override fun onResponse(
@@ -497,14 +498,35 @@ class MT5Client(
                         val raw = it.body?.string().orEmpty()
                         if (!it.isSuccessful) {
                             log.warn("MT5Client cancelOrder($ticket) HTTP ${it.code}: $raw")
-                            onResult("")
+                            onResult(errorResponse("HTTP ${it.code}: $raw"))
                         } else {
-                            onResult(raw)
+                            onResult(parseCancelResponse(raw))
                         }
                     }
                 }
             },
         )
+    }
+
+    private fun parseCancelResponse(raw: String): MT5OrderResponse {
+        val obj =
+            runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull()
+                ?: return errorResponse("invalid cancel response: $raw")
+        if (obj["result"] is JsonObject) return parseOrderResponse(raw)
+        val message = obj["message"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        if (message.contains("cancel", ignoreCase = true)) {
+            return MT5OrderResponse(
+                result =
+                    MT5OrderResult(
+                        retcode = MT5_TRADE_RETCODE_DONE,
+                        order = 0,
+                        deal = 0,
+                        price = BigDecimal.ZERO,
+                        comment = message,
+                    ),
+            )
+        }
+        return errorResponse(obj["error"]?.jsonPrimitive?.contentOrNull ?: "unconfirmed cancel response: $raw")
     }
 
     /**
