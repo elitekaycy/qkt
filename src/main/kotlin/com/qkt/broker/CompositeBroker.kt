@@ -36,6 +36,9 @@ class CompositeBroker(
 
     override fun supports(symbol: String): Boolean = brokerFor(symbol) != null
 
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode =
+        brokerFor(symbol)?.positionAccountingMode(symbol) ?: PositionAccountingMode.UNKNOWN
+
     private val orderIdToBroker: MutableMap<String, Broker> = mutableMapOf()
 
     /**

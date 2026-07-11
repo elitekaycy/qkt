@@ -44,6 +44,8 @@ class PaperBroker(
      */
     private val fillAtTriggerPrice: Boolean = false,
 ) : Broker {
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
+
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()

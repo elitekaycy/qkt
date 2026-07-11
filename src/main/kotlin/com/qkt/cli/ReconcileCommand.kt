@@ -5,7 +5,7 @@ import com.qkt.cli.daemon.StateDir
 
 /**
  * `qkt reconcile <name>` — engine-vs-broker truth comparison (FIA §2.1): per-symbol
- * net position deltas plus equity on both sides. Exit code is the alert: 0 when
+ * directional gross deltas (signed net only on confirmed netting accounts) plus equity. Exit code is the alert: 0 when
  * clean, 2 on any delta — so a daily cron line IS the reconciliation control:
  *
  * ```cron

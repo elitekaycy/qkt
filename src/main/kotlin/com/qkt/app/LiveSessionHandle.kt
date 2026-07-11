@@ -30,8 +30,8 @@ interface LiveSessionHandle {
     fun staleSymbols(): Map<String, Long> = emptyMap()
 
     /**
-     * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol net position
-     * deltas plus equity on both sides. Run daily via `qkt reconcile` — slow silent
+     * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol gross directional
+     * deltas (or confirmed netting deltas) plus equity on both sides. Run daily via `qkt reconcile` — slow silent
      * state drift (the hedge-accumulation bug class) is exactly what this catches.
      * Default null for handles without a broker view.
      */
@@ -137,6 +137,8 @@ data class PositionDelta(
     val symbol: String,
     val engineQty: java.math.BigDecimal,
     val brokerQty: java.math.BigDecimal,
+    /** Gross direction on hedging/unknown accounts; null for a confirmed netting comparison. */
+    val side: com.qkt.common.Side? = null,
 )
 
 /** One venue ticket whose attached protection differs from qkt's last requested levels. */
