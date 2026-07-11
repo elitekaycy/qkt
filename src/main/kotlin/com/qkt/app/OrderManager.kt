@@ -611,7 +611,8 @@ class OrderManager(
     }
 
     private fun onStackLayerFilled(e: BrokerEvent.OrderFilled) {
-        val owner = stacks.markFilled(e.clientOrderId) ?: return
+        val filledQuantity = orders[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity
+        val owner = stacks.markFilled(e.clientOrderId, filledQuantity) ?: return
         val state = stacks.get(owner) ?: return
         // Anchor capture happens only on layer 1.
         if (state.layerOneOrderId == e.clientOrderId && state.anchor == null) {
@@ -848,13 +849,18 @@ class OrderManager(
 
     private fun evaluateStackFlat(e: BrokerEvent.OrderFilled) {
         val managed = orders[e.clientOrderId] ?: return
-        // The fill is on an SL/TP closing a layer's position. Walk up to the layer-entry.
         val parentId = managed.parentClientOrderId ?: return
-        // If parentId is the Stack itself, this is a layer-entry fill — handled by onStackLayerFilled.
         val parent = orders[parentId] ?: return
-        if (parent.request is OrderRequest.Stack) return
-        // parentId is a layer-entry; this SL/TP fill closes its position. Record it.
-        val stackId = stacks.markLayerClosed(parentId) ?: return
+        val stackId =
+            if (parent.request is OrderRequest.Stack) {
+                // POSITION_MODIFY venues report a position close under the layer entry's own id.
+                // Its side is opposite the entry; same-side events are the original layer fill.
+                if (e.side == managed.request.side) return
+                stacks.recordLayerCloseFill(e.clientOrderId, e.quantity) ?: return
+            } else {
+                // Engine-decomposed SL/TP fills are children of the layer entry.
+                stacks.markLayerClosed(parentId) ?: return
+            }
         val state = stacks.get(stackId) ?: return
         if (state.filledLayerIds.size == state.closedLayerIds.size && state.filledLayerIds.isNotEmpty()) {
             cancelStackPending(stackId)
