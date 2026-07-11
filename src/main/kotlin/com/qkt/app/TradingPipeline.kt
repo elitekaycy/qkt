@@ -360,6 +360,7 @@ class TradingPipeline(
         // Both subscribe earlier in construction order, so ordinary subscribe() here
         // would run them against a pre-fill book (#374, #377).
         bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
+            if (e.strategyId.isBlank()) return@subscribeFirst
             if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
             riskState.beforeFill(e.strategyId)
             // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
@@ -442,6 +443,7 @@ class TradingPipeline(
             )
         }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
+            if (e.strategyId.isBlank()) return@subscribe
             riskState.beforeFill(e.strategyId)
             val asFill =
                 BrokerEvent.OrderFilled(
