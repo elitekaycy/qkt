@@ -130,4 +130,89 @@ RULES
             daemonThread.join(5_000)
         }
     }
+
+    @Test
+    fun `--load-dir auto-deploys portfolio roots with imported children`(
+        @TempDir tmp: Path,
+    ) {
+        val strategiesDir = Files.createDirectories(tmp.resolve("strategies"))
+        val childrenDir = Files.createDirectories(strategiesDir.resolve("children"))
+
+        fun strategySource(internalName: String) =
+            """
+STRATEGY $internalName VERSION 1
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+
+RULES
+    WHEN btc.close > 100
+    THEN BUY btc SIZING 1
+            """.trimIndent()
+
+        Files.writeString(childrenDir.resolve("alpha.qkt"), strategySource("alpha_strategy"))
+        Files.writeString(childrenDir.resolve("beta.qkt"), strategySource("beta_strategy"))
+        Files.writeString(
+            strategiesDir.resolve("book.qkt"),
+            """
+PORTFOLIO book VERSION 1 CAPITAL 100000
+
+IMPORT 'children/alpha.qkt' AS alpha
+IMPORT 'children/beta.qkt' AS beta
+
+RULES
+    RUN alpha WEIGHT 0.5
+    RUN beta WEIGHT 0.5
+            """.trimIndent(),
+        )
+
+        val ticks =
+            (0 until 2).map {
+                Tick(
+                    symbol = "BACKTEST:BTCUSDT",
+                    price = BigDecimal("42000.0").add(BigDecimal(it * 10)),
+                    timestamp = 1_705_276_800_000L + it * 60_000L,
+                )
+            }
+
+        val daemonThread =
+            Thread {
+                val args =
+                    Args(
+                        arrayOf(
+                            "daemon",
+                            "--state-dir",
+                            tmp.resolve("state").toString(),
+                            "--load-dir",
+                            strategiesDir.toString(),
+                        ),
+                    )
+                DaemonCommand(args, sourceFactory = { FakeSource(ticks) }).run()
+            }
+        daemonThread.isDaemon = true
+        daemonThread.start()
+
+        try {
+            val stateDir = StateDir.resolve(tmp.resolve("state").toString())
+            waitForFile(stateDir.controlPortFile)
+            val port = stateDir.readControlPort()!!
+            val client = OkHttpClient()
+            val deadline = System.currentTimeMillis() + 30_000
+            var body: String = ""
+            while (System.currentTimeMillis() < deadline) {
+                val resp =
+                    client
+                        .newCall(Request.Builder().url("http://127.0.0.1:$port/list").build())
+                        .execute()
+                body = resp.body!!.string()
+                if (body.contains("\"name\":\"book/alpha\"") && body.contains("\"name\":\"book/beta\"")) break
+                Thread.sleep(100)
+            }
+            assertThat(body).contains("\"name\":\"book/alpha\"")
+            assertThat(body).contains("\"name\":\"book/beta\"")
+        } finally {
+            daemonThread.interrupt()
+            daemonThread.join(5_000)
+        }
+    }
 }
