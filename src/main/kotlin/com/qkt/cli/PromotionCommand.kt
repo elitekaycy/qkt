@@ -200,7 +200,7 @@ class PromotionCommand(
     }
 
     private fun promotionConfig(): PromotionGateConfig {
-        val cfgPath = args.option("config")?.let(Path::of) ?: Path.of("./qkt.config.yaml")
+        val cfgPath = Config.resolvePath(args.option("config"))
         return Config.load(cfgPath).promotionGateConfig
     }
 
