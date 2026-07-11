@@ -531,6 +531,21 @@ class LiveSession(
                 mapOf("id" to e.clientOrderId, "reason" to e.reason),
             )
         }
+        bus.subscribe<BrokerEvent.PositionProtectionChanged> { e ->
+            journal.append(
+                e.strategyId.ifBlank { strategies.firstOrNull()?.first.orEmpty() },
+                "position-protection-changed",
+                mapOf(
+                    "broker" to e.broker,
+                    "symbol" to e.symbol,
+                    "ticket" to e.ticket,
+                    "oldSl" to e.oldStopLoss.toPlainString(),
+                    "newSl" to e.newStopLoss.toPlainString(),
+                    "oldTp" to e.oldTakeProfit.toPlainString(),
+                    "newTp" to e.newTakeProfit.toPlainString(),
+                ),
+            )
+        }
         bus.subscribe<com.qkt.events.RiskRejectedEvent> { e ->
             journal.append(
                 e.request.strategyId,
@@ -604,6 +619,20 @@ class LiveSession(
                         ),
                     )
                 }.onFailure { t -> recordNotificationFailure(ownerForError, "GatewayUnreachable", t) }
+            }
+            bus.subscribe<BrokerEvent.PositionProtectionChanged> { ev ->
+                runCatching {
+                    notifier.notify(
+                        NotificationEvent.StrategyError(
+                            strategyId = ev.strategyId.ifBlank { ownerForError },
+                            message =
+                                "CRITICAL venue protection changed: ${ev.broker} ${ev.symbol} ticket=${ev.ticket} " +
+                                    "SL ${ev.oldStopLoss}->${ev.newStopLoss}, " +
+                                    "TP ${ev.oldTakeProfit}->${ev.newTakeProfit}",
+                            timestamp = ev.timestamp,
+                        ),
+                    )
+                }.onFailure { t -> recordNotificationFailure(ownerForError, "PositionProtectionChanged", t) }
             }
         }
         if (NotifyEventKind.ORDER_REJECTED in notifyEvents) {
@@ -1457,6 +1486,7 @@ class LiveSession(
                     deltas = reconcileDeltas(ownerId, brokerTickets, ticketAttribution, positions.allPositions()),
                     engineEquity = strategyPnL.equityFor(ownerId),
                     brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
+                    protectionDeltas = reconcileProtectionDeltas(ownerId, brokerTickets, ticketAttribution),
                 )
             }
 

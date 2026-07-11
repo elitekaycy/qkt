@@ -27,6 +27,7 @@ class MT5PositionPollerCloseTest {
     private lateinit var bus: EventBus
     private lateinit var clock: FixedClock
     private val fills = mutableListOf<BrokerEvent.OrderFilled>()
+    private val protectionChanges = mutableListOf<BrokerEvent.PositionProtectionChanged>()
 
     private val profile =
         MT5BrokerProfile(
@@ -46,6 +47,7 @@ class MT5PositionPollerCloseTest {
         clock = FixedClock(time = 1_700_000_000_000L)
         bus = EventBus(clock, MonotonicSequenceGenerator())
         bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
+        bus.subscribe<BrokerEvent.PositionProtectionChanged> { e -> protectionChanges.add(e) }
         client =
             MT5Client(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
@@ -64,6 +66,140 @@ class MT5PositionPollerCloseTest {
         positions.joinToString(prefix = "[", postfix = "]") { (ticket, type, priceOpen) ->
             """{"ticket":"$ticket","symbol":"XAUUSD","type":"$type","volume":"0.10","price_open":"$priceOpen","sl":"0","tp":"0","profit":"0","magic":"12345","time_msc":"0"}"""
         }
+
+    private fun positionJson(
+        ticket: Long,
+        volume: String,
+        stopLoss: String,
+        takeProfit: String,
+    ): String =
+        """[{"ticket":"$ticket","symbol":"XAUUSD","type":"0","volume":"$volume","price_open":"100","sl":"$stopLoss","tp":"$takeProfit","profit":"0","magic":"12345","time_msc":"0"}]"""
+
+    @Test
+    fun `same-ticket volume reduction emits an attributed partial close`() {
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.04", "90", "110")))
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":22,"entry":1,"price":"95","volume":"0.06","commission":"-0.30"}]""",
+            ),
+        )
+        val meta = mapOf(7001L to ClosedPositionMeta("entry-1", "alpha"))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = meta::get,
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().quantity).isEqualByComparingTo("0.06")
+        assertThat(fills.single().price).isEqualByComparingTo("95")
+        assertThat(fills.single().clientOrderId).isEqualTo("entry-1")
+        assertThat(fills.single().strategyId).isEqualTo("alpha")
+    }
+
+    @Test
+    fun `repeated partial closes use only each newly observed closing deal for price`() {
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.07", "90", "110")))
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":22,"entry":1,"price":"95","volume":"0.03","commission":"-0.15"}]""",
+            ),
+        )
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.04", "90", "110")))
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":22,"entry":1,"price":"95","volume":"0.03","commission":"-0.15"},
+                    {"ticket":23,"entry":1,"price":"97","volume":"0.03","commission":"-0.15"}]""",
+            ),
+        )
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = { ClosedPositionMeta("entry-1", "alpha") },
+            )
+
+        repeat(3) { poller.tick() }
+
+        assertThat(fills.map { it.quantity }).containsExactly(BigDecimal("0.03"), BigDecimal("0.03"))
+        assertThat(fills.map { it.price }).containsExactly(BigDecimal("95"), BigDecimal("97"))
+    }
+
+    @Test
+    fun `same-ticket stop removal emits a protection drift event`() {
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "0", "110")))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                closedTicketMeta = { ClosedPositionMeta("entry-1", "alpha") },
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(protectionChanges).hasSize(1)
+        assertThat(protectionChanges.single().ticket).isEqualTo("7001")
+        assertThat(protectionChanges.single().oldStopLoss).isEqualByComparingTo("90")
+        assertThat(protectionChanges.single().newStopLoss).isEqualByComparingTo("0")
+        assertThat(protectionChanges.single().strategyId).isEqualTo("alpha")
+    }
+
+    @Test
+    fun `engine-requested protection change does not emit drift`() {
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "95", "110")))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                isExpectedProtectionChange = { true },
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(protectionChanges).isEmpty()
+    }
+
+    @Test
+    fun `engine-confirmed partial close is not published twice`() {
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.04", "90", "110")))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                engineCloseState = { EngineCloseState.CONFIRMED },
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).isEmpty()
+    }
 
     @Test
     fun `close with meta lookup emits strategyId and real client-order id`() {

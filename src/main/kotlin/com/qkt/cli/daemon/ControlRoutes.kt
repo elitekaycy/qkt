@@ -444,14 +444,25 @@ object ControlRoutes {
                 """{"symbol":"${it.symbol}","engineQty":"${it.engineQty.toPlainString()}",""" +
                     """"brokerQty":"${it.brokerQty.toPlainString()}"}"""
             }
+        val protectionDeltas =
+            report.protectionDeltas.joinToString(",", "[", "]") {
+                """{"ticket":"${it.ticket}","symbol":"${it.symbol}",""" +
+                    """"requestedStopLoss":${jsonDecimal(it.requestedStopLoss)},""" +
+                    """"brokerStopLoss":${jsonDecimal(it.brokerStopLoss)},""" +
+                    """"requestedTakeProfit":${jsonDecimal(it.requestedTakeProfit)},""" +
+                    """"brokerTakeProfit":${jsonDecimal(it.brokerTakeProfit)}}"""
+            }
         respond(
             ex,
             200,
             """{"strategy":"$name","clean":${report.clean},"deltas":$deltas,""" +
+                """"protectionDeltas":$protectionDeltas,""" +
                 """"engineEquity":"${report.engineEquity.toPlainString()}",""" +
                 """"brokerEquity":${report.brokerEquity?.let { "\"${it.toPlainString()}\"" } ?: "null"}}""",
         )
     }
+
+    private fun jsonDecimal(value: java.math.BigDecimal?): String = value?.let { "\"${it.toPlainString()}\"" } ?: "null"
 
     private fun handleLatencyAll(
         ex: HttpExchange,
