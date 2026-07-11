@@ -105,7 +105,16 @@ class RiskState(
         reason: String,
         scope: HaltScope = HaltScope.PERSISTENT,
     ) {
-        if (halted) return
+        if (halted) {
+            if (haltScope == HaltScope.DAILY && scope == HaltScope.PERSISTENT) {
+                haltReason = reason
+                haltScope = scope
+                haltEpochDay = epochDay()
+                bus.publish(RiskEvent.Halted(reason = reason, strategyId = null, timestamp = clock.now()))
+                persistNow()
+            }
+            return
+        }
         halted = true
         haltReason = reason
         haltScope = scope
@@ -113,6 +122,9 @@ class RiskState(
         bus.publish(RiskEvent.Halted(reason = reason, strategyId = null, timestamp = clock.now()))
         persistNow()
     }
+
+    /** Scope of the active global halt, or null when global risk is not halted. */
+    fun globalHaltScope(): HaltScope? = haltScope.takeIf { halted }
 
     fun haltStrategy(
         strategyId: String,

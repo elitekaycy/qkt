@@ -2,6 +2,7 @@ package com.qkt.app
 
 import com.qkt.execution.Trade
 import com.qkt.notify.StrategySummary
+import com.qkt.risk.HaltScope
 import java.math.BigDecimal
 import java.time.Duration
 
@@ -69,6 +70,20 @@ interface LiveSessionHandle {
      * implement it; the live daemon session overrides it to drive its risk state.
      */
     fun halt(reason: String) {}
+
+    /** Scoped risk halt used by portfolio-level controls; defaults to the legacy persistent halt. */
+    fun halt(
+        reason: String,
+        scope: HaltScope,
+    ) {
+        halt(reason)
+    }
+
+    /** Reason for the active global halt, or null when not halted/unsupported by this handle. */
+    fun haltReason(): String? = null
+
+    /** Scope for the active global halt, or null when not halted/unsupported by this handle. */
+    fun haltScope(): HaltScope? = null
 
     /** Reverse [halt]: re-enable new-order submission. Default no-op. */
     fun resume() {}

@@ -197,9 +197,18 @@ class PortfolioDeployer(
                 object : ChildRiskTarget {
                     override fun flatten() = w.handle.live.flatten()
 
-                    override fun halt(reason: String) = w.handle.live.halt(reason)
+                    override fun halt(
+                        reason: String,
+                        scope: com.qkt.risk.HaltScope,
+                    ) = w.handle.live.halt(reason, scope)
 
                     override fun resume() = w.handle.live.resume()
+
+                    override fun isHalted(): Boolean = w.handle.live.isHalted()
+
+                    override fun haltReason(): String? = w.handle.live.haltReason()
+
+                    override fun haltScope(): com.qkt.risk.HaltScope? = w.handle.live.haltScope()
                 }
             }
         val bookRiskState =
