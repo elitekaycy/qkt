@@ -72,6 +72,42 @@ class MarketDataGateTest {
     }
 
     @Test
+    fun `a coherent price gap re-baselines instead of freezing the symbol`() {
+        val clock = TickingClock(0L)
+        val gate = MarketDataGate(clock)
+        repeat(32) {
+            clock.t += 100L
+            gate.observe(tick("100", clock.t))
+        }
+
+        repeat(2) {
+            clock.t += 100L
+            assertThat(gate.observe(tick("98", clock.t))).isEqualTo(MarketDataGate.Verdict.OUTLIER)
+            assertThat(gate.isHealthy("X")).isFalse()
+        }
+        clock.t += 100L
+        assertThat(gate.observe(tick("98", clock.t))).isEqualTo(MarketDataGate.Verdict.OK)
+        assertThat(gate.isHealthy("X")).isTrue()
+
+        clock.t += 100L
+        assertThat(gate.observe(tick("98.1", clock.t))).isEqualTo(MarketDataGate.Verdict.OK)
+        assertThat(gate.outlierCount.get()).isEqualTo(2L)
+    }
+
+    @Test
+    fun `crossed books never trigger a price re-baseline`() {
+        val clock = TickingClock(0L)
+        val gate = MarketDataGate(clock)
+
+        repeat(4) {
+            clock.t += 100L
+            assertThat(gate.observe(tick("100", clock.t, bid = "101", ask = "99")))
+                .isEqualTo(MarketDataGate.Verdict.OUTLIER)
+        }
+        assertThat(gate.isHealthy("X")).isFalse()
+    }
+
+    @Test
     fun `never-observed symbols are healthy`() {
         val gate = MarketDataGate(TickingClock(0L))
         assertThat(gate.isHealthy("NEVER_SEEN")).isTrue()
