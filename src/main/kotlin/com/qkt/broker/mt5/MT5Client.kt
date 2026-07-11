@@ -678,6 +678,7 @@ class MT5Client(
             magic = obj["magic"]!!.jsonPrimitive.content.toInt(),
             openTime = rawTime,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
+            clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
             swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
             priceCurrent = obj["price_current"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
         )
@@ -704,6 +705,7 @@ class MT5Client(
             timeSetup = rawTime,
             timeExpiration = rawExp,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
+            clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
         )
     }
 

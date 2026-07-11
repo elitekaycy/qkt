@@ -89,6 +89,8 @@ data class MT5Position(
     val magic: Int,
     val openTime: Long,
     val comment: String? = null,
+    /** Full gateway placement id; unlike [comment], this is not truncated by the terminal. */
+    val clientOrderId: String? = null,
     /** Accumulated swap in account currency; null when the gateway omits the field. */
     val swap: BigDecimal? = null,
     /** Current market price the venue values the position at; null when omitted. */
@@ -159,6 +161,8 @@ data class MT5PendingOrder(
     val timeSetup: Long,
     val timeExpiration: Long,
     val comment: String? = null,
+    /** Full gateway placement id; unlike [comment], this is not truncated by the terminal. */
+    val clientOrderId: String? = null,
 )
 
 /**

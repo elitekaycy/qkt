@@ -19,6 +19,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 import org.slf4j.LoggerFactory
 
 /**
@@ -731,9 +732,10 @@ class MT5Broker(
         // engine thread never waits on the order round-trip — the real accept/reject/fill
         // follows on the bus, which is what the event-driven OCO/OTO sequencing consumes.
         val placement = prepared.withPlacementId()
+        val placementStartedAtMs = clock.now()
         val protection = protectionOf(placement)
         client.placeOrderAsync(placement) { resp ->
-            handlePlacementResult(request, placement.volume, protection, resp)
+            handlePlacementResult(request, placement, placementStartedAtMs, protection, resp)
         }
         return SubmitAck(
             clientOrderId = request.id,
@@ -751,7 +753,8 @@ class MT5Broker(
      */
     private fun handlePlacementResult(
         request: OrderRequest,
-        preparedVolume: BigDecimal,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
         protection: PositionProtection?,
         resp: MT5OrderResponse,
     ) {
@@ -761,7 +764,7 @@ class MT5Broker(
             // order may have reached MT5 and filled. Telling the strategy "rejected"
             // makes it re-fire and double the position; resolve against venue truth first.
             if (message != null && isAmbiguousSendFailure(message)) {
-                resolveUnknownOutcome(request, protection, message)
+                resolveUnknownOutcome(request, placement, placementStartedAtMs, protection, message)
                 return
             }
             reject(request, message ?: "retcode=${resp.result.retcode}")
@@ -784,7 +787,13 @@ class MT5Broker(
             resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL &&
             resp.result.volume?.signum() != 1
         ) {
-            resolveUnknownOutcome(request, protection, "partial fill response omitted actual volume")
+            resolveUnknownOutcome(
+                request,
+                placement,
+                placementStartedAtMs,
+                protection,
+                "partial fill response omitted actual volume",
+            )
             return
         }
         // Register the venue ticket BEFORE announcing acceptance so any consumer reacting to
@@ -820,7 +829,7 @@ class MT5Broker(
         if (isInstantFill) {
             val filledQuantity =
                 resp.result.volume?.takeIf { it.signum() > 0 }
-                    ?: preparedVolume
+                    ?: placement.volume
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = request.id,
@@ -873,8 +882,8 @@ class MT5Broker(
 
     /**
      * Resolve an UNKNOWN send outcome by querying the venue for an order carrying this
-     * request's comment (the clientOrderId goes on the wire as the comment, and state
-     * recovery already correlates on its venue-truncated prefix).
+     * request's full gateway placement id, with a constrained fallback to the venue-truncated
+     * comment for older gateways.
      *
      *   - Found as a pending → the venue owns it: register tickets, publish Accepted.
      *   - Found as a position → it filled: register meta, publish Accepted + Filled.
@@ -884,10 +893,12 @@ class MT5Broker(
      */
     private fun resolveUnknownOutcome(
         request: OrderRequest,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
         protection: PositionProtection?,
         cause: String,
     ) {
-        val wireComment = request.id.take(MT5_COMMENT_MAX_LENGTH)
+        val wireComment = placement.comment.take(MT5_COMMENT_MAX_LENGTH)
         val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
         log.warn(
             "MT5Broker {} order {} outcome UNKNOWN ({}) — querying venue before resolving",
@@ -899,65 +910,113 @@ class MT5Broker(
             Thread.sleep(unknownResolveBackoffMs * attempt)
             val pendings = client.getPendingOrders(magic = profile.magic) ?: continue
             val positions = client.getPositions(magic = profile.magic) ?: continue
-            val pendingMatch =
-                pendings.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
-            if (pendingMatch != null) {
-                registerPendingTicket(
-                    pendingMatch.ticket,
-                    PendingMeta(request.id, request.strategyId, protection),
-                )
-                bus.publish(
-                    BrokerEvent.OrderAccepted(
-                        clientOrderId = request.id,
-                        brokerOrderId = pendingMatch.ticket.toString(),
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-                log.info(
-                    "MT5Broker {} order {} resolved as PENDING ticket {}",
+            val pendingCandidates =
+                pendings.filter {
+                    it.ticket > 0L &&
+                        !pendingByTicket.containsKey(it.ticket) &&
+                        it.symbol == brokerSymbol &&
+                        matchesComment(it.comment, wireComment)
+                }
+            val positionCandidates =
+                positions.filter {
+                    !positionMetaByTicket.containsKey(it.ticket) &&
+                        it.symbol == brokerSymbol &&
+                        matchesComment(it.comment, wireComment)
+                }
+            val exactMatches: List<UnknownVenueMatch> =
+                pendingCandidates
+                    .filter { it.clientOrderId == placement.clientOrderId }
+                    .map { UnknownVenueMatch.Pending(it) } +
+                    positionCandidates
+                        .filter { it.clientOrderId == placement.clientOrderId }
+                        .map { UnknownVenueMatch.Position(it) }
+            val fallbackMatches: List<UnknownVenueMatch> =
+                if (exactMatches.isEmpty()) {
+                    pendingCandidates
+                        .filter { matchesUnknownPending(it, placement, placementStartedAtMs) }
+                        .map { UnknownVenueMatch.Pending(it) } +
+                        positionCandidates
+                            .filter { matchesUnknownPosition(it, placement, placementStartedAtMs) }
+                            .map { UnknownVenueMatch.Position(it) }
+                } else {
+                    emptyList()
+                }
+            val matches = if (exactMatches.isNotEmpty()) exactMatches else fallbackMatches
+            if (matches.size > 1 || (matches.isEmpty() && (pendingCandidates + positionCandidates).isNotEmpty())) {
+                log.error(
+                    "MT5Broker {} order {} UNKNOWN outcome remains ambiguous on attempt {}/{}: " +
+                        "pendingCandidates={} positionCandidates={} correlatedMatches={}",
                     profile.name,
                     request.id,
-                    pendingMatch.ticket,
+                    attempt,
+                    UNKNOWN_RESOLVE_ATTEMPTS,
+                    pendingCandidates.map { it.ticket },
+                    positionCandidates.map { it.ticket },
+                    matches.size,
                 )
-                return
+                continue
             }
-            val positionMatch =
-                positions.firstOrNull { it.symbol == brokerSymbol && matchesComment(it.comment, wireComment) }
-            if (positionMatch != null) {
-                positionMetaByTicket[positionMatch.ticket] =
-                    PendingMeta(request.id, request.strategyId, protection)
-                positionSymbolByTicket[positionMatch.ticket] = request.symbol
-                bus.publish(
-                    BrokerEvent.OrderAccepted(
-                        clientOrderId = request.id,
-                        brokerOrderId = positionMatch.ticket.toString(),
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-                bus.publish(
-                    BrokerEvent.OrderFilled(
-                        clientOrderId = request.id,
-                        brokerOrderId = positionMatch.ticket.toString(),
-                        symbol = request.symbol,
-                        side = request.side,
-                        price = positionMatch.priceOpen,
-                        quantity = positionMatch.volume,
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-                log.info(
-                    "MT5Broker {} order {} resolved as FILLED ticket {}",
-                    profile.name,
-                    request.id,
-                    positionMatch.ticket,
-                )
-                return
+            when (val match = matches.singleOrNull()) {
+                is UnknownVenueMatch.Pending -> {
+                    val pendingMatch = match.order
+                    registerPendingTicket(
+                        pendingMatch.ticket,
+                        PendingMeta(request.id, request.strategyId, protection),
+                    )
+                    bus.publish(
+                        BrokerEvent.OrderAccepted(
+                            clientOrderId = request.id,
+                            brokerOrderId = pendingMatch.ticket.toString(),
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                    log.info(
+                        "MT5Broker {} order {} resolved as PENDING ticket {}",
+                        profile.name,
+                        request.id,
+                        pendingMatch.ticket,
+                    )
+                    return
+                }
+                is UnknownVenueMatch.Position -> {
+                    val positionMatch = match.position
+                    positionMetaByTicket[positionMatch.ticket] =
+                        PendingMeta(request.id, request.strategyId, protection)
+                    positionSymbolByTicket[positionMatch.ticket] = request.symbol
+                    bus.publish(
+                        BrokerEvent.OrderAccepted(
+                            clientOrderId = request.id,
+                            brokerOrderId = positionMatch.ticket.toString(),
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                    bus.publish(
+                        BrokerEvent.OrderFilled(
+                            clientOrderId = request.id,
+                            brokerOrderId = positionMatch.ticket.toString(),
+                            symbol = request.symbol,
+                            side = request.side,
+                            price = positionMatch.priceOpen,
+                            quantity = positionMatch.volume,
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                    log.info(
+                        "MT5Broker {} order {} resolved as FILLED ticket {}",
+                        profile.name,
+                        request.id,
+                        positionMatch.ticket,
+                    )
+                    return
+                }
+                null -> {
+                    reject(request, "unknown-state send resolved as not placed ($cause)")
+                    return
+                }
             }
-            reject(request, "unknown-state send resolved as not placed ($cause)")
-            return
         }
         log.error(
             "MT5Broker {} order {} send outcome UNRESOLVED after {} venue queries — " +
@@ -967,6 +1026,46 @@ class MT5Broker(
             UNKNOWN_RESOLVE_ATTEMPTS,
         )
         publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
+    }
+
+    private fun matchesUnknownPending(
+        candidate: MT5PendingOrder,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
+    ): Boolean =
+        candidate.type.equals(placement.type, ignoreCase = true) &&
+            candidate.volume.compareTo(placement.volume) == 0 &&
+            (placement.price == null || candidate.priceOpen.compareTo(placement.price) == 0) &&
+            isNearPlacement(candidate.timeSetup, placementStartedAtMs)
+
+    private fun matchesUnknownPosition(
+        candidate: MT5Position,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
+    ): Boolean {
+        val expectedType = if (placement.type.startsWith("BUY")) 0 else 1
+        return candidate.type == expectedType &&
+            candidate.volume.compareTo(placement.volume) == 0 &&
+            isNearPlacement(candidate.openTime, placementStartedAtMs)
+    }
+
+    private fun isNearPlacement(
+        venueEpoch: Long,
+        placementStartedAtMs: Long,
+    ): Boolean {
+        if (venueEpoch <= 0L) return false
+        val venueEpochMs = if (venueEpoch < 100_000_000_000L) venueEpoch * 1_000L else venueEpoch
+        return abs(venueEpochMs - placementStartedAtMs) <= UNKNOWN_CORRELATION_WINDOW_MS
+    }
+
+    private sealed interface UnknownVenueMatch {
+        data class Pending(
+            val order: MT5PendingOrder,
+        ) : UnknownVenueMatch
+
+        data class Position(
+            val position: MT5Position,
+        ) : UnknownVenueMatch
     }
 
     /**
@@ -1564,6 +1663,9 @@ class MT5Broker(
 
         /** Venue queries before giving up on resolving an UNKNOWN send outcome. */
         private const val UNKNOWN_RESOLVE_ATTEMPTS: Int = 4
+
+        /** Maximum distance from placement time for legacy comment-based correlation. */
+        private const val UNKNOWN_CORRELATION_WINDOW_MS: Long = 60_000L
 
         /** Margin-level cache TTL — fresh enough for a floor check, cheap on the gateway. */
         private const val MARGIN_CACHE_TTL_MS: Long = 5_000L
