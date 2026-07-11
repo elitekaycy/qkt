@@ -26,6 +26,8 @@ class MT5StateRecovery(
     private val bus: EventBus,
     private val strategyName: String? = null,
     private val seedOrphan: (ticket: Long, orderId: String, strategyId: String) -> Unit = { _, _, _ -> },
+    /** Records recovered position metadata needed by later close accounting. */
+    private val onPositionRecovered: (MT5Position) -> Unit = {},
     /**
      * Returns the names of other strategies sharing this MT5 magic — looked up at recovery
      * time, not construction time, so it sees strategies deployed after this broker was
@@ -43,6 +45,7 @@ class MT5StateRecovery(
         log.info("MT5 ${profile.name} state recovery: ${positions.size} open positions")
         val siblings = if (strategyName != null) siblingsLookup() else emptyList()
         for (p in positions) {
+            onPositionRecovered(p)
             val qktSymbol = symbol.toQkt(p.symbol)
             val signedQty = if (p.type == 0) p.volume else p.volume.negate()
             bus.publish(

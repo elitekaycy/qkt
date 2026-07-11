@@ -44,6 +44,8 @@ class MT5PositionPoller(
      * because their fill was already published by the submission callback.
      */
     private val engineCloseState: ((Long) -> EngineCloseState)? = null,
+    /** Deduplicates venue costs shared with engine-initiated close callbacks. */
+    private val venueCostsForClose: ((Long, List<MT5Deal>) -> java.math.BigDecimal)? = null,
     /**
      * Best-effort source for the close price. The position snapshot diff only tells
      * us *that* a ticket closed, not at what price — the venue has already discarded
@@ -194,6 +196,10 @@ class MT5PositionPoller(
             // fallback proxy; the open price is the proxy of last resort (it fabricates
             // a break-even close — better than nothing, loudly logged).
             val deal = client.getClosingDeal(ticket, fromUtcMs = p.openTime, toUtcMs = now)
+            val venueCosts =
+                venueCostsForClose?.invoke(ticket, deal?.deals.orEmpty())
+                    ?: deal?.costs
+                    ?: java.math.BigDecimal.ZERO
             val closePrice =
                 deal?.price ?: (priceProvider?.lastPrice(qktSymbol) ?: p.priceOpen).also { fallback ->
                     log.warn(
@@ -214,7 +220,7 @@ class MT5PositionPoller(
                     quantity = p.volume,
                     strategyId = strategyId,
                     timestamp = clock.now(),
-                    venueCosts = deal?.costs ?: java.math.BigDecimal.ZERO,
+                    venueCosts = venueCosts,
                 ),
             )
         }
