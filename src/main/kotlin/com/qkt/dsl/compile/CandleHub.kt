@@ -166,6 +166,13 @@ class CandleHub {
     ) {
         val slot = slots[key] ?: error("CandleHub.seed: unknown key $key")
         if (candles.isEmpty()) return
+        val expectedDurationMs = TimeWindow.parse(key.timeframe).durationMs
+        require(candles.all { it.symbol == key.qktSymbol }) {
+            "CandleHub.seed: symbol mismatch for $key"
+        }
+        require(candles.all { it.endTime - it.startTime == expectedDurationMs }) {
+            "CandleHub.seed: timeframe mismatch for $key; expected ${expectedDurationMs}ms bars"
+        }
         val sorted = candles.sortedBy { it.startTime }
         val oldestExisting = slot.ring.firstOrNull()?.startTime ?: Long.MAX_VALUE
         val toPrepend = sorted.filter { it.startTime < oldestExisting }

@@ -20,6 +20,7 @@ import com.qkt.positions.PositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
 import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -119,8 +120,8 @@ class IndicatorWarmerPerStreamTest {
         warmer.warmup(
             perStream =
                 mapOf(
-                    "X" to WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 5),
-                    "Y" to WarmupSpec.Bars(TimeWindow.ONE_HOUR, 3),
+                    WarmupStream("X", TimeWindow.ONE_MINUTE) to WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 5),
+                    WarmupStream("Y", TimeWindow.ONE_HOUR) to WarmupSpec.Bars(TimeWindow.ONE_HOUR, 3),
                 ),
             now = now,
         )
@@ -143,8 +144,8 @@ class IndicatorWarmerPerStreamTest {
         warmer.warmup(
             perStream =
                 mapOf(
-                    "X" to WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 1),
-                    "Y" to WarmupSpec.None,
+                    WarmupStream("X", TimeWindow.ONE_MINUTE) to WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 1),
+                    WarmupStream("Y", TimeWindow.ONE_HOUR) to WarmupSpec.None,
                 ),
             now = now,
         )
@@ -168,7 +169,13 @@ class IndicatorWarmerPerStreamTest {
         // EventBus is private — subscribe through pipeline's bus accessor if exposed, else fall back
         // to verifying the bars() call shape (already covered above).
         val warmer = IndicatorWarmer(source, pipe)
-        warmer.warmup(perStream = mapOf("X" to WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 3)), now = now)
+        warmer.warmup(
+            perStream =
+                mapOf(
+                    WarmupStream("X", TimeWindow.ONE_MINUTE) to WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 3),
+                ),
+            now = now,
+        )
         // No bus accessor — assert via barCalls that exactly the requested window was pulled.
         assertThat(source.barCalls.single().first).isEqualTo("X")
         assertThat(received).isEmpty() // (placeholder — see comment above)
@@ -194,5 +201,23 @@ class IndicatorWarmerPerStreamTest {
 
         assertThat(source.barCalls).hasSize(2)
         assertThat(source.barCalls.map { it.first }).containsExactlyInAnyOrder("X", "Y")
+    }
+
+    @Test
+    fun `same symbol at two windows keeps both warmup requests`() {
+        val source = RecordingMarketSource(seed = emptyMap())
+        val warmer = IndicatorWarmer(source, pipeline(source))
+
+        warmer.warmup(
+            perStream =
+                mapOf(
+                    WarmupStream("X", TimeWindow.ONE_MINUTE) to WarmupSpec.Bars(TimeWindow.ONE_MINUTE, 5),
+                    WarmupStream("X", TimeWindow.ONE_HOUR) to WarmupSpec.Bars(TimeWindow.ONE_HOUR, 3),
+                ),
+            now = now,
+        )
+
+        assertThat(source.barCalls.map { it.first to it.second })
+            .containsExactlyInAnyOrder("X" to TimeWindow.ONE_MINUTE, "X" to TimeWindow.ONE_HOUR)
     }
 }
