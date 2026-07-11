@@ -9,6 +9,7 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import java.math.BigDecimal
+import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
@@ -49,6 +50,7 @@ class MT5BrokerIntegrationTest {
         bus.subscribe<BrokerEvent.OrderFilled> { e -> captured.add(e) }
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> captured.add(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> captured.add(e) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { e -> captured.add(e) }
 
         val profile =
             MT5DefaultProfiles.exness.copy(
@@ -410,6 +412,113 @@ class MT5BrokerIntegrationTest {
         // OrderAccepted but no OrderFilled — pending fills arrive via the position poller in Phase 26c.
         assertThat(captured).hasSize(1)
         assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
+    }
+
+    @Test
+    fun `failed cancel retains ticket attribution for a racing fill`() {
+        broker.shutdown()
+        val ticket = 7002L
+        val positionOpened = AtomicBoolean(false)
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        request.method == "DELETE" && path == "/orders/$ticket" -> {
+                            positionOpened.set(true)
+                            MockResponse().setResponseCode(500).setBody("gateway restart")
+                        }
+                        request.method == "GET" && path.startsWith("/orders") ->
+                            if (positionOpened.get()) {
+                                MockResponse().setBody("[]")
+                            } else {
+                                MockResponse().setBody(
+                                    """[{"ticket":$ticket,"symbol":"EURUSDm","type":"BUY_STOP","volume":"0.1",""" +
+                                        """"price_open":"1.1050","sl":"0","tp":"0","magic":10001,""" +
+                                        """"time_setup":1,"time_expiration":0,"comment":"cancel-race"}]""",
+                                )
+                            }
+                        request.method == "GET" && path.startsWith("/get_positions") ->
+                            if (positionOpened.get()) {
+                                MockResponse().setBody(
+                                    """[{"ticket":$ticket,"symbol":"EURUSDm","type":0,"volume":"0.1",""" +
+                                        """"price_open":"1.1050","sl":"0","tp":"0","profit":"0","magic":10001,""" +
+                                        """"time_msc":1,"comment":"cancel-race"}]""",
+                                )
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        request.method == "POST" && path == "/order" ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":$ticket,"deal":0,"price":"1.1050","comment":"ok"}}""",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 25,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker = MT5Broker(fastProfile, bus, FixedClock(time = 1L))
+        captured.clear()
+        fastBroker.submit(
+            OrderRequest.Stop(
+                id = "cancel-race",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            ),
+        )
+        awaitCaptured { captured.any { it is BrokerEvent.OrderAccepted } }
+        fastBroker.cancel("cancel-race")
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        val fill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(fill.clientOrderId).isEqualTo("cancel-race")
+        assertThat(fill.strategyId).isEqualTo("s1")
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderCancelled>()).isEmpty()
+    }
+
+    @Test
+    fun `confirmed cancel releases ticket tracking and publishes strategy attribution`() {
+        val ticket = 7003L
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":$ticket,"deal":0,"price":"0","comment":"placed"}}""",
+            ),
+        )
+        broker.submit(
+            OrderRequest.Stop(
+                id = "cancel-confirmed",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            ),
+        )
+        awaitCaptured { captured.any { it is BrokerEvent.OrderAccepted } }
+        server.enqueue(MockResponse().setBody("""{"message":"Order cancelled successfully"}"""))
+
+        broker.cancel("cancel-confirmed")
+        awaitCaptured { captured.any { it is BrokerEvent.OrderCancelled } }
+
+        val cancelled = captured.filterIsInstance<BrokerEvent.OrderCancelled>().single()
+        assertThat(cancelled.clientOrderId).isEqualTo("cancel-confirmed")
+        assertThat(cancelled.brokerOrderId).isEqualTo(ticket.toString())
+        assertThat(cancelled.strategyId).isEqualTo("s1")
     }
 
     @Test

@@ -1047,26 +1047,43 @@ class MT5Broker(
     }
 
     override fun cancel(orderId: String) {
-        val ticket = pendingTickets.remove(orderId) ?: return
-        pendingByTicket.remove(ticket)
+        val ticket = pendingTickets[orderId] ?: return
+        val meta = pendingByTicket[ticket] ?: return
         // Non-blocking: OCO sibling-cancels and the halt kill-switch sweep call this from the
         // engine thread, and serialized round-trips stall it exactly when it must stop fast.
-        // A null result is an IO failure (send never reached the gateway) — matches the sync
-        // version's thrown-exception branch, which only logged.
-        client.cancelOrderAsync(ticket) { result ->
-            if (result == null) {
-                log.warn("MT5Broker ${profile.name} cancel($orderId, ticket=$ticket) failed: IO error")
-            } else {
-                bus.publish(
-                    BrokerEvent.OrderCancelled(
-                        clientOrderId = orderId,
-                        brokerOrderId = ticket.toString(),
-                        reason = "user cancel",
-                        strategyId = "",
-                        timestamp = clock.now(),
-                    ),
+        // Keep both ticket maps until the venue confirms success. A rejected or ambiguous cancel
+        // can race a fill; retaining the metadata lets the position poller attribute that fill.
+        client.cancelOrderAsync(ticket) { response ->
+            if (!isOrderSuccessful(response.result.retcode)) {
+                log.warn(
+                    "MT5Broker {} cancel({}, ticket={}) remains unresolved: {}",
+                    profile.name,
+                    orderId,
+                    ticket,
+                    response.errorMessage ?: "retcode=${response.result.retcode}",
                 )
+                return@cancelOrderAsync
             }
+            val cancelled =
+                synchronized(pendingTransitionLock) {
+                    if (pendingByTicket[ticket] != meta || pendingTickets[orderId] != ticket) {
+                        false
+                    } else {
+                        pendingByTicket.remove(ticket)
+                        pendingTickets.remove(orderId)
+                        true
+                    }
+                }
+            if (!cancelled) return@cancelOrderAsync
+            bus.publish(
+                BrokerEvent.OrderCancelled(
+                    clientOrderId = orderId,
+                    brokerOrderId = ticket.toString(),
+                    reason = "user cancel",
+                    strategyId = meta.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
         }
     }
 
