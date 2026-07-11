@@ -145,7 +145,9 @@ assertThat(captured).hasSize(1)
 - **Approximate close prices on poller-detected exits.** Poller emits the last-known position price on disappearance, not the actual MT5 deal price. Future enhancement: query `/deal_history` for exact close.
 - **Magic uniqueness within instance only.** If two qkt instances use the same magic against the same broker, their pollers see each other's positions. Doc says: "magic must be unique per (broker, qkt instance)". Future: derive magic from instance-id + profile.
 - **No multi-account per single mt5-gateway.** Each profile = its own gateway container. mt5-gateway as it stands does not support multi-login natively.
-- **No DST-aware TZ.** `serverTzOffsetHours` is a fixed integer. Brokers that switch GMT+2 ↔ GMT+3 across DST need manual config update at the boundary. Future: query gateway for current server time and compute offset dynamically.
+- **Gateway offset must stay disabled.** qkt owns broker-wall-to-UTC conversion through the
+  profile's DST-aware `server_time_zone`. Set gateway `MT5_SERVER_UTC_OFFSET_SECONDS=0`; recent
+  live warmup fails closed when bars and ticks reveal competing time bases.
 - **`OrderManager.modify` not implemented.** SL/TP modifications after entry require a new method on `Broker` interface; future phase.
 
 ## References

@@ -12,6 +12,8 @@ import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import java.time.Instant
+import kotlin.math.abs
 import okhttp3.OkHttpClient
 
 /**
@@ -55,6 +57,7 @@ class Mt5MarketSource(
                     symbolMap = wireToQkt,
                     pollIntervalMs = profile.pollIntervalMs,
                     http = http,
+                    serverTimeZone = profile.serverTimeZone,
                     clock = clock,
                     symbolCalendars = symbolCalendars,
                     apiKey = profile.apiKey,
@@ -69,15 +72,60 @@ class Mt5MarketSource(
         range: TimeRange,
     ): Sequence<Candle> {
         require(supports(symbol)) { "$name cannot serve $symbol" }
-        val wire = symbolMap.toBroker(symbol.removePrefix(prefix))
-        return Mt5BarFetcher(
-            profile.gatewayUrl,
-            http,
-            profile.serverTzOffsetHours,
-            normalizeBidBarsToMid = true,
-            apiKey = profile.apiKey,
-        ).fetchRange(wire, window, range)
+        val bareSymbol = symbol.removePrefix(prefix)
+        val wire = symbolMap.toBroker(bareSymbol)
+        val candles =
+            Mt5BarFetcher(
+                profile.gatewayUrl,
+                http,
+                profile.serverTimeZone,
+                normalizeBidBarsToMid = true,
+                apiKey = profile.apiKey,
+            ).fetchRange(wire, window, range)
+                .toList()
+        validateRecentTimeBase(bareSymbol, wire, window, range, candles)
+        return candles.asSequence()
+    }
+
+    private fun validateRecentTimeBase(
+        bareSymbol: String,
+        wireSymbol: String,
+        window: TimeWindow,
+        range: TimeRange,
+        candles: List<Candle>,
+    ) {
+        val nowMs = clock.now()
+        if (abs(range.to.toEpochMilli() - nowMs) > RECENT_RANGE_TOLERANCE_MS) return
+        if (!symbolCalendars.calendarFor(bareSymbol).isInSession(bareSymbol, Instant.ofEpochMilli(nowMs))) return
+        require(candles.isNotEmpty()) {
+            "MT5 time-base mismatch for $bareSymbol: no decoded bar remained in the recent UTC range; " +
+                "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify " +
+                "server_time_zone=${profile.serverTimeZone.id}"
+        }
+        val tick =
+            Mt5TickClient(
+                profile.gatewayUrl,
+                http,
+                profile.serverTimeZone,
+                profile.apiKey,
+            ).fetchOnce(
+                wireSymbol,
+                nowMs,
+            )
+        val newestBarMs = candles.maxOf { it.startTime }
+        val barAgeMs = tick.brokerTimeMs - newestBarMs
+        val maxAgeMs = maxOf(window.durationMs * 3L, MIN_RECENT_BAR_AGE_MS)
+        require(barAgeMs in 0L..maxAgeMs) {
+            "MT5 time-base mismatch for $bareSymbol: newest bar=${Instant.ofEpochMilli(newestBarMs)}, " +
+                "tick=${Instant.ofEpochMilli(tick.brokerTimeMs)}, deltaMs=$barAgeMs; " +
+                "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify server_time_zone=${profile.serverTimeZone.id}"
+        }
     }
 
     override fun close() {}
+
+    companion object {
+        private const val RECENT_RANGE_TOLERANCE_MS: Long = 5 * 60_000L
+        private const val MIN_RECENT_BAR_AGE_MS: Long = 5 * 60_000L
+    }
 }

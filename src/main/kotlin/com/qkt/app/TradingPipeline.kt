@@ -117,7 +117,7 @@ class TradingPipeline(
     /**
      * Resolver for `Timezone.BROKER` in DSL `SCHEDULE` triggers (#77). Returns the
      * broker's effective `ZoneId` for the given strategy, or `null` to indicate
-     * the broker profile didn't supply `serverTzOffsetHours`. Defaults to null —
+     * the broker profile didn't supply `server_time_zone`. Defaults to null —
      * `BROKER` is only meaningful in live mode where a real broker profile exists.
      * Wired by [com.qkt.app.LiveSession] from the MT5 broker profile.
      */

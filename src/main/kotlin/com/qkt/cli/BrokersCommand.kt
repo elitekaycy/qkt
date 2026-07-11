@@ -53,15 +53,15 @@ class BrokersCommand(
             println(profiles.joinToString(",", "[", "]") { jsonProfile(it) })
             return ExitCodes.SUCCESS
         }
-        println("NAME              KIND  GATEWAY                  SUFFIX  TZ  MAGIC")
+        println("NAME              KIND  GATEWAY                  SUFFIX  SERVER TIME       MAGIC")
         for (p in profiles) {
             println(
-                "%-17s %-5s %-23s %-7s %-3s %s".format(
+                "%-17s %-5s %-23s %-7s %-17s %s".format(
                     p.name,
                     "mt5",
                     p.gatewayUrl,
                     if (p.symbolPolicy.suffix.isEmpty()) "-" else p.symbolPolicy.suffix,
-                    p.serverTzOffsetHours.toString(),
+                    p.serverTimeZone.id,
                     p.magic.toString(),
                 ),
             )
@@ -71,6 +71,6 @@ class BrokersCommand(
 
     private fun jsonProfile(p: MT5BrokerProfile): String =
         """{"name":"${p.name}","kind":"mt5","gatewayUrl":"${p.gatewayUrl}",""" +
-            """"symbolSuffix":"${p.symbolPolicy.suffix}","serverTzOffsetHours":${p.serverTzOffsetHours},""" +
+            """"symbolSuffix":"${p.symbolPolicy.suffix}","serverTimeZone":"${p.serverTimeZone.id}",""" +
             """"magic":${p.magic}}"""
 }
