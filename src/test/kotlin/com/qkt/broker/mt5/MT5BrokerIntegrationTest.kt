@@ -1,5 +1,6 @@
 package com.qkt.broker.mt5
 
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
@@ -72,6 +73,20 @@ class MT5BrokerIntegrationTest {
     @Test
     fun `GTD expiry is venue-owned by the current gateway`() {
         assertThat(broker.supportsNativeGtd).isTrue()
+    }
+
+    @Test
+    fun `venue margin mode selects gross hedging reconciliation`() {
+        server.enqueue(MockResponse().setBody("""{"margin_mode":2}"""))
+
+        assertThat(broker.positionAccountingMode("EXNESS:EURUSD")).isEqualTo(PositionAccountingMode.HEDGING)
+    }
+
+    @Test
+    fun `missing venue margin mode does not assume netting`() {
+        server.enqueue(MockResponse().setBody("{}"))
+
+        assertThat(broker.positionAccountingMode("EXNESS:EURUSD")).isEqualTo(PositionAccountingMode.UNKNOWN)
     }
 
     @Test

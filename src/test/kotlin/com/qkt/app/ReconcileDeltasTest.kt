@@ -1,9 +1,11 @@
 package com.qkt.app
 
 import com.qkt.broker.BrokerPositionTicket
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.common.Side
 import com.qkt.observe.insights.TicketAttribution
-import com.qkt.positions.Position
+import com.qkt.positions.LegRole
+import com.qkt.positions.PositionLeg
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -35,10 +37,14 @@ class ReconcileDeltasTest {
         requestedTakeProfit = requestedTakeProfit?.let(::BigDecimal),
     )
 
-    private fun engine(vararg pairs: Pair<String, String>): Map<String, Position> =
-        pairs.associate { (symbol, qty) ->
-            symbol to Position(symbol = symbol, quantity = BigDecimal(qty), avgEntryPrice = BigDecimal.ONE)
-        }
+    private fun leg(
+        id: String,
+        symbol: String,
+        side: Side,
+        qty: String,
+    ) = PositionLeg(id, symbol, side, BigDecimal(qty), BigDecimal.ONE, 0L, LegRole.INDEPENDENT)
+
+    private fun netting(symbol: String = "XAUUSD") = mapOf(symbol to PositionAccountingMode.NETTING)
 
     private fun attribution(vararg pairs: Pair<String, String>) =
         TicketAttribution().apply { pairs.forEach { (t, s) -> record(t, s) } }
@@ -50,13 +56,14 @@ class ReconcileDeltasTest {
                 ownerId = "hedge_straddle",
                 brokerTickets = listOf(ticket("t1", "EXNESS:XAUUSD", Side.SELL, "0.13")),
                 attribution = attribution("t1" to "hedge_straddle"),
-                enginePositions = engine("XAUUSD" to "-0.13"),
+                engineLegs = listOf(leg("e1", "XAUUSD", Side.SELL, "0.13")),
+                accountingModes = netting(),
             )
         assertThat(deltas).isEmpty()
     }
 
     @Test
-    fun `hedging straddle legs net to the engine net position`() {
+    fun `confirmed netting account compares signed net position`() {
         val deltas =
             reconcileDeltas(
                 ownerId = "hedge_straddle",
@@ -67,7 +74,8 @@ class ReconcileDeltasTest {
                         ticket("c", "EXNESS:XAUUSD", Side.SELL, "0.14"),
                     ),
                 attribution = attribution("a" to "hedge_straddle", "b" to "hedge_straddle", "c" to "hedge_straddle"),
-                enginePositions = engine("XAUUSD" to "-0.13"),
+                engineLegs = listOf(leg("e1", "XAUUSD", Side.SELL, "0.13")),
+                accountingModes = netting(),
             )
         assertThat(deltas).isEmpty()
     }
@@ -83,7 +91,7 @@ class ReconcileDeltasTest {
                         ticket("theirs", "EXNESS:XAUUSD", Side.SELL, "0.50"),
                     ),
                 attribution = attribution("mine" to "hedge_straddle", "theirs" to "latch_stack"),
-                enginePositions = engine("XAUUSD" to "0.10"),
+                engineLegs = listOf(leg("e1", "XAUUSD", Side.BUY, "0.10")),
             )
         assertThat(deltas).isEmpty()
     }
@@ -95,12 +103,13 @@ class ReconcileDeltasTest {
                 ownerId = "hedge_straddle",
                 brokerTickets = listOf(ticket("orphan", "EXNESS:XAUUSD", Side.SELL, "0.20")),
                 attribution = attribution(),
-                enginePositions = emptyMap(),
+                engineLegs = emptyList(),
             )
         assertThat(deltas).hasSize(1)
         assertThat(deltas[0].symbol).isEqualTo("unattributed:XAUUSD")
         assertThat(deltas[0].engineQty).isEqualByComparingTo("0")
-        assertThat(deltas[0].brokerQty).isEqualByComparingTo("-0.20")
+        assertThat(deltas[0].brokerQty).isEqualByComparingTo("0.20")
+        assertThat(deltas[0].side).isEqualTo(Side.SELL)
     }
 
     @Test
@@ -110,12 +119,55 @@ class ReconcileDeltasTest {
                 ownerId = "hedge_straddle",
                 brokerTickets = listOf(ticket("t", "EXNESS:XAUUSD", Side.SELL, "0.13")),
                 attribution = attribution("t" to "hedge_straddle"),
-                enginePositions = engine("XAUUSD" to "0.25"),
+                engineLegs = listOf(leg("e1", "XAUUSD", Side.BUY, "0.25")),
+                accountingModes = netting(),
             )
         assertThat(deltas).hasSize(1)
         assertThat(deltas[0].symbol).isEqualTo("XAUUSD")
         assertThat(deltas[0].engineQty).isEqualByComparingTo("0.25")
         assertThat(deltas[0].brokerQty).isEqualByComparingTo("-0.13")
+    }
+
+    @Test
+    fun `hedging engine straddle versus flat venue reports both directions`() {
+        val deltas =
+            reconcileDeltas(
+                ownerId = "hedge_straddle",
+                brokerTickets = emptyList(),
+                attribution = attribution(),
+                engineLegs =
+                    listOf(
+                        leg("long", "XAUUSD", Side.BUY, "0.10"),
+                        leg("short", "XAUUSD", Side.SELL, "0.10"),
+                    ),
+                accountingModes = mapOf("XAUUSD" to PositionAccountingMode.HEDGING),
+            )
+
+        assertThat(deltas.map { it.side }).containsExactly(Side.BUY, Side.SELL)
+        assertThat(deltas.map { it.engineQty }).allMatch { it.compareTo(BigDecimal("0.10")) == 0 }
+        assertThat(deltas.map { it.brokerQty }).allMatch { it.signum() == 0 }
+        assertThat(ReconcileReport(deltas, BigDecimal.ZERO, null).clean).isFalse()
+    }
+
+    @Test
+    fun `net-zero orphan pair reports both gross directions`() {
+        val deltas =
+            reconcileDeltas(
+                ownerId = "hedge_straddle",
+                brokerTickets =
+                    listOf(
+                        ticket("long", "EXNESS:XAUUSD", Side.BUY, "0.10"),
+                        ticket("short", "EXNESS:XAUUSD", Side.SELL, "0.10"),
+                    ),
+                attribution = attribution(),
+                engineLegs = emptyList(),
+                accountingModes = mapOf("XAUUSD" to PositionAccountingMode.HEDGING),
+            )
+
+        assertThat(deltas).hasSize(2)
+        assertThat(deltas.map { it.symbol }).containsOnly("unattributed:XAUUSD")
+        assertThat(deltas.map { it.side }).containsExactly(Side.BUY, Side.SELL)
+        assertThat(ReconcileReport(deltas, BigDecimal.ZERO, null).clean).isFalse()
     }
 
     @Test

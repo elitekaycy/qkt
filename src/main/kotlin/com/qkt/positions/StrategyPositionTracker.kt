@@ -526,6 +526,10 @@ class StrategyPositionTracker(
             books.mapNotNull { (sym, book) -> book.netView()?.let { sym to it } }.toMap()
         }
 
+    /** Immutable snapshot of every open leg owned by [strategyId], across symbols. */
+    fun allLegsFor(strategyId: String): List<PositionLeg> =
+        byStrategy[strategyId]?.values?.flatMap { it.all() } ?: emptyList()
+
     /** New Phase 27 accessor: the full leg book for direct inspection. */
     fun legBookFor(
         strategyId: String,

@@ -73,6 +73,9 @@ const val MARGIN_MODE_NETTING: Int = 0
 /** `ACCOUNT_MARGIN_MODE_RETAIL_HEDGING` — long and short coexist as independent tickets. */
 const val MARGIN_MODE_HEDGING: Int = 2
 
+/** Gateway omitted or returned an unsupported account margin mode. */
+const val MARGIN_MODE_UNKNOWN: Int = -1
+
 /** Open position on the venue, filtered by [MT5BrokerProfile.magic] during reconciliation. */
 data class MT5Position(
     val ticket: Long,

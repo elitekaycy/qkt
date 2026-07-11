@@ -146,6 +146,9 @@ interface Broker {
      * broker-reported profit and swap. Empty when unsupported or the read failed.
      */
     fun positionTickets(): List<BrokerPositionTicket> = emptyList()
+
+    /** Position accounting mode for [symbol]; unknown modes must be reconciled as hedging. */
+    fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.UNKNOWN
 }
 
 /**

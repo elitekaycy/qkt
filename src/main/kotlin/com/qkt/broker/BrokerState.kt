@@ -3,6 +3,18 @@ package com.qkt.broker
 import com.qkt.common.Side
 import java.math.BigDecimal
 
+/** How a venue accounts for simultaneous long and short exposure on one symbol. */
+enum class PositionAccountingMode {
+    /** Opposite fills collapse into one signed position. */
+    NETTING,
+
+    /** Long and short tickets coexist and must be reconciled independently. */
+    HEDGING,
+
+    /** Venue mode could not be confirmed; reconciliation must conservatively preserve direction. */
+    UNKNOWN,
+}
+
 /** Venue account snapshot for observability — what the broker says the whole account is worth. */
 data class BrokerAccountState(
     /** Venue identifier in uppercase, e.g. "EXNESS". */
