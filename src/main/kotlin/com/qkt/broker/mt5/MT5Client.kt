@@ -202,6 +202,7 @@ class MT5Client(
             login = obj["login"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
             server = obj["server"]?.jsonPrimitive?.contentOrNull ?: "",
             name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+            tradeMode = obj["trade_mode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: -1,
         )
     }
 

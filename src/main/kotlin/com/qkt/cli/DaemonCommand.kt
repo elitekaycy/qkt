@@ -1,5 +1,7 @@
 package com.qkt.cli
 
+import com.qkt.broker.mt5.MT5AccountVerifier
+import com.qkt.broker.mt5.MT5TradeMode
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
@@ -144,9 +146,26 @@ class DaemonCommand(
                         instrumentOverrides = cfg.brokerInstrumentOverrides,
                     )
             } catch (e: Exception) {
-                println("[WARN] mt5 profile load failed: ${e.message}")
-                emptyList()
+                System.err.println("qkt: MT5 profile load failed: ${e.message}")
+                runCatching { insightsSink?.close() }
+                return ExitCodes.USER_ERROR
             }
+        val mt5Accounts =
+            try {
+                mt5Profiles.associateWith { profile ->
+                    MT5AccountVerifier.fetchAndVerify(profile)
+                }
+            } catch (e: Exception) {
+                System.err.println("qkt: MT5 account preflight failed: ${e.message}")
+                runCatching { insightsSink?.close() }
+                return ExitCodes.USER_ERROR
+            }
+        if (!cfg.runtimeMode.production && mt5Accounts.values.any { it.tradeMode == MT5TradeMode.REAL.wireValue }) {
+            System.err.println(
+                "[WARN] REAL MT5 account detected while runtime.mode=${cfg.runtimeMode.name.lowercase()}; " +
+                    "production governance checks are not active",
+            )
+        }
         // Forward reference so the factory closure can query the registry that's
         // constructed below. Recovery runs strictly after the broker is built, so by
         // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
@@ -313,6 +332,9 @@ class DaemonCommand(
 
         if (mt5Profiles.isNotEmpty()) {
             println("[INFO] mt5 broker profiles loaded: ${mt5Profiles.joinToString { it.name }}")
+            mt5Accounts.forEach { (profile, account) ->
+                println("[INFO] mt5 account: ${MT5AccountVerifier.describe(profile, account)}")
+            }
         }
 
         loadDirIfRequested(args.option("load-dir"), registry, portfolioDeployer) { name, message ->
@@ -335,6 +357,10 @@ class DaemonCommand(
                     version = BuildInfo.VERSION,
                     strategies = registry.list().map { it.name },
                     timestamp = startedAt.toEpochMilli(),
+                    accounts =
+                        mt5Accounts.map { (profile, account) ->
+                            MT5AccountVerifier.describe(profile, account)
+                        },
                 ),
             )
         }

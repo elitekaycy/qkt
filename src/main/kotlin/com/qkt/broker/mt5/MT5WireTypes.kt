@@ -34,6 +34,8 @@ data class MT5AccountInfo(
     val server: String = "",
     /** Account holder name as the venue records it, e.g. "qkt-hedge-straddle". */
     val name: String = "",
+    /** MT5 account environment: 0 demo, 1 contest, 2 real; -1 when omitted by an old gateway. */
+    val tradeMode: Int = -1,
 ) {
     /**
      * True when the venue keeps a long and a short on the same symbol as two separate
@@ -42,6 +44,27 @@ data class MT5AccountInfo(
      * specific ticket rather than send an opposite order (which would open a counter).
      */
     val isHedging: Boolean get() = marginMode == MARGIN_MODE_HEDGING
+}
+
+/** Expected MT5 account environment used by cutover preflight. */
+enum class MT5TradeMode(
+    val wireValue: Int,
+) {
+    DEMO(0),
+    CONTEST(1),
+    REAL(2),
+    ;
+
+    companion object {
+        /** Parses `demo`, `contest`, `real`, or the corresponding MT5 numeric value. */
+        fun parse(raw: String): MT5TradeMode =
+            entries.firstOrNull {
+                it.name.equals(raw.trim(), ignoreCase = true) || it.wireValue.toString() == raw.trim()
+            } ?: error("unknown MT5 trade mode '$raw' (expected demo, contest, or real)")
+
+        /** Resolves an MT5 wire value, or null when the gateway omitted/returned an unknown value. */
+        fun fromWire(value: Int): MT5TradeMode? = entries.firstOrNull { it.wireValue == value }
+    }
 }
 
 /** `ACCOUNT_MARGIN_MODE_RETAIL_NETTING` — opposite orders net into one position per symbol. */
