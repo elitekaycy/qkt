@@ -9,6 +9,11 @@ import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.cli.daemon.TelegramCommandChannel
+import com.qkt.cli.daemon.portfolio.PortfolioDeployer
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
+import com.qkt.dsl.parse.ParsedFile
+import com.qkt.dsl.portfolio.PortfolioLoader
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.ChannelConfig
@@ -308,7 +313,7 @@ class DaemonCommand(
             println("[INFO] mt5 broker profiles loaded: ${mt5Profiles.joinToString { it.name }}")
         }
 
-        loadDirIfRequested(args.option("load-dir"), registry) { name, message ->
+        loadDirIfRequested(args.option("load-dir"), registry, portfolioDeployer) { name, message ->
             if (NotifyEventKind.STRATEGY_ERROR in notifyEventKinds) {
                 notifier.notify(
                     NotificationEvent.StrategyError(
@@ -431,6 +436,7 @@ class DaemonCommand(
     internal fun loadDirIfRequested(
         dir: String?,
         registry: StrategyRegistry,
+        portfolioDeployer: PortfolioDeployer? = null,
         onDeployError: (name: String, message: String) -> Unit = { _, _ -> },
     ) {
         if (dir == null) return
@@ -447,8 +453,30 @@ class DaemonCommand(
             for (file in stream.toList()) {
                 if (!file.toString().endsWith(".qkt")) continue
                 val name = file.fileName.toString().removeSuffix(".qkt")
-                runCatching { registry.deploy(name, file) }
-                    .onSuccess { println("[INFO] auto-deployed $name from $file") }
+                runCatching {
+                    when (val parsed = Dsl.parseFileAny(file)) {
+                        is ParseResult.Success ->
+                            when (parsed.value) {
+                                is ParsedFile.StrategyFile -> {
+                                    registry.deploy(name, file)
+                                    "strategy"
+                                }
+                                is ParsedFile.PortfolioFile -> {
+                                    check(portfolioDeployer != null) {
+                                        "portfolio deploy not configured on this daemon"
+                                    }
+                                    val compiled = PortfolioLoader.load(file)
+                                    val record = portfolioDeployer.deploy(name, compiled)
+                                    registry.registerPortfolio(record)
+                                    "portfolio"
+                                }
+                            }
+                        is ParseResult.Failure -> {
+                            val msg = parsed.errors.joinToString("\n") { "${it.line}:${it.col} ? ${it.message}" }
+                            error("parse failure for $file:\n$msg")
+                        }
+                    }
+                }.onSuccess { println("[INFO] auto-deployed $name from $file") }
                     .onFailure { e ->
                         System.err.println("[WARN] failed to auto-deploy $name: ${e.message}")
                         onDeployError(name, e.message ?: e::class.java.simpleName)
