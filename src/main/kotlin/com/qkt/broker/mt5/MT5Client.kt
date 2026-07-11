@@ -57,7 +57,7 @@ class MT5Client(
         val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
-                .header("Idempotency-Key", req.comment)
+                .header("Idempotency-Key", req.clientOrderId)
                 .post(body)
                 .build()
         // POST /order is NOT retried: duplicate placement is worse than a surfaced failure.
@@ -90,7 +90,7 @@ class MT5Client(
         val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
-                .header("Idempotency-Key", req.comment)
+                .header("Idempotency-Key", req.clientOrderId)
                 .post(body)
                 .build()
         http.newCall(request).enqueue(
@@ -626,7 +626,7 @@ class MT5Client(
         if (req.slDistance != null) field("sl_distance", req.slDistance.toString())
         field("deviation", req.deviation.toString())
         field("magic", req.magic.toString())
-        field("client_order_id", "\"${req.comment}\"")
+        field("client_order_id", "\"${req.clientOrderId}\"")
         // GTD expiry (epoch seconds). Without this a GTD pending rests GTC-forever on MT5
         // and fills late. Mirrors encodeModification, which the gateway accepts without an
         // explicit type_time — it infers TIME_SPECIFIED from the expiration's presence.

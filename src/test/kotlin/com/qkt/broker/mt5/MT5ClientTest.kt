@@ -45,6 +45,7 @@ class MT5ClientTest {
                     type = "BUY",
                     magic = 10001,
                     comment = "ord-1",
+                    clientOrderId = "placement-1",
                 ),
             )
         assertThat(resp.result.retcode).isEqualTo(10009)
@@ -53,8 +54,8 @@ class MT5ClientTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/order")
         assertThat(recorded.method).isEqualTo("POST")
-        assertThat(recorded.getHeader("Idempotency-Key")).isEqualTo("ord-1")
-        assertThat(recorded.body.readUtf8()).contains("\"client_order_id\":\"ord-1\"")
+        assertThat(recorded.getHeader("Idempotency-Key")).isEqualTo("placement-1")
+        assertThat(recorded.body.readUtf8()).contains("\"client_order_id\":\"placement-1\"")
     }
 
     @Test

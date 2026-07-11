@@ -108,11 +108,49 @@ class MT5BrokerIntegrationTest {
         val body = recordedOrder.body.readUtf8()
         assertThat(body).contains("\"symbol\":\"EURUSDm\"")
         assertThat(body).contains("\"magic\":10001")
+        assertThat(body).contains("\"comment\":\"ord-1\"")
+        assertThat(body).contains("\"client_order_id\":\"mt5-10001-session-1700000000000-0\"")
+        assertThat(recordedOrder.getHeader("Idempotency-Key"))
+            .isEqualTo("mt5-10001-session-1700000000000-0")
     }
 
     @Test
-    fun `ambiguous send failure resolves as filled from venue truth, not as a rejection`() {
-        // POST /order dies with a gateway 500 AFTER the order actually landed. A
+    fun `each placement gets a fresh gateway id even when the engine id repeats`() {
+        repeat(2) { ticket ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """{"result":{"retcode":10009,"order":${ticket + 1},"deal":${ticket + 1},""" +
+                        """"price":"1.1234","comment":"ok"}}""",
+                ),
+            )
+        }
+        val request =
+            OrderRequest.Market(
+                id = "replayed-engine-id",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+
+        broker.submit(request)
+        broker.submit(request)
+        awaitCaptured { captured.filterIsInstance<BrokerEvent.OrderFilled>().size == 2 }
+
+        repeat(3) { server.takeRequest() }
+        val placementIds =
+            List(2) { server.takeRequest().getHeader("Idempotency-Key") }
+        assertThat(placementIds).containsExactlyInAnyOrder(
+            "mt5-10001-session-1700000000000-0",
+            "mt5-10001-session-1700000000000-1",
+        )
+    }
+
+    @Test
+    fun `gateway conflict resolves as filled from venue truth, not as a rejection`() {
+        // POST /order returns 409 AFTER the order actually landed. A
         // synthetic rejection would make the strategy re-fire and double the position;
         // the broker must query the venue and emit the fill it finds (#378).
         val posts =
@@ -125,7 +163,7 @@ class MT5BrokerIntegrationTest {
                     return when {
                         path.startsWith("/order") && request.method == "POST" -> {
                             posts.incrementAndGet()
-                            MockResponse().setResponseCode(500).setBody("gateway crashed mid-send")
+                            MockResponse().setResponseCode(409).setBody("idempotency conflict")
                         }
                         path.startsWith("/orders") -> MockResponse().setBody("[]")
                         path.startsWith("/get_positions") ->

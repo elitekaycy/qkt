@@ -81,9 +81,6 @@ class ActionCompiler(
     private fun compileResize(action: Resize): (EvalContext) -> List<Signal> {
         val compiledTarget = sizingCompiler.compile(action.target, stopDistance = null, streamAlias = action.stream)
         val compiledMinStep = action.minStep?.let { exprCompiler.compile(it) }
-        // Stable across evaluations: OrderManager treats an identical non-terminal id as the same
-        // in-flight resize, preventing repeated rule evaluations from submitting the stale delta.
-        val resizeOrderId = ids.next()
         return resize@{ ctx ->
             val symbol =
                 ctx.streams[action.stream]?.qktSymbol
@@ -121,7 +118,7 @@ class ActionCompiler(
             listOf(
                 Signal.Submit(
                     OrderRequest.Market(
-                        id = resizeOrderId,
+                        id = ids.next(),
                         symbol = symbol,
                         side = side,
                         quantity = quantity,

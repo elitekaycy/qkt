@@ -9,6 +9,8 @@ import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
+import com.qkt.common.IdGenerator
+import com.qkt.common.SequentialIdGenerator
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
@@ -69,6 +71,15 @@ class MT5Broker(
      * (multiplied by attempt number). Tests shrink it; production keeps the default.
      */
     private val unknownResolveBackoffMs: Long = 500L,
+    /**
+     * Generates gateway placement ids. The default combines venue, strategy, and the
+     * injected session-start time with a sequence, so ids do not restart at zero across
+     * live process restarts while fixed-clock tests remain deterministic.
+     */
+    private val placementIds: IdGenerator =
+        SequentialIdGenerator(
+            prefix = "mt5-${profile.magic}-${strategyName ?: "session"}-${clock.now()}",
+        ),
 ) : Broker {
     override val name: String = profile.name
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
@@ -653,7 +664,8 @@ class MT5Broker(
         // thread by the single-consumer loop). submit returns an optimistic ack at once so the
         // engine thread never waits on the order round-trip — the real accept/reject/fill
         // follows on the bus, which is what the event-driven OCO/OTO sequencing consumes.
-        client.placeOrderAsync(prepared) { resp -> handlePlacementResult(request, prepared.volume, resp) }
+        val placement = prepared.withPlacementId()
+        client.placeOrderAsync(placement) { resp -> handlePlacementResult(request, placement.volume, resp) }
         return SubmitAck(
             clientOrderId = request.id,
             brokerOrderId = null,
@@ -772,7 +784,9 @@ class MT5Broker(
 
     /** True for failures where the request may have reached the venue despite the error. */
     private fun isAmbiguousSendFailure(errorMessage: String): Boolean =
-        errorMessage.startsWith("IO error") || errorMessage.startsWith("HTTP 5")
+        errorMessage.startsWith("IO error") ||
+            errorMessage.startsWith("HTTP 409") ||
+            errorMessage.startsWith("HTTP 5")
 
     /**
      * Resolve an UNKNOWN send outcome by querying the venue for an order carrying this
@@ -902,7 +916,8 @@ class MT5Broker(
         // the entire composite is rejected — never leave a one-legged OCO running as a
         // directional bet the caller never intended.
         val placed = mutableListOf<PlacedLeg>()
-        for (wire in prepared) {
+        for (preparedWire in prepared) {
+            val wire = preparedWire.withPlacementId()
             val resp = client.placeOrder(wire)
             if (!isOrderSuccessful(resp.result.retcode)) {
                 val reason =
@@ -944,6 +959,8 @@ class MT5Broker(
             accepted = true,
         )
     }
+
+    private fun MT5OrderRequest.withPlacementId(): MT5OrderRequest = copy(clientOrderId = placementIds.next())
 
     private data class PlacedLeg(
         val ticket: Long,
