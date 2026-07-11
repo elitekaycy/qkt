@@ -73,6 +73,7 @@ class FakeBroker(
     )
 
     val modifyPositions: MutableList<ModifyPositionCall> = mutableListOf()
+    var rejectPositionModifications: Boolean = false
 
     override fun modifyPosition(
         ticket: String,
@@ -80,6 +81,9 @@ class FakeBroker(
         tp: BigDecimal?,
     ): SubmitAck {
         modifyPositions.add(ModifyPositionCall(ticket, sl, tp))
+        if (rejectPositionModifications) {
+            return SubmitAck(ticket, ticket, accepted = false, rejectReason = "fake position modify rejection")
+        }
         return SubmitAck(ticket, ticket, accepted = true)
     }
 
