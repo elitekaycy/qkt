@@ -11,6 +11,8 @@ import com.qkt.cli.daemon.tradeToJson
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
+import com.qkt.dsl.ast.AlwaysRun
+import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.portfolio.CompiledChild
 import com.qkt.dsl.portfolio.PortfolioCompiled
 import com.qkt.dsl.portfolio.capitalAllocations
@@ -93,7 +95,13 @@ class PortfolioDeployer(
                 }
             for (compiledChild in compiled.children) {
                 val (handle, wrapper) =
-                    createChild(portfolioName, compiledChild, allocations[compiledChild.alias], bookController)
+                    createChild(
+                        portfolioName,
+                        compiled,
+                        compiledChild,
+                        allocations[compiledChild.alias],
+                        bookController,
+                    )
                 children.add(handle)
                 childWrappers.add(wrapper)
             }
@@ -227,8 +235,72 @@ class PortfolioDeployer(
         }
     }
 
+    private fun childInsightsMetadata(
+        portfolioName: String,
+        compiled: PortfolioCompiled,
+        compiledChild: CompiledChild,
+        allocatedCapital: java.math.BigDecimal?,
+        perStrategyOverride: com.qkt.cli.PerStrategyRisk?,
+    ): Map<String, Any?> {
+        val weights =
+            compiled.ast.rules.associate { rule ->
+                when (rule) {
+                    is WhenRun -> rule.alias to rule.weight
+                    is AlwaysRun -> rule.alias to rule.weight
+                }
+            }
+        return linkedMapOf(
+            "kind" to "portfolio_child",
+            "deployName" to "$portfolioName/${compiledChild.alias}",
+            "strategyId" to compiledChild.strategyId,
+            "dslName" to compiledChild.ast.name,
+            "portfolioId" to portfolioName,
+            "portfolioName" to compiled.ast.name,
+            "portfolioAlias" to compiledChild.alias,
+            "portfolioHold" to compiledChild.hold,
+            "portfolioWeight" to weights[compiledChild.alias],
+            "portfolioCapital" to compiled.ast.capital,
+            "allocatedCapital" to allocatedCapital,
+            "dslVersion" to compiledChild.ast.version,
+            "runtimeMode" to if (brokerFactories.isEmpty()) "paper" else "live",
+            "brokers" to brokerFactories.keys.sorted(),
+            "symbols" to compiledChild.symbols,
+            "streams" to
+                compiledChild.ast.streams.map {
+                    linkedMapOf(
+                        "alias" to it.alias,
+                        "broker" to it.broker,
+                        "symbol" to it.symbol,
+                        "qktSymbol" to it.qktSymbol,
+                        "timeframe" to it.timeframe,
+                        "warmupBars" to it.warmupBars,
+                    )
+                },
+            "risk" to
+                linkedMapOf(
+                    "maxDailyLoss" to maxDailyLoss,
+                    "maxDrawdownPct" to maxDrawdownPct,
+                    "maxDailyDrawdownPct" to maxDailyDrawdownPct,
+                    "totalDdBasis" to totalDdBasis.name,
+                    "dailyDdBasis" to dailyDdBasis.name,
+                    "perStrategyMaxDailyLoss" to perStrategyOverride?.maxDailyLoss,
+                    "perStrategyMaxPositionSize" to perStrategyOverride?.maxPositionSize,
+                    "perStrategyMaxOpenPositions" to perStrategyOverride?.maxOpenPositions,
+                    "perStrategyMaxDrawdownPct" to perStrategyOverride?.maxDrawdownPct,
+                    "perStrategyMaxDailyDrawdownPct" to perStrategyOverride?.maxDailyDrawdownPct,
+                    "perStrategyMaxTradesPerDay" to perStrategyOverride?.maxTradesPerDay,
+                    "perStrategyCooldownAfterLossMs" to perStrategyOverride?.cooldownAfterLossMs,
+                    "perStrategyCooldownAfterLossAfterConsecutive" to
+                        perStrategyOverride?.cooldownAfterLossAfterConsecutive,
+                    "perStrategyLossStreakHalt" to perStrategyOverride?.lossStreakHalt,
+                    "perStrategyLossStreakHaltScope" to perStrategyOverride?.lossStreakHaltScope?.name,
+                ),
+        )
+    }
+
     private fun createChild(
         portfolioName: String,
+        compiled: PortfolioCompiled,
         compiledChild: CompiledChild,
         allocatedCapital: java.math.BigDecimal? = null,
         bookController: com.qkt.risk.book.BookRiskController? = null,
@@ -291,6 +363,17 @@ class PortfolioDeployer(
                 insightsEvents = insightsEvents,
                 insightsStatePollMs = insightsStatePollMs,
                 insightsDealBackfillDays = insightsDealBackfillDays,
+                insightsStrategyMetadata =
+                    mapOf(
+                        compiledChild.strategyId to
+                            childInsightsMetadata(
+                                portfolioName = portfolioName,
+                                compiled = compiled,
+                                compiledChild = compiledChild,
+                                allocatedCapital = allocatedCapital,
+                                perStrategyOverride = perStrategyOverride,
+                            ),
+                    ),
                 perStrategyMaxDailyLoss = perStrategyOverride?.maxDailyLoss,
                 perStrategyMaxPositionSize = perStrategyOverride?.maxPositionSize,
                 perStrategyMaxOpenPositions = perStrategyOverride?.maxOpenPositions,
