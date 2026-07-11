@@ -11,6 +11,7 @@ import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
@@ -185,7 +186,8 @@ class MT5BrokerIntegrationTest {
                             MockResponse().setBody(
                                 """[{"ticket":"4242","symbol":"EURUSDm","type":"0","volume":"0.10",""" +
                                     """"price_open":"1.1003","sl":"0","tp":"0","profit":"0","magic":"10001",""" +
-                                    """"time_msc":"0","comment":"ord-amb-1"}]""",
+                                    """"time_msc":"0","comment":"ord-amb-1",""" +
+                                    """"client_order_id":"mt5-10001-session-1700000000000-0"}]""",
                             )
                         else -> MockResponse().setResponseCode(404)
                     }
@@ -227,6 +229,142 @@ class MT5BrokerIntegrationTest {
         assertThat(fill.price).isEqualByComparingTo("1.1003")
         // Exactly one POST /order — the unknown state blocked any duplicate send.
         assertThat(posts.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun `ambiguous send never reattributes an existing same-prefix position`() {
+        val posts = AtomicInteger()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/order") && request.method == "POST" ->
+                            if (posts.incrementAndGet() == 1) {
+                                MockResponse().setBody(
+                                    """{"result":{"retcode":10009,"order":111,"deal":111,"price":"1.1000","comment":"ok","volume":"0.10"}}""",
+                                )
+                            } else {
+                                MockResponse().setResponseCode(500).setBody("gateway crashed mid-send")
+                            }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") ->
+                            if (posts.get() < 2) {
+                                MockResponse().setBody("[]")
+                            } else {
+                                MockResponse().setBody(
+                                    """[{"ticket":111,"symbol":"EURUSDm","type":0,"volume":"0.10",""" +
+                                        """"price_open":"1.1000","sl":"0","tp":"0","profit":"0","magic":10001,""" +
+                                        """"time_msc":1700000000000,"comment":"dsl-hedge_stradd"}]""",
+                                )
+                            }
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker =
+            MT5Broker(
+                profile = fastProfile,
+                bus = bus,
+                clock = FixedClock(time = 1_700_000_000_000L),
+                unknownResolveBackoffMs = 1L,
+            )
+        captured.clear()
+        val first =
+            OrderRequest.Market(
+                id = "dsl-hedge_straddle-a",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        fastBroker.submit(first)
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled && it.clientOrderId == first.id } }
+        captured.clear()
+
+        val second = first.copy(id = "dsl-hedge_straddle-b")
+        fastBroker.submit(second)
+        awaitCaptured { captured.any { it is BrokerEvent.OrderRejected && it.clientOrderId == second.id } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>().single().clientOrderId).isEqualTo(second.id)
+        assertThat(fastBroker.ticketAttributions()).containsEntry("111", "s1")
+    }
+
+    @Test
+    fun `multiple legacy comment candidates leave the send unresolved`() {
+        val posts = AtomicInteger()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/order") && request.method == "POST" -> {
+                            posts.incrementAndGet()
+                            MockResponse().setResponseCode(500).setBody("gateway crashed mid-send")
+                        }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") ->
+                            if (posts.get() == 0) {
+                                MockResponse().setBody("[]")
+                            } else {
+                                MockResponse().setBody(
+                                    """[
+                                      {"ticket":201,"symbol":"EURUSDm","type":0,"volume":"0.10","price_open":"1.1000","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":1700000000000,"comment":"dsl-hedge_stradd"},
+                                      {"ticket":202,"symbol":"EURUSDm","type":0,"volume":"0.10","price_open":"1.1001","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":1700000000000,"comment":"dsl-hedge_stradd"}
+                                    ]""",
+                                )
+                            }
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker =
+            MT5Broker(
+                profile = fastProfile,
+                bus = bus,
+                clock = FixedClock(time = 1_700_000_000_000L),
+                unknownResolveBackoffMs = 1L,
+            )
+        bus.subscribe<BrokerEvent.GatewayUnreachable> { captured.add(it) }
+        captured.clear()
+        fastBroker.submit(
+            OrderRequest.Market(
+                id = "dsl-hedge_straddle-c",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            ),
+        )
+        awaitCaptured { captured.any { it is BrokerEvent.GatewayUnreachable } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.GatewayUnreachable>()).hasSize(1)
     }
 
     @Test

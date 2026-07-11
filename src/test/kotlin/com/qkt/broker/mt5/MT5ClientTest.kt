@@ -200,13 +200,14 @@ class MT5ClientTest {
         val serverEpochMs = 1_700_000_000_000L
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$serverEpochMs,"comment":"x"}]""",
+                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$serverEpochMs,"comment":"x","client_order_id":"placement-1"}]""",
             ),
         )
         val positions = client.getPositions(magic = 10001)!!
         assertThat(positions).hasSize(1)
         assertThat(positions[0].ticket).isEqualTo(1L)
         assertThat(positions[0].openTime).isEqualTo(serverEpochMs)
+        assertThat(positions[0].clientOrderId).isEqualTo("placement-1")
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/get_positions?magic=10001")
         assertThat(recorded.method).isEqualTo("GET")
@@ -288,7 +289,7 @@ class MT5ClientTest {
     }
 
     private val pendingOrderJson =
-        """{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1","price_open":"4700.0","sl":"4682.0","tp":"4712.0","magic":10001,"time_setup":1700000000,"time_expiration":1700000600,"comment":"x"}"""
+        """{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1","price_open":"4700.0","sl":"4682.0","tp":"4712.0","magic":10001,"time_setup":1700000000,"time_expiration":1700000600,"comment":"x","client_order_id":"placement-7"}"""
 
     @Test
     fun `getPendingOrders parses a wrapped orders object`() {
@@ -297,6 +298,7 @@ class MT5ClientTest {
         assertThat(orders).hasSize(1)
         assertThat(orders[0].ticket).isEqualTo(7L)
         assertThat(orders[0].symbol).isEqualTo("XAUUSDm")
+        assertThat(orders[0].clientOrderId).isEqualTo("placement-7")
     }
 
     @Test
