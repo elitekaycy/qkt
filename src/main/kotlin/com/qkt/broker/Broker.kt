@@ -105,6 +105,9 @@ interface Broker {
      */
     fun shutdown() {}
 
+    /** Whether [accountEquity] is a supported venue operation rather than the default null view. */
+    val supportsAccountEquity: Boolean get() = false
+
     /**
      * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and
      * the venue self-cancels at the deadline; the engine's deadline-sweep in
