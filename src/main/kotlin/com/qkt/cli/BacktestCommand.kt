@@ -176,7 +176,7 @@ class BacktestCommand(
         }
 
     private fun configHash(): String? {
-        val path = Path.of(args.option("config") ?: "./qkt.config.yaml")
+        val path = Config.resolvePath(args.option("config"))
         return if (Files.exists(path)) EvidenceHasher.sha256(path) else null
     }
 }

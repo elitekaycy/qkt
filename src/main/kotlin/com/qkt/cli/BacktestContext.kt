@@ -320,10 +320,7 @@ class BacktestContext private constructor(
             // Same config-driven halt/accounting construction the live daemon uses, so a strategy
             // that would halt live halts at the same point in its backtest. The basis balance is
             // the backtest's own starting balance.
-            val cfg =
-                Config.load(
-                    Paths.get(args.option("config") ?: "./qkt.config.yaml"),
-                )
+            val cfg = Config.load(Config.resolvePath(args.option("config")))
             val executionConfig = executionConfig(args, cfg, brokerKind)
             val accountingConfig = accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
@@ -604,7 +601,7 @@ class BacktestContext private constructor(
                     "mt5-sim" -> BrokerKind.MT5_SIM
                     else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
                 }
-            val cfg = Config.load(Paths.get(args.option("config") ?: "./qkt.config.yaml"))
+            val cfg = Config.load(Config.resolvePath(args.option("config")))
             val executionConfig = executionConfig(args, cfg, brokerKind)
             val accountingConfig = accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()

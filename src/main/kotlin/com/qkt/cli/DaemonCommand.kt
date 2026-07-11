@@ -87,13 +87,7 @@ class DaemonCommand(
         stateDir: StateDir,
         instanceLock: DaemonInstanceLock,
     ): Int {
-        val configPathEarly =
-            args.option("config")?.let {
-                java.nio.file.Path
-                    .of(it)
-            }
-                ?: java.nio.file.Path
-                    .of("./qkt.config.yaml")
+        val configPathEarly = Config.resolvePath(args.option("config"))
         val cfg = Config.load(configPathEarly)
         if (cfg.runtimeMode.production) {
             val preflight =

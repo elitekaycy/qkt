@@ -256,6 +256,12 @@ data class Config(
          */
         fun locate(searchPaths: List<Path> = defaultSearchPaths()): Path? = searchPaths.firstOrNull { Files.exists(it) }
 
+        /** Resolve an explicit config or the first documented default location. */
+        fun resolvePath(
+            explicit: String?,
+            searchPaths: List<Path> = defaultSearchPaths(),
+        ): Path = explicit?.let(Path::of) ?: locate(searchPaths) ?: Path.of("./qkt.config.yaml")
+
         // Matches `${NAME}` and `${NAME:-default}`. The default is used when the env
         // var / system property is unset; without it, the literal `${...}` stays in the
         // string and broker init logs a degraded-config warning.

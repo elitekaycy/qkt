@@ -412,7 +412,7 @@ class PreflightCommand(
 ) {
     fun run(): Int {
         val strategy = args.requirePositional(0, "<strategy.qkt>")
-        val configPath = args.option("config")?.let(Path::of) ?: Config.locate() ?: Path.of("./qkt.config.yaml")
+        val configPath = Config.resolvePath(args.option("config"))
         val stateDir = StateDir.resolve(args.option("state-dir"))
         val checks =
             ProductionPreflight.evaluate(

@@ -30,6 +30,20 @@ class ConfigLocateTest {
     }
 
     @Test
+    fun `resolvePath honors explicit then documented locations then dev fallback`(
+        @TempDir tmp: Path,
+    ) {
+        val missing = tmp.resolve("missing.yaml")
+        val located = tmp.resolve("located.yaml")
+        val explicit = tmp.resolve("explicit.yaml")
+        Files.writeString(located, "runtime:\n  mode: production")
+
+        assertThat(Config.resolvePath(explicit.toString(), listOf(missing, located))).isEqualTo(explicit)
+        assertThat(Config.resolvePath(null, listOf(missing, located))).isEqualTo(located)
+        assertThat(Config.resolvePath(null, listOf(missing))).isEqualTo(Path.of("./qkt.config.yaml"))
+    }
+
+    @Test
     fun `non-windows search list is pwd, etc-qkt, config-home, home-qkt`() {
         val home = Path.of("/home/me")
         val ud = UserDirs(osName = "linux", env = emptyMap(), home = home)

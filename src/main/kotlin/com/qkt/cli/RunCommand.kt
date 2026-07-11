@@ -103,8 +103,7 @@ class RunCommand(
         var accountingConfig = com.qkt.accounting.AccountingConfig()
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: run {
-                val configPath =
-                    args.option("config")?.let { Path.of(it) } ?: Path.of("./qkt.config.yaml")
+                val configPath = Config.resolvePath(args.option("config"))
                 val cfg = Config.load(configPath)
                 accountingConfig = cfg.accountingConfig
                 val mt5Profiles =
