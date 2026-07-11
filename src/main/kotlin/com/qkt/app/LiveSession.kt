@@ -945,7 +945,25 @@ class LiveSession(
             )
         // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
         // frozen data and drops implausible ticks before they poison indicators.
-        val marketDataGate = com.qkt.marketdata.MarketDataGate(clock)
+        val marketDataGate =
+            com.qkt.marketdata.MarketDataGate(
+                clock = clock,
+                onUnhealthy = { symbol, reason ->
+                    if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
+                        for ((strategyId, _) in strategies) {
+                            runCatching {
+                                notifier.notify(
+                                    NotificationEvent.StrategyError(
+                                        strategyId = strategyId,
+                                        message = "market data unhealthy for $symbol: $reason",
+                                        timestamp = clock.now(),
+                                    ),
+                                )
+                            }.onFailure { t -> recordNotificationFailure(strategyId, "MarketDataUnhealthy", t) }
+                        }
+                    }
+                },
+            )
         val marginRules =
             if (marginFloorPct.signum() > 0) {
                 listOf(
@@ -1282,6 +1300,33 @@ class LiveSession(
             }
         }
 
+        fun notifyUnexpectedFeedEnd(reason: String) {
+            for ((strategyId, _) in strategies) {
+                val notification =
+                    when {
+                        NotifyEventKind.STRATEGY_STOPPED in notifyEvents ->
+                            NotificationEvent.StrategyStopped(
+                                strategyId = strategyId,
+                                flatten = false,
+                                timestamp = clock.now(),
+                                unexpected = true,
+                                reason = reason,
+                            )
+                        NotifyEventKind.STRATEGY_ERROR in notifyEvents ->
+                            NotificationEvent.StrategyError(
+                                strategyId = strategyId,
+                                message = reason,
+                                timestamp = clock.now(),
+                            )
+                        else -> null
+                    }
+                if (notification != null) {
+                    runCatching { notifier.notify(notification) }
+                        .onFailure { t -> recordNotificationFailure(strategyId, "UnexpectedFeedEnd", t) }
+                }
+            }
+        }
+
         // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
         // positions, and the schedule runner. The tick feed, the heartbeat, the broker pollers
         // (via the bus), and the HTTP flatten all POST onto [inbound]; this loop drains it
@@ -1316,16 +1361,19 @@ class LiveSession(
                                     onEngineFault("event ${msg.event::class.simpleName}", e)
                                 }
                             is Inbound.Heartbeat ->
-                                runCatching { pipeline.scheduleHeartbeat(msg.nowMs) }
-                                    .onFailure { t -> onEngineFault("schedule heartbeat", t) }
+                                runCatching {
+                                    for (symbol in symbols) marketDataGate.isHealthy(symbol)
+                                    pipeline.scheduleHeartbeat(msg.nowMs)
+                                }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 runCatching { doFlatten() }
                                     .onFailure { t -> onEngineFault("flatten", t) }
-                            Inbound.FeedEnded -> {
+                            is Inbound.FeedEnded -> {
                                 // Feed ended (finite source drained): process every tick already
                                 // queued before stopping, so no tick is dropped.
                                 while (true) processTick(tickQueue.poll() ?: break)
+                                if (msg.unexpected) notifyUnexpectedFeedEnd(msg.reason)
                                 running.set(false)
                             }
                         }
@@ -1361,6 +1409,7 @@ class LiveSession(
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
                 } finally {
+                    val unexpected = running.get() && feed is LiveTickFeed
                     runCatching { feed.close() }
                     if (insightsSink != null &&
                         com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
@@ -1375,7 +1424,12 @@ class LiveSession(
                         )
                     }
                     // Non-blocking: tell the consumer the feed is done so it drains-then-stops.
-                    control.offer(Inbound.FeedEnded)
+                    control.offer(
+                        Inbound.FeedEnded(
+                            unexpected = unexpected,
+                            reason = "live market-data feed exceeded its reconnect budget",
+                        ),
+                    )
                 }
             }, "qkt-live-feed")
         feedThread.isDaemon = true
@@ -1648,5 +1702,8 @@ private sealed interface Inbound {
 
     object Flatten : Inbound
 
-    object FeedEnded : Inbound
+    data class FeedEnded(
+        val unexpected: Boolean,
+        val reason: String,
+    ) : Inbound
 }

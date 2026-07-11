@@ -24,6 +24,8 @@ class MarketDataGate(
     private val staleAgeMultiple: Double = DEFAULT_STALE_AGE_MULTIPLE,
     private val minStaleAgeMs: Long = DEFAULT_MIN_STALE_AGE_MS,
     private val outlierSigma: Double = DEFAULT_OUTLIER_SIGMA,
+    /** Invoked once per unhealthy transition; recovery permits a later transition to alert again. */
+    private val onUnhealthy: (symbol: String, reason: String) -> Unit = { _, _ -> },
 ) {
     private val log = LoggerFactory.getLogger(MarketDataGate::class.java)
 
@@ -195,6 +197,7 @@ class MarketDataGate(
                     symbol,
                     state.rejectedOutlierRun,
                 )
+                onUnhealthy(symbol, "${state.rejectedOutlierRun} consecutive outlier tick(s) rejected")
             }
             return false
         }
@@ -209,6 +212,7 @@ class MarketDataGate(
                 age,
                 threshold,
             )
+            onUnhealthy(symbol, "quote age ${age}ms exceeds ${threshold}ms threshold")
         }
         return healthy
     }
