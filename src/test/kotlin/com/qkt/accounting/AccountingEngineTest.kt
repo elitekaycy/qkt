@@ -29,6 +29,30 @@ class AccountingEngineTest {
     }
 
     @Test
+    fun `quote rate preserves precision for order sizing`() {
+        val rate =
+            AccountingEngine().quoteToAccountRate(
+                symbol = "BACKTEST:USDJPY",
+                timestamp = 2_000L,
+                referencePrice = BigDecimal("150"),
+            )
+
+        assertThat(rate).isEqualByComparingTo("0.006666666666666667")
+    }
+
+    @Test
+    fun `quote rate refuses missing conversion under warning policy`() {
+        assertThatThrownBy {
+            AccountingEngine().quoteToAccountRate(
+                symbol = "BACKTEST:EURJPY",
+                timestamp = 2_000L,
+                referencePrice = BigDecimal("160"),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("refusing to size order")
+    }
+
+    @Test
     fun `configured inverse market symbol converts cross pnl`() {
         val engine =
             AccountingEngine(

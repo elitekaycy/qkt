@@ -110,6 +110,7 @@ class StrategyHandle(
             com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
         private val priceCollarFrac: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+        private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
         private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
         /**
          * Measured-usage window hours. Factory default 0 (off) so embedded/test
@@ -264,6 +265,7 @@ class StrategyHandle(
                     source = source,
                     symbols = symbols,
                     candleWindow = candleWindow,
+                    accountingConfig = accountingConfig,
                     // The MDC carries the DSL strategy id, not the deploy name: log
                     // attribution downstream (per-strategy files, insights) must match
                     // the id every trading event uses, or consumers see two strategies
