@@ -28,6 +28,49 @@ class CompositeBrokerTest {
         timestamp = 0L,
     )
 
+    private fun equityBroker(value: String): Broker =
+        object : Broker {
+            override val name = "Equity-$value"
+            override val capabilities: Set<OrderTypeCapability> = emptySet()
+            override val supportsAccountEquity = true
+
+            override fun submit(request: OrderRequest): SubmitAck = error("unused")
+
+            override fun cancel(orderId: String) = Unit
+
+            override fun accountEquity() = Money.of(value)
+        }
+
+    @Test
+    fun `account equity delegates only when one leaf is authoritative`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val supported = equityBroker("12345")
+        val unsupported = FakeBroker(bus, clock, emptySet())
+        val single =
+            CompositeBroker(
+                routes =
+                    listOf(
+                        SymbolPattern.prefix("A:") to supported,
+                        SymbolPattern.prefix("B:") to unsupported,
+                    ),
+            )
+
+        assertThat(single.supportsAccountEquity).isTrue()
+        assertThat(single.accountEquity()).isEqualByComparingTo("12345")
+
+        val ambiguous =
+            CompositeBroker(
+                routes =
+                    listOf(
+                        SymbolPattern.prefix("A:") to supported,
+                        SymbolPattern.prefix("B:") to equityBroker("9999"),
+                    ),
+            )
+        assertThat(ambiguous.supportsAccountEquity).isFalse()
+        assertThat(ambiguous.accountEquity()).isNull()
+    }
+
     @Test
     fun `submit routes to broker matching symbol pattern`() {
         val bus = newBus()

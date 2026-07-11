@@ -179,6 +179,7 @@ class EventBus(
             is BrokerEvent.OrderModified -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.BalancesUpdated -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.GatewayUnreachable -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.AccountEquityStale -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.ConnectionChanged -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.PositionReconciled -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.PositionProtectionChanged -> event.copy(timestamp = ts, sequenceId = seq)
