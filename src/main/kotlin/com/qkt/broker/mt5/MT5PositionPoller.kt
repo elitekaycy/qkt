@@ -39,11 +39,11 @@ class MT5PositionPoller(
      */
     private val closedTicketMeta: ((Long) -> ClosedPositionMeta?)? = null,
     /**
-     * Returns true (consuming the marker) when qkt closed this ticket itself — e.g. via
-     * `closePosition` for an active close-by-ticket. The close was already published, so the
-     * poller must skip it when it sees the ticket gone, otherwise the trade is counted twice.
+     * Reports whether qkt's close-by-ticket request is absent, still pending, or confirmed.
+     * Pending closes are deferred without consuming the marker; confirmed closes are skipped
+     * because their fill was already published by the submission callback.
      */
-    private val closedByEngine: ((Long) -> Boolean)? = null,
+    private val engineCloseState: ((Long) -> EngineCloseState)? = null,
     /**
      * Best-effort source for the close price. The position snapshot diff only tells
      * us *that* a ticket closed, not at what price — the venue has already discarded
@@ -159,12 +159,20 @@ class MT5PositionPoller(
         val current =
             snapshot
                 .filter { it.ticket !in closedTickets }
-                .associateBy { it.ticket }
+                .associateByTo(mutableMapOf()) { it.ticket }
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
-            closedTickets[ticket] = now
-            // qkt closed this ticket itself and already published the close — don't double-count.
-            if (closedByEngine?.invoke(ticket) == true) continue
+            when (engineCloseState?.invoke(ticket) ?: EngineCloseState.NONE) {
+                EngineCloseState.PENDING -> {
+                    lastSnapshot[ticket]?.let { current[ticket] = it }
+                    continue
+                }
+                EngineCloseState.CONFIRMED -> {
+                    closedTickets[ticket] = now
+                    continue
+                }
+                EngineCloseState.NONE -> closedTickets[ticket] = now
+            }
             val p = lastSnapshot[ticket] ?: continue
             val qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(p.symbol)}"
             val closeSide = if (p.type == 0) Side.SELL else Side.BUY
@@ -226,6 +234,9 @@ class MT5PositionPoller(
         const val GATEWAY_FAILURE_ALERT_THRESHOLD: Int = 3
     }
 }
+
+/** Submission state used to disambiguate an engine close from a venue-side close. */
+enum class EngineCloseState { NONE, PENDING, CONFIRMED }
 
 /**
  * Meta the poller needs to publish a useful close [BrokerEvent.OrderFilled] when a

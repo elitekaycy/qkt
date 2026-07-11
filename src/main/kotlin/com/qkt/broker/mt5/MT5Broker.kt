@@ -100,7 +100,7 @@ class MT5Broker(
             clock,
             onPositionOpened = ::onPendingPositionOpened,
             closedTicketMeta = ::lookupClosedTicketMeta,
-            closedByEngine = ::consumeEngineClose,
+            engineCloseState = ::engineCloseState,
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onGatewayUnreachable = ::publishGatewayUnreachable,
@@ -178,7 +178,12 @@ class MT5Broker(
      * emit a second (duplicate) close when it sees one of these tickets gone. Reaped on the
      * same [DISAMBIGUATION_TTL_MULTIPLIER] × [profile.pollIntervalMs] window.
      */
-    private val recentlyClosedByTicket: MutableMap<Long, Long> = ConcurrentHashMap()
+    private val recentlyClosedByTicket: MutableMap<Long, EngineCloseMarker> = ConcurrentHashMap()
+
+    private data class EngineCloseMarker(
+        val startedAt: Long,
+        val confirmed: Boolean = false,
+    )
 
     private data class PendingMeta(
         val orderId: String,
@@ -391,7 +396,7 @@ class MT5Broker(
                 is VolumeResult.Ok -> result.quantity
                 is VolumeResult.Reject -> return reject(request, result.reason)
             }
-        recentlyClosedByTicket[ticket] = clock.now()
+        recentlyClosedByTicket[ticket] = EngineCloseMarker(clock.now())
         client.closePositionAsync(ticket, volume = closeQuantity, partial = request.partialClose) { resp ->
             if (!isOrderSuccessful(resp.result.retcode)) {
                 recentlyClosedByTicket.remove(ticket)
@@ -403,6 +408,7 @@ class MT5Broker(
             if (positionRemainsOpen) {
                 recentlyClosedByTicket.remove(ticket)
             } else {
+                recentlyClosedByTicket.computeIfPresent(ticket) { _, marker -> marker.copy(confirmed = true) }
                 positionMetaByTicket.remove(ticket)
                 positionSymbolByTicket.remove(ticket)
             }
@@ -1298,15 +1304,22 @@ class MT5Broker(
     }
 
     /**
-     * True (consuming the marker) when qkt closed [ticket] itself via [submitCloseByTicket].
-     * Lets [MT5PositionPoller] skip publishing a duplicate close for it. Reaps stale markers
-     * past the disambiguation window.
+     * Returns the close request state for [ticket]. A pending marker is never consumed: if
+     * the venue closes first and our request later rejects, the next poll must still publish
+     * that venue close. A confirmed marker is consumed because its callback published the fill.
      */
-    private fun consumeEngineClose(ticket: Long): Boolean {
+    private fun engineCloseState(ticket: Long): EngineCloseState {
         val now = clock.now()
-        val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
-        recentlyClosedByTicket.entries.removeIf { now - it.value >= ttlMs }
-        return recentlyClosedByTicket.remove(ticket) != null
+        val ttlMs =
+            maxOf(
+                profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER,
+                profile.httpTimeoutMs + profile.pollIntervalMs,
+            )
+        recentlyClosedByTicket.entries.removeIf { now - it.value.startedAt >= ttlMs }
+        val marker = recentlyClosedByTicket[ticket] ?: return EngineCloseState.NONE
+        if (!marker.confirmed) return EngineCloseState.PENDING
+        recentlyClosedByTicket.remove(ticket, marker)
+        return EngineCloseState.CONFIRMED
     }
 
     /**
