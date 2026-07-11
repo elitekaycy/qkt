@@ -112,7 +112,7 @@ object PortfolioLoader {
                         strategyId = childStrategyId,
                         compiled = compiled,
                         streams = effectiveAst.streams.map { it.alias },
-                        symbols = effectiveAst.streams.map { it.symbol }.distinct(),
+                        symbols = effectiveAst.streams.map { it.qktSymbol }.distinct(),
                         ast = effectiveAst,
                     )
                 }

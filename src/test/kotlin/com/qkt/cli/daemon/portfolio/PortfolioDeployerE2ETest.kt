@@ -60,6 +60,23 @@ class PortfolioDeployerE2ETest {
         override fun liveTicks(symbols: List<String>): TickFeed = BoundedFeed(ticks)
     }
 
+    private class RoutedSource(
+        private val ticks: List<Tick>,
+        private val requestedLiveSymbols: MutableList<List<String>>,
+    ) : MarketSource {
+        override val name: String = "Routed"
+        override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.LIVE_TICKS)
+
+        override fun supports(symbol: String): Boolean = symbol.startsWith("BACKTEST:")
+
+        override fun liveTicks(symbols: List<String>): TickFeed {
+            requestedLiveSymbols.add(symbols)
+            require(symbols.isNotEmpty()) { "symbols must not be empty" }
+            require(symbols.all(::supports)) { "unrouted live tick symbol(s): $symbols" }
+            return BoundedFeed(ticks)
+        }
+    }
+
     private fun ticksFor(symbol: String): List<Tick> =
         (0 until 3).map {
             Tick(
@@ -193,6 +210,34 @@ class PortfolioDeployerE2ETest {
             val rowsB = childB.live.dailySummaryRows()
             assertThat(rowsA.first().equity).isEqualByComparingTo(BigDecimal("60000"))
             assertThat(rowsB.first().equity).isEqualByComparingTo(BigDecimal("40000"))
+        } finally {
+            record.supervisor.stop()
+            for (child in record.children) runCatching { child.close() }
+        }
+    }
+
+    @Test
+    fun `portfolio children subscribe to live ticks with routed qkt symbols`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val requestedLiveSymbols = mutableListOf<List<String>>()
+        val deployer =
+            PortfolioDeployer(
+                stateDir = stateDir,
+                marketSourceProvider = { symbols ->
+                    assertThat(symbols).allMatch { it.startsWith("BACKTEST:") }
+                    RoutedSource(ticksFor(symbols.first()), requestedLiveSymbols)
+                },
+            )
+
+        val compiled = PortfolioLoader.load(Path.of("src/test/resources/dsl/portfolio_two_children.qkt"))
+        val record = deployer.deploy("two_children", compiled)
+
+        try {
+            assertThat(record.children).hasSize(2)
+            assertThat(requestedLiveSymbols)
+                .contains(listOf("BACKTEST:BTCUSDT"), listOf("BACKTEST:ETHUSDT"))
         } finally {
             record.supervisor.stop()
             for (child in record.children) runCatching { child.close() }
