@@ -197,6 +197,26 @@ class AccountingEngine(
         return convertPnl(symbol, nativeAmount, timestamp, referencePrice).account.amount
     }
 
+    /**
+     * Returns the account-currency value of one unit of [symbol]'s quote currency.
+     *
+     * Unlike [convertPnlAmount], this preserves the conversion rate's full [Money.CONTEXT]
+     * precision so callers such as position sizing do not compound a money-scale rounding.
+     * A missing rate always fails because treating quote currency as account currency would
+     * produce an unsafe quantity even when the configured reporting policy is [FxMissingPolicy.WARN].
+     */
+    fun quoteToAccountRate(
+        symbol: String,
+        timestamp: Long,
+        referencePrice: BigDecimal,
+    ): BigDecimal {
+        val from = pnlCurrencyCache.getOrPut(symbol) { pnlCurrencyFor(symbol) }
+        if (compatible(from, accountCurrency)) return BigDecimal.ONE
+        return requireNotNull(convertPnl(symbol, BigDecimal.ONE, timestamp, referencePrice).conversion) {
+            "missing FX conversion $from->$accountCurrency at $timestamp for $symbol; refusing to size order"
+        }.rate
+    }
+
     fun convertNotional(
         symbol: String,
         nativeNotional: BigDecimal,

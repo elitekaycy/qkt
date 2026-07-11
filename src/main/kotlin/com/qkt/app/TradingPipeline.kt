@@ -39,6 +39,7 @@ import com.qkt.positions.StrategyPositionViewImpl
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
+import com.qkt.strategy.QuoteToAccountRateProvider
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
@@ -265,6 +266,10 @@ class TradingPipeline(
                     pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                     instruments = instruments,
+                    quoteToAccountRate =
+                        QuoteToAccountRateProvider { symbol, timestamp, referencePrice ->
+                            accounting.quoteToAccountRate(symbol, timestamp, referencePrice)
+                        },
                     tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(tradeHistory, strategyId),
                     pacer =
                         com.qkt.risk.PacerViewImpl(

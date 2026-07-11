@@ -56,6 +56,7 @@ class PortfolioDeployer(
     private val riskIntervalMs: Long = 1000L,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
+    private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
@@ -356,6 +357,7 @@ class PortfolioDeployer(
                 source = source,
                 symbols = compiledChild.symbols,
                 candleWindow = candleWindow,
+                accountingConfig = accountingConfig,
                 mdcStrategy = childName,
                 onTrade = { trade, realized, strategyId ->
                     onBookRealized(strategyId, realized)

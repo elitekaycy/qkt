@@ -1,11 +1,10 @@
 package com.qkt.instrument
 
 /**
- * Deploy-time guard against silently misbooked PnL: qkt has no quote-currency
- * conversion, so an instrument quoted in anything but the account currency books
- * its PnL at the wrong magnitude (a USDJPY trade's JPY PnL recorded as USD is
- * ~150x overstated). Until conversion exists, such symbols are rejected at bind —
- * fail loud at deploy, never compute silently wrong.
+ * Deploy-time guard against silently misbooked PnL. An instrument quoted outside
+ * the account currency must have a conversion path; otherwise a USDJPY trade's JPY
+ * PnL could be recorded as USD at roughly 150x its real magnitude. Symbols without
+ * a conversion path are rejected at bind.
  *
  * The quote currency is inferred from the symbol's trailing currency code.
  * Dollar-family quotes (USD, USDT, USDC) are treated as equivalent — the stablecoin
@@ -21,9 +20,9 @@ object QuoteCurrencyGuard {
         listOf("USDT", "USDC", "USD", "JPY", "CHF", "CAD", "GBP", "EUR", "AUD", "NZD")
 
     /**
-     * Throws when any of [qktSymbols] is quoted in a known currency outside the
-     * account's dollar family. e.g. `assert(listOf("EXNESS:USDJPY"))` fails with a
-     * message naming the symbol and quote; `EXNESS:XAUUSD` and `BYBIT_SPOT:BTCUSDT` pass.
+     * Throws when any of [qktSymbols] is quoted in a known incompatible currency and
+     * [canConvert] reports no conversion path. For example, `EXNESS:USDJPY` fails under
+     * the default converter while `EXNESS:XAUUSD` and `BYBIT_SPOT:BTCUSDT` pass.
      */
     fun assertAccountQuoted(
         qktSymbols: Collection<String>,

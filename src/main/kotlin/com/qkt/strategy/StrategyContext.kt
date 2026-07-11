@@ -12,6 +12,22 @@ import com.qkt.positions.StrategyPositionView
 import com.qkt.risk.NoOpPacerView
 import com.qkt.risk.PacerView
 import com.qkt.risk.RiskView
+import java.math.BigDecimal
+
+/** Supplies the account-currency value of one unit of an instrument's quote currency. */
+fun interface QuoteToAccountRateProvider {
+    /** Returns a positive conversion rate for [symbol] at the deterministic [timestamp]. */
+    fun rate(
+        symbol: String,
+        timestamp: Long,
+        referencePrice: BigDecimal,
+    ): BigDecimal
+
+    companion object {
+        /** Identity conversion used by contexts whose instruments are account-quoted. */
+        val IDENTITY: QuoteToAccountRateProvider = QuoteToAccountRateProvider { _, _, _ -> BigDecimal.ONE }
+    }
+}
 
 /**
  * Read-only environment passed to every [Strategy] callback.
@@ -39,6 +55,8 @@ data class StrategyContext(
      * (`MT5InstrumentRegistry` live; `YamlInstrumentRegistry` backtest).
      */
     val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    /** Quote-to-account conversion used by every account-money sizing mode. */
+    val quoteToAccountRate: QuoteToAccountRateProvider = QuoteToAccountRateProvider.IDENTITY,
     /**
      * Phase 25-followup ([#132](https://github.com/elitekaycy/qkt/issues/132)):
      * per-strategy trade history (last fill timestamp, last realized P&L, win/loss

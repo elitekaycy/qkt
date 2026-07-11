@@ -81,6 +81,7 @@ fun testStrategyContext(
     pnl: StrategyPnLView = emptyPnL,
     risk: RiskView = NoOpRiskView(),
     instruments: InstrumentRegistry = UnitContractRegistry,
+    quoteToAccountRate: QuoteToAccountRateProvider = QuoteToAccountRateProvider.IDENTITY,
     tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
     pacer: PacerView = NoOpPacerView(),
 ): StrategyContext =
@@ -94,6 +95,7 @@ fun testStrategyContext(
         pnl = pnl,
         risk = risk,
         instruments = instruments,
+        quoteToAccountRate = quoteToAccountRate,
         tradeHistory = tradeHistory,
         pacer = pacer,
     )
