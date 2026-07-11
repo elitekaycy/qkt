@@ -834,6 +834,13 @@ class LiveSession(
 
         val engine = Engine(bus, priceTracker)
         val riskPersistId = strategies.firstOrNull()?.first ?: "session"
+        val persistedRiskState = persistor.loadRiskState(riskPersistId)
+        val restoredGlobalRealized =
+            persistedRiskState?.globalRealizedTotal
+                ?: strategies.fold(java.math.BigDecimal.ZERO) { total, (id, _) ->
+                    total + strategyPnL.realizedFor(id)
+                }
+        pnl.restoreRealizedTotal(restoredGlobalRealized)
         val riskState =
             RiskState(
                 pnl,
@@ -847,16 +854,15 @@ class LiveSession(
                         .onFailure { e -> log.warn("risk-state persist failed: ${e.message}") }
                 },
             )
-        // Restore halts + the day's realized PnL: a restart must not un-halt a halted
-        // strategy or hand it a fresh daily budget the same day it exhausted one.
-        persistor.loadRiskState(riskPersistId)?.let { persisted ->
+        // Restore the complete risk reference state before any live event can evaluate rules.
+        persistedRiskState?.let { persisted ->
             riskState.restore(persisted)
             if (riskState.halted) {
                 log.warn("restored HALTED risk state for {}: {}", riskPersistId, riskState.haltReason)
             }
         }
-
-        val pacerLedger = com.qkt.risk.PacerLedger()
+        riskState.initializeAnchors(strategies.map { it.first })
+        val pacerLedger = riskState.pacerLedger
 
         // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
         // The daemon creates one LiveSession per deployed strategy, so the first entry is
@@ -1386,7 +1392,10 @@ class LiveSession(
                     Thread(r, "qkt-schedule-heartbeat").apply { isDaemon = true }
                 }
         scheduleHeartbeat.scheduleAtFixedRate(
-            { runCatching { control.put(Inbound.Heartbeat(clock.now())) } },
+            {
+                runCatching { riskState.persistAnchorsIfDirty() }
+                runCatching { control.put(Inbound.Heartbeat(clock.now())) }
+            },
             scheduleHeartbeatIntervalMs,
             scheduleHeartbeatIntervalMs,
             java.util.concurrent.TimeUnit.MILLISECONDS,
@@ -1495,6 +1504,7 @@ class LiveSession(
                 thread.interrupt()
                 feedThread.interrupt()
                 runCatching { brokerStatePoller?.close() }
+                runCatching { riskState.persistAnchorsIfDirty() }
                 // Stop the schedule heartbeat thread so it doesn't outlive the session.
                 runCatching {
                     scheduleHeartbeat.shutdownNow()

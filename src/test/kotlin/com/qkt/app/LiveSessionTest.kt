@@ -8,6 +8,10 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.observe.OrderJournal
+import com.qkt.persistence.NoopStatePersistor
+import com.qkt.persistence.PersistedPnl
+import com.qkt.risk.DrawdownBasis
+import com.qkt.risk.rules.MaxDrawdown
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
@@ -332,6 +336,38 @@ class LiveSessionTest {
         assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
         assertThat(equities).isNotEmpty
         assertThat(equities.first()).isEqualByComparingTo(Money.of("10000"))
+    }
+
+    @Test
+    fun `legacy pnl restore still feeds global static drawdown`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val persistor = NoopStatePersistor()
+        persistor.savePnl("solo", PersistedPnl(Money.of("-600")))
+        val session =
+            LiveSession(
+                strategies = listOf("solo" to CapturingStrategy()),
+                haltRules =
+                    listOf(
+                        MaxDrawdown(
+                            maxFraction = Money.of("0.05"),
+                            basis = DrawdownBasis.STATIC,
+                            initialBalance = Money.of("10000"),
+                        ),
+                    ),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                initialBalance = Money.of("10000"),
+                persistor = persistor,
+            )
+
+        val handle = session.start()
+
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+        assertThat(handle.isHalted()).isTrue()
+        assertThat(handle.haltReason()).contains("global drawdown")
     }
 
     @Test
