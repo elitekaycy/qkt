@@ -15,7 +15,8 @@ BUY <stream> SIZING <seed_size>
 - `STACK <n>` — total layers, including the seed (so `STACK 3` = 1 seed + 2 adds)
 - `SPACING <points>` — distance between consecutive layers (price points)
 - `ABOVE|BELOW` — direction: `ABOVE` adds on favorable moves (pyramid-up); `BELOW` adds on adverse moves (average-down)
-- `WITHIN <duration>` — abandon unfilled layers after this duration from seed fill
+- `WITHIN <duration>` — abandon unfilled layers after this duration from seed fill; when omitted,
+  qkt applies a 24-hour safety fence
 
 ### Pyramid-up example
 
@@ -119,6 +120,7 @@ This is by design — the stop is the **portfolio-level safety net**, not per-la
 ## Time fences
 
 `WITHIN <duration>` abandons unfilled layers after a deadline measured from the seed fill.
+When it is omitted, qkt uses a 24-hour deadline so a GTC tier cannot remain on the venue forever.
 
 ```qkt
 STACK 3 SPACING 200 ABOVE WITHIN 4h    -- 4-hour deadline
