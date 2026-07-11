@@ -12,6 +12,7 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.OkHttpClient
@@ -77,6 +78,26 @@ class PortfolioDeployerE2ETest {
         }
     }
 
+    private class ManualFeed : TickFeed {
+        private val queue = LinkedBlockingQueue<Tick>()
+
+        fun offer(tick: Tick) {
+            queue.put(tick)
+        }
+
+        override fun next(): Tick? {
+            val tick = queue.take()
+            return tick.takeUnless { it.symbol == CLOSE_SYMBOL }
+        }
+
+        override fun close() {
+            queue.offer(Tick(CLOSE_SYMBOL, BigDecimal.ONE, Long.MIN_VALUE))
+        }
+
+        private companion object {
+            const val CLOSE_SYMBOL = "__CLOSE__"
+        }
+    }
     private fun ticksFor(symbol: String): List<Tick> =
         (0 until 3).map {
             Tick(
@@ -181,6 +202,85 @@ class PortfolioDeployerE2ETest {
         } finally {
             record.supervisor.stop()
             for (child in record.children) runCatching { child.close() }
+        }
+    }
+
+    @Test
+    fun `portfolio child rejects an order above the configured quantity cap`(
+        @TempDir tmp: Path,
+    ) {
+        val child = tmp.resolve("child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY capped_child VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+            RULES
+                WHEN btc.close > 0 THEN BUY btc SIZING 1
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO capped_book VERSION 1
+            IMPORT 'child.qkt' AS child
+            RULES
+                RUN child
+            """.trimIndent(),
+        )
+        val server = MockWebServer().also { it.start() }
+        repeat(5) { server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}""")) }
+        val sink =
+            InsightsSink(
+                url = server.url("/ingest").toString(),
+                token = "secret",
+                instanceId = "qkt-test",
+                batchSize = 100,
+                flushIntervalMs = 20L,
+                queueCapacity = 1000,
+            )
+        val feed = ManualFeed()
+        val source =
+            object : MarketSource {
+                override val name = "Manual"
+                override val capabilities = setOf(MarketSourceCapability.LIVE_TICKS)
+
+                override fun supports(symbol: String): Boolean = true
+
+                override fun liveTicks(symbols: List<String>): TickFeed = feed
+            }
+        val deployer =
+            PortfolioDeployer(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = { source },
+                maxOrderQty = BigDecimal("0.5"),
+                marginFloorPct = BigDecimal.ZERO,
+                insightsSink = sink,
+                insightsEvents = setOf(InsightsEventFamily.RISK),
+            )
+        val record = deployer.deploy("capped_book", PortfolioLoader.load(portfolio))
+        ticksFor("BACKTEST:BTCUSDT").forEach(feed::offer)
+
+        try {
+            var body = ""
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (System.currentTimeMillis() < deadline && !body.contains("risk.rejected")) {
+                body +=
+                    server
+                        .takeRequest(250, TimeUnit.MILLISECONDS)
+                        ?.body
+                        ?.readUtf8()
+                        .orEmpty()
+            }
+            assertThat(body).contains("\"type\":\"risk.rejected\"")
+            assertThat(body).contains("order qty 1 exceeds per-order cap 0.5")
+        } finally {
+            record.supervisor.stop()
+            for (handle in record.children) runCatching { handle.close() }
+            sink.close()
+            server.shutdown()
         }
     }
 
