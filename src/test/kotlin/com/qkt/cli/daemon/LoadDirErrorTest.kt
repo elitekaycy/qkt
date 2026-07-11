@@ -14,7 +14,19 @@ class LoadDirErrorTest {
         @TempDir tmp: Path,
     ) {
         val dir = Files.createDirectories(tmp.resolve("strategies"))
-        Files.writeString(dir.resolve("broken.qkt"), "STRATEGY broken")
+        Files.writeString(
+            dir.resolve("broken.qkt"),
+            """
+STRATEGY broken VERSION 1
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+
+RULES
+    WHEN btc.close > 100
+    THEN BUY btc SIZING 1
+            """.trimIndent(),
+        )
         val registry =
             StrategyRegistry(
                 StrategyHandle.Factory { _, _, _ -> error("bad strategy") },
