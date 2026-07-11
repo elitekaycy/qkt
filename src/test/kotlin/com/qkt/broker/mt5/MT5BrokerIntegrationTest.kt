@@ -376,6 +376,23 @@ class MT5BrokerIntegrationTest {
         awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
         val filled = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
         assertThat(filled.quantity).isEqualByComparingTo("0.60")
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":424242,"symbol":"EURUSDm","type":0,"volume":"1.00",""" +
+                    """"price_open":"1.1000","sl":"1.0900","tp":"1.1200","profit":"0",""" +
+                    """"magic":10001,"time_msc":0}]""",
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":424242,"symbol":"EURUSDm","type":0,"volume":"0.40",""" +
+                    """"price_open":"1.1000","sl":"1.0900","tp":"1.1200","profit":"0",""" +
+                    """"magic":10001,"time_msc":0}]""",
+            ),
+        )
+        broker.poller.tick()
+        broker.poller.tick()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).hasSize(1)
         server.takeRequest() // state recovery
         server.takeRequest() // position poller seed
         server.takeRequest() // pending poller seed

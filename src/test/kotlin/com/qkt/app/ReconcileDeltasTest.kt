@@ -14,6 +14,10 @@ class ReconcileDeltasTest {
         symbol: String,
         side: Side,
         qty: String,
+        stopLoss: String? = null,
+        takeProfit: String? = null,
+        requestedStopLoss: String? = null,
+        requestedTakeProfit: String? = null,
     ) = BrokerPositionTicket(
         ticket = id,
         symbol = symbol,
@@ -25,6 +29,10 @@ class ReconcileDeltasTest {
         swap = null,
         openedAt = null,
         comment = null,
+        stopLoss = stopLoss?.let(::BigDecimal),
+        takeProfit = takeProfit?.let(::BigDecimal),
+        requestedStopLoss = requestedStopLoss?.let(::BigDecimal),
+        requestedTakeProfit = requestedTakeProfit?.let(::BigDecimal),
     )
 
     private fun engine(vararg pairs: Pair<String, String>): Map<String, Position> =
@@ -108,5 +116,44 @@ class ReconcileDeltasTest {
         assertThat(deltas[0].symbol).isEqualTo("XAUUSD")
         assertThat(deltas[0].engineQty).isEqualByComparingTo("0.25")
         assertThat(deltas[0].brokerQty).isEqualByComparingTo("-0.13")
+    }
+
+    @Test
+    fun `a vanished requested stop is reported for its owning strategy`() {
+        val deltas =
+            reconcileProtectionDeltas(
+                ownerId = "hedge_straddle",
+                brokerTickets =
+                    listOf(
+                        ticket(
+                            "mine",
+                            "EXNESS:XAUUSD",
+                            Side.BUY,
+                            "0.10",
+                            stopLoss = "0",
+                            takeProfit = "110",
+                            requestedStopLoss = "90",
+                            requestedTakeProfit = "110",
+                        ),
+                    ),
+                attribution = attribution("mine" to "hedge_straddle"),
+            )
+
+        assertThat(deltas).hasSize(1)
+        assertThat(deltas.single().ticket).isEqualTo("mine")
+        assertThat(deltas.single().requestedStopLoss).isEqualByComparingTo("90")
+        assertThat(deltas.single().brokerStopLoss).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `an intentionally unprotected ticket is not protection drift`() {
+        val deltas =
+            reconcileProtectionDeltas(
+                ownerId = "hedge_straddle",
+                brokerTickets = listOf(ticket("mine", "EXNESS:XAUUSD", Side.BUY, "0.10", stopLoss = "0")),
+                attribution = attribution("mine" to "hedge_straddle"),
+            )
+
+        assertThat(deltas).isEmpty()
     }
 }

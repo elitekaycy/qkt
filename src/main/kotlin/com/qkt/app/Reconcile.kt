@@ -60,3 +60,32 @@ fun reconcileDeltas(
         }
     return deltas + orphans
 }
+
+/** Protection drift for tickets owned by [ownerId] and carrying qkt-requested levels. */
+fun reconcileProtectionDeltas(
+    ownerId: String,
+    brokerTickets: List<BrokerPositionTicket>,
+    attribution: TicketAttribution,
+): List<PositionProtectionDelta> =
+    brokerTickets
+        .filter { attribution.ownerOf(it.ticket) == ownerId }
+        .mapNotNull { ticket ->
+            val stopDiffers =
+                ticket.requestedStopLoss != null &&
+                    ticket.stopLoss?.compareTo(ticket.requestedStopLoss) != 0
+            val takeProfitDiffers =
+                ticket.requestedTakeProfit != null &&
+                    ticket.takeProfit?.compareTo(ticket.requestedTakeProfit) != 0
+            if (!stopDiffers && !takeProfitDiffers) {
+                null
+            } else {
+                PositionProtectionDelta(
+                    ticket = ticket.ticket,
+                    symbol = ticket.symbol,
+                    requestedStopLoss = ticket.requestedStopLoss,
+                    brokerStopLoss = ticket.stopLoss,
+                    requestedTakeProfit = ticket.requestedTakeProfit,
+                    brokerTakeProfit = ticket.takeProfit,
+                )
+            }
+        }.sortedBy { it.ticket }

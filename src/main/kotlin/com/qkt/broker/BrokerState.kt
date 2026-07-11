@@ -75,4 +75,12 @@ data class BrokerPositionTicket(
     /** Open time, UTC epoch millis; null when not exposed. */
     val openedAt: Long?,
     val comment: String?,
+    /** Stop-loss currently attached at the venue; null when unsupported. Zero means absent on MT5. */
+    val stopLoss: BigDecimal? = null,
+    /** Take-profit currently attached at the venue; null when unsupported. Zero means absent on MT5. */
+    val takeProfit: BigDecimal? = null,
+    /** Stop-loss qkt last requested for this ticket; null when none was requested or attribution is unknown. */
+    val requestedStopLoss: BigDecimal? = null,
+    /** Take-profit qkt last requested for this ticket; null when none was requested or attribution is unknown. */
+    val requestedTakeProfit: BigDecimal? = null,
 )
