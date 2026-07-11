@@ -17,7 +17,7 @@ internal class StackTracker {
                 id = stackId,
                 plan = plan,
                 outerBracket = outerBracket,
-                withinMillis = plan.withinMillis,
+                withinMillis = plan.withinMillis ?: DEFAULT_PENDING_LIFETIME_MS,
             )
     }
 
@@ -30,7 +30,7 @@ internal class StackTracker {
         active[stackId] =
             s.copy(
                 anchor = anchor,
-                deadlineEpochMs = s.withinMillis?.let { firstFillEpochMs + it },
+                deadlineEpochMs = firstFillEpochMs + s.withinMillis,
             )
     }
 
@@ -53,18 +53,23 @@ internal class StackTracker {
         active[stackId]?.pendingLayerIds?.add(layerOrderId)
     }
 
-    fun markFilled(layerOrderId: String): String? {
+    fun markFilled(
+        layerOrderId: String,
+        filledQuantity: BigDecimal,
+    ): String? {
         val entry = active.entries.firstOrNull { layerOrderId in it.value.pendingLayerIds }
         if (entry != null) {
             entry.value.pendingLayerIds.remove(layerOrderId)
             entry.value.filledLayerIds.add(layerOrderId)
+            entry.value.filledQuantityByLayer[layerOrderId] = filledQuantity
             return entry.key
         }
         // Layer 1 fills do not pass through pending — caller registers them separately.
         val layerOneOwner =
             active.entries.firstOrNull { it.value.layerOneOrderId == layerOrderId }
         if (layerOneOwner != null) {
-            layerOneOwner.value.filledLayerIds.add(layerOrderId)
+            if (!layerOneOwner.value.filledLayerIds.add(layerOrderId)) return null
+            layerOneOwner.value.filledQuantityByLayer[layerOrderId] = filledQuantity
             return layerOneOwner.key
         }
         return null
@@ -96,16 +101,34 @@ internal class StackTracker {
         return null
     }
 
+    fun recordLayerCloseFill(
+        layerOrderId: String,
+        quantity: BigDecimal,
+    ): String? {
+        val entry = active.entries.firstOrNull { layerOrderId in it.value.filledLayerIds } ?: return null
+        val expected = entry.value.filledQuantityByLayer[layerOrderId] ?: return null
+        val closed = entry.value.closedQuantityByLayer.merge(layerOrderId, quantity, BigDecimal::add) ?: quantity
+        if (closed < expected) return null
+        entry.value.closedLayerIds.add(layerOrderId)
+        return entry.key
+    }
+
     internal data class ActiveStack(
         val id: String,
         val plan: StackPlan,
         val outerBracket: BracketAst?,
-        val withinMillis: Long?,
+        val withinMillis: Long,
         val anchor: BigDecimal? = null,
         val deadlineEpochMs: Long? = null,
         val layerOneOrderId: String? = null,
         val pendingLayerIds: MutableSet<String> = mutableSetOf(),
         val filledLayerIds: MutableSet<String> = mutableSetOf(),
         val closedLayerIds: MutableSet<String> = mutableSetOf(),
+        val filledQuantityByLayer: MutableMap<String, BigDecimal> = mutableMapOf(),
+        val closedQuantityByLayer: MutableMap<String, BigDecimal> = mutableMapOf(),
     )
+
+    companion object {
+        const val DEFAULT_PENDING_LIFETIME_MS: Long = 24L * 60L * 60L * 1_000L
+    }
 }
