@@ -66,6 +66,15 @@ class NotificationEventTest {
         assertThat(NotificationEvent.StrategyStarted("x", 5L).severity).isEqualTo(NotificationEvent.Severity.INFO)
         assertThat(NotificationEvent.StrategyStopped("x", flatten = true, timestamp = 6L).severity)
             .isEqualTo(NotificationEvent.Severity.INFO)
+        val unexpectedStop =
+            NotificationEvent.StrategyStopped(
+                "x",
+                flatten = false,
+                timestamp = 6L,
+                unexpected = true,
+                reason = "feed lost",
+            )
+        assertThat(unexpectedStop.severity).isEqualTo(NotificationEvent.Severity.CRITICAL)
         assertThat(NotificationEvent.StrategyError("x", "boom", 7L).severity)
             .isEqualTo(NotificationEvent.Severity.CRITICAL)
         assertThat(NotificationEvent.DaemonStarted("0.27.0", listOf("x"), 8L).severity)

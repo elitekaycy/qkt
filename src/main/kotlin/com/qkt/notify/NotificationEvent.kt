@@ -65,8 +65,10 @@ sealed interface NotificationEvent {
         val strategyId: String,
         val flatten: Boolean,
         override val timestamp: Long,
+        val unexpected: Boolean = false,
+        val reason: String? = null,
     ) : NotificationEvent {
-        override val severity = Severity.INFO
+        override val severity = if (unexpected) Severity.CRITICAL else Severity.INFO
     }
 
     data class StrategyError(

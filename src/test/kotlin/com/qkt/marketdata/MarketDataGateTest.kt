@@ -46,6 +46,26 @@ class MarketDataGateTest {
     }
 
     @Test
+    fun `stale transition invokes the operator alert once`() {
+        val clock = TickingClock(0L)
+        val alerts = mutableListOf<String>()
+        val gate =
+            MarketDataGate(
+                clock,
+                minStaleAgeMs = 1_000L,
+                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+            )
+        clock.t = 1L
+        gate.observe(tick("100", clock.t))
+        clock.t += 2_000L
+
+        repeat(3) { assertThat(gate.isHealthy("X")).isFalse() }
+
+        assertThat(alerts).hasSize(1)
+        assertThat(alerts.single()).contains("X:quote age")
+    }
+
+    @Test
     fun `an implausible outlier tick is rejected, plausible moves pass`() {
         val clock = TickingClock(0L)
         val gate = MarketDataGate(clock)
