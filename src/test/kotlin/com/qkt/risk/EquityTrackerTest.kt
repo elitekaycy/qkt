@@ -148,4 +148,18 @@ class EquityTrackerTest {
         tracker.update()
         assertThat(DrawdownTracker(tracker).globalDrawdown()).isEqualByComparingTo(BigDecimal("0.01"))
     }
+
+    @Test
+    fun `per-strategy peak does not re-anchor below its starting balance`() {
+        val prices = MarketPriceTracker()
+        val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
+        strategyPnL.setStartingBalance("A", BigDecimal("10000"))
+        strategyPnL.recordRealized("A", BigDecimal("-300"))
+        val tracker = EquityTracker(FakePnL(Money.ZERO, Money.ZERO), strategyPnL, BigDecimal("10000"))
+
+        tracker.updateStrategy("A")
+
+        assertThat(tracker.peakEquityFor("A")).isEqualByComparingTo("10000")
+        assertThat(tracker.currentEquityFor("A")).isEqualByComparingTo("9700")
+    }
 }

@@ -76,9 +76,8 @@ interface StatePersistor {
     fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> = emptyList()
 
     /**
-     * Persist the session's risk snapshot — halt flags and the day's realized PnL.
-     * Without this, any restart un-halts a halted strategy and hands it a fresh
-     * daily-loss budget the same day it exhausted one. Default no-op keeps
+     * Persist the session's complete risk snapshot: halt flags, realized PnL,
+     * drawdown anchors, trailing peaks, and pacing state. Default no-op keeps
      * persistors that predate risk persistence compiling.
      */
     fun saveRiskState(
@@ -246,10 +245,8 @@ data class PersistedTierState(
 )
 
 /**
- * On-disk shape of [com.qkt.risk.RiskState]: the day's realized PnL (global to the
- * session plus per strategy) and every active halt with its reason, scope, and the
- * UTC day it tripped — enough for a restart to restore halts and daily budgets while
- * still honoring the UTC-midnight auto-resume for DAILY-scoped halts.
+ * On-disk shape of [com.qkt.risk.RiskState]: realized PnL, drawdown references,
+ * trailing peaks, pacing state, and active halts.
  */
 data class PersistedRiskState(
     val epochDay: Long,
@@ -260,6 +257,15 @@ data class PersistedRiskState(
     val haltScope: String,
     val haltEpochDay: Long,
     val strategyHalts: List<PersistedStrategyHalt>,
+    val globalRealizedTotal: java.math.BigDecimal? = null,
+    val dailyDrawdownEpochDay: Long? = null,
+    val globalDailyDrawdownRef: java.math.BigDecimal? = null,
+    val perStrategyDailyDrawdownRefs: Map<String, java.math.BigDecimal> = emptyMap(),
+    val peakTotalEquity: java.math.BigDecimal? = null,
+    val perStrategyPeakEquity: Map<String, java.math.BigDecimal> = emptyMap(),
+    val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
+    val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
+    val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
 )
 
 /** One strategy-scoped halt inside [PersistedRiskState]. */

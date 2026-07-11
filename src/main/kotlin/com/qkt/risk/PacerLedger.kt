@@ -70,12 +70,41 @@ class PacerLedger {
         return (lastLossAt + durationMs - nowMs).coerceAtLeast(0L)
     }
 
+    /** Immutable pacing snapshot, pruning entry fills before today's UTC boundary. */
+    fun snapshot(nowMs: Long): PacerSnapshot {
+        val cutoff = utcMidnight(nowMs)
+        val entries =
+            entryFillsByStrategy.mapValues { (_, q) ->
+                synchronized(q) { q.filter { it >= cutoff } }
+            }
+        return PacerSnapshot(entries, lossStreakByStrategy.toMap(), lastLossAtByStrategy.toMap())
+    }
+
+    /** Replace pacing state from a persisted snapshot. */
+    fun restore(snapshot: PacerSnapshot) {
+        entryFillsByStrategy.clear()
+        snapshot.entryFillsByStrategy.forEach { (strategyId, fills) ->
+            entryFillsByStrategy[strategyId] = ArrayDeque(fills)
+        }
+        lossStreakByStrategy.clear()
+        lossStreakByStrategy.putAll(snapshot.lossStreakByStrategy)
+        lastLossAtByStrategy.clear()
+        lastLossAtByStrategy.putAll(snapshot.lastLossAtByStrategy)
+    }
+
     private fun utcMidnight(nowMs: Long): Long = Math.floorDiv(nowMs, DAY_MS) * DAY_MS
 
     private companion object {
         private const val DAY_MS = 86_400_000L
     }
 }
+
+/** Persistable overtrading and loss-cooldown state. */
+data class PacerSnapshot(
+    val entryFillsByStrategy: Map<String, List<Long>>,
+    val lossStreakByStrategy: Map<String, Int>,
+    val lastLossAtByStrategy: Map<String, Long>,
+)
 
 /** Read-only pacing state exposed to strategy expressions. */
 interface PacerView {
