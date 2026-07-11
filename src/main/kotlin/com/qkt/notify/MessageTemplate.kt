@@ -75,11 +75,12 @@ object MessageTemplate {
                 """.trimIndent()
 
             is NotificationEvent.DaemonStarted ->
-                """
-                $tag qkt ${event.version} started
-                strategies: ${event.strategies.joinToString(", ")}
-                $t
-                """.trimIndent()
+                buildString {
+                    append("$tag qkt ${event.version} started\n")
+                    append("strategies: ${event.strategies.joinToString(", ")}\n")
+                    if (event.accounts.isNotEmpty()) append("accounts: ${event.accounts.joinToString("; ")}\n")
+                    append(t)
+                }
 
             is NotificationEvent.DailySummary ->
                 buildString {

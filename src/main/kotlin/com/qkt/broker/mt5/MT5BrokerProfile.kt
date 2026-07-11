@@ -28,10 +28,24 @@ data class MT5BrokerProfile(
     val apiKey: String? = null,
     val capabilityRestrictions: Set<OrderTypeCapability> = emptySet(),
     val symbolCalendars: SymbolCalendars = SymbolCalendars.fxDefault(),
+    val expectedAccountLogin: Long? = null,
+    val expectedAccountServer: String? = null,
+    val expectedTradeMode: MT5TradeMode? = null,
+    val expectedAccountCurrency: String? = null,
+    val expectedLeverage: Int? = null,
 ) {
     /** Effective capabilities for this profile after applying [capabilityRestrictions]. */
     val capabilities: Set<OrderTypeCapability>
         get() = MT5Protocol.capabilities - capabilityRestrictions
+
+    /** True when startup must assert at least one configured account property. */
+    val hasExpectedAccount: Boolean
+        get() =
+            expectedAccountLogin != null ||
+                expectedAccountServer != null ||
+                expectedTradeMode != null ||
+                expectedAccountCurrency != null ||
+                expectedLeverage != null
 }
 
 /**

@@ -66,6 +66,34 @@ class MT5BrokerProfileLoaderTest {
     }
 
     @Test
+    fun `expected account identity loads from profile config`() {
+        val profile =
+            loader
+                .load(
+                    raw =
+                        mapOf(
+                            "exness" to
+                                mapOf(
+                                    "type" to "mt5",
+                                    "expected_account_login" to "435898347",
+                                    "expected_account_server" to "Exness-MT5Trial9",
+                                    "expected_trade_mode" to "demo",
+                                    "expected_account_currency" to "usd",
+                                    "expected_leverage" to "100",
+                                ),
+                        ),
+                    defaults = MT5DefaultProfiles.all,
+                    env = emptyMap(),
+                ).single()
+
+        assertThat(profile.expectedAccountLogin).isEqualTo(435898347L)
+        assertThat(profile.expectedAccountServer).isEqualTo("Exness-MT5Trial9")
+        assertThat(profile.expectedTradeMode).isEqualTo(MT5TradeMode.DEMO)
+        assertThat(profile.expectedAccountCurrency).isEqualTo("USD")
+        assertThat(profile.expectedLeverage).isEqualTo(100)
+    }
+
+    @Test
     fun `non-mt5 type is filtered out`() {
         val raw =
             mapOf(

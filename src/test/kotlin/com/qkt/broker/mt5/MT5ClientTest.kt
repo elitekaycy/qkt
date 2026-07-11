@@ -405,7 +405,7 @@ class MT5ClientTest {
         // Real Exness demo /account shape (login 435898347): margin_mode 2 = RETAIL_HEDGING.
         server.enqueue(
             MockResponse().setBody(
-                """{"balance":2390.91,"equity":1895.99,"currency":"USD","leverage":100,"margin_mode":2}""",
+                """{"balance":2390.91,"equity":1895.99,"currency":"USD","leverage":100,"margin_mode":2,"login":435898347,"server":"Exness-MT5Trial9","trade_mode":0}""",
             ),
         )
         val acct = client.getAccount()!!
@@ -415,6 +415,9 @@ class MT5ClientTest {
         assertThat(acct.equity).isEqualByComparingTo("1895.99")
         assertThat(acct.currency).isEqualTo("USD")
         assertThat(acct.leverage).isEqualTo(100)
+        assertThat(acct.login).isEqualTo(435898347L)
+        assertThat(acct.server).isEqualTo("Exness-MT5Trial9")
+        assertThat(acct.tradeMode).isEqualTo(MT5TradeMode.DEMO.wireValue)
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/account")
         assertThat(recorded.method).isEqualTo("GET")
