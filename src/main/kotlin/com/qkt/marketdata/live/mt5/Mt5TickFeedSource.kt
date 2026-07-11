@@ -1,5 +1,6 @@
 package com.qkt.marketdata.live.mt5
 
+import com.qkt.broker.mt5.MT5ServerTimeZone
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.common.Clock
 import com.qkt.common.Money
@@ -35,6 +36,7 @@ class Mt5TickFeedSource(
     private val symbolMap: Map<String, String>,
     private val pollIntervalMs: Long = 50L,
     private val http: OkHttpClient = OkHttpClient(),
+    private val serverTimeZone: MT5ServerTimeZone = MT5ServerTimeZone.UTC,
     private val clock: Clock = SystemClock(),
     private val symbolCalendars: SymbolCalendars? = null,
     private val outOfSessionSleepMs: Long = 60_000L,
@@ -53,7 +55,7 @@ class Mt5TickFeedSource(
         onReconnect: () -> Unit,
     ) {
         check(running.compareAndSet(false, true)) { "Mt5TickFeedSource already started" }
-        val client = Mt5TickClient(baseUrl, http, apiKey)
+        val client = Mt5TickClient(baseUrl, http, serverTimeZone, apiKey)
         // One thread per symbol: a round's K fetches run in parallel against the gateway,
         // and the polling thread emits in configured order once all complete.
         val fetchPool =

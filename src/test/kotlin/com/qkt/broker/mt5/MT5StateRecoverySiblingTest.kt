@@ -28,7 +28,7 @@ class MT5StateRecoverySiblingTest {
         client =
             MT5Client(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
-                tzOffsetHours = 0,
+                serverTimeZone = MT5ServerTimeZone.UTC,
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
             )

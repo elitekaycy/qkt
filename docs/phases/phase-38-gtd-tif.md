@@ -136,7 +136,7 @@ Canonical test files:
   scope.
 - **MT5 venue clock skew.** A `NOW + Ns` deadline near a small `N`
   (single-digit seconds) can race the MT5 server's view of the deadline.
-  The Phase 30 profile already documents `serverTzOffsetHours`; the same
+  The MT5 profile's DST-aware `server_time_zone` converts the wire deadline; the same
   caution applies here. The engine-side sweep is a safety net only when
   the broker isn't native — for MT5, the venue is authoritative.
 - **`TIF GTD` rejected on Market actions** at compile time. Market orders

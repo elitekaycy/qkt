@@ -1042,7 +1042,7 @@ class LiveSession(
         }
 
         // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
-        // session's route list and use its profile's `serverTzOffsetHours`.
+        // session's route list and use its profile's DST-aware server clock.
         // LiveSession is per-strategy in the daemon model, so all calls return
         // the same zone — strategy id is ignored. Null when no MT5 broker is
         // in play (paper-only / Bybit-only sessions).
@@ -1050,8 +1050,7 @@ class LiveSession(
             run {
                 val mt5 = builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>().firstOrNull()
                 if (mt5 != null) {
-                    val zone: java.time.ZoneId =
-                        java.time.ZoneOffset.ofHours(mt5.profile.serverTzOffsetHours)
+                    val zone: java.time.ZoneId = mt5.profile.serverTimeZone.asZoneId()
                     ({ _: String -> zone })
                 } else {
                     null

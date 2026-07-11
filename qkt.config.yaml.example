@@ -37,5 +37,5 @@ brokers:
   #   type: mt5
   #   gateway_url: http://localhost:5002
   #   symbol_suffix: ".raw"
-  #   server_tz_offset_hours: 3
+  #   server_time_zone: new_york_close
   #   magic: 10002

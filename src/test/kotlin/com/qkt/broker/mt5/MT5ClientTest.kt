@@ -19,7 +19,7 @@ class MT5ClientTest {
         client =
             MT5Client(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
-                tzOffsetHours = 2,
+                serverTimeZone = MT5ServerTimeZone.fixedOffset(2),
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
             )
@@ -318,7 +318,7 @@ class MT5ClientTest {
         client =
             MT5Client(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
-                tzOffsetHours = 0,
+                serverTimeZone = MT5ServerTimeZone.UTC,
                 retryAttempts = 0,
                 apiKey = "secret-token",
             )

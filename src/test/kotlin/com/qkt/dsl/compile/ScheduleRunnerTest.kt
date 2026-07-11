@@ -273,7 +273,7 @@ class ScheduleRunnerTest {
                     emit = {},
                     nowMs = mondayMidnightUtc,
                 )
-            }.hasMessageContaining("serverTzOffsetHours")
+            }.hasMessageContaining("server_time_zone")
     }
 
     @Test

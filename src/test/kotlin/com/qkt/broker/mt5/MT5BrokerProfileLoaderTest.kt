@@ -18,7 +18,7 @@ class MT5BrokerProfileLoaderTest {
         val ex = profiles.first { it.name == "exness" }
         assertThat(ex.gatewayUrl).isEqualTo("http://h:5005")
         assertThat(ex.symbolPolicy.suffix).isEqualTo("m")
-        assertThat(ex.serverTzOffsetHours).isEqualTo(2)
+        assertThat(ex.serverTimeZone).isEqualTo(MT5ServerTimeZone.NEW_YORK_CLOSE)
         assertThat(ex.magic).isEqualTo(10001)
     }
 
@@ -55,6 +55,40 @@ class MT5BrokerProfileLoaderTest {
         val env = mapOf("QKT_BROKER_EXNESS_GATEWAY_URL" to "http://prod:7000")
         val profiles = loader.load(raw, MT5DefaultProfiles.all, env = env)
         assertThat(profiles.first { it.name == "exness" }.gatewayUrl).isEqualTo("http://prod:7000")
+    }
+
+    @Test
+    fun `fresh profile accepts a DST-aware server time zone`() {
+        val raw =
+            mapOf(
+                "custom" to
+                    mapOf(
+                        "type" to "mt5",
+                        "gateway_url" to "http://h:6000",
+                        "magic" to "10006",
+                        "server_time_zone" to "Europe/Helsinki",
+                    ),
+            )
+
+        val profile = loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()).single()
+
+        assertThat(profile.serverTimeZone.id).isEqualTo("Europe/Helsinki")
+    }
+
+    @Test
+    fun `profile rejects competing static and DST-aware time settings`() {
+        val raw =
+            mapOf(
+                "exness" to
+                    mapOf(
+                        "type" to "mt5",
+                        "server_time_zone" to "new_york_close",
+                        "server_tz_offset_hours" to "2",
+                    ),
+            )
+
+        assertThatThrownBy { loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()) }
+            .hasMessageContaining("must not set both")
     }
 
     @Test

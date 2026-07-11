@@ -26,13 +26,12 @@ import org.slf4j.LoggerFactory
  */
 class MT5Client(
     private val gatewayUrl: String,
-    private val tzOffsetHours: Int,
+    private val serverTimeZone: MT5ServerTimeZone,
     private val httpTimeoutMs: Long = 5000,
     private val retryAttempts: Int = 3,
     private val apiKey: String? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5Client::class.java)
-    private val tzOffsetMs: Long = tzOffsetHours.toLong() * 3600L * 1000L
     private val json = Json { ignoreUnknownKeys = true }
 
     private val http: OkHttpClient =
@@ -447,8 +446,9 @@ class MT5Client(
     }
 
     private fun venueIso(utcMs: Long): String =
-        java.time.Instant
-            .ofEpochMilli(utcMs + tzOffsetMs)
+        serverTimeZone
+            .toServerLocal(java.time.Instant.ofEpochMilli(utcMs))
+            .toInstant(java.time.ZoneOffset.UTC)
             .toString()
 
     fun getTick(brokerSymbol: String): MT5Tick? {

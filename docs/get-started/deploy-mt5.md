@@ -48,6 +48,10 @@ brokers:
 ```
 
 The `gateway_url` matches the Docker service name. On a non-Docker setup, use `http://localhost:5001`.
+Built-in profiles use the DST-aware `new_york_close` server clock. Keep the gateway's
+`MT5_SERVER_UTC_OFFSET_SECONDS=0`; qkt performs the single broker-wall-to-UTC conversion for
+both historical bars and live ticks. Fresh custom profiles must set `server_time_zone` to
+`new_york_close` or an IANA zone id.
 
 For multi-account, distinct profiles via `extends:` — see the [configure-mt5-broker](../how-to/index.md) recipe.
 
