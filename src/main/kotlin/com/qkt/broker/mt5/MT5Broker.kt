@@ -101,6 +101,7 @@ class MT5Broker(
             onPositionOpened = ::onPendingPositionOpened,
             closedTicketMeta = ::lookupClosedTicketMeta,
             engineCloseState = ::engineCloseState,
+            venueCostsForClose = ::bookVenueCloseCosts,
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onGatewayUnreachable = ::publishGatewayUnreachable,
@@ -126,6 +127,9 @@ class MT5Broker(
             strategyName = strategyName,
             seedOrphan = { ticket, orderId, strategyId ->
                 positionMetaByTicket[ticket] = PendingMeta(orderId, strategyId)
+            },
+            onPositionRecovered = { position ->
+                positionOpenedAtByTicket[position.ticket] = position.openTime
             },
             siblingsLookup = siblingsLookup,
         )
@@ -163,6 +167,11 @@ class MT5Broker(
      */
     private val positionMetaByTicket: MutableMap<Long, PendingMeta> = ConcurrentHashMap()
     private val positionSymbolByTicket: MutableMap<Long, String> = ConcurrentHashMap()
+    private val positionOpenedAtByTicket: MutableMap<Long, Long> = ConcurrentHashMap()
+    private val venueCostLedger =
+        MT5VenueCostLedger(
+            closedRetentionMs = maxOf(60_000L, profile.httpTimeoutMs + profile.pollIntervalMs * 2L),
+        )
 
     /**
      * Tickets that just transitioned from pending → position. The pending-order poller
@@ -438,6 +447,13 @@ class MT5Broker(
                     )
                     return@closePositionAsync
                 }
+            val venueCosts =
+                venueCostsForPositionClose(
+                    positionTicket = ticket,
+                    closingDealTicket = resp.result.deal,
+                    positionClosed = !positionRemainsOpen,
+                )
+            if (!positionRemainsOpen) positionOpenedAtByTicket.remove(ticket)
             bus.publish(
                 BrokerEvent.OrderAccepted(
                     clientOrderId = request.id,
@@ -456,7 +472,7 @@ class MT5Broker(
                     quantity = filledQuantity,
                     strategyId = request.strategyId,
                     timestamp = clock.now(),
-                    venueCosts = venueCostsForDeal(resp.result.deal),
+                    venueCosts = venueCosts,
                 ),
             )
         }
@@ -735,6 +751,7 @@ class MT5Broker(
             if (positionTicket != null) {
                 positionMetaByTicket[positionTicket] = PendingMeta(request.id, request.strategyId)
                 positionSymbolByTicket[positionTicket] = request.symbol
+                positionOpenedAtByTicket[positionTicket] = clock.now()
             }
         } else {
             // Pending: track ticket so we can correlate fill events and cancel by orderId.
@@ -771,21 +788,32 @@ class MT5Broker(
         }
     }
 
-    private fun venueCostsForDeal(dealTicket: Long): BigDecimal {
-        if (dealTicket == 0L) return BigDecimal.ZERO
+    private fun venueCostsForPositionClose(
+        positionTicket: Long,
+        closingDealTicket: Long,
+        positionClosed: Boolean,
+    ): BigDecimal {
         val now = clock.now()
+        val from = positionOpenedAtByTicket[positionTicket] ?: now - DEAL_LOOKUP_WINDOW_MS
         val deals =
-            runCatching {
-                client.getDeals(
-                    fromUtcMs = now - DEAL_LOOKUP_WINDOW_MS,
-                    toUtcMs = now + DEAL_LOOKUP_WINDOW_MS,
-                )
-            }.getOrNull() ?: return BigDecimal.ZERO
-        val deal = deals.firstOrNull { it.ticket == dealTicket } ?: return BigDecimal.ZERO
-        return deal.commission
-            .add(deal.swap)
-            .add(deal.fee)
-            .negate()
+            client.getPositionDeals(positionTicket, fromUtcMs = from, toUtcMs = now)
+                ?: client
+                    .getDeals(
+                        fromUtcMs = now - DEAL_LOOKUP_WINDOW_MS,
+                        toUtcMs = now + DEAL_LOOKUP_WINDOW_MS,
+                    ).orEmpty()
+                    .filter {
+                        it.positionTicket == positionTicket || it.ticket == closingDealTicket
+                    }
+        return venueCostLedger.book(positionTicket, deals, positionClosed, now)
+    }
+
+    private fun bookVenueCloseCosts(
+        positionTicket: Long,
+        deals: List<MT5Deal>,
+    ): BigDecimal {
+        positionOpenedAtByTicket.remove(positionTicket)
+        return venueCostLedger.book(positionTicket, deals, positionClosed = true, nowMs = clock.now())
     }
 
     /** True for failures where the request may have reached the venue despite the error. */
@@ -1274,6 +1302,7 @@ class MT5Broker(
         }
         // Keep the meta accessible to the position poller for the eventual close event.
         positionMetaByTicket[position.ticket] = meta
+        positionOpenedAtByTicket[position.ticket] = position.openTime
         val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(position.symbol)}"
         positionSymbolByTicket[position.ticket] = qktSymbol
         val filledSide = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL

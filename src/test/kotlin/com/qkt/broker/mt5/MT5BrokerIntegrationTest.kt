@@ -304,7 +304,10 @@ class MT5BrokerIntegrationTest {
         )
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":777,"order":1,"position_id":424242,"symbol":"EURUSDm","type":1,"entry":1,""" +
+                """[{"ticket":776,"order":1,"position_id":424242,"symbol":"EURUSDm","type":0,"entry":0,""" +
+                    """"volume":"0.10","price":"1.1000","profit":"0","commission":"-0.70","swap":"0",""" +
+                    """"fee":"0","magic":10001,"time_msc":1699999999000},""" +
+                    """{"ticket":777,"order":2,"position_id":424242,"symbol":"EURUSDm","type":1,"entry":1,""" +
                     """"volume":"0.10","price":"1.1050","profit":"10","commission":"-0.70","swap":"-0.30",""" +
                     """"fee":"-0.10","magic":10001,"time_msc":1700000000000}]""",
             ),
@@ -334,7 +337,7 @@ class MT5BrokerIntegrationTest {
         assertThat(filled.side).isEqualTo(Side.SELL)
         assertThat(filled.price).isEqualByComparingTo("1.1050")
         assertThat(filled.quantity).isEqualByComparingTo("0.10")
-        assertThat(filled.venueCosts).isEqualByComparingTo("1.10")
+        assertThat(filled.venueCosts).isEqualByComparingTo("1.80")
         // The gateway was hit at /close_position with the ticket — NOT /order.
         server.takeRequest() // state recovery
         server.takeRequest() // position poller seed

@@ -204,6 +204,8 @@ data class MT5OrderResult(
 data class MT5ClosingDeal(
     val price: BigDecimal,
     val costs: BigDecimal,
+    /** Venue deals included in [costs], retained for idempotent cost booking. */
+    val deals: List<MT5Deal> = emptyList(),
 )
 
 /** Top-level response from `POST /order`. */
