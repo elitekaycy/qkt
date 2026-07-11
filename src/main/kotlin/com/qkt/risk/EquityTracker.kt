@@ -7,7 +7,7 @@ import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Tracks total and per-strategy equity (current + peak-since-session-start). Fed by
+ * Tracks total and per-strategy equity (current + persisted trailing high-water). Fed by
  * P&L deltas from [PnLProvider] / [StrategyPnL]; exposes both current and peak readings
  * for [DrawdownTracker] to compute drawdown off.
  *
@@ -32,19 +32,23 @@ class EquityTracker(
     private val perStrategyCurrent: MutableMap<String, BigDecimal> = ConcurrentHashMap()
     private val perStrategyPeak: MutableMap<String, BigDecimal> = ConcurrentHashMap()
 
-    fun update() {
+    fun update(): Boolean {
         val total = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         currentTotalEquity = total
-        if (total > peakTotalEquity) peakTotalEquity = total
+        if (total <= peakTotalEquity) return false
+        peakTotalEquity = total
+        return true
     }
 
-    fun updateStrategy(strategyId: String) {
-        if (strategyId.isBlank()) return
+    fun updateStrategy(strategyId: String): Boolean {
+        if (strategyId.isBlank()) return false
         // equityFor anchors at the strategy's own starting balance (set on every deploy path).
         val total = strategyPnL.equityFor(strategyId)
         perStrategyCurrent[strategyId] = total
         val peak = perStrategyPeak[strategyId]
-        if (peak == null || total > peak) perStrategyPeak[strategyId] = total
+        if (peak != null && total <= peak) return false
+        perStrategyPeak[strategyId] = maxOf(strategyPnL.startingBalanceFor(strategyId), total)
+        return true
     }
 
     /**
@@ -53,10 +57,12 @@ class EquityTracker(
      * same way [update] tracks the global peak. Keeps `MaxStrategyDrawdown` measuring drawdown
      * against a live peak instead of a stale fill-point one.
      */
-    fun updateStrategies() {
+    fun updateStrategies(): Boolean {
+        var changed = false
         for (strategyId in perStrategyCurrent.keys) {
-            updateStrategy(strategyId)
+            if (updateStrategy(strategyId)) changed = true
         }
+        return changed
     }
 
     fun currentEquity(): BigDecimal = currentTotalEquity
@@ -70,4 +76,22 @@ class EquityTracker(
 
     /** The strategy's equity anchor — its starting balance as registered with [StrategyPnL]. */
     fun startingBalanceFor(strategyId: String): BigDecimal = strategyPnL.startingBalanceFor(strategyId)
+
+    /** Immutable trailing high-water marks for persistence. */
+    fun snapshot(): EquityPeakSnapshot = EquityPeakSnapshot(peakTotalEquity, perStrategyPeak.toMap())
+
+    /** Restore trailing high-water marks without allowing them below configured starting balances. */
+    fun restore(snapshot: EquityPeakSnapshot) {
+        peakTotalEquity = maxOf(startingBalance, snapshot.globalPeak)
+        perStrategyPeak.clear()
+        for ((strategyId, peak) in snapshot.strategyPeaks) {
+            perStrategyPeak[strategyId] = maxOf(strategyPnL.startingBalanceFor(strategyId), peak)
+        }
+    }
 }
+
+/** Persistable global and per-strategy trailing equity peaks. */
+data class EquityPeakSnapshot(
+    val globalPeak: BigDecimal,
+    val strategyPeaks: Map<String, BigDecimal>,
+)

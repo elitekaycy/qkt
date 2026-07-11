@@ -215,6 +215,16 @@ class FileStatePersistor(
                     state.strategyHalts.map {
                         StrategyHaltDto(it.strategyId, it.reason, it.scope, it.epochDay)
                     },
+                globalRealizedTotal = state.globalRealizedTotal?.toPlainString(),
+                dailyDrawdownEpochDay = state.dailyDrawdownEpochDay,
+                globalDailyDrawdownRef = state.globalDailyDrawdownRef?.toPlainString(),
+                perStrategyDailyDrawdownRefs =
+                    state.perStrategyDailyDrawdownRefs.mapValues { it.value.toPlainString() },
+                peakTotalEquity = state.peakTotalEquity?.toPlainString(),
+                perStrategyPeakEquity = state.perStrategyPeakEquity.mapValues { it.value.toPlainString() },
+                pacerEntryFillsByStrategy = state.pacerEntryFillsByStrategy,
+                pacerLossStreakByStrategy = state.pacerLossStreakByStrategy,
+                pacerLastLossAtByStrategy = state.pacerLastLossAtByStrategy,
             )
         runCatching { json.encodeToString(RiskStateDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, RISK_STATE_FILE, it) }
@@ -242,6 +252,16 @@ class FileStatePersistor(
                 dto.strategyHalts.map {
                     PersistedStrategyHalt(it.strategyId, it.reason, it.scope, it.epochDay)
                 },
+            globalRealizedTotal = dto.globalRealizedTotal?.toBigDecimal(),
+            dailyDrawdownEpochDay = dto.dailyDrawdownEpochDay,
+            globalDailyDrawdownRef = dto.globalDailyDrawdownRef?.toBigDecimal(),
+            perStrategyDailyDrawdownRefs =
+                dto.perStrategyDailyDrawdownRefs.mapValues { it.value.toBigDecimal() },
+            peakTotalEquity = dto.peakTotalEquity?.toBigDecimal(),
+            perStrategyPeakEquity = dto.perStrategyPeakEquity.mapValues { it.value.toBigDecimal() },
+            pacerEntryFillsByStrategy = dto.pacerEntryFillsByStrategy,
+            pacerLossStreakByStrategy = dto.pacerLossStreakByStrategy,
+            pacerLastLossAtByStrategy = dto.pacerLastLossAtByStrategy,
         )
     }
 
@@ -1066,6 +1086,15 @@ private data class RiskStateDto(
     val haltScope: String,
     val haltEpochDay: Long,
     val strategyHalts: List<StrategyHaltDto>,
+    val globalRealizedTotal: String? = null,
+    val dailyDrawdownEpochDay: Long? = null,
+    val globalDailyDrawdownRef: String? = null,
+    val perStrategyDailyDrawdownRefs: Map<String, String> = emptyMap(),
+    val peakTotalEquity: String? = null,
+    val perStrategyPeakEquity: Map<String, String> = emptyMap(),
+    val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
+    val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
+    val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
 )
 
 @Serializable

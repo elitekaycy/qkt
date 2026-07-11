@@ -8,11 +8,13 @@ import com.qkt.events.RiskEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.PnLProvider
+import com.qkt.pnl.RestorablePnLProvider
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Aggregate mutable state the risk subsystem reads on every order and updates on
@@ -25,19 +27,21 @@ import java.util.concurrent.ConcurrentHashMap
  * until [clear]/[clearStrategy] is called by an operator.
  */
 class RiskState(
-    pnl: PnLProvider,
+    private val pnl: PnLProvider,
     strategyPnL: StrategyPnL,
     private val clock: Clock,
     private val bus: EventBus,
     initialBalance: BigDecimal = BigDecimal.ZERO,
     dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
     /**
-     * Persistence sink for halt flags + daily PnL — invoked after every state change
+     * Persistence sink for the complete restart-safe risk snapshot — invoked after state changes
      * so a restart restores them ([com.qkt.persistence.StatePersistor.saveRiskState]).
      * Null disables (backtests, tests).
      */
     private val persist: ((com.qkt.persistence.PersistedRiskState) -> Unit)? = null,
+    val pacerLedger: PacerLedger = PacerLedger(),
 ) {
+    private val anchorsDirty = AtomicBoolean(false)
     val equityTracker: EquityTracker = EquityTracker(pnl, strategyPnL, initialBalance)
     val drawdownTracker: DrawdownTracker = DrawdownTracker(equityTracker)
     val dailyPnLTracker: DailyPnLTracker = DailyPnLTracker(clock)
@@ -53,6 +57,7 @@ class RiskState(
             // full unrealized-PnL walk per tick.
             currentGlobalEquity = equityTracker::currentEquity,
             currentStrategyEquity = equityTracker::currentEquityFor,
+            onAnchorChanged = { anchorsDirty.set(true) },
         )
 
     @Volatile
@@ -86,16 +91,21 @@ class RiskState(
     fun haltReasonFor(strategyId: String): String? = if (halted) haltReason else haltedStrategies[strategyId]?.reason
 
     fun onTick() {
-        equityTracker.update()
-        equityTracker.updateStrategies()
+        if (equityTracker.update()) anchorsDirty.set(true)
+        if (equityTracker.updateStrategies()) anchorsDirty.set(true)
+    }
+
+    /** Capture day-start references before the fill mutates realized PnL. */
+    fun beforeFill(strategyId: String) {
+        dailyDrawdownTracker.initializeStrategy(strategyId)
     }
 
     fun onFill(
         strategyId: String,
         realized: BigDecimal,
     ) {
-        equityTracker.update()
-        equityTracker.updateStrategy(strategyId)
+        if (equityTracker.update()) anchorsDirty.set(true)
+        if (equityTracker.updateStrategy(strategyId)) anchorsDirty.set(true)
         dailyPnLTracker.recordRealized(strategyId, realized)
         persistNow()
     }
@@ -171,13 +181,35 @@ class RiskState(
         persistNow()
     }
 
+    @Synchronized
     private fun persistNow() {
+        anchorsDirty.set(false)
         persist?.invoke(snapshot())
     }
 
-    /** Current halt flags + daily PnL in their persisted shape. */
+    /** Capture any missing day-start anchors and persist the complete restart state once. */
+    fun initializeAnchors(strategyIds: Collection<String>) {
+        dailyDrawdownTracker.initialize(strategyIds)
+        if (equityTracker.update()) anchorsDirty.set(true)
+        for (strategyId in strategyIds) {
+            if (equityTracker.updateStrategy(strategyId)) anchorsDirty.set(true)
+        }
+        persistNow()
+    }
+
+    /** Flush peak/day-reference changes from a worker thread; a clean state performs no work. */
+    @Synchronized
+    fun persistAnchorsIfDirty() {
+        if (!anchorsDirty.compareAndSet(true, false)) return
+        persist?.invoke(snapshot())
+    }
+
+    /** Current realized PnL, drawdown anchors, pacing state, and halt flags. */
     fun snapshot(): com.qkt.persistence.PersistedRiskState {
         val daily = dailyPnLTracker.snapshot()
+        val dailyDrawdown = dailyDrawdownTracker.snapshot()
+        val equity = equityTracker.snapshot()
+        val pacer = pacerLedger.snapshot(clock.now())
         return com.qkt.persistence.PersistedRiskState(
             epochDay = daily.epochDay,
             realizedToday = daily.global,
@@ -190,6 +222,15 @@ class RiskState(
                 haltedStrategies.map { (id, info) ->
                     com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay)
                 },
+            globalRealizedTotal = pnl.realizedTotal(),
+            dailyDrawdownEpochDay = dailyDrawdown.epochDay,
+            globalDailyDrawdownRef = dailyDrawdown.globalRef,
+            perStrategyDailyDrawdownRefs = dailyDrawdown.strategyRefs,
+            peakTotalEquity = equity.globalPeak,
+            perStrategyPeakEquity = equity.strategyPeaks,
+            pacerEntryFillsByStrategy = pacer.entryFillsByStrategy,
+            pacerLossStreakByStrategy = pacer.lossStreakByStrategy,
+            pacerLastLossAtByStrategy = pacer.lastLossAtByStrategy,
         )
     }
 
@@ -197,14 +238,34 @@ class RiskState(
      * Restore a persisted snapshot at boot. DAILY-scoped halts from a PAST UTC day are
      * NOT restored — they auto-resume at midnight (#354) and a restart must not revive
      * them; PERSISTENT halts and same-day DAILY halts come back exactly as they were.
-     * Daily PnL only carries over when the snapshot is from today. No events publish —
-     * these are pre-existing facts, not new state changes.
+     * Daily PnL and day-start drawdown references only carry over when their snapshot is
+     * from today. Lifetime realized PnL, trailing peaks, and pacing streaks remain intact.
+     * No events publish because these are pre-existing facts, not new state changes.
      */
     @Synchronized
     fun restore(persisted: com.qkt.persistence.PersistedRiskState) {
+        persisted.globalRealizedTotal?.let { realized ->
+            (pnl as? RestorablePnLProvider)?.restoreRealizedTotal(realized)
+        }
         dailyPnLTracker.restore(
             DailyPnLSnapshot(persisted.epochDay, persisted.realizedToday, persisted.perStrategyRealizedToday),
         )
+        persisted.dailyDrawdownEpochDay?.let { day ->
+            dailyDrawdownTracker.restore(
+                DailyDrawdownSnapshot(day, persisted.globalDailyDrawdownRef, persisted.perStrategyDailyDrawdownRefs),
+            )
+        }
+        persisted.peakTotalEquity?.let { peak ->
+            equityTracker.restore(EquityPeakSnapshot(peak, persisted.perStrategyPeakEquity))
+        }
+        pacerLedger.restore(
+            PacerSnapshot(
+                persisted.pacerEntryFillsByStrategy,
+                persisted.pacerLossStreakByStrategy,
+                persisted.pacerLastLossAtByStrategy,
+            ),
+        )
+        anchorsDirty.set(false)
         val today = epochDay()
         val scope = runCatching { HaltScope.valueOf(persisted.haltScope) }.getOrDefault(HaltScope.PERSISTENT)
         if (persisted.halted && (scope == HaltScope.PERSISTENT || persisted.haltEpochDay >= today)) {

@@ -18,6 +18,12 @@ interface PnLProvider {
     fun totalPnL(): BigDecimal
 }
 
+/** A PnL provider whose lifetime realized total can be restored before live processing resumes. */
+interface RestorablePnLProvider : PnLProvider {
+    /** Replace the realized total with persisted account-currency truth. */
+    fun restoreRealizedTotal(realized: BigDecimal)
+}
+
 /**
  * Tracks realized + unrealized PnL across all positions.
  *
@@ -33,11 +39,15 @@ class PnLCalculator(
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     private val accounting: AccountingEngine = AccountingEngine(),
     private val markTimestamp: () -> Long = { 0L },
-) : PnLProvider {
+) : RestorablePnLProvider {
     private var realizedTotal: BigDecimal = Money.ZERO
 
     fun recordRealized(realized: BigDecimal) {
         realizedTotal = realizedTotal.add(realized).setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    override fun restoreRealizedTotal(realized: BigDecimal) {
+        realizedTotal = realized.setScale(Money.SCALE, Money.ROUNDING)
     }
 
     override fun realizedTotal(): BigDecimal = realizedTotal

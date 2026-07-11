@@ -15,8 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  * deterministically.
  *
  * Global equity is absolute: `initialBalance + realized + unrealized`. Per-strategy uses
- * [StrategyPnL]'s already-absolute `balanceFor` / `equityFor`. The reference is captured lazily on
- * the first query of a new day; the risk engine queries every fill/tick, so that lands ~midnight.
+ * [StrategyPnL]'s already-absolute `balanceFor` / `equityFor`. References are initialized before
+ * live processing and before the first fill of a new day, then persisted for same-day restarts.
  */
 class DailyDrawdownTracker(
     private val clock: Clock,
@@ -32,6 +32,7 @@ class DailyDrawdownTracker(
      */
     private val currentGlobalEquity: (() -> BigDecimal)? = null,
     private val currentStrategyEquity: ((String) -> BigDecimal)? = null,
+    private val onAnchorChanged: () -> Unit = {},
 ) {
     @Volatile
     private var lastResetEpochDay: Long = epochDay()
@@ -43,7 +44,11 @@ class DailyDrawdownTracker(
 
     fun globalDrawdownToday(): BigDecimal {
         rolloverIfNeeded()
-        val ref = globalRef ?: captureGlobalRef().also { globalRef = it }
+        val ref =
+            globalRef ?: captureGlobalRef().also {
+                globalRef = it
+                onAnchorChanged()
+            }
         val current =
             currentGlobalEquity?.invoke()
                 ?: initialBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
@@ -52,7 +57,7 @@ class DailyDrawdownTracker(
 
     fun strategyDrawdownToday(strategyId: String): BigDecimal {
         rolloverIfNeeded()
-        val ref = strategyRef.getOrPut(strategyId) { captureStrategyRef(strategyId) }
+        val ref = strategyRef.getOrPut(strategyId) { captureStrategyRef(strategyId).also { onAnchorChanged() } }
         val current = currentStrategyEquity?.invoke(strategyId) ?: strategyPnL.equityFor(strategyId)
         return ddFraction(ref, current)
     }
@@ -84,7 +89,49 @@ class DailyDrawdownTracker(
             globalRef = null
             strategyRef.clear()
             lastResetEpochDay = today
+            onAnchorChanged()
         }
+    }
+
+    /** Capture missing day-start references before live processing begins. */
+    @Synchronized
+    fun initialize(strategyIds: Collection<String>) {
+        rolloverIfNeeded()
+        captureGlobalIfMissing()
+        for (strategyId in strategyIds) {
+            strategyRef.getOrPut(strategyId) { captureStrategyRef(strategyId).also { onAnchorChanged() } }
+        }
+    }
+
+    /** Capture missing references for one fill without allocating a strategy collection. */
+    @Synchronized
+    fun initializeStrategy(strategyId: String) {
+        rolloverIfNeeded()
+        captureGlobalIfMissing()
+        strategyRef.getOrPut(strategyId) { captureStrategyRef(strategyId).also { onAnchorChanged() } }
+    }
+
+    private fun captureGlobalIfMissing() {
+        if (globalRef == null) {
+            globalRef = captureGlobalRef().also { onAnchorChanged() }
+        }
+    }
+
+    /** Immutable reference snapshot for persistence. */
+    @Synchronized
+    fun snapshot(): DailyDrawdownSnapshot {
+        rolloverIfNeeded()
+        return DailyDrawdownSnapshot(lastResetEpochDay, globalRef, strategyRef.toMap())
+    }
+
+    /** Restore same-day references; stale references are intentionally ignored. */
+    @Synchronized
+    fun restore(snapshot: DailyDrawdownSnapshot) {
+        if (snapshot.epochDay != epochDay()) return
+        lastResetEpochDay = snapshot.epochDay
+        globalRef = snapshot.globalRef
+        strategyRef.clear()
+        strategyRef.putAll(snapshot.strategyRefs)
     }
 
     // UTC epoch-day without the per-call Instant/ZonedDateTime/LocalDate chain — rolloverIfNeeded
@@ -95,3 +142,10 @@ class DailyDrawdownTracker(
         const val MILLIS_PER_DAY = 86_400_000L
     }
 }
+
+/** Persistable UTC-day drawdown references. */
+data class DailyDrawdownSnapshot(
+    val epochDay: Long,
+    val globalRef: BigDecimal?,
+    val strategyRefs: Map<String, BigDecimal>,
+)
