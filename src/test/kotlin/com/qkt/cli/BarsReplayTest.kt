@@ -67,7 +67,7 @@ class BarsReplayTest {
                 gold = BACKTEST:XAUUSD EVERY 15m
             RULES
                 WHEN ema(gold.close, 3) CROSSES ABOVE ema(gold.close, 9)
-                THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
                 WHEN ema(gold.close, 3) CROSSES BELOW ema(gold.close, 9)
                 THEN CLOSE gold
             """.trimIndent(),

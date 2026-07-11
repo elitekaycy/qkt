@@ -22,7 +22,7 @@ SYMBOLS
 FOR EACH s IN btc, eth, sol DO
     WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
     THEN BUY s SIZING 0.1
-         BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+         BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 ```
 
 This expands at compile time to three independent rules — one each for btc, eth, sol. The substitution is purely textual at the AST level.
@@ -32,13 +32,13 @@ Equivalent without `FOR EACH`:
 ```qkt
 RULES
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
-    THEN BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+    THEN BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 
     WHEN ema(eth.close, 9) CROSSES ABOVE ema(eth.close, 21)
-    THEN BUY eth SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+    THEN BUY eth SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 
     WHEN ema(sol.close, 9) CROSSES ABOVE ema(sol.close, 21)
-    THEN BUY sol SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+    THEN BUY sol SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 ```
 
 `FOR EACH` is just syntactic sugar — both versions compile to identical bytecode (well, AST nodes).

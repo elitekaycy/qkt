@@ -688,7 +688,7 @@ object InsightsTranslate {
             is ChildBy ->
                 mapOf("type" to "By", "distance" to exprPayload(child.distance))
             is ChildPct ->
-                mapOf("type" to "Pct", "frac" to exprPayload(child.frac))
+                mapOf("type" to "Pct", "percent" to exprPayload(child.percent))
             is ChildRr ->
                 mapOf("type" to "Rr", "multiplier" to exprPayload(child.multiplier))
             is ChildArmedTrail ->

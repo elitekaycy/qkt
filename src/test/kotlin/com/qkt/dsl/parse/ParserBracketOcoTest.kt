@@ -23,10 +23,13 @@ class ParserBracketOcoTest {
     }
 
     @Test
-    fun `bracket with stop only`() {
-        val r = Parser(Lexer("{ STOP LOSS PCT 0.01 }").tokenize()).parseBracket()
+    fun `documented percent bracket suffix parses both children`() {
+        val r =
+            Parser(
+                Lexer("{ STOP LOSS BY 1.0 PCT, TAKE PROFIT BY 3.0 PCT }").tokenize(),
+            ).parseBracket()
         assertThat(r.stopLoss).isInstanceOf(ChildPct::class.java)
-        assertThat(r.takeProfit).isNull()
+        assertThat(r.takeProfit).isInstanceOf(ChildPct::class.java)
     }
 
     @Test

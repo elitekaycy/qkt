@@ -245,7 +245,7 @@ internal object StrategyDataRequirementScanner {
             when (price) {
                 is ChildAt -> walk(price.price)
                 is ChildBy -> walk(price.distance)
-                is ChildPct -> walk(price.frac)
+                is ChildPct -> walk(price.percent)
                 is ChildRr -> walk(price.multiplier)
                 is ChildArmedTrail -> {
                     walk(price.trailDistance)

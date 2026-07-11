@@ -64,7 +64,7 @@ class TickResolvedParityTest {
                 gold = BACKTEST:XAUUSD EVERY 15m
             RULES
                 WHEN ema(gold.close, 3) CROSSES ABOVE ema(gold.close, 9)
-                THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
                 WHEN ema(gold.close, 3) CROSSES BELOW ema(gold.close, 9)
                 THEN CLOSE gold
             """.trimIndent(),
@@ -208,7 +208,7 @@ class TickResolvedParityTest {
                 b = BACKTEST:XAGUSD EVERY 15m
             RULES
                 WHEN ema(a.close, 3) CROSSES ABOVE ema(a.close, 9) AND b.close > ema(b.close, 9)
-                THEN BUY a SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                THEN BUY a SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
                 WHEN ema(a.close, 3) CROSSES BELOW ema(a.close, 9)
                 THEN CLOSE a
             """.trimIndent(),
@@ -227,10 +227,10 @@ class TickResolvedParityTest {
                 b = BACKTEST:XAGUSD EVERY 15m
             RULES
                 WHEN ema(a.close, 3) CROSSES ABOVE ema(a.close, 9)
-                THEN BUY a SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                THEN BUY a SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
                 WHEN ema(a.close, 3) CROSSES BELOW ema(a.close, 9) THEN CLOSE a
                 WHEN ema(b.close, 3) CROSSES ABOVE ema(b.close, 9)
-                THEN BUY b SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                THEN BUY b SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
                 WHEN ema(b.close, 3) CROSSES BELOW ema(b.close, 9) THEN CLOSE b
             """.trimIndent(),
         )

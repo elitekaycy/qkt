@@ -165,7 +165,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
             null -> Unit
             is ChildAt -> walkExpr(c.price)
             is ChildBy -> walkExpr(c.distance)
-            is ChildPct -> walkExpr(c.frac)
+            is ChildPct -> walkExpr(c.percent)
             is ChildRr -> walkExpr(c.multiplier)
             is ChildArmedTrail -> {
                 walkExpr(c.trailDistance)

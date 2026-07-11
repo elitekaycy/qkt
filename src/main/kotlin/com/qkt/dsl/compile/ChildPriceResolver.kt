@@ -96,10 +96,11 @@ class ChildPriceResolver(
                 }
             }
             is ChildPct -> {
-                val fracExpr = exprCompiler.compile(child.frac)
+                if (child.percent is NumLit) percentFraction(child.percent.value, kind)
+                val percentExpr = exprCompiler.compile(child.percent)
                 CompiledChildPrice { ec, side, entry, _ ->
-                    val v = fracExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
-                    val dist = entry.multiply(v, Money.CONTEXT)
+                    val percent = percentExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
+                    val dist = entry.multiply(percentFraction(percent, kind), Money.CONTEXT)
                     applyDistance(side, entry, dist, kind)
                 }
             }
@@ -150,5 +151,23 @@ class ChildPriceResolver(
         return entry.add(sign.multiply(dist, Money.CONTEXT), Money.CONTEXT)
     }
 
+    private fun percentFraction(
+        percent: BigDecimal,
+        kind: ChildKind,
+    ): BigDecimal {
+        require(percent.signum() > 0) { "bracket PCT must be greater than 0, was $percent" }
+        if (kind == ChildKind.STOP_LOSS) {
+            require(percent < MAX_STOP_PERCENT) {
+                "STOP LOSS PCT must be less than $MAX_STOP_PERCENT, was $percent"
+            }
+        }
+        return percent.divide(ONE_HUNDRED, Money.CONTEXT)
+    }
+
     private fun CompiledExpr.evaluateNumber(ec: EvalContext): BigDecimal? = (evaluate(ec) as? Value.Num)?.v
+
+    private companion object {
+        val ONE_HUNDRED: BigDecimal = BigDecimal("100")
+        val MAX_STOP_PERCENT: BigDecimal = BigDecimal("50")
+    }
 }

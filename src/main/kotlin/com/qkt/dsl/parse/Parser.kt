@@ -990,7 +990,8 @@ class Parser(
             }
             TokenKind.BY -> {
                 advance()
-                ChildBy(parseExpr())
+                val distance = parseExpr()
+                if (match(TokenKind.PCT)) ChildPct(distance) else ChildBy(distance)
             }
             TokenKind.PCT -> {
                 advance()

@@ -63,10 +63,17 @@ class ChildPriceResolverTest {
     }
 
     @Test
-    fun `PCT for stop loss on long subtracts entry times fraction`() {
-        val r = resolver.compile(ChildPct(NumLit(BigDecimal("0.05"))), kind = ChildKind.STOP_LOSS)
+    fun `PCT for stop loss on long treats the value as percentage points`() {
+        val r = resolver.compile(ChildPct(NumLit(BigDecimal("5"))), kind = ChildKind.STOP_LOSS)
         assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = null))
             .isEqualByComparingTo("95")
+    }
+
+    @Test
+    fun `PCT rejects a stop distance of fifty percent or more`() {
+        assertThatThrownBy {
+            resolver.compile(ChildPct(NumLit(BigDecimal("50"))), kind = ChildKind.STOP_LOSS)
+        }.hasMessageContaining("less than 50")
     }
 
     @Test

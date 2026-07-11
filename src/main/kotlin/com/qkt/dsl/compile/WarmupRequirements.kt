@@ -207,7 +207,7 @@ object WarmupRequirements {
         when (cp) {
             is ChildAt -> walkExpr(cp.price, out)
             is ChildBy -> walkExpr(cp.distance, out)
-            is ChildPct -> walkExpr(cp.frac, out)
+            is ChildPct -> walkExpr(cp.percent, out)
             is ChildRr -> walkExpr(cp.multiplier, out)
             is ChildArmedTrail -> {
                 walkExpr(cp.trailDistance, out)

@@ -189,7 +189,7 @@ SYMBOLS
 
 FOR EACH s IN btc, eth, sol DO
     WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
-    THEN BUY s SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+    THEN BUY s SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 ```
 
 Compiles to three separate rules — one each for btc, eth, sol. The substitution is textual at AST level; no runtime cost.

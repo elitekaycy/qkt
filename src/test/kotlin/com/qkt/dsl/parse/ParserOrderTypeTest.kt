@@ -98,7 +98,8 @@ class ParserOrderTypeTest {
 
     @Test
     fun `child pct`() {
-        assertThat(cp("PCT 0.01")).isInstanceOf(ChildPct::class.java)
+        assertThat(cp("PCT 1")).isInstanceOf(ChildPct::class.java)
+        assertThat(cp("BY 1 PCT")).isInstanceOf(ChildPct::class.java)
     }
 
     @Test

@@ -44,6 +44,8 @@ BRACKET {
 ```
 
 For BTC at $67,000 long, stop at $66,330, target at $69,010.
+The value is a percentage, not a fraction: `1 PCT` means 1%. Stop-loss percentages
+must be greater than 0 and less than 50; larger values are rejected as likely mistakes.
 
 ### `AT <price_expression>` — absolute price
 

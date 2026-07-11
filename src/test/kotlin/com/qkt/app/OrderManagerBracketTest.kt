@@ -115,8 +115,8 @@ class OrderManagerBracketTest {
         val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
         val request =
             bracket().copy(
-                stopLossAst = ChildPct(NumLit(Money.of("0.05"))),
-                takeProfitAst = ChildPct(NumLit(Money.of("0.10"))),
+                stopLossAst = ChildPct(NumLit(Money.of("5"))),
+                takeProfitAst = ChildPct(NumLit(Money.of("10"))),
             )
 
         om.submit(request)

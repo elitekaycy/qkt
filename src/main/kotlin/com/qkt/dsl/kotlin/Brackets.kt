@@ -13,7 +13,8 @@ fun childAt(price: ExprAst): ChildPriceAst = ChildAt(price)
 
 fun childBy(distance: ExprAst): ChildPriceAst = ChildBy(distance)
 
-fun childPct(frac: ExprAst): ChildPriceAst = ChildPct(frac)
+/** Creates a relative bracket child price where `1` means one percent. */
+fun childPct(percent: ExprAst): ChildPriceAst = ChildPct(percent)
 
 fun childRr(multiplier: ExprAst): ChildPriceAst = ChildRr(multiplier)
 
