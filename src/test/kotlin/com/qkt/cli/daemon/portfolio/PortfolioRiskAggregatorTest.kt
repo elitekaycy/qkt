@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.persistence.PersistedRiskState
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.DailyDrawdownBasis
@@ -12,6 +13,7 @@ import com.qkt.risk.FakePnL
 import com.qkt.risk.RiskState
 import com.qkt.risk.TestClock
 import com.qkt.risk.rules.MaxDailyDrawdown
+import com.qkt.risk.rules.MaxDailyLoss
 import com.qkt.risk.rules.MaxDrawdown
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -43,6 +45,7 @@ class PortfolioRiskAggregatorTest {
     private fun bookRiskState(
         pnl: FakePnL,
         clock: Clock,
+        persist: ((PersistedRiskState) -> Unit)? = null,
     ): RiskState =
         RiskState(
             pnl,
@@ -51,7 +54,68 @@ class PortfolioRiskAggregatorTest {
             EventBus(clock, MonotonicSequenceGenerator()),
             BigDecimal("100000"),
             DailyDrawdownBasis.BALANCE,
+            persist,
         )
+
+    @Test
+    fun `child fills feed the book daily-loss rule even before the aggregator binds`() {
+        val clock = TestClock(0L)
+        val state = bookRiskState(FakePnL(BigDecimal("-1100"), BigDecimal.ZERO), clock)
+        val child = FakeChild()
+        val aggregator =
+            PortfolioRiskAggregator(
+                listOf(child),
+                state,
+                listOf(MaxDailyLoss(BigDecimal("1000"))),
+                clock,
+            )
+        val fills = PortfolioRiskFillBuffer()
+        fills.record("alpha", BigDecimal("-600"))
+        fills.record("beta", BigDecimal("-500"))
+
+        fills.bind(aggregator)
+        aggregator.evaluate()
+
+        assertThat(state.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("-1100")
+        assertThat(child.flattened).isEqualTo(1)
+        assertThat(child.halted).contains("daily loss")
+    }
+
+    @Test
+    fun `persisted book halt is re-applied to children after restart`() {
+        val clock = TestClock(0L)
+        var persisted: PersistedRiskState? = null
+        val firstState =
+            bookRiskState(FakePnL(BigDecimal("-1100"), BigDecimal.ZERO), clock) { state -> persisted = state }
+        val firstChild = FakeChild()
+        val first =
+            PortfolioRiskAggregator(
+                listOf(firstChild),
+                firstState,
+                listOf(MaxDailyLoss(BigDecimal("1000"))),
+                clock,
+            )
+        first.recordRealized("alpha", BigDecimal("-1100"))
+        first.evaluate()
+
+        val restoredState = bookRiskState(FakePnL(BigDecimal("-1100"), BigDecimal.ZERO), clock)
+        restoredState.restore(requireNotNull(persisted))
+        val restoredChild = FakeChild()
+        val restored =
+            PortfolioRiskAggregator(
+                listOf(restoredChild),
+                restoredState,
+                listOf(MaxDailyLoss(BigDecimal("1000"))),
+                clock,
+            )
+
+        restored.evaluate()
+
+        assertThat(restoredState.halted).isTrue
+        assertThat(restoredState.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("-1100")
+        assertThat(restoredChild.flattened).isEqualTo(1)
+        assertThat(restoredChild.halted).contains("daily loss")
+    }
 
     @Test
     fun `flattens and halts every child on a static total breach, once`() {
