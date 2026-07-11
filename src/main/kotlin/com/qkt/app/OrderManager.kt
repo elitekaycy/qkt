@@ -72,6 +72,8 @@ class OrderManager(
      * map would grow unbounded over a 24/7 session. Wired by [TradingPipeline] to `mode == BACKTEST`.
      */
     private val trackRisk: Boolean = false,
+    /** Raises an operator alert when a filled position cannot retain venue-side protection. */
+    private val onProtectionFailure: (strategyId: String, message: String) -> Unit = { _, _ -> },
 ) {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -130,6 +132,7 @@ class OrderManager(
     private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
 
     private val siblings: MutableMap<String, List<String>> = mutableMapOf()
+    private val engineHeldCloseTickets: MutableMap<String, String> = mutableMapOf()
 
     /**
      * In-flight sequencing for a [OrderRequest.StandaloneOCO] whose legs are placed one
@@ -651,9 +654,18 @@ class OrderManager(
         fillPrice: BigDecimal,
         ticket: String?,
     ) {
-        val resolvedTicket = ticket?.takeIf { it.isNotBlank() } ?: return
         val state = stacks.get(stackId) ?: return
         val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return
+        val resolvedTicket =
+            ticket?.takeIf { it.isNotBlank() }
+                ?: closeTicketFor?.invoke(parent.strategyId, layerOrderId)
+        if (resolvedTicket == null) {
+            reportProtectionFailure(
+                parent.strategyId,
+                "filled stack layer $layerOrderId has no venue ticket; SL/TP cannot be attached",
+            )
+            return
+        }
         val slPrice =
             state.outerBracket?.stopLoss?.let {
                 computeChildPrice(it, parent.side, fillPrice, isStopLoss = true)
@@ -666,18 +678,39 @@ class OrderManager(
         if (slPrice == null && tpPrice == null) return
         val ack = broker.modifyPosition(resolvedTicket, sl = slPrice, tp = tpPrice)
         if (!ack.accepted) {
-            log.error(
-                "venue rejected attached SL/TP for ticket {}: {}",
-                resolvedTicket,
-                ack.rejectReason,
+            val fallbackStop =
+                attachLayerSl(
+                    stackId = stackId,
+                    layerOrderId = layerOrderId,
+                    fillPrice = fillPrice,
+                    engineHeldCloseTicket = resolvedTicket,
+                )
+            reportProtectionFailure(
+                parent.strategyId,
+                "venue rejected attached SL/TP for ticket $resolvedTicket: ${ack.rejectReason}; " +
+                    if (fallbackStop != null && slPrice != null) {
+                        "engine-held stop armed at ${slPrice.toPlainString()}"
+                    } else {
+                        "no stop-loss was configured for fallback"
+                    },
             )
         }
+    }
+
+    private fun reportProtectionFailure(
+        strategyId: String,
+        message: String,
+    ) {
+        log.error("stack protection failure: {}", message)
+        runCatching { onProtectionFailure(strategyId, message) }
+            .onFailure { log.error("stack protection alert failed for strategy {}", strategyId, it) }
     }
 
     private fun attachLayerSl(
         stackId: String,
         layerOrderId: String,
         fillPrice: BigDecimal,
+        engineHeldCloseTicket: String? = null,
     ): BigDecimal? {
         val state = stacks.get(stackId) ?: return null
         val slAst = state.outerBracket?.stopLoss ?: return null
@@ -713,7 +746,12 @@ class OrderManager(
         update(layerOrderId) {
             it.copy(childClientOrderIds = it.childClientOrderIds + slId, lastUpdatedAt = now)
         }
-        dispatch(slReq)
+        if (engineHeldCloseTicket != null) {
+            engineHeldCloseTickets[slId] = engineHeldCloseTicket
+            update(slId) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
+        } else {
+            dispatch(slReq)
+        }
         return (fillPrice - slPrice).abs()
     }
 
@@ -1471,6 +1509,7 @@ class OrderManager(
         siblings.remove(id)
         scaleOutLegs.remove(id)
         pendingChildren.remove(id)
+        engineHeldCloseTickets.remove(id)
     }
 
     /**
@@ -2075,6 +2114,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        closesTicket = engineHeldCloseTickets.remove(req.id),
                     )
                 is OrderRequest.StopLimit ->
                     OrderRequest.Limit(
