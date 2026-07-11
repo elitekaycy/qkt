@@ -76,6 +76,7 @@ class LiveSession(
     private val candleWindow: TimeWindow? = null,
     private val clock: Clock = SystemClock(),
     private val calendar: TradingCalendar = TradingCalendar.fxDefault(),
+    private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
     private val warmupOverride: WarmupSpec? = null,
     private val mdcStrategy: String? = null,
     private val candleHub: com.qkt.dsl.compile.CandleHub? = null,
@@ -720,13 +721,16 @@ class LiveSession(
         }
 
     fun start(): LiveSessionHandle {
-        // No quote-currency conversion exists: refuse symbols whose PnL would book at
-        // the wrong magnitude (e.g. USDJPY's JPY PnL recorded as USD, ~150x off).
-        com.qkt.instrument.QuoteCurrencyGuard
-            .assertAccountQuoted(symbols)
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
+        val accounting = com.qkt.accounting.AccountingEngine(accountingConfig, priceTracker)
+        com.qkt.instrument.QuoteCurrencyGuard
+            .assertAccountQuoted(
+                symbols,
+                accountCurrency = accounting.accountCurrency,
+                canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
+            )
         val positions = PositionTracker()
         val strategyPositions = StrategyPositionTracker(persistor)
         val bus = busOverride ?: EventBus(clock, sequencer)
@@ -749,7 +753,7 @@ class LiveSession(
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
-        val pnl = PnLCalculator(positions, priceTracker, instruments)
+        val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
         // #352: live account equity, polled off the engine thread (a network call) into this holder
         // and read cheaply by StrategyPnL.equityFor. Stays null for paper/backtest, so those keep
         // the deterministic derived `startingBalance + realized + unrealized`.
@@ -762,6 +766,8 @@ class LiveSession(
                 priceTracker,
                 instruments,
                 persistor,
+                accounting = accounting,
+                markTimestamp = clock::now,
                 brokerEquity = { brokerEquity.get() },
             )
         // Every deploy path needs a starting balance: portfolio deploys pass per-strategy
@@ -900,6 +906,7 @@ class LiveSession(
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
+                accounting = accounting,
             )
         // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
         // frozen data and drops implausible ticks before they poison indicators.
@@ -938,7 +945,7 @@ class LiveSession(
                     listOfNotNull(
                         bookRiskController?.let {
                             com.qkt.risk.rules
-                                .BookExposureLimit(it, priceTracker, instruments)
+                                .BookExposureLimit(it, priceTracker, instruments, accounting)
                         },
                     ) +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
@@ -1023,6 +1030,7 @@ class LiveSession(
                 source = source,
                 candleWindow = candleWindow,
                 candleHub = pipelineCandleHub,
+                accounting = accounting,
                 marketDataGate = marketDataGate,
                 runawayBreaker =
                     com.qkt.risk.RunawayBreaker(

@@ -100,11 +100,13 @@ class RunCommand(
                 ?.timeframe
                 ?.let { TimeWindow.parse(it) }
 
+        var accountingConfig = com.qkt.accounting.AccountingConfig()
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: run {
                 val configPath =
                     args.option("config")?.let { Path.of(it) } ?: Path.of("./qkt.config.yaml")
                 val cfg = Config.load(configPath)
+                accountingConfig = cfg.accountingConfig
                 val mt5Profiles =
                     try {
                         com.qkt.broker.mt5
@@ -139,6 +141,7 @@ class RunCommand(
                 source = marketSource,
                 symbols = symbols,
                 candleWindow = candleWindow,
+                accountingConfig = accountingConfig,
                 onTrade = { trade, realized, _ ->
                     val ts = Instant.ofEpochMilli(trade.timestamp)
                     println(
