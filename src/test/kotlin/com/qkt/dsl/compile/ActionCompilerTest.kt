@@ -107,6 +107,46 @@ class ActionCompilerTest {
     }
 
     @Test
+    fun `CLOSE of a primary leg targets its broker ticket`() {
+        val primary =
+            PositionLeg(
+                legId = "primary",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.25"),
+                entryPrice = BigDecimal("100"),
+                openedAt = 0L,
+                role = LegRole.PRIMARY,
+                brokerTicket = "333",
+            )
+        val view =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String): Position? =
+                    Position(symbol, BigDecimal("0.25"), BigDecimal("100"))
+
+                override fun allPositions(): Map<String, Position> = emptyMap()
+
+                override fun legsFor(symbol: String): List<PositionLeg> = listOf(primary)
+            }
+        val closeContext =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = view),
+            )
+
+        val signals = ActionCompiler(ExprCompiler()).compile(Close("btc")).invoke(closeContext)
+
+        val close = signals.filterIsInstance<Signal.Submit>().single().request as OrderRequest.Market
+        assertThat(close.side).isEqualTo(Side.SELL)
+        assertThat(close.quantity).isEqualByComparingTo("0.25")
+        assertThat(close.closesTicket).isEqualTo("333")
+        assertThat(close.closesLegId).isEqualTo("primary")
+        assertThat(close.partialClose).isFalse
+    }
+
+    @Test
     fun `RESIZE shrink marks only a nonzero target as a partial close`() {
         val primary =
             PositionLeg(
