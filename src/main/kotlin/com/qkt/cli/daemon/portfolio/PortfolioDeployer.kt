@@ -109,11 +109,19 @@ class PortfolioDeployer(
                 compiled.ast.streams
                     .map { it.qktSymbol }
                     .distinct()
+            val hasConditionalRules = compiled.ast.rules.any { it is WhenRun }
             val supervisor =
                 PortfolioSupervisor(
                     ast = compiled.ast,
                     children = childWrappers,
-                    marketSource = if (symbols.isEmpty()) null else marketSourceProvider(symbols),
+                    marketSource =
+                        if (!hasConditionalRules ||
+                            symbols.isEmpty()
+                        ) {
+                            null
+                        } else {
+                            marketSourceProvider(symbols)
+                        },
                     riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers, bookController),
                     riskIntervalMs = riskIntervalMs,
                 )
