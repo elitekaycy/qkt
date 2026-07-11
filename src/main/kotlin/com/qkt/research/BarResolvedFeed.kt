@@ -187,6 +187,8 @@ private class SymbolFeed(
         var maxPrice = opening.price
         var minPrice = opening.price
         var maxAsk = opening.buyExecPrice()
+        var minAsk = maxAsk
+        var maxBid = opening.sellExecPrice()
         var minBid = opening.sellExecPrice()
         var fedVolume = opening.volume ?: BigDecimal.ZERO
         val out = ArrayList<Tick>()
@@ -207,7 +209,15 @@ private class SymbolFeed(
                 maxAsk = a
                 keep = true
             }
+            if (a < minAsk) {
+                minAsk = a
+                keep = true
+            }
             val b = t.sellExecPrice()
+            if (b > maxBid) {
+                maxBid = b
+                keep = true
+            }
             if (b < minBid) {
                 minBid = b
                 keep = true
