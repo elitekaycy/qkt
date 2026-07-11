@@ -7,6 +7,7 @@ import com.qkt.marketdata.Candle
 import com.qkt.strategy.PerStreamWarmable
 import com.qkt.strategy.Signal
 import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -53,7 +54,8 @@ class CompiledStrategyAutoWarmupTest {
             )
         val pw = s as PerStreamWarmable
         assertThat(pw.perStreamWarmup).hasSize(1)
-        val spec = pw.perStreamWarmup["EXNESS:XAUUSD"] as WarmupSpec.Bars
+        val spec =
+            pw.perStreamWarmup[WarmupStream("EXNESS:XAUUSD", TimeWindow.ONE_MINUTE)] as WarmupSpec.Bars
         assertThat(spec.window).isEqualTo(TimeWindow.ONE_MINUTE)
         // Max of explicit (30) and indicator-derived (50) → 50.
         assertThat(spec.count).isEqualTo(50)
@@ -133,12 +135,71 @@ class CompiledStrategyAutoWarmupTest {
             )
         val pw = s as PerStreamWarmable
         assertThat(pw.perStreamWarmup).hasSize(2)
-        val aSpec = pw.perStreamWarmup["EXNESS:XAUUSD"] as WarmupSpec.Bars
-        val bSpec = pw.perStreamWarmup["BACKTEST:SPX500"] as WarmupSpec.Bars
+        val aSpec =
+            pw.perStreamWarmup[WarmupStream("EXNESS:XAUUSD", TimeWindow.ONE_MINUTE)] as WarmupSpec.Bars
+        val bSpec =
+            pw.perStreamWarmup[WarmupStream("BACKTEST:SPX500", TimeWindow.ONE_HOUR)] as WarmupSpec.Bars
         assertThat(aSpec.window).isEqualTo(TimeWindow.ONE_MINUTE)
         assertThat(aSpec.count).isEqualTo(30)
         assertThat(bSpec.window).isEqualTo(TimeWindow.ONE_HOUR)
         assertThat(bSpec.count).isEqualTo(24)
+    }
+
+    @Test
+    fun `same symbol at two timeframes keeps independent warmup specs and history`() {
+        val s =
+            compile(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  fast = EXNESS:XAUUSD EVERY 1m WARMUP 3 BARS,
+                  slow = EXNESS:XAUUSD EVERY 1h WARMUP 2 BARS
+                RULES
+                  WHEN fast.close > slow.close THEN FLATTEN
+                """.trimIndent(),
+            )
+        val warmup = (s as PerStreamWarmable).perStreamWarmup
+        val fastKey = s.declaredStreams.getValue("fast")
+        val slowKey = s.declaredStreams.getValue("slow")
+        val hub = CandleHub()
+        hub.register(fastKey, retention = 3, strategyId = "test")
+        hub.register(slowKey, retention = 2, strategyId = "test")
+        hub.seed(fastKey, (0..2).map { candle("EXNESS:XAUUSD", it * 60_000L) })
+        hub.seed(
+            slowKey,
+            (0..1).map { index ->
+                candle("EXNESS:XAUUSD", index * 3_600_000L).copy(endTime = (index + 1) * 3_600_000L)
+            },
+        )
+
+        s.bindToHub(hub, testStrategyContext()) { _: Signal -> }
+
+        assertThat(warmup).hasSize(2)
+        assertThat(warmup.keys.map { it.window })
+            .containsExactlyInAnyOrder(TimeWindow.ONE_MINUTE, TimeWindow.ONE_HOUR)
+        assertThat(hub.seededHistory(fastKey)).allMatch { it.endTime - it.startTime == 60_000L }
+        assertThat(hub.seededHistory(slowKey)).allMatch { it.endTime - it.startTime == 3_600_000L }
+    }
+
+    @Test
+    fun `aliases sharing one symbol and timeframe retain the largest requirement`() {
+        val s =
+            compile(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  short = EXNESS:XAUUSD EVERY 1m WARMUP 3 BARS,
+                  long = EXNESS:XAUUSD EVERY 1m WARMUP 20 BARS
+                RULES
+                  WHEN short.close > long.close THEN FLATTEN
+                """.trimIndent(),
+            )
+
+        val warmup = (s as PerStreamWarmable).perStreamWarmup
+
+        assertThat(warmup).hasSize(1)
+        val spec = warmup.values.single() as WarmupSpec.Bars
+        assertThat(spec.count).isEqualTo(20)
     }
 
     @Test
