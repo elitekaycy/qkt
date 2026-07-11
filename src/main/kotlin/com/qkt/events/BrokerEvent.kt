@@ -157,6 +157,15 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : BrokerEvent
 
+    /** The venue account-equity view is unavailable long enough to make its last value stale. */
+    data class AccountEquityStale(
+        val broker: String,
+        val consecutiveFailures: Int,
+        val staleForMs: Long?,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
+
     /**
      * Broker transport/gateway connection lifecycle. Used for real-time operator visibility;
      * order and position events remain the source of trade truth.

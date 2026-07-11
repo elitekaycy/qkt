@@ -195,6 +195,10 @@ class LiveSession(
     private val busOverride: EventBus? = null,
     /** Base backoff between reconcile read attempts; tests shrink it to keep retries fast. */
     private val reconcileReadBackoffMs: Long = 500L,
+    /** Account-equity poll cadence; injectable so retry behavior is testable without long sleeps. */
+    private val brokerEquityPollMs: Long = BROKER_EQUITY_POLL_MS,
+    /** Maximum age of the last successful venue-equity sample before a critical alert. */
+    private val brokerEquityStaleMs: Long = BROKER_EQUITY_STALE_MS,
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -204,6 +208,9 @@ class LiveSession(
 
         /** How often to poll the broker for live account equity, off the engine thread (#352). */
         const val BROKER_EQUITY_POLL_MS: Long = 5_000L
+
+        /** Three missed default polls make the broker equity unsafe for drawdown decisions. */
+        const val BROKER_EQUITY_STALE_MS: Long = BROKER_EQUITY_POLL_MS * 3
 
         /**
          * Bound on buffered ticks awaiting the engine thread. At a heavy 100 ticks/sec
@@ -619,6 +626,20 @@ class LiveSession(
                         ),
                     )
                 }.onFailure { t -> recordNotificationFailure(ownerForError, "GatewayUnreachable", t) }
+            }
+            bus.subscribe<BrokerEvent.AccountEquityStale> { ev ->
+                runCatching {
+                    val age = ev.staleForMs?.let { "last good sample is ${it}ms old" } ?: "no successful sample"
+                    notifier.notify(
+                        NotificationEvent.StrategyError(
+                            strategyId = ownerForError,
+                            message =
+                                "Broker equity '${ev.broker}' unavailable for ${ev.consecutiveFailures} " +
+                                    "consecutive polls ($age) — drawdown basis is stale",
+                            timestamp = ev.timestamp,
+                        ),
+                    )
+                }.onFailure { t -> recordNotificationFailure(ownerForError, "AccountEquityStale", t) }
             }
             bus.subscribe<BrokerEvent.PositionProtectionChanged> { ev ->
                 runCatching {
@@ -1454,19 +1475,36 @@ class LiveSession(
 
         // #352: poll real account equity off the engine thread so sizing + drawdown track the
         // broker's account (commissions, swaps, deposits), not just engine-derived PnL. Single-
-        // strategy only — account equity maps cleanly to one strategy. Skipped when the broker
-        // exposes no equity (paper, or a gateway without the endpoint), so paper/backtest keep the
-        // deterministic derived value. The poll is a network call; it must not run on the consumer.
+        // strategy only — account equity maps cleanly to one strategy. Capability is static: a
+        // transiently failed startup read must not disable polling for the entire session. Failed
+        // reads retain the last-known value and alert once stale. The network call stays off the consumer.
         val equityPoller: java.util.concurrent.ScheduledExecutorService? =
-            if (strategies.size == 1 && runCatching { broker.accountEquity() }.getOrNull() != null) {
+            if (strategies.size == 1 && broker.supportsAccountEquity) {
+                val monitor =
+                    BrokerEquityMonitor(
+                        broker = broker,
+                        clock = clock,
+                        equity = brokerEquity,
+                        staleAfterMs = brokerEquityStaleMs,
+                        onStale = { failures, staleForMs ->
+                            bus.publish(
+                                BrokerEvent.AccountEquityStale(
+                                    broker = broker.name,
+                                    consecutiveFailures = failures,
+                                    staleForMs = staleForMs,
+                                    timestamp = clock.now(),
+                                ),
+                            )
+                        },
+                    )
                 java.util.concurrent.Executors
                     .newSingleThreadScheduledExecutor { r ->
                         Thread(r, "qkt-broker-equity-poller").apply { isDaemon = true }
                     }.also { exec ->
                         exec.scheduleAtFixedRate(
-                            { brokerEquity.set(runCatching { broker.accountEquity() }.getOrNull()) },
+                            monitor::tick,
                             0L,
-                            BROKER_EQUITY_POLL_MS,
+                            brokerEquityPollMs,
                             java.util.concurrent.TimeUnit.MILLISECONDS,
                         )
                     }

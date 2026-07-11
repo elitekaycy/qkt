@@ -40,6 +40,11 @@ class CompositeBroker(
         brokerFor(symbol)?.positionAccountingMode(symbol) ?: PositionAccountingMode.UNKNOWN
 
     private val orderIdToBroker: MutableMap<String, Broker> = mutableMapOf()
+    private val accountEquityBroker: Broker? = allLeaves().distinct().filter { it.supportsAccountEquity }.singleOrNull()
+
+    override val supportsAccountEquity: Boolean get() = accountEquityBroker != null
+
+    override fun accountEquity(): java.math.BigDecimal? = accountEquityBroker?.accountEquity()
 
     /**
      * Venue ticket → owning leaf, captured from each fill's `brokerOrderId` (the same value the

@@ -247,6 +247,8 @@ class MT5Broker(
                 ?.let(::recordAccountingMode)
             ?: PositionAccountingMode.UNKNOWN
 
+    override val supportsAccountEquity: Boolean = true
+
     override fun accountEquity(): java.math.BigDecimal? =
         runCatching { client.getAccount() }
             .getOrNull()
