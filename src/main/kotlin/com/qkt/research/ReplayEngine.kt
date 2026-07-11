@@ -273,6 +273,7 @@ class ReplayEngine(
                 strategyPnL = strategyPnL,
                 strategyIds = strategies.map { it.first },
                 startingBalance = startingBalance,
+                candleSymbols = symbols.toSet(),
             )
 
         autocorr = ReturnAutocorrCollector(bus)

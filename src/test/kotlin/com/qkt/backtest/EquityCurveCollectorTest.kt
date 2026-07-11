@@ -22,9 +22,10 @@ class EquityCurveCollectorTest {
     private fun candle(
         close: String,
         endMs: Long,
+        symbol: String = "X",
     ): Candle =
         Candle(
-            symbol = "X",
+            symbol = symbol,
             open = Money.of(close),
             high = Money.of(close),
             low = Money.of(close),
@@ -82,6 +83,28 @@ class EquityCurveCollectorTest {
 
         assertThat(collector.forStrategy("s1")).hasSize(2)
         assertThat(collector.forStrategy("s1")[0].equity).isEqualByComparingTo(Money.ZERO)
+    }
+
+    @Test
+    fun `CANDLE_CLOSE samples once after all symbols close the same boundary`() {
+        val rig = newRig()
+        val collector =
+            EquityCurveCollector(
+                cadence = SampleCadence.CANDLE_CLOSE,
+                bus = rig.bus,
+                pnl = rig.pnl,
+                strategyPnL = rig.strategyPnL,
+                strategyIds = listOf("s1"),
+                candleSymbols = setOf("X", "Y"),
+            )
+
+        rig.bus.publish(CandleEvent(candle("100", 60_000L, symbol = "X")))
+        assertThat(collector.global()).isEmpty()
+        rig.bus.publish(CandleEvent(candle("200", 60_000L, symbol = "Y")))
+
+        assertThat(collector.global()).hasSize(1)
+        assertThat(collector.globalMetrics().count).isEqualTo(1)
+        assertThat(collector.global().single().timestamp).isEqualTo(60_000L)
     }
 
     @Test
