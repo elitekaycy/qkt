@@ -272,6 +272,7 @@ data class Config(
                 Load(LoadSettings.builder().build())
                     .loadFromString(expanded) as? Map<String, Any?>
                     ?: return defaults()
+            validateRiskKeys(map["risk"])
             return Config(
                 source = (map["source"] as? String) ?: "tv",
                 dataRoot = (map["data_root"] as? String) ?: "./data",
@@ -311,10 +312,69 @@ data class Config(
             )
 
         @Suppress("UNCHECKED_CAST")
+        private fun validateRiskKeys(raw: Any?) {
+            val risk = raw as? Map<String, Any?> ?: return
+            rejectUnknownKeys("risk", risk.keys, RISK_KEYS)
+            val perStrategy = risk["per_strategy"] as? Map<String, Any?> ?: return
+            for ((strategy, value) in perStrategy) {
+                val overrides =
+                    value as? Map<String, Any?>
+                        ?: error("risk.per_strategy.$strategy must be a key-value block")
+                rejectUnknownKeys(
+                    "risk.per_strategy.$strategy",
+                    overrides.keys,
+                    PER_STRATEGY_RISK_KEYS,
+                )
+            }
+        }
+
+        private fun rejectUnknownKeys(
+            path: String,
+            actual: Set<String>,
+            allowed: Set<String>,
+        ) {
+            val unknown = actual - allowed
+            require(unknown.isEmpty()) {
+                "unknown $path key(s): ${unknown.sorted().joinToString(", ")}"
+            }
+        }
+
+        @Suppress("UNCHECKED_CAST")
         private fun parseFlat(raw: Any?): Map<String, String> {
             val m = raw as? Map<String, Any?> ?: return emptyMap()
             return m.mapValues { (_, v) -> v?.toString() ?: "" }
         }
+
+        private val RISK_KEYS =
+            setOf(
+                "max_daily_loss",
+                "max_order_qty",
+                "max_order_notional",
+                "price_collar_pct",
+                "margin_floor_pct",
+                "measured_usage_hours",
+                "measured_usage_max_qty",
+                "max_drawdown_pct",
+                "max_daily_drawdown_pct",
+                "total_dd_basis",
+                "daily_dd_basis",
+                "per_strategy",
+            )
+
+        private val PER_STRATEGY_RISK_KEYS =
+            setOf(
+                "max_daily_loss",
+                "max_position_size",
+                "max_open_positions",
+                "max_drawdown_pct",
+                "max_daily_drawdown_pct",
+                "max_trades_per_day",
+                "cooldown_after_loss",
+                "cooldown_after_loss_ms",
+                "cooldown_after_loss_after_consecutive",
+                "loss_streak_halt",
+                "loss_streak_halt_scope",
+            )
 
         @Suppress("UNCHECKED_CAST")
         private fun parseRuntimeWaivers(raw: Any?): Map<String, String> {

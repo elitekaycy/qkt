@@ -118,6 +118,25 @@ class ConfigPerStrategyRiskTest {
     }
 
     @Test
+    fun `per_strategy rejects an unknown override key`(
+        @TempDir tmp: Path,
+    ) {
+        val config =
+            writeConfig(
+                tmp,
+                """
+                risk:
+                  per_strategy:
+                    alpha:
+                      max_daily_los: 100
+                """,
+            )
+
+        assertThatThrownBy { Config.load(config) }
+            .hasMessageContaining("unknown risk.per_strategy.alpha key(s): max_daily_los")
+    }
+
+    @Test
     fun `PerStrategyRisk rejects non-positive caps`() {
         assertThatThrownBy { PerStrategyRisk(maxDailyLoss = BigDecimal.ZERO) }
             .hasMessageContaining("maxDailyLoss")
