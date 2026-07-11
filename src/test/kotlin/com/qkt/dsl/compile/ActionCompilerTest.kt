@@ -194,6 +194,44 @@ class ActionCompilerTest {
     }
 
     @Test
+    fun `RESIZE creates a fresh order id for each emitted placement`() {
+        val primary =
+            PositionLeg(
+                legId = "primary",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                entryPrice = BigDecimal.ONE,
+                openedAt = 0L,
+                role = LegRole.PRIMARY,
+                brokerTicket = "ticket-1",
+            )
+        val view =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String): Position? = null
+
+                override fun allPositions(): Map<String, Position> = emptyMap()
+
+                override fun legsFor(symbol: String): List<PositionLeg> = listOf(primary)
+            }
+        val resizeContext =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext = testStrategyContext(positions = view),
+            )
+        val compiled =
+            ActionCompiler(ExprCompiler())
+                .compile(Resize("btc", SizeQty(NumLit(BigDecimal("0.04")))))
+
+        val first = (compiled(resizeContext).single() as Signal.Submit).request
+        val second = (compiled(resizeContext).single() as Signal.Submit).request
+
+        assertThat(second.id).isNotEqualTo(first.id)
+    }
+
+    @Test
     fun `Buy without sizing is rejected`() {
         assertThatThrownBy {
             ActionCompiler(ExprCompiler()).compile(Buy(stream = "btc", opts = ActionOpts()))
