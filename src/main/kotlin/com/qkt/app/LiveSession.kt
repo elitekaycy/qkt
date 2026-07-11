@@ -1557,6 +1557,17 @@ class LiveSession(
                 riskState.halt(reason)
             }
 
+            override fun halt(
+                reason: String,
+                scope: com.qkt.risk.HaltScope,
+            ) {
+                riskState.halt(reason, scope)
+            }
+
+            override fun haltReason(): String? = riskState.haltReason
+
+            override fun haltScope(): com.qkt.risk.HaltScope? = riskState.globalHaltScope()
+
             override fun resume() {
                 riskState.resume()
             }

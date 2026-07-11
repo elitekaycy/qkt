@@ -124,6 +124,21 @@ class RiskStateTest {
     }
 
     @Test
+    fun `persistent halt escalates an existing daily halt`() {
+        val clock = FixedClock(0L)
+        val (state, _) = newRiskState(clock)
+        state.halt("daily loss", HaltScope.DAILY)
+
+        state.halt("engine fault", HaltScope.PERSISTENT)
+        clock.time = DAY_MS
+        state.clearExpiredDailyHalts()
+
+        assertThat(state.halted).isTrue
+        assertThat(state.haltReason).isEqualTo("engine fault")
+        assertThat(state.globalHaltScope()).isEqualTo(HaltScope.PERSISTENT)
+    }
+
+    @Test
     fun `clearExpiredDailyHalts auto-resumes daily strategy halts but not persistent ones`() {
         val clock = FixedClock(0L)
         val (state, _) = newRiskState(clock)

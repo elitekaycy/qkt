@@ -10,6 +10,7 @@ import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.FakePnL
+import com.qkt.risk.HaltScope
 import com.qkt.risk.RiskState
 import com.qkt.risk.TestClock
 import com.qkt.risk.rules.MaxDailyDrawdown
@@ -27,19 +28,34 @@ class PortfolioRiskAggregatorTest {
     private class FakeChild : ChildRiskTarget {
         var flattened = 0
         var halted: String? = null
+        var scope: HaltScope? = null
         var resumed = 0
 
         override fun flatten() {
             flattened++
         }
 
-        override fun halt(reason: String) {
-            halted = reason
+        override fun halt(
+            reason: String,
+            scope: HaltScope,
+        ) {
+            if (halted == null || (this.scope == HaltScope.DAILY && scope == HaltScope.PERSISTENT)) {
+                halted = reason
+                this.scope = scope
+            }
         }
 
         override fun resume() {
             resumed++
+            halted = null
+            scope = null
         }
+
+        override fun isHalted(): Boolean = halted != null
+
+        override fun haltReason(): String? = halted
+
+        override fun haltScope(): HaltScope? = scope
     }
 
     private fun bookRiskState(
@@ -172,6 +188,7 @@ class PortfolioRiskAggregatorTest {
         agg.evaluate() // breach: flatten + halt, latched DAILY
         assertThat(a.flattened).isEqualTo(1)
         assertThat(a.halted).isNotNull()
+        assertThat(a.scope).isEqualTo(HaltScope.DAILY)
         assertThat(a.resumed).isEqualTo(0)
 
         clock.t = DAY_MS // roll into the next UTC day; tracker re-captures ref at 95000 → DD 0
@@ -179,6 +196,33 @@ class PortfolioRiskAggregatorTest {
 
         assertThat(a.resumed).isEqualTo(1)
         assertThat(a.flattened).isEqualTo(1) // not re-tripped — DD reset on the new day
+    }
+
+    @Test
+    fun `daily expiry does not resume a child with an unrelated persistent halt`() {
+        val clock = TestClock(0L)
+        val pnl = FakePnL(BigDecimal.ZERO, BigDecimal.ZERO)
+        val state = bookRiskState(pnl, clock)
+        val bookOwned = FakeChild()
+        val engineFaulted = FakeChild().also { it.halt("engine fault", HaltScope.PERSISTENT) }
+        val aggregator =
+            PortfolioRiskAggregator(
+                listOf(bookOwned, engineFaulted),
+                state,
+                listOf(MaxDailyDrawdown(BigDecimal("0.04"))),
+                clock,
+            )
+
+        aggregator.evaluate()
+        pnl.realized = BigDecimal("-5000")
+        aggregator.evaluate()
+        clock.t = DAY_MS
+        aggregator.evaluate()
+
+        assertThat(bookOwned.resumed).isEqualTo(1)
+        assertThat(engineFaulted.resumed).isZero()
+        assertThat(engineFaulted.halted).isEqualTo("engine fault")
+        assertThat(engineFaulted.scope).isEqualTo(HaltScope.PERSISTENT)
     }
 
     @Test
