@@ -139,11 +139,22 @@ data class PositionDelta(
     val brokerQty: java.math.BigDecimal,
 )
 
-/** Result of an engine-vs-broker reconcile pass. Clean when [deltas] is empty. */
+/** One venue ticket whose attached protection differs from qkt's last requested levels. */
+data class PositionProtectionDelta(
+    val ticket: String,
+    val symbol: String,
+    val requestedStopLoss: java.math.BigDecimal?,
+    val brokerStopLoss: java.math.BigDecimal?,
+    val requestedTakeProfit: java.math.BigDecimal?,
+    val brokerTakeProfit: java.math.BigDecimal?,
+)
+
+/** Result of an engine-vs-broker reconcile pass. */
 data class ReconcileReport(
     val deltas: List<PositionDelta>,
     val engineEquity: java.math.BigDecimal,
     val brokerEquity: java.math.BigDecimal?,
+    val protectionDeltas: List<PositionProtectionDelta> = emptyList(),
 ) {
-    val clean: Boolean get() = deltas.isEmpty()
+    val clean: Boolean get() = deltas.isEmpty() && protectionDeltas.isEmpty()
 }

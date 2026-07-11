@@ -187,4 +187,18 @@ sealed interface BrokerEvent : Event {
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : BrokerEvent
+
+    /** Venue-side SL/TP protection changed while the position ticket remained open. */
+    data class PositionProtectionChanged(
+        val broker: String,
+        val symbol: String,
+        val ticket: String,
+        val oldStopLoss: BigDecimal,
+        val newStopLoss: BigDecimal,
+        val oldTakeProfit: BigDecimal,
+        val newTakeProfit: BigDecimal,
+        val strategyId: String = "",
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
 }
