@@ -1220,21 +1220,21 @@ class LiveSession(
                 ),
             )
             if (feed is MarketDataLifecycleFeed) {
-                feed.onDisconnect {
+                feed.onDisconnect { scope ->
                     insightsSink.offer(
                         com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
-                            source = source.name,
-                            symbols = symbols,
+                            source = scope.source ?: source.name,
+                            symbols = scope.symbols ?: symbols,
                             ts = clock.now(),
                             reason = "source-disconnected",
                         ),
                     )
                 }
-                feed.onReconnect {
+                feed.onReconnect { scope ->
                     insightsSink.offer(
                         com.qkt.observe.insights.InsightsTranslate.marketDataReconnected(
-                            source = source.name,
-                            symbols = symbols,
+                            source = scope.source ?: source.name,
+                            symbols = scope.symbols ?: symbols,
                             ts = clock.now(),
                         ),
                     )
@@ -1429,7 +1429,11 @@ class LiveSession(
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
                 } finally {
-                    val unexpected = running.get() && feed is LiveTickFeed
+                    val lifecycleFeed = feed as? MarketDataLifecycleFeed
+                    val unexpected = running.get() && lifecycleFeed?.expectsContinuousDelivery == true
+                    val failureReason =
+                        lifecycleFeed?.terminalFailureReason()
+                            ?: "live market-data feed exceeded its reconnect budget"
                     runCatching { feed.close() }
                     if (insightsSink != null &&
                         com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
@@ -1447,7 +1451,7 @@ class LiveSession(
                     control.offer(
                         Inbound.FeedEnded(
                             unexpected = unexpected,
-                            reason = "live market-data feed exceeded its reconnect budget",
+                            reason = failureReason,
                         ),
                     )
                 }
