@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+subject="$repo_root/scripts/prepare-main-promotion.sh"
+workflow="$repo_root/.github/workflows/promote-to-main.yml"
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+fake_gh="$tmp_dir/gh"
+log_file="$tmp_dir/calls.log"
+
+cat > "$fake_gh" <<'FAKE_GH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+
+case "$*" in
+    "api repos/test/repo/branches/testing --jq .commit.sha")
+        printf '%s\n' "testing-sha"
+        ;;
+    "run list --repo test/repo --workflow integration.yml --branch testing --limit 1 --json conclusion,headSha,url --jq .[0] | [.conclusion, .headSha, .url] | join(\"|\")")
+        printf '%s|%s|%s\n' "${FAKE_INTEGRATION_CONCLUSION:-success}" "${FAKE_INTEGRATION_SHA:-testing-sha}" "https://example.test/integration"
+        ;;
+    "api repos/test/repo/compare/main...testing --jq .ahead_by")
+        printf '%s\n' "${FAKE_AHEAD_BY:-1}"
+        ;;
+    "pr list --repo test/repo --base main --head testing --state open --limit 1 --json url --jq .[0].url // empty")
+        printf '%s\n' "${FAKE_PR_URL:-}"
+        ;;
+    "run list --repo test/repo --workflow windows-ci.yml --branch testing --limit 1 --json conclusion,headSha,status,url --jq .[0] | [.conclusion, .headSha, .status, .url] | join(\"|\")")
+        if [ -n "${FAKE_WINDOWS_SHA:-}" ]; then
+            printf '%s|%s|%s|%s\n' \
+                "${FAKE_WINDOWS_CONCLUSION:-}" \
+                "$FAKE_WINDOWS_SHA" \
+                "${FAKE_WINDOWS_STATUS:-completed}" \
+                "https://example.test/windows"
+        fi
+        ;;
+    pr\ create*)
+        printf '%s\n' "https://example.test/pull/1"
+        ;;
+    "workflow run windows-ci.yml --repo test/repo --ref testing")
+        ;;
+    *)
+        printf 'unexpected gh call: %s\n' "$*" >&2
+        exit 2
+        ;;
+esac
+FAKE_GH
+chmod +x "$fake_gh"
+
+run_subject() {
+    env \
+        GITHUB_REPOSITORY=test/repo \
+        GH_BIN="$fake_gh" \
+        FAKE_GH_LOG="$log_file" \
+        "$@" \
+        bash "$subject"
+}
+
+output="$(run_subject)"
+grep -q 'promotion PR: https://example.test/pull/1' <<< "$output"
+grep -q '^pr create ' "$log_file"
+grep -q '^workflow run windows-ci.yml ' "$log_file"
+
+: > "$log_file"
+output="$(run_subject FAKE_PR_URL=https://example.test/pull/7)"
+grep -q 'promotion PR: https://example.test/pull/7' <<< "$output"
+if grep -q '^pr create ' "$log_file"; then
+    echo "existing PR must be reused" >&2
+    exit 1
+fi
+
+: > "$log_file"
+output="$(run_subject \
+    FAKE_PR_URL=https://example.test/pull/7 \
+    FAKE_WINDOWS_SHA=testing-sha \
+    FAKE_WINDOWS_CONCLUSION=success)"
+grep -q 'Windows validation already current' <<< "$output"
+if grep -q '^workflow run windows-ci.yml ' "$log_file"; then
+    echo "current Windows validation must not be duplicated" >&2
+    exit 1
+fi
+
+: > "$log_file"
+output="$(run_subject FAKE_AHEAD_BY=0)"
+grep -q 'no promotion PR required' <<< "$output"
+if grep -q '^pr list ' "$log_file"; then
+    echo "identical branches must not query or create a PR" >&2
+    exit 1
+fi
+
+: > "$log_file"
+if run_subject FAKE_INTEGRATION_SHA=stale-sha > "$tmp_dir/stale.out" 2>&1; then
+    echo "stale integration must fail closed" >&2
+    exit 1
+fi
+grep -q 'not current testing' "$tmp_dir/stale.out"
+
+: > "$log_file"
+if run_subject FAKE_INTEGRATION_CONCLUSION=failure > "$tmp_dir/failed.out" 2>&1; then
+    echo "failed integration must fail closed" >&2
+    exit 1
+fi
+grep -q "is 'failure', not 'success'" "$tmp_dir/failed.out"
+
+if ! grep -q '^          ref: testing$' "$workflow"; then
+    echo "promotion workflow must checkout the integration-tested testing ref" >&2
+    exit 1
+fi
+
+echo "prepare-main-promotion tests passed"
