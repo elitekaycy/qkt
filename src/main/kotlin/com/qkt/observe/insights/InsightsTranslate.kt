@@ -364,6 +364,14 @@ object InsightsTranslate {
         reason: String = "source-reconnected",
     ): InsightsEnvelope = marketDataLifecycle("reconnected", "marketdata.reconnected", source, symbols, ts, reason)
 
+    /** Per-symbol quote-health transition detected while the source itself remains connected. */
+    fun marketDataStale(
+        source: String,
+        symbol: String,
+        ts: Long,
+        reason: String,
+    ): InsightsEnvelope = marketDataLifecycle("stale", "marketdata.stale", source, listOf(symbol), ts, reason)
+
     /**
      * Live venue account snapshot ("state.account"). Last-value semantics: the collector
      * keeps only the newest per (instance, broker), so the id just needs to be unique

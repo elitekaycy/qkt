@@ -185,6 +185,11 @@ class InsightsTranslateTest {
         val md = InsightsTranslate.marketDataReconnected("tradingview", listOf("XAUUSD"), 1718000000300L)
         assertThat(md.type).isEqualTo("marketdata.reconnected")
         assertThat(md.payload["symbols"]).isEqualTo(listOf("XAUUSD"))
+
+        val stale = InsightsTranslate.marketDataStale("mt5", "EXNESS:XAUUSD", 1718000000400L, "quote age")
+        assertThat(stale.type).isEqualTo("marketdata.stale")
+        assertThat(stale.payload).containsEntry("state", "stale")
+        assertThat(stale.payload["symbols"]).isEqualTo(listOf("EXNESS:XAUUSD"))
     }
 
     @Test
