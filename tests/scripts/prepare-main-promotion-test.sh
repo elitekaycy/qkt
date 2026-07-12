@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 subject="$repo_root/scripts/prepare-main-promotion.sh"
+workflow="$repo_root/.github/workflows/promote-to-main.yml"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -104,5 +105,10 @@ if run_subject FAKE_INTEGRATION_CONCLUSION=failure > "$tmp_dir/failed.out" 2>&1;
     exit 1
 fi
 grep -q "is 'failure', not 'success'" "$tmp_dir/failed.out"
+
+if ! grep -q '^          ref: testing$' "$workflow"; then
+    echo "promotion workflow must checkout the integration-tested testing ref" >&2
+    exit 1
+fi
 
 echo "prepare-main-promotion tests passed"
