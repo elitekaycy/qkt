@@ -16,7 +16,8 @@ import org.slf4j.LoggerFactory
  * `<rootDir>/<strategyId>/{legbook.json,bracket-pairs.json,pending-orders.json,pending-stacks.json}`.
  *
  * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
- * an entry-only risk halt. Load failures return null and log.
+ * an entry-only risk halt. Most load failures return null and log; risk-state load failures are
+ * surfaced so a live session cannot silently discard a halt or reset its daily-loss budget.
  */
 class FileStatePersistor(
     rootDir: Path,
@@ -244,13 +245,10 @@ class FileStatePersistor(
 
     override fun loadRiskState(strategyId: String): PersistedRiskState? {
         val raw = writer.read(strategyId, RISK_STATE_FILE) ?: return null
-        val dto =
-            try {
-                json.decodeFromString(RiskStateDto.serializer(), raw)
-            } catch (e: SerializationException) {
-                log.warn("loadRiskState parse failed for $strategyId: ${e.message}")
-                return null
-            }
+        val dto = json.decodeFromString(RiskStateDto.serializer(), raw)
+        require(dto.version == SCHEMA_VERSION) {
+            "loadRiskState schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
+        }
         return PersistedRiskState(
             epochDay = dto.epochDay,
             realizedToday = dto.realizedToday.toBigDecimal(),
