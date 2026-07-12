@@ -27,12 +27,17 @@ class MaxPositionSize(
     ): Decision {
         if (request.symbol != symbol) return Decision.Approve
         val current = positions.positionFor(symbol)?.quantity ?: Money.ZERO
+        val pending = positions.pendingOrderQuantity(symbol, request.side)
         val projected =
-            if (request.side == Side.BUY) current.add(request.quantity) else current.subtract(request.quantity)
+            if (request.side == Side.BUY) {
+                current.add(pending).add(request.quantity)
+            } else {
+                current.subtract(pending).subtract(request.quantity)
+            }
         return if (projected.abs().compareTo(maxQty) <= 0) {
             Decision.Approve
         } else {
-            Decision.Reject("MaxPositionSize: |$projected| > $maxQty for $symbol")
+            Decision.Reject("MaxPositionSize: |$projected| > $maxQty for $symbol (pending=$pending)")
         }
     }
 }

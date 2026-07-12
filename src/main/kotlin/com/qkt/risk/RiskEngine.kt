@@ -1,6 +1,7 @@
 package com.qkt.risk
 
 import com.qkt.execution.OrderRequest
+import com.qkt.positions.PendingOrderExposureProvider
 import com.qkt.positions.PositionProvider
 import org.slf4j.LoggerFactory
 
@@ -26,12 +27,31 @@ class RiskEngine(
     private val riskState: RiskState,
 ) {
     private val log = LoggerFactory.getLogger(RiskEngine::class.java)
+    private var pendingExposure: PendingOrderExposureProvider = PendingOrderExposureProvider.NONE
+    private val positionsWithPendingExposure =
+        object : PositionProvider {
+            override fun positionFor(symbol: String) = positions.positionFor(symbol)
+
+            override fun allPositions() = positions.allPositions()
+
+            override fun symbols() = positions.symbols()
+
+            override fun pendingOrderQuantity(
+                symbol: String,
+                side: com.qkt.common.Side,
+                strategyId: String?,
+            ) = pendingExposure.quantityFor(symbol, side, strategyId)
+        }
 
     /** Convenience constructor for tests / single-strategy setups with no halt rules. */
     constructor(
         rules: List<RiskRule>,
         positions: PositionProvider,
     ) : this(rules, emptyList(), positions, RiskState.noOp())
+
+    internal fun bindPendingExposure(provider: PendingOrderExposureProvider) {
+        pendingExposure = provider
+    }
 
     /** Run the rules over [request] and return whether the venue should see it. */
     fun approve(request: OrderRequest): Decision {
@@ -47,7 +67,7 @@ class RiskEngine(
             log.info("halted but allowing risk-reducing order {} for {}", request.id, request.symbol)
         }
         for (rule in rules) {
-            val decision = rule.evaluate(request, positions)
+            val decision = rule.evaluate(request, positionsWithPendingExposure)
             if (decision is Decision.Reject) return decision
         }
         return Decision.Approve
