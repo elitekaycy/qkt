@@ -128,6 +128,7 @@ class ReplayEngine(
     private val positions = PositionTracker()
     private val accounting: AccountingEngine
     private val pnl: PnLCalculator
+    private val strategyPositions: StrategyPositionTracker
     private val strategyPnL: StrategyPnL
     private val collector: EquityCurveCollector
     private val autocorr: ReturnAutocorrCollector
@@ -149,7 +150,7 @@ class ReplayEngine(
         val sequencer = MonotonicSequenceGenerator()
         accounting = AccountingEngine(accountingConfig, priceTracker)
         pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = { currentTimestamp })
-        val strategyPositions = StrategyPositionTracker()
+        strategyPositions = StrategyPositionTracker()
         strategyPnL =
             StrategyPnL(
                 strategyPositions,
@@ -516,6 +517,7 @@ class ReplayEngine(
             bookAnalytics = bookReturns.result(),
             bookRisk = bookRiskMonitor.result(annualizationFactor),
             accounting = accounting.snapshot(),
+            finalPositionsByStrategy = strategyPositions.allByStrategy(),
         )
     }
 
