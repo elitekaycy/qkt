@@ -12,6 +12,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
 import com.qkt.common.SequentialIdGenerator
+import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
@@ -894,7 +895,8 @@ class MT5Broker(
      *
      *   - Found as a pending → the venue owns it: register tickets, publish Accepted.
      *   - Found as a position → it filled: register meta, publish Accepted + Filled.
-     *   - Clean read, no match → it never landed: publish Rejected (retry is now safe).
+     *   - Repeated clean order/position/deal reads with no match → publish Rejected.
+     *   - Found only in deal history → replay its fill and any completed close legs.
      *   - Reads keep failing → leave the order UNRESOLVED (no event): a false "rejected"
      *     invites a duplicate submission, which is the worse failure. Alert the operator.
      */
@@ -913,6 +915,7 @@ class MT5Broker(
             request.id,
             cause,
         )
+        var cleanAbsenceReads = 0
         for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
             Thread.sleep(unknownResolveBackoffMs * attempt)
             val pendings = client.getPendingOrders(magic = profile.magic) ?: continue
@@ -1020,10 +1023,58 @@ class MT5Broker(
                     return
                 }
                 null -> {
-                    reject(request, "unknown-state send resolved as not placed ($cause)")
-                    return
+                    val deals =
+                        client.getDeals(
+                            fromUtcMs = placementStartedAtMs - UNKNOWN_CORRELATION_WINDOW_MS,
+                            toUtcMs = maxOf(clock.now(), placementStartedAtMs) + UNKNOWN_CORRELATION_WINDOW_MS,
+                        ) ?: continue
+                    val dealCandidates =
+                        deals.filter {
+                            it.entry == 0 &&
+                                it.magic == profile.magic &&
+                                it.symbol == brokerSymbol &&
+                                !positionMetaByTicket.containsKey(it.positionTicket) &&
+                                (
+                                    it.clientOrderId == placement.clientOrderId ||
+                                        matchesComment(it.comment, wireComment)
+                                )
+                        }
+                    val exactDealGroups =
+                        dealCandidates
+                            .filter { it.clientOrderId == placement.clientOrderId }
+                            .groupBy(::dealPositionKey)
+                    val fallbackDealGroups =
+                        if (exactDealGroups.isEmpty()) {
+                            dealCandidates
+                                .groupBy(::dealPositionKey)
+                                .filterValues { matchesUnknownDeals(it, placement, placementStartedAtMs) }
+                        } else {
+                            emptyMap()
+                        }
+                    val dealGroups = if (exactDealGroups.isNotEmpty()) exactDealGroups else fallbackDealGroups
+                    if (dealGroups.size > 1 || (dealGroups.isEmpty() && dealCandidates.isNotEmpty())) {
+                        log.error(
+                            "MT5Broker {} order {} deal-history outcome remains ambiguous on attempt {}/{}: {}",
+                            profile.name,
+                            request.id,
+                            attempt,
+                            UNKNOWN_RESOLVE_ATTEMPTS,
+                            dealCandidates.map { it.ticket },
+                        )
+                        continue
+                    }
+                    val openingDeals = dealGroups.values.singleOrNull()
+                    if (openingDeals != null) {
+                        if (resolveUnknownDeals(request, protection, openingDeals, deals, positions)) return
+                        continue
+                    }
+                    cleanAbsenceReads++
                 }
             }
+        }
+        if (cleanAbsenceReads == UNKNOWN_RESOLVE_ATTEMPTS) {
+            reject(request, "unknown-state send resolved as not placed after verified retry window ($cause)")
+            return
         }
         log.error(
             "MT5Broker {} order {} send outcome UNRESOLVED after {} venue queries — " +
@@ -1033,6 +1084,110 @@ class MT5Broker(
             UNKNOWN_RESOLVE_ATTEMPTS,
         )
         publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
+    }
+
+    private fun dealPositionKey(deal: MT5Deal): Long =
+        deal.positionTicket.takeIf { it > 0L }
+            ?: deal.orderTicket.takeIf { it > 0L }
+            ?: deal.ticket
+
+    private fun matchesUnknownDeals(
+        deals: List<MT5Deal>,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
+    ): Boolean {
+        val expectedType = if (placement.type.startsWith("BUY")) 0 else 1
+        val totalVolume = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
+        return deals.all { it.type == expectedType } &&
+            totalVolume.compareTo(placement.volume) == 0 &&
+            deals.any { isNearPlacement(it.timeMs, placementStartedAtMs) }
+    }
+
+    /** Replay a deal-proven ambiguous placement, including its close legs when already flat. */
+    private fun resolveUnknownDeals(
+        request: OrderRequest,
+        protection: PositionProtection?,
+        openingDeals: List<MT5Deal>,
+        allDeals: List<MT5Deal>,
+        positions: List<MT5Position>,
+    ): Boolean {
+        val positionTicket = dealPositionKey(openingDeals.first())
+        if (positionTicket <= 0L) return false
+        val quantity = openingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
+        if (quantity.signum() <= 0) return false
+        val price = weightedDealPrice(openingDeals) ?: return false
+        val positionOpen = positions.any { it.ticket == positionTicket }
+        val positionDeals = allDeals.filter { dealPositionKey(it) == positionTicket }
+        val closingDeals = positionDeals.filter { it.entry != 0 }.sortedBy { it.timeMs }
+        if (!positionOpen) {
+            val closedQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
+            if (closedQuantity.compareTo(quantity) < 0) return false
+        }
+        if (positionOpen) {
+            positionMetaByTicket[positionTicket] = PendingMeta(request.id, request.strategyId, protection)
+            positionSymbolByTicket[positionTicket] = request.symbol
+            positionOpenedAtByTicket[positionTicket] = openingDeals.minOf { it.timeMs }
+        }
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = request.id,
+                brokerOrderId = positionTicket.toString(),
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = request.id,
+                brokerOrderId = positionTicket.toString(),
+                symbol = request.symbol,
+                side = request.side,
+                price = price,
+                quantity = quantity,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        if (!positionOpen) {
+            val venueCosts =
+                venueCostLedger.book(
+                    positionTicket,
+                    positionDeals,
+                    positionClosed = true,
+                    nowMs = clock.now(),
+                )
+            closingDeals.forEachIndexed { index, deal ->
+                bus.publish(
+                    BrokerEvent.OrderFilled(
+                        clientOrderId = request.id,
+                        brokerOrderId = positionTicket.toString(),
+                        symbol = request.symbol,
+                        side = if (deal.type == 0) Side.BUY else Side.SELL,
+                        price = deal.price,
+                        quantity = deal.volume,
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                        updatesOrderExecution = false,
+                        venueCosts = if (index == closingDeals.lastIndex) venueCosts else BigDecimal.ZERO,
+                    ),
+                )
+            }
+        }
+        log.info(
+            "MT5Broker {} order {} resolved from deal history as {} ticket {}",
+            profile.name,
+            request.id,
+            if (positionOpen) "FILLED" else "FILLED_AND_CLOSED",
+            positionTicket,
+        )
+        return true
+    }
+
+    private fun weightedDealPrice(deals: List<MT5Deal>): BigDecimal? {
+        val quantity = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
+        if (quantity.signum() <= 0) return null
+        val notional = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.price.multiply(deal.volume) }
+        return notional.divide(quantity, com.qkt.common.Money.CONTEXT)
     }
 
     private fun matchesUnknownPending(

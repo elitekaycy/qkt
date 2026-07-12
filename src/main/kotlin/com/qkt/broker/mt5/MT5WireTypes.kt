@@ -124,6 +124,8 @@ data class MT5Deal(
     val comment: String?,
     /** Deal execution time in UTC epoch millis (the venue's raw `time_msc`). */
     val timeMs: Long,
+    /** Gateway placement id when the gateway preserves it in deal history. */
+    val clientOrderId: String? = null,
 )
 
 /**
