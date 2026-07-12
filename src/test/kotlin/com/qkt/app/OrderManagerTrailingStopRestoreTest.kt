@@ -14,6 +14,7 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.persistence.NoopStatePersistor
 import com.qkt.persistence.PersistedTrailingStop
+import com.qkt.persistence.StatePersistor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -24,6 +25,20 @@ import org.junit.jupiter.api.Test
  * so a missing entry is skipped entirely).
  */
 class OrderManagerTrailingStopRestoreTest {
+    private class CountingPersistor(
+        private val delegate: NoopStatePersistor = NoopStatePersistor(),
+    ) : StatePersistor by delegate {
+        var trailingSaves = 0
+
+        override fun saveTrailingStops(
+            strategyId: String,
+            stops: List<PersistedTrailingStop>,
+        ) {
+            trailingSaves++
+            delegate.saveTrailingStops(strategyId, stops)
+        }
+    }
+
     private fun armedSl(id: String) =
         OrderRequest.ArmedTrailingStop(
             id = id,
@@ -55,6 +70,30 @@ class OrderManagerTrailingStopRestoreTest {
         assertThat(saved[0].clientOrderId).isEqualTo("b1-sl")
         assertThat(saved[0].armed).isTrue
         assertThat(saved[0].hwm).isEqualByComparingTo("110")
+    }
+
+    @Test
+    fun `bounded flush persists an advanced hwm once and ignores unchanged prices`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val persistor = CountingPersistor()
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor = persistor)
+
+        om.submit(armedSl("b1-sl"))
+        bus.publish(TickEvent(Tick("X", Money.of("110"), 1L)))
+        persistor.trailingSaves = 0
+
+        bus.publish(TickEvent(Tick("X", Money.of("120"), 2L)))
+        assertThat(persistor.loadTrailingStops("alpha").single().hwm).isEqualByComparingTo("110")
+
+        om.persistTrailingStateIfDirty()
+        assertThat(persistor.trailingSaves).isEqualTo(1)
+        assertThat(persistor.loadTrailingStops("alpha").single().hwm).isEqualByComparingTo("120")
+
+        bus.publish(TickEvent(Tick("X", Money.of("119"), 3L)))
+        om.persistTrailingStateIfDirty()
+        assertThat(persistor.trailingSaves).isEqualTo(1)
     }
 
     @Test

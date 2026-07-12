@@ -591,6 +591,7 @@ class TradingPipeline(
      * the heartbeat via [ingest] (#77).
      */
     fun scheduleHeartbeat(nowMs: Long) {
+        orderManager.persistTrailingStateIfDirty()
         scheduleRunner.tick(nowMs)
         sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
