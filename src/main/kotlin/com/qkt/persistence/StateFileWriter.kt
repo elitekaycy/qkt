@@ -13,8 +13,8 @@ import org.slf4j.LoggerFactory
  * A crash during write is benign: the old file remains intact until the rename
  * commits, so readers always see a complete (old or new) document — never a torn write.
  *
- * Errors are logged but do not throw. Persistence is best-effort; the trading engine
- * keeps running even when the disk is full or read-only.
+ * Errors are logged and counted rather than thrown from the write path. Live sessions monitor
+ * [failedWrites] and halt new exposure while leaving protective exits active.
  */
 internal class StateFileWriter(
     private val rootDir: Path,
@@ -32,6 +32,12 @@ internal class StateFileWriter(
         java.util.concurrent.atomic
             .AtomicLong(0)
     val failedWrites: java.util.concurrent.atomic.AtomicLong =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+    val consecutiveFailures: java.util.concurrent.atomic.AtomicLong =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+    val failureEpisodes: java.util.concurrent.atomic.AtomicLong =
         java.util.concurrent.atomic
             .AtomicLong(0)
 
@@ -77,6 +83,7 @@ internal class StateFileWriter(
                 // orphan so unique temps don't accumulate.
                 Files.deleteIfExists(temp)
             }
+            consecutiveFailures.set(0L)
             totalWrites.incrementAndGet()
             totalBytesWritten.addAndGet(json.length.toLong())
             val elapsedMs = (System.nanoTime() - start) / 1_000_000L
@@ -93,6 +100,7 @@ internal class StateFileWriter(
             }
         } catch (e: Exception) {
             failedWrites.incrementAndGet()
+            if (consecutiveFailures.getAndIncrement() == 0L) failureEpisodes.incrementAndGet()
             // ERROR, not warn: a session restarting after persist failures reconciles
             // against stale state — the operator must know the disk is failing NOW.
             log.error("StateFileWriter.write FAILED for $strategyName/$fileName: ${e.message}", e)

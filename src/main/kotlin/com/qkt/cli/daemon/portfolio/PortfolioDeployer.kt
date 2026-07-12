@@ -460,6 +460,7 @@ class PortfolioDeployer(
                         session.recentTrades(),
                         layers,
                         pnl = session.pnlSnapshot(compiledChild.ast.name),
+                        persistenceHealth = session.persistenceHealth(),
                     )
                 },
                 running = { session.running },

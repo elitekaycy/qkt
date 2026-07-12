@@ -15,8 +15,8 @@ import org.slf4j.LoggerFactory
  * On-disk [StatePersistor]. Serializes the four state shapes to atomic JSON files under
  * `<rootDir>/<strategyId>/{legbook.json,bracket-pairs.json,pending-orders.json,pending-stacks.json}`.
  *
- * Per Phase 29 spec, errors are best-effort: write failures log + skip; load failures
- * return null + log. The engine never crashes from a persistence failure.
+ * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
+ * an entry-only risk halt. Load failures return null and log.
  */
 class FileStatePersistor(
     rootDir: Path,
@@ -35,6 +35,17 @@ class FileStatePersistor(
 
     /** Cumulative JSON bytes written across all save operations. */
     val totalBytesWritten: Long get() = writer.totalBytesWritten.get()
+
+    override fun healthSnapshot(): PersistenceHealth =
+        PersistenceHealth(
+            enabled = true,
+            totalWrites = totalWrites,
+            slowWrites = slowWrites,
+            failedWrites = failedWrites,
+            consecutiveFailures = writer.consecutiveFailures.get(),
+            failureEpisodes = writer.failureEpisodes.get(),
+        )
+
     private val json =
         Json {
             ignoreUnknownKeys = true

@@ -285,6 +285,32 @@ class InsightsTranslateTest {
     }
 
     @Test
+    fun `state persistence carries durability counters`() {
+        val env =
+            InsightsTranslate.statePersistence(
+                ts = 1718000000000L,
+                strategyId = "alpha",
+                health =
+                    com.qkt.persistence.PersistenceHealth(
+                        enabled = true,
+                        totalWrites = 10L,
+                        slowWrites = 2L,
+                        failedWrites = 1L,
+                        consecutiveFailures = 1L,
+                        failureEpisodes = 1L,
+                        queueSize = 7,
+                        callerRunsTotal = 3L,
+                    ),
+            )
+
+        assertThat(env.type).isEqualTo("state.persistence")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.payload).containsEntry("failedWrites", 1L)
+        assertThat(env.payload).containsEntry("callerRunsTotal", 3L)
+        assertThat(env.toJson("qkt-prod")).contains(""""queueSize":7""")
+    }
+
+    @Test
     fun `broker deal has a deterministic id and ships the deal fields`() {
         val deal =
             com.qkt.broker.BrokerDeal(

@@ -434,6 +434,31 @@ object InsightsTranslate {
                 ),
         )
 
+    /** Durable-state health emitted when persistence becomes unsafe. */
+    fun statePersistence(
+        ts: Long,
+        strategyId: String?,
+        health: com.qkt.persistence.PersistenceHealth,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "persistence-${strategyId ?: "session"}-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = strategyId,
+            type = "state.persistence",
+            payload =
+                mapOf(
+                    "enabled" to health.enabled,
+                    "totalWrites" to health.totalWrites,
+                    "slowWrites" to health.slowWrites,
+                    "failedWrites" to health.failedWrites,
+                    "consecutiveFailures" to health.consecutiveFailures,
+                    "failureEpisodes" to health.failureEpisodes,
+                    "queueSize" to health.queueSize,
+                    "callerRunsTotal" to health.callerRunsTotal,
+                ),
+        )
+
     /**
      * One executed venue deal ("broker.deal"). Deterministic id from the broker plus
      * deal ticket, so re-sending the same deal (restart re-backfill, retried batch)
