@@ -403,8 +403,7 @@ class OrderManager(
             }.onFailure { e -> log.warn("[restore] failed for {}: {}", sid, e.message) }
         }
         if (recovered.isNotEmpty()) {
-            runCatching { broker.recoverPendingOrders(recovered) }
-                .onFailure { e -> log.warn("[restore] broker recovery failed: {}", e.message) }
+            broker.recoverPendingOrders(recovered)
         }
     }
 

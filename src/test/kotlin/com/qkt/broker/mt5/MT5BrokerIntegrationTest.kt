@@ -6,7 +6,9 @@ import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import java.math.BigDecimal
@@ -15,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -35,6 +38,28 @@ class MT5BrokerIntegrationTest {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline && !predicate()) Thread.sleep(5)
     }
+
+    private fun recoveredPending(
+        id: String,
+        ticket: String,
+    ) = ManagedOrder(
+        id = id,
+        request =
+            OrderRequest.Stop(
+                id = id,
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.2"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            ),
+        state = OrderState.WORKING,
+        brokerOrderId = ticket,
+        createdAt = 0L,
+        lastUpdatedAt = 0L,
+    )
 
     @BeforeEach
     fun setup() {
@@ -62,7 +87,14 @@ class MT5BrokerIntegrationTest {
                 pollIntervalMs = 100_000,
                 instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
             )
-        broker = MT5Broker(profile, bus, clock)
+        broker =
+            MT5Broker(
+                profile,
+                bus,
+                clock,
+                recoveryReadAttempts = 3,
+                recoveryReadBackoffMs = 1L,
+            )
     }
 
     @AfterEach
@@ -88,6 +120,32 @@ class MT5BrokerIntegrationTest {
         server.enqueue(MockResponse().setBody("{}"))
 
         assertThat(broker.positionAccountingMode("EXNESS:EURUSD")).isEqualTo(PositionAccountingMode.UNKNOWN)
+    }
+
+    @Test
+    fun `recovery retries a failed read and converges a vanished ticket to cancelled`() {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("pending unavailable"))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        val order = recoveredPending("ord-recovered", "9001")
+
+        broker.recoverPendingOrders(listOf(order))
+
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        broker.pendingPoller.tickForTesting()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderCancelled>().map { it.clientOrderId })
+            .containsExactly("ord-recovered")
+    }
+
+    @Test
+    fun `recovery refuses to continue after persistent venue read failures`() {
+        repeat(6) { server.enqueue(MockResponse().setResponseCode(500).setBody("unavailable")) }
+
+        assertThatThrownBy { broker.recoverPendingOrders(listOf(recoveredPending("ord-recovered", "9001"))) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("failed 3 times")
     }
 
     @Test

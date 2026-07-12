@@ -306,6 +306,53 @@ class CompositeBrokerTest {
     }
 
     @Test
+    fun `recoverPendingOrders propagates a leaf recovery failure`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val delegate = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
+        val failingBroker =
+            object : Broker by delegate {
+                override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
+                    error("venue truth unavailable")
+                }
+            }
+        val composite =
+            CompositeBroker(
+                routes = listOf(SymbolPattern.prefix("A:") to failingBroker),
+                bus = bus,
+            )
+        val order =
+            com.qkt.execution.ManagedOrder(
+                "c1",
+                marketReq("c1", "A:X"),
+                com.qkt.execution.OrderState.WORKING,
+                createdAt = 0L,
+                lastUpdatedAt = 0L,
+            )
+
+        assertThatThrownBy { composite.recoverPendingOrders(listOf(order)) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("venue truth unavailable")
+    }
+
+    @Test
+    fun `recoverPendingOrders rejects an order with no venue route`() {
+        val composite = CompositeBroker(routes = emptyList())
+        val order =
+            com.qkt.execution.ManagedOrder(
+                "c1",
+                marketReq("c1", "A:X"),
+                com.qkt.execution.OrderState.WORKING,
+                createdAt = 0L,
+                lastUpdatedAt = 0L,
+            )
+
+        assertThatThrownBy { composite.recoverPendingOrders(listOf(order)) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("no broker for A:X")
+    }
+
+    @Test
     fun `modifyPosition routes to the leaf that filled the ticket`() {
         val bus = newBus()
         val clock = FixedClock(0L)

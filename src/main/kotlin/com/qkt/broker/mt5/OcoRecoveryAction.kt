@@ -15,12 +15,19 @@ internal sealed interface OcoRecoveryAction {
         val order: ManagedOrder,
         val position: MT5Position,
     ) : OcoRecoveryAction
+
+    /** Leg is absent from both snapshots — retain it until the poller confirms cancellation. */
+    data class TrackVanished(
+        val order: ManagedOrder,
+        val ticket: Long,
+    ) : OcoRecoveryAction
 }
 
 /**
  * Join recovered [orders] to venue truth by ticket. A leg still in [pendingTickets] is
  * re-seeded; a leg whose ticket is an open [positions] entry filled during downtime; a
- * leg in neither was cancelled/expired and is left for the pending poller to reconcile.
+ * leg in neither is re-seeded for the pending poller to distinguish cancellation from a
+ * not-yet-visible fill.
  */
 internal fun classifyOcoRecovery(
     orders: List<ManagedOrder>,
@@ -34,7 +41,7 @@ internal fun classifyOcoRecovery(
             ticket in pendingTickets -> OcoRecoveryAction.Reseed(order, ticket)
             positionByTicket.containsKey(ticket) ->
                 OcoRecoveryAction.EmitFill(order, positionByTicket.getValue(ticket))
-            else -> null
+            else -> OcoRecoveryAction.TrackVanished(order, ticket)
         }
     }
 }
