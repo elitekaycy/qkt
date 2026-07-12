@@ -130,7 +130,7 @@ jobs:
         shell: bash
         run: docker compose --env-file .env config --quiet
 
-      - name: Validate QKT strategies
+      - name: Parse, compile, and preflight QKT strategies
         shell: bash
         run: |
           set -euo pipefail
@@ -143,6 +143,7 @@ jobs:
           for file in "${strategies[@]}"; do
             target="/strategies/$(basename "$file")"
             docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt parse "$target"
+            # Production preflight performs the full AstCompiler pass before broker checks.
             docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt preflight "$target" \
               --production --config /etc/qkt/qkt.config.yaml --state-dir /tmp/qkt-preflight-state
           done

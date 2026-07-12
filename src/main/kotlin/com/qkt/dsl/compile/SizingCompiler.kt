@@ -11,45 +11,65 @@ import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.SizingAst
 import java.math.BigDecimal
 
+/** Evaluates an order quantity from the current strategy state and resolved entry geometry. */
 fun interface CompiledSize {
+    /**
+     * Returns the broker quantity. [runtimeStopDistance] is supplied by bracket actions whose
+     * stop price depends on runtime expressions; non-risk sizing ignores it.
+     */
     fun evaluate(
         ec: EvalContext,
         entryPrice: BigDecimal,
+        runtimeStopDistance: BigDecimal?,
     ): BigDecimal
 }
 
+/** Evaluates sizing where no runtime-resolved stop distance is available. */
+fun CompiledSize.evaluate(
+    ec: EvalContext,
+    entryPrice: BigDecimal,
+): BigDecimal = evaluate(ec, entryPrice, runtimeStopDistance = null)
+
+/** Compiles DSL sizing expressions into deterministic runtime quantity evaluators. */
 class SizingCompiler(
     private val exprCompiler: ExprCompiler,
 ) {
+    /**
+     * Compiles [sizing]. Risk-based forms require either a positive [stopDistance] known now or
+     * [runtimeStopDistanceAvailable] when a bracket will provide the resolved distance later.
+     */
     fun compile(
         sizing: SizingAst,
         stopDistance: BigDecimal?,
         streamAlias: String,
+        runtimeStopDistanceAvailable: Boolean = false,
     ): CompiledSize =
         when (sizing) {
             is SizeQty -> {
                 val e = exprCompiler.compile(sizing.expr)
-                CompiledSize { ec, _ -> (e.evaluate(ec) as Value.Num).v }
+                CompiledSize { ec, _, _ -> (e.evaluate(ec) as Value.Num).v }
             }
             is SizeNotional -> {
                 val e = exprCompiler.compile(sizing.usd)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, _ ->
                     val usd = (e.evaluate(ec) as Value.Num).v
                     usd.divide(accountValuePerLot(ec, streamAlias, entry, entry), Money.CONTEXT)
                 }
             }
             is SizeRiskAbs -> {
-                require(stopDistance != null && stopDistance.signum() > 0) {
+                val staticStopDistance = stopDistance?.takeIf { it.signum() > 0 }
+                require(staticStopDistance != null || runtimeStopDistanceAvailable) {
                     "SIZING RISK \$ requires a resolvable stop distance via BRACKET STOP LOSS"
                 }
                 val e = exprCompiler.compile(sizing.usd)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, runtimeStopDistance ->
                     val amount = (e.evaluate(ec) as Value.Num).v
-                    amount.divide(accountValuePerLot(ec, streamAlias, stopDistance, entry), Money.CONTEXT)
+                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
+                    amount.divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
                 }
             }
             is SizePositionFull -> {
-                CompiledSize { ec, _ ->
+                CompiledSize { ec, _, _ ->
                     val symbol =
                         ec.streams[sizing.stream]?.qktSymbol
                             ?: error("Unknown stream alias: ${sizing.stream}")
@@ -62,7 +82,7 @@ class SizingCompiler(
             }
             is SizePctEquity -> {
                 val e = exprCompiler.compile(sizing.frac)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, _ ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val equity = ec.strategyContext.pnl.equity()
                     equity
@@ -72,7 +92,7 @@ class SizingCompiler(
             }
             is SizePctBalance -> {
                 val e = exprCompiler.compile(sizing.frac)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, _ ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val balance = ec.strategyContext.pnl.balance()
                     balance
@@ -81,19 +101,32 @@ class SizingCompiler(
                 }
             }
             is SizeRiskFrac -> {
-                require(stopDistance != null && stopDistance.signum() > 0) {
+                val staticStopDistance = stopDistance?.takeIf { it.signum() > 0 }
+                require(staticStopDistance != null || runtimeStopDistanceAvailable) {
                     "SIZING RISK <fraction> requires a resolvable stop distance via BRACKET STOP LOSS"
                 }
                 val e = exprCompiler.compile(sizing.frac)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, runtimeStopDistance ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val equity = ec.strategyContext.pnl.equity()
+                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
                     equity
                         .multiply(frac, Money.CONTEXT)
-                        .divide(accountValuePerLot(ec, streamAlias, stopDistance, entry), Money.CONTEXT)
+                        .divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
                 }
             }
         }
+
+    private fun resolveStopDistance(
+        staticStopDistance: BigDecimal?,
+        runtimeStopDistance: BigDecimal?,
+    ): BigDecimal {
+        val resolved = runtimeStopDistance ?: staticStopDistance
+        require(resolved != null && resolved.signum() > 0) {
+            "risk sizing requires a positive runtime stop distance"
+        }
+        return resolved
+    }
 
     /**
      * Converts a stream's native quote-currency value per unit into account-currency
