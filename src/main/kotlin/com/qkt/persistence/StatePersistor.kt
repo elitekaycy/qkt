@@ -36,7 +36,10 @@ data class PersistenceHealth(
  * after every mutation to the underlying state object. Reads happen once at boot via
  * [com.qkt.persistence.LegBookReconciler].
  */
-interface StatePersistor {
+interface StatePersistor : AutoCloseable {
+    /** Releases persistence resources after all sessions have stopped. */
+    override fun close() = Unit
+
     /** Current durability counters; disabled by default for non-durable test persistors. */
     fun healthSnapshot(): PersistenceHealth = PersistenceHealth.DISABLED
 

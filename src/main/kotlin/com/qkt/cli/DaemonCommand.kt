@@ -28,9 +28,12 @@ import com.qkt.notify.NotificationEvent
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.aggregateDailySummary
+import com.qkt.persistence.StatePersistor
 import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -49,6 +52,8 @@ class DaemonCommand(
      * factory to swap in a stub.
      */
     private val sourceFactory: ((List<String>) -> MarketSource)? = null,
+    /** Test seam for verifying ownership of the daemon-wide persistence resource. */
+    private val statePersistorFactory: ((Config, Path) -> StatePersistor)? = null,
 ) {
     fun run(): Int {
         // Sub-subcommand dispatch (implemented further in Task 9): `qkt daemon stop|status`.
@@ -254,7 +259,9 @@ class DaemonCommand(
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source)
 
-        val statePersistor = cfg.statePersistor(stateDir.stateRoot)
+        val statePersistor =
+            statePersistorFactory?.invoke(cfg, stateDir.stateRoot)
+                ?: cfg.statePersistor(stateDir.stateRoot)
         val registry =
             StrategyRegistry(
                 StrategyHandle.RealFactory(
@@ -406,15 +413,19 @@ class DaemonCommand(
                     }
             }
 
+        val cleanupStarted = AtomicBoolean(false)
+
         fun cleanup() {
-            runCatching { registry.stopAll() }
-            runCatching { bybitClient?.close() }
+            if (!cleanupStarted.compareAndSet(false, true)) return
+            runCatching { stateDir.deleteControlPort() }
             runCatching { plane.close() }
             commandChannels.forEach { runCatching { it.close() } }
             runCatching { dailySummarySchedulers.forEach { it.close() } }
+            runCatching { registry.stopAll() }
+            runCatching { statePersistor.close() }
+            runCatching { bybitClient?.close() }
             runCatching { notifier.close() }
             runCatching { insightsSink?.close() }
-            runCatching { stateDir.deleteControlPort() }
         }
 
         val shutdown =

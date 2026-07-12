@@ -13,6 +13,7 @@ services:
     image: ghcr.io/elitekaycy/qkt:${QKT_IMAGE_TAG:?QKT_IMAGE_TAG must be set in .env}
     container_name: qkt
     restart: unless-stopped
+    stop_grace_period: 30s
     depends_on:
       init-perms:
         condition: service_completed_successfully
