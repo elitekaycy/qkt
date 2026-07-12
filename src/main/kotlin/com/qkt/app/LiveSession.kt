@@ -31,6 +31,7 @@ import com.qkt.notify.NotificationEvent
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.StrategySummary
+import com.qkt.persistence.PersistenceHealth
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionProvider
@@ -1179,6 +1180,13 @@ class LiveSession(
         // the situation the halt declared bad (FIA §1.11, RTS 6). Runs on the engine
         // thread via the bus reroute, so OrderManager state stays single-threaded.
         bus.subscribe<RiskEvent.Halted> { ev ->
+            if (!ev.cancelWorkingOrders) {
+                log.error(
+                    "entry-only halt ({}): venue-resting protection remains active",
+                    ev.reason,
+                )
+                return@subscribe
+            }
             log.warn("halt ({}): cancelling venue-resting pendings for {} symbol(s)", ev.reason, symbols.size)
             for (symbol in symbols) {
                 runCatching { pipeline.orderManager.cancelPendingForSymbol(symbol) }
@@ -1350,6 +1358,45 @@ class LiveSession(
             }
         }
 
+        var alertedPersistenceEpisode = 0L
+
+        fun checkPersistenceHealth() {
+            val health = persistor.healthSnapshot()
+            if (!health.enabled) return
+            val newFailureEpisode = health.failureEpisodes > alertedPersistenceEpisode
+            if (!newFailureEpisode && health.consecutiveFailures == 0L) return
+            val reason =
+                "persistence failure: durable state is stale " +
+                    "(failedWrites=${health.failedWrites}, consecutiveFailures=${health.consecutiveFailures}, " +
+                    "queueSize=${health.queueSize}, " +
+                    "callerRunsTotal=${health.callerRunsTotal})"
+            riskState.halt(reason, cancelWorkingOrders = false)
+            if (!newFailureEpisode) return
+            alertedPersistenceEpisode = health.failureEpisodes
+            log.error("{}; blocking new exposure while keeping exits active", reason)
+            val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
+            runCatching {
+                notifier.notify(
+                    NotificationEvent.StrategyError(
+                        strategyId = ownerStrategyId,
+                        message = "CRITICAL disk failing — persisted state is stale; new exposure halted",
+                        timestamp = clock.now(),
+                    ),
+                )
+            }.onFailure { t -> recordNotificationFailure(ownerStrategyId, "PersistenceFailure", t) }
+            if (insightsSink != null &&
+                com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents
+            ) {
+                insightsSink.offer(
+                    com.qkt.observe.insights.InsightsTranslate.statePersistence(
+                        ts = clock.now(),
+                        strategyId = ownerStrategyId.takeIf { it.isNotBlank() },
+                        health = health,
+                    ),
+                )
+            }
+        }
+
         // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
         // positions, and the schedule runner. The tick feed, the heartbeat, the broker pollers
         // (via the bus), and the HTTP flatten all POST onto [inbound]; this loop drains it
@@ -1388,6 +1435,7 @@ class LiveSession(
                                     for (symbol in symbols) marketDataGate.isHealthy(symbol)
                                     pipeline.scheduleHeartbeat(msg.nowMs)
                                 }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
+                            Inbound.PersistenceHealthCheck -> checkPersistenceHealth()
                             is Inbound.Query -> msg.execute()
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
@@ -1419,6 +1467,7 @@ class LiveSession(
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
         bus.bindEngineLoop(thread) { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
+        control.put(Inbound.PersistenceHealthCheck)
         thread.start()
 
         // Feed reader: turn the blocking tick feed into queue messages so the engine loop stays a
@@ -1474,6 +1523,7 @@ class LiveSession(
         scheduleHeartbeat.scheduleAtFixedRate(
             {
                 runCatching { riskState.persistAnchorsIfDirty() }
+                runCatching { control.put(Inbound.PersistenceHealthCheck) }
                 runCatching { control.put(Inbound.Heartbeat(clock.now())) }
             },
             scheduleHeartbeatIntervalMs,
@@ -1608,6 +1658,8 @@ class LiveSession(
             override fun inboundQueueDepth(): Int = control.size + tickQueue.size
 
             override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
+
+            override fun persistenceHealth(): PersistenceHealth = persistor.healthSnapshot()
 
             override fun reconcile(): ReconcileReport {
                 val ownerId = strategies.firstOrNull()?.first.orEmpty()
@@ -1786,6 +1838,8 @@ private sealed interface Inbound {
     ) : Inbound
 
     object Flatten : Inbound
+
+    object PersistenceHealthCheck : Inbound
 
     data class FeedEnded(
         val unexpected: Boolean,

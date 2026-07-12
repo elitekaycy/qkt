@@ -350,6 +350,7 @@ class StrategyHandle(
                             inboundQueueDepth = session.inboundQueueDepth(),
                             staleSymbols = session.staleSymbols().keys.sorted(),
                             openPositions = session.positionsFor(ast.name),
+                            persistenceHealth = session.persistenceHealth(),
                         )
                     },
                     running = { session.running },

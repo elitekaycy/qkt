@@ -11,6 +11,8 @@ sealed interface RiskEvent : Event {
     data class Halted(
         val reason: String,
         val strategyId: String?,
+        /** Whether venue-resting orders must be swept in addition to rejecting new exposure. */
+        val cancelWorkingOrders: Boolean = true,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : RiskEvent
