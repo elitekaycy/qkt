@@ -656,6 +656,29 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `modifyPositionAsync reports venue completion through callback`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":0,"price":"0","comment":"ok"}}""",
+            ),
+        )
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val accepted = AtomicBoolean(false)
+
+        broker.modifyPositionAsync("424242", sl = BigDecimal("1.0950"), tp = BigDecimal("1.1100")) { ack ->
+            accepted.set(ack.accepted)
+            latch.countDown()
+        }
+
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(accepted.get()).isTrue
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        assertThat(server.takeRequest().path).isEqualTo("/modify_sl_tp")
+    }
+
+    @Test
     fun `bracket submit includes sl tp in payload`() {
         server.enqueue(
             MockResponse().setBody(

@@ -339,6 +339,42 @@ class MT5Client(
         }
     }
 
+    /** Modify an open position's SL/TP on OkHttp's dispatcher without blocking the caller. */
+    fun modifyPositionAsync(
+        ticket: Long,
+        sl: BigDecimal? = null,
+        tp: BigDecimal? = null,
+        onResult: (MT5OrderResponse) -> Unit,
+    ) {
+        val body = encodeModifyPosition(ticket, sl, tp).toRequestBody(JSON_MEDIA)
+        val request =
+            mt5RequestBuilder("$gatewayUrl/modify_sl_tp", apiKey)
+                .post(body)
+                .build()
+        http.newCall(request).enqueue(
+            object : Callback {
+                override fun onFailure(
+                    call: Call,
+                    e: java.io.IOException,
+                ) {
+                    onResult(errorResponse("IO error: ${e.message}"))
+                }
+
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    response.use {
+                        val raw = it.body?.string().orEmpty()
+                        val result =
+                            if (it.isSuccessful) parseOrderResponse(raw) else errorResponse("HTTP ${it.code}: $raw")
+                        onResult(result)
+                    }
+                }
+            },
+        )
+    }
+
     private fun encodeModifyPosition(
         ticket: Long,
         sl: BigDecimal?,

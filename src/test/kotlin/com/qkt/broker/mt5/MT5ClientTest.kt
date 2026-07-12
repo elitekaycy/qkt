@@ -499,6 +499,30 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `modifyPositionAsync delivers result without a caller-thread round trip`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"message":"SL/TP modified","result":{"retcode":10009,"order":0,"deal":0,"price":"0","comment":"ok"}}""",
+            ),
+        )
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+
+        client.modifyPositionAsync(424242L, BigDecimal("1.0950"), BigDecimal("1.1100")) { response ->
+            result.set(response)
+            latch.countDown()
+        }
+
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(10009)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/modify_sl_tp")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":424242,"sl":1.0950,"tp":1.1100}""")
+    }
+
+    @Test
     fun `modifyPosition surfaces a gateway failure`() {
         server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"Position 1 not found"}"""))
         val resp = client.modifyPosition(ticket = 1L, sl = BigDecimal("1.0"))
