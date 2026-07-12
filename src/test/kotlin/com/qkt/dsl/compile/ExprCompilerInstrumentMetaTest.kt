@@ -26,6 +26,8 @@ class ExprCompilerInstrumentMetaTest {
             pointSize = BigDecimal("0.01"),
             digits = 2,
             tradeStopsLevelPoints = 0,
+            swapLongPoints = BigDecimal("-12.5"),
+            swapShortPoints = BigDecimal("4.25"),
         )
 
     private fun registry(meta: InstrumentMeta?): InstrumentRegistry =
@@ -76,6 +78,16 @@ class ExprCompilerInstrumentMetaTest {
     fun `volume_min resolves to InstrumentMeta volumeMin`() {
         val v = ExprCompiler().compile(StreamFieldRef("gold", "volume_min")).evaluate(ctx(registry(gold)))
         assertThat(v).isEqualTo(Value.Num(BigDecimal("0.01")))
+    }
+
+    @Test
+    fun `swap point rates resolve from InstrumentMeta`() {
+        val context = ctx(registry(gold))
+        val long = ExprCompiler().compile(StreamFieldRef("gold", "swap_long_points")).evaluate(context)
+        val short = ExprCompiler().compile(StreamFieldRef("gold", "swap_short_points")).evaluate(context)
+
+        assertThat(long).isEqualTo(Value.Num(BigDecimal("-12.5")))
+        assertThat(short).isEqualTo(Value.Num(BigDecimal("4.25")))
     }
 
     @Test

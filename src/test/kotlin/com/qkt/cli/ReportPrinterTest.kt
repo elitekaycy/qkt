@@ -21,7 +21,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class ReportPrinterTest {
-    private fun report(commissionPaid: String): PerformanceReport =
+    private fun report(
+        commissionPaid: String,
+        swapPaid: String = "0",
+    ): PerformanceReport =
         PerformanceReport(
             realizedTotal = BigDecimal("100"),
             unrealizedTotal = BigDecimal.ZERO,
@@ -39,14 +42,18 @@ class ReportPrinterTest {
             calmarRatio = BigDecimal("0.8"),
             equityCurve = listOf(EquitySample(0L, BigDecimal("100"))),
             commissionPaid = BigDecimal(commissionPaid),
+            swapPaid = BigDecimal(swapPaid),
         )
 
-    private fun result(commissionPaid: String = "0"): BacktestResult =
+    private fun result(
+        commissionPaid: String = "0",
+        swapPaid: String = "0",
+    ): BacktestResult =
         BacktestResult(
             trades = emptyList(),
             rejections = emptyList(),
             finalPositions = emptyMap(),
-            global = report(commissionPaid),
+            global = report(commissionPaid, swapPaid),
             perStrategy = emptyMap(),
             cadence = SampleCadence.TICK,
         )
@@ -55,9 +62,10 @@ class ReportPrinterTest {
         fmt: ReportFormat,
         brokerKind: BrokerKind,
         commissionPaid: String = "0",
+        swapPaid: String = "0",
     ): String {
         val buf = ByteArrayOutputStream()
-        ReportPrinter.print(result(commissionPaid), fmt, PrintStream(buf), brokerKind)
+        ReportPrinter.print(result(commissionPaid, swapPaid), fmt, PrintStream(buf), brokerKind)
         return buf.toString()
     }
 
@@ -94,6 +102,17 @@ class ReportPrinterTest {
         assertThat(json).contains("\"commissionPaid\":5.00")
         assertThat(json).contains("\"executionModel\":\"paper\"")
         assertThat(json).contains("\"evidence\":null")
+    }
+
+    @Test
+    fun `text and json reports disclose swap charge sign`() {
+        val text = render(ReportFormat.Text, BrokerKind.PAPER, swapPaid = "2.50")
+        assertThat(text).contains("Final realized:   100   (net of commission and swap)")
+        assertThat(text).contains("Swap paid:        2.50")
+        assertThat(text).contains("2.50 charged")
+
+        val json = render(ReportFormat.Json, BrokerKind.PAPER, swapPaid = "-1.25")
+        assertThat(json).contains("\"swapPaid\":-1.25")
     }
 
     @Test

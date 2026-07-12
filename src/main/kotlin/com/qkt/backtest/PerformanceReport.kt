@@ -38,13 +38,19 @@ data class PerformanceReport(
     val monteCarlo: MonteCarloSummary? = null,
     /**
      * Total commission charged over the run (#335). The realized/total PnL above are already
-     * net of this; it is reported separately as the bridge from gross trade PnL to net —
-     * `gross = totalPnL + commissionPaid`. Zero when no commission was configured.
+     * net of this; it is reported separately as one part of the bridge from gross PnL to net.
+     * With swap, `preCostPnL = totalPnL + commissionPaid + swapPaid`. Zero when no commission
+     * was configured.
      */
     val commissionPaid: BigDecimal = BigDecimal.ZERO,
     /**
-     * Realized PnL bucketed by UTC day (#348) — `{ 2026-06-04: +120.50, ... }`. Empty when no
-     * trades closed. Sums each trade's realized PnL into the day of its fill timestamp.
+     * Net overnight swap paid over the run. Positive is a charge and negative is a credit.
+     * Realized and total PnL are already net of this amount.
+     */
+    val swapPaid: BigDecimal = BigDecimal.ZERO,
+    /**
+     * Realized PnL bucketed by UTC day (#348) — `{ 2026-06-04: +120.50, ... }`. Includes trade
+     * closes and financing cash on its rollover date; empty when neither occurred.
      */
     val dailyPnL: Map<java.time.LocalDate, BigDecimal> = emptyMap(),
     /**

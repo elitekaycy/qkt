@@ -1,6 +1,7 @@
 package com.qkt.instrument
 
 import java.math.BigDecimal
+import java.time.DayOfWeek
 
 /**
  * Per-instrument venue metadata used to size orders correctly and quantize wire fields.
@@ -20,6 +21,12 @@ import java.math.BigDecimal
  * the mt5-sim broker on every fill — e.g. 5 on a 0.001-pointSize symbol slips a fill by 0.005
  * against you. Left at zero, fills have no slippage (the optimistic default); live runs leave it
  * zero because the real venue slips for real.
+ *
+ * [swapLongPoints] and [swapShortPoints] are signed venue points per lot per rollover:
+ * positive values credit the position and negative values debit it. Backtests convert them
+ * through `pointSize * contractSize * quantity`; live runs leave them zero because the venue
+ * reports actual swap. [swapRolloverHourUtc] and [swapTripleDay] define the deterministic
+ * backtest calendar convention.
  */
 data class InstrumentMeta(
     val qktSymbol: String,
@@ -32,6 +39,10 @@ data class InstrumentMeta(
     val tradeStopsLevelPoints: Int,
     val commissionPerLot: BigDecimal = BigDecimal.ZERO,
     val slippagePoints: Int = 0,
+    val swapLongPoints: BigDecimal = BigDecimal.ZERO,
+    val swapShortPoints: BigDecimal = BigDecimal.ZERO,
+    val swapRolloverHourUtc: Int = 21,
+    val swapTripleDay: DayOfWeek = DayOfWeek.WEDNESDAY,
 ) {
     init {
         require(qktSymbol.isNotBlank()) { "InstrumentMeta.qktSymbol must not be blank" }
@@ -48,6 +59,12 @@ data class InstrumentMeta(
         }
         require(slippagePoints >= 0) {
             "InstrumentMeta.slippagePoints must be >= 0: $slippagePoints"
+        }
+        require(swapRolloverHourUtc in 0..23) {
+            "InstrumentMeta.swapRolloverHourUtc must be in 0..23: $swapRolloverHourUtc"
+        }
+        require(swapTripleDay.value <= DayOfWeek.FRIDAY.value) {
+            "InstrumentMeta.swapTripleDay must be Monday through Friday: $swapTripleDay"
         }
     }
 }

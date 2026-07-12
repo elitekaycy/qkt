@@ -19,10 +19,18 @@ class YamlInstrumentRegistryTest {
         assertThat(gold.digits).isEqualTo(3)
         assertThat(gold.volumeStep).isEqualByComparingTo("0.01")
         assertThat(gold.volumeMax).isEqualByComparingTo("200")
+        assertThat(gold.swapLongPoints).isEqualByComparingTo("-12.5")
+        assertThat(gold.swapShortPoints).isEqualByComparingTo("4.25")
+        assertThat(gold.swapRolloverHourUtc).isEqualTo(22)
+        assertThat(gold.swapTripleDay).isEqualTo(java.time.DayOfWeek.FRIDAY)
         val eu = r.require("EXNESS:EURUSD")
         assertThat(eu.contractSize).isEqualByComparingTo("100000")
         assertThat(eu.digits).isEqualTo(5)
         assertThat(eu.volumeMax).isNull()
+        assertThat(eu.swapLongPoints).isEqualByComparingTo("0")
+        assertThat(eu.swapShortPoints).isEqualByComparingTo("0")
+        assertThat(eu.swapRolloverHourUtc).isEqualTo(21)
+        assertThat(eu.swapTripleDay).isEqualTo(java.time.DayOfWeek.WEDNESDAY)
     }
 
     @Test
@@ -125,5 +133,29 @@ class YamlInstrumentRegistryTest {
                 YamlInstrumentRegistry.load(Paths.get("/tmp/does-not-exist.yaml"))
             }
         assertThat(e.message).contains("/tmp/does-not-exist.yaml")
+    }
+
+    @Test
+    fun `invalid swap triple day fails with field value`(
+        @TempDir tmp: Path,
+    ) {
+        val bad = tmp.resolve("instruments-swap-day.yaml")
+        Files.writeString(
+            bad,
+            """
+            instruments:
+              - qktSymbol: X
+                contractSize: 1
+                volumeStep: 0.01
+                volumeMin: 0.01
+                pointSize: 0.01
+                digits: 2
+                tradeStopsLevelPoints: 0
+                swapTripleDay: FUNDAY
+            """.trimIndent(),
+        )
+
+        val error = assertThrows<IllegalStateException> { YamlInstrumentRegistry.load(bad) }
+        assertThat(error.message).contains("swapTripleDay").contains("FUNDAY")
     }
 }
