@@ -69,6 +69,12 @@ sealed interface BrokerEvent : Event {
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
         /**
+         * Whether this fill completes or advances the order identified by [clientOrderId].
+         * False for venue position-close observations that reuse the original entry id:
+         * accounting still consumes the fill, but the entry order record is already terminal.
+         */
+        val updatesOrderExecution: Boolean = true,
+        /**
          * Venue-reported trading costs attached to this fill — commission + swap + fees,
          * in account currency, positive = charge (negative = rebate). Zero when the venue
          * reports none or the venue path cannot supply them. The pipeline nets this out
