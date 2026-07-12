@@ -34,6 +34,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Test promotion workflow
+        run: bash tests/scripts/prepare-main-promotion-test.sh
       - name: Build + test + ktlint
         run: ./gradlew build --no-daemon
       - name: Upload test reports
