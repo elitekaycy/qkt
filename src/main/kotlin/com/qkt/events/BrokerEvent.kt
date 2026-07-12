@@ -216,4 +216,14 @@ sealed interface BrokerEvent : Event {
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : BrokerEvent
+
+    /** Completion of an asynchronous venue-side position SL/TP modification. */
+    data class PositionModificationCompleted(
+        val operationId: String,
+        val ticket: String,
+        val accepted: Boolean,
+        val rejectReason: String? = null,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
 }

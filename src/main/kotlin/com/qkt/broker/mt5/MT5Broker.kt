@@ -1332,12 +1332,40 @@ class MT5Broker(
         sl: BigDecimal?,
         tp: BigDecimal?,
     ): SubmitAck {
-        fun ack(
-            accepted: Boolean,
-            reason: String? = null,
-        ) = SubmitAck(clientOrderId = ticket, brokerOrderId = ticket, accepted = accepted, rejectReason = reason)
+        val t = ticket.toLongOrNull() ?: return positionModifyAck(ticket, false, "modifyPosition: bad ticket $ticket")
+        positionModifyPreflightRejection(ticket, t, sl, tp)?.let { return it }
+        val response =
+            runCatching { client.modifyPosition(t, sl, tp) }
+                .getOrElse { ex -> return positionModifyAck(ticket, false, ex.message) }
+        return handlePositionModifyResult(ticket, t, sl, tp, response)
+    }
 
-        val t = ticket.toLongOrNull() ?: return ack(false, "modifyPosition: bad ticket $ticket")
+    override fun modifyPositionAsync(
+        ticket: String,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+        onResult: (SubmitAck) -> Unit,
+    ) {
+        val t = ticket.toLongOrNull()
+        if (t == null) {
+            onResult(positionModifyAck(ticket, false, "modifyPosition: bad ticket $ticket"))
+            return
+        }
+        positionModifyPreflightRejection(ticket, t, sl, tp)?.let {
+            onResult(it)
+            return
+        }
+        client.modifyPositionAsync(t, sl, tp) { response ->
+            onResult(handlePositionModifyResult(ticket, t, sl, tp, response))
+        }
+    }
+
+    private fun positionModifyPreflightRejection(
+        ticket: String,
+        t: Long,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+    ): SubmitAck? {
         val qktSymbol = positionSymbolByTicket[t]
         if (qktSymbol != null) {
             val brokerSymbol = mt5Symbol.toBroker(qktSymbol.substringAfter(':'))
@@ -1350,24 +1378,33 @@ class MT5Broker(
                         (level - current).abs() < minDistance
                     }
                 if (blocked != null) {
-                    return ack(
-                        false,
-                        "modify inside tradeFreezeLevel for $qktSymbol: " +
-                            "level=$blocked current=$current minDistance=$minDistance",
+                    return positionModifyAck(
+                        ticket,
+                        accepted = false,
+                        reason =
+                            "modify inside tradeFreezeLevel for $qktSymbol: " +
+                                "level=$blocked current=$current minDistance=$minDistance",
                     )
                 }
             }
         }
-        val resp =
-            runCatching { client.modifyPosition(t, sl, tp) }
-                .getOrElse { ex -> return ack(false, ex.message) }
-        val ok = isOrderSuccessful(resp.result.retcode)
+        return null
+    }
+
+    private fun handlePositionModifyResult(
+        ticket: String,
+        t: Long,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+        response: MT5OrderResponse,
+    ): SubmitAck {
+        val ok = isOrderSuccessful(response.result.retcode)
         if (!ok) {
             log.warn(
                 "MT5Broker {} modifyPosition({}) rejected: {}",
                 profile.name,
                 ticket,
-                resp.errorMessage ?: resp.result.retcode,
+                response.errorMessage ?: response.result.retcode,
             )
         }
         if (ok) {
@@ -1384,8 +1421,14 @@ class MT5Broker(
                 )
             }
         }
-        return ack(ok, if (ok) null else resp.errorMessage)
+        return positionModifyAck(ticket, ok, if (ok) null else response.errorMessage)
     }
+
+    private fun positionModifyAck(
+        ticket: String,
+        accepted: Boolean,
+        reason: String? = null,
+    ): SubmitAck = SubmitAck(clientOrderId = ticket, brokerOrderId = ticket, accepted = accepted, rejectReason = reason)
 
     private fun protectionFor(request: OrderRequest): PositionProtection? =
         runCatching { translator.translate(request) }
