@@ -50,4 +50,9 @@ data class BacktestResult(
      * results that use the shared engine; older/unit-test results may leave it null.
      */
     val accounting: com.qkt.accounting.AccountingSnapshot? = null,
+    /**
+     * Final open positions keyed first by strategy id, then symbol. Unlike [finalPositions],
+     * this preserves independent-leg ownership and the remaining entry basis after partial closes.
+     */
+    val finalPositionsByStrategy: Map<String, Map<String, Position>> = emptyMap(),
 )

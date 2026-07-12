@@ -14,14 +14,14 @@ import java.nio.file.Path
  * machine-readable artifacts (`result.json`, per-strategy equity curves, trades and
  * rejections CSVs) plus a rendered `report.html` summary.
  *
- * One writer per output directory; call [write] once per result. Strategy ids must
- * match `[A-Za-z0-9_-]+` so they're safe to embed in filenames — anything else fails
- * fast before the writer touches the filesystem.
+ * One writer per output directory; call [write] once per result. Strategy ids may contain
+ * colon-separated `[A-Za-z0-9_-]+` segments. Colons are encoded when ids are embedded in filenames;
+ * anything outside that grammar fails fast before the writer touches the filesystem.
  */
 class BacktestReportWriter(
     private val dir: Path,
 ) {
-    private val safeId = Regex("[A-Za-z0-9_-]+")
+    private val safeId = Regex("[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*")
 
     /**
      * Emit every artifact for [result] into the writer's directory. Overwrites any
@@ -38,13 +38,15 @@ class BacktestReportWriter(
         Files.writeString(dir.resolve("result.json"), renderJson(result))
         Files.writeString(dir.resolve("equity_global.csv"), renderEquityCsv(result.global.equityCurve))
         for ((id, report) in result.perStrategy) {
-            Files.writeString(dir.resolve("equity_$id.csv"), renderEquityCsv(report.equityCurve))
+            Files.writeString(dir.resolve("equity_${fileId(id)}.csv"), renderEquityCsv(report.equityCurve))
         }
         Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
         Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
         result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), renderBookRiskCsv(it)) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
     }
+
+    private fun fileId(strategyId: String): String = strategyId.replace(":", "%3A")
 
     private fun renderEquityCsv(curve: List<EquitySample>): String {
         val sb = StringBuilder("timestamp,equity\n")
