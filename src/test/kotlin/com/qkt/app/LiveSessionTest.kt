@@ -609,6 +609,88 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `verified flatten closes attributed ticket from control plane`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("EXNESS:X", listOf(Tick("EXNESS:X", Money.of("100"), now.toEpochMilli())))
+        val tickets = java.util.concurrent.CopyOnWriteArrayList<com.qkt.broker.BrokerPositionTicket>()
+        val closeThreads = mutableListOf<String>()
+        val factory: BrokerFactory = { bus, clock, prices, _, _ ->
+            val delegate = com.qkt.broker.PaperBroker(bus, clock, prices)
+            bus.subscribe<com.qkt.events.BrokerEvent.OrderFilled> { fill ->
+                if (fill.side == com.qkt.common.Side.BUY) {
+                    tickets.add(
+                        com.qkt.broker.BrokerPositionTicket(
+                            ticket = requireNotNull(fill.brokerOrderId),
+                            symbol = fill.symbol,
+                            side = fill.side,
+                            qty = fill.quantity,
+                            entryPrice = fill.price,
+                            currentPrice = fill.price,
+                            profit = BigDecimal.ZERO,
+                            swap = BigDecimal.ZERO,
+                            openedAt = fill.timestamp,
+                            comment = "dsl-test",
+                        ),
+                    )
+                }
+            }
+            object : com.qkt.broker.Broker by delegate {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun positionTickets(): List<com.qkt.broker.BrokerPositionTicket> = tickets.toList()
+
+                override fun submit(request: com.qkt.execution.OrderRequest): com.qkt.broker.SubmitAck {
+                    val closeTicket = (request as? com.qkt.execution.OrderRequest.Market)?.closesTicket
+                    if (closeTicket != null) {
+                        closeThreads.add(Thread.currentThread().name)
+                        tickets.removeIf { it.ticket == closeTicket }
+                        return com.qkt.broker.SubmitAck(request.id, closeTicket, accepted = true)
+                    }
+                    return delegate.submit(request)
+                }
+            }
+        }
+        val strategy =
+            object : DslCompiledStrategy {
+                override val declaredStreams: Map<String, HubKey> =
+                    mapOf("x" to HubKey("EXNESS", "X", "1m"))
+                override val multiPositionPerSymbolSymbols: Set<String> = emptySet()
+                override val retentionByKey: Map<HubKey, Int> = emptyMap()
+                override val pendingStacks: PendingStacks = PendingStacks()
+
+                override fun bindToHub(
+                    hub: CandleHub,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {}
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy(tick.symbol, Money.of("1")))
+                }
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                source = src,
+                symbols = listOf("EXNESS:X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                brokerFactories = mapOf("exness" to factory),
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue
+
+        val result = handle.flattenAndVerify(Duration.ofSeconds(1))
+
+        assertThat(result.verifiedFlat).describedAs(result.toString()).isTrue
+        assertThat(result.remainingTickets).isEmpty()
+        assertThat(closeThreads.single()).isEqualTo(Thread.currentThread().name)
+    }
+
+    @Test
     fun `approved risk decision is journaled before broker submit`(
         @TempDir tmp: Path,
     ) {

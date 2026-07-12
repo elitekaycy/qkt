@@ -165,6 +165,9 @@ interface Broker {
      */
     fun positionTickets(): List<BrokerPositionTicket> = emptyList()
 
+    /** Whether [positionTickets] is authoritative venue truth rather than the empty default. */
+    val supportsPositionTickets: Boolean get() = false
+
     /** Position accounting mode for [symbol]; unknown modes must be reconciled as hedging. */
     fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.UNKNOWN
 }

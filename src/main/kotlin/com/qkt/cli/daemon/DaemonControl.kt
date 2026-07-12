@@ -1,5 +1,8 @@
 package com.qkt.cli.daemon
 
+import com.qkt.app.FlattenResult
+import java.time.Duration
+
 /** What a control action targets: every strategy, or one by name. */
 sealed interface Target {
     data object All : Target
@@ -16,6 +19,7 @@ sealed interface Target {
 data class ControlResult(
     val affected: List<String>,
     val unknown: List<String> = emptyList(),
+    val flattenResults: Map<String, FlattenResult> = emptyMap(),
 )
 
 /** A point-in-time view of every deployed strategy's run/halt state. */
@@ -70,13 +74,30 @@ class RegistryDaemonControl(
         target: Target,
         flatten: Boolean,
     ): ControlResult {
+        val flattenResults = mutableMapOf<String, FlattenResult>()
         val result =
             apply(target) {
                 it.live.halt("operator kill")
-                if (flatten) it.live.flatten()
+                if (flatten) flattenResults[it.name] = it.live.flattenAndVerify(FLATTEN_TIMEOUT)
             }
-        operatorJournal?.record("kill", target, result, mapOf("flatten" to flatten.toString()))
-        return result
+        val completed = result.copy(flattenResults = flattenResults)
+        val verified =
+            flatten && completed.affected.isNotEmpty() && completed.flattenResults.values.all { it.verifiedFlat }
+        val remaining =
+            completed.flattenResults.values
+                .flatMap { it.remainingTickets }
+                .distinct()
+        operatorJournal?.record(
+            "kill",
+            target,
+            completed,
+            mapOf(
+                "flatten" to flatten.toString(),
+                "flattenVerified" to verified.toString(),
+                "remainingTickets" to remaining.joinToString(","),
+            ),
+        )
+        return completed
     }
 
     override fun status(): StatusReport =
@@ -104,4 +125,8 @@ class RegistryDaemonControl(
                 }
             }
         }
+
+    private companion object {
+        val FLATTEN_TIMEOUT: Duration = Duration.ofSeconds(10)
+    }
 }

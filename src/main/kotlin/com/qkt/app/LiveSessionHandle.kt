@@ -99,6 +99,18 @@ interface LiveSessionHandle {
     fun flatten()
 
     /**
+     * Emergency control-plane flatten with broker-truth verification. Implementations that cannot
+     * verify venue tickets must report an unverified result rather than claiming the book is flat.
+     */
+    fun flattenAndVerify(timeout: Duration): FlattenResult {
+        flatten()
+        return FlattenResult(
+            verifiedFlat = false,
+            detail = "this session handle cannot verify venue positions",
+        )
+    }
+
+    /**
      * Snapshot of pipeline latency observations (#150). Defaults to a disabled-report so
      * non-live handles don't need to override. Live sessions return `pipeline.latency.snapshot()`.
      */
@@ -123,6 +135,13 @@ interface LiveSessionHandle {
     /** Current valued legs for account-wide live book-risk aggregation. */
     fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> = emptyList()
 }
+
+/** Result returned to an operator after an emergency flatten attempt. */
+data class FlattenResult(
+    val verifiedFlat: Boolean,
+    val remainingTickets: List<String> = emptyList(),
+    val detail: String? = null,
+)
 
 /** A point-in-time P&L reading for one strategy, surfaced through `/status`. */
 data class SessionPnl(

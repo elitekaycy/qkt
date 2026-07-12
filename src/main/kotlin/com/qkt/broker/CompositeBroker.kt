@@ -194,6 +194,12 @@ class CompositeBroker(
         return merged
     }
 
+    override val supportsPositionTickets: Boolean
+        get() {
+            val leaves = allLeaves()
+            return leaves.isNotEmpty() && leaves.all(Broker::supportsPositionTickets)
+        }
+
     override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
         val byBroker = LinkedHashMap<Broker, MutableList<com.qkt.execution.ManagedOrder>>()
         for (order in orders) {

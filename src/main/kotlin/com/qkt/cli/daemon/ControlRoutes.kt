@@ -632,7 +632,24 @@ object ControlRoutes {
         if (result.unknown.isNotEmpty()) {
             return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
-        respond(ex, 200, """{"state":"killed","flatten":$flatten,"affected":${jsonArray(result.affected)}}""")
+        val flattenVerified =
+            flatten && result.affected.isNotEmpty() && result.flattenResults.values.all { it.verifiedFlat }
+        val remainingTickets =
+            result.flattenResults.values
+                .flatMap { it.remainingTickets }
+                .distinct()
+        val flattenDetails = result.flattenResults.mapValues { it.value.detail }
+        val detailsJson =
+            flattenDetails.entries.joinToString(prefix = "{", postfix = "}") { (strategy, detail) ->
+                "${jsonString(strategy)}:${jsonStringOrNull(detail)}"
+            }
+        respond(
+            ex,
+            200,
+            """{"state":"killed","flatten":$flatten,"flattenVerified":$flattenVerified,""" +
+                """"remainingTickets":${jsonArray(remainingTickets)},"flattenDetails":$detailsJson,""" +
+                """"affected":${jsonArray(result.affected)}}""",
+        )
     }
 
     private fun handleResume(
