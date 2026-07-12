@@ -89,8 +89,9 @@ interface Broker {
      * Re-establish venue-side tracking for OCO legs recovered from the persistor on
      * restart. Brokers join each [com.qkt.execution.ManagedOrder] to live venue state by
      * ticket and, for a leg that filled while the daemon was down, republish its
-     * [com.qkt.events.BrokerEvent.OrderFilled]. Default no-op — only stateful venue
-     * connectors override.
+     * [com.qkt.events.BrokerEvent.OrderFilled]. Implementations must throw when venue truth
+     * cannot be established, so startup refuses to trade on assumed state. Default no-op — only
+     * stateful venue connectors override.
      */
     fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {}
 

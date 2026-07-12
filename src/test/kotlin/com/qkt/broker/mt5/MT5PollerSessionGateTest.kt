@@ -129,6 +129,47 @@ class MT5PollerSessionGateTest {
     }
 
     @Test
+    fun `persisted ticket absent at startup is reported as disappeared`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+        val disappeared = mutableListOf<Long>()
+        val poller =
+            MT5PendingOrderPoller(
+                client = client,
+                profile = profile,
+                sessionGate = null,
+                onPendingDisappeared = { disappeared.add(it) },
+            )
+        poller.seedTrackedTickets(setOf(9001L))
+
+        poller.tickForTesting()
+
+        assertThat(disappeared).containsExactly(9001L)
+    }
+
+    @Test
+    fun `unresolved disappearance remains tracked for the next clean check`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+        var checks = 0
+        val poller =
+            MT5PendingOrderPoller(
+                client = client,
+                profile = profile,
+                sessionGate = null,
+                onPendingDisappeared = {
+                    checks++
+                    checks > 1
+                },
+            )
+        poller.seedTrackedTickets(setOf(9001L))
+
+        poller.tickForTesting()
+        poller.tickForTesting()
+
+        assertThat(checks).isEqualTo(2)
+    }
+
+    @Test
     fun `pending poller polls when any configured calendar is open multi-asset`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
         val sc =

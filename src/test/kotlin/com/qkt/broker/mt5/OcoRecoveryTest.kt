@@ -47,7 +47,7 @@ class OcoRecoveryTest {
         )
 
     @Test
-    fun `classifies a pending leg as reseed, a filled leg as emit-fill, a vanished leg as neither`() {
+    fun `classifies pending filled and vanished legs for recovery`() {
         val orders = listOf(leg("oco-a", "1"), leg("oco-b", "2"), leg("oco-c", "3"))
 
         val actions =
@@ -57,13 +57,16 @@ class OcoRecoveryTest {
                 positions = listOf(position(2L)),
             )
 
-        assertThat(actions).hasSize(2)
+        assertThat(actions).hasSize(3)
         val reseed = actions.filterIsInstance<OcoRecoveryAction.Reseed>().single()
         assertThat(reseed.order.id).isEqualTo("oco-a")
         assertThat(reseed.ticket).isEqualTo(1L)
         val fill = actions.filterIsInstance<OcoRecoveryAction.EmitFill>().single()
         assertThat(fill.order.id).isEqualTo("oco-b")
         assertThat(fill.position.ticket).isEqualTo(2L)
+        val vanished = actions.filterIsInstance<OcoRecoveryAction.TrackVanished>().single()
+        assertThat(vanished.order.id).isEqualTo("oco-c")
+        assertThat(vanished.ticket).isEqualTo(3L)
     }
 
     @Test

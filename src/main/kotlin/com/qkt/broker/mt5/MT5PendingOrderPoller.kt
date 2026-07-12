@@ -32,7 +32,8 @@ class MT5PendingOrderPoller(
     private val profile: MT5BrokerProfile,
     private val clock: Clock = SystemClock(),
     private val sessionGate: ((Instant) -> Boolean)? = null,
-    private val onPendingDisappeared: ((Long) -> Unit)? = null,
+    /** Return false to keep the ticket in the next diff when resolution remains uncertain. */
+    private val onPendingDisappeared: ((Long) -> Boolean)? = null,
     /** See [MT5PositionPoller]'s hook of the same name. */
     private val onGatewayUnreachable: ((Int) -> Unit)? = null,
     /** See [MT5PositionPoller]'s hook of the same name. */
@@ -41,12 +42,19 @@ class MT5PendingOrderPoller(
     private val log = LoggerFactory.getLogger(MT5PendingOrderPoller::class.java)
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
-    private var lastSnapshot: Map<Long, MT5PendingOrder> = emptyMap()
+    private val snapshotLock = Any()
+    private var lastSnapshot: Set<Long> = emptySet()
     private var consecutiveFailures: Int = 0
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
-        lastSnapshot = client.getPendingOrders(magic = profile.magic)?.associateBy { it.ticket } ?: emptyMap()
+        synchronized(snapshotLock) {
+            lastSnapshot =
+                client
+                    .getPendingOrders(magic = profile.magic)
+                    ?.mapTo(mutableSetOf()) { it.ticket }
+                    ?: emptySet()
+        }
         thread =
             Thread({
                 while (running.get()) {
@@ -77,6 +85,14 @@ class MT5PendingOrderPoller(
     /** Visible for tests. Production callers invoke this indirectly via the daemon thread. */
     internal fun tickForTesting() = tick()
 
+    /** Add persisted working tickets so absence at startup is observed as a disappearance. */
+    internal fun seedTrackedTickets(tickets: Set<Long>) {
+        if (tickets.isEmpty()) return
+        synchronized(snapshotLock) {
+            lastSnapshot = lastSnapshot + tickets
+        }
+    }
+
     private fun tick() {
         if (sessionGate != null && !sessionGate(Instant.ofEpochMilli(clock.now()))) {
             return
@@ -103,12 +119,17 @@ class MT5PendingOrderPoller(
             onGatewayRecovered?.invoke(consecutiveFailures)
         }
         consecutiveFailures = 0
-        val current = snapshot.associateBy { it.ticket }
-        val disappeared = lastSnapshot.keys - current.keys
+        val current = snapshot.mapTo(mutableSetOf()) { it.ticket }
+        val previous = synchronized(snapshotLock) { lastSnapshot }
+        val disappeared = previous - current
+        val unresolved = mutableSetOf<Long>()
         for (ticket in disappeared) {
-            onPendingDisappeared?.invoke(ticket)
+            if (onPendingDisappeared?.invoke(ticket) == false) unresolved += ticket
         }
-        lastSnapshot = current
+        synchronized(snapshotLock) {
+            val seededDuringTick = lastSnapshot - previous
+            lastSnapshot = current + unresolved + seededDuringTick
+        }
     }
 
     private companion object {
