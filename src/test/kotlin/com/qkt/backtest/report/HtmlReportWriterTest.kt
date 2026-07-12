@@ -41,6 +41,7 @@ class HtmlReportWriterTest {
         assertThat(html).contains("Run evidence")
         assertThat(html).contains("sha256:strategy")
         assertThat(html).contains("paper-fast")
+        assertThat(html).contains("Swap paid</td><td>2.50")
         assertThat(html).contains("split.train")
         assertThat(html).contains("2026-06-04T00:00:00Z/2026-06-04T04:00:00Z")
         assertThat(html).contains("promotion rationale")
@@ -106,6 +107,7 @@ class HtmlReportWriterTest {
                             )
                         },
                 ),
+            swapPaid = BigDecimal("2.50"),
         )
 
     private fun stubResult(report: PerformanceReport): BacktestResult =

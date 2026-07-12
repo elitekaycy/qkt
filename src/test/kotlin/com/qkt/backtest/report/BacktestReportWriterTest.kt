@@ -57,6 +57,7 @@ class BacktestReportWriterTest {
         assertThat(json).contains("\"mutableStore\":true")
         assertThat(json).contains("\"accounting\": {\"accountCurrency\": \"USD\"")
         assertThat(json).contains("\"global\":")
+        assertThat(json).contains("\"swapPaid\": \"0.00000000\"")
         assertThat(json).contains("\"perStrategy\":")
         Json.parseToJsonElement(json)
 

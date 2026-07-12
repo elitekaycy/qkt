@@ -24,6 +24,10 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *     tradeStopsLevelPoints: 0
  *     commissionPerLot: 3.50   # optional, default 0 — backtest cost per lot per side
  *     slippagePoints: 5        # optional, default 0 — adverse execution slip in points (mt5-sim)
+ *     swapLongPoints: -10      # optional, signed points per lot per rollover
+ *     swapShortPoints: 4       # optional, signed points per lot per rollover
+ *     swapRolloverHourUtc: 21  # optional, default 21
+ *     swapTripleDay: WEDNESDAY # optional, default WEDNESDAY
  * ```
  *
  * Duplicate `qktSymbol` entries fail loudly at [load] — fail-fast keeps a YAML edit
@@ -81,6 +85,14 @@ class YamlInstrumentRegistry private constructor(
                 tradeStopsLevelPoints = int("tradeStopsLevelPoints"),
                 commissionPerLot = bdOpt("commissionPerLot") ?: BigDecimal.ZERO,
                 slippagePoints = intOpt("slippagePoints") ?: 0,
+                swapLongPoints = bdOpt("swapLongPoints") ?: BigDecimal.ZERO,
+                swapShortPoints = bdOpt("swapShortPoints") ?: BigDecimal.ZERO,
+                swapRolloverHourUtc = intOpt("swapRolloverHourUtc") ?: 21,
+                swapTripleDay =
+                    entry["swapTripleDay"]?.toString()?.let {
+                        runCatching { java.time.DayOfWeek.valueOf(it.trim().uppercase()) }
+                            .getOrElse { error("instruments.yaml: entry $index invalid swapTripleDay '$it'") }
+                    } ?: java.time.DayOfWeek.WEDNESDAY,
             )
         }
     }

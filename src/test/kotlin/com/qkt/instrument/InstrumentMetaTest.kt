@@ -87,4 +87,21 @@ class InstrumentMetaTest {
             )
         }
     }
+
+    @Test
+    fun `rejects rollover hour outside utc day`() {
+        assertThrows<IllegalArgumentException> {
+            InstrumentMeta(
+                qktSymbol = "X",
+                contractSize = BigDecimal.ONE,
+                volumeStep = BigDecimal("0.01"),
+                volumeMin = BigDecimal("0.01"),
+                volumeMax = null,
+                pointSize = BigDecimal("0.01"),
+                digits = 2,
+                tradeStopsLevelPoints = 0,
+                swapRolloverHourUtc = 24,
+            )
+        }
+    }
 }

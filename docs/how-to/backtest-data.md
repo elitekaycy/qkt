@@ -192,7 +192,7 @@ The script is invoked as `script SYMBOL YYYY-MM-DD TARGET_PATH` and must write a
 (same format as Scenario 4) to `TARGET_PATH`. `scripts/fetch-dukascopy.sh` (a `dukascopy-node`
 wrapper) ships as a reference. This path takes precedence over the built-in fetcher when set.
 
-## Contract specs and commission (`instruments.yaml`)
+## Contract specs, commission, and swap (`instruments.yaml`)
 
 To turn lots into dollars a backtest needs each instrument's contract specs (lot size, lot step,
 price precision). qkt ships standard specs for every FX major and metal it can fetch, so gold and
@@ -200,7 +200,8 @@ FX backtests size correctly out of the box.
 
 `instruments.yaml` is an **override**, not a requirement. Drop it at `<data-root>/instruments.yaml`
 (i.e. `~/.qkt/data/instruments.yaml`) or pass `--instruments <path>` to set a broker's commission
-(default is zero) or add a symbol the standard table doesn't cover. Entries are keyed by the
+and overnight swap (both default to zero), or add a symbol the standard table doesn't cover.
+Entries are keyed by the
 broker-prefixed symbol from your strategy:
 
 ```yaml
@@ -213,9 +214,16 @@ instruments:
     digits: 3
     tradeStopsLevelPoints: 0
     commissionPerLot: 7.0   # optional — $ per lot per fill
+    swapLongPoints: -32.4   # optional — signed points per long lot per rollover
+    swapShortPoints: 14.1   # optional — signed points per short lot per rollover
+    swapRolloverHourUtc: 21 # optional — 0..23, default 21
+    swapTripleDay: WEDNESDAY # optional — Monday..Friday, default Wednesday
 ```
 
 A symbol present in the file wins; anything omitted falls back to the built-in specs.
+Positive swap points credit PnL and negative points debit it. The configured triple-day
+rollover is multiplied by three and weekend rollovers are skipped. Refresh these values
+from the broker before a cost-sensitive run because broker schedules can change.
 
 ## Reference
 

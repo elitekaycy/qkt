@@ -37,6 +37,7 @@ import com.qkt.pnl.CommissionBook
 import com.qkt.pnl.PerLotCommission
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
+import com.qkt.pnl.SwapFinancingBook
 import com.qkt.positions.Position
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
@@ -134,6 +135,7 @@ class ReplayEngine(
     private val bookRiskMonitor: BookRiskMonitor
     private val commissionBook = CommissionBook(PerLotCommission(instruments))
     private val pipeline: TradingPipeline
+    private val swapBook: SwapFinancingBook
     private val tradeRecords = mutableListOf<TradeRecord>()
     private val rejections = mutableListOf<RiskRejectedEvent>()
     private val halts = mutableListOf<com.qkt.events.RiskEvent.Halted>()
@@ -371,6 +373,15 @@ class ReplayEngine(
                 latencyEnabled = latencyEnabled,
             )
         holder[0] = pipeline
+        swapBook =
+            SwapFinancingBook(
+                instruments = instruments,
+                strategyPositions = strategyPositions,
+                accounting = accounting,
+                prices = priceTracker,
+                strategyIds = strategies.map { it.first },
+                symbols = tradedSymbols + brokerSymbols.values.flatten(),
+            )
         // Match the live kill-switch: a halt must remove every resting pending before
         // another replay tick can trigger it. RiskEngine only rejects new submissions;
         // without this subscription backtests could fill old entries after the halt.
@@ -404,6 +415,13 @@ class ReplayEngine(
      * pushed and pulled ticks take an identical path.
      */
     fun ingest(tick: Tick) {
+        if (ticksIngested > 0L) {
+            swapBook.accrueBetween(currentTimestamp, tick.timestamp) { strategyId, boundaryMs, amount ->
+                currentTimestamp = boundaryMs
+                clock.time = boundaryMs
+                pipeline.applyFinancing(strategyId, amount)
+            }
+        }
         currentTimestamp = tick.timestamp
         ticksIngested++
         clock.time = tick.timestamp
@@ -464,6 +482,8 @@ class ReplayEngine(
                 annualizationFactor = annualizationFactor,
                 metrics = collector.globalMetrics(),
                 commissionPaid = commissionBook.total(),
+                swapPaid = swapBook.totalPaid(),
+                dailyAdjustments = swapBook.dailyNet(),
                 tradedNotional = tradedNotional(tradeRecords),
             )
         val perStrategy =
@@ -478,6 +498,8 @@ class ReplayEngine(
                         annualizationFactor = annualizationFactor,
                         metrics = collector.metricsFor(id),
                         commissionPaid = commissionBook.totalFor(id),
+                        swapPaid = swapBook.totalPaidFor(id),
+                        dailyAdjustments = swapBook.dailyNetFor(id),
                         tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }),
                     )
             }

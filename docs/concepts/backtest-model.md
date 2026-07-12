@@ -39,7 +39,7 @@ Two of the headline ratios beyond Sharpe and Calmar:
 
 ## Per-strategy attribution
 
-A portfolio backtest (two or more strategies) prints a per-strategy block under the global summary, and the same breakdown lands in `--json` (a `perStrategy` object) and the `--report` bundle (`result.json`, plus an `equity_<id>.csv` per strategy). Each strategy carries its own full report — P&L, trades, Sharpe, Sortino, max drawdown, win rate, turnover, commission — computed from only that strategy's fills. A single-strategy run omits the block: the global summary already *is* that strategy.
+A portfolio backtest (two or more strategies) prints a per-strategy block under the global summary, and the same breakdown lands in `--json` (a `perStrategy` object) and the `--report` bundle (`result.json`, plus an `equity_<id>.csv` per strategy). Each strategy carries its own full report — P&L, trades, Sharpe, Sortino, max drawdown, win rate, turnover, commission, and swap — computed from that strategy's fills and financing cash flows. A single-strategy run omits the block: the global summary already *is* that strategy.
 
 ## Book analytics
 
@@ -70,6 +70,23 @@ Returns are measured on a constant capital base — each strategy's P&L change o
 ## Partial fills
 
 **Not modeled.** Every order is either filled fully or rejected.
+
+## Overnight swap
+
+Backtests model broker swap from signed `swapLongPoints` / `swapShortPoints` values in
+`instruments.yaml`. At each configured UTC rollover, every qualifying open leg accrues:
+
+`points * pointSize * contractSize * absolute lots * day multiplier`
+
+The multiplier is three on `swapTripleDay`, one on other weekdays, and zero on weekends.
+Positive points credit PnL; negative points debit it. A position opened on the boundary
+tick starts accruing on the next rollover, while one closed on that tick pays the current
+rollover. Gaps traverse every boundary in chronological order. Native quote-currency cash
+is converted through the accounting engine at the last pre-boundary mark.
+
+`swapPaid` is positive for a net charge and negative for a net credit. Realized and total
+PnL are already net of swap, and daily PnL assigns the cash to its UTC rollover date.
+Configured rates are a point-in-time input; they are not fetched historically from a broker.
 
 ## Equity
 

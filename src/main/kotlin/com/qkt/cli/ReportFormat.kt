@@ -52,10 +52,11 @@ object ReportPrinter {
     ) {
         val g = r.global
         out.println("Trades:           ${g.tradeCount}")
-        out.println("Final realized:   ${g.realizedTotal.toPlainString()}   (net of commission)")
+        out.println("Final realized:   ${g.realizedTotal.toPlainString()}   (net of commission and swap)")
         out.println("Final unrealized: ${g.unrealizedTotal.toPlainString()}")
         out.println("Total PnL:        ${g.totalPnL.toPlainString()}")
         out.println("Commission paid:  ${g.commissionPaid.toPlainString()}")
+        out.println("Swap paid:        ${g.swapPaid.toPlainString()}")
         out.println("Win rate:         ${g.winRate.toPlainString()}")
         out.println("Sharpe (annual):  ${g.sharpeRatio?.toPlainString() ?: "n/a"}")
         out.println("Sortino (annual): ${g.sortinoRatio?.toPlainString() ?: "n/a"}")
@@ -74,6 +75,7 @@ object ReportPrinter {
         out.println("Assumptions & conventions")
         out.println("  Execution:  ${executionModel(brokerKind)}")
         out.println("  Commission: ${commissionNote(g.commissionPaid)}")
+        out.println("  Swap:       ${swapNote(g.swapPaid)}")
         out.println("  Win rate:   wins / decided trades; break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
@@ -108,6 +110,7 @@ object ReportPrinter {
             it.partialFillModel?.let { v -> out.println("  partials:  $v") }
             it.venueRules?.let { v -> out.println("  venue:     $v") }
             it.commissionModel?.let { v -> out.println("  costs:     $v") }
+            it.financingModel?.let { v -> out.println("  financing: $v") }
             it.ocoMode?.let { v -> out.println("  oco:       $v") }
             it.warning?.let { warning -> out.println("  warning:   $warning") }
         }
@@ -246,6 +249,13 @@ object ReportPrinter {
             "none modeled — set commissionPerLot in instruments.yaml for cost-realistic PnL"
         }
 
+    private fun swapNote(swapPaid: java.math.BigDecimal): String =
+        when {
+            swapPaid.signum() > 0 -> "$swapPaid charged (signed points from instruments.yaml)"
+            swapPaid.signum() < 0 -> "${swapPaid.negate()} credited (signed points from instruments.yaml)"
+            else -> "none accrued"
+        }
+
     private fun printJson(
         r: BacktestResult,
         out: PrintStream,
@@ -259,6 +269,7 @@ object ReportPrinter {
         sb.append("\"finalUnrealized\":").append(g.unrealizedTotal.toPlainString()).append(',')
         sb.append("\"totalPnL\":").append(g.totalPnL.toPlainString()).append(',')
         sb.append("\"commissionPaid\":").append(g.commissionPaid.toPlainString()).append(',')
+        sb.append("\"swapPaid\":").append(g.swapPaid.toPlainString()).append(',')
         sb.append("\"winRate\":").append(g.winRate.toPlainString()).append(',')
         sb.append("\"maxDrawdown\":").append(g.maxDrawdown.toPlainString()).append(',')
         sb.append("\"profitFactor\":").append(g.profitFactor?.toPlainString() ?: "null").append(',')
@@ -346,6 +357,7 @@ object ReportPrinter {
             append(",\"maxDailyDrawdown\":").append(s.maxDailyDrawdown.toPlainString())
             append(",\"turnover\":").append(s.turnover.toPlainString())
             append(",\"commissionPaid\":").append(s.commissionPaid.toPlainString())
+            append(",\"swapPaid\":").append(s.swapPaid.toPlainString())
             append("}")
         }
 

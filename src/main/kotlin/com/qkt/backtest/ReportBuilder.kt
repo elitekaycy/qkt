@@ -21,6 +21,8 @@ object ReportBuilder {
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics? = null,
         commissionPaid: BigDecimal = BigDecimal.ZERO,
+        swapPaid: BigDecimal = BigDecimal.ZERO,
+        dailyAdjustments: Map<java.time.LocalDate, BigDecimal> = emptyMap(),
         tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport =
         build(
@@ -31,6 +33,8 @@ object ReportBuilder {
             annualizationFactor,
             metrics,
             commissionPaid,
+            swapPaid,
+            dailyAdjustments,
             tradedNotional,
         )
 
@@ -43,6 +47,8 @@ object ReportBuilder {
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics? = null,
         commissionPaid: BigDecimal = BigDecimal.ZERO,
+        swapPaid: BigDecimal = BigDecimal.ZERO,
+        dailyAdjustments: Map<java.time.LocalDate, BigDecimal> = emptyMap(),
         tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
@@ -54,6 +60,8 @@ object ReportBuilder {
             annualizationFactor,
             metrics,
             commissionPaid,
+            swapPaid,
+            dailyAdjustments,
             tradedNotional,
         )
     }
@@ -72,6 +80,8 @@ object ReportBuilder {
         annualizationFactor: BigDecimal,
         metrics: EquityMetrics?,
         commissionPaid: BigDecimal,
+        swapPaid: BigDecimal,
+        dailyAdjustments: Map<java.time.LocalDate, BigDecimal>,
         tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
         val realizeds = trades.map { it.realized }
@@ -133,7 +143,13 @@ object ReportBuilder {
                         .toLocalDate()
                 }.mapValues { (_, recs) ->
                     recs.fold(BigDecimal.ZERO) { acc, r -> acc.add(r.realized) }.setScale(Money.SCALE, Money.ROUNDING)
-                }
+                }.toMutableMap()
+        for ((date, adjustment) in dailyAdjustments) {
+            dailyPnL[date] =
+                (dailyPnL[date] ?: Money.ZERO)
+                    .add(adjustment)
+                    .setScale(Money.SCALE, Money.ROUNDING)
+        }
         val maxDailyDd = metrics?.maxDailyDrawdown() ?: DailyDrawdownAccumulator.fromCurve(equityCurve)
 
         return PerformanceReport(
@@ -155,7 +171,8 @@ object ReportBuilder {
             drawdownPeriods = drawdownPeriods,
             monteCarlo = monteCarlo,
             commissionPaid = commissionPaid.setScale(Money.SCALE, Money.ROUNDING),
-            dailyPnL = dailyPnL,
+            swapPaid = swapPaid.setScale(Money.SCALE, Money.ROUNDING),
+            dailyPnL = dailyPnL.toSortedMap(),
             maxDailyDrawdown = maxDailyDd,
             sortinoRatio = sortinoR,
             turnover = turnover,
