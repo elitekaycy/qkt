@@ -137,6 +137,7 @@ class OrderManager(
      * Never reverts. See #48.
      */
     private val armedTrailArmed: MutableMap<String, Boolean> = mutableMapOf()
+    private var trailingStateDirty = false
 
     private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
 
@@ -1722,28 +1723,7 @@ class OrderManager(
                     ),
                 )
             }
-            // Engine-managed armed trailing stops: persist the dispatched (PENDING) ones with their
-            // live arm flag + high-water mark so a restart resumes the trail instead of a winner
-            // coming back stop-less (#436).
-            val trailingStopsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.PersistedTrailingStop>> =
-                mutableMapOf()
-            for ((id, managed) in orders) {
-                val req = managed.request
-                if (req !is OrderRequest.ArmedTrailingStop) continue
-                if (managed.state != OrderState.PENDING) continue
-                val sid = req.strategyId
-                if (sid.isBlank()) continue
-                trailingStopsByStrategy.getOrPut(sid) { mutableListOf() }.add(
-                    com.qkt.persistence.PersistedTrailingStop(
-                        clientOrderId = id,
-                        brokerOrderId = managed.brokerOrderId,
-                        strategyId = sid,
-                        request = req,
-                        armed = armedTrailArmed[id] ?: false,
-                        hwm = trailingHwm[id] ?: req.entryPrice,
-                    ),
-                )
-            }
+            val trailingStopsByStrategy = trailingStopsByStrategy()
             val strategies =
                 (
                     pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +
@@ -1755,7 +1735,40 @@ class OrderManager(
                 persistor.saveOcoLegs(sid, ocoLegsByStrategy[sid] ?: emptyList())
                 persistor.saveTrailingStops(sid, trailingStopsByStrategy[sid] ?: emptyList())
             }
+            trailingStateDirty = false
         }
+    }
+
+    /** Flushes HWM-only armed-trail changes at the live heartbeat cadence. */
+    fun persistTrailingStateIfDirty() {
+        if (!trailingStateDirty) return
+        runCatching {
+            for ((strategyId, stops) in trailingStopsByStrategy()) {
+                persistor.saveTrailingStops(strategyId, stops)
+            }
+            trailingStateDirty = false
+        }
+    }
+
+    private fun trailingStopsByStrategy(): Map<String, List<com.qkt.persistence.PersistedTrailingStop>> {
+        val result = mutableMapOf<String, MutableList<com.qkt.persistence.PersistedTrailingStop>>()
+        for ((id, managed) in orders) {
+            val request = managed.request
+            if (request !is OrderRequest.ArmedTrailingStop || managed.state != OrderState.PENDING) continue
+            val strategyId = request.strategyId
+            if (strategyId.isBlank()) continue
+            result.getOrPut(strategyId) { mutableListOf() }.add(
+                com.qkt.persistence.PersistedTrailingStop(
+                    clientOrderId = id,
+                    brokerOrderId = managed.brokerOrderId,
+                    strategyId = strategyId,
+                    request = request,
+                    armed = armedTrailArmed[id] ?: false,
+                    hwm = trailingHwm[id] ?: request.entryPrice,
+                ),
+            )
+        }
+        return result
     }
 
     private fun onAccepted(e: BrokerEvent.OrderAccepted) {
@@ -2086,7 +2099,10 @@ class OrderManager(
                         Side.SELL -> if (tickPrice > current) tickPrice else current
                         Side.BUY -> if (tickPrice < current) tickPrice else current
                     }
-                trailingHwm[managed.id] = newHwm
+                if (newHwm != current) {
+                    trailingHwm[managed.id] = newHwm
+                    trailingStateDirty = true
+                }
 
                 // Arming gate: MFE = |hwm - entry|. Once MFE crosses the threshold, arm
                 // for life. Subsequent thresholds being un-crossed do NOT disarm.
