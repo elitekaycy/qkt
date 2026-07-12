@@ -98,4 +98,7 @@ not MT5 venue evidence.
 - `CliTierDeterminismTest`: exact JSON and raw report-bundle equality across all five CLI tiers.
 - `WallClockSourcePolicyTest`: exact-file allowlist for direct production wall-clock reads.
 
-The MT5 demo golden row remains unimplemented and unproven pending an authentic capture.
+`MT5GoldenFixture` and `MT5GoldenVerifier` implement the versioned capture schema, strict loader,
+deterministic simulator replay, explicit price/volume tolerance checks, and aggregate partial-deal
+comparison. The committed synthetic fixture exercises only this machinery and is rejected by the
+authenticity gate. The MT5 demo golden evidence row remains unproven pending an authentic capture.
