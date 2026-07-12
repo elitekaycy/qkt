@@ -810,6 +810,8 @@ class ExprCompiler(
                     "contract_size" -> meta.contractSize
                     "volume_step" -> meta.volumeStep
                     "volume_min" -> meta.volumeMin
+                    "swap_long_points" -> meta.swapLongPoints
+                    "swap_short_points" -> meta.swapShortPoints
                     else -> error("unreachable: ${ref.field}")
                 }
             Value.Num(value)
@@ -819,7 +821,14 @@ class ExprCompiler(
         val CANDLE_FIELDS: Set<String> =
             setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value")
         val META_FIELDS: Set<String> =
-            setOf("tick_size", "contract_size", "volume_step", "volume_min")
+            setOf(
+                "tick_size",
+                "contract_size",
+                "volume_step",
+                "volume_min",
+                "swap_long_points",
+                "swap_short_points",
+            )
         private val MS_PER_SECOND = BigDecimal(1000)
     }
 

@@ -40,6 +40,8 @@ data class ExecutionEvidence(
     val partialFillModel: String? = null,
     val venueRules: String? = null,
     val commissionModel: String? = null,
+    /** Human-readable overnight financing assumptions used by the run. */
+    val financingModel: String? = null,
     val ocoMode: String? = null,
     val warning: String? = null,
 )
@@ -126,6 +128,7 @@ object EvidenceJson {
             append(",\"partialFillModel\":").append(nullableString(e.partialFillModel))
             append(",\"venueRules\":").append(nullableString(e.venueRules))
             append(",\"commissionModel\":").append(nullableString(e.commissionModel))
+            append(",\"financingModel\":").append(nullableString(e.financingModel))
             append(",\"ocoMode\":").append(nullableString(e.ocoMode))
             append(",\"warning\":").append(nullableString(e.warning))
             append("}")

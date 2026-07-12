@@ -20,4 +20,10 @@ data class StreamRef(
     val contractSize: ExprAst = StreamFieldRef(alias, "contract_size")
     val volumeStep: ExprAst = StreamFieldRef(alias, "volume_step")
     val volumeMin: ExprAst = StreamFieldRef(alias, "volume_min")
+
+    /** Signed long swap points per lot per rollover for this stream's instrument. */
+    val swapLongPoints: ExprAst = StreamFieldRef(alias, "swap_long_points")
+
+    /** Signed short swap points per lot per rollover for this stream's instrument. */
+    val swapShortPoints: ExprAst = StreamFieldRef(alias, "swap_short_points")
 }

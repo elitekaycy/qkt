@@ -27,7 +27,8 @@ Exit criteria — every one, not most:
 - [ ] Halt → resume and `qkt kill --flatten` each exercised DELIBERATELY at least once.
       A kill procedure that has never been run is not a control.
 - [ ] Live fill data (slippage, spread, swap, commission) fed back into the backtest
-      cost model; demo equity lands inside the re-run backtest's expectation band.
+      cost model, including long/short points, rollover UTC hour, and triple weekday;
+      demo equity lands inside the re-run backtest's expectation band.
 
 ## Stage 2 — micro-real (2-4 weeks at 0.01 lots)
 

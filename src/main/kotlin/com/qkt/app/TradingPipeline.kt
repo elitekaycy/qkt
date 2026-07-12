@@ -552,6 +552,18 @@ class TradingPipeline(
         scheduleRunner.tick(tick.timestamp)
     }
 
+    /** Apply a non-trade realized adjustment through the shared PnL and risk writers. */
+    internal fun applyFinancing(
+        strategyId: String,
+        amount: BigDecimal,
+    ) {
+        riskState.beforeFill(strategyId)
+        pnl.recordRealized(amount)
+        strategyPnL.recordRealized(strategyId, amount)
+        riskState.onFill(strategyId, amount)
+        riskEngine.evaluateHaltRules()
+    }
+
     private fun sampleAccountEquitySeries(nowMs: Long) {
         if (!hasAccountEquitySeries) return
         candleHub.feed(
