@@ -12,9 +12,11 @@ object MT5Protocol {
     /**
      * Order types every MT5 venue understands at the protocol layer.
      *
-     * Phase 26b: STOP, LIMIT, STOP_LIMIT, OCO, and TRAILING_STOP translate natively
-     * via [MT5OrderTranslator]. Brokers can subtract via
-     * [MT5BrokerProfile.capabilityRestrictions] if a specific venue disables one.
+     * STOP and LIMIT map to order types accepted by the deployed gateway. STOP_LIMIT
+     * and TRAILING_STOP deliberately remain absent: the gateway neither accepts the
+     * stop-limit type nor applies the translator's trailing-distance field, so the
+     * engine must emulate those shapes. Brokers can subtract supported capabilities
+     * via [MT5BrokerProfile.capabilityRestrictions] for venue-specific restrictions.
      *
      * Pending-order fill-event lifecycle (detecting fills via position deltas, OCO
      * sibling cancel-on-fill via ticket correlation) is Phase 26c. Until then,
@@ -27,9 +29,7 @@ object MT5Protocol {
             OrderTypeCapability.BRACKET,
             OrderTypeCapability.STOP,
             OrderTypeCapability.LIMIT,
-            OrderTypeCapability.STOP_LIMIT,
             OrderTypeCapability.OCO,
-            OrderTypeCapability.TRAILING_STOP,
             OrderTypeCapability.MODIFY,
             OrderTypeCapability.MULTI_POSITION_PER_SYMBOL,
             OrderTypeCapability.POSITION_MODIFY,
