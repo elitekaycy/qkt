@@ -61,4 +61,29 @@ class WindowsConcatenateTest {
         assertThat(out).hasSize(4)
         assertThat(out.last().equity).isEqualByComparingTo(BigDecimal("13"))
     }
+
+    @Test
+    fun `anchored folds stitch pnl without adding starting balance`() {
+        val foldA =
+            listOf(
+                EquitySample(0L, BigDecimal("10000")),
+                EquitySample(1L, BigDecimal("10100")),
+            )
+        val foldB =
+            listOf(
+                EquitySample(2L, BigDecimal("10000")),
+                EquitySample(3L, BigDecimal("9950")),
+            )
+
+        val out = concatenate(listOf(foldA, foldB))
+
+        assertThat(out.map(EquitySample::equity))
+            .usingElementComparator(BigDecimal::compareTo)
+            .containsExactly(
+                BigDecimal("10000"),
+                BigDecimal("10100"),
+                BigDecimal("10100"),
+                BigDecimal("10050"),
+            )
+    }
 }
