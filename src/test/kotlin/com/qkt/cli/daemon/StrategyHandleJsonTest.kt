@@ -53,4 +53,36 @@ class StrategyHandleJsonTest {
         assertThat(snap.positions.first { it.symbol == "BYBIT_LINEAR:BTCUSDT" }.qty)
             .isEqualByComparingTo("-0.5")
     }
+
+    @Test
+    fun `buildSnapshot exposes persistence health counters`() {
+        val snap =
+            buildSnapshot(
+                strategyName = "s",
+                strategyVersion = 1,
+                startMs = 0L,
+                startedAt = "t",
+                trades = emptyList(),
+                persistenceHealth =
+                    com.qkt.persistence.PersistenceHealth(
+                        enabled = true,
+                        totalWrites = 10L,
+                        slowWrites = 2L,
+                        failedWrites = 1L,
+                        consecutiveFailures = 1L,
+                        failureEpisodes = 1L,
+                        queueSize = 7,
+                        callerRunsTotal = 3L,
+                    ),
+            )
+
+        assertThat(snap.persistence.enabled).isTrue()
+        assertThat(snap.persistence.totalWrites).isEqualTo(10L)
+        assertThat(snap.persistence.slowWrites).isEqualTo(2L)
+        assertThat(snap.persistence.failedWrites).isEqualTo(1L)
+        assertThat(snap.persistence.consecutiveFailures).isEqualTo(1L)
+        assertThat(snap.persistence.failureEpisodes).isEqualTo(1L)
+        assertThat(snap.persistence.queueSize).isEqualTo(7)
+        assertThat(snap.persistence.callerRunsTotal).isEqualTo(3L)
+    }
 }

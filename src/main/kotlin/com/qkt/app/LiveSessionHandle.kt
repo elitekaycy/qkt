@@ -2,6 +2,7 @@ package com.qkt.app
 
 import com.qkt.execution.Trade
 import com.qkt.notify.StrategySummary
+import com.qkt.persistence.PersistenceHealth
 import com.qkt.risk.HaltScope
 import java.math.BigDecimal
 import java.time.Duration
@@ -28,6 +29,9 @@ interface LiveSessionHandle {
 
     /** Symbols whose market data is currently stale, with quote age in ms (#395). */
     fun staleSymbols(): Map<String, Long> = emptyMap()
+
+    /** Durable-state write counters used by `/status` and operator automation. */
+    fun persistenceHealth(): PersistenceHealth = PersistenceHealth.DISABLED
 
     /**
      * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol gross directional

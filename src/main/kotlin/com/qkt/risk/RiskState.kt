@@ -110,17 +110,29 @@ class RiskState(
         persistNow()
     }
 
+    /**
+     * Latch a global risk halt. [cancelWorkingOrders] false creates an entry-only halt: new
+     * exposure is rejected while already-working protective exits remain live.
+     */
     @Synchronized
     fun halt(
         reason: String,
         scope: HaltScope = HaltScope.PERSISTENT,
+        cancelWorkingOrders: Boolean = true,
     ) {
         if (halted) {
             if (haltScope == HaltScope.DAILY && scope == HaltScope.PERSISTENT) {
                 haltReason = reason
                 haltScope = scope
                 haltEpochDay = epochDay()
-                bus.publish(RiskEvent.Halted(reason = reason, strategyId = null, timestamp = clock.now()))
+                bus.publish(
+                    RiskEvent.Halted(
+                        reason = reason,
+                        strategyId = null,
+                        cancelWorkingOrders = cancelWorkingOrders,
+                        timestamp = clock.now(),
+                    ),
+                )
                 persistNow()
             }
             return
@@ -129,7 +141,14 @@ class RiskState(
         haltReason = reason
         haltScope = scope
         haltEpochDay = epochDay()
-        bus.publish(RiskEvent.Halted(reason = reason, strategyId = null, timestamp = clock.now()))
+        bus.publish(
+            RiskEvent.Halted(
+                reason = reason,
+                strategyId = null,
+                cancelWorkingOrders = cancelWorkingOrders,
+                timestamp = clock.now(),
+            ),
+        )
         persistNow()
     }
 
