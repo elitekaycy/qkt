@@ -5,6 +5,16 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.LocalDate
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+/** Deterministic source identity for a stored macro series. */
+@Serializable
+data class MacroProvenance(
+    val schema: String = "qkt-macro-provenance-v1",
+    val sources: Map<String, String>,
+)
 
 /**
  * One observation of a daily macro series: a value for a calendar date.
@@ -13,11 +23,14 @@ import java.time.LocalDate
 data class MacroPoint(
     val date: LocalDate,
     val value: BigDecimal,
+    /** Exact instant this value became usable, or `null` for a legacy scheduled observation. */
+    val availableAtMs: Long? = null,
 )
 
 /**
  * On-disk store for daily macro series under `<root>/macro/<SERIES>/<year>.csv`, one row per
- * published business day as `date,value` (ISO date). One file per year, written sorted; a write
+ * published business day as `date,value,availableAtMs` (ISO date). Legacy two-column rows remain
+ * readable and use the series' release schedule. One file per year, written sorted; a write
  * merges into the existing year by date (new value wins) so incremental fetches are idempotent.
  *
  * Daily granularity, so unlike the tick store there is no per-day file — a year of a daily series
@@ -26,6 +39,8 @@ data class MacroPoint(
 class MacroSeriesStore(
     private val root: Path,
 ) {
+    private val json = Json { prettyPrint = true }
+
     private fun yearFile(
         series: String,
         year: Int,
@@ -44,7 +59,13 @@ class MacroSeriesStore(
             val body =
                 merged.values.sortedBy { it.date }.joinToString(
                     "\n",
-                ) { "${it.date},${it.value.toPlainString()}" }
+                ) { point ->
+                    listOfNotNull(
+                        point.date.toString(),
+                        point.value.toPlainString(),
+                        point.availableAtMs?.toString(),
+                    ).joinToString(",")
+                }
             val tmp = file.resolveSibling("${file.fileName}.tmp")
             Files.writeString(tmp, body + "\n")
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
@@ -78,12 +99,36 @@ class MacroSeriesStore(
         return min <= from && max >= to
     }
 
+    /** Atomically persist official source URLs mapped to SHA-256 artifact digests. */
+    fun writeProvenance(
+        series: String,
+        provenance: MacroProvenance,
+    ) {
+        val file = root.resolve("macro").resolve(series).resolve("provenance.json")
+        Files.createDirectories(file.parent)
+        val tmp = file.resolveSibling("${file.fileName}.tmp")
+        val normalized = provenance.copy(sources = provenance.sources.toSortedMap())
+        Files.writeString(tmp, json.encodeToString(normalized) + "\n")
+        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    }
+
+    /** Read source provenance for [series], or `null` for legacy/unprovenanced data. */
+    fun readProvenance(series: String): MacroProvenance? {
+        val file = root.resolve("macro").resolve(series).resolve("provenance.json")
+        if (!Files.exists(file)) return null
+        return json.decodeFromString(Files.readString(file))
+    }
+
     private fun readYear(file: Path): List<MacroPoint> {
         if (!Files.exists(file)) return emptyList()
         return Files.readAllLines(file).mapNotNull { line ->
             if (line.isBlank()) return@mapNotNull null
-            val parts = line.split(",", limit = 2)
-            MacroPoint(LocalDate.parse(parts[0]), BigDecimal(parts[1]))
+            val parts = line.split(",", limit = 3)
+            MacroPoint(
+                date = LocalDate.parse(parts[0]),
+                value = BigDecimal(parts[1]),
+                availableAtMs = parts.getOrNull(2)?.takeIf { it.isNotBlank() }?.toLong(),
+            )
         }
     }
 }

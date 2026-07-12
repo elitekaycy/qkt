@@ -27,6 +27,7 @@ class CandleHub {
     )
 
     private class Slot(
+        val key: HubKey,
         val aggregator: CandleAggregator,
         val ring: ArrayDeque<Candle>,
         var retention: Int,
@@ -86,14 +87,47 @@ class CandleHub {
                 for (l in slot.listeners.toList()) l.callback(closed)
                 routeToSyncSlots(key, closed)
             }
-        slots[key] = Slot(agg, ring, retention, listeners, mutableSetOf(strategyId))
+        slots[key] = Slot(key, agg, ring, retention, listeners, mutableSetOf(strategyId))
         rebuildSymbolIndex()
     }
 
     fun feed(tick: Tick) {
         val matching = slotsByQktSymbol[tick.symbol]
-        if (matching != null) for (i in matching.indices) matching[i].aggregator.onTick(tick)
+        if (matching != null) {
+            for (i in matching.indices) {
+                val slot = matching[i]
+                if (tick.symbol.startsWith("MACRO:")) {
+                    publishMacroEvent(slot, tick)
+                } else {
+                    slot.aggregator.onTick(tick)
+                }
+            }
+        }
         if (syncSlots.isNotEmpty()) sweepSyncTimeouts(tick.timestamp)
+    }
+
+    private fun publishMacroEvent(
+        slot: Slot,
+        tick: Tick,
+    ) {
+        val durationMs = TimeWindow.parse(slot.key.timeframe).durationMs
+        val candle =
+            Candle(
+                symbol = tick.symbol,
+                open = tick.price,
+                high = tick.price,
+                low = tick.price,
+                close = tick.price,
+                volume = tick.volume ?: com.qkt.common.Money.ZERO,
+                startTime = tick.timestamp,
+                endTime = tick.timestamp + durationMs,
+                bid = tick.bid,
+                ask = tick.ask,
+            )
+        slot.ring.addLast(candle)
+        while (slot.ring.size > slot.retention) slot.ring.removeFirst()
+        for (listener in slot.listeners.toList()) listener.callback(candle)
+        routeToSyncSlots(slot.key, candle)
     }
 
     /**

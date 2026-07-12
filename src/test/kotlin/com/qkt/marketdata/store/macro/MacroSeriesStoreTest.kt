@@ -58,4 +58,36 @@ class MacroSeriesStoreTest {
         assertThat(store.hasRange("DGS2", LocalDate.of(2023, 12, 29), LocalDate.of(2024, 6, 1))).isFalse()
         assertThat(store.hasRange("MISSING", LocalDate.of(2024, 1, 1), LocalDate.of(2024, 1, 2))).isFalse()
     }
+
+    @Test
+    fun `round trips explicit availability and still reads legacy rows`(
+        @TempDir tmp: Path,
+    ) {
+        val store = MacroSeriesStore(tmp)
+        val date = LocalDate.of(2024, 3, 5)
+        store.write("POLICY", listOf(MacroPoint(date, BigDecimal("4.35"), 1_709_620_200_000L)))
+
+        assertThat(store.read("POLICY", date, date).single().availableAtMs)
+            .isEqualTo(1_709_620_200_000L)
+
+        val legacyDir = tmp.resolve("macro").resolve("LEGACY")
+        java.nio.file.Files
+            .createDirectories(legacyDir)
+        java.nio.file.Files
+            .writeString(legacyDir.resolve("2024.csv"), "2024-03-05,4.00\n")
+        assertThat(store.read("LEGACY", date, date).single().availableAtMs).isNull()
+    }
+
+    @Test
+    fun `round trips deterministic source provenance`(
+        @TempDir tmp: Path,
+    ) {
+        val store = MacroSeriesStore(tmp)
+        val provenance = MacroProvenance(sources = mapOf("https://central.bank/rates.xlsx" to "abc123"))
+
+        store.writeProvenance("POLICY", provenance)
+
+        assertThat(store.readProvenance("POLICY")).isEqualTo(provenance)
+        assertThat(store.readProvenance("MISSING")).isNull()
+    }
 }
