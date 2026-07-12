@@ -98,6 +98,7 @@ class PortfolioDeployerE2ETest {
             const val CLOSE_SYMBOL = "__CLOSE__"
         }
     }
+
     private fun ticksFor(symbol: String): List<Tick> =
         (0 until 3).map {
             Tick(
