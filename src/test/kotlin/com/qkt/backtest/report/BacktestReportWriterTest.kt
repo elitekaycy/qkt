@@ -94,6 +94,31 @@ class BacktestReportWriterTest {
         assertThat(Files.list(dir).count()).isEqualTo(0L)
     }
 
+    @Test
+    fun `portfolio strategy ids are encoded in equity filenames`(
+        @TempDir dir: Path,
+    ) {
+        val noopStrategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {}
+            }
+        val result =
+            Backtest(
+                strategies = listOf("book:child" to noopStrategy),
+                ticks = ticks(),
+                candleWindow = TimeWindow.ONE_MINUTE,
+            ).run()
+
+        BacktestReportWriter(dir).write(result)
+
+        assertThat(dir.resolve("equity_book%3Achild.csv")).exists()
+        assertThat(Files.readString(dir.resolve("result.json"))).contains("\"book:child\"")
+    }
+
     private fun evidence(): EvidenceEnvelope =
         EvidenceEnvelope(
             qktVersion = "test",

@@ -122,4 +122,30 @@ class BacktestLiveParityTest {
             assertThat(l.orderId).isEqualTo(b.orderId)
         }
     }
+
+    @Test
+    fun `compiled candle indicator bracket has full-state parity`() {
+        val dsl =
+            """
+            STRATEGY candle_bracket VERSION 1
+            DEFAULTS { SIZING = 1 TIF = GTC }
+            SYMBOLS
+              btc = BACKTEST:BTCUSDT EVERY 1m
+            RULES
+              WHEN ema(btc.close, 2) CROSSES ABOVE ema(btc.close, 3)
+              THEN BUY btc BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 3 }
+              WHEN ema(btc.close, 2) CROSSES BELOW ema(btc.close, 3)
+              THEN CLOSE btc
+            """.trimIndent()
+        val prices = listOf("100", "99", "98", "99", "101", "104", "103", "101", "98", "97", "97")
+        val tape =
+            prices.mapIndexed { index, price ->
+                Tick("BACKTEST:BTCUSDT", Money.of(price), initialTs + index * 60_000L)
+            }
+
+        val result = DslParityHarness.run("candle_bracket", dsl, tape)
+
+        assertThat(result.backtest.trades).isNotEmpty
+        assertThat(result.live).isEqualTo(result.backtest)
+    }
 }
