@@ -121,7 +121,10 @@ class StrategyRegistryTest {
                         running.set(false)
                     }
 
-                    override fun awaitTermination(timeout: Duration): Boolean = true
+                    override fun awaitTermination(timeout: Duration): Boolean {
+                        events.add("await:$name:${file.fileName}")
+                        return true
+                    }
 
                     override fun recentTrades(): List<Trade> = emptyList()
 
@@ -385,6 +388,23 @@ class StrategyRegistryTest {
         registry.deploy("beta", tmp.resolve("beta.qkt"))
         registry.stopAll()
         assertThat(registry.list()).isEmpty()
+    }
+
+    @Test
+    fun `stopAll requests every stop before awaiting sessions`(
+        @TempDir tmp: Path,
+    ) {
+        val state = StateDir.resolve(tmp.toString())
+        val events = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val registry = StrategyRegistry(recordingFactory(state, events))
+        registry.deploy("alpha", tmp.resolve("alpha.qkt"))
+        registry.deploy("beta", tmp.resolve("beta.qkt"))
+
+        registry.stopAll()
+
+        val firstAwait = events.indexOfFirst { it.startsWith("await:") }
+        val lastStop = events.indexOfLast { it.startsWith("stop:") }
+        assertThat(firstAwait).isGreaterThan(lastStop)
     }
 
     @Test

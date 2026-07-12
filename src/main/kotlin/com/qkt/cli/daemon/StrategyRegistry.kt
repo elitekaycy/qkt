@@ -2,6 +2,7 @@ package com.qkt.cli.daemon
 
 import com.qkt.cli.daemon.portfolio.PortfolioSupervisor
 import java.nio.file.Path
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -64,11 +65,24 @@ class StrategyRegistry(
 
     fun list(): List<StrategyHandle> = handles.values.toList()
 
-    fun stopAll() {
-        for (record in portfolios.values) runCatching { record.supervisor.stop() }
+    /** Stops every supervisor/session against one shared deadline. */
+    fun stopAll(timeout: Duration = Duration.ofSeconds(5)) {
+        require(!timeout.isNegative) { "stop timeout must not be negative" }
+        val deadlineNanos = System.nanoTime() + timeout.toNanos()
+        val supervisors = portfolios.values.map { it.supervisor }
+        val closing = handles.values.toList()
         portfolios.clear()
-        for (h in handles.values) runCatching { h.close() }
         handles.clear()
+        for (supervisor in supervisors) runCatching { supervisor.requestStop() }
+        for (handle in closing) runCatching { handle.requestStop() }
+        for (supervisor in supervisors) {
+            val remaining = (deadlineNanos - System.nanoTime()).coerceAtLeast(0L)
+            runCatching { supervisor.awaitStopped(Duration.ofNanos(remaining)) }
+        }
+        for (handle in closing) {
+            val remaining = (deadlineNanos - System.nanoTime()).coerceAtLeast(0L)
+            runCatching { handle.awaitStopped(Duration.ofNanos(remaining)) }
+        }
     }
 
     fun registerPortfolio(record: PortfolioRecord) {

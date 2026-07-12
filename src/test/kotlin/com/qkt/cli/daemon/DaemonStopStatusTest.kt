@@ -7,12 +7,15 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.persistence.NoopStatePersistor
+import com.qkt.persistence.StatePersistor
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,6 +25,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
 class DaemonStopStatusTest {
+    private class RecordingPersistor : StatePersistor by NoopStatePersistor() {
+        val closed = AtomicBoolean(false)
+
+        override fun close() {
+            closed.set(true)
+        }
+    }
+
     private class IdleFeed : TickFeed {
         private val gate = CountDownLatch(1)
 
@@ -61,10 +72,15 @@ class DaemonStopStatusTest {
         @TempDir tmp: Path,
     ) {
         val stateDir = StateDir.resolve(tmp.toString())
+        val persistor = RecordingPersistor()
         val daemonThread =
             Thread {
                 val args = Args(arrayOf("daemon", "--state-dir", tmp.toString()))
-                DaemonCommand(args, sourceFactory = { IdleSource() }).run()
+                DaemonCommand(
+                    args,
+                    sourceFactory = { IdleSource() },
+                    statePersistorFactory = { _, _ -> persistor },
+                ).run()
             }
         daemonThread.isDaemon = true
         daemonThread.start()
@@ -85,6 +101,7 @@ class DaemonStopStatusTest {
             assertThat(resp.body!!.string()).contains("\"status\":\"accepted\"")
             daemonThread.join(5_000)
             assertThat(daemonThread.isAlive).isFalse
+            assertThat(persistor.closed).isTrue()
             assertThat(Files.exists(stateDir.controlPortFile)).isFalse
         } finally {
             if (daemonThread.isAlive) daemonThread.interrupt()
