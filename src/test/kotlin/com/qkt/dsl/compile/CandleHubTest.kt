@@ -27,6 +27,21 @@ class CandleHubTest {
     }
 
     @Test
+    fun `macro observations close immediately at their availability timestamp`() {
+        val hub = CandleHub()
+        val key = HubKey("MACRO", "RBA_RBNZ_RATE_DIFF", "1d")
+        val observedAt = 1_709_640_000_000L
+        val received = mutableListOf<Long>()
+        hub.register(key, retention = 5, strategyId = "test")
+        hub.onClosed(key, strategyId = "test") { received.add(it.startTime) }
+
+        hub.feed(tick("MACRO:RBA_RBNZ_RATE_DIFF", observedAt, "0.35"))
+
+        assertThat(received).containsExactly(observedAt)
+        assertThat(hub.latest(key)?.close).isEqualByComparingTo("0.35")
+    }
+
+    @Test
     fun `register max wins when called twice`() {
         val hub = CandleHub()
         hub.register(key1m, retention = 5, strategyId = "test")

@@ -782,8 +782,8 @@ class ExprCompiler(
             } else {
                 val fieldValue: BigDecimal? =
                     when (ref.field) {
-                        // `value` is the macro-series accessor (MACRO:DGS10.value); a daily series has
-                        // one number per day, which the candle path carries as the close.
+                        // `value` is the macro-series accessor (MACRO:DGS10.value); the candle hub
+                        // closes each published observation immediately as an event candle.
                         "close", "price", "value" -> candle.close
                         "open" -> candle.open
                         "high" -> candle.high

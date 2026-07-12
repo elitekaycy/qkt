@@ -391,6 +391,12 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 
 Bybit credentials are not configured under `qkt.config.yaml`. Bybit live routes are enabled when `BYBIT_API_KEY` is non-empty. The client reads `BYBIT_API_KEY`, `BYBIT_API_SECRET`, `BYBIT_TESTNET`, `BYBIT_RECV_WINDOW_MS`, and `BYBIT_ACCOUNT_TYPE` from the environment.
 
+Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
+and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the
+authorities' official XLSX tables. The RBA and RBNZ URLs are the defaults. Use a read-only mounted
+local artifact when an authority rejects server-side HTTP traffic; qkt records its SHA-256 and
+fails live ingestion when the artifact is malformed or more than seven calendar days stale.
+
 ## `notify`
 
 Notification channels are keyed by channel type. Telegram is built in.

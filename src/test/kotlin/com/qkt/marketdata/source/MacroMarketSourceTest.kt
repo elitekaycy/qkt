@@ -51,4 +51,33 @@ class MacroMarketSourceTest {
         assertThat(ticks.single().timestamp).isEqualTo(instant(LocalDate.of(2024, 3, 4), 13).toEpochMilli())
         assertThat(ticks.single().symbol).isEqualTo("MACRO:DGS10")
     }
+
+    @Test
+    fun `cataloged policy observations provide event bars for live warmup`(
+        @TempDir tmp: Path,
+    ) {
+        val store = MacroSeriesStore(tmp)
+        val availableAt = instant(LocalDate.of(2024, 3, 4), 13).toEpochMilli()
+        store.write(
+            "RBA_CASH_RATE",
+            listOf(
+                MacroPoint(LocalDate.of(2024, 2, 19), BigDecimal("4.35"), availableAt - 14 * 86_400_000L),
+                MacroPoint(LocalDate.of(2024, 3, 4), BigDecimal("4.35"), availableAt),
+            ),
+        )
+        val source = MacroMarketSource(store)
+
+        val bars =
+            source
+                .bars(
+                    "MACRO:RBA_CASH_RATE",
+                    com.qkt.candles.TimeWindow.ONE_DAY,
+                    TimeRange(
+                        instant(LocalDate.of(2024, 2, 19), 0),
+                        instant(LocalDate.of(2024, 3, 5), 0),
+                    ),
+                ).toList()
+
+        assertThat(bars.map { it.close }).containsExactly(BigDecimal("4.35"), BigDecimal("4.35"))
+    }
 }

@@ -58,4 +58,17 @@ class MarketSourceFactoryTest {
         assertThat(composite.supports("BYBIT_SPOT:BTCUSDT")).isTrue()
         assertThat(composite.supports("BYBIT_LINEAR:BTCUSDT")).isTrue()
     }
+
+    @Test
+    fun `composite routes cataloged policy rates but rejects arbitrary macro live series`() {
+        val composite =
+            MarketSourceFactory.composite(
+                mt5Profiles = emptyList(),
+                source = "local",
+                enableBybit = false,
+            )(emptyList())
+
+        assertThat(composite.supports("MACRO:RBA_RBNZ_RATE_DIFF")).isTrue()
+        assertThat(composite.supports("MACRO:DFII10")).isFalse()
+    }
 }

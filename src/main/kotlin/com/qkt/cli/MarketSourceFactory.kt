@@ -6,10 +6,14 @@ import com.qkt.marketdata.live.bybit.BybitSpotMarketSource
 import com.qkt.marketdata.live.mt5.Mt5MarketSource
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
+import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.marketdata.source.ReplayMarketSource
 import com.qkt.marketdata.source.SymbolPattern
+import com.qkt.marketdata.store.DataRoot
+import com.qkt.marketdata.store.macro.MacroSeriesStore
+import com.qkt.marketdata.store.macro.PolicyRateSeries
 import java.nio.file.Path
 
 /**
@@ -45,6 +49,11 @@ object MarketSourceFactory {
         fallbackProvider: () -> MarketSource = { defaultFallback(source) },
     ): (List<String>) -> MarketSource {
         val routes = mutableListOf<Pair<SymbolPattern, MarketSource>>()
+        val policySymbols = PolicyRateSeries.entries.map { "MACRO:${it.id}" }.toSet()
+        routes.add(
+            SymbolPattern.exactSet(policySymbols) to
+                MacroMarketSource(MacroSeriesStore(DataRoot.resolve())),
+        )
         for (p in mt5Profiles) {
             routes.add(SymbolPattern.prefix("${p.name.uppercase()}:") to Mt5MarketSource(p))
         }
