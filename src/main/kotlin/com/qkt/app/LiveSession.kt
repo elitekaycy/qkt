@@ -221,6 +221,9 @@ class LiveSession(
 
         /** Tick-queue poll timeout — bounds the control-queue re-check latency. */
         const val QUEUE_POLL_MS: Long = 25L
+
+        /** HTTP/operator snapshot requests fail loud instead of waiting forever on a stalled engine. */
+        const val ENGINE_QUERY_TIMEOUT_MS: Long = 5_000L
     }
 
     /** Accumulates trades/halts/equity-delta for the daily summary. */
@@ -1385,6 +1388,7 @@ class LiveSession(
                                     for (symbol in symbols) marketDataGate.isHealthy(symbol)
                                     pipeline.scheduleHeartbeat(msg.nowMs)
                                 }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
+                            is Inbound.Query -> msg.execute()
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 runCatching { doFlatten() }
@@ -1565,6 +1569,34 @@ class LiveSession(
             }
         }
 
+        fun <T> engineSnapshot(read: () -> T): T {
+            if (Thread.currentThread() === thread || !thread.isAlive) return read()
+            val result = java.util.concurrent.CompletableFuture<T>()
+            control.put(
+                Inbound.Query {
+                    runCatching(read)
+                        .onSuccess(result::complete)
+                        .onFailure(result::completeExceptionally)
+                },
+            )
+            val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ENGINE_QUERY_TIMEOUT_MS)
+            while (thread.isAlive) {
+                val remainingNs = deadlineNs - System.nanoTime()
+                if (remainingNs <= 0L) {
+                    throw IllegalStateException("live engine did not produce a consistent snapshot within the timeout")
+                }
+                try {
+                    return result.get(
+                        minOf(remainingNs, TimeUnit.MILLISECONDS.toNanos(QUEUE_POLL_MS)),
+                        TimeUnit.NANOSECONDS,
+                    )
+                } catch (_: java.util.concurrent.TimeoutException) {
+                    // Recheck thread liveness so a finite feed cannot strand the query on shutdown.
+                }
+            }
+            return if (result.isDone) result.get() else read()
+        }
+
         return object : LiveSessionHandle {
             override val running: Boolean get() = running.get()
 
@@ -1579,6 +1611,10 @@ class LiveSession(
 
             override fun reconcile(): ReconcileReport {
                 val ownerId = strategies.firstOrNull()?.first.orEmpty()
+                val engineState =
+                    engineSnapshot {
+                        strategyPositions.allLegsFor(ownerId) to strategyPnL.equityFor(ownerId)
+                    }
                 // positionTickets() carries the venue ticket, so the broker side can be scoped
                 // to this strategy by attribution and keyed identically to the engine tracker.
                 // getOpenPositions() is magic-global and ticketless, which made the old diff
@@ -1594,10 +1630,10 @@ class LiveSession(
                             ownerId,
                             brokerTickets,
                             ticketAttribution,
-                            strategyPositions.allLegsFor(ownerId),
+                            engineState.first,
                             accountingModes,
                         ),
-                    engineEquity = strategyPnL.equityFor(ownerId),
+                    engineEquity = engineState.second,
                     brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
                     protectionDeltas = reconcileProtectionDeltas(ownerId, brokerTickets, ticketAttribution),
                 )
@@ -1658,13 +1694,13 @@ class LiveSession(
             override fun recentTrades(): List<Trade> = trades.snapshot()
 
             override fun positionsFor(strategyId: String): List<com.qkt.positions.Position> =
-                strategyPositions.positionsFor(strategyId).values.toList()
+                engineSnapshot { strategyPositions.positionsFor(strategyId).values.toList() }
 
             override fun dailySummaryRows(): List<StrategySummary> =
-                this@LiveSession.dailySummaryRows(strategyPnL, strategyPositions)
+                engineSnapshot { this@LiveSession.dailySummaryRows(strategyPnL, strategyPositions) }
 
             override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
-                pipeline.orderManager.pendingStackLayerInfos()
+                engineSnapshot { pipeline.orderManager.pendingStackLayerInfos() }
 
             override fun latencySnapshot(): com.qkt.observability.LatencyRegistry.Report = pipeline.latency.snapshot()
 
@@ -1681,20 +1717,24 @@ class LiveSession(
             }
 
             override fun pnlSnapshot(strategyId: String): SessionPnl =
-                SessionPnl(
-                    equity = strategyPnL.equityFor(strategyId),
-                    balance = strategyPnL.balanceFor(strategyId),
-                    realized = strategyPnL.realizedFor(strategyId),
-                    unrealized = strategyPnL.unrealizedTotalFor(strategyId),
-                )
+                engineSnapshot {
+                    SessionPnl(
+                        equity = strategyPnL.equityFor(strategyId),
+                        balance = strategyPnL.balanceFor(strategyId),
+                        realized = strategyPnL.realizedFor(strategyId),
+                        unrealized = strategyPnL.unrealizedTotalFor(strategyId),
+                    )
+                }
 
             override fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> =
-                strategyPositions.positionsFor(strategyId).values.mapNotNull { position ->
-                    if (position.quantity.signum() == 0) return@mapNotNull null
-                    val price = priceTracker.lastPrice(position.symbol) ?: position.avgEntryPrice
-                    val contractSize = instruments.lookup(position.symbol)?.contractSize ?: java.math.BigDecimal.ONE
-                    com.qkt.risk.book
-                        .Leg(strategyId, position.symbol, position.quantity, price, contractSize)
+                engineSnapshot {
+                    strategyPositions.positionsFor(strategyId).values.mapNotNull { position ->
+                        if (position.quantity.signum() == 0) return@mapNotNull null
+                        val price = priceTracker.lastPrice(position.symbol) ?: position.avgEntryPrice
+                        val contractSize = instruments.lookup(position.symbol)?.contractSize ?: java.math.BigDecimal.ONE
+                        com.qkt.risk.book
+                            .Leg(strategyId, position.symbol, position.quantity, price, contractSize)
+                    }
                 }
 
             override fun halt(reason: String) {
@@ -1739,6 +1779,10 @@ private sealed interface Inbound {
 
     data class Heartbeat(
         val nowMs: Long,
+    ) : Inbound
+
+    class Query(
+        val execute: () -> Unit,
     ) : Inbound
 
     object Flatten : Inbound
