@@ -1,20 +1,19 @@
 package com.qkt.backtest.walkforward
 
 import com.qkt.backtest.EquitySample
-import com.qkt.common.Money
 import com.qkt.common.TimeRange
-import java.math.BigDecimal
 import java.time.Duration
 
 internal fun concatenate(curves: List<List<EquitySample>>): List<EquitySample> {
     val out = mutableListOf<EquitySample>()
-    var runningOffset: BigDecimal = Money.ZERO
     for (curve in curves) {
         if (curve.isEmpty()) continue
+        val foldStart = curve.first().equity
+        val stitchedStart = out.lastOrNull()?.equity ?: foldStart
         for (sample in curve) {
-            out.add(EquitySample(sample.timestamp, sample.equity.add(runningOffset)))
+            val foldPnl = sample.equity.subtract(foldStart)
+            out.add(EquitySample(sample.timestamp, stitchedStart.add(foldPnl)))
         }
-        runningOffset = runningOffset.add(curve.last().equity)
     }
     return out
 }
