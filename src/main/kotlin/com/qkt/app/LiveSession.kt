@@ -987,6 +987,18 @@ class LiveSession(
                             }.onFailure { t -> recordNotificationFailure(strategyId, "MarketDataUnhealthy", t) }
                         }
                     }
+                    if (insightsSink != null &&
+                        com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
+                    ) {
+                        insightsSink.offer(
+                            com.qkt.observe.insights.InsightsTranslate.marketDataStale(
+                                source = source.name,
+                                symbol = symbol,
+                                ts = clock.now(),
+                                reason = reason,
+                            ),
+                        )
+                    }
                 },
             )
         val marginRules =
