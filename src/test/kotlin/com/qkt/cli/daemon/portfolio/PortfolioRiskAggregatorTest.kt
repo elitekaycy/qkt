@@ -4,14 +4,17 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.persistence.PersistedRiskState
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.FakePnL
+import com.qkt.risk.HaltScope
 import com.qkt.risk.RiskState
 import com.qkt.risk.TestClock
 import com.qkt.risk.rules.MaxDailyDrawdown
+import com.qkt.risk.rules.MaxDailyLoss
 import com.qkt.risk.rules.MaxDrawdown
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -25,24 +28,40 @@ class PortfolioRiskAggregatorTest {
     private class FakeChild : ChildRiskTarget {
         var flattened = 0
         var halted: String? = null
+        var scope: HaltScope? = null
         var resumed = 0
 
         override fun flatten() {
             flattened++
         }
 
-        override fun halt(reason: String) {
-            halted = reason
+        override fun halt(
+            reason: String,
+            scope: HaltScope,
+        ) {
+            if (halted == null || (this.scope == HaltScope.DAILY && scope == HaltScope.PERSISTENT)) {
+                halted = reason
+                this.scope = scope
+            }
         }
 
         override fun resume() {
             resumed++
+            halted = null
+            scope = null
         }
+
+        override fun isHalted(): Boolean = halted != null
+
+        override fun haltReason(): String? = halted
+
+        override fun haltScope(): HaltScope? = scope
     }
 
     private fun bookRiskState(
         pnl: FakePnL,
         clock: Clock,
+        persist: ((PersistedRiskState) -> Unit)? = null,
     ): RiskState =
         RiskState(
             pnl,
@@ -51,7 +70,68 @@ class PortfolioRiskAggregatorTest {
             EventBus(clock, MonotonicSequenceGenerator()),
             BigDecimal("100000"),
             DailyDrawdownBasis.BALANCE,
+            persist,
         )
+
+    @Test
+    fun `child fills feed the book daily-loss rule even before the aggregator binds`() {
+        val clock = TestClock(0L)
+        val state = bookRiskState(FakePnL(BigDecimal("-1100"), BigDecimal.ZERO), clock)
+        val child = FakeChild()
+        val aggregator =
+            PortfolioRiskAggregator(
+                listOf(child),
+                state,
+                listOf(MaxDailyLoss(BigDecimal("1000"))),
+                clock,
+            )
+        val fills = PortfolioRiskFillBuffer()
+        fills.record("alpha", BigDecimal("-600"))
+        fills.record("beta", BigDecimal("-500"))
+
+        fills.bind(aggregator)
+        aggregator.evaluate()
+
+        assertThat(state.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("-1100")
+        assertThat(child.flattened).isEqualTo(1)
+        assertThat(child.halted).contains("daily loss")
+    }
+
+    @Test
+    fun `persisted book halt is re-applied to children after restart`() {
+        val clock = TestClock(0L)
+        var persisted: PersistedRiskState? = null
+        val firstState =
+            bookRiskState(FakePnL(BigDecimal("-1100"), BigDecimal.ZERO), clock) { state -> persisted = state }
+        val firstChild = FakeChild()
+        val first =
+            PortfolioRiskAggregator(
+                listOf(firstChild),
+                firstState,
+                listOf(MaxDailyLoss(BigDecimal("1000"))),
+                clock,
+            )
+        first.recordRealized("alpha", BigDecimal("-1100"))
+        first.evaluate()
+
+        val restoredState = bookRiskState(FakePnL(BigDecimal("-1100"), BigDecimal.ZERO), clock)
+        restoredState.restore(requireNotNull(persisted))
+        val restoredChild = FakeChild()
+        val restored =
+            PortfolioRiskAggregator(
+                listOf(restoredChild),
+                restoredState,
+                listOf(MaxDailyLoss(BigDecimal("1000"))),
+                clock,
+            )
+
+        restored.evaluate()
+
+        assertThat(restoredState.halted).isTrue
+        assertThat(restoredState.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("-1100")
+        assertThat(restoredChild.flattened).isEqualTo(1)
+        assertThat(restoredChild.halted).contains("daily loss")
+    }
 
     @Test
     fun `flattens and halts every child on a static total breach, once`() {
@@ -108,6 +188,7 @@ class PortfolioRiskAggregatorTest {
         agg.evaluate() // breach: flatten + halt, latched DAILY
         assertThat(a.flattened).isEqualTo(1)
         assertThat(a.halted).isNotNull()
+        assertThat(a.scope).isEqualTo(HaltScope.DAILY)
         assertThat(a.resumed).isEqualTo(0)
 
         clock.t = DAY_MS // roll into the next UTC day; tracker re-captures ref at 95000 → DD 0
@@ -115,6 +196,33 @@ class PortfolioRiskAggregatorTest {
 
         assertThat(a.resumed).isEqualTo(1)
         assertThat(a.flattened).isEqualTo(1) // not re-tripped — DD reset on the new day
+    }
+
+    @Test
+    fun `daily expiry does not resume a child with an unrelated persistent halt`() {
+        val clock = TestClock(0L)
+        val pnl = FakePnL(BigDecimal.ZERO, BigDecimal.ZERO)
+        val state = bookRiskState(pnl, clock)
+        val bookOwned = FakeChild()
+        val engineFaulted = FakeChild().also { it.halt("engine fault", HaltScope.PERSISTENT) }
+        val aggregator =
+            PortfolioRiskAggregator(
+                listOf(bookOwned, engineFaulted),
+                state,
+                listOf(MaxDailyDrawdown(BigDecimal("0.04"))),
+                clock,
+            )
+
+        aggregator.evaluate()
+        pnl.realized = BigDecimal("-5000")
+        aggregator.evaluate()
+        clock.t = DAY_MS
+        aggregator.evaluate()
+
+        assertThat(bookOwned.resumed).isEqualTo(1)
+        assertThat(engineFaulted.resumed).isZero()
+        assertThat(engineFaulted.halted).isEqualTo("engine fault")
+        assertThat(engineFaulted.scope).isEqualTo(HaltScope.PERSISTENT)
     }
 
     @Test

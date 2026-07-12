@@ -67,7 +67,7 @@ class BarsReplayTest {
                 gold = BACKTEST:XAUUSD EVERY 15m
             RULES
                 WHEN ema(gold.close, 3) CROSSES ABOVE ema(gold.close, 9)
-                THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 0.01, TAKE PROFIT RR 2 }
+                THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
                 WHEN ema(gold.close, 3) CROSSES BELOW ema(gold.close, 9)
                 THEN CLOSE gold
             """.trimIndent(),
@@ -302,6 +302,26 @@ class BarsReplayTest {
         buildBars(dataRoot, "15m")
         // 2m does not divide the strategy's 15m, so rollup would be inexact -> reject before running.
         assertThat(runBarsArgs(dir, dataRoot, arrayOf("--bar-tf", "2m"))).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
+    fun `plain bars reject mt5-sim because synthetic ticks void its fill model`(
+        @TempDir dir: Path,
+    ) {
+        val originalErr = System.err
+        val err = ByteArrayOutputStream()
+        val code =
+            try {
+                System.setErr(PrintStream(err))
+                runBarsArgs(dir, dir.resolve("data"), arrayOf("--broker", "mt5-sim"))
+            } finally {
+                System.setErr(originalErr)
+            }
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(err.toString())
+            .contains("--bars with --broker mt5-sim is unsafe")
+            .contains("Use --bars --tick-fills or full tick replay")
     }
 
     @Test

@@ -69,6 +69,12 @@ sealed interface BrokerEvent : Event {
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
         /**
+         * Whether this fill completes or advances the order identified by [clientOrderId].
+         * False for venue position-close observations that reuse the original entry id:
+         * accounting still consumes the fill, but the entry order record is already terminal.
+         */
+        val updatesOrderExecution: Boolean = true,
+        /**
          * Venue-reported trading costs attached to this fill — commission + swap + fees,
          * in account currency, positive = charge (negative = rebate). Zero when the venue
          * reports none or the venue path cannot supply them. The pipeline nets this out
@@ -157,6 +163,15 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : BrokerEvent
 
+    /** The venue account-equity view is unavailable long enough to make its last value stale. */
+    data class AccountEquityStale(
+        val broker: String,
+        val consecutiveFailures: Int,
+        val staleForMs: Long?,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
+
     /**
      * Broker transport/gateway connection lifecycle. Used for real-time operator visibility;
      * order and position events remain the source of trade truth.
@@ -184,6 +199,30 @@ sealed interface BrokerEvent : Event {
         val newAvgPx: BigDecimal,
         val source: String,
         val reason: String,
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
+
+    /** Venue-side SL/TP protection changed while the position ticket remained open. */
+    data class PositionProtectionChanged(
+        val broker: String,
+        val symbol: String,
+        val ticket: String,
+        val oldStopLoss: BigDecimal,
+        val newStopLoss: BigDecimal,
+        val oldTakeProfit: BigDecimal,
+        val newTakeProfit: BigDecimal,
+        val strategyId: String = "",
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : BrokerEvent
+
+    /** Completion of an asynchronous venue-side position SL/TP modification. */
+    data class PositionModificationCompleted(
+        val operationId: String,
+        val ticket: String,
+        val accepted: Boolean,
+        val rejectReason: String? = null,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : BrokerEvent

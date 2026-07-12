@@ -56,6 +56,11 @@ class AsyncStatePersistor(
     /** Cumulative count of writes that fell back to caller-runs because the queue was full. */
     val callerRunsTotal: Long get() = callerRunsCount.get()
 
+    override fun healthSnapshot(): PersistenceHealth =
+        delegate
+            .healthSnapshot()
+            .copy(queueSize = queueSize, callerRunsTotal = callerRunsTotal)
+
     private class CountingCallerRunsPolicy(
         private val counter: java.util.concurrent.atomic.AtomicLong,
     ) : java.util.concurrent.RejectedExecutionHandler {

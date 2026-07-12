@@ -3,9 +3,12 @@ package com.qkt.cli
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import java.math.BigDecimal
+import java.nio.file.Files
+import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class ConfigRiskTest {
     @Test
@@ -43,5 +46,23 @@ class ConfigRiskTest {
             .hasMessageContaining("(0, 100]")
         assertThatThrownBy { Config(risk = mapOf("total_dd_basis" to "bogus")).totalDdBasis }
             .hasMessageContaining("unknown total_dd_basis")
+    }
+
+    @Test
+    fun `load rejects an unknown global risk key`(
+        @TempDir tempDir: Path,
+    ) {
+        val config = tempDir.resolve("qkt.config.yaml")
+        Files.writeString(
+            config,
+            """
+            risk:
+              max_daily_loss: 500
+              max_daily_drawdow_pct: 4
+            """.trimIndent(),
+        )
+
+        assertThatThrownBy { Config.load(config) }
+            .hasMessageContaining("unknown risk key(s): max_daily_drawdow_pct")
     }
 }

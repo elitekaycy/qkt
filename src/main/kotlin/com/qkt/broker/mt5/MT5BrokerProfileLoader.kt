@@ -95,9 +95,18 @@ class MT5BrokerProfileLoader {
         val magic =
             pick("magic", fields, env, name, base?.magic?.toString())?.toInt()
                 ?: error("MT5 profile '$name' missing required field: magic")
-        val tz =
-            pick("server_tz_offset_hours", fields, env, name, base?.serverTzOffsetHours?.toString())?.toInt()
-                ?: error("MT5 profile '$name' missing required field: server_tz_offset_hours")
+        val explicitOffset = pick("server_tz_offset_hours", fields, env, name, null)?.toInt()
+        val explicitTimeZone = pick("server_time_zone", fields, env, name, null)
+        require(explicitOffset == null || explicitTimeZone == null) {
+            "MT5 profile '$name' must not set both server_time_zone and server_tz_offset_hours"
+        }
+        val serverTimeZone =
+            when {
+                explicitTimeZone != null -> MT5ServerTimeZone.parse(explicitTimeZone)
+                explicitOffset != null -> MT5ServerTimeZone.fixedOffset(explicitOffset)
+                base != null -> base.serverTimeZone
+                else -> error("MT5 profile '$name' missing required field: server_time_zone")
+            }
         // YAML wins over the inherited base on key conflict.
         val aliases = (base?.symbolPolicy?.aliases ?: emptyMap()) + yamlAliases
         val capabilityRestrictions =
@@ -119,7 +128,7 @@ class MT5BrokerProfileLoader {
             name = name,
             gatewayUrl = gatewayUrl,
             symbolPolicy = SymbolPolicy(suffix = suffix, aliases = aliases),
-            serverTzOffsetHours = tz,
+            serverTimeZone = serverTimeZone,
             magic = magic,
             instrumentOverrides = instrumentOverrides,
             pollIntervalMs =
@@ -137,6 +146,18 @@ class MT5BrokerProfileLoader {
             apiKey = pick("api_key", fields, env, name, base?.apiKey),
             capabilityRestrictions = capabilityRestrictions,
             symbolCalendars = symbolCalendars,
+            expectedAccountLogin =
+                pick("expected_account_login", fields, env, name, base?.expectedAccountLogin?.toString())?.toLong(),
+            expectedAccountServer =
+                pick("expected_account_server", fields, env, name, base?.expectedAccountServer),
+            expectedTradeMode =
+                pick("expected_trade_mode", fields, env, name, base?.expectedTradeMode?.name)
+                    ?.let(MT5TradeMode::parse),
+            expectedAccountCurrency =
+                pick("expected_account_currency", fields, env, name, base?.expectedAccountCurrency)
+                    ?.uppercase(),
+            expectedLeverage =
+                pick("expected_leverage", fields, env, name, base?.expectedLeverage?.toString())?.toInt(),
         )
     }
 

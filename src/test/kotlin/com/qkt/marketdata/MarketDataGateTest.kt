@@ -46,6 +46,26 @@ class MarketDataGateTest {
     }
 
     @Test
+    fun `stale transition invokes the operator alert once`() {
+        val clock = TickingClock(0L)
+        val alerts = mutableListOf<String>()
+        val gate =
+            MarketDataGate(
+                clock,
+                minStaleAgeMs = 1_000L,
+                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+            )
+        clock.t = 1L
+        gate.observe(tick("100", clock.t))
+        clock.t += 2_000L
+
+        repeat(3) { assertThat(gate.isHealthy("X")).isFalse() }
+
+        assertThat(alerts).hasSize(1)
+        assertThat(alerts.single()).contains("X:quote age")
+    }
+
+    @Test
     fun `an implausible outlier tick is rejected, plausible moves pass`() {
         val clock = TickingClock(0L)
         val gate = MarketDataGate(clock)
@@ -69,6 +89,42 @@ class MarketDataGateTest {
         clock.t += 100L
         val verdict = gate.observe(tick("100", clock.t, bid = "100.5", ask = "99.5"))
         assertThat(verdict).isEqualTo(MarketDataGate.Verdict.OUTLIER)
+    }
+
+    @Test
+    fun `a coherent price gap re-baselines instead of freezing the symbol`() {
+        val clock = TickingClock(0L)
+        val gate = MarketDataGate(clock)
+        repeat(32) {
+            clock.t += 100L
+            gate.observe(tick("100", clock.t))
+        }
+
+        repeat(2) {
+            clock.t += 100L
+            assertThat(gate.observe(tick("98", clock.t))).isEqualTo(MarketDataGate.Verdict.OUTLIER)
+            assertThat(gate.isHealthy("X")).isFalse()
+        }
+        clock.t += 100L
+        assertThat(gate.observe(tick("98", clock.t))).isEqualTo(MarketDataGate.Verdict.OK)
+        assertThat(gate.isHealthy("X")).isTrue()
+
+        clock.t += 100L
+        assertThat(gate.observe(tick("98.1", clock.t))).isEqualTo(MarketDataGate.Verdict.OK)
+        assertThat(gate.outlierCount.get()).isEqualTo(2L)
+    }
+
+    @Test
+    fun `crossed books never trigger a price re-baseline`() {
+        val clock = TickingClock(0L)
+        val gate = MarketDataGate(clock)
+
+        repeat(4) {
+            clock.t += 100L
+            assertThat(gate.observe(tick("100", clock.t, bid = "101", ask = "99")))
+                .isEqualTo(MarketDataGate.Verdict.OUTLIER)
+        }
+        assertThat(gate.isHealthy("X")).isFalse()
     }
 
     @Test

@@ -151,7 +151,7 @@ class ExprTransform(
         when (cp) {
             is ChildAt -> ChildAt(expr(cp.price))
             is ChildBy -> ChildBy(expr(cp.distance))
-            is ChildPct -> ChildPct(expr(cp.frac))
+            is ChildPct -> ChildPct(expr(cp.percent))
             is ChildRr -> ChildRr(expr(cp.multiplier))
             is ChildArmedTrail -> ChildArmedTrail(expr(cp.trailDistance), expr(cp.mfeThreshold))
         }

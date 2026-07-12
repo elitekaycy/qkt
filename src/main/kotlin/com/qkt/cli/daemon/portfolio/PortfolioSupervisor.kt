@@ -102,15 +102,36 @@ class PortfolioSupervisor(
             }
     }
 
-    /** Stop the supervisor thread and join it (5s timeout). Idempotent. */
-    fun stop() {
+    /** Requests both supervisor loops to stop without waiting. */
+    fun requestStop() {
         if (!runFlag.compareAndSet(true, false)) return
         thread?.interrupt()
-        thread?.join(5000)
-        thread = null
         riskThread?.interrupt()
-        riskThread?.join(5000)
-        riskThread = null
+    }
+
+    /** Waits up to [timeout] for both supervisor loops. */
+    fun awaitStopped(timeout: java.time.Duration): Boolean {
+        require(!timeout.isNegative) { "stop timeout must not be negative" }
+        val deadlineNanos = System.nanoTime() + timeout.toNanos()
+        for (candidate in listOfNotNull(thread, riskThread)) {
+            val remaining = (deadlineNanos - System.nanoTime()).coerceAtLeast(0L)
+            if (remaining > 0L) {
+                candidate.join(
+                    remaining / 1_000_000L,
+                    (remaining % 1_000_000L).toInt(),
+                )
+            }
+        }
+        val stopped = thread?.isAlive != true && riskThread?.isAlive != true
+        if (thread?.isAlive != true) thread = null
+        if (riskThread?.isAlive != true) riskThread = null
+        return stopped
+    }
+
+    /** Stop the supervisor loops and wait up to five seconds. Idempotent. */
+    fun stop() {
+        requestStop()
+        awaitStopped(java.time.Duration.ofSeconds(5))
     }
 
     internal fun applyDesired(desired: Map<String, Boolean>) {

@@ -23,6 +23,8 @@ import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
+import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 import java.math.BigDecimal
 
 class AstCompiler {
@@ -39,7 +41,7 @@ class AstCompiler {
                 ast.series.associate { it.alias to HubKey(it.source.broker, it.source.symbol, it.timeframe) }
         // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
         val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
-        val resolver = LetResolver(ast.lets)
+        val resolver = LetResolver(ast.lets, streams.keys)
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
         val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
@@ -145,7 +147,7 @@ class AstCompiler {
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
         val warmupGate = WarmupGate(perStreamWarmup)
 
-        val perStreamWarmupSpec: Map<String, com.qkt.strategy.WarmupSpec> =
+        val perStreamWarmupSpec: Map<WarmupStream, WarmupSpec> =
             perStreamWarmup
                 .mapNotNull { (alias, bars) ->
                     val key = streams[alias] ?: return@mapNotNull null
@@ -153,10 +155,11 @@ class AstCompiler {
                     val window =
                         com.qkt.candles.TimeWindow
                             .parse(key.timeframe)
-                    key.qktSymbol to
-                        com.qkt.strategy.WarmupSpec
-                            .Bars(window, bars)
-                }.toMap()
+                    WarmupStream(key.qktSymbol, window) to bars
+                }.groupBy(keySelector = { it.first }, valueTransform = { it.second })
+                .mapValues { (stream, counts) ->
+                    WarmupSpec.Bars(stream.window, counts.max())
+                }
 
         val compiledSchedules: List<CompiledSchedule> =
             ast.schedules.map { decl ->
@@ -425,7 +428,7 @@ private class CompiledStrategy(
     override val volumeRequiringSymbols: Set<String>,
     private val metaRefs: List<MetaRef>,
     private val warmupGate: WarmupGate,
-    override val perStreamWarmup: Map<String, com.qkt.strategy.WarmupSpec>,
+    override val perStreamWarmup: Map<WarmupStream, WarmupSpec>,
     private val syncGroups: List<SyncGroupDecl>,
     private val schedules: List<CompiledSchedule>,
     override val quoteFieldStreams: Set<String>,

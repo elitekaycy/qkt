@@ -373,11 +373,17 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; prefer `${QKT_BROKER_<NAME>_API_KEY}`. |
 | `symbol_suffix` | string | no | inherited or empty | Appended to broker symbol names. |
 | `magic` | int | yes for fresh profile | inherited or built-in | Must be unique across MT5 profiles. |
-| `server_tz_offset_hours` | int | yes for fresh profile | inherited or built-in | MT5 server offset from UTC. |
+| `server_time_zone` | zone id | yes for fresh profile | inherited or built-in | MT5 server clock. Use `new_york_close` for UTC+2/+3 following US DST, or an IANA id such as `Europe/Helsinki`. |
+| `server_tz_offset_hours` | int | no | none | Legacy fixed-offset alternative. Cannot be combined with `server_time_zone`; does not handle DST. |
 | `poll_interval_ms` | long | no | `1000` | Position and pending-order polling cadence. |
 | `http_timeout_ms` | long | no | `5000` | Gateway HTTP timeout. |
 | `retry_attempts` | int | no | `3` | Gateway retry attempts. |
 | `deviation_points` | int | no | `20` | Market-order price deviation tolerance. |
+| `expected_account_login` | long | production MT5 | none | Refuses startup when `/account.login` differs. |
+| `expected_account_server` | string | production MT5 | none | Refuses startup when `/account.server` differs. |
+| `expected_trade_mode` | `demo`, `contest`, or `real` | production MT5 | none | Prevents demo/real environment inversion. |
+| `expected_account_currency` | currency code | no | none | Optional profile-level currency assertion; global `account.currency` is also checked by preflight. |
+| `expected_leverage` | int | production MT5 | none | Refuses startup when venue leverage differs. |
 | `calendars` | map pattern to `fx`, `crypto`, or `nyse` | no | inherited or FX default | First matching pattern wins. |
 | `aliases` | map qkt symbol to broker symbol | no | inherited plus overrides | Example `NAS100: USTEC`. |
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |

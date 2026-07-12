@@ -28,7 +28,8 @@ On deploy, the engine fetches:
 - 50 bars of 5m XAUUSD from EXNESS (max of explicit 50 and no implicit need).
 - 24 bars of 1h SPX500 from BACKTEST (implicit from `ema(..., 24)`).
 
-Different timeframes on different streams now warm independently — the legacy single-spec `Warmable` collapsed everything to one window, which over- or under-fetched at least one stream in multi-stream strategies.
+Different timeframes warm independently, including two aliases for the same symbol. `PerStreamWarmable`
+keys requirements by `WarmupStream(symbol, window)` so neither declaration can overwrite the other.
 
 ### `WarmupRequirements.compute(ast)`
 
@@ -44,7 +45,8 @@ Pre-credits the Phase 24 gate so it doesn't sit cold after the hub has already b
 
 ### `IndicatorWarmer.warmup(perStream, now)`
 
-Per-stream form of the existing single-spec method. Each symbol gets its own `WarmupSpec`. Legacy single-spec callers continue to work via a thin wrapper.
+Per-stream form of the existing single-spec method. Each `(symbol, window)` stream gets its own
+`WarmupSpec`. Legacy single-spec callers continue to work via a thin wrapper.
 
 ### `WarmupFailedException`
 
@@ -58,7 +60,12 @@ Deploy aborts before any rule fires. Half-warm strategies are worse than not-dep
 
 ## Migration from Phase 24
 
-Pure addition for DSL strategies — every existing strategy still parses, and behavior strictly improves: `WARMUP 50 BARS` that previously meant "wait 50 live bars" now means "prefetch 50 bars and fire on the first live bar." Indicator-derived bars-needed is also new — a strategy with `EMA(close, 200)` but no explicit `WARMUP` now also gets 200 bars pre-fetched. This was previously a silent bug surface (rule never fired because indicator stayed cold).
+DSL syntax is unchanged. Custom `PerStreamWarmable` implementations must replace string keys with
+`WarmupStream(symbol, window)` keys. This prevents same-symbol multi-timeframe declarations from
+colliding during live deploy.
+
+`WARMUP 50 BARS` means "prefetch 50 bars and fire on the first live bar." A strategy with
+`EMA(close, 200)` but no explicit `WARMUP` also gets 200 bars pre-fetched.
 
 The legacy single-spec `Warmable` interface still works for non-DSL strategies — `LiveSession.start()` falls back to it when `PerStreamWarmable` isn't implemented.
 

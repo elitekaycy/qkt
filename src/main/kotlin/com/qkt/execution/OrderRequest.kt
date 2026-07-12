@@ -71,6 +71,12 @@ sealed interface OrderRequest {
          * (not net into the primary), so it works in the backtest too, where there is no ticket.
          */
         val closesLegId: String? = null,
+        /**
+         * True when [quantity] reduces only part of the referenced position leg. MT5 routes
+         * this shape to its dedicated partial-close endpoint when [closesTicket] is available;
+         * full closes continue to use close-by-ticket.
+         */
+        val partialClose: Boolean = false,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }

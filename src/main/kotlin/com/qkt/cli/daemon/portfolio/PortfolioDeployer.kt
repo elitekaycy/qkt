@@ -56,6 +56,17 @@ class PortfolioDeployer(
     private val riskIntervalMs: Long = 1000L,
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
+    private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+    private val maxOrderQty: java.math.BigDecimal =
+        com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+    private val maxOrderNotional: java.math.BigDecimal =
+        com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+    private val priceCollarFrac: java.math.BigDecimal =
+        com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+    private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
+    private val measuredUsageHours: Long = 0L,
+    private val measuredUsageMaxQty: java.math.BigDecimal =
+        com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
@@ -93,6 +104,12 @@ class PortfolioDeployer(
                 } else {
                     null
                 }
+            val bookRiskEnabled =
+                bookController != null ||
+                    maxDrawdownPct != null ||
+                    maxDailyDrawdownPct != null ||
+                    maxDailyLoss.signum() > 0
+            val bookFillBuffer = if (bookRiskEnabled) PortfolioRiskFillBuffer() else null
             for (compiledChild in compiled.children) {
                 val (handle, wrapper) =
                     createChild(
@@ -101,6 +118,7 @@ class PortfolioDeployer(
                         compiledChild,
                         allocations[compiledChild.alias],
                         bookController,
+                        bookFillBuffer?.let { buffer -> buffer::record } ?: { _, _ -> },
                     )
                 children.add(handle)
                 childWrappers.add(wrapper)
@@ -110,6 +128,8 @@ class PortfolioDeployer(
                     .map { it.qktSymbol }
                     .distinct()
             val hasConditionalRules = compiled.ast.rules.any { it is WhenRun }
+            val riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers, bookController)
+            if (riskAggregator != null) bookFillBuffer?.bind(riskAggregator)
             val supervisor =
                 PortfolioSupervisor(
                     ast = compiled.ast,
@@ -122,7 +142,7 @@ class PortfolioDeployer(
                         } else {
                             marketSourceProvider(symbols)
                         },
-                    riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers, bookController),
+                    riskAggregator = riskAggregator,
                     riskIntervalMs = riskIntervalMs,
                 )
             supervisor.start()
@@ -177,9 +197,18 @@ class PortfolioDeployer(
                 object : ChildRiskTarget {
                     override fun flatten() = w.handle.live.flatten()
 
-                    override fun halt(reason: String) = w.handle.live.halt(reason)
+                    override fun halt(
+                        reason: String,
+                        scope: com.qkt.risk.HaltScope,
+                    ) = w.handle.live.halt(reason, scope)
 
                     override fun resume() = w.handle.live.resume()
+
+                    override fun isHalted(): Boolean = w.handle.live.isHalted()
+
+                    override fun haltReason(): String? = w.handle.live.haltReason()
+
+                    override fun haltScope(): com.qkt.risk.HaltScope? = w.handle.live.haltScope()
                 }
             }
         val bookRiskState =
@@ -193,7 +222,9 @@ class PortfolioDeployer(
                 com.qkt.bus.EventBus(clock, com.qkt.common.MonotonicSequenceGenerator()),
                 riskCapital,
                 dailyDdBasis,
+                persist = { state -> persistor.saveRiskState("$PORTFOLIO_RISK_PREFIX$portfolioName", state) },
             )
+        persistor.loadRiskState("$PORTFOLIO_RISK_PREFIX$portfolioName")?.let(bookRiskState::restore)
         val haltRules =
             buildList {
                 if (maxDailyLoss.signum() > 0) {
@@ -312,6 +343,7 @@ class PortfolioDeployer(
         compiledChild: CompiledChild,
         allocatedCapital: java.math.BigDecimal? = null,
         bookController: com.qkt.risk.book.BookRiskController? = null,
+        onBookRealized: (String, java.math.BigDecimal) -> Unit = { _, _ -> },
     ): Pair<StrategyHandle, ChildHandle> {
         val childName = "$portfolioName/${compiledChild.alias}"
         val gateActive = AtomicBoolean(false)
@@ -344,8 +376,10 @@ class PortfolioDeployer(
                 source = source,
                 symbols = compiledChild.symbols,
                 candleWindow = candleWindow,
+                accountingConfig = accountingConfig,
                 mdcStrategy = childName,
-                onTrade = { trade, realized, _ ->
+                onTrade = { trade, realized, strategyId ->
+                    onBookRealized(strategyId, realized)
                     com.qkt.cli.daemon.logging.withMdc("strategy", childName) {
                         com.qkt.cli.daemon.logging.withMdc("parent", portfolioName) {
                             ring.append("trade", tradeToJson(trade, realized))
@@ -394,6 +428,12 @@ class PortfolioDeployer(
                 perStrategyLossStreakHalt = perStrategyOverride?.lossStreakHalt,
                 perStrategyLossStreakHaltScope =
                     perStrategyOverride?.lossStreakHaltScope ?: com.qkt.risk.HaltScope.PERSISTENT,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                priceCollarFrac = priceCollarFrac,
+                marginFloorPct = marginFloorPct,
+                measuredUsageHours = measuredUsageHours,
+                measuredUsageMaxQty = measuredUsageMaxQty,
                 startingBalances =
                     allocatedCapital?.let { mapOf(compiledChild.strategyId to it) } ?: emptyMap(),
             ).start()
@@ -420,6 +460,7 @@ class PortfolioDeployer(
                         session.recentTrades(),
                         layers,
                         pnl = session.pnlSnapshot(compiledChild.ast.name),
+                        persistenceHealth = session.persistenceHealth(),
                     )
                 },
                 running = { session.running },
@@ -461,5 +502,9 @@ class PortfolioDeployer(
                 operatorStop = operatorStop,
             )
         return handle to wrapper
+    }
+
+    private companion object {
+        const val PORTFOLIO_RISK_PREFIX = "__portfolio__"
     }
 }

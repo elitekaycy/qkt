@@ -39,6 +39,7 @@ import com.qkt.positions.StrategyPositionViewImpl
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
+import com.qkt.strategy.QuoteToAccountRateProvider
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
@@ -100,6 +101,8 @@ class TradingPipeline(
      * per-strategy `LiveSession` similarly gets its own.
      */
     val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(persistor = persistor),
+    /** Operator alert hook for a filled stack layer whose venue-side protection failed. */
+    val onProtectionFailure: (strategyId: String, message: String) -> Unit = { _, _ -> },
     val pacerLedger: com.qkt.risk.PacerLedger = com.qkt.risk.PacerLedger(),
     private val pacerCooldownDurationMs: Long? = null,
     private val pacerCooldownAfterConsecutive: Int = 1,
@@ -114,7 +117,7 @@ class TradingPipeline(
     /**
      * Resolver for `Timezone.BROKER` in DSL `SCHEDULE` triggers (#77). Returns the
      * broker's effective `ZoneId` for the given strategy, or `null` to indicate
-     * the broker profile didn't supply `serverTzOffsetHours`. Defaults to null —
+     * the broker profile didn't supply `server_time_zone`. Defaults to null —
      * `BROKER` is only meaningful in live mode where a real broker profile exists.
      * Wired by [com.qkt.app.LiveSession] from the MT5 broker profile.
      */
@@ -194,6 +197,7 @@ class TradingPipeline(
             // Risk-per-trade is a backtest-report feature; only record it there so the live
             // daemon's risk map doesn't grow unbounded.
             trackRisk = mode == Mode.BACKTEST,
+            onProtectionFailure = onProtectionFailure,
         )
     val latchManager: LatchManager =
         LatchManager(
@@ -238,6 +242,7 @@ class TradingPipeline(
         )
 
     init {
+        riskEngine.bindPendingExposure(orderManager)
         require(strategies.map { it.first }.toSet().size == strategies.size) {
             "Strategy IDs must be unique: ${strategies.map { it.first }}"
         }
@@ -262,6 +267,10 @@ class TradingPipeline(
                     pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
                     risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
                     instruments = instruments,
+                    quoteToAccountRate =
+                        QuoteToAccountRateProvider { symbol, timestamp, referencePrice ->
+                            accounting.quoteToAccountRate(symbol, timestamp, referencePrice)
+                        },
                     tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(tradeHistory, strategyId),
                     pacer =
                         com.qkt.risk.PacerViewImpl(
@@ -352,7 +361,9 @@ class TradingPipeline(
         // Both subscribe earlier in construction order, so ordinary subscribe() here
         // would run them against a pre-fill book (#374, #377).
         bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
+            if (e.strategyId.isBlank()) return@subscribeFirst
             if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
+            riskState.beforeFill(e.strategyId)
             // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
             // the instrument's contractSize here so dollar amounts match what the venue
             // reports. Default 1 preserves pre-Phase-30 behavior for symbols not in the
@@ -433,6 +444,8 @@ class TradingPipeline(
             )
         }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
+            if (e.strategyId.isBlank()) return@subscribe
+            riskState.beforeFill(e.strategyId)
             val asFill =
                 BrokerEvent.OrderFilled(
                     clientOrderId = e.clientOrderId,
@@ -578,6 +591,7 @@ class TradingPipeline(
      * the heartbeat via [ingest] (#77).
      */
     fun scheduleHeartbeat(nowMs: Long) {
+        orderManager.persistTrailingStateIfDirty()
         scheduleRunner.tick(nowMs)
         sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
@@ -712,7 +726,7 @@ class TradingPipeline(
     }
 
     /**
-     * A `CLOSE` of an independent leg is emitted as a market tagged with `closesLegId`
+     * A `CLOSE` of a tracked position leg is emitted as a market tagged with `closesLegId`
      * ([com.qkt.dsl.compile.ActionCompiler.closeSignalsFor]). Register the fill so the tracker
      * realizes that specific leg instead of netting into the primary. Works in backtest and
      * live; the venue-side close (by ticket) is handled separately by the MT5 broker.

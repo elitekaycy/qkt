@@ -62,10 +62,11 @@ object MessageTemplate {
                 """.trimIndent()
 
             is NotificationEvent.StrategyStopped ->
-                """
-                $tag qkt stopped ${event.strategyId} (flatten=${event.flatten})
-                $t
-                """.trimIndent()
+                listOfNotNull(
+                    "$tag qkt stopped ${event.strategyId} (flatten=${event.flatten})",
+                    event.reason?.let { "reason: $it" },
+                    t,
+                ).joinToString("\n")
 
             is NotificationEvent.StrategyError ->
                 """
@@ -75,11 +76,12 @@ object MessageTemplate {
                 """.trimIndent()
 
             is NotificationEvent.DaemonStarted ->
-                """
-                $tag qkt ${event.version} started
-                strategies: ${event.strategies.joinToString(", ")}
-                $t
-                """.trimIndent()
+                buildString {
+                    append("$tag qkt ${event.version} started\n")
+                    append("strategies: ${event.strategies.joinToString(", ")}\n")
+                    if (event.accounts.isNotEmpty()) append("accounts: ${event.accounts.joinToString("; ")}\n")
+                    append(t)
+                }
 
             is NotificationEvent.DailySummary ->
                 buildString {

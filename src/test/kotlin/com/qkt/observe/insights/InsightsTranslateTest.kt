@@ -185,6 +185,11 @@ class InsightsTranslateTest {
         val md = InsightsTranslate.marketDataReconnected("tradingview", listOf("XAUUSD"), 1718000000300L)
         assertThat(md.type).isEqualTo("marketdata.reconnected")
         assertThat(md.payload["symbols"]).isEqualTo(listOf("XAUUSD"))
+
+        val stale = InsightsTranslate.marketDataStale("mt5", "EXNESS:XAUUSD", 1718000000400L, "quote age")
+        assertThat(stale.type).isEqualTo("marketdata.stale")
+        assertThat(stale.payload).containsEntry("state", "stale")
+        assertThat(stale.payload["symbols"]).isEqualTo(listOf("EXNESS:XAUUSD"))
     }
 
     @Test
@@ -282,6 +287,32 @@ class InsightsTranslateTest {
         // The orphan ticket appears with its nulls absent, not serialized as null.
         assertThat(json).contains(""""ticket":"124"""")
         assertThat(json).doesNotContain("null")
+    }
+
+    @Test
+    fun `state persistence carries durability counters`() {
+        val env =
+            InsightsTranslate.statePersistence(
+                ts = 1718000000000L,
+                strategyId = "alpha",
+                health =
+                    com.qkt.persistence.PersistenceHealth(
+                        enabled = true,
+                        totalWrites = 10L,
+                        slowWrites = 2L,
+                        failedWrites = 1L,
+                        consecutiveFailures = 1L,
+                        failureEpisodes = 1L,
+                        queueSize = 7,
+                        callerRunsTotal = 3L,
+                    ),
+            )
+
+        assertThat(env.type).isEqualTo("state.persistence")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.payload).containsEntry("failedWrites", 1L)
+        assertThat(env.payload).containsEntry("callerRunsTotal", 3L)
+        assertThat(env.toJson("qkt-prod")).contains(""""queueSize":7""")
     }
 
     @Test
@@ -437,7 +468,7 @@ class InsightsTranslateTest {
 
         val requests =
             listOf(
-                market().copy(closesTicket = "ticket-1", closesLegId = "leg-1"),
+                market().copy(closesTicket = "ticket-1", closesLegId = "leg-1", partialClose = true),
                 OrderRequest.Limit(
                     "lim",
                     "XAUUSD",
@@ -640,6 +671,7 @@ class InsightsTranslateTest {
                 "Stack",
             )
         assertThat(byType.getValue("Market")).containsEntry("closesTicket", "ticket-1")
+        assertThat(byType.getValue("Market")).containsEntry("partialClose", true)
         assertThat(
             byType.getValue("Limit"),
         ).containsEntry("limitPrice", BigDecimal("2349.5")).containsEntry("expiresAt", 2L)

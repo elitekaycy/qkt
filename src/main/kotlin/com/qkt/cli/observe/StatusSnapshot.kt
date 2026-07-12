@@ -62,6 +62,19 @@ data class PendingStackLayer(
     @Serializable(with = BigDecimalAsNumberSerializer::class) val quantity: BigDecimal,
 )
 
+/** Durable-state health included in every operator status snapshot. */
+@Serializable
+data class PersistenceHealthDto(
+    val enabled: Boolean = false,
+    val totalWrites: Long = 0L,
+    val slowWrites: Long = 0L,
+    val failedWrites: Long = 0L,
+    val consecutiveFailures: Long = 0L,
+    val failureEpisodes: Long = 0L,
+    val queueSize: Int = 0,
+    val callerRunsTotal: Long = 0L,
+)
+
 /** JSON payload returned by `/status` — the canonical operator-facing strategy snapshot. */
 @Serializable
 data class StatusSnapshot(
@@ -89,4 +102,6 @@ data class StatusSnapshot(
     val inboundQueueDepth: Int = 0,
     /** Symbols whose market data is currently stale (quote age past threshold). */
     val staleSymbols: List<String> = emptyList(),
+    /** Durable state-writer health; failed writes make restart state stale. */
+    val persistence: PersistenceHealthDto = PersistenceHealthDto(),
 )

@@ -18,7 +18,7 @@ class MT5BrokerProfileLoaderTest {
         val ex = profiles.first { it.name == "exness" }
         assertThat(ex.gatewayUrl).isEqualTo("http://h:5005")
         assertThat(ex.symbolPolicy.suffix).isEqualTo("m")
-        assertThat(ex.serverTzOffsetHours).isEqualTo(2)
+        assertThat(ex.serverTimeZone).isEqualTo(MT5ServerTimeZone.NEW_YORK_CLOSE)
         assertThat(ex.magic).isEqualTo(10001)
     }
 
@@ -58,11 +58,73 @@ class MT5BrokerProfileLoaderTest {
     }
 
     @Test
+    fun `fresh profile accepts a DST-aware server time zone`() {
+        val raw =
+            mapOf(
+                "custom" to
+                    mapOf(
+                        "type" to "mt5",
+                        "gateway_url" to "http://h:6000",
+                        "magic" to "10006",
+                        "server_time_zone" to "Europe/Helsinki",
+                    ),
+            )
+
+        val profile = loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()).single()
+
+        assertThat(profile.serverTimeZone.id).isEqualTo("Europe/Helsinki")
+    }
+
+    @Test
+    fun `profile rejects competing static and DST-aware time settings`() {
+        val raw =
+            mapOf(
+                "exness" to
+                    mapOf(
+                        "type" to "mt5",
+                        "server_time_zone" to "new_york_close",
+                        "server_tz_offset_hours" to "2",
+                    ),
+            )
+
+        assertThatThrownBy { loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()) }
+            .hasMessageContaining("must not set both")
+    }
+
+    @Test
     fun `api key loads from the profile environment override`() {
         val raw = mapOf("exness" to mapOf("type" to "mt5"))
         val env = mapOf("QKT_BROKER_EXNESS_API_KEY" to "secret-token")
         val profile = loader.load(raw, MT5DefaultProfiles.all, env).single()
         assertThat(profile.apiKey).isEqualTo("secret-token")
+    }
+
+    @Test
+    fun `expected account identity loads from profile config`() {
+        val profile =
+            loader
+                .load(
+                    raw =
+                        mapOf(
+                            "exness" to
+                                mapOf(
+                                    "type" to "mt5",
+                                    "expected_account_login" to "435898347",
+                                    "expected_account_server" to "Exness-MT5Trial9",
+                                    "expected_trade_mode" to "demo",
+                                    "expected_account_currency" to "usd",
+                                    "expected_leverage" to "100",
+                                ),
+                        ),
+                    defaults = MT5DefaultProfiles.all,
+                    env = emptyMap(),
+                ).single()
+
+        assertThat(profile.expectedAccountLogin).isEqualTo(435898347L)
+        assertThat(profile.expectedAccountServer).isEqualTo("Exness-MT5Trial9")
+        assertThat(profile.expectedTradeMode).isEqualTo(MT5TradeMode.DEMO)
+        assertThat(profile.expectedAccountCurrency).isEqualTo("USD")
+        assertThat(profile.expectedLeverage).isEqualTo(100)
     }
 
     @Test

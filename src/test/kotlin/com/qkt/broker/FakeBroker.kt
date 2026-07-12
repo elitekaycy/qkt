@@ -73,6 +73,9 @@ class FakeBroker(
     )
 
     val modifyPositions: MutableList<ModifyPositionCall> = mutableListOf()
+    var rejectPositionModifications: Boolean = false
+    var deferPositionModifications: Boolean = false
+    private val deferredPositionModificationResults: ArrayDeque<(SubmitAck) -> Unit> = ArrayDeque()
 
     override fun modifyPosition(
         ticket: String,
@@ -80,7 +83,32 @@ class FakeBroker(
         tp: BigDecimal?,
     ): SubmitAck {
         modifyPositions.add(ModifyPositionCall(ticket, sl, tp))
+        if (rejectPositionModifications) {
+            return SubmitAck(ticket, ticket, accepted = false, rejectReason = "fake position modify rejection")
+        }
         return SubmitAck(ticket, ticket, accepted = true)
+    }
+
+    override fun modifyPositionAsync(
+        ticket: String,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+        onResult: (SubmitAck) -> Unit,
+    ) {
+        if (!deferPositionModifications) {
+            onResult(modifyPosition(ticket, sl, tp))
+            return
+        }
+        modifyPositions.add(ModifyPositionCall(ticket, sl, tp))
+        deferredPositionModificationResults.addLast(onResult)
+    }
+
+    fun completeNextPositionModification(
+        accepted: Boolean,
+        rejectReason: String? = null,
+    ) {
+        val callback = deferredPositionModificationResults.removeFirst()
+        callback(SubmitAck("position-modify", "position-modify", accepted, rejectReason))
     }
 
     /**

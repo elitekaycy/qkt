@@ -11,7 +11,8 @@ import org.slf4j.LoggerFactory
  *    smoothed inter-tick gap (floored at [minStaleAgeMs]), the symbol is unhealthy and
  *    NEW order generation for it should be suppressed. Auto-resumes when data flows.
  *  - **Outlier ticks** — a price more than [outlierSigma] standard deviations from the
- *    short-window mean is rejected: it never updates indicators, marks, or triggers.
+ *    short-window mean is rejected. A short cluster at a coherent new level re-baselines
+ *    the window so genuine gaps do not freeze marks and triggers indefinitely.
  *  - **Crossed books** (bid > ask) are treated as outliers.
  *
  * This sits ABOVE the hard ingestion floor (zero/negative prices, #379): the floor
@@ -23,6 +24,8 @@ class MarketDataGate(
     private val staleAgeMultiple: Double = DEFAULT_STALE_AGE_MULTIPLE,
     private val minStaleAgeMs: Long = DEFAULT_MIN_STALE_AGE_MS,
     private val outlierSigma: Double = DEFAULT_OUTLIER_SIGMA,
+    /** Invoked once per unhealthy transition; recovery permits a later transition to alert again. */
+    private val onUnhealthy: (symbol: String, reason: String) -> Unit = { _, _ -> },
 ) {
     private val log = LoggerFactory.getLogger(MarketDataGate::class.java)
 
@@ -36,6 +39,9 @@ class MarketDataGate(
         var windowHead = 0
         var windowSize = 0
         var staleAlerted = false
+        var rejectedOutlierRun = 0
+        var rebaselineCandidate = 0.0
+        var rebaselineCandidateCount = 0
 
         fun push(price: Double) {
             if (windowSize < WINDOW_SIZE) {
@@ -45,6 +51,19 @@ class MarketDataGate(
                 window[windowHead] = price
                 windowHead = (windowHead + 1) % WINDOW_SIZE
             }
+        }
+
+        fun resetAt(price: Double) {
+            windowHead = 0
+            windowSize = 0
+            repeat(MIN_WINDOW_FOR_OUTLIER) { push(price) }
+            clearRejectedOutliers()
+        }
+
+        fun clearRejectedOutliers() {
+            rejectedOutlierRun = 0
+            rebaselineCandidate = 0.0
+            rebaselineCandidateCount = 0
         }
     }
 
@@ -66,6 +85,23 @@ class MarketDataGate(
         val price = tick.price.toDouble()
         val outlier = crossed || isOutlier(state, price)
         if (outlier) {
+            state.rejectedOutlierRun++
+            if (!crossed && recordRebaselineCandidate(state, price)) {
+                state.resetAt(price)
+                state.staleAlerted = false
+                touch(state, now)
+                log.error(
+                    "market data for {} re-baselined at {} after {} coherent outlier ticks",
+                    tick.symbol,
+                    tick.price.toPlainString(),
+                    REBASELINE_TICK_COUNT,
+                )
+                return Verdict.OK
+            }
+            if (crossed) {
+                state.rebaselineCandidate = 0.0
+                state.rebaselineCandidateCount = 0
+            }
             val n = outlierCount.incrementAndGet()
             if (n == 1L || n % OUTLIER_LOG_EVERY == 0L) {
                 log.warn(
@@ -83,11 +119,28 @@ class MarketDataGate(
 
         touch(state, now)
         state.push(price)
+        state.clearRejectedOutliers()
         if (state.staleAlerted) {
             state.staleAlerted = false
             log.info("market data for {} healthy again", tick.symbol)
         }
         return Verdict.OK
+    }
+
+    private fun recordRebaselineCandidate(
+        state: SymbolState,
+        price: Double,
+    ): Boolean {
+        val tolerance = maxOf(kotlin.math.abs(state.rebaselineCandidate), 1.0) * REBASELINE_CLUSTER_TOLERANCE
+        if (state.rebaselineCandidateCount == 0 || kotlin.math.abs(price - state.rebaselineCandidate) > tolerance) {
+            state.rebaselineCandidate = price
+            state.rebaselineCandidateCount = 1
+        } else {
+            state.rebaselineCandidateCount++
+            state.rebaselineCandidate +=
+                (price - state.rebaselineCandidate) / state.rebaselineCandidateCount
+        }
+        return state.rebaselineCandidateCount >= REBASELINE_TICK_COUNT
     }
 
     private fun touch(
@@ -136,6 +189,18 @@ class MarketDataGate(
     fun isHealthy(symbol: String): Boolean {
         val state = bySymbol[symbol] ?: return true
         if (state.lastSeenMs == 0L) return true
+        if (state.rejectedOutlierRun > 0) {
+            if (!state.staleAlerted) {
+                state.staleAlerted = true
+                log.error(
+                    "market data for {} UNHEALTHY: {} consecutive outlier tick(s) rejected — suppressing new orders",
+                    symbol,
+                    state.rejectedOutlierRun,
+                )
+                onUnhealthy(symbol, "${state.rejectedOutlierRun} consecutive outlier tick(s) rejected")
+            }
+            return false
+        }
         val threshold = staleThresholdMs(state)
         val age = clock.now() - state.lastSeenMs
         val healthy = age <= threshold
@@ -147,6 +212,7 @@ class MarketDataGate(
                 age,
                 threshold,
             )
+            onUnhealthy(symbol, "quote age ${age}ms exceeds ${threshold}ms threshold")
         }
         return healthy
     }
@@ -172,6 +238,8 @@ class MarketDataGate(
         private const val MIN_WINDOW_FOR_OUTLIER = 16
         private const val EWMA_ALPHA = 0.1
         private const val MIN_RELATIVE_SIGMA = 0.002
+        private const val REBASELINE_CLUSTER_TOLERANCE = 0.002
+        private const val REBASELINE_TICK_COUNT = 3
         private const val OUTLIER_LOG_EVERY = 500L
     }
 }

@@ -2,6 +2,7 @@ package com.qkt.cli.daemon
 
 import com.qkt.app.SessionPnl
 import com.qkt.cli.observe.PendingStackLayer
+import com.qkt.cli.observe.PersistenceHealthDto
 import com.qkt.cli.observe.PositionDto
 import com.qkt.cli.observe.StatusSnapshot
 import com.qkt.cli.observe.TradeDto
@@ -65,6 +66,7 @@ internal fun buildSnapshot(
     inboundQueueDepth: Int = 0,
     staleSymbols: List<String> = emptyList(),
     openPositions: List<com.qkt.positions.Position> = emptyList(),
+    persistenceHealth: com.qkt.persistence.PersistenceHealth = com.qkt.persistence.PersistenceHealth.DISABLED,
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
     val last = trades.lastOrNull()
@@ -96,5 +98,16 @@ internal fun buildSnapshot(
         streamBrokers = streamBrokers,
         inboundQueueDepth = inboundQueueDepth,
         staleSymbols = staleSymbols,
+        persistence =
+            PersistenceHealthDto(
+                enabled = persistenceHealth.enabled,
+                totalWrites = persistenceHealth.totalWrites,
+                slowWrites = persistenceHealth.slowWrites,
+                failedWrites = persistenceHealth.failedWrites,
+                consecutiveFailures = persistenceHealth.consecutiveFailures,
+                failureEpisodes = persistenceHealth.failureEpisodes,
+                queueSize = persistenceHealth.queueSize,
+                callerRunsTotal = persistenceHealth.callerRunsTotal,
+            ),
     )
 }

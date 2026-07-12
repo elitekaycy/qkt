@@ -24,6 +24,7 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 class StrategyHandle(
@@ -38,12 +39,15 @@ class StrategyHandle(
     val childMeta: ChildMeta? = null,
     private val fillCount: AtomicLong = AtomicLong(0),
 ) : AutoCloseable {
+    private val stopRequested = AtomicBoolean(false)
+    private val observabilityClosed = AtomicBoolean(false)
+
     data class ChildMeta(
         val parent: String,
         val alias: String,
         val hold: Boolean,
-        val gateActive: java.util.concurrent.atomic.AtomicBoolean,
-        val operatorStop: java.util.concurrent.atomic.AtomicBoolean,
+        val gateActive: AtomicBoolean,
+        val operatorStop: AtomicBoolean,
     )
 
     val port: Int get() = observability.boundPort
@@ -53,17 +57,29 @@ class StrategyHandle(
 
     fun isRunning(): Boolean = live.running
 
-    override fun close() {
-        live.stop()
+    /** Requests session shutdown without waiting, allowing a registry to fan out stops first. */
+    fun requestStop() {
+        if (stopRequested.compareAndSet(false, true)) live.stop()
+    }
+
+    /** Waits for the session and closes its operator endpoint, returning whether it terminated. */
+    fun awaitStopped(timeout: Duration): Boolean {
         var interrupted = false
+        var terminated = false
         try {
-            live.awaitTermination(Duration.ofSeconds(5))
+            terminated = live.awaitTermination(timeout)
         } catch (_: InterruptedException) {
             interrupted = true
         } finally {
-            observability.close()
+            if (observabilityClosed.compareAndSet(false, true)) observability.close()
             if (interrupted) Thread.currentThread().interrupt()
         }
+        return terminated
+    }
+
+    override fun close() {
+        requestStop()
+        awaitStopped(Duration.ofSeconds(5))
     }
 
     fun interface Factory {
@@ -110,6 +126,7 @@ class StrategyHandle(
             com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
         private val priceCollarFrac: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+        private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
         private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
         /**
          * Measured-usage window hours. Factory default 0 (off) so embedded/test
@@ -264,6 +281,7 @@ class StrategyHandle(
                     source = source,
                     symbols = symbols,
                     candleWindow = candleWindow,
+                    accountingConfig = accountingConfig,
                     // The MDC carries the DSL strategy id, not the deploy name: log
                     // attribution downstream (per-strategy files, insights) must match
                     // the id every trading event uses, or consumers see two strategies
@@ -348,6 +366,7 @@ class StrategyHandle(
                             inboundQueueDepth = session.inboundQueueDepth(),
                             staleSymbols = session.staleSymbols().keys.sorted(),
                             openPositions = session.positionsFor(ast.name),
+                            persistenceHealth = session.persistenceHealth(),
                         )
                     },
                     running = { session.running },

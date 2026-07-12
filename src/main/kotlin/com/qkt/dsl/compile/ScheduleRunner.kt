@@ -33,7 +33,7 @@ class ScheduleRunner(
      * itself is null), a strategy that uses `BROKER` fails fast at registration.
      *
      * Wired by [com.qkt.app.TradingPipeline] from the live broker profile's
-     * `serverTzOffsetHours`. Backtest leaves it null — `BROKER` shouldn't be used
+     * effective server time zone. Backtest leaves it null — `BROKER` shouldn't be used
      * in backtest because there's no real broker (#77 follow-up).
      */
     private val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? = null,
@@ -81,7 +81,7 @@ class ScheduleRunner(
      * Resolve a trigger's timezone to a `ZoneId`, dispatching `Timezone.BROKER`
      * to the wired resolver. Throws a clear error if `BROKER` is used but no
      * resolver was supplied (typical for backtest) or if the resolver returns
-     * null for [strategyId] (broker profile has no `serverTzOffsetHours`).
+     * null for [strategyId] (broker profile has no server time zone).
      */
     private fun resolveZoneId(
         tz: com.qkt.dsl.ast.Timezone,
@@ -95,12 +95,12 @@ class ScheduleRunner(
                             "SCHEDULE timezone BROKER used by strategy '$strategyId' " +
                                 "but no broker-zone resolver is configured on this pipeline. " +
                                 "BROKER is only available in live mode where a broker profile " +
-                                "supplies serverTzOffsetHours.",
+                                "supplies server_time_zone.",
                         )
                 resolver(strategyId)
                     ?: error(
                         "SCHEDULE timezone BROKER used by strategy '$strategyId' " +
-                            "but the broker profile has no serverTzOffsetHours. Set it in " +
+                            "but the broker profile has no server_time_zone. Set it in " +
                             "the broker config or use a named IANA timezone " +
                             "(UTC/NY/LONDON/TOKYO/SYDNEY/CHICAGO) instead.",
                     )

@@ -2,6 +2,8 @@ package com.qkt.app
 
 import com.qkt.execution.Trade
 import com.qkt.notify.StrategySummary
+import com.qkt.persistence.PersistenceHealth
+import com.qkt.risk.HaltScope
 import java.math.BigDecimal
 import java.time.Duration
 
@@ -28,9 +30,12 @@ interface LiveSessionHandle {
     /** Symbols whose market data is currently stale, with quote age in ms (#395). */
     fun staleSymbols(): Map<String, Long> = emptyMap()
 
+    /** Durable-state write counters used by `/status` and operator automation. */
+    fun persistenceHealth(): PersistenceHealth = PersistenceHealth.DISABLED
+
     /**
-     * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol net position
-     * deltas plus equity on both sides. Run daily via `qkt reconcile` — slow silent
+     * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol gross directional
+     * deltas (or confirmed netting deltas) plus equity on both sides. Run daily via `qkt reconcile` — slow silent
      * state drift (the hedge-accumulation bug class) is exactly what this catches.
      * Default null for handles without a broker view.
      */
@@ -70,6 +75,20 @@ interface LiveSessionHandle {
      */
     fun halt(reason: String) {}
 
+    /** Scoped risk halt used by portfolio-level controls; defaults to the legacy persistent halt. */
+    fun halt(
+        reason: String,
+        scope: HaltScope,
+    ) {
+        halt(reason)
+    }
+
+    /** Reason for the active global halt, or null when not halted/unsupported by this handle. */
+    fun haltReason(): String? = null
+
+    /** Scope for the active global halt, or null when not halted/unsupported by this handle. */
+    fun haltScope(): HaltScope? = null
+
     /** Reverse [halt]: re-enable new-order submission. Default no-op. */
     fun resume() {}
 
@@ -78,6 +97,18 @@ interface LiveSessionHandle {
 
     /** Cancels all working orders and flattens any open position at market. */
     fun flatten()
+
+    /**
+     * Emergency control-plane flatten with broker-truth verification. Implementations that cannot
+     * verify venue tickets must report an unverified result rather than claiming the book is flat.
+     */
+    fun flattenAndVerify(timeout: Duration): FlattenResult {
+        flatten()
+        return FlattenResult(
+            verifiedFlat = false,
+            detail = "this session handle cannot verify venue positions",
+        )
+    }
 
     /**
      * Snapshot of pipeline latency observations (#150). Defaults to a disabled-report so
@@ -105,6 +136,13 @@ interface LiveSessionHandle {
     fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> = emptyList()
 }
 
+/** Result returned to an operator after an emergency flatten attempt. */
+data class FlattenResult(
+    val verifiedFlat: Boolean,
+    val remainingTickets: List<String> = emptyList(),
+    val detail: String? = null,
+)
+
 /** A point-in-time P&L reading for one strategy, surfaced through `/status`. */
 data class SessionPnl(
     val equity: BigDecimal,
@@ -122,13 +160,26 @@ data class PositionDelta(
     val symbol: String,
     val engineQty: java.math.BigDecimal,
     val brokerQty: java.math.BigDecimal,
+    /** Gross direction on hedging/unknown accounts; null for a confirmed netting comparison. */
+    val side: com.qkt.common.Side? = null,
 )
 
-/** Result of an engine-vs-broker reconcile pass. Clean when [deltas] is empty. */
+/** One venue ticket whose attached protection differs from qkt's last requested levels. */
+data class PositionProtectionDelta(
+    val ticket: String,
+    val symbol: String,
+    val requestedStopLoss: java.math.BigDecimal?,
+    val brokerStopLoss: java.math.BigDecimal?,
+    val requestedTakeProfit: java.math.BigDecimal?,
+    val brokerTakeProfit: java.math.BigDecimal?,
+)
+
+/** Result of an engine-vs-broker reconcile pass. */
 data class ReconcileReport(
     val deltas: List<PositionDelta>,
     val engineEquity: java.math.BigDecimal,
     val brokerEquity: java.math.BigDecimal?,
+    val protectionDeltas: List<PositionProtectionDelta> = emptyList(),
 ) {
-    val clean: Boolean get() = deltas.isEmpty()
+    val clean: Boolean get() = deltas.isEmpty() && protectionDeltas.isEmpty()
 }

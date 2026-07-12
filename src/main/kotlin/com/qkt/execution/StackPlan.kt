@@ -11,8 +11,9 @@ import java.math.BigDecimal
  * Pyramiding plan for [OrderRequest.Stack].
  *
  * `layers[0]` is the seed (fires at signal time as a market or limit). Subsequent layers
- * carry [LayerTrigger]s that fire when their price condition prints. The optional
- * [withinMillis] time fence abandons unfired layers after the deadline.
+ * carry [LayerTrigger]s that fire when their price condition prints. [withinMillis]
+ * abandons unfired layers after the deadline; the runtime applies a 24-hour safety
+ * fence when it is null.
  */
 data class StackPlan(
     val layers: List<LayerSpec>,

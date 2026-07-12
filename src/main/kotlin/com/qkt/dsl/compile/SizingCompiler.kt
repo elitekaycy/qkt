@@ -11,47 +11,65 @@ import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.SizingAst
 import java.math.BigDecimal
 
+/** Evaluates an order quantity from the current strategy state and resolved entry geometry. */
 fun interface CompiledSize {
+    /**
+     * Returns the broker quantity. [runtimeStopDistance] is supplied by bracket actions whose
+     * stop price depends on runtime expressions; non-risk sizing ignores it.
+     */
     fun evaluate(
         ec: EvalContext,
         entryPrice: BigDecimal,
+        runtimeStopDistance: BigDecimal?,
     ): BigDecimal
 }
 
+/** Evaluates sizing where no runtime-resolved stop distance is available. */
+fun CompiledSize.evaluate(
+    ec: EvalContext,
+    entryPrice: BigDecimal,
+): BigDecimal = evaluate(ec, entryPrice, runtimeStopDistance = null)
+
+/** Compiles DSL sizing expressions into deterministic runtime quantity evaluators. */
 class SizingCompiler(
     private val exprCompiler: ExprCompiler,
 ) {
+    /**
+     * Compiles [sizing]. Risk-based forms require either a positive [stopDistance] known now or
+     * [runtimeStopDistanceAvailable] when a bracket will provide the resolved distance later.
+     */
     fun compile(
         sizing: SizingAst,
         stopDistance: BigDecimal?,
         streamAlias: String,
+        runtimeStopDistanceAvailable: Boolean = false,
     ): CompiledSize =
         when (sizing) {
             is SizeQty -> {
                 val e = exprCompiler.compile(sizing.expr)
-                CompiledSize { ec, _ -> (e.evaluate(ec) as Value.Num).v }
+                CompiledSize { ec, _, _ -> (e.evaluate(ec) as Value.Num).v }
             }
             is SizeNotional -> {
                 val e = exprCompiler.compile(sizing.usd)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, _ ->
                     val usd = (e.evaluate(ec) as Value.Num).v
-                    val cs = contractSizeFor(ec, streamAlias)
-                    usd.divide(entry.multiply(cs, Money.CONTEXT), Money.CONTEXT)
+                    usd.divide(accountValuePerLot(ec, streamAlias, entry, entry), Money.CONTEXT)
                 }
             }
             is SizeRiskAbs -> {
-                require(stopDistance != null && stopDistance.signum() > 0) {
+                val staticStopDistance = stopDistance?.takeIf { it.signum() > 0 }
+                require(staticStopDistance != null || runtimeStopDistanceAvailable) {
                     "SIZING RISK \$ requires a resolvable stop distance via BRACKET STOP LOSS"
                 }
                 val e = exprCompiler.compile(sizing.usd)
-                CompiledSize { ec, _ ->
+                CompiledSize { ec, entry, runtimeStopDistance ->
                     val amount = (e.evaluate(ec) as Value.Num).v
-                    val cs = contractSizeFor(ec, streamAlias)
-                    amount.divide(stopDistance.multiply(cs, Money.CONTEXT), Money.CONTEXT)
+                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
+                    amount.divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
                 }
             }
             is SizePositionFull -> {
-                CompiledSize { ec, _ ->
+                CompiledSize { ec, _, _ ->
                     val symbol =
                         ec.streams[sizing.stream]?.qktSymbol
                             ?: error("Unknown stream alias: ${sizing.stream}")
@@ -64,53 +82,77 @@ class SizingCompiler(
             }
             is SizePctEquity -> {
                 val e = exprCompiler.compile(sizing.frac)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, _ ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val equity = ec.strategyContext.pnl.equity()
-                    val cs = contractSizeFor(ec, streamAlias)
-                    equity.multiply(frac, Money.CONTEXT).divide(entry.multiply(cs, Money.CONTEXT), Money.CONTEXT)
+                    equity
+                        .multiply(frac, Money.CONTEXT)
+                        .divide(accountValuePerLot(ec, streamAlias, entry, entry), Money.CONTEXT)
                 }
             }
             is SizePctBalance -> {
                 val e = exprCompiler.compile(sizing.frac)
-                CompiledSize { ec, entry ->
+                CompiledSize { ec, entry, _ ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val balance = ec.strategyContext.pnl.balance()
-                    val cs = contractSizeFor(ec, streamAlias)
-                    balance.multiply(frac, Money.CONTEXT).divide(entry.multiply(cs, Money.CONTEXT), Money.CONTEXT)
+                    balance
+                        .multiply(frac, Money.CONTEXT)
+                        .divide(accountValuePerLot(ec, streamAlias, entry, entry), Money.CONTEXT)
                 }
             }
             is SizeRiskFrac -> {
-                require(stopDistance != null && stopDistance.signum() > 0) {
+                val staticStopDistance = stopDistance?.takeIf { it.signum() > 0 }
+                require(staticStopDistance != null || runtimeStopDistanceAvailable) {
                     "SIZING RISK <fraction> requires a resolvable stop distance via BRACKET STOP LOSS"
                 }
                 val e = exprCompiler.compile(sizing.frac)
-                CompiledSize { ec, _ ->
+                CompiledSize { ec, entry, runtimeStopDistance ->
                     val frac = (e.evaluate(ec) as Value.Num).v
                     val equity = ec.strategyContext.pnl.equity()
-                    val cs = contractSizeFor(ec, streamAlias)
+                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
                     equity
                         .multiply(frac, Money.CONTEXT)
-                        .divide(stopDistance.multiply(cs, Money.CONTEXT), Money.CONTEXT)
+                        .divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
                 }
             }
         }
 
+    private fun resolveStopDistance(
+        staticStopDistance: BigDecimal?,
+        runtimeStopDistance: BigDecimal?,
+    ): BigDecimal {
+        val resolved = runtimeStopDistance ?: staticStopDistance
+        require(resolved != null && resolved.signum() > 0) {
+            "risk sizing requires a positive runtime stop distance"
+        }
+        return resolved
+    }
+
     /**
-     * The instrument contract size for the action's stream, e.g. 100 for XAUUSD
-     * (1 lot = 100 oz) or 100,000 for FX majors (1 lot = 100,000 base units).
-     * Money-amount sizing must divide through it so the result is broker lots,
-     * not base-asset units: $10,000 of XAUUSD at $2,000 is 0.05 lots, not 5.
+     * Converts a stream's native quote-currency value per unit into account-currency
+     * value per broker lot by applying its contract size and the point-in-time FX rate.
      */
-    private fun contractSizeFor(
+    private fun accountValuePerLot(
         ec: EvalContext,
         streamAlias: String,
+        nativeValuePerUnit: BigDecimal,
+        referencePrice: BigDecimal,
     ): BigDecimal {
         val qktSymbol =
             ec.streams[streamAlias]?.qktSymbol
                 ?: error("Unknown stream alias: $streamAlias")
-        return ec.strategyContext.instruments
-            .require(qktSymbol)
-            .contractSize
+        val contractSize =
+            ec.strategyContext.instruments
+                .require(qktSymbol)
+                .contractSize
+        val quoteToAccountRate =
+            ec.strategyContext.quoteToAccountRate
+                .rate(qktSymbol, ec.strategyContext.clock.now(), referencePrice)
+        require(quoteToAccountRate.signum() > 0) {
+            "quote-to-account rate must be positive for $qktSymbol: $quoteToAccountRate"
+        }
+        return nativeValuePerUnit
+            .multiply(contractSize, Money.CONTEXT)
+            .multiply(quoteToAccountRate, Money.CONTEXT)
     }
 }

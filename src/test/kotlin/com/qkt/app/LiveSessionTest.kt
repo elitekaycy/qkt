@@ -4,15 +4,24 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.compile.CandleHub
+import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.HubKey
+import com.qkt.dsl.compile.PendingStacks
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.observe.OrderJournal
+import com.qkt.persistence.NoopStatePersistor
+import com.qkt.persistence.PersistedPnl
+import com.qkt.risk.DrawdownBasis
+import com.qkt.risk.rules.MaxDrawdown
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -335,6 +344,38 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `legacy pnl restore still feeds global static drawdown`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val persistor = NoopStatePersistor()
+        persistor.savePnl("solo", PersistedPnl(Money.of("-600")))
+        val session =
+            LiveSession(
+                strategies = listOf("solo" to CapturingStrategy()),
+                haltRules =
+                    listOf(
+                        MaxDrawdown(
+                            maxFraction = Money.of("0.05"),
+                            basis = DrawdownBasis.STATIC,
+                            initialBalance = Money.of("10000"),
+                        ),
+                    ),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                initialBalance = Money.of("10000"),
+                persistor = persistor,
+            )
+
+        val handle = session.start()
+
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+        assertThat(handle.isHalted()).isTrue()
+        assertThat(handle.haltReason()).contains("global drawdown")
+    }
+
+    @Test
     fun `running becomes false after stop`() {
         val src = InMemoryMarketSource()
         src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
@@ -499,6 +540,154 @@ class LiveSessionTest {
         handle.awaitTermination(Duration.ofSeconds(2))
 
         assertThat(handle.recentTrades().size).isEqualTo(2)
+    }
+
+    @Test
+    fun `reconcile attributes live fills when insights are disabled`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("EXNESS:X", listOf(Tick("EXNESS:X", Money.of("100"), now.toEpochMilli())))
+        val tickets = java.util.concurrent.CopyOnWriteArrayList<com.qkt.broker.BrokerPositionTicket>()
+        val factory: BrokerFactory = { bus, clock, prices, _, _ ->
+            bus.subscribe<com.qkt.events.BrokerEvent.OrderFilled> { fill ->
+                tickets.clear()
+                tickets.add(
+                    com.qkt.broker.BrokerPositionTicket(
+                        ticket = requireNotNull(fill.brokerOrderId),
+                        symbol = fill.symbol,
+                        side = fill.side,
+                        qty = fill.quantity,
+                        entryPrice = fill.price,
+                        currentPrice = fill.price,
+                        profit = BigDecimal.ZERO,
+                        swap = BigDecimal.ZERO,
+                        openedAt = fill.timestamp,
+                        comment = fill.clientOrderId,
+                    ),
+                )
+            }
+            object : com.qkt.broker.Broker by com.qkt.broker.PaperBroker(bus, clock, prices) {
+                override fun positionTickets(): List<com.qkt.broker.BrokerPositionTicket> = tickets.toList()
+            }
+        }
+        val strategy =
+            object : DslCompiledStrategy {
+                override val declaredStreams: Map<String, HubKey> =
+                    mapOf("x" to HubKey("EXNESS", "X", "1m"))
+                override val multiPositionPerSymbolSymbols: Set<String> = emptySet()
+                override val retentionByKey: Map<HubKey, Int> = emptyMap()
+                override val pendingStacks: PendingStacks = PendingStacks()
+
+                override fun bindToHub(
+                    hub: CandleHub,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {}
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("EXNESS:X", Money.of("1")))
+                }
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                source = src,
+                symbols = listOf("EXNESS:X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                brokerFactories = mapOf("exness" to factory),
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+
+        val report = handle.reconcile()!!
+        assertThat(report.deltas).describedAs(report.toString()).isEmpty()
+        assertThat(report.protectionDeltas).isEmpty()
+        assertThat(report.clean).isTrue()
+    }
+
+    @Test
+    fun `verified flatten closes attributed ticket from control plane`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("EXNESS:X", listOf(Tick("EXNESS:X", Money.of("100"), now.toEpochMilli())))
+        val tickets = java.util.concurrent.CopyOnWriteArrayList<com.qkt.broker.BrokerPositionTicket>()
+        val closeThreads = mutableListOf<String>()
+        val factory: BrokerFactory = { bus, clock, prices, _, _ ->
+            val delegate = com.qkt.broker.PaperBroker(bus, clock, prices)
+            bus.subscribe<com.qkt.events.BrokerEvent.OrderFilled> { fill ->
+                if (fill.side == com.qkt.common.Side.BUY) {
+                    tickets.add(
+                        com.qkt.broker.BrokerPositionTicket(
+                            ticket = requireNotNull(fill.brokerOrderId),
+                            symbol = fill.symbol,
+                            side = fill.side,
+                            qty = fill.quantity,
+                            entryPrice = fill.price,
+                            currentPrice = fill.price,
+                            profit = BigDecimal.ZERO,
+                            swap = BigDecimal.ZERO,
+                            openedAt = fill.timestamp,
+                            comment = "dsl-test",
+                        ),
+                    )
+                }
+            }
+            object : com.qkt.broker.Broker by delegate {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun positionTickets(): List<com.qkt.broker.BrokerPositionTicket> = tickets.toList()
+
+                override fun submit(request: com.qkt.execution.OrderRequest): com.qkt.broker.SubmitAck {
+                    val closeTicket = (request as? com.qkt.execution.OrderRequest.Market)?.closesTicket
+                    if (closeTicket != null) {
+                        closeThreads.add(Thread.currentThread().name)
+                        tickets.removeIf { it.ticket == closeTicket }
+                        return com.qkt.broker.SubmitAck(request.id, closeTicket, accepted = true)
+                    }
+                    return delegate.submit(request)
+                }
+            }
+        }
+        val strategy =
+            object : DslCompiledStrategy {
+                override val declaredStreams: Map<String, HubKey> =
+                    mapOf("x" to HubKey("EXNESS", "X", "1m"))
+                override val multiPositionPerSymbolSymbols: Set<String> = emptySet()
+                override val retentionByKey: Map<HubKey, Int> = emptyMap()
+                override val pendingStacks: PendingStacks = PendingStacks()
+
+                override fun bindToHub(
+                    hub: CandleHub,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {}
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy(tick.symbol, Money.of("1")))
+                }
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                source = src,
+                symbols = listOf("EXNESS:X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                brokerFactories = mapOf("exness" to factory),
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue
+
+        val result = handle.flattenAndVerify(Duration.ofSeconds(1))
+
+        assertThat(result.verifiedFlat).describedAs(result.toString()).isTrue
+        assertThat(result.remainingTickets).isEmpty()
+        assertThat(closeThreads.single()).isEqualTo(Thread.currentThread().name)
     }
 
     @Test

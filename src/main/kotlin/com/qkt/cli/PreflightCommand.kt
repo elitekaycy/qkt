@@ -1,7 +1,12 @@
 package com.qkt.cli
 
+import com.qkt.broker.mt5.MT5AccountVerifier
+import com.qkt.broker.mt5.MT5BrokerProfile
+import com.qkt.broker.mt5.MT5Client
+import com.qkt.broker.mt5.MT5Symbol
 import com.qkt.cli.daemon.StateDir
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -63,6 +68,7 @@ object ProductionPreflight {
         checks.add(riskCheck(cfg, production))
         checks.add(brokerConfigCheck(cfg, production))
         checks.add(brokerProfileCheck(cfg, production))
+        checks.addAll(brokerGatewayChecks(cfg, target, production))
         checks.add(alertsCheck(cfg, production))
         if (target != null) {
             checks.add(symbolMetadataCheck(target, production))
@@ -87,14 +93,40 @@ object ProductionPreflight {
                                 "${file.ast.name} v${file.ast.version}",
                             ),
                         )
-                        PreflightTarget(strategyAsts = listOf(file.ast))
+                        try {
+                            AstCompiler().compile(file.ast)
+                            add(
+                                PreflightCheck(
+                                    "strategy.compile",
+                                    PreflightStatus.PASS,
+                                    "${file.ast.name} v${file.ast.version}",
+                                ),
+                            )
+                            PreflightTarget(strategyAsts = listOf(file.ast))
+                        } catch (e: Exception) {
+                            add(
+                                PreflightCheck(
+                                    "strategy.compile",
+                                    PreflightStatus.FAIL,
+                                    e.message ?: e.toString(),
+                                ),
+                            )
+                            null
+                        }
                     }
-                    is ParsedFile.PortfolioFile ->
+                    is ParsedFile.PortfolioFile -> {
+                        add(
+                            PreflightCheck(
+                                "strategy.parse",
+                                PreflightStatus.PASS,
+                                "${file.ast.name} portfolio v${file.ast.version}",
+                            ),
+                        )
                         try {
                             val compiled = PortfolioLoader.load(path)
                             add(
                                 PreflightCheck(
-                                    "strategy.parse",
+                                    "strategy.compile",
                                     PreflightStatus.PASS,
                                     "${file.ast.name} portfolio v${file.ast.version} (${compiled.children.size} child strategies)",
                                 ),
@@ -106,13 +138,14 @@ object ProductionPreflight {
                         } catch (e: Exception) {
                             add(
                                 PreflightCheck(
-                                    "strategy.parse",
+                                    "strategy.compile",
                                     PreflightStatus.FAIL,
                                     e.message ?: e.toString(),
                                 ),
                             )
                             null
                         }
+                    }
                 }
             }
             is ParseResult.Failure -> {
@@ -191,16 +224,7 @@ object ProductionPreflight {
         val mt5Configured = cfg.brokers.values.any { it["type"] == "mt5" }
         if (!mt5Configured) return PreflightCheck("broker.metadata", PreflightStatus.PASS, "no MT5 profile to validate")
         return try {
-            val profiles =
-                com.qkt.broker.mt5.MT5BrokerProfileLoader().load(
-                    raw = cfg.brokers,
-                    defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
-                    env = System.getenv(),
-                    calendars = cfg.brokerCalendars,
-                    aliases = cfg.brokerAliases,
-                    capabilityRestrictions = cfg.brokerCapabilityRestrictions,
-                    instrumentOverrides = cfg.brokerInstrumentOverrides,
-                )
+            val profiles = resolveMt5Profiles(cfg)
             PreflightCheck("broker.metadata", PreflightStatus.PASS, "${profiles.size} MT5 profile(s) resolved")
         } catch (e: Exception) {
             PreflightCheck(
@@ -210,6 +234,82 @@ object ProductionPreflight {
             )
         }
     }
+
+    private fun brokerGatewayChecks(
+        cfg: Config,
+        target: PreflightTarget?,
+        production: Boolean,
+    ): List<PreflightCheck> {
+        val profiles = runCatching { resolveMt5Profiles(cfg) }.getOrElse { return emptyList() }
+        return profiles.map { profile ->
+            val problems = mutableListOf<String>()
+            if (production) {
+                val missing =
+                    buildList {
+                        if (profile.expectedAccountLogin == null) add("expected_account_login")
+                        if (profile.expectedAccountServer == null) add("expected_account_server")
+                        if (profile.expectedTradeMode == null) add("expected_trade_mode")
+                        if (profile.expectedLeverage == null) add("expected_leverage")
+                    }
+                if (missing.isNotEmpty()) problems.add("missing ${missing.joinToString()}")
+            }
+            try {
+                val client =
+                    MT5Client(
+                        gatewayUrl = profile.gatewayUrl,
+                        serverTimeZone = profile.serverTimeZone,
+                        httpTimeoutMs = profile.httpTimeoutMs,
+                        retryAttempts = profile.retryAttempts,
+                        apiKey = profile.apiKey,
+                    )
+                val account = MT5AccountVerifier.fetchAndVerify(profile, client)
+                if (!account.currency.equals(cfg.accountCurrency, ignoreCase = true)) {
+                    problems.add("account currency expected ${cfg.accountCurrency}, got ${account.currency}")
+                }
+                val symbols =
+                    target
+                        ?.strategyAsts
+                        .orEmpty()
+                        .flatMap { ast -> ast.streams.map { it.qktSymbol } }
+                        .plus(target?.portfolioSymbols.orEmpty())
+                        .distinct()
+                        .filter { it.substringBefore(':').equals(profile.name, ignoreCase = true) }
+                val translator = MT5Symbol(profile.symbolPolicy)
+                val missingSymbols =
+                    symbols.filter { qktSymbol ->
+                        client.getSymbolInfo(translator.toBroker(qktSymbol.substringAfter(':'))) == null
+                    }
+                if (missingSymbols.isNotEmpty()) problems.add("symbols not visible: ${missingSymbols.joinToString()}")
+                val identity = MT5AccountVerifier.describe(profile, account)
+                PreflightCheck(
+                    "broker.gateway.${profile.name}",
+                    if (problems.isEmpty()) PreflightStatus.PASS else failureStatus(production),
+                    if (problems.isEmpty()) identity else "$identity; ${problems.joinToString("; ")}",
+                )
+            } catch (e: Exception) {
+                problems.add(e.message ?: e.toString())
+                PreflightCheck(
+                    "broker.gateway.${profile.name}",
+                    failureStatus(production),
+                    problems.joinToString("; "),
+                )
+            }
+        }
+    }
+
+    private fun resolveMt5Profiles(cfg: Config): List<MT5BrokerProfile> =
+        com.qkt.broker.mt5.MT5BrokerProfileLoader().load(
+            raw = cfg.brokers,
+            defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
+            env = System.getenv(),
+            calendars = cfg.brokerCalendars,
+            aliases = cfg.brokerAliases,
+            capabilityRestrictions = cfg.brokerCapabilityRestrictions,
+            instrumentOverrides = cfg.brokerInstrumentOverrides,
+        )
+
+    private fun failureStatus(production: Boolean): PreflightStatus =
+        if (production) PreflightStatus.FAIL else PreflightStatus.WARN
 
     private fun alertsCheck(
         cfg: Config,
@@ -340,7 +440,7 @@ class PreflightCommand(
 ) {
     fun run(): Int {
         val strategy = args.requirePositional(0, "<strategy.qkt>")
-        val configPath = args.option("config")?.let(Path::of) ?: Config.locate() ?: Path.of("./qkt.config.yaml")
+        val configPath = Config.resolvePath(args.option("config"))
         val stateDir = StateDir.resolve(args.option("state-dir"))
         val checks =
             ProductionPreflight.evaluate(

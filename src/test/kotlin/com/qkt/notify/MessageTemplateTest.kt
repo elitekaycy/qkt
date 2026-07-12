@@ -79,6 +79,17 @@ class MessageTemplateTest {
             .contains("[INFO] qkt started x")
         assertThat(MessageTemplate.format(NotificationEvent.StrategyStopped("x", flatten = true, ts)))
             .contains("[INFO] qkt stopped x (flatten=true)")
+        assertThat(
+            MessageTemplate.format(
+                NotificationEvent.StrategyStopped(
+                    "x",
+                    flatten = false,
+                    ts,
+                    unexpected = true,
+                    reason = "feed lost",
+                ),
+            ),
+        ).contains("[CRITICAL] qkt stopped x").contains("reason: feed lost")
         assertThat(MessageTemplate.format(NotificationEvent.StrategyError("x", "boom", ts)))
             .contains("[CRITICAL] qkt strategy error x")
     }
@@ -87,10 +98,16 @@ class MessageTemplateTest {
     fun `DaemonStarted renders version and strategy list`() {
         val out =
             MessageTemplate.format(
-                NotificationEvent.DaemonStarted("0.27.0", listOf("hedge-straddle", "test"), ts),
+                NotificationEvent.DaemonStarted(
+                    "0.27.0",
+                    listOf("hedge-straddle", "test"),
+                    ts,
+                    accounts = listOf("exness: login=435898347 server=Exness-MT5Trial9 mode=demo"),
+                ),
             )
         assertThat(out).contains("[INFO] qkt 0.27.0 started")
         assertThat(out).contains("strategies: hedge-straddle, test")
+        assertThat(out).contains("accounts: exness: login=435898347 server=Exness-MT5Trial9 mode=demo")
     }
 
     @Test

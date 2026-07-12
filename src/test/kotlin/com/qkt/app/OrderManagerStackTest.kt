@@ -417,6 +417,52 @@ class OrderManagerStackTest {
     }
 
     @Test
+    fun `stack without WITHIN cancels pending layers at the safety deadline`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT, OrderTypeCapability.STOP),
+            )
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val plan =
+            StackPlan(
+                listOf(
+                    LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                    LayerSpec(
+                        2,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        com.qkt.dsl.ast.Market,
+                        At(
+                            BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("100"))),
+                            StackDirection.TRADE_DIRECTION,
+                        ),
+                    ),
+                ),
+            )
+        val stack =
+            OrderRequest.Stack(
+                id = "stk-default-deadline",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.2"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(stack)
+        publishLayerFill(bus, stack, layer = 1, ticket = "TKT-1", quantity = BigDecimal("0.1"), clock = clock)
+
+        clock.time += StackTracker.DEFAULT_PENDING_LIFETIME_MS + 1L
+        bus.publish(TickEvent(Tick("BTCUSDT", BigDecimal("50050"), clock.now())))
+
+        assertThat(broker.cancels).containsExactly("${stack.id}-l2")
+        assertThat(manager.pendingStackLayerInfos()).isEmpty()
+    }
+
+    @Test
     fun `external cancel of stack id cancels its pending layers`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
@@ -812,6 +858,247 @@ class OrderManagerStackTest {
     }
 
     @Test
+    fun `POSITION_MODIFY closes terminate the stack and cancel venue pending tiers`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(
+                    OrderTypeCapability.MARKET,
+                    OrderTypeCapability.LIMIT,
+                    OrderTypeCapability.STOP,
+                    OrderTypeCapability.POSITION_MODIFY,
+                ),
+            )
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val plan =
+            StackPlan(
+                layers =
+                    listOf(
+                        LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                        LayerSpec(
+                            2,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            com.qkt.dsl.ast.Market,
+                            At(
+                                BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("100"))),
+                                StackDirection.TRADE_DIRECTION,
+                            ),
+                        ),
+                        LayerSpec(
+                            3,
+                            SizeQty(NumLit(BigDecimal("0.1"))),
+                            com.qkt.dsl.ast.Market,
+                            At(
+                                BinaryOp(BinOp.ADD, StackEntryRef, NumLit(BigDecimal("200"))),
+                                StackDirection.TRADE_DIRECTION,
+                            ),
+                        ),
+                    ),
+                outerBracket = BracketAst(stopLoss = ChildBy(NumLit(BigDecimal("50")))),
+            )
+        val stack =
+            OrderRequest.Stack(
+                id = "stk-position-close",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.3"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+            )
+        manager.submit(stack)
+
+        publishLayerFill(bus, stack, layer = 1, ticket = "TKT-1", quantity = BigDecimal("0.1"), clock = clock)
+        publishLayerFill(bus, stack, layer = 2, ticket = "TKT-2", quantity = BigDecimal("0.1"), clock = clock)
+        assertThat(broker.modifyPositions).hasSize(2)
+
+        publishLayerClose(bus, stack, layer = 1, ticket = "TKT-1", quantity = BigDecimal("0.1"), clock = clock)
+        publishLayerClose(bus, stack, layer = 2, ticket = "TKT-2", quantity = BigDecimal("0.04"), clock = clock)
+        assertThat(broker.cancels).isEmpty()
+
+        publishLayerClose(bus, stack, layer = 2, ticket = "TKT-2", quantity = BigDecimal("0.06"), clock = clock)
+
+        assertThat(broker.modifyPositions).hasSize(2)
+        assertThat(broker.cancels).containsExactly("${stack.id}-l3")
+        assertThat(manager.pendingStackLayerInfos()).isEmpty()
+    }
+
+    @Test
+    fun `failed venue protection arms an engine-held close-by-ticket stop and alerts`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.POSITION_MODIFY),
+            ).apply { rejectPositionModifications = true }
+        val alerts = mutableListOf<String>()
+        val manager =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                onProtectionFailure = { _, message -> alerts.add(message) },
+            )
+        val plan =
+            StackPlan(
+                layers = listOf(LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate)),
+                outerBracket = BracketAst(stopLoss = ChildBy(NumLit(BigDecimal("50")))),
+            )
+        val stack =
+            OrderRequest.Stack(
+                id = "stk-fallback",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                plan = plan,
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+                strategyId = "alpha",
+            )
+        manager.submit(stack)
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${stack.id}-l1",
+                brokerOrderId = "TKT-42",
+                symbol = stack.symbol,
+                side = stack.side,
+                price = BigDecimal("50000"),
+                quantity = stack.quantity,
+                strategyId = stack.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+
+        val fallback = manager.getOrder("${stack.id}-l1-sl")
+        assertThat(fallback?.state).isEqualTo(OrderState.PENDING)
+        assertThat((fallback?.request as OrderRequest.Stop).stopPrice).isEqualByComparingTo("49950")
+        assertThat(alerts.single()).contains("engine-held stop armed at 49950")
+
+        bus.publish(TickEvent(Tick("BTCUSDT", BigDecimal("49940"), clock.now())))
+
+        val close = broker.submits.last() as OrderRequest.Market
+        assertThat(close.closesTicket).isEqualTo("TKT-42")
+    }
+
+    @Test
+    fun `deferred venue protection does not block fill and handles later rejection`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.POSITION_MODIFY),
+            ).apply { deferPositionModifications = true }
+        val alerts = mutableListOf<String>()
+        val manager =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                onProtectionFailure = { _, message -> alerts.add(message) },
+            )
+        val stack =
+            OrderRequest.Stack(
+                id = "stk-async-protection",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                plan =
+                    StackPlan(
+                        layers =
+                            listOf(
+                                LayerSpec(
+                                    1,
+                                    SizeQty(NumLit(BigDecimal("0.1"))),
+                                    com.qkt.dsl.ast.Market,
+                                    Immediate,
+                                ),
+                            ),
+                        outerBracket = BracketAst(stopLoss = ChildBy(NumLit(BigDecimal("50")))),
+                    ),
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+                strategyId = "alpha",
+            )
+        manager.submit(stack)
+
+        publishLayerFill(bus, stack, layer = 1, ticket = "TKT-42", quantity = stack.quantity, clock = clock)
+
+        assertThat(broker.modifyPositions).hasSize(1)
+        assertThat(manager.getOrder("${stack.id}-l1-sl")).isNull()
+        assertThat(alerts).isEmpty()
+
+        broker.completeNextPositionModification(false, "gateway timeout")
+
+        assertThat(manager.getOrder("${stack.id}-l1-sl")?.state).isEqualTo(OrderState.PENDING)
+        assertThat(alerts.single()).contains("gateway timeout", "engine-held stop armed")
+    }
+
+    @Test
+    fun `blank stack fill ticket raises a protection failure alert`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.POSITION_MODIFY),
+            )
+        val alerts = mutableListOf<String>()
+        val manager =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                onProtectionFailure = { _, message -> alerts.add(message) },
+            )
+        val stack =
+            OrderRequest.Stack(
+                id = "stk-no-ticket",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                plan =
+                    StackPlan(
+                        layers =
+                            listOf(
+                                LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                            ),
+                        outerBracket = BracketAst(stopLoss = ChildBy(NumLit(BigDecimal("50")))),
+                    ),
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+                strategyId = "alpha",
+            )
+        manager.submit(stack)
+
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${stack.id}-l1",
+                brokerOrderId = "",
+                symbol = stack.symbol,
+                side = stack.side,
+                price = BigDecimal("50000"),
+                quantity = stack.quantity,
+                strategyId = stack.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+
+        assertThat(alerts.single()).contains("has no venue ticket")
+        assertThat(broker.modifyPositions).isEmpty()
+    }
+
+    @Test
     fun `TP fill cancels SL as OCO sibling`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
@@ -1007,5 +1294,47 @@ class OrderManagerStackTest {
         val tp = active.first { it.id == "${req.id}-l1-tp" }.request as OrderRequest.Limit
         assertThat(sl.stopPrice).isEqualByComparingTo(BigDecimal("49950"))
         assertThat(tp.limitPrice).isEqualByComparingTo(BigDecimal("50100"))
+    }
+
+    private fun publishLayerFill(
+        bus: EventBus,
+        stack: OrderRequest.Stack,
+        layer: Int,
+        ticket: String,
+        quantity: BigDecimal,
+        clock: FixedClock,
+    ) {
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${stack.id}-l$layer",
+                brokerOrderId = ticket,
+                symbol = stack.symbol,
+                side = stack.side,
+                price = BigDecimal("50000") + BigDecimal(layer - 1).multiply(BigDecimal("100")),
+                quantity = quantity,
+                timestamp = clock.now(),
+            ),
+        )
+    }
+
+    private fun publishLayerClose(
+        bus: EventBus,
+        stack: OrderRequest.Stack,
+        layer: Int,
+        ticket: String,
+        quantity: BigDecimal,
+        clock: FixedClock,
+    ) {
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "${stack.id}-l$layer",
+                brokerOrderId = ticket,
+                symbol = stack.symbol,
+                side = if (stack.side == Side.BUY) Side.SELL else Side.BUY,
+                price = BigDecimal("49950"),
+                quantity = quantity,
+                timestamp = clock.now(),
+            ),
+        )
     }
 }

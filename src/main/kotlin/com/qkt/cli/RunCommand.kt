@@ -6,6 +6,7 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
+import com.qkt.cli.observe.PersistenceHealthDto
 import com.qkt.cli.observe.PortPrinter
 import com.qkt.cli.observe.PositionDto
 import com.qkt.cli.observe.StatusSnapshot
@@ -100,11 +101,12 @@ class RunCommand(
                 ?.timeframe
                 ?.let { TimeWindow.parse(it) }
 
+        var accountingConfig = com.qkt.accounting.AccountingConfig()
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: run {
-                val configPath =
-                    args.option("config")?.let { Path.of(it) } ?: Path.of("./qkt.config.yaml")
+                val configPath = Config.resolvePath(args.option("config"))
                 val cfg = Config.load(configPath)
+                accountingConfig = cfg.accountingConfig
                 val mt5Profiles =
                     try {
                         com.qkt.broker.mt5
@@ -139,6 +141,7 @@ class RunCommand(
                 source = marketSource,
                 symbols = symbols,
                 candleWindow = candleWindow,
+                accountingConfig = accountingConfig,
                 onTrade = { trade, realized, _ ->
                     val ts = Instant.ofEpochMilli(trade.timestamp)
                     println(
@@ -175,6 +178,7 @@ class RunCommand(
                             session.recentTrades(),
                             layers,
                             pnl = session.pnlSnapshot(ast.name),
+                            persistenceHealth = session.persistenceHealth(),
                         )
                     },
                     running = { session.running },
@@ -268,6 +272,7 @@ class RunCommand(
         trades: List<Trade>,
         pendingStackLayers: List<PendingStackLayer> = emptyList(),
         pnl: SessionPnl = SessionPnl.ZERO,
+        persistenceHealth: com.qkt.persistence.PersistenceHealth = com.qkt.persistence.PersistenceHealth.DISABLED,
     ): StatusSnapshot {
         val now = System.currentTimeMillis()
         val last = trades.lastOrNull()
@@ -293,6 +298,17 @@ class RunCommand(
                     )
                 },
             pendingStackLayers = pendingStackLayers,
+            persistence =
+                PersistenceHealthDto(
+                    enabled = persistenceHealth.enabled,
+                    totalWrites = persistenceHealth.totalWrites,
+                    slowWrites = persistenceHealth.slowWrites,
+                    failedWrites = persistenceHealth.failedWrites,
+                    consecutiveFailures = persistenceHealth.consecutiveFailures,
+                    failureEpisodes = persistenceHealth.failureEpisodes,
+                    queueSize = persistenceHealth.queueSize,
+                    callerRunsTotal = persistenceHealth.callerRunsTotal,
+                ),
         )
     }
 

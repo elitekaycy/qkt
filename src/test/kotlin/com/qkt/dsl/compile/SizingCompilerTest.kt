@@ -2,10 +2,14 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeNotional
+import com.qkt.dsl.ast.SizePctBalance
+import com.qkt.dsl.ast.SizePctEquity
 import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
+import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.marketdata.Candle
+import com.qkt.strategy.QuoteToAccountRateProvider
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -72,6 +76,35 @@ class SizingCompilerTest {
         )
 
     private val ecWithContractSize100 = ecWith(BigDecimal("100"))
+
+    private val usdJpyEc =
+        EvalContext(
+            candle = ec.candle.copy(symbol = "BACKTEST:USDJPY"),
+            streams = mapOf("jpy" to HubKey("BACKTEST", "USDJPY", "1m")),
+            lets = emptyMap(),
+            strategyContext =
+                testStrategyContext(
+                    pnl = ecWithContractSize100.strategyContext.pnl,
+                    instruments =
+                        object : com.qkt.instrument.InstrumentRegistry {
+                            override fun lookup(qktSymbol: String): com.qkt.instrument.InstrumentMeta =
+                                com.qkt.instrument.InstrumentMeta(
+                                    qktSymbol = qktSymbol,
+                                    contractSize = BigDecimal("100000"),
+                                    volumeStep = BigDecimal("0.01"),
+                                    volumeMin = BigDecimal("0.01"),
+                                    volumeMax = null,
+                                    pointSize = BigDecimal("0.001"),
+                                    digits = 3,
+                                    tradeStopsLevelPoints = 0,
+                                )
+                        },
+                    quoteToAccountRate =
+                        QuoteToAccountRateProvider { _, _, referencePrice ->
+                            BigDecimal.ONE.divide(referencePrice, com.qkt.common.Money.CONTEXT)
+                        },
+                ),
+        )
 
     @Test
     fun `SizeQty returns the expression`() {
@@ -152,6 +185,28 @@ class SizingCompilerTest {
     }
 
     @Test
+    fun `money sizing converts quote currency into account currency`() {
+        val entry = BigDecimal("150")
+        val stop = BigDecimal.ONE
+        val compiler = compiler()
+
+        val notional = compiler.compile(SizeNotional(NumLit(BigDecimal("10000"))), null, "jpy")
+        val riskAbs = compiler.compile(SizeRiskAbs(NumLit(BigDecimal("100"))), stop, "jpy")
+        val pctEquity =
+            compiler.compile(SizePctEquity(NumLit(BigDecimal("0.01"))), null, "jpy")
+        val pctBalance =
+            compiler.compile(SizePctBalance(NumLit(BigDecimal("0.01"))), null, "jpy")
+        val riskFrac =
+            compiler.compile(SizeRiskFrac(NumLit(BigDecimal("0.01"))), stop, "jpy")
+
+        assertThat(notional.evaluate(usdJpyEc, entry)).isEqualByComparingTo("0.1")
+        assertThat(riskAbs.evaluate(usdJpyEc, entry)).isEqualByComparingTo("0.15")
+        assertThat(pctEquity.evaluate(usdJpyEc, entry)).isEqualByComparingTo("0.001")
+        assertThat(pctBalance.evaluate(usdJpyEc, entry)).isEqualByComparingTo("0.002")
+        assertThat(riskFrac.evaluate(usdJpyEc, entry)).isEqualByComparingTo("0.15")
+    }
+
+    @Test
     fun `SizeRiskAbs without stop distance errors at compile time`() {
         assertThatThrownBy {
             compiler().compile(
@@ -160,6 +215,27 @@ class SizingCompilerTest {
                 streamAlias = "btc",
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `risk sizing can consume a runtime-resolved stop distance`() {
+        val sizing =
+            compiler().compile(
+                SizeRiskFrac(NumLit(BigDecimal("0.01"))),
+                stopDistance = null,
+                streamAlias = "btc",
+                runtimeStopDistanceAvailable = true,
+            )
+
+        assertThat(
+            sizing.evaluate(
+                ecWithContractSize100,
+                entryPrice = BigDecimal("100"),
+                runtimeStopDistance = BigDecimal("5"),
+            ),
+        ).isEqualByComparingTo("0.2")
+        assertThatThrownBy { sizing.evaluate(ecWithContractSize100, BigDecimal("100")) }
+            .hasMessageContaining("positive runtime stop distance")
     }
 
     @Test

@@ -81,6 +81,9 @@ object WarmupRequirements {
             },
         )
         lets.set(ast.lets.associate { it.name to it.expr })
+        streamAliases.set(
+            (ast.streams.map { it.alias } + ast.baskets.map { it.alias } + ast.series.map { it.alias }).toSet(),
+        )
         val out = mutableMapOf<String, Int>()
         try {
             for (s in ast.streams) {
@@ -96,6 +99,7 @@ object WarmupRequirements {
         } finally {
             timeframeMinutes.remove()
             lets.remove()
+            streamAliases.remove()
         }
     }
 
@@ -207,7 +211,7 @@ object WarmupRequirements {
         when (cp) {
             is ChildAt -> walkExpr(cp.price, out)
             is ChildBy -> walkExpr(cp.distance, out)
-            is ChildPct -> walkExpr(cp.frac, out)
+            is ChildPct -> walkExpr(cp.percent, out)
             is ChildRr -> walkExpr(cp.multiplier, out)
             is ChildArmedTrail -> {
                 walkExpr(cp.trailDistance, out)
@@ -335,7 +339,9 @@ object WarmupRequirements {
             is Aggregate -> aliasFor(expr.series)
             is FuncCall -> expr.args.firstNotNullOfOrNull(::aliasFor)
             is IsNull -> aliasFor(expr.expr)
-            is Ref -> lets.get()[expr.name]?.let(::aliasFor)
+            is Ref ->
+                lets.get()[expr.name]?.let(::aliasFor)
+                    ?: expr.name.takeIf { it in streamAliases.get() }
             else -> null
         }
 
@@ -349,4 +355,5 @@ object WarmupRequirements {
 
     private val timeframeMinutes = ThreadLocal.withInitial<Map<String, Long>> { emptyMap() }
     private val lets = ThreadLocal.withInitial<Map<String, ExprAst>> { emptyMap() }
+    private val streamAliases = ThreadLocal.withInitial<Set<String>> { emptySet() }
 }

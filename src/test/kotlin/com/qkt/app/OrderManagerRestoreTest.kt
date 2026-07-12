@@ -16,6 +16,7 @@ import com.qkt.persistence.PersistedOcoLeg
 import java.math.BigDecimal
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -91,5 +92,25 @@ class OrderManagerRestoreTest {
         om.restore(listOf("alpha"))
 
         assertThat(broker.recovered).isEmpty()
+    }
+
+    @Test
+    fun `restore propagates broker recovery failure`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        persistor.saveOcoLegs("alpha", listOf(ocoLeg("oco1-a", Side.BUY, "1001", emptyList())))
+        val bus = newBus()
+        val broker =
+            object : Broker by LogBroker(bus, FixedClock(0L)) {
+                override fun recoverPendingOrders(orders: List<ManagedOrder>) {
+                    error("venue truth unavailable")
+                }
+            }
+        val om = OrderManager(broker, bus, MarketPriceTracker(), FixedClock(0L), persistor)
+
+        assertThatThrownBy { om.restore(listOf("alpha")) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("venue truth unavailable")
     }
 }

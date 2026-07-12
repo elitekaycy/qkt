@@ -7,6 +7,23 @@ import com.qkt.positions.LegRole
 import com.qkt.positions.PositionLeg
 import java.math.BigDecimal
 
+/** Point-in-time durability health exposed to live-session controls and operator status. */
+data class PersistenceHealth(
+    val enabled: Boolean,
+    val totalWrites: Long = 0L,
+    val slowWrites: Long = 0L,
+    val failedWrites: Long = 0L,
+    val consecutiveFailures: Long = failedWrites,
+    val failureEpisodes: Long = if (failedWrites == 0L) 0L else 1L,
+    val queueSize: Int = 0,
+    val callerRunsTotal: Long = 0L,
+) {
+    companion object {
+        /** Health for in-memory/no-op persistence where no durable writes are expected. */
+        val DISABLED = PersistenceHealth(enabled = false)
+    }
+}
+
 /**
  * Durable storage for the in-memory engine state that doesn't survive restart:
  * leg metadata, bracket linkages, in-flight orders, and STACK_AT tier-fired state.
@@ -19,7 +36,13 @@ import java.math.BigDecimal
  * after every mutation to the underlying state object. Reads happen once at boot via
  * [com.qkt.persistence.LegBookReconciler].
  */
-interface StatePersistor {
+interface StatePersistor : AutoCloseable {
+    /** Releases persistence resources after all sessions have stopped. */
+    override fun close() = Unit
+
+    /** Current durability counters; disabled by default for non-durable test persistors. */
+    fun healthSnapshot(): PersistenceHealth = PersistenceHealth.DISABLED
+
     fun saveLegBook(
         strategyId: String,
         symbol: String,
@@ -76,9 +99,8 @@ interface StatePersistor {
     fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> = emptyList()
 
     /**
-     * Persist the session's risk snapshot — halt flags and the day's realized PnL.
-     * Without this, any restart un-halts a halted strategy and hands it a fresh
-     * daily-loss budget the same day it exhausted one. Default no-op keeps
+     * Persist the session's complete risk snapshot: halt flags, realized PnL,
+     * drawdown anchors, trailing peaks, and pacing state. Default no-op keeps
      * persistors that predate risk persistence compiling.
      */
     fun saveRiskState(
@@ -86,7 +108,12 @@ interface StatePersistor {
         state: PersistedRiskState,
     ) {}
 
-    /** The last persisted risk snapshot, or null when none exists. */
+    /**
+     * The last persisted risk snapshot, or null when none exists.
+     *
+     * Implementations must surface unreadable or incompatible persisted state. Treating those
+     * cases as absent would let a restart discard a halt and reset the session's daily-loss budget.
+     */
     fun loadRiskState(strategyId: String): PersistedRiskState? = null
 
     /**
@@ -246,10 +273,8 @@ data class PersistedTierState(
 )
 
 /**
- * On-disk shape of [com.qkt.risk.RiskState]: the day's realized PnL (global to the
- * session plus per strategy) and every active halt with its reason, scope, and the
- * UTC day it tripped — enough for a restart to restore halts and daily budgets while
- * still honoring the UTC-midnight auto-resume for DAILY-scoped halts.
+ * On-disk shape of [com.qkt.risk.RiskState]: realized PnL, drawdown references,
+ * trailing peaks, pacing state, and active halts.
  */
 data class PersistedRiskState(
     val epochDay: Long,
@@ -260,6 +285,15 @@ data class PersistedRiskState(
     val haltScope: String,
     val haltEpochDay: Long,
     val strategyHalts: List<PersistedStrategyHalt>,
+    val globalRealizedTotal: java.math.BigDecimal? = null,
+    val dailyDrawdownEpochDay: Long? = null,
+    val globalDailyDrawdownRef: java.math.BigDecimal? = null,
+    val perStrategyDailyDrawdownRefs: Map<String, java.math.BigDecimal> = emptyMap(),
+    val peakTotalEquity: java.math.BigDecimal? = null,
+    val perStrategyPeakEquity: Map<String, java.math.BigDecimal> = emptyMap(),
+    val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
+    val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
+    val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
 )
 
 /** One strategy-scoped halt inside [PersistedRiskState]. */

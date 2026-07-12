@@ -36,7 +36,15 @@ class CompositeBroker(
 
     override fun supports(symbol: String): Boolean = brokerFor(symbol) != null
 
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode =
+        brokerFor(symbol)?.positionAccountingMode(symbol) ?: PositionAccountingMode.UNKNOWN
+
     private val orderIdToBroker: MutableMap<String, Broker> = mutableMapOf()
+    private val accountEquityBroker: Broker? = allLeaves().distinct().filter { it.supportsAccountEquity }.singleOrNull()
+
+    override val supportsAccountEquity: Boolean get() = accountEquityBroker != null
+
+    override fun accountEquity(): java.math.BigDecimal? = accountEquityBroker?.accountEquity()
 
     /**
      * Venue ticket → owning leaf, captured from each fill's `brokerOrderId` (the same value the
@@ -124,6 +132,27 @@ class CompositeBroker(
         }
     }
 
+    override fun modifyPositionAsync(
+        ticket: String,
+        sl: java.math.BigDecimal?,
+        tp: java.math.BigDecimal?,
+        onResult: (SubmitAck) -> Unit,
+    ) {
+        val target = ticketToBroker[ticket]
+        if (target == null) {
+            onResult(
+                SubmitAck(
+                    clientOrderId = ticket,
+                    brokerOrderId = ticket,
+                    accepted = false,
+                    rejectReason = "no leaf owns ticket $ticket",
+                ),
+            )
+            return
+        }
+        target.modifyPositionAsync(ticket, sl, tp, onResult)
+    }
+
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
         val merged = LinkedHashMap<String, MutableList<com.qkt.positions.Position>>()
         for (leaf in allLeaves()) {
@@ -165,16 +194,24 @@ class CompositeBroker(
         return merged
     }
 
+    override val supportsPositionTickets: Boolean
+        get() {
+            val leaves = allLeaves()
+            return leaves.isNotEmpty() && leaves.all(Broker::supportsPositionTickets)
+        }
+
     override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
         val byBroker = LinkedHashMap<Broker, MutableList<com.qkt.execution.ManagedOrder>>()
         for (order in orders) {
-            val target = brokerFor(order.request.symbol) ?: continue
+            val target =
+                brokerFor(order.request.symbol)
+                    ?: error("CompositeBroker recovery: no broker for ${order.request.symbol}")
             // Restore orderId → broker routing so a later cancel()/modify() of a recovered order
             // reaches the right leaf. Without this, OCO restart recovery is dead on a composite.
             orderIdToBroker[order.id] = target
             byBroker.getOrPut(target) { mutableListOf() }.add(order)
         }
-        for ((broker, group) in byBroker) runCatching { broker.recoverPendingOrders(group) }
+        for ((broker, group) in byBroker) broker.recoverPendingOrders(group)
     }
 
     private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)

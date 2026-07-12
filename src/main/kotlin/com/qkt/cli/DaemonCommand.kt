@@ -1,8 +1,11 @@
 package com.qkt.cli
 
+import com.qkt.broker.mt5.MT5AccountVerifier
+import com.qkt.broker.mt5.MT5TradeMode
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
+import com.qkt.cli.daemon.DaemonInstanceLock
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
 import com.qkt.cli.daemon.StateDir
@@ -25,8 +28,12 @@ import com.qkt.notify.NotificationEvent
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.aggregateDailySummary
+import com.qkt.persistence.StatePersistor
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -45,6 +52,8 @@ class DaemonCommand(
      * factory to swap in a stub.
      */
     private val sourceFactory: ((List<String>) -> MarketSource)? = null,
+    /** Test seam for verifying ownership of the daemon-wide persistence resource. */
+    private val statePersistorFactory: ((Config, Path) -> StatePersistor)? = null,
 ) {
     fun run(): Int {
         // Sub-subcommand dispatch (implemented further in Task 9): `qkt daemon stop|status`.
@@ -62,14 +71,28 @@ class DaemonCommand(
 
     private fun startDaemon(): Int {
         val stateDir = StateDir.resolve(args.option("state-dir"))
+        val instanceLock = stateDir.acquireDaemonLock()
+        if (instanceLock == null) {
+            val owner =
+                runCatching {
+                    Files
+                        .readString(stateDir.pidFile)
+                        .trim()
+                }.getOrNull()
+            System.err.println(
+                "qkt: daemon already running for state directory ${stateDir.root}" +
+                    owner?.takeIf { it.isNotEmpty() }?.let { " (pid $it)" }.orEmpty(),
+            )
+            return ExitCodes.USER_ERROR
+        }
+        return instanceLock.use { startDaemonLocked(stateDir, it) }
+    }
 
-        val configPathEarly =
-            args.option("config")?.let {
-                java.nio.file.Path
-                    .of(it)
-            }
-                ?: java.nio.file.Path
-                    .of("./qkt.config.yaml")
+    private fun startDaemonLocked(
+        stateDir: StateDir,
+        instanceLock: DaemonInstanceLock,
+    ): Int {
+        val configPathEarly = Config.resolvePath(args.option("config"))
         val cfg = Config.load(configPathEarly)
         if (cfg.runtimeMode.production) {
             val preflight =
@@ -144,9 +167,26 @@ class DaemonCommand(
                         instrumentOverrides = cfg.brokerInstrumentOverrides,
                     )
             } catch (e: Exception) {
-                println("[WARN] mt5 profile load failed: ${e.message}")
-                emptyList()
+                System.err.println("qkt: MT5 profile load failed: ${e.message}")
+                runCatching { insightsSink?.close() }
+                return ExitCodes.USER_ERROR
             }
+        val mt5Accounts =
+            try {
+                mt5Profiles.associateWith { profile ->
+                    MT5AccountVerifier.fetchAndVerify(profile)
+                }
+            } catch (e: Exception) {
+                System.err.println("qkt: MT5 account preflight failed: ${e.message}")
+                runCatching { insightsSink?.close() }
+                return ExitCodes.USER_ERROR
+            }
+        if (!cfg.runtimeMode.production && mt5Accounts.values.any { it.tradeMode == MT5TradeMode.REAL.wireValue }) {
+            System.err.println(
+                "[WARN] REAL MT5 account detected while runtime.mode=${cfg.runtimeMode.name.lowercase()}; " +
+                    "production governance checks are not active",
+            )
+        }
         // Forward reference so the factory closure can query the registry that's
         // constructed below. Recovery runs strictly after the broker is built, so by
         // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
@@ -219,7 +259,9 @@ class DaemonCommand(
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source)
 
-        val statePersistor = cfg.statePersistor(stateDir.stateRoot)
+        val statePersistor =
+            statePersistorFactory?.invoke(cfg, stateDir.stateRoot)
+                ?: cfg.statePersistor(stateDir.stateRoot)
         val registry =
             StrategyRegistry(
                 StrategyHandle.RealFactory(
@@ -236,6 +278,7 @@ class DaemonCommand(
                     maxOrderQty = cfg.maxOrderQty,
                     maxOrderNotional = cfg.maxOrderNotional,
                     priceCollarFrac = cfg.priceCollarFrac,
+                    accountingConfig = cfg.accountingConfig,
                     marginFloorPct = cfg.marginFloorPct,
                     measuredUsageHours = cfg.measuredUsageHours,
                     measuredUsageMaxQty = cfg.measuredUsageMaxQty,
@@ -277,6 +320,13 @@ class DaemonCommand(
                     dailyDdBasis = cfg.dailyDdBasis,
                     bookRiskConfig = cfg.bookRisk,
                     perStrategyRisk = cfg.perStrategyRisk,
+                    accountingConfig = cfg.accountingConfig,
+                    maxOrderQty = cfg.maxOrderQty,
+                    maxOrderNotional = cfg.maxOrderNotional,
+                    priceCollarFrac = cfg.priceCollarFrac,
+                    marginFloorPct = cfg.marginFloorPct,
+                    measuredUsageHours = cfg.measuredUsageHours,
+                    measuredUsageMaxQty = cfg.measuredUsageMaxQty,
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,
@@ -298,7 +348,7 @@ class DaemonCommand(
                 promotionGates = cfg.promotionGateConfig,
             )
         plane.start()
-        stateDir.writeControlPort(plane.boundPort)
+        instanceLock.writeControlPort(plane.boundPort)
         commandChannels.forEach { it.start() }
 
         println("[INFO] qkt ${BuildInfo.VERSION} daemon starting")
@@ -311,6 +361,9 @@ class DaemonCommand(
 
         if (mt5Profiles.isNotEmpty()) {
             println("[INFO] mt5 broker profiles loaded: ${mt5Profiles.joinToString { it.name }}")
+            mt5Accounts.forEach { (profile, account) ->
+                println("[INFO] mt5 account: ${MT5AccountVerifier.describe(profile, account)}")
+            }
         }
 
         loadDirIfRequested(args.option("load-dir"), registry, portfolioDeployer) { name, message ->
@@ -333,6 +386,10 @@ class DaemonCommand(
                     version = BuildInfo.VERSION,
                     strategies = registry.list().map { it.name },
                     timestamp = startedAt.toEpochMilli(),
+                    accounts =
+                        mt5Accounts.map { (profile, account) ->
+                            MT5AccountVerifier.describe(profile, account)
+                        },
                 ),
             )
         }
@@ -356,15 +413,19 @@ class DaemonCommand(
                     }
             }
 
+        val cleanupStarted = AtomicBoolean(false)
+
         fun cleanup() {
-            runCatching { registry.stopAll() }
-            runCatching { bybitClient?.close() }
+            if (!cleanupStarted.compareAndSet(false, true)) return
+            runCatching { stateDir.deleteControlPort() }
             runCatching { plane.close() }
             commandChannels.forEach { runCatching { it.close() } }
             runCatching { dailySummarySchedulers.forEach { it.close() } }
+            runCatching { registry.stopAll() }
+            runCatching { statePersistor.close() }
+            runCatching { bybitClient?.close() }
             runCatching { notifier.close() }
             runCatching { insightsSink?.close() }
-            runCatching { stateDir.deleteControlPort() }
         }
 
         val shutdown =

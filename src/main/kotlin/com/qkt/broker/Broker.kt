@@ -72,6 +72,20 @@ interface Broker {
     ): SubmitAck = SubmitAck(ticket, ticket, accepted = true)
 
     /**
+     * Asynchronous variant of [modifyPosition]. Connectors with blocking venue I/O override this
+     * so fill handlers never wait on a network round-trip. The default preserves immediate,
+     * in-process brokers while reporting completion through [onResult].
+     */
+    fun modifyPositionAsync(
+        ticket: String,
+        sl: BigDecimal? = null,
+        tp: BigDecimal? = null,
+        onResult: (SubmitAck) -> Unit,
+    ) {
+        onResult(modifyPosition(ticket, sl, tp))
+    }
+
+    /**
      * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol.
      *
      * Returns a **list per symbol** because hedge-mode-capable brokers (MT5, Bybit linear)
@@ -89,8 +103,9 @@ interface Broker {
      * Re-establish venue-side tracking for OCO legs recovered from the persistor on
      * restart. Brokers join each [com.qkt.execution.ManagedOrder] to live venue state by
      * ticket and, for a leg that filled while the daemon was down, republish its
-     * [com.qkt.events.BrokerEvent.OrderFilled]. Default no-op — only stateful venue
-     * connectors override.
+     * [com.qkt.events.BrokerEvent.OrderFilled]. Implementations must throw when venue truth
+     * cannot be established, so startup refuses to trade on assumed state. Default no-op — only
+     * stateful venue connectors override.
      */
     fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {}
 
@@ -104,6 +119,9 @@ interface Broker {
      * Implementations must be idempotent: calling `shutdown` twice is harmless.
      */
     fun shutdown() {}
+
+    /** Whether [accountEquity] is a supported venue operation rather than the default null view. */
+    val supportsAccountEquity: Boolean get() = false
 
     /**
      * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and
@@ -146,6 +164,12 @@ interface Broker {
      * broker-reported profit and swap. Empty when unsupported or the read failed.
      */
     fun positionTickets(): List<BrokerPositionTicket> = emptyList()
+
+    /** Whether [positionTickets] is authoritative venue truth rather than the empty default. */
+    val supportsPositionTickets: Boolean get() = false
+
+    /** Position accounting mode for [symbol]; unknown modes must be reconciled as hedging. */
+    fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.UNKNOWN
 }
 
 /**

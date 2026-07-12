@@ -442,16 +442,28 @@ object ControlRoutes {
         val deltas =
             report.deltas.joinToString(",", "[", "]") {
                 """{"symbol":"${it.symbol}","engineQty":"${it.engineQty.toPlainString()}",""" +
-                    """"brokerQty":"${it.brokerQty.toPlainString()}"}"""
+                    """"brokerQty":"${it.brokerQty.toPlainString()}",""" +
+                    """"side":${it.side?.let { side -> "\"${side.name}\"" } ?: "null"}}"""
+            }
+        val protectionDeltas =
+            report.protectionDeltas.joinToString(",", "[", "]") {
+                """{"ticket":"${it.ticket}","symbol":"${it.symbol}",""" +
+                    """"requestedStopLoss":${jsonDecimal(it.requestedStopLoss)},""" +
+                    """"brokerStopLoss":${jsonDecimal(it.brokerStopLoss)},""" +
+                    """"requestedTakeProfit":${jsonDecimal(it.requestedTakeProfit)},""" +
+                    """"brokerTakeProfit":${jsonDecimal(it.brokerTakeProfit)}}"""
             }
         respond(
             ex,
             200,
             """{"strategy":"$name","clean":${report.clean},"deltas":$deltas,""" +
+                """"protectionDeltas":$protectionDeltas,""" +
                 """"engineEquity":"${report.engineEquity.toPlainString()}",""" +
                 """"brokerEquity":${report.brokerEquity?.let { "\"${it.toPlainString()}\"" } ?: "null"}}""",
         )
     }
+
+    private fun jsonDecimal(value: java.math.BigDecimal?): String = value?.let { "\"${it.toPlainString()}\"" } ?: "null"
 
     private fun handleLatencyAll(
         ex: HttpExchange,
@@ -620,7 +632,24 @@ object ControlRoutes {
         if (result.unknown.isNotEmpty()) {
             return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
         }
-        respond(ex, 200, """{"state":"killed","flatten":$flatten,"affected":${jsonArray(result.affected)}}""")
+        val flattenVerified =
+            flatten && result.affected.isNotEmpty() && result.flattenResults.values.all { it.verifiedFlat }
+        val remainingTickets =
+            result.flattenResults.values
+                .flatMap { it.remainingTickets }
+                .distinct()
+        val flattenDetails = result.flattenResults.mapValues { it.value.detail }
+        val detailsJson =
+            flattenDetails.entries.joinToString(prefix = "{", postfix = "}") { (strategy, detail) ->
+                "${jsonString(strategy)}:${jsonStringOrNull(detail)}"
+            }
+        respond(
+            ex,
+            200,
+            """{"state":"killed","flatten":$flatten,"flattenVerified":$flattenVerified,""" +
+                """"remainingTickets":${jsonArray(remainingTickets)},"flattenDetails":$detailsJson,""" +
+                """"affected":${jsonArray(result.affected)}}""",
+        )
     }
 
     private fun handleResume(

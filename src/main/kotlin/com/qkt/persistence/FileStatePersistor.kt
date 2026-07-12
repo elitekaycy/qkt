@@ -15,8 +15,9 @@ import org.slf4j.LoggerFactory
  * On-disk [StatePersistor]. Serializes the four state shapes to atomic JSON files under
  * `<rootDir>/<strategyId>/{legbook.json,bracket-pairs.json,pending-orders.json,pending-stacks.json}`.
  *
- * Per Phase 29 spec, errors are best-effort: write failures log + skip; load failures
- * return null + log. The engine never crashes from a persistence failure.
+ * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
+ * an entry-only risk halt. Most load failures return null and log; risk-state load failures are
+ * surfaced so a live session cannot silently discard a halt or reset its daily-loss budget.
  */
 class FileStatePersistor(
     rootDir: Path,
@@ -35,6 +36,17 @@ class FileStatePersistor(
 
     /** Cumulative JSON bytes written across all save operations. */
     val totalBytesWritten: Long get() = writer.totalBytesWritten.get()
+
+    override fun healthSnapshot(): PersistenceHealth =
+        PersistenceHealth(
+            enabled = true,
+            totalWrites = totalWrites,
+            slowWrites = slowWrites,
+            failedWrites = failedWrites,
+            consecutiveFailures = writer.consecutiveFailures.get(),
+            failureEpisodes = writer.failureEpisodes.get(),
+        )
+
     private val json =
         Json {
             ignoreUnknownKeys = true
@@ -215,6 +227,16 @@ class FileStatePersistor(
                     state.strategyHalts.map {
                         StrategyHaltDto(it.strategyId, it.reason, it.scope, it.epochDay)
                     },
+                globalRealizedTotal = state.globalRealizedTotal?.toPlainString(),
+                dailyDrawdownEpochDay = state.dailyDrawdownEpochDay,
+                globalDailyDrawdownRef = state.globalDailyDrawdownRef?.toPlainString(),
+                perStrategyDailyDrawdownRefs =
+                    state.perStrategyDailyDrawdownRefs.mapValues { it.value.toPlainString() },
+                peakTotalEquity = state.peakTotalEquity?.toPlainString(),
+                perStrategyPeakEquity = state.perStrategyPeakEquity.mapValues { it.value.toPlainString() },
+                pacerEntryFillsByStrategy = state.pacerEntryFillsByStrategy,
+                pacerLossStreakByStrategy = state.pacerLossStreakByStrategy,
+                pacerLastLossAtByStrategy = state.pacerLastLossAtByStrategy,
             )
         runCatching { json.encodeToString(RiskStateDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, RISK_STATE_FILE, it) }
@@ -223,13 +245,10 @@ class FileStatePersistor(
 
     override fun loadRiskState(strategyId: String): PersistedRiskState? {
         val raw = writer.read(strategyId, RISK_STATE_FILE) ?: return null
-        val dto =
-            try {
-                json.decodeFromString(RiskStateDto.serializer(), raw)
-            } catch (e: SerializationException) {
-                log.warn("loadRiskState parse failed for $strategyId: ${e.message}")
-                return null
-            }
+        val dto = json.decodeFromString(RiskStateDto.serializer(), raw)
+        require(dto.version == SCHEMA_VERSION) {
+            "loadRiskState schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
+        }
         return PersistedRiskState(
             epochDay = dto.epochDay,
             realizedToday = dto.realizedToday.toBigDecimal(),
@@ -242,6 +261,16 @@ class FileStatePersistor(
                 dto.strategyHalts.map {
                     PersistedStrategyHalt(it.strategyId, it.reason, it.scope, it.epochDay)
                 },
+            globalRealizedTotal = dto.globalRealizedTotal?.toBigDecimal(),
+            dailyDrawdownEpochDay = dto.dailyDrawdownEpochDay,
+            globalDailyDrawdownRef = dto.globalDailyDrawdownRef?.toBigDecimal(),
+            perStrategyDailyDrawdownRefs =
+                dto.perStrategyDailyDrawdownRefs.mapValues { it.value.toBigDecimal() },
+            peakTotalEquity = dto.peakTotalEquity?.toBigDecimal(),
+            perStrategyPeakEquity = dto.perStrategyPeakEquity.mapValues { it.value.toBigDecimal() },
+            pacerEntryFillsByStrategy = dto.pacerEntryFillsByStrategy,
+            pacerLossStreakByStrategy = dto.pacerLossStreakByStrategy,
+            pacerLastLossAtByStrategy = dto.pacerLastLossAtByStrategy,
         )
     }
 
@@ -1066,6 +1095,15 @@ private data class RiskStateDto(
     val haltScope: String,
     val haltEpochDay: Long,
     val strategyHalts: List<StrategyHaltDto>,
+    val globalRealizedTotal: String? = null,
+    val dailyDrawdownEpochDay: Long? = null,
+    val globalDailyDrawdownRef: String? = null,
+    val perStrategyDailyDrawdownRefs: Map<String, String> = emptyMap(),
+    val peakTotalEquity: String? = null,
+    val perStrategyPeakEquity: Map<String, String> = emptyMap(),
+    val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
+    val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
+    val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
 )
 
 @Serializable

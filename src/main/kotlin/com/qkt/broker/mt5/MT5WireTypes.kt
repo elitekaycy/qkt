@@ -34,6 +34,8 @@ data class MT5AccountInfo(
     val server: String = "",
     /** Account holder name as the venue records it, e.g. "qkt-hedge-straddle". */
     val name: String = "",
+    /** MT5 account environment: 0 demo, 1 contest, 2 real; -1 when omitted by an old gateway. */
+    val tradeMode: Int = -1,
 ) {
     /**
      * True when the venue keeps a long and a short on the same symbol as two separate
@@ -44,11 +46,35 @@ data class MT5AccountInfo(
     val isHedging: Boolean get() = marginMode == MARGIN_MODE_HEDGING
 }
 
+/** Expected MT5 account environment used by cutover preflight. */
+enum class MT5TradeMode(
+    val wireValue: Int,
+) {
+    DEMO(0),
+    CONTEST(1),
+    REAL(2),
+    ;
+
+    companion object {
+        /** Parses `demo`, `contest`, `real`, or the corresponding MT5 numeric value. */
+        fun parse(raw: String): MT5TradeMode =
+            entries.firstOrNull {
+                it.name.equals(raw.trim(), ignoreCase = true) || it.wireValue.toString() == raw.trim()
+            } ?: error("unknown MT5 trade mode '$raw' (expected demo, contest, or real)")
+
+        /** Resolves an MT5 wire value, or null when the gateway omitted/returned an unknown value. */
+        fun fromWire(value: Int): MT5TradeMode? = entries.firstOrNull { it.wireValue == value }
+    }
+}
+
 /** `ACCOUNT_MARGIN_MODE_RETAIL_NETTING` — opposite orders net into one position per symbol. */
 const val MARGIN_MODE_NETTING: Int = 0
 
 /** `ACCOUNT_MARGIN_MODE_RETAIL_HEDGING` — long and short coexist as independent tickets. */
 const val MARGIN_MODE_HEDGING: Int = 2
+
+/** Gateway omitted or returned an unsupported account margin mode. */
+const val MARGIN_MODE_UNKNOWN: Int = -1
 
 /** Open position on the venue, filtered by [MT5BrokerProfile.magic] during reconciliation. */
 data class MT5Position(
@@ -63,6 +89,8 @@ data class MT5Position(
     val magic: Int,
     val openTime: Long,
     val comment: String? = null,
+    /** Full gateway placement id; unlike [comment], this is not truncated by the terminal. */
+    val clientOrderId: String? = null,
     /** Accumulated swap in account currency; null when the gateway omits the field. */
     val swap: BigDecimal? = null,
     /** Current market price the venue values the position at; null when omitted. */
@@ -96,6 +124,8 @@ data class MT5Deal(
     val comment: String?,
     /** Deal execution time in UTC epoch millis (the venue's raw `time_msc`). */
     val timeMs: Long,
+    /** Gateway placement id when the gateway preserves it in deal history. */
+    val clientOrderId: String? = null,
 )
 
 /**
@@ -133,6 +163,8 @@ data class MT5PendingOrder(
     val timeSetup: Long,
     val timeExpiration: Long,
     val comment: String? = null,
+    /** Full gateway placement id; unlike [comment], this is not truncated by the terminal. */
+    val clientOrderId: String? = null,
 )
 
 /**
@@ -163,6 +195,10 @@ data class MT5SymbolInfo(
  * [slDistance] is set for trailing stops — the distance in MT5 *points* that the
  * server-side trail follows the favorable price. Mutually exclusive with [sl]
  * (server manages the trail; clients shouldn't also set a fixed SL).
+ *
+ * [clientOrderId] identifies one placement attempt to the gateway. It is deliberately
+ * separate from [comment], which remains the stable engine order id used to correlate
+ * venue state during recovery.
  */
 data class MT5OrderRequest(
     val symbol: String,
@@ -176,6 +212,7 @@ data class MT5OrderRequest(
     val deviation: Int = 20,
     val magic: Int,
     val comment: String,
+    val clientOrderId: String = comment,
     val expiration: Long? = null,
     val typeTime: String? = null,
 )
@@ -199,6 +236,8 @@ data class MT5OrderResult(
 data class MT5ClosingDeal(
     val price: BigDecimal,
     val costs: BigDecimal,
+    /** Venue deals included in [costs], retained for idempotent cost booking. */
+    val deals: List<MT5Deal> = emptyList(),
 )
 
 /** Top-level response from `POST /order`. */

@@ -1,5 +1,6 @@
 package com.qkt.marketdata.live.mt5
 
+import com.qkt.broker.mt5.MT5ServerTimeZone
 import com.qkt.broker.mt5.mt5RequestBuilder
 import java.math.BigDecimal
 import kotlinx.serialization.json.Json
@@ -10,6 +11,7 @@ import okhttp3.OkHttpClient
 class Mt5TickClient(
     private val baseUrl: String,
     private val http: OkHttpClient = OkHttpClient(),
+    private val serverTimeZone: MT5ServerTimeZone = MT5ServerTimeZone.UTC,
     private val apiKey: String? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -64,9 +66,10 @@ class Mt5TickClient(
         val ask = obj["ask"]!!.jsonPrimitive.content.toBigDecimal()
         val last = obj["last"]!!.jsonPrimitive.content.toBigDecimal()
         val flags = obj["flags"]!!.jsonPrimitive.content.toInt()
-        val brokerMs =
+        val serverMs =
             obj["time_msc"]?.jsonPrimitive?.content?.toLong()
                 ?: (obj["time"]!!.jsonPrimitive.content.toLong() * 1000L)
+        val brokerMs = serverTimeZone.serverEpochToUtc(serverMs)
         return Mt5Tick(
             capturedAtMs = capturedAtMs,
             brokerTimeMs = brokerMs,

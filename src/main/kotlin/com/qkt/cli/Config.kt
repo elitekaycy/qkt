@@ -185,13 +185,11 @@ data class Config(
     /**
      * Effective `state.async`. When `true`, wraps the file persistor in [com.qkt.persistence.AsyncStatePersistor]
      * so disk I/O runs on a background thread instead of the bus dispatch thread. Defaults to
-     * `true` — a single fill otherwise pays several synchronous DSYNC flushes on the engine
-     * thread (order state, leg book, PnL, risk state), stalling tick processing behind disk
-     * latency. Set `state.async: false` where the async writer's ~1s crash-loss window is
-     * unacceptable.
+     * `false` so a crash cannot discard the async writer's most recent queued state mutations.
+     * Operators may opt in where the throughput benefit justifies that durability window.
      */
     val stateAsync: Boolean
-        get() = state["async"]?.lowercase() != "false"
+        get() = state["async"]?.lowercase() == "true"
 
     /**
      * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under
@@ -256,6 +254,12 @@ data class Config(
          */
         fun locate(searchPaths: List<Path> = defaultSearchPaths()): Path? = searchPaths.firstOrNull { Files.exists(it) }
 
+        /** Resolve an explicit config or the first documented default location. */
+        fun resolvePath(
+            explicit: String?,
+            searchPaths: List<Path> = defaultSearchPaths(),
+        ): Path = explicit?.let(Path::of) ?: locate(searchPaths) ?: Path.of("./qkt.config.yaml")
+
         // Matches `${NAME}` and `${NAME:-default}`. The default is used when the env
         // var / system property is unset; without it, the literal `${...}` stays in the
         // string and broker init logs a degraded-config warning.
@@ -272,6 +276,7 @@ data class Config(
                 Load(LoadSettings.builder().build())
                     .loadFromString(expanded) as? Map<String, Any?>
                     ?: return defaults()
+            validateRiskKeys(map["risk"])
             return Config(
                 source = (map["source"] as? String) ?: "tv",
                 dataRoot = (map["data_root"] as? String) ?: "./data",
@@ -311,10 +316,69 @@ data class Config(
             )
 
         @Suppress("UNCHECKED_CAST")
+        private fun validateRiskKeys(raw: Any?) {
+            val risk = raw as? Map<String, Any?> ?: return
+            rejectUnknownKeys("risk", risk.keys, RISK_KEYS)
+            val perStrategy = risk["per_strategy"] as? Map<String, Any?> ?: return
+            for ((strategy, value) in perStrategy) {
+                val overrides =
+                    value as? Map<String, Any?>
+                        ?: error("risk.per_strategy.$strategy must be a key-value block")
+                rejectUnknownKeys(
+                    "risk.per_strategy.$strategy",
+                    overrides.keys,
+                    PER_STRATEGY_RISK_KEYS,
+                )
+            }
+        }
+
+        private fun rejectUnknownKeys(
+            path: String,
+            actual: Set<String>,
+            allowed: Set<String>,
+        ) {
+            val unknown = actual - allowed
+            require(unknown.isEmpty()) {
+                "unknown $path key(s): ${unknown.sorted().joinToString(", ")}"
+            }
+        }
+
+        @Suppress("UNCHECKED_CAST")
         private fun parseFlat(raw: Any?): Map<String, String> {
             val m = raw as? Map<String, Any?> ?: return emptyMap()
             return m.mapValues { (_, v) -> v?.toString() ?: "" }
         }
+
+        private val RISK_KEYS =
+            setOf(
+                "max_daily_loss",
+                "max_order_qty",
+                "max_order_notional",
+                "price_collar_pct",
+                "margin_floor_pct",
+                "measured_usage_hours",
+                "measured_usage_max_qty",
+                "max_drawdown_pct",
+                "max_daily_drawdown_pct",
+                "total_dd_basis",
+                "daily_dd_basis",
+                "per_strategy",
+            )
+
+        private val PER_STRATEGY_RISK_KEYS =
+            setOf(
+                "max_daily_loss",
+                "max_position_size",
+                "max_open_positions",
+                "max_drawdown_pct",
+                "max_daily_drawdown_pct",
+                "max_trades_per_day",
+                "cooldown_after_loss",
+                "cooldown_after_loss_ms",
+                "cooldown_after_loss_after_consecutive",
+                "loss_streak_halt",
+                "loss_streak_halt_scope",
+            )
 
         @Suppress("UNCHECKED_CAST")
         private fun parseRuntimeWaivers(raw: Any?): Map<String, String> {

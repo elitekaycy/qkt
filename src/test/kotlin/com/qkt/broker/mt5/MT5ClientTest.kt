@@ -19,7 +19,7 @@ class MT5ClientTest {
         client =
             MT5Client(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
-                tzOffsetHours = 2,
+                serverTimeZone = MT5ServerTimeZone.fixedOffset(2),
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
             )
@@ -45,6 +45,7 @@ class MT5ClientTest {
                     type = "BUY",
                     magic = 10001,
                     comment = "ord-1",
+                    clientOrderId = "placement-1",
                 ),
             )
         assertThat(resp.result.retcode).isEqualTo(10009)
@@ -53,8 +54,8 @@ class MT5ClientTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/order")
         assertThat(recorded.method).isEqualTo("POST")
-        assertThat(recorded.getHeader("Idempotency-Key")).isEqualTo("ord-1")
-        assertThat(recorded.body.readUtf8()).contains("\"client_order_id\":\"ord-1\"")
+        assertThat(recorded.getHeader("Idempotency-Key")).isEqualTo("placement-1")
+        assertThat(recorded.body.readUtf8()).contains("\"client_order_id\":\"placement-1\"")
     }
 
     @Test
@@ -199,13 +200,14 @@ class MT5ClientTest {
         val serverEpochMs = 1_700_000_000_000L
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$serverEpochMs,"comment":"x"}]""",
+                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$serverEpochMs,"comment":"x","client_order_id":"placement-1"}]""",
             ),
         )
         val positions = client.getPositions(magic = 10001)!!
         assertThat(positions).hasSize(1)
         assertThat(positions[0].ticket).isEqualTo(1L)
         assertThat(positions[0].openTime).isEqualTo(serverEpochMs)
+        assertThat(positions[0].clientOrderId).isEqualTo("placement-1")
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/get_positions?magic=10001")
         assertThat(recorded.method).isEqualTo("GET")
@@ -287,7 +289,7 @@ class MT5ClientTest {
     }
 
     private val pendingOrderJson =
-        """{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1","price_open":"4700.0","sl":"4682.0","tp":"4712.0","magic":10001,"time_setup":1700000000,"time_expiration":1700000600,"comment":"x"}"""
+        """{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1","price_open":"4700.0","sl":"4682.0","tp":"4712.0","magic":10001,"time_setup":1700000000,"time_expiration":1700000600,"comment":"x","client_order_id":"placement-7"}"""
 
     @Test
     fun `getPendingOrders parses a wrapped orders object`() {
@@ -296,6 +298,7 @@ class MT5ClientTest {
         assertThat(orders).hasSize(1)
         assertThat(orders[0].ticket).isEqualTo(7L)
         assertThat(orders[0].symbol).isEqualTo("XAUUSDm")
+        assertThat(orders[0].clientOrderId).isEqualTo("placement-7")
     }
 
     @Test
@@ -317,7 +320,7 @@ class MT5ClientTest {
         client =
             MT5Client(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
-                tzOffsetHours = 0,
+                serverTimeZone = MT5ServerTimeZone.UTC,
                 retryAttempts = 0,
                 apiKey = "secret-token",
             )
@@ -404,7 +407,7 @@ class MT5ClientTest {
         // Real Exness demo /account shape (login 435898347): margin_mode 2 = RETAIL_HEDGING.
         server.enqueue(
             MockResponse().setBody(
-                """{"balance":2390.91,"equity":1895.99,"currency":"USD","leverage":100,"margin_mode":2}""",
+                """{"balance":2390.91,"equity":1895.99,"currency":"USD","leverage":100,"margin_mode":2,"login":435898347,"server":"Exness-MT5Trial9","trade_mode":0}""",
             ),
         )
         val acct = client.getAccount()!!
@@ -414,6 +417,9 @@ class MT5ClientTest {
         assertThat(acct.equity).isEqualByComparingTo("1895.99")
         assertThat(acct.currency).isEqualTo("USD")
         assertThat(acct.leverage).isEqualTo(100)
+        assertThat(acct.login).isEqualTo(435898347L)
+        assertThat(acct.server).isEqualTo("Exness-MT5Trial9")
+        assertThat(acct.tradeMode).isEqualTo(MT5TradeMode.DEMO.wireValue)
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/account")
         assertThat(recorded.method).isEqualTo("GET")
@@ -489,6 +495,30 @@ class MT5ClientTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/modify_sl_tp")
         assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":424242,"sl":1.0950,"tp":1.1100}""")
+    }
+
+    @Test
+    fun `modifyPositionAsync delivers result without a caller-thread round trip`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"message":"SL/TP modified","result":{"retcode":10009,"order":0,"deal":0,"price":"0","comment":"ok"}}""",
+            ),
+        )
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+
+        client.modifyPositionAsync(424242L, BigDecimal("1.0950"), BigDecimal("1.1100")) { response ->
+            result.set(response)
+            latch.countDown()
+        }
+
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(10009)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/modify_sl_tp")
         assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":424242,"sl":1.0950,"tp":1.1100}""")
     }
 

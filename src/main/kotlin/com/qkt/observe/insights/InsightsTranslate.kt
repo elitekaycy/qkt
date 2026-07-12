@@ -364,6 +364,14 @@ object InsightsTranslate {
         reason: String = "source-reconnected",
     ): InsightsEnvelope = marketDataLifecycle("reconnected", "marketdata.reconnected", source, symbols, ts, reason)
 
+    /** Per-symbol quote-health transition detected while the source itself remains connected. */
+    fun marketDataStale(
+        source: String,
+        symbol: String,
+        ts: Long,
+        reason: String,
+    ): InsightsEnvelope = marketDataLifecycle("stale", "marketdata.stale", source, listOf(symbol), ts, reason)
+
     /**
      * Live venue account snapshot ("state.account"). Last-value semantics: the collector
      * keeps only the newest per (instance, broker), so the id just needs to be unique
@@ -431,6 +439,31 @@ object InsightsTranslate {
                                 "strategyId" to p.strategyId,
                             )
                         },
+                ),
+        )
+
+    /** Durable-state health emitted when persistence becomes unsafe. */
+    fun statePersistence(
+        ts: Long,
+        strategyId: String?,
+        health: com.qkt.persistence.PersistenceHealth,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "persistence-${strategyId ?: "session"}-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = strategyId,
+            type = "state.persistence",
+            payload =
+                mapOf(
+                    "enabled" to health.enabled,
+                    "totalWrites" to health.totalWrites,
+                    "slowWrites" to health.slowWrites,
+                    "failedWrites" to health.failedWrites,
+                    "consecutiveFailures" to health.consecutiveFailures,
+                    "failureEpisodes" to health.failureEpisodes,
+                    "queueSize" to health.queueSize,
+                    "callerRunsTotal" to health.callerRunsTotal,
                 ),
         )
 
@@ -547,6 +580,7 @@ object InsightsTranslate {
             is OrderRequest.Market -> {
                 base["closesTicket"] = request.closesTicket
                 base["closesLegId"] = request.closesLegId
+                base["partialClose"] = request.partialClose
             }
             is OrderRequest.Limit -> base["limitPrice"] = request.limitPrice
             is OrderRequest.Stop -> base["stopPrice"] = request.stopPrice
@@ -687,7 +721,7 @@ object InsightsTranslate {
             is ChildBy ->
                 mapOf("type" to "By", "distance" to exprPayload(child.distance))
             is ChildPct ->
-                mapOf("type" to "Pct", "frac" to exprPayload(child.frac))
+                mapOf("type" to "Pct", "percent" to exprPayload(child.percent))
             is ChildRr ->
                 mapOf("type" to "Rr", "multiplier" to exprPayload(child.multiplier))
             is ChildArmedTrail ->

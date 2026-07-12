@@ -32,9 +32,11 @@ class DaemonControlTest {
     private class RecordingHandle(
         initialRunning: Boolean = true,
         private var halted: Boolean = false,
+        var flattenResult: com.qkt.app.FlattenResult = com.qkt.app.FlattenResult(verifiedFlat = true),
     ) : LiveSessionHandle {
         val halts = mutableListOf<String>()
         var resumes = 0
+        var verifiedFlattens = 0
         private val alive = AtomicBoolean(initialRunning)
 
         override val running: Boolean get() = alive.get()
@@ -51,6 +53,11 @@ class DaemonControlTest {
         override fun pendingStackLayerInfos(): List<com.qkt.app.OrderManager.PendingStackLayerInfo> = emptyList()
 
         override fun flatten() = Unit
+
+        override fun flattenAndVerify(timeout: Duration): com.qkt.app.FlattenResult {
+            verifiedFlattens++
+            return flattenResult
+        }
 
         override fun halt(reason: String) {
             halts.add(reason)
@@ -193,6 +200,26 @@ class DaemonControlTest {
         assertThat(result.affected).containsExactlyInAnyOrder("alpha", "beta")
         assertThat(handles.getValue("alpha").resumes).isEqualTo(1)
         assertThat(handles.getValue("beta").resumes).isEqualTo(1)
+    }
+
+    @Test
+    fun `kill flatten returns broker verification outcome`(
+        @TempDir tmp: Path,
+    ) {
+        val (registry, handles) = registryWith(tmp, listOf("alpha"))
+        handles.getValue("alpha").flattenResult =
+            com.qkt.app.FlattenResult(
+                verifiedFlat = false,
+                remainingTickets = listOf("42"),
+                detail = "ticket remains open",
+            )
+
+        val result = RegistryDaemonControl(registry).kill(Target.Strategy("alpha"), flatten = true)
+
+        assertThat(handles.getValue("alpha").halts).containsExactly("operator kill")
+        assertThat(handles.getValue("alpha").verifiedFlattens).isEqualTo(1)
+        assertThat(result.flattenResults.getValue("alpha").verifiedFlat).isFalse
+        assertThat(result.flattenResults.getValue("alpha").remainingTickets).containsExactly("42")
     }
 
     @Test

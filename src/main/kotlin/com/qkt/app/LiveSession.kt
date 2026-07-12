@@ -12,6 +12,7 @@ import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.HubKey
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
 import com.qkt.events.RiskEvent
@@ -30,6 +31,7 @@ import com.qkt.notify.NotificationEvent
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.StrategySummary
+import com.qkt.persistence.PersistenceHealth
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionProvider
@@ -45,6 +47,7 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 import com.qkt.strategy.windowMs
 import java.time.Duration
 import java.time.Instant
@@ -74,6 +77,7 @@ class LiveSession(
     private val candleWindow: TimeWindow? = null,
     private val clock: Clock = SystemClock(),
     private val calendar: TradingCalendar = TradingCalendar.fxDefault(),
+    private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
     private val warmupOverride: WarmupSpec? = null,
     private val mdcStrategy: String? = null,
     private val candleHub: com.qkt.dsl.compile.CandleHub? = null,
@@ -192,6 +196,10 @@ class LiveSession(
     private val busOverride: EventBus? = null,
     /** Base backoff between reconcile read attempts; tests shrink it to keep retries fast. */
     private val reconcileReadBackoffMs: Long = 500L,
+    /** Account-equity poll cadence; injectable so retry behavior is testable without long sleeps. */
+    private val brokerEquityPollMs: Long = BROKER_EQUITY_POLL_MS,
+    /** Maximum age of the last successful venue-equity sample before a critical alert. */
+    private val brokerEquityStaleMs: Long = BROKER_EQUITY_STALE_MS,
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
@@ -202,6 +210,9 @@ class LiveSession(
         /** How often to poll the broker for live account equity, off the engine thread (#352). */
         const val BROKER_EQUITY_POLL_MS: Long = 5_000L
 
+        /** Three missed default polls make the broker equity unsafe for drawdown decisions. */
+        const val BROKER_EQUITY_STALE_MS: Long = BROKER_EQUITY_POLL_MS * 3
+
         /**
          * Bound on buffered ticks awaiting the engine thread. At a heavy 100 ticks/sec
          * this is ~100s of backlog — far past the point where shedding the oldest tick
@@ -211,6 +222,10 @@ class LiveSession(
 
         /** Tick-queue poll timeout — bounds the control-queue re-check latency. */
         const val QUEUE_POLL_MS: Long = 25L
+        const val FLATTEN_VERIFY_POLL_MS: Long = 100L
+
+        /** HTTP/operator snapshot requests fail loud instead of waiting forever on a stalled engine. */
+        const val ENGINE_QUERY_TIMEOUT_MS: Long = 5_000L
     }
 
     /** Accumulates trades/halts/equity-delta for the daily summary. */
@@ -225,16 +240,16 @@ class LiveSession(
     private fun seedHubFromHistory(
         strategies: List<Pair<String, Strategy>>,
         hub: com.qkt.dsl.compile.CandleHub,
-        perStreamSpecs: Map<String, WarmupSpec>,
+        perStreamSpecs: Map<WarmupStream, WarmupSpec>,
         now: Instant,
     ) {
-        // Map qkt symbol → owning DSL strategy's HubKey (multiple strategies may
-        // declare the same symbol on different timeframes; seed each).
+        // Resolve each owning DSL alias by exact symbol + timeframe; same-symbol aliases on
+        // different windows must fetch and seed independently.
         for ((sessionStrategyName, strategy) in strategies) {
             if (strategy !is DslCompiledStrategy) continue
             for ((alias, key) in strategy.declaredStreams) {
                 val symbol = key.qktSymbol
-                val spec = perStreamSpecs[symbol] ?: continue
+                val spec = perStreamSpecs[warmupStream(key)] ?: continue
                 val barSpec =
                     when (spec) {
                         is WarmupSpec.Bars -> spec
@@ -262,6 +277,8 @@ class LiveSession(
             }
         }
     }
+
+    private fun warmupStream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
 
     /**
      * Three-way reconcile: persisted leg state + broker positions → attached LegBook
@@ -526,6 +543,21 @@ class LiveSession(
                 mapOf("id" to e.clientOrderId, "reason" to e.reason),
             )
         }
+        bus.subscribe<BrokerEvent.PositionProtectionChanged> { e ->
+            journal.append(
+                e.strategyId.ifBlank { strategies.firstOrNull()?.first.orEmpty() },
+                "position-protection-changed",
+                mapOf(
+                    "broker" to e.broker,
+                    "symbol" to e.symbol,
+                    "ticket" to e.ticket,
+                    "oldSl" to e.oldStopLoss.toPlainString(),
+                    "newSl" to e.newStopLoss.toPlainString(),
+                    "oldTp" to e.oldTakeProfit.toPlainString(),
+                    "newTp" to e.newTakeProfit.toPlainString(),
+                ),
+            )
+        }
         bus.subscribe<com.qkt.events.RiskRejectedEvent> { e ->
             journal.append(
                 e.request.strategyId,
@@ -599,6 +631,34 @@ class LiveSession(
                         ),
                     )
                 }.onFailure { t -> recordNotificationFailure(ownerForError, "GatewayUnreachable", t) }
+            }
+            bus.subscribe<BrokerEvent.AccountEquityStale> { ev ->
+                runCatching {
+                    val age = ev.staleForMs?.let { "last good sample is ${it}ms old" } ?: "no successful sample"
+                    notifier.notify(
+                        NotificationEvent.StrategyError(
+                            strategyId = ownerForError,
+                            message =
+                                "Broker equity '${ev.broker}' unavailable for ${ev.consecutiveFailures} " +
+                                    "consecutive polls ($age) — drawdown basis is stale",
+                            timestamp = ev.timestamp,
+                        ),
+                    )
+                }.onFailure { t -> recordNotificationFailure(ownerForError, "AccountEquityStale", t) }
+            }
+            bus.subscribe<BrokerEvent.PositionProtectionChanged> { ev ->
+                runCatching {
+                    notifier.notify(
+                        NotificationEvent.StrategyError(
+                            strategyId = ev.strategyId.ifBlank { ownerForError },
+                            message =
+                                "CRITICAL venue protection changed: ${ev.broker} ${ev.symbol} ticket=${ev.ticket} " +
+                                    "SL ${ev.oldStopLoss}->${ev.newStopLoss}, " +
+                                    "TP ${ev.oldTakeProfit}->${ev.newTakeProfit}",
+                            timestamp = ev.timestamp,
+                        ),
+                    )
+                }.onFailure { t -> recordNotificationFailure(ownerForError, "PositionProtectionChanged", t) }
             }
         }
         if (NotifyEventKind.ORDER_REJECTED in notifyEvents) {
@@ -716,13 +776,16 @@ class LiveSession(
         }
 
     fun start(): LiveSessionHandle {
-        // No quote-currency conversion exists: refuse symbols whose PnL would book at
-        // the wrong magnitude (e.g. USDJPY's JPY PnL recorded as USD, ~150x off).
-        com.qkt.instrument.QuoteCurrencyGuard
-            .assertAccountQuoted(symbols)
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
+        val accounting = com.qkt.accounting.AccountingEngine(accountingConfig, priceTracker)
+        com.qkt.instrument.QuoteCurrencyGuard
+            .assertAccountQuoted(
+                symbols,
+                accountCurrency = accounting.accountCurrency,
+                canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
+            )
         val positions = PositionTracker()
         val strategyPositions = StrategyPositionTracker(persistor)
         val bus = busOverride ?: EventBus(clock, sequencer)
@@ -745,7 +808,7 @@ class LiveSession(
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
-        val pnl = PnLCalculator(positions, priceTracker, instruments)
+        val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
         // #352: live account equity, polled off the engine thread (a network call) into this holder
         // and read cheaply by StrategyPnL.equityFor. Stays null for paper/backtest, so those keep
         // the deterministic derived `startingBalance + realized + unrealized`.
@@ -758,6 +821,8 @@ class LiveSession(
                 priceTracker,
                 instruments,
                 persistor,
+                accounting = accounting,
+                markTimestamp = clock::now,
                 brokerEquity = { brokerEquity.get() },
             )
         // Every deploy path needs a starting balance: portfolio deploys pass per-strategy
@@ -795,6 +860,13 @@ class LiveSession(
 
         val engine = Engine(bus, priceTracker)
         val riskPersistId = strategies.firstOrNull()?.first ?: "session"
+        val persistedRiskState = persistor.loadRiskState(riskPersistId)
+        val restoredGlobalRealized =
+            persistedRiskState?.globalRealizedTotal
+                ?: strategies.fold(java.math.BigDecimal.ZERO) { total, (id, _) ->
+                    total + strategyPnL.realizedFor(id)
+                }
+        pnl.restoreRealizedTotal(restoredGlobalRealized)
         val riskState =
             RiskState(
                 pnl,
@@ -808,16 +880,15 @@ class LiveSession(
                         .onFailure { e -> log.warn("risk-state persist failed: ${e.message}") }
                 },
             )
-        // Restore halts + the day's realized PnL: a restart must not un-halt a halted
-        // strategy or hand it a fresh daily budget the same day it exhausted one.
-        persistor.loadRiskState(riskPersistId)?.let { persisted ->
+        // Restore the complete risk reference state before any live event can evaluate rules.
+        persistedRiskState?.let { persisted ->
             riskState.restore(persisted)
             if (riskState.halted) {
                 log.warn("restored HALTED risk state for {}: {}", riskPersistId, riskState.haltReason)
             }
         }
-
-        val pacerLedger = com.qkt.risk.PacerLedger()
+        riskState.initializeAnchors(strategies.map { it.first })
+        val pacerLedger = riskState.pacerLedger
 
         // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
         // The daemon creates one LiveSession per deployed strategy, so the first entry is
@@ -896,10 +967,41 @@ class LiveSession(
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
+                accounting = accounting,
             )
         // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
         // frozen data and drops implausible ticks before they poison indicators.
-        val marketDataGate = com.qkt.marketdata.MarketDataGate(clock)
+        val marketDataGate =
+            com.qkt.marketdata.MarketDataGate(
+                clock = clock,
+                onUnhealthy = { symbol, reason ->
+                    if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
+                        for ((strategyId, _) in strategies) {
+                            runCatching {
+                                notifier.notify(
+                                    NotificationEvent.StrategyError(
+                                        strategyId = strategyId,
+                                        message = "market data unhealthy for $symbol: $reason",
+                                        timestamp = clock.now(),
+                                    ),
+                                )
+                            }.onFailure { t -> recordNotificationFailure(strategyId, "MarketDataUnhealthy", t) }
+                        }
+                    }
+                    if (insightsSink != null &&
+                        com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
+                    ) {
+                        insightsSink.offer(
+                            com.qkt.observe.insights.InsightsTranslate.marketDataStale(
+                                source = source.name,
+                                symbol = symbol,
+                                ts = clock.now(),
+                                reason = reason,
+                            ),
+                        )
+                    }
+                },
+            )
         val marginRules =
             if (marginFloorPct.signum() > 0) {
                 listOf(
@@ -934,7 +1036,7 @@ class LiveSession(
                     listOfNotNull(
                         bookRiskController?.let {
                             com.qkt.risk.rules
-                                .BookExposureLimit(it, priceTracker, instruments)
+                                .BookExposureLimit(it, priceTracker, instruments, accounting)
                         },
                     ) +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
@@ -959,17 +1061,18 @@ class LiveSession(
         // registration extends these slots rather than replacing them. Retention is
         // widened to the warmup bar count so the seeded history survives the ring.
         // Fail-fast: any broker error here aborts deploy with a typed exception.
-        val perStreamSpecs: Map<String, WarmupSpec> =
+        val perStreamSpecs: Map<WarmupStream, WarmupSpec> =
             strategies
                 .map { it.second }
                 .filterIsInstance<PerStreamWarmable>()
                 .flatMap { it.perStreamWarmup.entries }
-                .associate { it.key to it.value }
+                .groupBy(keySelector = { it.key }, valueTransform = { it.value })
+                .mapValues { (_, specs) -> specs.maxBy { it.windowMs(now) } }
         if (perStreamSpecs.isNotEmpty()) {
             for ((strategyId, strategy) in strategies) {
                 if (strategy !is DslCompiledStrategy) continue
                 for ((key, retention) in strategy.retentionByKey) {
-                    val warmupBars = (perStreamSpecs[key.qktSymbol] as? WarmupSpec.Bars)?.count ?: 0
+                    val warmupBars = (perStreamSpecs[warmupStream(key)] as? WarmupSpec.Bars)?.count ?: 0
                     pipelineCandleHub.register(key, maxOf(retention, warmupBars), strategyId)
                 }
             }
@@ -977,7 +1080,7 @@ class LiveSession(
         }
 
         // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
-        // session's route list and use its profile's `serverTzOffsetHours`.
+        // session's route list and use its profile's DST-aware server clock.
         // LiveSession is per-strategy in the daemon model, so all calls return
         // the same zone — strategy id is ignored. Null when no MT5 broker is
         // in play (paper-only / Bybit-only sessions).
@@ -985,8 +1088,7 @@ class LiveSession(
             run {
                 val mt5 = builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>().firstOrNull()
                 if (mt5 != null) {
-                    val zone: java.time.ZoneId =
-                        java.time.ZoneOffset.ofHours(mt5.profile.serverTzOffsetHours)
+                    val zone: java.time.ZoneId = mt5.profile.serverTimeZone.asZoneId()
                     ({ _: String -> zone })
                 } else {
                     null
@@ -1018,6 +1120,7 @@ class LiveSession(
                 source = source,
                 candleWindow = candleWindow,
                 candleHub = pipelineCandleHub,
+                accounting = accounting,
                 marketDataGate = marketDataGate,
                 runawayBreaker =
                     com.qkt.risk.RunawayBreaker(
@@ -1048,6 +1151,17 @@ class LiveSession(
                 persistor = persistor,
                 instruments = instruments,
                 brokerZoneIdFor = brokerZoneIdFor,
+                onProtectionFailure = { strategyId, message ->
+                    runCatching {
+                        notifier.notify(
+                            NotificationEvent.StrategyError(
+                                strategyId = strategyId,
+                                message = message,
+                                timestamp = clock.now(),
+                            ),
+                        )
+                    }.onFailure { t -> recordNotificationFailure(strategyId, "ProtectionFailure", t) }
+                },
             )
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
@@ -1059,14 +1173,12 @@ class LiveSession(
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
         // so any publish that happens after this line will see the new subscribers.
         wireNotifierSubscriptions(bus, pipeline.orderManager)
-        insightsSink?.let { sink ->
-            wireInsights(bus, sink)
-            // Every fill names its venue ticket: mirror it so the state poller can
-            // attribute that ticket's open position and deals to the strategy.
-            bus.subscribe<BrokerEvent.OrderFilled> { e ->
-                ticketAttribution.record(e.brokerOrderId, e.strategyId)
-            }
+        // Every fill names its venue ticket. Reconciliation needs this attribution even when
+        // insights are disabled, or every live ticket is misclassified as an orphan.
+        bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            ticketAttribution.record(e.brokerOrderId, e.strategyId)
         }
+        insightsSink?.let { sink -> wireInsights(bus, sink) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
@@ -1081,6 +1193,13 @@ class LiveSession(
         // the situation the halt declared bad (FIA §1.11, RTS 6). Runs on the engine
         // thread via the bus reroute, so OrderManager state stays single-threaded.
         bus.subscribe<RiskEvent.Halted> { ev ->
+            if (!ev.cancelWorkingOrders) {
+                log.error(
+                    "entry-only halt ({}): venue-resting protection remains active",
+                    ev.reason,
+                )
+                return@subscribe
+            }
             log.warn("halt ({}): cancelling venue-resting pendings for {} symbol(s)", ev.reason, symbols.size)
             for (symbol in symbols) {
                 runCatching { pipeline.orderManager.cancelPendingForSymbol(symbol) }
@@ -1125,21 +1244,21 @@ class LiveSession(
                 ),
             )
             if (feed is MarketDataLifecycleFeed) {
-                feed.onDisconnect {
+                feed.onDisconnect { scope ->
                     insightsSink.offer(
                         com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
-                            source = source.name,
-                            symbols = symbols,
+                            source = scope.source ?: source.name,
+                            symbols = scope.symbols ?: symbols,
                             ts = clock.now(),
                             reason = "source-disconnected",
                         ),
                     )
                 }
-                feed.onReconnect {
+                feed.onReconnect { scope ->
                     insightsSink.offer(
                         com.qkt.observe.insights.InsightsTranslate.marketDataReconnected(
-                            source = source.name,
-                            symbols = symbols,
+                            source = scope.source ?: source.name,
+                            symbols = scope.symbols ?: symbols,
                             ts = clock.now(),
                         ),
                     )
@@ -1225,6 +1344,72 @@ class LiveSession(
             }
         }
 
+        fun notifyUnexpectedFeedEnd(reason: String) {
+            for ((strategyId, _) in strategies) {
+                val notification =
+                    when {
+                        NotifyEventKind.STRATEGY_STOPPED in notifyEvents ->
+                            NotificationEvent.StrategyStopped(
+                                strategyId = strategyId,
+                                flatten = false,
+                                timestamp = clock.now(),
+                                unexpected = true,
+                                reason = reason,
+                            )
+                        NotifyEventKind.STRATEGY_ERROR in notifyEvents ->
+                            NotificationEvent.StrategyError(
+                                strategyId = strategyId,
+                                message = reason,
+                                timestamp = clock.now(),
+                            )
+                        else -> null
+                    }
+                if (notification != null) {
+                    runCatching { notifier.notify(notification) }
+                        .onFailure { t -> recordNotificationFailure(strategyId, "UnexpectedFeedEnd", t) }
+                }
+            }
+        }
+
+        var alertedPersistenceEpisode = 0L
+
+        fun checkPersistenceHealth() {
+            val health = persistor.healthSnapshot()
+            if (!health.enabled) return
+            val newFailureEpisode = health.failureEpisodes > alertedPersistenceEpisode
+            if (!newFailureEpisode && health.consecutiveFailures == 0L) return
+            val reason =
+                "persistence failure: durable state is stale " +
+                    "(failedWrites=${health.failedWrites}, consecutiveFailures=${health.consecutiveFailures}, " +
+                    "queueSize=${health.queueSize}, " +
+                    "callerRunsTotal=${health.callerRunsTotal})"
+            riskState.halt(reason, cancelWorkingOrders = false)
+            if (!newFailureEpisode) return
+            alertedPersistenceEpisode = health.failureEpisodes
+            log.error("{}; blocking new exposure while keeping exits active", reason)
+            val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
+            runCatching {
+                notifier.notify(
+                    NotificationEvent.StrategyError(
+                        strategyId = ownerStrategyId,
+                        message = "CRITICAL disk failing — persisted state is stale; new exposure halted",
+                        timestamp = clock.now(),
+                    ),
+                )
+            }.onFailure { t -> recordNotificationFailure(ownerStrategyId, "PersistenceFailure", t) }
+            if (insightsSink != null &&
+                com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents
+            ) {
+                insightsSink.offer(
+                    com.qkt.observe.insights.InsightsTranslate.statePersistence(
+                        ts = clock.now(),
+                        strategyId = ownerStrategyId.takeIf { it.isNotBlank() },
+                        health = health,
+                    ),
+                )
+            }
+        }
+
         // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
         // positions, and the schedule runner. The tick feed, the heartbeat, the broker pollers
         // (via the bus), and the HTTP flatten all POST onto [inbound]; this loop drains it
@@ -1259,16 +1444,21 @@ class LiveSession(
                                     onEngineFault("event ${msg.event::class.simpleName}", e)
                                 }
                             is Inbound.Heartbeat ->
-                                runCatching { pipeline.scheduleHeartbeat(msg.nowMs) }
-                                    .onFailure { t -> onEngineFault("schedule heartbeat", t) }
+                                runCatching {
+                                    for (symbol in symbols) marketDataGate.isHealthy(symbol)
+                                    pipeline.scheduleHeartbeat(msg.nowMs)
+                                }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
+                            Inbound.PersistenceHealthCheck -> checkPersistenceHealth()
+                            is Inbound.Query -> msg.execute()
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 runCatching { doFlatten() }
                                     .onFailure { t -> onEngineFault("flatten", t) }
-                            Inbound.FeedEnded -> {
+                            is Inbound.FeedEnded -> {
                                 // Feed ended (finite source drained): process every tick already
                                 // queued before stopping, so no tick is dropped.
                                 while (true) processTick(tickQueue.poll() ?: break)
+                                if (msg.unexpected) notifyUnexpectedFeedEnd(msg.reason)
                                 running.set(false)
                             }
                         }
@@ -1290,6 +1480,7 @@ class LiveSession(
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
         bus.bindEngineLoop(thread) { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
+        control.put(Inbound.PersistenceHealthCheck)
         thread.start()
 
         // Feed reader: turn the blocking tick feed into queue messages so the engine loop stays a
@@ -1304,6 +1495,11 @@ class LiveSession(
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
                 } finally {
+                    val lifecycleFeed = feed as? MarketDataLifecycleFeed
+                    val unexpected = running.get() && lifecycleFeed?.expectsContinuousDelivery == true
+                    val failureReason =
+                        lifecycleFeed?.terminalFailureReason()
+                            ?: "live market-data feed exceeded its reconnect budget"
                     runCatching { feed.close() }
                     if (insightsSink != null &&
                         com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
@@ -1318,7 +1514,12 @@ class LiveSession(
                         )
                     }
                     // Non-blocking: tell the consumer the feed is done so it drains-then-stops.
-                    control.offer(Inbound.FeedEnded)
+                    control.offer(
+                        Inbound.FeedEnded(
+                            unexpected = unexpected,
+                            reason = failureReason,
+                        ),
+                    )
                 }
             }, "qkt-live-feed")
         feedThread.isDaemon = true
@@ -1333,7 +1534,11 @@ class LiveSession(
                     Thread(r, "qkt-schedule-heartbeat").apply { isDaemon = true }
                 }
         scheduleHeartbeat.scheduleAtFixedRate(
-            { runCatching { control.put(Inbound.Heartbeat(clock.now())) } },
+            {
+                runCatching { riskState.persistAnchorsIfDirty() }
+                runCatching { control.put(Inbound.PersistenceHealthCheck) }
+                runCatching { control.put(Inbound.Heartbeat(clock.now())) }
+            },
             scheduleHeartbeatIntervalMs,
             scheduleHeartbeatIntervalMs,
             java.util.concurrent.TimeUnit.MILLISECONDS,
@@ -1341,19 +1546,36 @@ class LiveSession(
 
         // #352: poll real account equity off the engine thread so sizing + drawdown track the
         // broker's account (commissions, swaps, deposits), not just engine-derived PnL. Single-
-        // strategy only — account equity maps cleanly to one strategy. Skipped when the broker
-        // exposes no equity (paper, or a gateway without the endpoint), so paper/backtest keep the
-        // deterministic derived value. The poll is a network call; it must not run on the consumer.
+        // strategy only — account equity maps cleanly to one strategy. Capability is static: a
+        // transiently failed startup read must not disable polling for the entire session. Failed
+        // reads retain the last-known value and alert once stale. The network call stays off the consumer.
         val equityPoller: java.util.concurrent.ScheduledExecutorService? =
-            if (strategies.size == 1 && runCatching { broker.accountEquity() }.getOrNull() != null) {
+            if (strategies.size == 1 && broker.supportsAccountEquity) {
+                val monitor =
+                    BrokerEquityMonitor(
+                        broker = broker,
+                        clock = clock,
+                        equity = brokerEquity,
+                        staleAfterMs = brokerEquityStaleMs,
+                        onStale = { failures, staleForMs ->
+                            bus.publish(
+                                BrokerEvent.AccountEquityStale(
+                                    broker = broker.name,
+                                    consecutiveFailures = failures,
+                                    staleForMs = staleForMs,
+                                    timestamp = clock.now(),
+                                ),
+                            )
+                        },
+                    )
                 java.util.concurrent.Executors
                     .newSingleThreadScheduledExecutor { r ->
                         Thread(r, "qkt-broker-equity-poller").apply { isDaemon = true }
                     }.also { exec ->
                         exec.scheduleAtFixedRate(
-                            { brokerEquity.set(runCatching { broker.accountEquity() }.getOrNull()) },
+                            monitor::tick,
                             0L,
-                            BROKER_EQUITY_POLL_MS,
+                            brokerEquityPollMs,
                             java.util.concurrent.TimeUnit.MILLISECONDS,
                         )
                     }
@@ -1410,6 +1632,34 @@ class LiveSession(
             }
         }
 
+        fun <T> engineSnapshot(read: () -> T): T {
+            if (Thread.currentThread() === thread || !thread.isAlive) return read()
+            val result = java.util.concurrent.CompletableFuture<T>()
+            control.put(
+                Inbound.Query {
+                    runCatching(read)
+                        .onSuccess(result::complete)
+                        .onFailure(result::completeExceptionally)
+                },
+            )
+            val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ENGINE_QUERY_TIMEOUT_MS)
+            while (thread.isAlive) {
+                val remainingNs = deadlineNs - System.nanoTime()
+                if (remainingNs <= 0L) {
+                    throw IllegalStateException("live engine did not produce a consistent snapshot within the timeout")
+                }
+                try {
+                    return result.get(
+                        minOf(remainingNs, TimeUnit.MILLISECONDS.toNanos(QUEUE_POLL_MS)),
+                        TimeUnit.NANOSECONDS,
+                    )
+                } catch (_: java.util.concurrent.TimeoutException) {
+                    // Recheck thread liveness so a finite feed cannot strand the query on shutdown.
+                }
+            }
+            return if (result.isDone) result.get() else read()
+        }
+
         return object : LiveSessionHandle {
             override val running: Boolean get() = running.get()
 
@@ -1422,17 +1672,35 @@ class LiveSession(
 
             override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
 
+            override fun persistenceHealth(): PersistenceHealth = persistor.healthSnapshot()
+
             override fun reconcile(): ReconcileReport {
                 val ownerId = strategies.firstOrNull()?.first.orEmpty()
+                val engineState =
+                    engineSnapshot {
+                        strategyPositions.allLegsFor(ownerId) to strategyPnL.equityFor(ownerId)
+                    }
                 // positionTickets() carries the venue ticket, so the broker side can be scoped
                 // to this strategy by attribution and keyed identically to the engine tracker.
                 // getOpenPositions() is magic-global and ticketless, which made the old diff
                 // double-count (prefixed vs bare key) and cry wolf on a shared account (#413).
                 val brokerTickets = runCatching { broker.positionTickets() }.getOrElse { emptyList() }
+                val accountingModes =
+                    symbols.associate { symbol ->
+                        symbol.substringAfter(":") to broker.positionAccountingMode(symbol)
+                    }
                 return ReconcileReport(
-                    deltas = reconcileDeltas(ownerId, brokerTickets, ticketAttribution, positions.allPositions()),
-                    engineEquity = strategyPnL.equityFor(ownerId),
+                    deltas =
+                        reconcileDeltas(
+                            ownerId,
+                            brokerTickets,
+                            ticketAttribution,
+                            engineState.first,
+                            accountingModes,
+                        ),
+                    engineEquity = engineState.second,
                     brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
+                    protectionDeltas = reconcileProtectionDeltas(ownerId, brokerTickets, ticketAttribution),
                 )
             }
 
@@ -1441,6 +1709,7 @@ class LiveSession(
                 thread.interrupt()
                 feedThread.interrupt()
                 runCatching { brokerStatePoller?.close() }
+                runCatching { riskState.persistAnchorsIfDirty() }
                 // Stop the schedule heartbeat thread so it doesn't outlive the session.
                 runCatching {
                     scheduleHeartbeat.shutdownNow()
@@ -1490,13 +1759,13 @@ class LiveSession(
             override fun recentTrades(): List<Trade> = trades.snapshot()
 
             override fun positionsFor(strategyId: String): List<com.qkt.positions.Position> =
-                strategyPositions.positionsFor(strategyId).values.toList()
+                engineSnapshot { strategyPositions.positionsFor(strategyId).values.toList() }
 
             override fun dailySummaryRows(): List<StrategySummary> =
-                this@LiveSession.dailySummaryRows(strategyPnL, strategyPositions)
+                engineSnapshot { this@LiveSession.dailySummaryRows(strategyPnL, strategyPositions) }
 
             override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
-                pipeline.orderManager.pendingStackLayerInfos()
+                engineSnapshot { pipeline.orderManager.pendingStackLayerInfos() }
 
             override fun latencySnapshot(): com.qkt.observability.LatencyRegistry.Report = pipeline.latency.snapshot()
 
@@ -1513,25 +1782,40 @@ class LiveSession(
             }
 
             override fun pnlSnapshot(strategyId: String): SessionPnl =
-                SessionPnl(
-                    equity = strategyPnL.equityFor(strategyId),
-                    balance = strategyPnL.balanceFor(strategyId),
-                    realized = strategyPnL.realizedFor(strategyId),
-                    unrealized = strategyPnL.unrealizedTotalFor(strategyId),
-                )
+                engineSnapshot {
+                    SessionPnl(
+                        equity = strategyPnL.equityFor(strategyId),
+                        balance = strategyPnL.balanceFor(strategyId),
+                        realized = strategyPnL.realizedFor(strategyId),
+                        unrealized = strategyPnL.unrealizedTotalFor(strategyId),
+                    )
+                }
 
             override fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> =
-                strategyPositions.positionsFor(strategyId).values.mapNotNull { position ->
-                    if (position.quantity.signum() == 0) return@mapNotNull null
-                    val price = priceTracker.lastPrice(position.symbol) ?: position.avgEntryPrice
-                    val contractSize = instruments.lookup(position.symbol)?.contractSize ?: java.math.BigDecimal.ONE
-                    com.qkt.risk.book
-                        .Leg(strategyId, position.symbol, position.quantity, price, contractSize)
+                engineSnapshot {
+                    strategyPositions.positionsFor(strategyId).values.mapNotNull { position ->
+                        if (position.quantity.signum() == 0) return@mapNotNull null
+                        val price = priceTracker.lastPrice(position.symbol) ?: position.avgEntryPrice
+                        val contractSize = instruments.lookup(position.symbol)?.contractSize ?: java.math.BigDecimal.ONE
+                        com.qkt.risk.book
+                            .Leg(strategyId, position.symbol, position.quantity, price, contractSize)
+                    }
                 }
 
             override fun halt(reason: String) {
                 riskState.halt(reason)
             }
+
+            override fun halt(
+                reason: String,
+                scope: com.qkt.risk.HaltScope,
+            ) {
+                riskState.halt(reason, scope)
+            }
+
+            override fun haltReason(): String? = riskState.haltReason
+
+            override fun haltScope(): com.qkt.risk.HaltScope? = riskState.globalHaltScope()
 
             override fun resume() {
                 riskState.resume()
@@ -1539,8 +1823,113 @@ class LiveSession(
 
             override fun isHalted(): Boolean = riskState.halted
 
-            // Run the actual flatten on the engine thread (it mutates the OrderManager and
-            // publishes closes); this HTTP-pool call just posts the command onto the queue.
+            override fun flattenAndVerify(timeout: Duration): FlattenResult {
+                val strategyId =
+                    strategies.firstOrNull()?.first
+                        ?: return FlattenResult(false, detail = "session has no strategy owner")
+                if (!broker.supportsPositionTickets) {
+                    flatten()
+                    return FlattenResult(
+                        verifiedFlat = false,
+                        detail = "broker ${broker.name} cannot verify open position tickets",
+                    )
+                }
+                val deployedIds = strategies.map { it.first }
+
+                fun targetTickets(): Pair<List<com.qkt.broker.BrokerPositionTicket>, List<String>> {
+                    val tickets = broker.positionTickets()
+                    val owned = mutableListOf<com.qkt.broker.BrokerPositionTicket>()
+                    val ambiguous = mutableListOf<String>()
+                    for (ticket in tickets) {
+                        val owner =
+                            ticketAttribution.ownerOf(ticket.ticket)
+                                ?: ticketAttribution.fromComment(ticket.comment, deployedIds)
+                        when (owner) {
+                            strategyId -> owned.add(ticket)
+                            null -> ambiguous.add(ticket.ticket)
+                        }
+                    }
+                    return owned to ambiguous
+                }
+
+                val initial =
+                    runCatching { targetTickets() }
+                        .getOrElse { error ->
+                            return FlattenResult(false, detail = "broker position read failed: ${error.message}")
+                        }
+                for (ticket in initial.first) {
+                    val side =
+                        if (ticket.side == com.qkt.common.Side.BUY) {
+                            com.qkt.common.Side.SELL
+                        } else {
+                            com.qkt.common.Side.BUY
+                        }
+                    val ack =
+                        runCatching {
+                            broker.submit(
+                                com.qkt.execution.OrderRequest.Market(
+                                    id = "operator-kill-${ticket.ticket}",
+                                    symbol = ticket.symbol,
+                                    side = side,
+                                    quantity = ticket.qty,
+                                    timeInForce = com.qkt.execution.TimeInForce.GTC,
+                                    timestamp = clock.now(),
+                                    strategyId = strategyId,
+                                    closesTicket = ticket.ticket,
+                                ),
+                            )
+                        }.getOrElse { error ->
+                            return FlattenResult(
+                                false,
+                                remainingTickets = (initial.first.map { it.ticket } + initial.second).distinct(),
+                                detail = "close submission failed for ticket ${ticket.ticket}: ${error.message}",
+                            )
+                        }
+                    if (!ack.accepted) {
+                        return FlattenResult(
+                            false,
+                            remainingTickets = (initial.first.map { it.ticket } + initial.second).distinct(),
+                            detail = "close rejected for ticket ${ticket.ticket}: ${ack.rejectReason}",
+                        )
+                    }
+                }
+
+                val deadline = System.nanoTime() + timeout.toNanos()
+                var lastRemaining = (initial.first.map { it.ticket } + initial.second).distinct()
+                while (true) {
+                    val current =
+                        runCatching { targetTickets() }
+                            .getOrElse { error ->
+                                return FlattenResult(
+                                    false,
+                                    remainingTickets = lastRemaining,
+                                    detail = "broker verification failed: ${error.message}",
+                                )
+                            }
+                    val remaining = (current.first.map { it.ticket } + current.second).distinct()
+                    lastRemaining = remaining
+                    if (remaining.isEmpty()) return FlattenResult(verifiedFlat = true)
+                    if (System.nanoTime() >= deadline) {
+                        return FlattenResult(
+                            verifiedFlat = false,
+                            remainingTickets = remaining,
+                            detail = "broker still reports open or unattributed position tickets",
+                        )
+                    }
+                    try {
+                        Thread.sleep(FLATTEN_VERIFY_POLL_MS)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return FlattenResult(
+                            verifiedFlat = false,
+                            remainingTickets = remaining,
+                            detail = "broker verification interrupted",
+                        )
+                    }
+                }
+            }
+
+            // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
             override fun flatten() {
                 control.put(Inbound.Flatten)
             }
@@ -1562,7 +1951,16 @@ private sealed interface Inbound {
         val nowMs: Long,
     ) : Inbound
 
+    class Query(
+        val execute: () -> Unit,
+    ) : Inbound
+
     object Flatten : Inbound
 
-    object FeedEnded : Inbound
+    object PersistenceHealthCheck : Inbound
+
+    data class FeedEnded(
+        val unexpected: Boolean,
+        val reason: String,
+    ) : Inbound
 }

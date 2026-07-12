@@ -51,6 +51,7 @@ class CreateCommandTest {
         assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
         assertThat(makefile).contains("qkt reconcile $(STRAT)")
         val compose = Files.readString(target.resolve("docker-compose.yml"))
+        assertThat(compose).contains("stop_grace_period: 30s")
         assertThat(compose).contains("/deploy-scripts/verify-live.sh")
         assertThat(compose).contains("qkt-insights")
         assertThat(compose).contains("ghcr.io/elitekaycy/qkt-insights:latest")
@@ -147,6 +148,7 @@ class CreateCommandTest {
                 .exists()
         }
         val compose = Files.readString(target.resolve("docker-compose.yml"))
+        assertThat(compose).contains("stop_grace_period: 30s")
         assertThat(compose)
             .withFailMessage("minimal compose should not declare mt5-gateway")
             .doesNotContain("mt5-gateway")
@@ -188,6 +190,7 @@ class CreateCommandTest {
                 .exists()
         }
         val compose = Files.readString(target.resolve("docker-compose.yml"))
+        assertThat(compose).contains("stop_grace_period: 30s")
         assertThat(compose)
             .withFailMessage("bybit compose should not declare mt5-gateway")
             .doesNotContain("mt5-gateway")
@@ -273,7 +276,8 @@ class CreateCommandTest {
         assertThat(workflow).contains("COMPOSE_PROFILES=%s\\n' 'insights'")
         assertThat(workflow).contains("QKT_INSIGHTS_INGEST_TOKEN")
         assertThat(workflow).contains("docker compose --env-file .env config --quiet")
-        assertThat(workflow).contains("Validate QKT strategies")
+        assertThat(workflow).contains("Parse, compile, and preflight QKT strategies")
+        assertThat(workflow).contains("Production preflight performs the full AstCompiler pass")
         assertThat(workflow).contains("qkt parse \"\$target\"")
         assertThat(workflow).contains("qkt preflight \"\$target\"")
         assertThat(workflow).contains("--state-dir /tmp/qkt-preflight-state")
