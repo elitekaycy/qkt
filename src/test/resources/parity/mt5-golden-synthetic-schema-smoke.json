@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "kind": "SYNTHETIC_SCHEMA_TEST",
+    "capturedAtUtc": "2026-07-12T00:00:00Z",
+    "captureId": "synthetic-schema-smoke-v1",
+    "sourceArtifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "sourceHost": "generated-test-data",
+    "notes": "Schema/verifier smoke only. Not MT5 venue evidence."
+  },
+  "account": {
+    "mode": "synthetic",
+    "serverTimeZone": "Etc/UTC",
+    "brokerProfile": "synthetic-exness-shape",
+    "accountCurrency": "USD"
+  },
+  "instrument": {
+    "qktSymbol": "EXNESS:EURUSD",
+    "venueSymbol": "EURUSDm",
+    "contractSize": "100000",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "volumeMax": "100",
+    "pointSize": "0.00001",
+    "digits": 5,
+    "tradeStopsLevelPoints": 0
+  },
+  "tolerances": {
+    "pricePoints": 0,
+    "volumeSteps": 0
+  },
+  "ticks": [
+    {"sequence": 1, "timestampMs": 1704844800000, "symbol": "EXNESS:EURUSD", "bid": "1.10000", "ask": "1.10020"},
+    {"sequence": 4, "timestampMs": 1704844802000, "symbol": "EXNESS:EURUSD", "bid": "1.10100", "ask": "1.10120"}
+  ],
+  "submissions": [
+    {
+      "sequence": 2,
+      "clientOrder": {
+        "id": "market-buy-1", "strategyId": "golden", "symbol": "EXNESS:EURUSD", "side": "BUY",
+        "kind": "MARKET", "quantity": "0.107", "timeInForce": "GTC", "timestampMs": 1704844801000
+      },
+      "venueRequest": {
+        "clientOrderId": "market-buy-1", "symbol": "EURUSDm", "action": "DEAL", "orderType": "BUY",
+        "volume": "0.10", "magic": 10001, "typeTime": "GTC"
+      }
+    },
+    {
+      "sequence": 3,
+      "clientOrder": {
+        "id": "limit-sell-1", "strategyId": "golden", "symbol": "EXNESS:EURUSD", "side": "SELL",
+        "kind": "LIMIT", "quantity": "0.10", "timeInForce": "GTC", "timestampMs": 1704844801001,
+        "limitPrice": "1.10100"
+      },
+      "venueRequest": {
+        "clientOrderId": "limit-sell-1", "symbol": "EURUSDm", "action": "PENDING", "orderType": "SELL_LIMIT",
+        "volume": "0.10", "price": "1.10100", "magic": 10001, "typeTime": "GTC"
+      }
+    }
+  ],
+  "venueOrders": [
+    {"clientOrderId": "market-buy-1", "brokerOrderId": "1001", "accepted": true, "retcode": 10009, "status": "FILLED", "comment": "synthetic"},
+    {"clientOrderId": "limit-sell-1", "brokerOrderId": "1002", "accepted": true, "retcode": 10008, "status": "FILLED", "comment": "synthetic"}
+  ],
+  "venueDeals": [
+    {"clientOrderId": "market-buy-1", "dealId": "2001", "positionTicket": "3001", "side": "BUY", "executedVolume": "0.10", "price": "1.10020", "retcode": 10009, "commission": "-0.35", "swap": "0", "fee": "0"},
+    {"clientOrderId": "limit-sell-1", "dealId": "2002", "positionTicket": "3001", "side": "SELL", "executedVolume": "0.10", "price": "1.10100", "retcode": 10009, "commission": "-0.35", "swap": "0", "fee": "0"}
+  ]
+}
