@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.SnapshotOpen
+import com.qkt.dsl.ast.StreamFieldRef
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -37,6 +38,13 @@ class ExprCompilerLetTest {
     fun `unknown reference is rejected`() {
         assertThatThrownBy { LetResolver(emptyList()).resolve(Ref("missing")) }
             .isInstanceOf(IllegalStateException::class.java)
+    }
+
+    @Test
+    fun `declared stream reference resolves to its candle series`() {
+        val resolved = LetResolver(emptyList(), setOf("btc")).resolve(Ref("btc"))
+
+        assertThat(resolved).isEqualTo(StreamFieldRef("btc", "candle"))
     }
 
     @Test

@@ -4,9 +4,12 @@ import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.StreamFieldRef
 
+/** Resolves bare identifiers to LET values or declared stream candle series. */
 class LetResolver(
     lets: List<LetDecl>,
+    private val streamAliases: Set<String> = emptySet(),
 ) {
     private val table: Map<String, ExprAst> = lets.associate { it.name to it.expr }
 
@@ -37,7 +40,12 @@ class LetResolver(
             if (!table.containsKey(ref.name)) error("Unknown LET reference: ${ref.name}")
             ref
         } else {
-            resolve(table[ref.name] ?: error("Unknown reference: ${ref.name}"))
+            table[ref.name]?.let(::resolve)
+                ?: if (ref.name in streamAliases) {
+                    StreamFieldRef(ref.name, "candle")
+                } else {
+                    error("Unknown reference: ${ref.name}")
+                }
         }
     }
 }

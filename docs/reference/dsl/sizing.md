@@ -77,9 +77,9 @@ BUY btc SIZING 0.5 PCT RISK
     BRACKET { STOP LOSS AT btc.close - atr(btc, 14) * 2, TAKE PROFIT RR 3 }
 ```
 
-Sizes the position so that, if the stop hits, the loss is exactly N% of equity. `SIZING 0.5 PCT RISK` is sugar for `SIZING RISK 0.005` — both compile to the same engine path. Use the PCT form to avoid decimal-shift bugs when expressing small risk fractions: `0.5 PCT RISK` is unambiguous; `RISK 0.005` invites typos.
+Sizes the position so that, if the stop hits, the loss is exactly N% of equity. `SIZING 0.5 PCT RISK` is sugar for `SIZING RISK 0.005` — both compile to the same engine path. Use the PCT form to avoid decimal-shift bugs when expressing small risk fractions: `0.5 PCT RISK` is unambiguous; `RISK 0.005` invites typos. The engine resolves `AT`, expression-based `BY`, and `PCT` stop prices with the current entry geometry before it computes the order quantity.
 
-Requires a `BRACKET` with a `STOP_LOSS` — without one the engine has no stop distance to size against and the order rejects at submission.
+Requires a `BRACKET` with a `STOP_LOSS` — without one the compiler rejects the strategy because no stop distance can be established safely.
 
 **When to use:** the default for portable strategies. Risk-percent sizing scales correctly with account size, stop distance, and instrument volatility.
 

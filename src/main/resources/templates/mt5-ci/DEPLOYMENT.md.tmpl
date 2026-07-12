@@ -64,7 +64,7 @@ The workflow does the following:
 2. Verifies required production secrets are present.
 3. Renders `.env` from GitHub environment secrets/variables.
 4. Runs `docker compose --env-file .env config --quiet`.
-5. Parses every `strategies/*.qkt` file and runs production preflight.
+5. Parses and compiles every `strategies/*.qkt` file, then runs production preflight.
 6. Syncs this repo to `DEPLOY_PATH`, excluding `.git/`, `state/`, and `data/`.
 7. Runs `docker compose pull`.
 8. Runs `docker compose up -d --remove-orphans`.

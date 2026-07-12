@@ -11,6 +11,10 @@ RULES
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
      AND POSITION.btc = 0
     THEN BUY btc SIZING 0.5 PCT RISK
+         BRACKET {
+             STOP LOSS AT btc.close - atr(btc, 14) * 2,
+             TAKE PROFIT RR 2
+         }
 
     WHEN POSITION.btc > 0
      AND ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)

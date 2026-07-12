@@ -413,14 +413,18 @@ class ActionCompiler(
             )
         }
 
-        // Resolve a static stop distance for risk-based sizing, if possible
-        val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
-        val compiledSize = sizingCompiler.compile(sizing, staticStopDistance, stream)
-
         val compiledSL = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
         val compiledTP = opts.bracket?.takeProfit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
         val compiledOcoLeg1 = opts.oco?.stop?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
         val compiledOcoLeg2 = opts.oco?.limit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
+        val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
+        val compiledSize =
+            sizingCompiler.compile(
+                sizing,
+                staticStopDistance,
+                stream,
+                runtimeStopDistanceAvailable = compiledSL != null,
+            )
 
         var skippedUndefinedLogged = false
         return buySell@{ ctx ->
@@ -438,7 +442,40 @@ class ActionCompiler(
                         }
                         return@buySell emptyList()
                     }
-            val qty = compiledSize.evaluate(ctx, entry)
+            val resolvedBracket: ResolvedBracket? =
+                if (opts.bracket != null) {
+                    val sl = requireNotNull(compiledSL) { "BRACKET requires STOP LOSS" }
+                    val tp = requireNotNull(compiledTP) { "BRACKET requires TAKE PROFIT" }
+                    val slSpec =
+                        resolveStopLoss(sl, ctx, side, entry)
+                            ?: run {
+                                if (!skippedUndefinedLogged) {
+                                    strategyLogger.warn(
+                                        "order skipped: bracket stop price undefined during warm-up " +
+                                            "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                                    )
+                                    skippedUndefinedLogged = true
+                                }
+                                return@buySell emptyList()
+                            }
+                    val stopDistance = stopDistance(entry, slSpec)
+                    val takeProfit =
+                        tp.evaluate(ctx, side, entry, stopDistance = stopDistance)
+                            ?: run {
+                                if (!skippedUndefinedLogged) {
+                                    strategyLogger.warn(
+                                        "order skipped: bracket take-profit price undefined during warm-up " +
+                                            "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                                    )
+                                    skippedUndefinedLogged = true
+                                }
+                                return@buySell emptyList()
+                            }
+                    ResolvedBracket(slSpec, stopDistance, takeProfit)
+                } else {
+                    null
+                }
+            val qty = compiledSize.evaluate(ctx, entry, resolvedBracket?.stopDistance)
             val entryReq =
                 compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
                     ?: run {
@@ -455,51 +492,15 @@ class ActionCompiler(
             val request: OrderRequest =
                 when {
                     opts.bracket != null -> {
-                        val sl = requireNotNull(compiledSL) { "BRACKET requires STOP LOSS" }
-                        val tp = requireNotNull(compiledTP) { "BRACKET requires TAKE PROFIT" }
-                        val slSpec: com.qkt.execution.StopLossSpec =
-                            when (sl) {
-                                is CompiledStopLoss.Static -> sl.spec
-                                is CompiledStopLoss.Dynamic ->
-                                    sl.evaluate(ctx, side, entry)
-                                        ?: run {
-                                            if (!skippedUndefinedLogged) {
-                                                strategyLogger.warn(
-                                                    "order skipped: bracket stop price undefined during warm-up " +
-                                                        "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                                                )
-                                                skippedUndefinedLogged = true
-                                            }
-                                            return@buySell emptyList()
-                                        }
-                            }
-                        // For RR take-profit, derive the stop distance from the Fixed-shaped
-                        // stop. Armed trails carry their distance explicitly.
-                        val sd: java.math.BigDecimal =
-                            when (slSpec) {
-                                is com.qkt.execution.StopLossSpec.Fixed -> (entry - slSpec.price).abs()
-                                is com.qkt.execution.StopLossSpec.ArmedTrail -> slSpec.trailDistance
-                            }
-                        val tpPrice =
-                            tp.evaluate(ctx, side, entry, stopDistance = sd)
-                                ?: run {
-                                    if (!skippedUndefinedLogged) {
-                                        strategyLogger.warn(
-                                            "order skipped: bracket take-profit price undefined during warm-up " +
-                                                "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                                        )
-                                        skippedUndefinedLogged = true
-                                    }
-                                    return@buySell emptyList()
-                                }
+                        val bracket = requireNotNull(resolvedBracket)
                         OrderRequest.Bracket(
                             id = ids.next(),
                             symbol = symbol,
                             side = side,
                             quantity = qty,
                             entry = entryReq,
-                            takeProfit = tpPrice,
-                            stopLoss = slSpec,
+                            takeProfit = bracket.takeProfit,
+                            stopLoss = bracket.stopLoss,
                             takeProfitAst = opts.bracket.takeProfit,
                             stopLossAst = opts.bracket.stopLoss,
                             timeInForce = tif,
@@ -819,15 +820,21 @@ class ActionCompiler(
         val stackAst = opts.stack ?: error("unreachable")
         val tif = TifTranslator.translate(opts.tif)
         val staticStopDistance = resolveStaticStopDistance(opts.bracket?.stopLoss)
+        val compiledStopLoss = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
         val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket, side)
         // Pre-compile one CompiledSize per layer (they may share the same sizing AST for
         // StackSpacing, but compiling per-layer is cheap and avoids sharing mutable state).
         val compiledSizes =
             plan.layers.map { layer ->
-                sizingCompiler.compile(layer.sizing, staticStopDistance, stream)
+                sizingCompiler.compile(
+                    layer.sizing,
+                    staticStopDistance,
+                    stream,
+                    runtimeStopDistanceAvailable = compiledStopLoss != null,
+                )
             }
 
-        return { ctx ->
+        return stack@{ ctx ->
             val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
             val ts = ctx.strategyContext.clock.now()
             val currentPrice = ctx.candle.close
@@ -844,7 +851,14 @@ class ActionCompiler(
                             val at = layer.trigger as At
                             evaluateLayerTriggerPrice(at.price, currentPrice)
                         }
-                    val qty = compiledSizes[idx].evaluate(ctx, expectedEntry)
+                    val runtimeStopDistance =
+                        compiledStopLoss?.let { stopLoss ->
+                            val spec =
+                                resolveStopLoss(stopLoss, ctx, side, expectedEntry)
+                                    ?: return@stack emptyList()
+                            stopDistance(expectedEntry, spec)
+                        }
+                    val qty = compiledSizes[idx].evaluate(ctx, expectedEntry, runtimeStopDistance)
                     layer.copy(resolvedQuantity = qty)
                 }
             val resolvedPlan = plan.copy(layers = resolvedLayers)
@@ -885,6 +899,32 @@ class ActionCompiler(
                 }
             }
             else -> error("unsupported trigger expression type: ${expr::class.simpleName}")
+        }
+
+    private data class ResolvedBracket(
+        val stopLoss: com.qkt.execution.StopLossSpec,
+        val stopDistance: BigDecimal,
+        val takeProfit: BigDecimal,
+    )
+
+    private fun resolveStopLoss(
+        compiled: CompiledStopLoss,
+        ctx: EvalContext,
+        side: Side,
+        entry: BigDecimal,
+    ): com.qkt.execution.StopLossSpec? =
+        when (compiled) {
+            is CompiledStopLoss.Static -> compiled.spec
+            is CompiledStopLoss.Dynamic -> compiled.evaluate(ctx, side, entry)
+        }
+
+    private fun stopDistance(
+        entry: BigDecimal,
+        stopLoss: com.qkt.execution.StopLossSpec,
+    ): BigDecimal =
+        when (stopLoss) {
+            is com.qkt.execution.StopLossSpec.Fixed -> entry.subtract(stopLoss.price).abs()
+            is com.qkt.execution.StopLossSpec.ArmedTrail -> stopLoss.trailDistance
         }
 
     private fun resolveStaticStopDistance(stop: ChildPriceAst?): BigDecimal? =

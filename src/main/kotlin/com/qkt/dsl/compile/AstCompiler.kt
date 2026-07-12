@@ -41,7 +41,7 @@ class AstCompiler {
                 ast.series.associate { it.alias to HubKey(it.source.broker, it.source.symbol, it.timeframe) }
         // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
         val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
-        val resolver = LetResolver(ast.lets)
+        val resolver = LetResolver(ast.lets, streams.keys)
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
         val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)

@@ -129,6 +129,23 @@ class WarmupRequirementsTest {
     }
 
     @Test
+    fun `bare stream argument contributes indicator warmup`() {
+        val s =
+            ast(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m
+                RULES
+                  WHEN g.close > 0
+                  THEN BUY g SIZING 1 BRACKET { STOP LOSS BY atr(g, 14), TAKE PROFIT BY 10 }
+                """.trimIndent(),
+            )
+
+        assertThat(WarmupRequirements.compute(s).getValue("g")).isGreaterThanOrEqualTo(14)
+    }
+
+    @Test
     fun `max of explicit and indicator wins`() {
         val s =
             ast(

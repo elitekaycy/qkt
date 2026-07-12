@@ -184,9 +184,43 @@ class PreflightCommandTest {
         }
 
         val text = out.toString()
-        assertThat(text).contains("PASS strategy.parse: book portfolio v1 (1 child strategies)")
+        assertThat(text).contains("PASS strategy.parse: book portfolio v1")
+        assertThat(text).contains("PASS strategy.compile: book portfolio v1 (1 child strategies)")
         assertThat(text).contains("PASS symbol.metadata")
         assertThat(text).doesNotContain("FAIL")
+    }
+
+    @Test
+    fun `preflight fails when a parsed strategy cannot compile`(
+        @TempDir tmp: Path,
+    ) {
+        val strategy = tmp.resolve("invalid-risk.qkt")
+        Files.writeString(
+            strategy,
+            """
+            STRATEGY invalid_risk VERSION 1
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            RULES
+                WHEN gold.close > 0
+                THEN BUY gold SIZING 0.5 PCT RISK
+            """.trimIndent(),
+        )
+        val config = tmp.resolve("qkt.config.yaml")
+        Files.writeString(config, "runtime:\n  mode: dev\n")
+
+        val checks =
+            ProductionPreflight.evaluate(
+                configPath = config,
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                strategyPath = strategy,
+            )
+
+        assertThat(checks).anySatisfy { check ->
+            assertThat(check.name).isEqualTo("strategy.compile")
+            assertThat(check.status).isEqualTo(PreflightStatus.FAIL)
+            assertThat(check.detail).contains("resolvable stop distance")
+        }
     }
 
     @Test
