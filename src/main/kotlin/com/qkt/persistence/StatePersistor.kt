@@ -108,7 +108,12 @@ interface StatePersistor : AutoCloseable {
         state: PersistedRiskState,
     ) {}
 
-    /** The last persisted risk snapshot, or null when none exists. */
+    /**
+     * The last persisted risk snapshot, or null when none exists.
+     *
+     * Implementations must surface unreadable or incompatible persisted state. Treating those
+     * cases as absent would let a restart discard a halt and reset the session's daily-loss budget.
+     */
     fun loadRiskState(strategyId: String): PersistedRiskState? = null
 
     /**

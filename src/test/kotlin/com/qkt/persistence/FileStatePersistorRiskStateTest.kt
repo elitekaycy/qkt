@@ -4,6 +4,8 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatIllegalArgumentException
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -56,5 +58,37 @@ class FileStatePersistorRiskStateTest {
         assertThat(loaded.globalRealizedTotal).isNull()
         assertThat(loaded.perStrategyDailyDrawdownRefs).isEmpty()
         assertThat(loaded.pacerEntryFillsByStrategy).isEmpty()
+    }
+
+    @Test
+    fun `missing risk state is a fresh start`() {
+        assertThat(FileStatePersistor(tempDir).loadRiskState("s1")).isNull()
+    }
+
+    @Test
+    fun `malformed risk state refuses startup`() {
+        writeRiskState("{not-json")
+
+        assertThatThrownBy { FileStatePersistor(tempDir).loadRiskState("s1") }
+            .isInstanceOf(kotlinx.serialization.SerializationException::class.java)
+    }
+
+    @Test
+    fun `unsupported risk state schema refuses startup`() {
+        writeRiskState(
+            """{"version":2,"strategyId":"s1","epochDay":100,"realizedToday":"-300",""" +
+                """"perStrategyRealizedToday":{},"halted":true,"haltReason":"daily loss",""" +
+                """"haltScope":"DAILY","haltEpochDay":100,"strategyHalts":[]}""",
+        )
+
+        assertThatIllegalArgumentException()
+            .isThrownBy { FileStatePersistor(tempDir).loadRiskState("s1") }
+            .withMessage("loadRiskState schema mismatch for s1: 2 != 1")
+    }
+
+    private fun writeRiskState(contents: String) {
+        val strategyDir = tempDir.resolve("s1")
+        Files.createDirectories(strategyDir)
+        Files.writeString(strategyDir.resolve("risk-state.json"), contents)
     }
 }
