@@ -5,6 +5,10 @@ same symbol — typically TradingView (what a strategy *sees* during authoring)
 vs the MT5 gateway (what the strategy *fills against* during live trading).
 Run this before committing capital so the drift bound is known.
 
+For deployments where MT5 is both the strategy and execution source, use
+`--reference mt5-history`. This mode proves that quotes observed through the live
+endpoint reappear byte-for-byte in the terminal's raw tick history.
+
 ## How to run
 
 The audit talks to the same `mt5-gateway` the daemon uses, so it runs inside
@@ -15,18 +19,25 @@ ssh root@<prod-host>
 docker exec qkt qkt audit-ticks \
     --symbol XAUUSD \
     --duration 600 \
-    --mt5-profile exness
+    --mt5-profile exness \
+    --reference mt5-history
 ```
 
 Flags:
 
-- `--symbol` — the TV / strategy-facing symbol. The MT5 side is resolved via
-  the profile's `symbolPolicy`.
+- `--symbol` — the TV / strategy-facing symbol. A source prefix is stripped before
+  resolving the MT5 side through the profile's `symbolPolicy`.
+- `--mt5-symbol` — optional MT5-side base symbol when it differs from the suffix of
+  `--symbol` (for example `--symbol OANDA:XAUUSD --mt5-symbol XAUUSD`).
 - `--duration` — sample window in seconds. 600 s (10 min) gives a few
   thousand samples without saturating the gateway poller.
 - `--mt5-profile` — broker profile from `qkt.config.yaml`. `exness` matches
   the broker hedge-straddle trades against.
 - `--poll-ms` — MT5 poll cadence (default 250 ms). Leave default.
+- `--reference` — `tradingview` (default) or `mt5-history` for a single-source
+  production path.
+- `--settle-ms` — wait before reading MT5 history (default 5000 ms). This avoids
+  comparing a just-arrived quote before the terminal commits it to history.
 - `--json` — emit a single-line JSON result to stdout instead of the human table.
 - `--out <path>` — also persist the JSON to a file (regardless of `--json`). Parent dirs are created. Lets you skip the stdout-piping dance below.
 
@@ -81,7 +92,24 @@ multiple runs over time.
 
 ## Latest result
 
-**Not run — blocked, and not currently applicable to this deployment (2026-06-03, #54 parked).**
+**Preliminary MT5 path-integrity run — not sufficient to close #54 (2026-07-12).**
+
+A read-only bot1 run sampled `AUDUSDm` for 120 seconds at 250 ms during the quiet
+Sunday-open window. It observed 15 new in-window venue ticks; all 15 appeared in
+`copy_ticks_range` with exact `time_msc`, bid, and ask values. Five M1 bars rebuilt
+from 37 raw ticks matched the gateway's bid OHLC exactly. The initial live snapshot
+predated the requested history window and was correctly excluded from the result.
+
+The implemented CLI mode was then exercised through a local SSH tunnel for 30 seconds:
+6 unique in-window ticks, 6 raw-history ticks, 6 exact timestamp and bid/ask matches,
+zero mismatches, zero missing or invalid ticks, and `passed=true`. Quote-age p95 was 9022 ms,
+consistent with the low tick rate in this window rather than transport delay.
+
+This proves that the live, raw-history, and M1 paths agree, but 15 ticks in two minutes
+is not a representative liquid-hours quality bound. A London or early-New-York run is
+still required before closing the issue.
+
+### Previous TradingView attempt (2026-06-03)
 
 Attempting the live audit against the prod `qkt` container surfaced three things:
 
@@ -93,16 +121,14 @@ Attempting the live audit against the prod `qkt` container surfaced three things
    trades ticks *and* orders through the exness `mt5-gateway`. If authoring/backtesting also run
    on MT5 bars (`qkt fetch EXNESS:XAUUSD`), TradingView is in no part of the path — so the
    TV-vs-MT5 drift this tool measures is not a risk the current setup actually has.
-3. **The command can't bridge the two symbol conventions.** `--symbol XAUUSD` fails TV's
+3. **The command could not bridge the two symbol conventions.** `--symbol XAUUSD` failed TV's
    required `EXCHANGE:SYMBOL` form; the TV side needs `OANDA:XAUUSD`, but `audit-ticks` reuses the
-   one `--symbol` for the MT5 side too, and `MT5Symbol.toBroker` can't map an exchange-prefixed TV
-   symbol to the broker symbol. A working audit needs *separate* TV/MT5 symbols (as the
-   `runParityTicksXauusd` tool already takes), plus an authenticated TV token and a non-datacenter
-   IP for TV to serve the feed.
+   one `--symbol` for the MT5 side too. The command now strips source prefixes and accepts an
+   explicit `--mt5-symbol`; TradingView comparison still needs an authenticated TV token and a
+   non-datacenter IP for TV to serve the feed.
 
-When this becomes relevant again — i.e. if a strategy is ever authored or backtested against a
-TradingView feed it does not also execute on — reopen #54, fix the symbol handling, and run from a
-host TradingView will serve.
+If a strategy is ever authored or backtested against a TradingView feed it does not also execute
+on, run the cross-source mode from a host TradingView will serve.
 
 | date | symbol | duration | samples | mean | median | p95 | max | notes |
 |------|--------|----------|---------|------|--------|-----|-----|-------|
