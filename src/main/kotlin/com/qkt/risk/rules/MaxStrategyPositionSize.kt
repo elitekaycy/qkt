@@ -11,9 +11,8 @@ import java.math.BigDecimal
 
 /**
  * Phase 25D: rejects orders that would push a strategy's net position on a symbol
- * past [maxQty]. Consults [StrategyPositionTracker] for the per-strategy view —
- * the shared global [PositionProvider] passed to [evaluate] is ignored, since a
- * per-strategy cap must isolate from other strategies' positions on the same symbol.
+ * past [maxQty]. Consults [StrategyPositionTracker] for filled strategy positions and the
+ * supplied [PositionProvider] for that strategy's pending entry exposure.
  */
 class MaxStrategyPositionSize(
     private val strategyId: String,
@@ -32,13 +31,19 @@ class MaxStrategyPositionSize(
         if (request.strategyId != strategyId) return Decision.Approve
         val current =
             strategyPositions.positionFor(strategyId, request.symbol)?.quantity ?: Money.ZERO
+        val pending = positions.pendingOrderQuantity(request.symbol, request.side, strategyId)
         val projected =
-            if (request.side == Side.BUY) current.add(request.quantity) else current.subtract(request.quantity)
+            if (request.side == Side.BUY) {
+                current.add(pending).add(request.quantity)
+            } else {
+                current.subtract(pending).subtract(request.quantity)
+            }
         return if (projected.abs().compareTo(maxQty) <= 0) {
             Decision.Approve
         } else {
             Decision.Reject(
-                "MaxStrategyPositionSize[$strategyId]: |$projected| > $maxQty for ${request.symbol}",
+                "MaxStrategyPositionSize[$strategyId]: |$projected| > $maxQty for ${request.symbol} " +
+                    "(pending=$pending)",
             )
         }
     }

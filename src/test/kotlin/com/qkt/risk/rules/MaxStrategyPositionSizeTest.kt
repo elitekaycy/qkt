@@ -5,6 +5,7 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
+import com.qkt.positions.PositionProvider
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
@@ -95,5 +96,23 @@ class MaxStrategyPositionSizeTest {
         fill("ema_cross", "XAUUSD", Money.of("3"), Side.SELL)
         val decision = rule.evaluate(order(side = Side.SELL, qty = Money.of("1")), global)
         assertThat(decision).isInstanceOf(Decision.Reject::class.java)
+    }
+
+    @Test
+    fun `counts only pending exposure owned by the strategy`() {
+        val withPending =
+            object : PositionProvider by global {
+                override fun pendingOrderQuantity(
+                    symbol: String,
+                    side: Side,
+                    strategyId: String?,
+                ): BigDecimal = if (strategyId == "ema_cross") Money.of("2.5") else Money.ZERO
+            }
+
+        val targetDecision = rule.evaluate(order(qty = Money.of("1")), withPending)
+        val otherDecision = rule.evaluate(order(strategyId = "other_strat", qty = Money.of("10")), withPending)
+
+        assertThat(targetDecision).isInstanceOf(Decision.Reject::class.java)
+        assertThat(otherDecision).isEqualTo(Decision.Approve)
     }
 }

@@ -5,6 +5,7 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
+import com.qkt.positions.PositionProvider
 import com.qkt.positions.PositionTracker
 import com.qkt.risk.Decision
 import java.math.BigDecimal
@@ -80,5 +81,22 @@ class MaxPositionSizeTest {
         val decision = rule.evaluate(order(side = Side.SELL, qty = Money.of("1")), positions)
         assertThat(decision).isInstanceOf(Decision.Reject::class.java)
         assertThat((decision as Decision.Reject).reason).contains("MaxPositionSize")
+    }
+
+    @Test
+    fun `rejects order when same-side pending exposure breaches the cap`() {
+        val withPending =
+            object : PositionProvider by positions {
+                override fun pendingOrderQuantity(
+                    symbol: String,
+                    side: Side,
+                    strategyId: String?,
+                ): BigDecimal = if (symbol == "XAUUSD" && side == Side.BUY) Money.of("2.5") else Money.ZERO
+            }
+
+        val decision = rule.evaluate(order(qty = Money.of("1")), withPending)
+
+        assertThat(decision).isInstanceOf(Decision.Reject::class.java)
+        assertThat((decision as Decision.Reject).reason).contains("pending=2.5")
     }
 }

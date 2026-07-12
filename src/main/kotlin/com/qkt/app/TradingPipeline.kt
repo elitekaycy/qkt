@@ -242,6 +242,7 @@ class TradingPipeline(
         )
 
     init {
+        riskEngine.bindPendingExposure(orderManager)
         require(strategies.map { it.first }.toSet().size == strategies.size) {
             "Strategy IDs must be unique: ${strategies.map { it.first }}"
         }

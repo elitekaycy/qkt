@@ -34,6 +34,7 @@ import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.buyExecPrice
 import com.qkt.marketdata.sellExecPrice
+import com.qkt.positions.PendingOrderExposureProvider
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
@@ -74,10 +75,18 @@ class OrderManager(
     private val trackRisk: Boolean = false,
     /** Raises an operator alert when a filled position cannot retain venue-side protection. */
     private val onProtectionFailure: (strategyId: String, message: String) -> Unit = { _, _ -> },
-) {
+) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
     private val orders: MutableMap<String, ManagedOrder> = mutableMapOf()
+    private val exposureEntries: MutableMap<String, ExposureEntry> = mutableMapOf()
+    private val exposureGroupScratch: MutableMap<String, BigDecimal> = mutableMapOf()
+
+    private data class ExposureEntry(
+        val request: OrderRequest,
+        val groupId: String?,
+        var filledQuantity: BigDecimal = BigDecimal.ZERO,
+    )
 
     /**
      * Ids of orders that are not yet terminal. The per-tick [evaluateTriggers] scan walks this
@@ -232,8 +241,56 @@ class OrderManager(
                 lastUpdatedAt = now,
             ),
         )
+        if (!request.isCompositeShape()) registerExposure(request)
         return dispatch(request)
     }
+
+    override fun quantityFor(
+        symbol: String,
+        side: Side,
+        strategyId: String?,
+    ): BigDecimal {
+        var ungrouped = BigDecimal.ZERO
+        exposureGroupScratch.clear()
+        for ((id, entry) in exposureEntries) {
+            val request = entry.request
+            if (request.symbol != symbol || request.side != side) continue
+            if (strategyId != null && request.strategyId != strategyId) continue
+            if (orders[id]?.state?.isTerminal == true) continue
+            val remaining = request.quantity.subtract(entry.filledQuantity).max(BigDecimal.ZERO)
+            if (remaining.signum() == 0) continue
+            val groupId = entry.groupId
+            if (groupId == null) {
+                ungrouped = ungrouped.add(remaining)
+            } else {
+                val prior = exposureGroupScratch[groupId]
+                if (prior == null || remaining > prior) exposureGroupScratch[groupId] = remaining
+            }
+        }
+        return exposureGroupScratch.values.fold(ungrouped, BigDecimal::add)
+    }
+
+    private fun registerExposure(
+        request: OrderRequest,
+        groupId: String? = null,
+    ) {
+        val existing = exposureEntries[request.id]
+        exposureEntries[request.id] =
+            ExposureEntry(
+                request = request,
+                groupId = existing?.groupId ?: groupId,
+                filledQuantity = existing?.filledQuantity ?: BigDecimal.ZERO,
+            )
+    }
+
+    private fun exposureEntryRequest(request: OrderRequest): OrderRequest =
+        when (request) {
+            is OrderRequest.Bracket -> request.entry.withStrategyId(request.strategyId)
+            is OrderRequest.OTO -> request.parent
+            is OrderRequest.ScaleOut -> request.basis
+            is OrderRequest.TimeExit -> request.target
+            else -> request
+        }
 
     fun cancel(clientOrderId: String) {
         val managed = orders[clientOrderId] ?: return
@@ -244,16 +301,20 @@ class OrderManager(
             }
             stacks.terminate(clientOrderId)
             update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
+            exposureEntries.remove(clientOrderId)
             return
         }
         if (managed.childClientOrderIds.isNotEmpty()) {
             for (childId in managed.childClientOrderIds) cancel(childId)
             update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
+            exposureEntries.remove(clientOrderId)
             return
         }
         when (managed.state) {
-            OrderState.CREATED, OrderState.PENDING ->
+            OrderState.CREATED, OrderState.PENDING -> {
                 update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
+                exposureEntries.remove(clientOrderId)
+            }
             else -> broker.cancel(clientOrderId)
         }
     }
@@ -309,6 +370,11 @@ class OrderManager(
                     orders[leg.clientOrderId] = managed
                     indexLive(managed)
                     siblings[leg.clientOrderId] = leg.siblingIds
+                    val groupId =
+                        (leg.siblingIds + leg.clientOrderId)
+                            .sorted()
+                            .joinToString(prefix = "restored-oco:", separator = "|")
+                    registerExposure(leg.request, groupId)
                     recovered += managed
                 }
                 for (stop in persistor.loadTrailingStops(sid)) {
@@ -332,6 +398,7 @@ class OrderManager(
                     // high-water mark instead of re-arming from the entry (#436).
                     trailingHwm[stop.clientOrderId] = stop.hwm
                     armedTrailArmed[stop.clientOrderId] = stop.armed
+                    registerExposure(stop.request)
                 }
             }.onFailure { e -> log.warn("[restore] failed for {}: {}", sid, e.message) }
         }
@@ -504,7 +571,7 @@ class OrderManager(
                     // BRACKET but no position-modify, fixed SL: ship whole (venue attaches SL/TP,
                     // nothing to trail).
                     !isArmedTrail && !needsFillAnchor && OrderTypeCapability.BRACKET in caps ->
-                        submitToBroker(request)
+                        submitRegisteredToBroker(request)
                     // No venue attach (backtest / restricted venue): decompose into engine-watched
                     // resting exits.
                     else -> submitBracketFallback(request)
@@ -540,6 +607,7 @@ class OrderManager(
             ),
         )
         scaleOutLegs[req.basis.id] = req to req.basis.quantity
+        registerExposure(exposureEntryRequest(req.basis))
         dispatch(req.basis)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -564,6 +632,7 @@ class OrderManager(
             ),
         )
         timeExits[req.id] = req
+        registerExposure(exposureEntryRequest(req.target))
         dispatch(req.target)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -606,6 +675,7 @@ class OrderManager(
                 lastUpdatedAt = now,
             )
         }
+        registerExposure(firstReq)
         dispatch(firstReq)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -898,6 +968,7 @@ class OrderManager(
                 ),
             )
             stacks.addPending(stackId, layerOrderId)
+            registerExposure(pending)
             log.info(
                 "stack pending stack_id={} strategy_id={} layer={} qty={} trigger={} side={}",
                 stackId,
@@ -1271,13 +1342,26 @@ class OrderManager(
             // Arm the trail only once the position exists — dispatched on the entry's fill.
             pendingChildren[attached.id] = listOf(trail)
         }
+        registerExposure(attached)
         val ack = submitToBroker(attached)
         return SubmitAck(req.id, req.id, accepted = ack.accepted, rejectReason = ack.rejectReason)
     }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
         update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
-        return broker.submit(request)
+        val ack = broker.submit(request)
+        if (!ack.accepted && orders[request.id]?.state?.isTerminal != true) {
+            update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
+            exposureEntries.remove(request.id)
+        }
+        return ack
+    }
+
+    private fun submitRegisteredToBroker(request: OrderRequest): SubmitAck {
+        val entry = exposureEntryRequest(request)
+        val existing = if (entry.id == request.id) null else exposureEntries.remove(entry.id)
+        registerExposure(request, existing?.groupId)
+        return submitToBroker(request)
     }
 
     private fun submitOto(req: OrderRequest.OTO): SubmitAck {
@@ -1313,6 +1397,7 @@ class OrderManager(
             )
         }
         pendingChildren[req.parent.id] = req.children
+        registerExposure(exposureEntryRequest(req.parent))
         dispatch(req.parent)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -1348,6 +1433,8 @@ class OrderManager(
         // under the same id, so the sequence below is keyed by it too.
         val leg1AckId = ocoFillId(req.leg1)
         val leg2AckId = ocoFillId(req.leg2)
+        registerExposure(exposureEntryRequest(req.leg1), req.id)
+        registerExposure(exposureEntryRequest(req.leg2), req.id)
         siblings[leg1AckId] = listOf(leg2AckId)
         siblings[leg2AckId] = listOf(leg1AckId)
 
@@ -1367,6 +1454,7 @@ class OrderManager(
         if (!ack1.accepted) {
             // Local rejection that carried no event (e.g. a capability reject) — abandon the
             // OCO; leg2 was never dispatched.
+            exposureEntries.remove(leg2AckId)
             clearOcoSequence(seq)
             return rejectOco(req.id, "leg ${req.leg1.id} rejected: ${ack1.rejectReason ?: "unknown"}")
         }
@@ -1403,6 +1491,7 @@ class OrderManager(
     private fun failOcoOnReject(ackId: String) {
         ocoByLeg1[ackId]?.let { seq ->
             if (!seq.leg2Placed) {
+                exposureEntries.remove(seq.leg2AckId)
                 clearOcoSequence(seq)
                 rejectOco(seq.ocoId, "leg ${seq.leg1.id} rejected")
                 return
@@ -1516,6 +1605,7 @@ class OrderManager(
         scaleOutLegs.remove(id)
         pendingChildren.remove(id)
         engineHeldCloseTickets.remove(id)
+        exposureEntries.remove(id)
     }
 
     /**
@@ -1698,6 +1788,7 @@ class OrderManager(
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
+        exposureEntries.remove(e.clientOrderId)
         failOcoOnReject(e.clientOrderId)
     }
 
@@ -1712,6 +1803,7 @@ class OrderManager(
                 )
             }
         if (!applied) return
+        exposureEntries[e.clientOrderId]?.filledQuantity = e.cumulativeFilled
         log.info(
             "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
             e.clientOrderId,
@@ -1753,6 +1845,7 @@ class OrderManager(
                 )
             }
         if (!applied) return
+        exposureEntries.remove(e.clientOrderId)
         log.info(
             "order filled order_id={} strategy_id={} symbol={} side={} qty={} price={}",
             e.clientOrderId,
@@ -1848,6 +1941,7 @@ class OrderManager(
                 it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
+        exposureEntries.remove(e.clientOrderId)
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
             e.clientOrderId,
