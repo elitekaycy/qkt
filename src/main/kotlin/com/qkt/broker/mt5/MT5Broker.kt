@@ -88,6 +88,7 @@ class MT5Broker(
         ),
 ) : Broker {
     override val name: String = profile.name
+    override val supportsPositionTickets: Boolean = true
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
 
     // Current mt5-gateway applies ORDER_TIME_SPECIFIED whenever expiration is present.

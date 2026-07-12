@@ -54,6 +54,13 @@ class ControlRoutesHaltTest {
 
         override fun flatten() = Unit
 
+        override fun flattenAndVerify(timeout: Duration): com.qkt.app.FlattenResult =
+            com.qkt.app.FlattenResult(
+                verifiedFlat = false,
+                remainingTickets = listOf("TKT-42"),
+                detail = "ticket remains open",
+            )
+
         override fun halt(reason: String) {
             halts++
         }
@@ -157,5 +164,13 @@ class ControlRoutesHaltTest {
         assertThat(handles.getValue("beta").resumes).isEqualTo(0)
 
         assertThat(post(port, "/halt/ghost").statusCode()).isEqualTo(404)
+
+        val kill = post(port, "/kill/alpha?flatten=true")
+        assertThat(kill.statusCode()).isEqualTo(200)
+        assertThat(kill.body()).contains(
+            "\"flattenVerified\":false",
+            "\"remainingTickets\":[\"TKT-42\"]",
+            "\"alpha\":\"ticket remains open\"",
+        )
     }
 }
