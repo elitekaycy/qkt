@@ -7,6 +7,10 @@ instruments:
     pointSize: 0.001
     digits: 3
     tradeStopsLevelPoints: 0
+    swapLongPoints: -12.5
+    swapShortPoints: 4.25
+    swapRolloverHourUtc: 22
+    swapTripleDay: FRIDAY
   - qktSymbol: EXNESS:EURUSD
     contractSize: 100000
     volumeStep: 0.01

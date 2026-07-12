@@ -289,6 +289,8 @@ class BacktestReportWriter(
         field("realizedTotal", ReportSerializer.jsonBigDecimal(r.realizedTotal))
         field("unrealizedTotal", ReportSerializer.jsonBigDecimal(r.unrealizedTotal))
         field("totalPnL", ReportSerializer.jsonBigDecimal(r.totalPnL))
+        field("commissionPaid", ReportSerializer.jsonBigDecimal(r.commissionPaid))
+        field("swapPaid", ReportSerializer.jsonBigDecimal(r.swapPaid))
         field("tradeCount", r.tradeCount.toString())
         field("winRate", ReportSerializer.jsonBigDecimal(r.winRate))
         field("maxDrawdown", ReportSerializer.jsonBigDecimal(r.maxDrawdown))

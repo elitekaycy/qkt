@@ -115,6 +115,7 @@ data class ExecutionSimulationConfig(
                     "none"
                 },
             commissionModel = "per-lot instruments.yaml commissionPerLot",
+            financingModel = "signed swap points at configured UTC rollover; triple configured weekday",
             ocoMode = "engine-managed deterministic siblings",
         )
 

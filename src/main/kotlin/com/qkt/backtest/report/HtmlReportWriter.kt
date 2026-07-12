@@ -154,6 +154,7 @@ class HtmlReportWriter(
                 it.partialFillModel?.let { v -> append("<tr><td>partial-fill model</td><td>${html(v)}</td></tr>") }
                 it.venueRules?.let { v -> append("<tr><td>venue rules</td><td>${html(v)}</td></tr>") }
                 it.commissionModel?.let { v -> append("<tr><td>cost model</td><td>${html(v)}</td></tr>") }
+                it.financingModel?.let { v -> append("<tr><td>financing model</td><td>${html(v)}</td></tr>") }
                 it.ocoMode?.let { v -> append("<tr><td>OCO mode</td><td>${html(v)}</td></tr>") }
                 it.warning?.let { warning -> append("<tr><td>execution warning</td><td>${html(warning)}</td></tr>") }
             }
@@ -265,6 +266,8 @@ class HtmlReportWriter(
             append("<tr><td>Largest win</td><td>${r.largestWin.toPlainString()}</td></tr>")
             append("<tr><td>Largest loss</td><td>${r.largestLoss.toPlainString()}</td></tr>")
             append("<tr><td>Max consecutive losses</td><td>${r.maxConsecutiveLosses}</td></tr>")
+            append("<tr><td>Commission paid</td><td>${r.commissionPaid.toPlainString()}</td></tr>")
+            append("<tr><td>Swap paid</td><td>${r.swapPaid.toPlainString()}</td></tr>")
             append("</tbody></table>")
         }
 
