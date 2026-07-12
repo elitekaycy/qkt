@@ -458,11 +458,17 @@ class MT5Broker(
                 is VolumeResult.Ok -> result.quantity
                 is VolumeResult.Reject -> return reject(request, result.reason)
             }
-        recentlyClosedByTicket[ticket] = EngineCloseMarker(clock.now())
+        val closeStartedAtMs = clock.now()
+        recentlyClosedByTicket[ticket] = EngineCloseMarker(closeStartedAtMs)
         client.closePositionAsync(ticket, volume = closeQuantity, partial = request.partialClose) { resp ->
             if (!isOrderSuccessful(resp.result.retcode)) {
+                val message = resp.errorMessage ?: "close_position retcode=${resp.result.retcode}"
+                if (isAmbiguousSendFailure(message)) {
+                    resolveUnknownCloseOutcome(request, ticket, closeQuantity, closeStartedAtMs, message)
+                    return@closePositionAsync
+                }
                 recentlyClosedByTicket.remove(ticket)
-                reject(request, resp.errorMessage ?: "close_position retcode=${resp.result.retcode}")
+                reject(request, message)
                 return@closePositionAsync
             }
             val partiallyFilled = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
@@ -492,7 +498,6 @@ class MT5Broker(
                             timestamp = clock.now(),
                         ),
                     )
-                    publishGatewayUnreachable(1)
                     log.error(
                         "MT5Broker {} partial close {} omitted actual filled volume",
                         profile.name,
@@ -530,6 +535,102 @@ class MT5Broker(
             )
         }
         return SubmitAck(request.id, ticket.toString(), accepted = true)
+    }
+
+    private fun resolveUnknownCloseOutcome(
+        request: OrderRequest.Market,
+        ticket: Long,
+        requestedQuantity: BigDecimal,
+        closeStartedAtMs: Long,
+        cause: String,
+    ) {
+        log.warn(
+            "MT5Broker {} close {} outcome UNKNOWN ({}) — querying venue before resolving",
+            profile.name,
+            request.id,
+            cause,
+        )
+        var cleanAbsenceReads = 0
+        for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
+            Thread.sleep(unknownResolveBackoffMs * attempt)
+            val positions = client.getPositions(magic = profile.magic) ?: continue
+            val deals =
+                client.getPositionDeals(
+                    positionTicket = ticket,
+                    fromUtcMs = closeStartedAtMs - UNKNOWN_CORRELATION_WINDOW_MS,
+                    toUtcMs = maxOf(clock.now(), closeStartedAtMs) + UNKNOWN_CORRELATION_WINDOW_MS,
+                ) ?: continue
+            val position = positions.firstOrNull { it.ticket == ticket }
+            val closingDeals =
+                deals
+                    .filter {
+                        it.positionTicket == ticket &&
+                            it.magic == profile.magic &&
+                            it.entry != 0 &&
+                            it.timeMs >= closeStartedAtMs - CLOSE_DEAL_CLOCK_SKEW_MS
+                    }.sortedBy { it.timeMs }
+            if (closingDeals.isNotEmpty()) {
+                val filledQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
+                val fillPrice = weightedDealPrice(closingDeals)
+                if (filledQuantity.signum() > 0 && fillPrice != null) {
+                    val positionRemainsOpen = position != null
+                    recentlyClosedByTicket.computeIfPresent(ticket) { _, marker -> marker.copy(confirmed = true) }
+                    if (!positionRemainsOpen) {
+                        positionMetaByTicket.remove(ticket)
+                        positionSymbolByTicket.remove(ticket)
+                        positionOpenedAtByTicket.remove(ticket)
+                    }
+                    val venueCosts =
+                        venueCostLedger.book(
+                            ticket,
+                            deals,
+                            positionClosed = !positionRemainsOpen,
+                            nowMs = clock.now(),
+                        )
+                    bus.publish(
+                        BrokerEvent.OrderAccepted(
+                            clientOrderId = request.id,
+                            brokerOrderId = ticket.toString(),
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                    bus.publish(
+                        BrokerEvent.OrderFilled(
+                            clientOrderId = request.id,
+                            brokerOrderId = ticket.toString(),
+                            symbol = request.symbol,
+                            side = request.side,
+                            price = fillPrice,
+                            quantity = filledQuantity.min(requestedQuantity),
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                            venueCosts = venueCosts,
+                        ),
+                    )
+                    log.info(
+                        "MT5Broker {} close {} resolved as FILLED ticket {}",
+                        profile.name,
+                        request.id,
+                        ticket,
+                    )
+                    return
+                }
+            }
+            if (position != null) cleanAbsenceReads++
+        }
+        if (cleanAbsenceReads == UNKNOWN_RESOLVE_ATTEMPTS) {
+            recentlyClosedByTicket.remove(ticket)
+            reject(request, "unknown-state close resolved as not executed after verified retry window ($cause)")
+            return
+        }
+        log.error(
+            "MT5Broker {} close {} outcome UNRESOLVED after {} venue queries — no rejection emitted",
+            profile.name,
+            request.id,
+            UNKNOWN_RESOLVE_ATTEMPTS,
+        )
+        publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
     }
 
     /**
@@ -1895,6 +1996,7 @@ class MT5Broker(
 
         /** Maximum distance from placement time for legacy comment-based correlation. */
         private const val UNKNOWN_CORRELATION_WINDOW_MS: Long = 60_000L
+        private const val CLOSE_DEAL_CLOCK_SKEW_MS: Long = 1_000L
 
         /** Margin-level cache TTL — fresh enough for a floor check, cheap on the gateway. */
         private const val MARGIN_CACHE_TTL_MS: Long = 5_000L
