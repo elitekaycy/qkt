@@ -478,6 +478,7 @@ class MT5Client(
             magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
             timeMs = rawTimeMs,
+            clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
         )
     }
 
