@@ -987,6 +987,62 @@ class OrderManagerStackTest {
     }
 
     @Test
+    fun `deferred venue protection does not block fill and handles later rejection`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.POSITION_MODIFY),
+            ).apply { deferPositionModifications = true }
+        val alerts = mutableListOf<String>()
+        val manager =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                onProtectionFailure = { _, message -> alerts.add(message) },
+            )
+        val stack =
+            OrderRequest.Stack(
+                id = "stk-async-protection",
+                symbol = "BTCUSDT",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                plan =
+                    StackPlan(
+                        layers =
+                            listOf(
+                                LayerSpec(
+                                    1,
+                                    SizeQty(NumLit(BigDecimal("0.1"))),
+                                    com.qkt.dsl.ast.Market,
+                                    Immediate,
+                                ),
+                            ),
+                        outerBracket = BracketAst(stopLoss = ChildBy(NumLit(BigDecimal("50")))),
+                    ),
+                timeInForce = TimeInForce.GTC,
+                timestamp = clock.now(),
+                strategyId = "alpha",
+            )
+        manager.submit(stack)
+
+        publishLayerFill(bus, stack, layer = 1, ticket = "TKT-42", quantity = stack.quantity, clock = clock)
+
+        assertThat(broker.modifyPositions).hasSize(1)
+        assertThat(manager.getOrder("${stack.id}-l1-sl")).isNull()
+        assertThat(alerts).isEmpty()
+
+        broker.completeNextPositionModification(false, "gateway timeout")
+
+        assertThat(manager.getOrder("${stack.id}-l1-sl")?.state).isEqualTo(OrderState.PENDING)
+        assertThat(alerts.single()).contains("gateway timeout", "engine-held stop armed")
+    }
+
+    @Test
     fun `blank stack fill ticket raises a protection failure alert`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)

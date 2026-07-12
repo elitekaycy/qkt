@@ -72,6 +72,20 @@ interface Broker {
     ): SubmitAck = SubmitAck(ticket, ticket, accepted = true)
 
     /**
+     * Asynchronous variant of [modifyPosition]. Connectors with blocking venue I/O override this
+     * so fill handlers never wait on a network round-trip. The default preserves immediate,
+     * in-process brokers while reporting completion through [onResult].
+     */
+    fun modifyPositionAsync(
+        ticket: String,
+        sl: BigDecimal? = null,
+        tp: BigDecimal? = null,
+        onResult: (SubmitAck) -> Unit,
+    ) {
+        onResult(modifyPosition(ticket, sl, tp))
+    }
+
+    /**
      * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol.
      *
      * Returns a **list per symbol** because hedge-mode-capable brokers (MT5, Bybit linear)

@@ -179,6 +179,24 @@ class OrderManager(
     private val fillAnchoredFallbackBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
     private val fillAnchoredAttachedBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
 
+    private sealed interface PendingPositionModification
+
+    private data class StackPositionModification(
+        val stackId: String,
+        val layerOrderId: String,
+        val fillPrice: BigDecimal,
+        val stopLoss: BigDecimal?,
+        val ticket: String,
+        val strategyId: String,
+    ) : PendingPositionModification
+
+    private data class BracketPositionModification(
+        val ticket: String,
+        val strategyId: String,
+    ) : PendingPositionModification
+
+    private val pendingPositionModifications: MutableMap<String, PendingPositionModification> = mutableMapOf()
+
     private val scaleOutLegs: MutableMap<String, Pair<OrderRequest.ScaleOut, BigDecimal>> = mutableMapOf()
 
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
@@ -221,6 +239,7 @@ class OrderManager(
         bus.subscribe<BrokerEvent.OrderFilled> { e -> evaluateStackFlat(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> onPartiallyFilled(e) }
         bus.subscribe<BrokerEvent.OrderCancelled> { e -> onCancelled(e) }
+        bus.subscribe<BrokerEvent.PositionModificationCompleted> { e -> onPositionModificationCompleted(e) }
         bus.subscribe<TickEvent> { e -> evaluateTriggers(e.tick) }
     }
 
@@ -698,6 +717,7 @@ class OrderManager(
                 layerOrderId = e.clientOrderId,
                 fillPrice = e.price,
                 ticket = e.brokerOrderId,
+                operationId = "stack:${e.clientOrderId}:${e.sequenceId}",
             )
             return
         }
@@ -724,6 +744,7 @@ class OrderManager(
         layerOrderId: String,
         fillPrice: BigDecimal,
         ticket: String?,
+        operationId: String,
     ) {
         val state = stacks.get(stackId) ?: return
         val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return
@@ -747,24 +768,75 @@ class OrderManager(
                 computeChildPrice(it, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
             }
         if (slPrice == null && tpPrice == null) return
-        val ack = broker.modifyPosition(resolvedTicket, sl = slPrice, tp = tpPrice)
-        if (!ack.accepted) {
-            val fallbackStop =
-                attachLayerSl(
-                    stackId = stackId,
-                    layerOrderId = layerOrderId,
-                    fillPrice = fillPrice,
-                    engineHeldCloseTicket = resolvedTicket,
-                )
-            reportProtectionFailure(
-                parent.strategyId,
-                "venue rejected attached SL/TP for ticket $resolvedTicket: ${ack.rejectReason}; " +
-                    if (fallbackStop != null && slPrice != null) {
-                        "engine-held stop armed at ${slPrice.toPlainString()}"
-                    } else {
-                        "no stop-loss was configured for fallback"
-                    },
+        pendingPositionModifications[operationId] =
+            StackPositionModification(
+                stackId = stackId,
+                layerOrderId = layerOrderId,
+                fillPrice = fillPrice,
+                stopLoss = slPrice,
+                ticket = resolvedTicket,
+                strategyId = parent.strategyId,
             )
+        modifyPositionAsync(operationId, resolvedTicket, slPrice, tpPrice)
+    }
+
+    private fun modifyPositionAsync(
+        operationId: String,
+        ticket: String,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+    ) {
+        runCatching {
+            broker.modifyPositionAsync(ticket, sl, tp) { ack ->
+                bus.publish(
+                    BrokerEvent.PositionModificationCompleted(
+                        operationId = operationId,
+                        ticket = ticket,
+                        accepted = ack.accepted,
+                        rejectReason = ack.rejectReason,
+                    ),
+                )
+            }
+        }.onFailure { error ->
+            bus.publish(
+                BrokerEvent.PositionModificationCompleted(
+                    operationId = operationId,
+                    ticket = ticket,
+                    accepted = false,
+                    rejectReason = error.message,
+                ),
+            )
+        }
+    }
+
+    private fun onPositionModificationCompleted(event: BrokerEvent.PositionModificationCompleted) {
+        val pending = pendingPositionModifications.remove(event.operationId) ?: return
+        if (event.accepted) return
+        when (pending) {
+            is StackPositionModification -> {
+                val fallbackStop =
+                    attachLayerSl(
+                        stackId = pending.stackId,
+                        layerOrderId = pending.layerOrderId,
+                        fillPrice = pending.fillPrice,
+                        engineHeldCloseTicket = pending.ticket,
+                    )
+                reportProtectionFailure(
+                    pending.strategyId,
+                    "venue rejected attached SL/TP for ticket ${pending.ticket}: ${event.rejectReason}; " +
+                        if (fallbackStop != null && pending.stopLoss != null) {
+                            "engine-held stop armed at ${pending.stopLoss.toPlainString()}"
+                        } else {
+                            "no stop-loss was configured for fallback"
+                        },
+                )
+            }
+            is BracketPositionModification ->
+                reportProtectionFailure(
+                    pending.strategyId,
+                    "venue rejected fill-anchored bracket modify for ticket ${pending.ticket}: " +
+                        event.rejectReason,
+                )
         }
     }
 
@@ -772,7 +844,7 @@ class OrderManager(
         strategyId: String,
         message: String,
     ) {
-        log.error("stack protection failure: {}", message)
+        log.error("position protection failure: {}", message)
         runCatching { onProtectionFailure(strategyId, message) }
             .onFailure { log.error("stack protection alert failed for strategy {}", strategyId, it) }
     }
@@ -1884,17 +1956,14 @@ class OrderManager(
                                 e.price + spec.trailDistance
                             }
                     }
-                val modifyAck =
-                    e.brokerOrderId
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { broker.modifyPosition(it, sl = sl, tp = resolved.takeProfit) }
-                if (modifyAck != null && !modifyAck.accepted) {
-                    log.error(
-                        "venue rejected fill-anchored bracket modify for ticket {}: {}",
-                        e.brokerOrderId,
-                        modifyAck.rejectReason,
-                    )
-                }
+                e.brokerOrderId
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { ticket ->
+                        val operationId = "bracket:${e.clientOrderId}:${e.sequenceId}"
+                        pendingPositionModifications[operationId] =
+                            BracketPositionModification(ticket, resolved.strategyId)
+                        modifyPositionAsync(operationId, ticket, sl, resolved.takeProfit)
+                    }
                 pending.orEmpty().forEach { child ->
                     val anchored =
                         if (child is OrderRequest.ArmedTrailingStop) {

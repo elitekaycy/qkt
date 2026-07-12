@@ -132,6 +132,27 @@ class CompositeBroker(
         }
     }
 
+    override fun modifyPositionAsync(
+        ticket: String,
+        sl: java.math.BigDecimal?,
+        tp: java.math.BigDecimal?,
+        onResult: (SubmitAck) -> Unit,
+    ) {
+        val target = ticketToBroker[ticket]
+        if (target == null) {
+            onResult(
+                SubmitAck(
+                    clientOrderId = ticket,
+                    brokerOrderId = ticket,
+                    accepted = false,
+                    rejectReason = "no leaf owns ticket $ticket",
+                ),
+            )
+            return
+        }
+        target.modifyPositionAsync(ticket, sl, tp, onResult)
+    }
+
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
         val merged = LinkedHashMap<String, MutableList<com.qkt.positions.Position>>()
         for (leaf in allLeaves()) {

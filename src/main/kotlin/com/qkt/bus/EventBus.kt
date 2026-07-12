@@ -183,6 +183,7 @@ class EventBus(
             is BrokerEvent.ConnectionChanged -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.PositionReconciled -> event.copy(timestamp = ts, sequenceId = seq)
             is BrokerEvent.PositionProtectionChanged -> event.copy(timestamp = ts, sequenceId = seq)
+            is BrokerEvent.PositionModificationCompleted -> event.copy(timestamp = ts, sequenceId = seq)
             is RiskEvent.Halted -> event.copy(timestamp = ts, sequenceId = seq)
             is RiskEvent.Resumed -> event.copy(timestamp = ts, sequenceId = seq)
         }
