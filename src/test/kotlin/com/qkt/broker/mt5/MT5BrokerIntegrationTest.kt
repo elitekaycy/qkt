@@ -739,6 +739,156 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `ambiguous close resolved from deals preserves close order attribution`() {
+        val closeSent = AtomicBoolean(false)
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") -> {
+                            closeSent.set(true)
+                            MockResponse().setResponseCode(500).setBody("gateway timed out")
+                        }
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") ->
+                            MockResponse().setBody(if (closeSent.get()) closeDealHistory() else "[]")
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+
+        fastBroker.submit(ambiguousClose("close-ambiguous"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        val fill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(fill.clientOrderId).isEqualTo("close-ambiguous")
+        assertThat(fill.brokerOrderId).isEqualTo("999")
+        assertThat(fill.price).isEqualByComparingTo("1.1050")
+    }
+
+    @Test
+    fun `ambiguous close waits through clean open read before late close deal`() {
+        val closeSent = AtomicBoolean(false)
+        val historyReads = AtomicInteger()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") -> {
+                            closeSent.set(true)
+                            MockResponse().setResponseCode(500).setBody("gateway timed out")
+                        }
+                        path.startsWith("/get_positions") ->
+                            if (closeSent.get() && historyReads.get() == 0) {
+                                MockResponse().setBody(openPosition999())
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") ->
+                            if (historyReads.incrementAndGet() == 1) {
+                                MockResponse().setBody("[]")
+                            } else {
+                                MockResponse().setBody(closeDealHistory())
+                            }
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+
+        fastBroker.submit(ambiguousClose("close-late"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        assertThat(historyReads.get()).isGreaterThanOrEqualTo(2)
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>().single().clientOrderId).isEqualTo("close-late")
+    }
+
+    @Test
+    fun `ambiguous close rejects only after repeated verified non-execution`() {
+        val closeSent = AtomicBoolean(false)
+        val historyReads = AtomicInteger()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") -> {
+                            closeSent.set(true)
+                            MockResponse().setResponseCode(500).setBody("gateway timed out")
+                        }
+                        path.startsWith("/get_positions") ->
+                            MockResponse().setBody(if (closeSent.get()) openPosition999() else "[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") -> {
+                            historyReads.incrementAndGet()
+                            MockResponse().setBody("[]")
+                        }
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+
+        fastBroker.submit(ambiguousClose("close-not-executed"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderRejected } }
+        fastBroker.shutdown()
+
+        assertThat(historyReads.get()).isEqualTo(4)
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>().single().reason)
+            .contains("verified retry window")
+    }
+
+    @Test
+    fun `partial close without reported volume does not latch gateway outage`() {
+        bus.subscribe<BrokerEvent.GatewayUnreachable> { captured.add(it) }
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10010,"order":0,"deal":55,"price":"1.1050","comment":"partial"}}""",
+            ),
+        )
+
+        broker.submit(ambiguousClose("close-partial").copy(partialClose = true))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderAccepted } }
+
+        assertThat(captured.filterIsInstance<BrokerEvent.GatewayUnreachable>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+    }
+
+    private fun ambiguousClose(id: String): OrderRequest.Market =
+        OrderRequest.Market(
+            id = id,
+            symbol = "EXNESS:EURUSD",
+            side = Side.SELL,
+            quantity = BigDecimal("0.10"),
+            timeInForce = TimeInForce.GTC,
+            timestamp = 1L,
+            strategyId = "s1",
+            closesTicket = "999",
+        )
+
+    private fun openPosition999(): String =
+        """[{"ticket":999,"symbol":"EURUSDm","type":0,"volume":"0.10","price_open":"1.1000",""" +
+            """"sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":1700000000000}]"""
+
+    private fun closeDealHistory(): String =
+        """[{"ticket":401,"order":301,"position_id":999,"symbol":"EURUSDm","type":1,"entry":1,""" +
+            """"volume":"0.10","price":"1.1050","profit":"50","commission":"-0.1","swap":"0",""" +
+            """"fee":"0","magic":10001,"comment":"close","time_msc":1700000000000}]"""
+
+    @Test
     fun `modifyPosition posts to modify_sl_tp and reports accepted`() {
         server.enqueue(
             MockResponse().setBody(
