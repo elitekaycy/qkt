@@ -30,6 +30,7 @@ dependencies {
     implementation(libs.snakeyaml.engine)
     implementation(libs.logback.classic)
     implementation(libs.lsp4j)
+    implementation(libs.apache.poi.ooxml)
     testImplementation(libs.logback.classic)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)

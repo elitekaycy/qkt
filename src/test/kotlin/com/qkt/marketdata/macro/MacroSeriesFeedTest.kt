@@ -60,4 +60,18 @@ class MacroSeriesFeedTest {
             utcMs(LocalDate.of(2024, 3, 6), 13) to BigDecimal("4.20"),
         )
     }
+
+    @Test
+    fun `explicit availability overrides the generic release schedule`() {
+        val availableAt = utcMs(LocalDate.of(2024, 3, 1), 7)
+        val feed =
+            MacroSeriesFeed(
+                qktSymbol = "MACRO:POLICY",
+                points = listOf(MacroPoint(LocalDate.of(2024, 3, 1), BigDecimal("4.35"), availableAt)),
+                fromMs = 0L,
+                toMs = Long.MAX_VALUE,
+            )
+
+        assertThat(drain(feed)).containsExactly(availableAt to BigDecimal("4.35"))
+    }
 }

@@ -37,6 +37,8 @@ import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
 import com.qkt.marketdata.store.dukascopy.DukascopyTickFetcher
 import com.qkt.marketdata.store.macro.FredSeriesFetcher
 import com.qkt.marketdata.store.macro.MacroSeriesStore
+import com.qkt.marketdata.store.macro.PolicyRateSeries
+import com.qkt.marketdata.store.macro.PolicyRateSeriesFetcher
 import com.qkt.research.ReplayEngine
 import java.math.BigDecimal
 import java.nio.file.Files
@@ -364,10 +366,16 @@ class BacktestContext private constructor(
                 if (macroStreams.isNotEmpty() && !noFetch && !provisionTo.isBefore(provisionFrom)) {
                     val macroStore = MacroSeriesStore(Paths.get(dataRoot))
                     val fredFetcher = FredSeriesFetcher(macroStore)
+                    val policyRateFetcher = PolicyRateSeriesFetcher(macroStore)
                     val macroFrom = provisionFrom.minusDays(90)
                     for (s in macroStreams) {
                         if (!macroStore.hasRange(s.symbol, macroFrom, provisionTo)) {
-                            fredFetcher.fetch(s.symbol, macroFrom, provisionTo)
+                            val policySeries = PolicyRateSeries.fromId(s.symbol)
+                            if (policySeries == null) {
+                                fredFetcher.fetch(s.symbol, macroFrom, provisionTo)
+                            } else {
+                                policyRateFetcher.fetch(policySeries, macroFrom, provisionTo)
+                            }
                         }
                     }
                 }
