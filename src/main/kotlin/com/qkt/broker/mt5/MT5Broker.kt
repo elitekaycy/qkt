@@ -73,6 +73,10 @@ class MT5Broker(
      * (multiplied by attempt number). Tests shrink it; production keeps the default.
      */
     private val unknownResolveBackoffMs: Long = 500L,
+    /** Clean restart-recovery venue reads required before startup may continue. */
+    private val recoveryReadAttempts: Int = 5,
+    /** Base linear backoff between restart-recovery venue reads. */
+    private val recoveryReadBackoffMs: Long = 500L,
     /**
      * Generates gateway placement ids. The default combines venue, strategy, and the
      * injected session-start time with a sequence, so ids do not restart at zero across
@@ -1212,16 +1216,24 @@ class MT5Broker(
 
     override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
         if (orders.isEmpty()) return
-        val pending =
-            client.getPendingOrders(magic = profile.magic) ?: run {
-                log.warn("MT5Broker ${profile.name} recovery: getPendingOrders failed")
-                return
-            }
-        val positions =
-            client.getPositions(magic = profile.magic) ?: run {
-                log.warn("MT5Broker ${profile.name} recovery: getPositions failed")
-                return
-            }
+        val snapshot =
+            readMT5RecoverySnapshot(
+                attempts = recoveryReadAttempts,
+                backoffMs = recoveryReadBackoffMs,
+                onFailedAttempt = { attempt, reason ->
+                    log.warn(
+                        "MT5Broker {} recovery read failed (attempt {}/{}): {}",
+                        profile.name,
+                        attempt,
+                        recoveryReadAttempts,
+                        reason,
+                    )
+                },
+                readPendingOrders = { client.getPendingOrders(magic = profile.magic) },
+                readPositions = { client.getPositions(magic = profile.magic) },
+            )
+        val pending = snapshot.pendingOrders
+        val positions = snapshot.positions
         val actions = classifyOcoRecovery(orders, pending.map { it.ticket }.toSet(), positions)
         // Pass 1: re-seed every still-pending leg before any fill is emitted, so a
         // cancel triggered by pass 2 can resolve its sibling's ticket.
@@ -1239,7 +1251,22 @@ class MT5Broker(
                     "MT5Broker ${profile.name} recovery: re-seeded pending leg ${a.order.id} ticket=${a.ticket}",
                 )
             }
+            if (a is OcoRecoveryAction.TrackVanished) {
+                registerPendingTicket(
+                    a.ticket,
+                    PendingMeta(
+                        a.order.id,
+                        a.order.request.strategyId,
+                        protectionFor(a.order.request),
+                    ),
+                )
+            }
         }
+        val vanishedTickets =
+            actions
+                .filterIsInstance<OcoRecoveryAction.TrackVanished>()
+                .mapTo(mutableSetOf()) { it.ticket }
+        pendingPoller.seedTrackedTickets(vanishedTickets)
         // Pass 2: republish the fill for any leg that filled while the daemon was down;
         // OrderManager's cancel-on-fill then unwinds the still-pending sibling.
         for (a in actions) {
@@ -1573,8 +1600,8 @@ class MT5Broker(
      *   3. If we don't track this ticket, it's an external pending (manual MetaTrader
      *      placement, another qkt instance with the same magic) — ignore.
      */
-    private fun onPendingDisappeared(ticket: Long) {
-        val meta = pendingByTicket[ticket] ?: return
+    private fun onPendingDisappeared(ticket: Long): Boolean {
+        val meta = pendingByTicket[ticket] ?: return true
 
         val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
         val recentlyFilledAt = recentlyFilledTickets[ticket]
@@ -1583,7 +1610,7 @@ class MT5Broker(
             pendingByTicket.remove(ticket)
             pendingTickets.entries.removeIf { it.value == ticket }
             recentlyFilledTickets.remove(ticket)
-            return
+            return true
         }
 
         // Cross-check /positions before treating as cancel. If the ticket is now a
@@ -1598,12 +1625,12 @@ class MT5Broker(
                         "deferring fill-vs-cancel resolution",
                     ticket,
                 )
-                return
+                return false
             }
         val asPosition = positionsNow.firstOrNull { it.ticket == ticket }
         if (asPosition != null) {
             onPendingPositionOpened(asPosition)
-            return
+            return true
         }
 
         pendingByTicket.remove(ticket)
@@ -1620,6 +1647,7 @@ class MT5Broker(
                 timestamp = clock.now(),
             ),
         )
+        return true
     }
 
     /**

@@ -176,13 +176,15 @@ class CompositeBroker(
     override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
         val byBroker = LinkedHashMap<Broker, MutableList<com.qkt.execution.ManagedOrder>>()
         for (order in orders) {
-            val target = brokerFor(order.request.symbol) ?: continue
+            val target =
+                brokerFor(order.request.symbol)
+                    ?: error("CompositeBroker recovery: no broker for ${order.request.symbol}")
             // Restore orderId → broker routing so a later cancel()/modify() of a recovered order
             // reaches the right leaf. Without this, OCO restart recovery is dead on a composite.
             orderIdToBroker[order.id] = target
             byBroker.getOrPut(target) { mutableListOf() }.add(order)
         }
-        for ((broker, group) in byBroker) runCatching { broker.recoverPendingOrders(group) }
+        for ((broker, group) in byBroker) broker.recoverPendingOrders(group)
     }
 
     private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
