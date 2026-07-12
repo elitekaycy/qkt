@@ -103,6 +103,7 @@ class MT5PositionPollerCloseTest {
         assertThat(fills.single().price).isEqualByComparingTo("95")
         assertThat(fills.single().clientOrderId).isEqualTo("entry-1")
         assertThat(fills.single().strategyId).isEqualTo("alpha")
+        assertThat(fills.single().updatesOrderExecution).isFalse()
     }
 
     @Test

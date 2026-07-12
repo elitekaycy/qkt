@@ -288,6 +288,7 @@ class MT5PositionPoller(
                 quantity = quantity,
                 strategyId = meta?.strategyId ?: "",
                 timestamp = now,
+                updatesOrderExecution = false,
                 venueCosts = venueCosts,
             ),
         )

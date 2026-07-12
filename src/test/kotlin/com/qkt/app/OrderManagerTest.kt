@@ -54,6 +54,63 @@ class OrderManagerTest {
             ),
         )
         assertThat(om.getOrder("m-1")?.state).isEqualTo(OrderState.FILLED)
+
+        bus.publish(
+            BrokerEvent.OrderCancelled(
+                clientOrderId = "m-1",
+                brokerOrderId = "b-1",
+                reason = "late cancel acknowledgement",
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "m-1",
+                brokerOrderId = "b-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                price = Money.of("1.20"),
+                quantity = Money.of("1"),
+            ),
+        )
+        val terminal = om.getOrder("m-1")!!
+        assertThat(terminal.state).isEqualTo(OrderState.FILLED)
+        assertThat(terminal.cumulativeFilledQuantity).isEqualByComparingTo("1")
+        assertThat(terminal.avgFillPrice).isEqualByComparingTo("1.10")
+    }
+
+    @Test
+    fun `cancelled order cannot flip to filled on a late event`() {
+        val bus = newBus()
+        val clock = FixedClock(0L)
+        val broker = LogBroker(bus, clock)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        om.submit(
+            OrderRequest.Limit(
+                id = "c-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("1.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        om.cancel("c-1")
+
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "c-1",
+                brokerOrderId = "c-1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                price = Money.of("1.10"),
+                quantity = Money.of("1"),
+            ),
+        )
+
+        val terminal = om.getOrder("c-1")!!
+        assertThat(terminal.state).isEqualTo(OrderState.CANCELLED)
+        assertThat(terminal.cumulativeFilledQuantity).isEqualByComparingTo("0")
     }
 
     @Test

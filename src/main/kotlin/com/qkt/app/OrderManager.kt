@@ -1547,29 +1547,29 @@ class OrderManager(
     private fun update(
         id: String,
         change: (ManagedOrder) -> ManagedOrder,
-    ) {
-        orders[id]?.let {
-            val wasTerminal = it.state.isTerminal
-            val updated = change(it)
-            // Terminal states are SINKS (OrderState's documented contract): a late or
-            // duplicate broker event must not resurrect a FILLED/CANCELLED order into
-            // a live one — that re-arms triggers and double-counts it downstream.
-            if (wasTerminal && !updated.state.isTerminal) {
-                log.error(
-                    "ignoring illegal state transition {} -> {} for order {} — terminal states are sinks",
-                    it.state,
-                    updated.state,
-                    id,
-                )
-                return
-            }
-            orders[id] = updated
-            indexLive(updated)
-            // Enqueue once, on the transition into terminal — a redundant terminal->terminal
-            // update (e.g. a replayed fill) must not re-queue the id.
-            if (updated.state.isTerminal && !wasTerminal) gcQueue.addLast(id)
+    ): Boolean {
+        val current = orders[id]
+        if (current == null) {
+            persistAll()
+            return false
         }
+        val updated = change(current)
+        // A terminal outcome is immutable. Same-state metadata updates remain valid: a
+        // filled stack entry still receives child ids when its protection is attached.
+        if (current.state.isTerminal && updated.state != current.state) {
+            log.error(
+                "ignoring illegal terminal transition {} -> {} for order {} — terminal outcomes are immutable",
+                current.state,
+                updated.state,
+                id,
+            )
+            return false
+        }
+        orders[id] = updated
+        indexLive(updated)
+        if (updated.state.isTerminal && !current.state.isTerminal) gcQueue.addLast(id)
         persistAll()
+        return true
     }
 
     /**
@@ -1670,17 +1670,19 @@ class OrderManager(
     }
 
     private fun onAccepted(e: BrokerEvent.OrderAccepted) {
-        update(e.clientOrderId) {
-            if (it.state == OrderState.PENDING) {
-                it.copy(brokerOrderId = e.brokerOrderId ?: it.brokerOrderId, lastUpdatedAt = clock.now())
-            } else {
-                it.copy(
-                    state = OrderState.WORKING,
-                    brokerOrderId = e.brokerOrderId ?: it.brokerOrderId,
-                    lastUpdatedAt = clock.now(),
-                )
+        val applied =
+            update(e.clientOrderId) {
+                if (it.state == OrderState.PENDING) {
+                    it.copy(brokerOrderId = e.brokerOrderId ?: it.brokerOrderId, lastUpdatedAt = clock.now())
+                } else {
+                    it.copy(
+                        state = OrderState.WORKING,
+                        brokerOrderId = e.brokerOrderId ?: it.brokerOrderId,
+                        lastUpdatedAt = clock.now(),
+                    )
+                }
             }
-        }
+        if (!applied) return
         log.info(
             "order accepted order_id={} strategy_id={} broker_order_id={}",
             e.clientOrderId,
@@ -1691,21 +1693,25 @@ class OrderManager(
     }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
-        update(e.clientOrderId) {
-            it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
-        }
+        val applied =
+            update(e.clientOrderId) {
+                it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
+            }
+        if (!applied) return
         failOcoOnReject(e.clientOrderId)
     }
 
     private fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
-        update(e.clientOrderId) {
-            it.copy(
-                state = OrderState.PARTIALLY_FILLED,
-                cumulativeFilledQuantity = e.cumulativeFilled,
-                avgFillPrice = blendAvg(it.avgFillPrice, it.cumulativeFilledQuantity, e.price, e.quantity),
-                lastUpdatedAt = clock.now(),
-            )
-        }
+        val applied =
+            update(e.clientOrderId) {
+                it.copy(
+                    state = OrderState.PARTIALLY_FILLED,
+                    cumulativeFilledQuantity = e.cumulativeFilled,
+                    avgFillPrice = blendAvg(it.avgFillPrice, it.cumulativeFilledQuantity, e.price, e.quantity),
+                    lastUpdatedAt = clock.now(),
+                )
+            }
+        if (!applied) return
         log.info(
             "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
             e.clientOrderId,
@@ -1719,15 +1725,34 @@ class OrderManager(
     }
 
     private fun onFilled(e: BrokerEvent.OrderFilled) {
-        update(e.clientOrderId) {
-            val newCumulative = it.cumulativeFilledQuantity + e.quantity
-            it.copy(
-                state = OrderState.FILLED,
-                cumulativeFilledQuantity = newCumulative,
-                avgFillPrice = blendAvg(it.avgFillPrice, it.cumulativeFilledQuantity, e.price, e.quantity),
-                lastUpdatedAt = clock.now(),
+        if (!e.updatesOrderExecution) {
+            log.info(
+                "position close observed order_id={} broker_order_id={} — terminal order record unchanged",
+                e.clientOrderId,
+                e.brokerOrderId,
             )
+            return
         }
+        val existing = orders[e.clientOrderId]
+        if (existing?.state?.isTerminal == true) {
+            log.error(
+                "ignoring duplicate fill for terminal order {} in state {} — cumulative execution is immutable",
+                e.clientOrderId,
+                existing.state,
+            )
+            return
+        }
+        val applied =
+            update(e.clientOrderId) {
+                val newCumulative = it.cumulativeFilledQuantity + e.quantity
+                it.copy(
+                    state = OrderState.FILLED,
+                    cumulativeFilledQuantity = newCumulative,
+                    avgFillPrice = blendAvg(it.avgFillPrice, it.cumulativeFilledQuantity, e.price, e.quantity),
+                    lastUpdatedAt = clock.now(),
+                )
+            }
+        if (!applied) return
         log.info(
             "order filled order_id={} strategy_id={} symbol={} side={} qty={} price={}",
             e.clientOrderId,
@@ -1818,9 +1843,11 @@ class OrderManager(
     }
 
     private fun onCancelled(e: BrokerEvent.OrderCancelled) {
-        update(e.clientOrderId) {
-            it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
-        }
+        val applied =
+            update(e.clientOrderId) {
+                it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
+            }
+        if (!applied) return
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
             e.clientOrderId,
