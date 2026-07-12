@@ -218,6 +218,27 @@ class SizingCompilerTest {
     }
 
     @Test
+    fun `risk sizing can consume a runtime-resolved stop distance`() {
+        val sizing =
+            compiler().compile(
+                SizeRiskFrac(NumLit(BigDecimal("0.01"))),
+                stopDistance = null,
+                streamAlias = "btc",
+                runtimeStopDistanceAvailable = true,
+            )
+
+        assertThat(
+            sizing.evaluate(
+                ecWithContractSize100,
+                entryPrice = BigDecimal("100"),
+                runtimeStopDistance = BigDecimal("5"),
+            ),
+        ).isEqualByComparingTo("0.2")
+        assertThatThrownBy { sizing.evaluate(ecWithContractSize100, BigDecimal("100")) }
+            .hasMessageContaining("positive runtime stop distance")
+    }
+
+    @Test
     fun `SizePositionFull returns absolute quantity when flat`() {
         val s = compiler().compile(SizePositionFull("btc"), stopDistance = null, streamAlias = "btc")
         assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"))).isEqualByComparingTo("0")

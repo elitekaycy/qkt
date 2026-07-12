@@ -17,10 +17,12 @@ import com.qkt.dsl.parse.ParseResult
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.marketdata.Candle
+import com.qkt.pnl.StrategyPnLView
 import com.qkt.strategy.Signal
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.Test
 
 class OrderSurfaceEndToEndTest {
@@ -41,6 +43,24 @@ class OrderSurfaceEndToEndTest {
             BigDecimal.ZERO,
             0L,
             60_000L,
+        )
+
+    private fun fundedContext() =
+        testStrategyContext(
+            pnl =
+                object : StrategyPnLView {
+                    override fun realized(): BigDecimal = BigDecimal.ZERO
+
+                    override fun unrealizedFor(symbol: String): BigDecimal = BigDecimal.ZERO
+
+                    override fun unrealizedTotal(): BigDecimal = BigDecimal.ZERO
+
+                    override fun total(): BigDecimal = BigDecimal.ZERO
+
+                    override fun equity(): BigDecimal = BigDecimal("10000")
+
+                    override fun balance(): BigDecimal = BigDecimal("10000")
+                },
         )
 
     @Test
@@ -155,5 +175,61 @@ class OrderSurfaceEndToEndTest {
         val bracket = req.request as OrderRequest.Bracket
         assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("96")
         assertThat(bracket.takeProfit).isEqualByComparingTo("111")
+    }
+
+    @Test
+    fun `risk sizing uses runtime AT expression BY expression and PCT stop distances`() {
+        val stopForms =
+            listOf(
+                "AT btc.close - 5",
+                "BY btc.close / 20",
+                "PCT 5",
+            )
+
+        for (stopForm in stopForms) {
+            val strategy =
+                compile(
+                    """
+                    STRATEGY runtime_risk VERSION 1
+                    SYMBOLS
+                      btc = BACKTEST:BTCUSDT EVERY 1m
+                    RULES
+                      WHEN btc.close > 0
+                      THEN BUY btc SIZING 1 PCT RISK BRACKET {
+                        STOP LOSS $stopForm,
+                        TAKE PROFIT RR 2
+                      }
+                    """.trimIndent(),
+                )
+            val captured = mutableListOf<Signal>()
+
+            strategy.onCandle(candle("100"), fundedContext(), captured::add)
+
+            val bracket = (captured.single() as Signal.Submit).request as OrderRequest.Bracket
+            assertThat(bracket.quantity).describedAs(stopForm).isEqualByComparingTo("20")
+            assertThat((bracket.stopLoss as StopLossSpec.Fixed).price)
+                .describedAs(stopForm)
+                .isEqualByComparingTo("95")
+            assertThat(bracket.takeProfit).describedAs(stopForm).isEqualByComparingTo("110")
+        }
+    }
+
+    @Test
+    fun `documented ATR stop compiles with percent risk sizing`() {
+        assertThatCode {
+            compile(
+                """
+                STRATEGY atr_risk VERSION 1
+                SYMBOLS
+                  btc = BACKTEST:BTCUSDT EVERY 1m WARMUP 20 BARS
+                RULES
+                  WHEN btc.close > 0
+                  THEN BUY btc SIZING 0.5 PCT RISK BRACKET {
+                    STOP LOSS AT btc.close - atr(btc, 14) * 2,
+                    TAKE PROFIT RR 3
+                  }
+                """.trimIndent(),
+            )
+        }.doesNotThrowAnyException()
     }
 }

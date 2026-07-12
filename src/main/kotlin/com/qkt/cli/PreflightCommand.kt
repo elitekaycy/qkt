@@ -6,6 +6,7 @@ import com.qkt.broker.mt5.MT5Client
 import com.qkt.broker.mt5.MT5Symbol
 import com.qkt.cli.daemon.StateDir
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -92,14 +93,40 @@ object ProductionPreflight {
                                 "${file.ast.name} v${file.ast.version}",
                             ),
                         )
-                        PreflightTarget(strategyAsts = listOf(file.ast))
+                        try {
+                            AstCompiler().compile(file.ast)
+                            add(
+                                PreflightCheck(
+                                    "strategy.compile",
+                                    PreflightStatus.PASS,
+                                    "${file.ast.name} v${file.ast.version}",
+                                ),
+                            )
+                            PreflightTarget(strategyAsts = listOf(file.ast))
+                        } catch (e: Exception) {
+                            add(
+                                PreflightCheck(
+                                    "strategy.compile",
+                                    PreflightStatus.FAIL,
+                                    e.message ?: e.toString(),
+                                ),
+                            )
+                            null
+                        }
                     }
-                    is ParsedFile.PortfolioFile ->
+                    is ParsedFile.PortfolioFile -> {
+                        add(
+                            PreflightCheck(
+                                "strategy.parse",
+                                PreflightStatus.PASS,
+                                "${file.ast.name} portfolio v${file.ast.version}",
+                            ),
+                        )
                         try {
                             val compiled = PortfolioLoader.load(path)
                             add(
                                 PreflightCheck(
-                                    "strategy.parse",
+                                    "strategy.compile",
                                     PreflightStatus.PASS,
                                     "${file.ast.name} portfolio v${file.ast.version} (${compiled.children.size} child strategies)",
                                 ),
@@ -111,13 +138,14 @@ object ProductionPreflight {
                         } catch (e: Exception) {
                             add(
                                 PreflightCheck(
-                                    "strategy.parse",
+                                    "strategy.compile",
                                     PreflightStatus.FAIL,
                                     e.message ?: e.toString(),
                                 ),
                             )
                             null
                         }
+                    }
                 }
             }
             is ParseResult.Failure -> {
