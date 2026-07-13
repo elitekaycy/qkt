@@ -466,6 +466,42 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `shared read cache collapses account snapshots and writes invalidate it`() {
+        client =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                serverTimeZone = MT5ServerTimeZone.UTC,
+                retryAttempts = 0,
+                readCache = MT5ReadCache(ttlMs = 60_000L),
+            )
+        val account =
+            """{"balance":1000.0,"equity":1000.0,"currency":"USD","leverage":100,"margin_mode":2}"""
+        server.enqueue(MockResponse().setBody(account))
+
+        assertThat(client.getAccount()).isNotNull
+        assertThat(client.getAccount()).isNotNull
+        assertThat(server.requestCount).isEqualTo(1)
+
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
+            ),
+        )
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.01"),
+                type = "BUY",
+                magic = 10001,
+                comment = "cache-test",
+            ),
+        )
+        server.enqueue(MockResponse().setBody(account))
+        assertThat(client.getAccount()).isNotNull
+        assertThat(server.requestCount).isEqualTo(3)
+    }
+
+    @Test
     fun `closePosition posts the ticket and parses the close deal`() {
         server.enqueue(
             MockResponse().setBody(

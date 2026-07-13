@@ -10,6 +10,7 @@ import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.marketdata.source.ReplayMarketSource
+import com.qkt.marketdata.source.SharedLiveMarketSource
 import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.macro.MacroSeriesStore
@@ -55,7 +56,10 @@ object MarketSourceFactory {
                 MacroMarketSource(MacroSeriesStore(DataRoot.resolve())),
         )
         for (p in mt5Profiles) {
-            routes.add(SymbolPattern.prefix("${p.name.uppercase()}:") to Mt5MarketSource(p))
+            routes.add(
+                SymbolPattern.prefix("${p.name.uppercase()}:") to
+                    SharedLiveMarketSource(Mt5MarketSource(p)),
+            )
         }
         if (enableBybit) {
             routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())

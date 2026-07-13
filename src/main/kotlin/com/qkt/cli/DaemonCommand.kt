@@ -1,6 +1,8 @@
 package com.qkt.cli
 
 import com.qkt.broker.mt5.MT5AccountVerifier
+import com.qkt.broker.mt5.MT5Client
+import com.qkt.broker.mt5.MT5ReadCache
 import com.qkt.broker.mt5.MT5TradeMode
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
@@ -195,6 +197,15 @@ class DaemonCommand(
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
                 val key = profileLabel.lowercase()
+                val sharedClient =
+                    MT5Client(
+                        gatewayUrl = profile.gatewayUrl,
+                        serverTimeZone = profile.serverTimeZone,
+                        httpTimeoutMs = profile.httpTimeoutMs,
+                        retryAttempts = profile.retryAttempts,
+                        apiKey = profile.apiKey,
+                        readCache = MT5ReadCache(SHARED_MT5_READ_TTL_MS),
+                    )
                 key to
                     { bus, clock, priceTracker, _, strategyName ->
                         val siblingsLookup: () -> List<String> = {
@@ -221,6 +232,7 @@ class DaemonCommand(
                                 bus = bus,
                                 clock = clock,
                                 priceTracker = priceTracker,
+                                client = sharedClient,
                                 strategyName = strategyName,
                                 siblingsLookup = siblingsLookup,
                             )
@@ -549,6 +561,9 @@ class DaemonCommand(
     private fun controlClient(stateDir: StateDir): ControlClient = ControlClient(stateDir)
 
     companion object {
+        /** Below the 1s venue poll cadence: collapses sibling reads without hiding a poll round. */
+        private const val SHARED_MT5_READ_TTL_MS: Long = 500L
+
         @Suppress("UNUSED_PARAMETER")
         fun defaultTradingViewSource(symbols: List<String>): MarketSource = TradingViewMarketSource.connect()
     }
