@@ -1,7 +1,10 @@
 # Bot trade CLI — one-shot manual/AI trading surface
 
 Date: 2026-07-13
-Status: Draft — awaiting approval
+Status: Implemented (feature/bot-trade-cli). Deltas from the draft: DAY TIF becomes an
+explicit end-of-UTC-day expiration on the wire; `bot modify` preserves the untouched
+SL/TP level by reading the position first; query verbs without a symbol take
+`--broker`; user-facing cookbook lives at `docs/reference/bot-cli.md`.
 
 ## Why
 
