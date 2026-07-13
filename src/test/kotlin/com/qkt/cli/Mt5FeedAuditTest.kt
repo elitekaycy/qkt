@@ -2,6 +2,9 @@ package com.qkt.cli
 
 import com.qkt.broker.mt5.MT5Tick
 import java.math.BigDecimal
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -74,6 +77,42 @@ class Mt5FeedAuditTest {
         assertThat(result.exactPriceMatches).isEqualTo(1)
         assertThat(result.invalidLiveQuotes).isEqualTo(1)
         assertThat(result.passed).isFalse()
+    }
+
+    @Test
+    fun `artifact records capture parameters and exact comparison result`() {
+        val venueTick = tick(1_100, "1.1000", "1.1002")
+        val result =
+            Mt5FeedAudit.compare(
+                symbol = "EXNESS:EURUSD",
+                startedAtMs = 1_000,
+                endedAtMs = 2_000,
+                observations = listOf(ObservedMt5Tick(1_150, venueTick)),
+                history = listOf(venueTick),
+            )
+
+        val artifact =
+            Json
+                .parseToJsonElement(
+                    Mt5FeedAudit.artifactJson(
+                        result = result,
+                        venueSymbol = "EURUSDm",
+                        profileName = "exness",
+                        durationSeconds = 600,
+                        pollMs = 250,
+                        settleMs = 15_000,
+                    ),
+                ).jsonObject
+
+        assertThat(artifact.getValue("schema").jsonPrimitive.content)
+            .isEqualTo("qkt-mt5-live-history-audit-v1")
+        assertThat(artifact.getValue("venue_symbol").jsonPrimitive.content).isEqualTo("EURUSDm")
+        assertThat(artifact.getValue("mt5_profile").jsonPrimitive.content).isEqualTo("exness")
+        assertThat(artifact.getValue("duration_seconds").jsonPrimitive.content).isEqualTo("600")
+        assertThat(artifact.getValue("poll_ms").jsonPrimitive.content).isEqualTo("250")
+        assertThat(artifact.getValue("settle_ms").jsonPrimitive.content).isEqualTo("15000")
+        assertThat(artifact.getValue("exact_match_ratio").jsonPrimitive.content).isEqualTo("1")
+        assertThat(artifact.getValue("passed").jsonPrimitive.content).isEqualTo("true")
     }
 
     private fun tick(

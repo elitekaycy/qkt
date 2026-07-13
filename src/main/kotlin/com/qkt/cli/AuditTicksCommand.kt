@@ -11,10 +11,7 @@ import java.math.MathContext
 import java.math.RoundingMode
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /**
  * `qkt audit-ticks` — operator tool that compares TradingView ticks with the MT5 gateway,
@@ -40,7 +37,7 @@ class AuditTicksCommand(
         val profileName = args.option("mt5-profile") ?: "exness"
         val pollMs = args.option("poll-ms")?.toLongOrNull() ?: 250L
         val reference = args.option("reference") ?: "tradingview"
-        val settleMs = args.option("settle-ms")?.toLongOrNull() ?: 5_000L
+        val settleMs = args.option("settle-ms")?.toLongOrNull() ?: DEFAULT_MT5_HISTORY_SETTLE_MS
         if (duration <= 0L) return invalid("duration", "must be positive")
         if (pollMs <= 0L) return invalid("poll-ms", "must be positive")
         if (settleMs < 0L) return invalid("settle-ms", "must be non-negative")
@@ -104,7 +101,15 @@ class AuditTicksCommand(
         val mt5InputSymbol = Mt5FeedAudit.inputSymbol(symbol, args.option("mt5-symbol"))
         val brokerSymbol = mt5Symbol.toBroker(mt5InputSymbol)
         if (reference == "mt5-history") {
-            return runMt5HistoryAudit(mt5Client, brokerSymbol, symbol, duration, pollMs, settleMs)
+            return runMt5HistoryAudit(
+                client = mt5Client,
+                brokerSymbol = brokerSymbol,
+                qktSymbol = symbol,
+                profileName = profileName,
+                durationSeconds = duration,
+                pollMs = pollMs,
+                settleMs = settleMs,
+            )
         }
 
         val tvLatest = AtomicReference<Tick?>(null)
@@ -183,6 +188,7 @@ class AuditTicksCommand(
         client: MT5Client,
         brokerSymbol: String,
         qktSymbol: String,
+        profileName: String,
         durationSeconds: Long,
         pollMs: Long,
         settleMs: Long,
@@ -211,35 +217,15 @@ class AuditTicksCommand(
                 System.err.println("qkt audit-ticks: ${error.message}")
                 return ExitCodes.USER_ERROR
             }
-        val exactRatio =
-            if (result.uniqueLiveTicks == 0) {
-                BigDecimal.ZERO
-            } else {
-                BigDecimal(result.exactPriceMatches)
-                    .divide(BigDecimal(result.uniqueLiveTicks), MC)
-            }
         val json =
-            buildJsonObject {
-                put("schema", "qkt-mt5-live-history-audit-v1")
-                put("symbol", result.symbol)
-                put("started_at_utc", Instant.ofEpochMilli(result.startedAtMs).toString())
-                put("ended_at_utc", Instant.ofEpochMilli(result.endedAtMs).toString())
-                put("poll_samples", result.pollSamples)
-                put("unique_live_ticks", result.uniqueLiveTicks)
-                put("history_ticks", result.historyTicks)
-                put("exact_timestamp_matches", result.exactTimestampMatches)
-                put("exact_price_matches", result.exactPriceMatches)
-                put("exact_match_ratio", exactRatio.toPlainString())
-                put("timestamp_price_mismatches", result.timestampPriceMismatches)
-                put("missing_from_history", result.missingFromHistory)
-                put("invalid_live_quotes", result.invalidLiveQuotes)
-                put("quote_age_median_ms", result.quoteAgeMs.median)
-                put("quote_age_p95_ms", result.quoteAgeMs.p95)
-                put("quote_age_max_ms", result.quoteAgeMs.max)
-                put("median_spread", result.medianSpread.toPlainString())
-                put("max_spread", result.maxSpread.toPlainString())
-                put("passed", result.passed)
-            }.toString()
+            Mt5FeedAudit.artifactJson(
+                result = result,
+                venueSymbol = brokerSymbol,
+                profileName = profileName,
+                durationSeconds = durationSeconds,
+                pollMs = pollMs,
+                settleMs = settleMs,
+            )
         if (args.flag("json")) {
             println(json)
         } else {
@@ -286,5 +272,6 @@ class AuditTicksCommand(
 
     companion object {
         private val MC = MathContext(8, RoundingMode.HALF_EVEN)
+        private const val DEFAULT_MT5_HISTORY_SETTLE_MS = 15_000L
     }
 }

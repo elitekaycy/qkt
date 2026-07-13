@@ -2,6 +2,11 @@ package com.qkt.cli
 
 import com.qkt.broker.mt5.MT5Tick
 import java.math.BigDecimal
+import java.math.MathContext
+import java.math.RoundingMode
+import java.time.Instant
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 internal data class ObservedMt5Tick(
     val observedAtMs: Long,
@@ -94,6 +99,50 @@ internal object Mt5FeedAudit {
         )
     }
 
+    fun artifactJson(
+        result: Mt5FeedAuditResult,
+        venueSymbol: String,
+        profileName: String,
+        durationSeconds: Long,
+        pollMs: Long,
+        settleMs: Long,
+    ): String {
+        val exactRatio =
+            if (result.uniqueLiveTicks == 0) {
+                BigDecimal.ZERO
+            } else {
+                BigDecimal(result.exactPriceMatches)
+                    .divide(BigDecimal(result.uniqueLiveTicks), MATH_CONTEXT)
+            }
+        return buildJsonObject {
+            put("schema", "qkt-mt5-live-history-audit-v1")
+            put("symbol", result.symbol)
+            put("venue_symbol", venueSymbol)
+            put("mt5_profile", profileName)
+            put("reference", "mt5-history")
+            put("duration_seconds", durationSeconds)
+            put("poll_ms", pollMs)
+            put("settle_ms", settleMs)
+            put("started_at_utc", Instant.ofEpochMilli(result.startedAtMs).toString())
+            put("ended_at_utc", Instant.ofEpochMilli(result.endedAtMs).toString())
+            put("poll_samples", result.pollSamples)
+            put("unique_live_ticks", result.uniqueLiveTicks)
+            put("history_ticks", result.historyTicks)
+            put("exact_timestamp_matches", result.exactTimestampMatches)
+            put("exact_price_matches", result.exactPriceMatches)
+            put("exact_match_ratio", exactRatio.toPlainString())
+            put("timestamp_price_mismatches", result.timestampPriceMismatches)
+            put("missing_from_history", result.missingFromHistory)
+            put("invalid_live_quotes", result.invalidLiveQuotes)
+            put("quote_age_median_ms", result.quoteAgeMs.median)
+            put("quote_age_p95_ms", result.quoteAgeMs.p95)
+            put("quote_age_max_ms", result.quoteAgeMs.max)
+            put("median_spread", result.medianSpread.toPlainString())
+            put("max_spread", result.maxSpread.toPlainString())
+            put("passed", result.passed)
+        }.toString()
+    }
+
     private fun MT5Tick.identity(): String = "$timeMs|${bid.toPlainString()}|${ask.toPlainString()}"
 
     private fun distribution(values: List<Long>): MillisecondDistribution {
@@ -104,4 +153,6 @@ internal object Mt5FeedAudit {
             max = sorted.last(),
         )
     }
+
+    private val MATH_CONTEXT = MathContext(8, RoundingMode.HALF_EVEN)
 }
