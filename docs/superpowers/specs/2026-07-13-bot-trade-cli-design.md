@@ -46,9 +46,12 @@ qkt bot modify --ticket N [--sl <spec>] [--tp <spec>]
 qkt bot cancel --order N | --all [--symbol S]
 ```
 
-- Positional sizing is raw lots. `--sizing "<dsl sizing>"` accepts any DSL sizing
-  expression (`1% RISK`, `2% EQUITY`, notional); live equity is fetched from the
-  broker at compile time to resolve it.
+- Positional sizing is raw lots. `--sizing "<dsl sizing>"` accepts the literal DSL
+  sizing forms (`1% RISK`, `2% EQUITY`, `2% BALANCE`, `RISK $50`); live equity is
+  fetched from the broker at compile time to resolve them. One-shot restriction:
+  percentage/risk sizing requires the instrument's quote currency to equal the
+  account currency (no point-in-time FX service exists one-shot) — otherwise the
+  command rejects with a clear error and asks for explicit lots.
 - Entry: market by default; `--limit <px>`, `--stop <px>`, `--stop-limit
   <trigger>:<limit>` for pendings. `--tif GTC|DAY|GTD` with `--expires <iso>` for GTD.
 - `--sl`/`--tp` specs mirror the DSL child-price forms:
@@ -74,17 +77,31 @@ visible too, which is what an overseeing agent wants.
 
 ## Compile path detail
 
-`qkt bot buy 0.5 EXNESS:XAUUSD --sl by:30 --tp by:60` renders to canonical DSL:
+`qkt bot buy 0.5 EXNESS:XAUUSD --sl by:30 --tp by:60` renders to a complete canonical
+strategy (the action grammar references instruments by stream alias, so the canonical
+artifact is a full, `qkt parse`-valid `.qkt` source):
 
 ```
-BUY EXNESS:XAUUSD SIZING 0.5 BRACKET { STOP LOSS BY 30, TAKE PROFIT BY 60 }
+STRATEGY bot VERSION 1
+SYMBOLS ( x = "EXNESS:XAUUSD" TF 1m )
+WHEN true THEN
+  BUY x SIZING 0.5 BRACKET { STOP LOSS BY 30, TAKE PROFIT BY 60 }
 ```
 
-Flow: renderer → `Dsl.parseAction(text)` (new rule-less parser entry point reusing the
-existing action grammar; grammar itself unchanged) → `ActionCompiler` with a one-shot
-context (live equity, instrument metadata) → `Signal.Submit(OrderRequest.Bracket(...))`
-→ pre-trade validation → broker submit (venue-attached SL/TP) → ack → egress/journal
-→ exit.
+Flow: renderer → `Dsl.parse(source)` (the standard parser, grammar unchanged) →
+extract the single rule's `ActionAst` → `BotActionCompiler` (a one-shot compiler for
+the literal subset of `ActionAst`: numeric sizing / % EQUITY / % BALANCE / % RISK,
+bracket AT/BY/PCT/RR, LIMIT/STOP entries, TIF) → `OrderRequest` → pre-trade
+validation → synchronous venue submit (`MT5Client.placeOrder`, venue-attached SL/TP)
+→ ack → egress/journal → exit.
+
+The full `ActionCompiler` is not reused: it evaluates against a live `EvalContext`
+(candle hub, positions, pnl) that does not exist one-shot. `BotActionCompiler`
+compiles the same AST types, so grammar and versioning stay shared; non-literal
+expressions in sizing/prices are rejected fail-closed. Likewise `MT5Broker` is not
+used one-shot (async submit via bus, background pollers on construction) — the bot
+gateway calls the synchronous `MT5Client` endpoints directly, the same pattern
+`audit-ticks`/`fetch`/`brokers` already use.
 
 The canonical text, its sha256, the qkt version, the `--as` id, and the raw argv are
 recorded on every trade. Identity model matches deployed strategies: name + source
