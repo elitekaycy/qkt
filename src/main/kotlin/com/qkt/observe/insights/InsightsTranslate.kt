@@ -437,6 +437,52 @@ object InsightsTranslate {
                                 "swap" to p.swap,
                                 "openedAt" to p.openedAt,
                                 "strategyId" to p.strategyId,
+                                "stopLoss" to p.stopLoss,
+                                "takeProfit" to p.takeProfit,
+                                "requestedStopLoss" to p.requestedStopLoss,
+                                "requestedTakeProfit" to p.requestedTakeProfit,
+                                "magic" to p.magic,
+                                "clientOrderId" to p.clientOrderId,
+                            )
+                        },
+                ),
+        )
+
+    /**
+     * Resting venue orders snapshot ("state.orders"), full-replace semantics like
+     * "state.positions": a pending order that filled, expired, or was cancelled since
+     * the last poll simply stops appearing.
+     */
+    fun stateOrders(
+        ts: Long,
+        broker: String,
+        orders: List<StatePendingOrder>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "pord-$broker-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "state.orders",
+            payload =
+                mapOf(
+                    "broker" to broker,
+                    "orders" to
+                        orders.map { o ->
+                            mapOf(
+                                "ticket" to o.ticket,
+                                "symbol" to o.symbol,
+                                "side" to o.side,
+                                "orderType" to o.orderType,
+                                "qty" to o.qty,
+                                "price" to o.price,
+                                "stopLoss" to o.stopLoss,
+                                "takeProfit" to o.takeProfit,
+                                "expiresAt" to o.expiresAt,
+                                "createdAt" to o.createdAt,
+                                "magic" to o.magic,
+                                "clientOrderId" to o.clientOrderId,
+                                "strategyId" to o.strategyId,
                             )
                         },
                 ),
@@ -496,6 +542,8 @@ object InsightsTranslate {
                     "profit" to d.profit,
                     "commission" to d.commission,
                     "swap" to d.swap,
+                    "fee" to d.fee,
+                    "clientOrderId" to d.clientOrderId,
                     "magic" to d.magic,
                     "comment" to d.comment,
                     "ts" to d.ts,
@@ -818,4 +866,31 @@ data class StatePosition(
     val swap: BigDecimal?,
     val openedAt: Long?,
     val strategyId: String?,
+    /** Venue-side protective levels; null when unsupported, zero when absent on MT5. */
+    val stopLoss: BigDecimal? = null,
+    val takeProfit: BigDecimal? = null,
+    /** What qkt last requested — differs from venue truth while a modify is in flight. */
+    val requestedStopLoss: BigDecimal? = null,
+    val requestedTakeProfit: BigDecimal? = null,
+    val magic: Int? = null,
+    val clientOrderId: String? = null,
+)
+
+/** One resting venue order as the "state.orders" payload carries it. */
+data class StatePendingOrder(
+    val ticket: String,
+    val symbol: String,
+    /** "BUY" or "SELL". */
+    val side: String,
+    /** Venue order type string, e.g. "ORDER_TYPE_BUY_LIMIT". */
+    val orderType: String,
+    val qty: BigDecimal,
+    val price: BigDecimal?,
+    val stopLoss: BigDecimal? = null,
+    val takeProfit: BigDecimal? = null,
+    val expiresAt: Long? = null,
+    val createdAt: Long? = null,
+    val magic: Int? = null,
+    val clientOrderId: String? = null,
+    val strategyId: String? = null,
 )
