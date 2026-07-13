@@ -5,6 +5,7 @@ import com.qkt.backtest.Backtest
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.execution.Trade
+import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
@@ -142,8 +143,22 @@ class BacktestLiveParityTest {
             prices.mapIndexed { index, price ->
                 Tick("BACKTEST:BTCUSDT", Money.of(price), initialTs + index * 60_000L)
             }
+        val firstWindowStart = initialTs - Math.floorMod(initialTs, 60_000L)
+        val warmupCandles =
+            (3 downTo 1).map { offset ->
+                Candle(
+                    symbol = "BACKTEST:BTCUSDT",
+                    open = BigDecimal("100"),
+                    high = BigDecimal("100"),
+                    low = BigDecimal("100"),
+                    close = BigDecimal("100"),
+                    volume = BigDecimal.ZERO,
+                    startTime = firstWindowStart - offset * 60_000L,
+                    endTime = firstWindowStart - (offset - 1) * 60_000L,
+                )
+            }
 
-        val result = DslParityHarness.run("candle_bracket", dsl, tape)
+        val result = DslParityHarness.run("candle_bracket", dsl, tape, warmupCandles)
 
         assertThat(result.backtest.trades).isNotEmpty
         assertThat(result.live).isEqualTo(result.backtest)

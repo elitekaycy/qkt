@@ -17,6 +17,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.marketdata.source.candleToTicks
 import com.qkt.risk.HaltRule
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
@@ -69,19 +70,21 @@ internal object DslParityHarness {
         strategyId: String,
         source: String,
         ticks: List<Tick>,
+        warmupCandles: List<Candle> = emptyList(),
         candleWindow: TimeWindow = TimeWindow.ONE_MINUTE,
         startingBalance: BigDecimal = BigDecimal("10000"),
         haltRules: () -> List<HaltRule> = { emptyList() },
     ): Result {
         require(ticks.isNotEmpty()) { "parity tape must not be empty" }
         val symbols = ticks.map { it.symbol }.distinct()
+        val backtestTicks = warmupCandles.flatMap(::candleToTicks) + ticks
         val backtestResult =
             Backtest(
                 strategies = listOf(strategyId to compile(source)),
                 haltRules = haltRules(),
-                ticks = ticks,
+                ticks = backtestTicks,
                 candleWindow = candleWindow,
-                initialTimestamp = ticks.first().timestamp,
+                initialTimestamp = backtestTicks.first().timestamp,
                 startingBalance = startingBalance,
             ).run()
         val backtest =
@@ -117,7 +120,7 @@ internal object DslParityHarness {
             LiveSession(
                 strategies = listOf(strategyId to compile(source)),
                 haltRules = haltRules(),
-                source = TapeSource(ticks),
+                source = TapeSource(ticks, warmupCandles),
                 symbols = symbols,
                 candleWindow = candleWindow,
                 clock = liveClock,
@@ -183,6 +186,7 @@ internal object DslParityHarness {
 
     private class TapeSource(
         private val ticks: List<Tick>,
+        private val warmupCandles: List<Candle>,
     ) : MarketSource {
         override val name: String = "DslParityTape"
         override val capabilities: Set<MarketSourceCapability> =
@@ -203,6 +207,11 @@ internal object DslParityHarness {
             symbol: String,
             window: TimeWindow,
             range: com.qkt.common.TimeRange,
-        ): Sequence<Candle> = emptySequence()
+        ): Sequence<Candle> =
+            warmupCandles.asSequence().filter {
+                it.symbol == symbol &&
+                    it.startTime >= range.from.toEpochMilli() &&
+                    it.startTime < range.to.toEpochMilli()
+            }
     }
 }

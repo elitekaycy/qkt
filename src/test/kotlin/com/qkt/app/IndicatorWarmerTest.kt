@@ -172,6 +172,7 @@ class IndicatorWarmerTest {
             "X",
             TimeWindow.ONE_MINUTE,
             listOf(
+                candle("99", Instant.parse("2024-01-15T14:58:00Z").toEpochMilli()),
                 candle("100", rightBeforeNow),
                 candle("999", Instant.parse("2024-01-15T15:00:00Z").toEpochMilli()),
             ),

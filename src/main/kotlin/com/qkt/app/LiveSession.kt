@@ -9,7 +9,6 @@ import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
-import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.HubKey
@@ -242,6 +241,7 @@ class LiveSession(
         hub: com.qkt.dsl.compile.CandleHub,
         perStreamSpecs: Map<WarmupStream, WarmupSpec>,
         now: Instant,
+        history: WarmupHistoryLoader,
     ) {
         // Resolve each owning DSL alias by exact symbol + timeframe; same-symbol aliases on
         // different windows must fetch and seed independently.
@@ -257,12 +257,11 @@ class LiveSession(
                         else -> continue // Duration / Ticks handled by IndicatorWarmer; skip seed
                     }
                 val upperMs = barSpec.window.windowStartFor(now.toEpochMilli())
-                val totalMs = barSpec.window.durationMs * barSpec.count
-                val lowerMs = upperMs - totalMs
-                val range = TimeRange(Instant.ofEpochMilli(lowerMs), Instant.ofEpochMilli(upperMs))
                 val candles =
                     try {
-                        source.bars(symbol, barSpec.window, range).toList()
+                        history.load(symbol, barSpec.window, barSpec.count, upperMs)
+                    } catch (e: WarmupUnderfilledException) {
+                        throw e
                     } catch (e: Exception) {
                         throw WarmupFailedException(alias, symbol, e)
                     }
@@ -1052,6 +1051,7 @@ class LiveSession(
                 .CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
+        val warmupHistory = WarmupHistoryLoader(source)
 
         // Phase 25B: per-stream pre-fetch + hub seeding for DSL strategies. Seeding
         // must happen BEFORE TradingPipeline binds strategies to the hub: bindToHub
@@ -1076,7 +1076,7 @@ class LiveSession(
                     pipelineCandleHub.register(key, maxOf(retention, warmupBars), strategyId)
                 }
             }
-            seedHubFromHistory(strategies, pipelineCandleHub, perStreamSpecs, now)
+            seedHubFromHistory(strategies, pipelineCandleHub, perStreamSpecs, now, warmupHistory)
         }
 
         // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
@@ -1208,7 +1208,7 @@ class LiveSession(
         }
 
         if (perStreamSpecs.isNotEmpty()) {
-            IndicatorWarmer(source, pipeline).warmup(perStreamSpecs, now)
+            IndicatorWarmer(source, pipeline, warmupHistory).warmup(perStreamSpecs, now)
         } else {
             val effectiveWarmup =
                 warmupOverride
@@ -1218,7 +1218,7 @@ class LiveSession(
                         .maxByOrNull { it.warmup.windowMs(now) }
                         ?.warmup
                     ?: WarmupSpec.None
-            IndicatorWarmer(source, pipeline).warmup(symbols, effectiveWarmup, now)
+            IndicatorWarmer(source, pipeline, warmupHistory).warmup(symbols, effectiveWarmup, now)
         }
         riskState.warmupComplete = true
 
