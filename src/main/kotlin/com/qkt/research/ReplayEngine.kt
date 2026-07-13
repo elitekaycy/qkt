@@ -72,6 +72,8 @@ class ReplayEngine(
     symbols: List<String> = emptyList(),
     cadence: SampleCadence? = null,
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
+    /** Optional per-strategy capital bases; absent ids inherit [startingBalance]. */
+    private val startingBalances: Map<String, BigDecimal> = emptyMap(),
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     private val accountingConfig: AccountingConfig = AccountingConfig(),
     private val tradedSymbols: List<String> = symbols,
@@ -159,7 +161,9 @@ class ReplayEngine(
                 accounting = accounting,
                 markTimestamp = { currentTimestamp },
             )
-        for ((id, _) in strategies) strategyPnL.setStartingBalance(id, startingBalance)
+        for ((id, _) in strategies) {
+            strategyPnL.setStartingBalance(id, startingBalances[id] ?: startingBalance)
+        }
         val bus = EventBus(clock, sequencer)
         val engine = Engine(bus, priceTracker)
         val candleHub =
