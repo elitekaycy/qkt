@@ -30,8 +30,8 @@ import org.junit.jupiter.api.io.TempDir
  *    that maps "exness" → MT5Broker
  * 3. A strategy declaring `EXNESS:EURUSD` is deployed
  * 4. Ticks driving the strategy's BUY rule are fed via FakeSource
- * 5. We assert the gateway received an order POST translated to broker-side
- *    symbol "EURUSDm" with the configured magic
+ * 5. We assert the gateway received the translated order and, in the round-trip
+ *    case, the close-by-ticket request after the entry fill reached strategy state
  *
  * Validates Phase 17 (broker) + Phase 18 (typed dispatch) work end-to-end via the daemon.
  */
@@ -40,11 +40,15 @@ class MT5DaemonE2ETest {
 
     private class BoundedFeed(
         private val ticks: List<Tick>,
+        private val delayMs: Long = 0L,
+        private val endDelayMs: Long = 0L,
     ) : TickFeed {
         private val idx = AtomicInteger(0)
 
         override fun next(): Tick? {
             val i = idx.getAndIncrement()
+            if (i > 0 && i < ticks.size && delayMs > 0L) Thread.sleep(delayMs)
+            if (i == ticks.size && endDelayMs > 0L) Thread.sleep(endDelayMs)
             return if (i < ticks.size) ticks[i] else null
         }
 
@@ -53,6 +57,8 @@ class MT5DaemonE2ETest {
 
     private class FakeSource(
         private val ticks: List<Tick>,
+        private val delayMs: Long = 0L,
+        private val endDelayMs: Long = 0L,
     ) : MarketSource {
         override val name: String = "Fake"
         override val capabilities: Set<MarketSourceCapability> =
@@ -60,7 +66,7 @@ class MT5DaemonE2ETest {
 
         override fun supports(symbol: String): Boolean = true
 
-        override fun liveTicks(symbols: List<String>): TickFeed = BoundedFeed(ticks)
+        override fun liveTicks(symbols: List<String>): TickFeed = BoundedFeed(ticks, delayMs, endDelayMs)
     }
 
     @BeforeEach
@@ -76,8 +82,13 @@ class MT5DaemonE2ETest {
                     return when {
                         path.startsWith("/order") && request.method == "POST" ->
                             MockResponse().setBody(
-                                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"1.1234","comment":"ok"}}""",
+                                """{"result":{"retcode":10009,"order":42,"deal":2,"price":"1.1000","volume":"0.1","comment":"ok"}}""",
                             )
+                        path.startsWith("/close_position") && request.method == "POST" ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":43,"deal":43,"price":"1.1011","volume":"0.1","comment":"closed"}}""",
+                            )
+                        path.startsWith("/history_deals_get") -> MockResponse().setBody("[]")
                         path.startsWith("/get_positions") || path.startsWith("/orders") ->
                             MockResponse().setBody("[]")
                         path.startsWith("/symbol_info/") ->
@@ -163,6 +174,75 @@ class MT5DaemonE2ETest {
             assertThat(body).contains("\"magic\":10001")
             assertThat(body).contains("\"type\":\"BUY\"")
             assertThat(body).contains("\"volume\":0.1")
+        } finally {
+            handle.close()
+        }
+    }
+
+    @Test
+    fun `daemon strategy completes signal order fill and close through MT5`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val baseTs = 1_705_276_800_000L
+        val ticks =
+            listOf(
+                Tick("EXNESS:EURUSD", BigDecimal("1.1000"), baseTs),
+                Tick("EXNESS:EURUSD", BigDecimal("1.1000"), baseTs + 60_000L),
+                Tick("EXNESS:EURUSD", BigDecimal("1.1011"), baseTs + 120_000L),
+                Tick("EXNESS:EURUSD", BigDecimal("1.1011"), baseTs + 180_000L),
+            )
+        val profile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides =
+                    mapOf(
+                        "EXNESS:EURUSD" to
+                            InstrumentSpec(
+                                minVolume = BigDecimal("0.01"),
+                                volumeStep = BigDecimal("0.01"),
+                                pointSize = BigDecimal("0.00001"),
+                                digits = 5,
+                                tradeStopsLevelPoints = 0,
+                            ),
+                    ),
+            )
+        val factory =
+            StrategyHandle.RealFactory(
+                stateDir = stateDir,
+                marketSourceProvider = { FakeSource(ticks, delayMs = 250L, endDelayMs = 2_000L) },
+                brokerFactories =
+                    mapOf(
+                        "exness" to { bus, clock, _, _, _ -> MT5Broker(profile, bus, clock) },
+                    ),
+            )
+        val handle =
+            factory.create(
+                "round-trip",
+                Path.of("src/test/resources/parity/mt5_e2e_round_trip.qkt"),
+                false,
+            )
+
+        try {
+            val deadline = System.currentTimeMillis() + 10_000L
+            while (handle.tradeCount < 2 && System.currentTimeMillis() < deadline) Thread.sleep(25L)
+
+            val requests = mutableListOf<okhttp3.mockwebserver.RecordedRequest>()
+            while (true) {
+                val request = server.takeRequest(100, TimeUnit.MILLISECONDS) ?: break
+                requests.add(request)
+            }
+            val order = requests.single { it.path == "/order" }
+            val close = requests.single { it.path == "/close_position" }
+
+            assertThat(order.body.readUtf8()).contains("\"symbol\":\"EURUSDm\"", "\"type\":\"BUY\"")
+            assertThat(close.body.readUtf8()).isEqualTo("""{"position":{"ticket":42,"volume":0.10}}""")
+            assertThat(handle.tradeCount).isEqualTo(2)
+            assertThat(handle.live.positionsFor(handle.ast.name)).isEmpty()
+            assertThat(handle.live.pnlSnapshot(handle.ast.name).realized).isEqualByComparingTo("11.00000000")
         } finally {
             handle.close()
         }
