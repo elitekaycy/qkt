@@ -154,6 +154,17 @@ class BotGateway(
             require(brokerKey.isNotBlank() && qktSymbol.contains(':')) {
                 "symbol must be BROKER:SYMBOL (e.g. EXNESS:XAUUSD), got '$qktSymbol'"
             }
+            return forBroker(cfg, brokerKey)
+        }
+
+        /**
+         * Resolves a gateway by broker name alone (account-level commands with no symbol).
+         * [brokerName] null is allowed only when exactly one MT5 broker is configured.
+         */
+        fun forBroker(
+            cfg: Config,
+            brokerName: String?,
+        ): BotGateway {
             val profiles =
                 MT5BrokerProfileLoader().load(
                     raw = cfg.brokers,
@@ -165,11 +176,19 @@ class BotGateway(
                     instrumentOverrides = cfg.brokerInstrumentOverrides,
                 )
             val profile =
-                profiles.firstOrNull { it.name.equals(brokerKey, ignoreCase = true) }
-                    ?: error(
-                        "no mt5 broker '$brokerKey' in config; configured: " +
-                            (profiles.map { it.name }.ifEmpty { listOf("none") }).joinToString(),
-                    )
+                if (brokerName != null) {
+                    profiles.firstOrNull { it.name.equals(brokerName, ignoreCase = true) }
+                        ?: error(
+                            "no mt5 broker '$brokerName' in config; configured: " +
+                                (profiles.map { it.name }.ifEmpty { listOf("none") }).joinToString(),
+                        )
+                } else {
+                    profiles.singleOrNull()
+                        ?: error(
+                            "config has ${profiles.size} mt5 brokers; pass --broker <name> " +
+                                "(configured: ${profiles.joinToString { it.name }})",
+                        )
+                }
             val client =
                 MT5Client(
                     gatewayUrl = profile.gatewayUrl,

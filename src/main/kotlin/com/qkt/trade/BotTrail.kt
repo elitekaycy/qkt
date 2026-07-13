@@ -79,6 +79,29 @@ class BotTrail(
         sink?.offer(botOrderSubmitEnvelope(asName, order, clock.now(), seq++))
     }
 
+    /**
+     * Records a non-entry venue action (close/modify/cancel) and its outcome as a
+     * journal line plus a same-typed insights envelope, e.g. kind `bot.close`.
+     */
+    fun recordEvent(
+        asName: String,
+        kind: String,
+        fields: Map<String, String?>,
+    ) {
+        journal.append(asName, kind, fields)
+        val ts = clock.now()
+        sink?.offer(
+            com.qkt.observe.insights.InsightsEnvelope(
+                id = "bot-$kind-$ts-$seq",
+                seq = seq++,
+                ts = ts,
+                strategyId = asName,
+                type = kind,
+                payload = fields,
+            ),
+        )
+    }
+
     /** Records the venue's ack or rejection. */
     fun recordResult(
         asName: String,
