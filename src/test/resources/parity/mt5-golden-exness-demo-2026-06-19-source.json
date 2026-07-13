@@ -1,0 +1,88 @@
+{
+  "schema": "qkt-mt5-demo-source-v1",
+  "captureId": "exness-demo-xauusdm-2867967948",
+  "retrievedAtUtc": "2026-07-13T00:28:00Z",
+  "sourceHost": "bot1:qkt-livebook-mt5-gateway-1",
+  "gatewayImage": "elitekaycy/mt5-gateway-api:0.3.2",
+  "account": {
+    "tradeMode": 0,
+    "currency": "USD",
+    "server": "Exness-MT5Trial9",
+    "marginMode": 2,
+    "leverage": 100
+  },
+  "instrument": {
+    "symbol": "XAUUSDm",
+    "tradeContractSize": "100.0",
+    "volumeMin": "0.01",
+    "volumeMax": "200.0",
+    "volumeStep": "0.01",
+    "point": "0.001",
+    "digits": 3,
+    "tradeStopsLevel": 0,
+    "tradeMode": 4,
+    "tradeExecutionMode": 2,
+    "fillingMode": 3
+  },
+  "tickQuery": {
+    "fromDate": "2026-06-19T03:00:00Z",
+    "toDate": "2026-06-19T03:00:10Z",
+    "returnedTickCount": 39,
+    "retainedTicksAroundFill": [
+      {"time": 1781838003, "time_msc": 1781838003867, "bid": "4177.082", "ask": "4177.342", "flags": 134},
+      {"time": 1781838004, "time_msc": 1781838004589, "bid": "4177.028", "ask": "4177.288", "flags": 134},
+      {"time": 1781838005, "time_msc": 1781838005196, "bid": "4176.976", "ask": "4177.236", "flags": 134},
+      {"time": 1781838006, "time_msc": 1781838006350, "bid": "4176.948", "ask": "4177.208", "flags": 134},
+      {"time": 1781838006, "time_msc": 1781838006851, "bid": "4176.894", "ask": "4177.154", "flags": 134},
+      {"time": 1781838008, "time_msc": 1781838008151, "bid": "4176.911", "ask": "4177.171", "flags": 134}
+    ]
+  },
+  "historyOrder": {
+    "ticket": 2867967948,
+    "position_id": 2867967948,
+    "symbol": "XAUUSDm",
+    "type": 0,
+    "type_filling": 1,
+    "type_time": 0,
+    "state": 4,
+    "volume_initial": "0.05",
+    "volume_current": "0.0",
+    "price_open": "0.0",
+    "price_current": "4177.236",
+    "time_setup": 1781838005,
+    "time_setup_msc": 1781838005222,
+    "time_done": 1781838005,
+    "time_done_msc": 1781838005223,
+    "magic": 200002,
+    "comment": "PA|xauusd_hedge-",
+    "reason": 3
+  },
+  "historyDeal": {
+    "ticket": 2336471757,
+    "order": 2867967948,
+    "position_id": 2867967948,
+    "symbol": "XAUUSDm",
+    "type": 0,
+    "entry": 0,
+    "volume": "0.05",
+    "price": "4177.236",
+    "time": 1781838005,
+    "time_msc": 1781838005223,
+    "magic": 200002,
+    "comment": "PA|xauusd_hedge-",
+    "commission": "0.0",
+    "swap": "0.0",
+    "fee": "0.0"
+  },
+  "normalization": {
+    "clientOrderId": "PA|xauusd_hedge-",
+    "clientOrderKind": "MARKET",
+    "clientOrderSide": "BUY",
+    "venueAction": "DEAL",
+    "venueOrderType": "BUY",
+    "venueTimeInForce": "GTC",
+    "rawOrderSendRetcode": null,
+    "fixtureRetcode": 0,
+    "retcodeNote": "The retained order history proves state=4 FILLED and links deal 2336471757; the transient order_send retcode was not retained and is not inferred."
+  }
+}

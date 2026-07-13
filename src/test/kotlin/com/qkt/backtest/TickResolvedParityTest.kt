@@ -11,10 +11,14 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.math.sin
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -115,6 +119,77 @@ class TickResolvedParityTest {
         key: String,
     ): String = Regex("\"$key\":\\s*(-?[0-9.]+)").find(json)?.groupValues?.get(1) ?: error("no $key in $json")
 
+    private fun normalizedReport(json: String): JsonObject {
+        val reportLine = json.lineSequence().map(String::trim).single { it.startsWith("{") }
+        val root = Json.parseToJsonElement(reportLine).jsonObject
+        val evidence = root.getValue("evidence").jsonObject
+        return JsonObject(root + ("evidence" to JsonObject(evidence - "command")))
+    }
+
+    private fun seedRealEurUsdDay(dataRoot: Path) {
+        val target = dataRoot.resolve("symbols/EURUSD/2024-01-10.csv.gz")
+        Files.createDirectories(target.parent)
+        requireNotNull(javaClass.getResourceAsStream("/parity/dukascopy/eurusd-2024-01-10.csv.gz")) {
+            "real-data parity fixture is missing"
+        }.use { input ->
+            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
+    private fun realDataStrategyFile(dir: Path): Path {
+        val strategy = dir.resolve("real-eurusd.qkt")
+        Files.writeString(
+            strategy,
+            """
+            STRATEGY real_eurusd VERSION 1
+            SYMBOLS
+                eurusd = BACKTEST:EURUSD EVERY 5m
+            RULES
+                WHEN ema(eurusd.close, 3) CROSSES ABOVE ema(eurusd.close, 9)
+                THEN BUY eurusd SIZING 0.1 BRACKET { STOP LOSS PCT 0.1, TAKE PROFIT RR 2 }
+                WHEN ema(eurusd.close, 3) CROSSES BELOW ema(eurusd.close, 9)
+                THEN CLOSE eurusd
+            """.trimIndent(),
+        )
+        return strategy
+    }
+
+    private fun runRealDataJson(
+        strategy: Path,
+        dataRoot: Path,
+        extra: List<String>,
+    ): String {
+        val output = ByteArrayOutputStream()
+        val original = System.out
+        val code =
+            try {
+                System.setOut(PrintStream(output))
+                BacktestCommand(
+                    Args(
+                        (
+                            listOf(
+                                "backtest",
+                                strategy.toString(),
+                                "--from",
+                                "2024-01-10",
+                                "--to",
+                                "2024-01-11",
+                                "--data-root",
+                                dataRoot.toString(),
+                                "--no-fetch",
+                                "--allow-incomplete",
+                                "--json",
+                            ) + extra
+                        ).toTypedArray(),
+                    ),
+                ).run()
+            } finally {
+                System.setOut(original)
+            }
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        return output.toString()
+    }
+
     @Test
     fun `tick-resolved fills match a full-tick replay byte-for-byte`(
         @TempDir dir: Path,
@@ -149,10 +224,43 @@ class TickResolvedParityTest {
 
         // The whole point: a bracket strategy on a volatile path actually trades and hits brackets.
         assertThat(field(fullTick, "trades").toInt()).isGreaterThan(0)
-        // Byte-identical on every reported metric.
-        assertThat(field(resolved, "trades")).isEqualTo(field(fullTick, "trades"))
-        assertThat(field(resolved, "totalPnL")).isEqualTo(field(fullTick, "totalPnL"))
-        assertThat(field(resolved, "maxDrawdown")).isEqualTo(field(fullTick, "maxDrawdown"))
+        // Complete semantic report parity. Only the invocation command differs by design because
+        // one run includes --bars --tick-fills; no computed or model-evidence field is removed.
+        assertThat(normalizedReport(resolved)).isEqualTo(normalizedReport(fullTick))
+    }
+
+    @Test
+    fun `tick-resolved fills match full-tick replay across a real EURUSD day`(
+        @TempDir dir: Path,
+    ) {
+        val dataRoot = dir.resolve("data")
+        seedRealEurUsdDay(dataRoot)
+        val build =
+            DataCommand(
+                Args(
+                    arrayOf(
+                        "data",
+                        "build-bars",
+                        "EURUSD",
+                        "--tf",
+                        "5m",
+                        "--from",
+                        "2024-01-10",
+                        "--to",
+                        "2024-01-11",
+                        "--data-root",
+                        dataRoot.toString(),
+                    ),
+                ),
+            ).run()
+        assertThat(build).isEqualTo(ExitCodes.SUCCESS)
+
+        val strategy = realDataStrategyFile(dir)
+        val fullTick = runRealDataJson(strategy, dataRoot, extra = emptyList())
+        val resolved = runRealDataJson(strategy, dataRoot, extra = listOf("--bars", "--tick-fills"))
+
+        assertThat(field(fullTick, "trades").toInt()).isGreaterThan(0)
+        assertThat(normalizedReport(resolved)).isEqualTo(normalizedReport(fullTick))
     }
 
     private fun instrumentsFile(dir: Path): Path {

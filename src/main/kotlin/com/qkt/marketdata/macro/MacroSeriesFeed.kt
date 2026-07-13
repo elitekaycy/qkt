@@ -10,8 +10,9 @@ import com.qkt.marketdata.store.macro.MacroPoint
  * ([ReleaseSchedule]) — not the observation date. Only ticks whose release falls in `[fromMs, toMs)`
  * are emitted, in release-time order, so a strategy never sees a value before it was knowable.
  *
- * Holds between releases by construction: the engine sees the last emitted value until the next
- * release tick arrives. Merges with symbol tick feeds via [com.qkt.marketdata.MergingTickFeed].
+ * Holds between releases by construction: the candle hub closes macro ticks as event candles, so
+ * the engine sees the new value at this timestamp and holds it until the next release. Merges with
+ * symbol tick feeds via [com.qkt.marketdata.MergingTickFeed].
  */
 class MacroSeriesFeed(
     qktSymbol: String,
@@ -27,7 +28,9 @@ class MacroSeriesFeed(
                 Tick(
                     symbol = qktSymbol,
                     price = p.value,
-                    timestamp = ReleaseSchedule.releaseTimeMs(p.date, lagBusinessDays, releaseUtcHour),
+                    timestamp =
+                        p.availableAtMs
+                            ?: ReleaseSchedule.releaseTimeMs(p.date, lagBusinessDays, releaseUtcHour),
                 )
             }.filter { it.timestamp in fromMs until toMs }
             .sortedBy { it.timestamp }

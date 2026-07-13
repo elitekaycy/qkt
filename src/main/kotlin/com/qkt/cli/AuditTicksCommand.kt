@@ -9,23 +9,24 @@ import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * `qkt audit-ticks` — operator tool that compares TradingView ticks vs MT5 gateway
- * ticks for a symbol, reporting statistical drift over a sample duration.
+ * `qkt audit-ticks` — operator tool that compares TradingView ticks with the MT5 gateway,
+ * or reconciles polled MT5 quotes against raw MT5 history for the same UTC window.
  *
  * Usage:
  *   qkt audit-ticks --symbol EURUSD --duration 60 --mt5-profile exness
+ *   qkt audit-ticks --symbol EURUSD --duration 60 --mt5-profile exness --reference mt5-history
  *
- * Captures both feeds simultaneously for `--duration` seconds and reports:
- *   - sample count
- *   - mean / median / p95 / max absolute price difference
- *   - tv-leads-mt5 timing skew (median ms)
+ * Captures for `--duration` seconds and reports cross-source price drift or exact
+ * live/history timestamp and bid/ask reconciliation, depending on the reference mode.
  *
- * Use this before committing investor money: confirms the TV prices your strategies
- * see actually track the MT5 prices your orders fill at, within an acceptable bound.
+ * Use this before committing investor money: the TradingView mode quantifies cross-source
+ * drift, while the MT5-history mode proves that live quotes survive into raw venue history
+ * without timestamp or price mutation.
  */
 class AuditTicksCommand(
     private val args: Args,
@@ -35,6 +36,14 @@ class AuditTicksCommand(
         val duration = args.option("duration")?.toLongOrNull() ?: 60L
         val profileName = args.option("mt5-profile") ?: "exness"
         val pollMs = args.option("poll-ms")?.toLongOrNull() ?: 250L
+        val reference = args.option("reference") ?: "tradingview"
+        val settleMs = args.option("settle-ms")?.toLongOrNull() ?: DEFAULT_MT5_HISTORY_SETTLE_MS
+        if (duration <= 0L) return invalid("duration", "must be positive")
+        if (pollMs <= 0L) return invalid("poll-ms", "must be positive")
+        if (settleMs < 0L) return invalid("settle-ms", "must be non-negative")
+        if (reference !in setOf("tradingview", "mt5-history")) {
+            return invalid("reference", "expected tradingview or mt5-history")
+        }
 
         val configPath =
             args.option("config")?.let { Path.of(it) }
@@ -84,7 +93,24 @@ class AuditTicksCommand(
             return ExitCodes.USER_ERROR
         }
 
-        println("qkt audit-ticks: symbol=$symbol duration=${duration}s profile=$profileName poll=${pollMs}ms")
+        println(
+            "qkt audit-ticks: symbol=$symbol duration=${duration}s profile=$profileName " +
+                "reference=$reference poll=${pollMs}ms",
+        )
+
+        val mt5InputSymbol = Mt5FeedAudit.inputSymbol(symbol, args.option("mt5-symbol"))
+        val brokerSymbol = mt5Symbol.toBroker(mt5InputSymbol)
+        if (reference == "mt5-history") {
+            return runMt5HistoryAudit(
+                client = mt5Client,
+                brokerSymbol = brokerSymbol,
+                qktSymbol = symbol,
+                profileName = profileName,
+                durationSeconds = duration,
+                pollMs = pollMs,
+                settleMs = settleMs,
+            )
+        }
 
         val tvLatest = AtomicReference<Tick?>(null)
         val tvSource = TradingViewMarketSource.connect()
@@ -100,24 +126,16 @@ class AuditTicksCommand(
         tvThread.isDaemon = true
         tvThread.start()
 
-        val brokerSymbol = mt5Symbol.toBroker(symbol)
         val samples = mutableListOf<Sample>()
         val deadline = System.currentTimeMillis() + duration * 1000L
         try {
             while (System.currentTimeMillis() < deadline) {
                 val tvTick = tvLatest.get()
-                val mt5Tick = mt5Client.getTick(brokerSymbol) ?: continue
-                if (tvTick != null) {
+                val mt5Tick = mt5Client.getTick(brokerSymbol)
+                if (tvTick != null && mt5Tick != null) {
                     val tvMid = tvTick.price
                     val mt5Mid = mt5Tick.bid.add(mt5Tick.ask).divide(BigDecimal("2"), MC)
-                    samples.add(
-                        Sample(
-                            timestamp = System.currentTimeMillis(),
-                            tvPrice = tvMid,
-                            mt5Mid = mt5Mid,
-                            absDiff = tvMid.subtract(mt5Mid).abs(),
-                        ),
-                    )
+                    samples.add(Sample(absDiff = tvMid.subtract(mt5Mid).abs()))
                 }
                 Thread.sleep(pollMs)
             }
@@ -161,20 +179,78 @@ class AuditTicksCommand(
         // Operators recording audits append each run's JSON to the results table in
         // docs/operations/tick-feed-audit.md; persisting to a stable path makes that
         // a one-command workflow instead of "remember to redirect stdout."
-        args.option("out")?.let { outPath ->
-            val path =
-                java.nio.file.Path
-                    .of(outPath)
-            path.parent?.let {
-                java.nio.file.Files
-                    .createDirectories(it)
-            }
-            java.nio.file.Files
-                .writeString(path, json + "\n")
-            System.err.println("qkt audit-ticks: wrote $outPath")
-        }
+        persist(json)
 
         return ExitCodes.SUCCESS
+    }
+
+    private fun runMt5HistoryAudit(
+        client: MT5Client,
+        brokerSymbol: String,
+        qktSymbol: String,
+        profileName: String,
+        durationSeconds: Long,
+        pollMs: Long,
+        settleMs: Long,
+    ): Int {
+        val startedAtMs = System.currentTimeMillis()
+        val deadline = startedAtMs + durationSeconds * 1_000L
+        val observations = mutableListOf<ObservedMt5Tick>()
+        while (System.currentTimeMillis() < deadline) {
+            client.getTick(brokerSymbol)?.let { tick ->
+                observations += ObservedMt5Tick(System.currentTimeMillis(), tick)
+            }
+            Thread.sleep(pollMs)
+        }
+        val endedAtMs = System.currentTimeMillis()
+        Thread.sleep(settleMs)
+        val history =
+            client.getTicksRange(brokerSymbol, startedAtMs, endedAtMs)
+                ?: run {
+                    System.err.println("qkt audit-ticks: MT5 raw tick history is unavailable")
+                    return ExitCodes.USER_ERROR
+                }
+        val result =
+            runCatching {
+                Mt5FeedAudit.compare(qktSymbol, startedAtMs, endedAtMs, observations, history)
+            }.getOrElse { error ->
+                System.err.println("qkt audit-ticks: ${error.message}")
+                return ExitCodes.USER_ERROR
+            }
+        val json =
+            Mt5FeedAudit.artifactJson(
+                result = result,
+                venueSymbol = brokerSymbol,
+                profileName = profileName,
+                durationSeconds = durationSeconds,
+                pollMs = pollMs,
+                settleMs = settleMs,
+            )
+        if (args.flag("json")) {
+            println(json)
+        } else {
+            println("poll samples:             ${result.pollSamples}")
+            println("unique in-window ticks:   ${result.uniqueLiveTicks}")
+            println("history ticks:            ${result.historyTicks}")
+            println("exact timestamp matches:  ${result.exactTimestampMatches}")
+            println("exact bid/ask matches:    ${result.exactPriceMatches}")
+            println("timestamp price mismatch: ${result.timestampPriceMismatches}")
+            println("missing from history:     ${result.missingFromHistory}")
+            println("invalid live quotes:      ${result.invalidLiveQuotes}")
+            println("quote age p95 ms:         ${result.quoteAgeMs.p95}")
+            println("result:                   ${if (result.passed) "PASS" else "FAIL"}")
+        }
+        persist(json)
+        return if (result.passed) ExitCodes.SUCCESS else ExitCodes.USER_ERROR
+    }
+
+    private fun persist(json: String) {
+        args.option("out")?.let { outPath ->
+            val path = Path.of(outPath)
+            path.parent?.let { Files.createDirectories(it) }
+            Files.writeString(path, json + "\n")
+            System.err.println("qkt audit-ticks: wrote $outPath")
+        }
     }
 
     private fun missing(field: String): Int {
@@ -182,14 +258,20 @@ class AuditTicksCommand(
         return ExitCodes.ARG_ERROR
     }
 
+    private fun invalid(
+        field: String,
+        reason: String,
+    ): Int {
+        System.err.println("qkt: --$field $reason")
+        return ExitCodes.ARG_ERROR
+    }
+
     private data class Sample(
-        val timestamp: Long,
-        val tvPrice: BigDecimal,
-        val mt5Mid: BigDecimal,
         val absDiff: BigDecimal,
     )
 
     companion object {
         private val MC = MathContext(8, RoundingMode.HALF_EVEN)
+        private const val DEFAULT_MT5_HISTORY_SETTLE_MS = 15_000L
     }
 }

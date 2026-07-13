@@ -1,12 +1,17 @@
 package com.qkt.marketdata.source
 
 import com.qkt.candles.TimeWindow
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.macro.MacroSeriesFeed
 import com.qkt.marketdata.store.macro.MacroSeriesStore
+import com.qkt.marketdata.store.macro.PolicyRateSeries
+import com.qkt.marketdata.store.macro.PolicyRateSeriesFetcher
+import java.math.BigDecimal
 import java.time.ZoneOffset
 
 /**
@@ -16,21 +21,39 @@ import java.time.ZoneOffset
  * knowable. Composed alongside the tick source via [CompositeMarketSource]: `MACRO:` symbols route
  * here, everything else falls through to the tick store.
  *
- * Tick-only: the engine's candle aggregator turns the daily ticks into `EVERY 1d` candles, so a
- * strategy reads the series through the normal candle path (`.close`, indicators).
+ * Tick-only: [CandleHub][com.qkt.dsl.compile.CandleHub] closes each published macro observation as
+ * an event candle immediately, so `.value` changes at its availability timestamp instead of one
+ * observation later. The declared timeframe remains the candle duration used by history APIs.
  */
 class MacroMarketSource(
     private val store: MacroSeriesStore,
     private val lagBusinessDays: Int = 1,
     private val releaseUtcHour: Int = 13,
+    private val clock: Clock = SystemClock(),
+    private val policyRateFetcher: PolicyRateSeriesFetcher = PolicyRateSeriesFetcher(store),
+    private val livePollIntervalMs: Long = 15 * 60 * 1_000L,
 ) : MarketSource {
     override val name: String = "Macro"
-    override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.TICKS)
+    override val capabilities: Set<MarketSourceCapability> =
+        setOf(MarketSourceCapability.TICKS, MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
 
     override fun supports(symbol: String): Boolean = symbol.startsWith("MACRO:")
 
-    override fun liveTicks(symbols: List<String>): TickFeed =
-        throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName!!)
+    override fun liveTicks(symbols: List<String>): TickFeed {
+        val resolved =
+            symbols.associateWith { symbol ->
+                require(symbol.startsWith("MACRO:")) { "MacroMarketSource cannot serve $symbol" }
+                PolicyRateSeries.fromId(symbol.substringAfter(':'))
+                    ?: error("live macro series $symbol is unsupported; use a cataloged policy-rate series")
+            }
+        return PolicyRateLiveFeed(
+            symbols = resolved,
+            store = store,
+            clock = clock,
+            pollIntervalMs = livePollIntervalMs,
+            refresh = { series, from, to -> policyRateFetcher.fetch(series, from, to) },
+        )
+    }
 
     override fun ticks(
         symbol: String,
@@ -56,5 +79,33 @@ class MacroMarketSource(
         symbol: String,
         window: TimeWindow,
         range: TimeRange,
-    ): Sequence<Candle> = throw UnsupportedDataException(MarketSourceCapability.BARS, this::class.java.simpleName!!)
+    ): Sequence<Candle> {
+        val seriesId = symbol.substringAfter(':')
+        val policySeries =
+            PolicyRateSeries.fromId(seriesId)
+                ?: throw UnsupportedDataException(MarketSourceCapability.BARS, "uncataloged macro series $symbol")
+        val fromDate = range.from.atZone(ZoneOffset.UTC).toLocalDate()
+        val toDate = range.to.atZone(ZoneOffset.UTC).toLocalDate()
+        val requiredThrough = maxOf(fromDate, toDate.minusDays(4))
+        if (!store.hasRange(seriesId, fromDate, requiredThrough)) {
+            policyRateFetcher.fetch(policySeries, fromDate, toDate)
+        }
+        return store
+            .read(seriesId, fromDate, toDate)
+            .asSequence()
+            .mapNotNull { point ->
+                val timestamp = point.availableAtMs ?: return@mapNotNull null
+                if (timestamp !in range.from.toEpochMilli() until range.to.toEpochMilli()) return@mapNotNull null
+                Candle(
+                    symbol = symbol,
+                    open = point.value,
+                    high = point.value,
+                    low = point.value,
+                    close = point.value,
+                    volume = BigDecimal.ZERO,
+                    startTime = timestamp,
+                    endTime = timestamp + window.durationMs,
+                )
+            }
+    }
 }

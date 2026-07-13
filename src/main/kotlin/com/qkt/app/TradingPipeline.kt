@@ -524,12 +524,13 @@ class TradingPipeline(
     }
 
     fun ingest(tick: Tick) {
+        val isMacroObservation = tick.symbol.startsWith("MACRO:")
         // Hard floor on the most exposed input boundary the engine has: one glitched
         // tick (zero/negative price, crossed quotes) marks every open position wrong,
         // fires engine-held triggers, and poisons indicators for a full window. Drop
         // it, count it, keep the last good price (#379). Identical in backtest and
         // live so the gate itself cannot cause divergence.
-        if (!isValidTick(tick)) {
+        if (!isMacroObservation && !isValidTick(tick)) {
             val n = malformedTickCount.incrementAndGet()
             if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
                 log.error(
@@ -545,7 +546,11 @@ class TradingPipeline(
         }
         // The judgment layer above the floor: an implausible (outlier/crossed) tick is
         // dropped before it can poison indicators, marks, or triggers (#395).
-        if (marketDataGate?.observe(tick) == com.qkt.marketdata.MarketDataGate.Verdict.OUTLIER) return
+        if (!isMacroObservation &&
+            marketDataGate?.observe(tick) == com.qkt.marketdata.MarketDataGate.Verdict.OUTLIER
+        ) {
+            return
+        }
         engine.onTick(tick)
         sampleAccountEquitySeries(tick.timestamp)
         candleHub.feed(tick)
