@@ -22,8 +22,8 @@ import java.math.MathContext
  * Returns are measured on a constant capital base ([startingBalance]): strategy i's return at a
  * sample is `(pnl_i_now - pnl_i_prev) / startingBalance`. The book return is then exactly the sum of
  * strategy returns, which makes the risk-contribution decomposition sum to 1. PnL (not equity) is the
- * basis because the engine anchors every strategy at the full starting balance, so equity-based
- * shares would not sum cleanly.
+ * basis because strategy equity can be anchored at distinct portfolio allocations, so equity-based
+ * shares would not sum cleanly to the book return.
  *
  * It also tracks the book's deepest peak-to-trough drawdown window and the per-strategy PnL at that
  * window's peak and trough, so a drawdown can be attributed to the strategies that drove it.

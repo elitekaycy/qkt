@@ -1,9 +1,14 @@
 package com.qkt.cli
 
+import com.qkt.marketdata.Candle
+import com.qkt.marketdata.store.LocalBarStore
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
+import java.time.LocalDate
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -18,10 +23,11 @@ class BacktestCommandPortfolioTest {
         name: String,
         alias: String,
         symbol: String,
+        timeframe: String = "1m",
     ) = """
         STRATEGY $name VERSION 1
         SYMBOLS
-          $alias = EXNESS:$symbol EVERY 1m
+          $alias = EXNESS:$symbol EVERY $timeframe
         RULES
           WHEN $alias.close > 0 THEN BUY $alias SIZING 0.01
         """.trimIndent()
@@ -36,12 +42,12 @@ class BacktestCommandPortfolioTest {
         Files.writeString(
             portfolio,
             """
-            PORTFOLIO book VERSION 1
+            PORTFOLIO book VERSION 1 CAPITAL 10000
             IMPORT 'ca.qkt' AS ca
             IMPORT 'cb.qkt' AS cb
             RULES
-              RUN ca
-              RUN cb
+              RUN ca WEIGHT 0.6
+              RUN cb WEIGHT 0.4
             """.trimIndent(),
         )
         val config = tmp.resolve("qkt.config.yaml")
@@ -134,4 +140,63 @@ class BacktestCommandPortfolioTest {
                 .isEqualTo(ExitCodes.USER_ERROR)
         }
     }
+
+    @Test
+    fun `portfolio backtest replays each symbol at its finest declared timeframe`(
+        @TempDir tmp: Path,
+    ) {
+        Files.writeString(tmp.resolve("ca.qkt"), child("ca", "gold", "XAUUSD"))
+        Files.writeString(tmp.resolve("cb.qkt"), child("cb", "eur", "EURUSD", timeframe = "5m"))
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'ca.qkt' AS ca
+            IMPORT 'cb.qkt' AS cb
+            RULES
+              RUN ca
+              RUN cb
+            """.trimIndent(),
+        )
+        val start = Instant.parse("2026-07-10T00:00:00Z").toEpochMilli()
+        val day = LocalDate.parse("2026-07-10")
+        val store = LocalBarStore(tmp)
+        store.writeDay("EXNESS", "XAUUSD", "1m", day, listOf(bar("EXNESS:XAUUSD", start, 60_000L)))
+        store.writeDay("EXNESS", "EURUSD", "5m", day, listOf(bar("EXNESS:EURUSD", start, 300_000L)))
+
+        val args =
+            Args(
+                arrayOf(
+                    "backtest",
+                    portfolio.toString(),
+                    "--from",
+                    "2026-07-10",
+                    "--to",
+                    "2026-07-11",
+                    "--data-root",
+                    tmp.toString(),
+                    "--no-fetch",
+                    "--json",
+                ),
+            )
+
+        assertThat(BacktestCommand(args).run()).isEqualTo(ExitCodes.SUCCESS)
+    }
+
+    private fun bar(
+        symbol: String,
+        startTime: Long,
+        durationMs: Long,
+    ): Candle =
+        Candle(
+            symbol = symbol,
+            open = BigDecimal("100"),
+            high = BigDecimal("101"),
+            low = BigDecimal("99"),
+            close = BigDecimal("100"),
+            volume = BigDecimal.ONE,
+            startTime = startTime,
+            endTime = startTime + durationMs,
+        )
 }

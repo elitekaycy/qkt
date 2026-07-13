@@ -1,0 +1,11 @@
+STRATEGY mt5_e2e_round_trip VERSION 1
+
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 1m
+
+RULES
+    WHEN POSITION.eur = 0 AND eur.close < 1.1010
+    THEN BUY eur SIZING 0.1
+
+    WHEN POSITION.eur > 0 AND eur.close >= 1.1010
+    THEN CLOSE eur
