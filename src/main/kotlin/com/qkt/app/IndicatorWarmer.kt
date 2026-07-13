@@ -1,7 +1,6 @@
 package com.qkt.app
 
 import com.qkt.candles.TimeWindow
-import com.qkt.common.TimeRange
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.candleToTicks
@@ -18,10 +17,13 @@ import org.slf4j.LoggerFactory
  * [com.qkt.events.WarmupTickEvent]s — indicators populate state but the strategy's
  * `onTick` callback is silenced until warmup completes.
  */
-class IndicatorWarmer(
+class IndicatorWarmer internal constructor(
     private val source: MarketSource,
     private val pipeline: TradingPipeline,
+    private val history: WarmupHistoryLoader,
 ) {
+    constructor(source: MarketSource, pipeline: TradingPipeline) : this(source, pipeline, WarmupHistoryLoader(source))
+
     private val log = LoggerFactory.getLogger(IndicatorWarmer::class.java)
 
     fun warmup(
@@ -60,14 +62,8 @@ class IndicatorWarmer(
         now: Instant,
     ) {
         val upperMs = bars.window.windowStartFor(now.toEpochMilli())
-        val totalMs = bars.window.durationMs * bars.count
-        val lowerMs = upperMs - totalMs
-        require(upperMs > lowerMs) {
-            "warmup range degenerate: lower=$lowerMs upper=$upperMs symbol=$symbol"
-        }
-        val range = TimeRange(Instant.ofEpochMilli(lowerMs), Instant.ofEpochMilli(upperMs))
-
-        for (candle in source.bars(symbol, bars.window, range)) {
+        val candles = history.load(symbol, bars.window, bars.count, upperMs)
+        for (candle in candles) {
             for (tick in candleToTicks(candle.copy(symbol = symbol))) {
                 require(tick.timestamp < now.toEpochMilli()) {
                     "look-ahead bias: warmup tick beyond now=$now, requested to=${Instant.ofEpochMilli(
