@@ -314,6 +314,29 @@ class MT5Broker(
                 magic = d.magic,
                 comment = d.comment,
                 ts = d.timeMs,
+                fee = d.fee,
+                clientOrderId = d.clientOrderId,
+            )
+        }
+    }
+
+    override fun pendingOrders(): List<com.qkt.broker.BrokerPendingOrder> {
+        val orders = runCatching { client.getPendingOrders(magic = profile.magic) }.getOrNull() ?: return emptyList()
+        return orders.map { o ->
+            com.qkt.broker.BrokerPendingOrder(
+                ticket = o.ticket.toString(),
+                symbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(o.symbol)}",
+                side = if (o.type.contains("BUY")) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL,
+                orderType = o.type,
+                qty = o.volume,
+                price = o.priceOpen,
+                stopLoss = o.sl,
+                takeProfit = o.tp,
+                expiresAt = o.timeExpiration.takeIf { it != 0L },
+                createdAt = o.timeSetup.takeIf { it != 0L },
+                magic = o.magic,
+                comment = o.comment,
+                clientOrderId = o.clientOrderId,
             )
         }
     }
@@ -341,6 +364,8 @@ class MT5Broker(
                 takeProfit = p.tp,
                 requestedStopLoss = positionMetaByTicket[p.ticket]?.protection?.stopLoss,
                 requestedTakeProfit = positionMetaByTicket[p.ticket]?.protection?.takeProfit,
+                magic = p.magic,
+                clientOrderId = p.clientOrderId,
             )
         }
     }
