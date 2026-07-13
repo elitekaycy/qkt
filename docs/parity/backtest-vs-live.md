@@ -12,15 +12,22 @@ Both `Backtest` (`src/main/kotlin/com/qkt/backtest/Backtest.kt`) and `LiveSessio
 
 If the trade lists ever drift in that test, the pipeline contract is broken and the test fails.
 
-## The unproven part — broker layer is different
+## Broker-layer proof boundary
 
-`BacktestLiveParityTest` uses `LiveSession` with its default `PaperBroker`. So the proven equation is:
+`BacktestLiveParityTest` uses `LiveSession` with its default `PaperBroker`. That test proves:
 
 ```
 Backtest + PaperBroker  ===  LiveSession + PaperBroker
 ```
 
-It does **not** prove `Backtest === LiveSession + MT5Broker`. Every divergence below lives between `PaperBroker` and `MT5Broker`, and is invisible to the parity test.
+That test alone does **not** prove `Backtest === LiveSession + MT5Broker`. Separate
+`MT5BrokerSimulatorTest` coverage pins deterministic venue rules. The authentic
+`MT5GoldenVerifierTest` additionally replays one retained Exness demo XAUUSD market order against
+its raw bid/ask ticks and matches the venue deal at zero price and volume tolerance.
+
+The authentic row is deliberately narrow. It proves one demo market-fill shape, instrument
+metadata normalization, and source provenance. It does not prove OCO cancellation races, partial
+fills, rejection retcodes, latency distributions, pending-order recovery, or a second broker.
 
 ## Catalog of broker-layer divergences
 
@@ -68,9 +75,10 @@ loaded from `data/instruments.yaml`, or any other `InstrumentRegistry`
 implementation. A missing entry fails the order with `OrderRejected`, consistent
 with the Phase 30 hard-error stance.
 
-**What it doesn't model yet:** row 8 (`tradeStopsLevel`), row 9 (OCO atomicity),
-row 11 (latency — separate issue #140), row 12 (retcodes). These remain
-divergent under `--broker mt5-sim` too; tracked as follow-ups.
+**What remains empirical or live-only:** venue OCO cancellation races, exact rejection
+retcodes, and latency calibration. The simulator enforces configured stop-distance rules and
+supports deterministic latency/rejection stress models, but those configured distributions are
+not measurements of a particular live session.
 
 `PaperBroker` remains the default. Existing backtests are unaffected unless they
 opt in explicitly.
@@ -85,23 +93,17 @@ Historical note kept for context: before Phase 30, backtest PnL was off by a fac
 
 - **Use the backtest to compare strategies and parameters against each other.** Rule firing, signal counts, win rate, drawdown ordering, sharpe ranking all transfer.
 - **PnL is now in real dollars** as of Phase 30 — but **still don't expect bit-identical live numbers**. Spread, slippage, latency, and bid/ask fill prices (rows 4–6, 11) still differ. Treat backtest PnL as a defensible estimate, not a tick-perfect prediction.
-- **Don't backtest a brand-new strategy and immediately wire to live without a paper-mode run.** The MT5Broker can reject orders the backtest happily accepted (rows 3, 8 — live closed in Phase 30 but backtest still permissive — and 12).
-- **Treat `qkt backtest` as the pipeline test plus a contract-size-correct PnL test, but not yet a fill-price test.** Closing the fill-price gap is the `MT5BrokerSimulator` work.
+- **Don't backtest a brand-new strategy and immediately wire to live without a paper-mode run.** Plain `PaperBroker` remains permissive, while MT5 can still reject for live-only retcodes and session state.
+- **Use `--broker mt5-sim` for venue-shaped fill tests.** The default paper tier is still a fast research model and should not be cited as MT5 fill-price evidence.
 
-## What would close the gap
+## Remaining MT5 gaps
 
-A `MT5BrokerSimulator` usable in backtest mode, mirroring:
-
-- `volume_step` / `volume_min` quantization (rows 1, 3)
-- `digits` price rounding (row 2)
-- bid/ask fills at venue prices (rows 4-6)
-- contract-size multiplier in fill PnL (row 7, the big one)
-- `tradeStopsLevel` rejection (row 8)
-- realistic latency model (rows 11)
-
-Plus a sibling test `BacktestMT5LiveParityTest` that replays a recorded MT5 session and asserts the simulator matches. That's the work that turns "backtest of hedge_straddle returned +$13.25" into "this is what live should look like."
-
-Tracked as a future engine phase — not scheduled. Until it ships, this document is the answer to "can I trust the backtest."
+`MT5BrokerSimulator` now models deterministic volume and price quantization, bid/ask fills,
+contract-size PnL, stop-distance rejection, and configurable latency/rejection stress. The
+authentic golden replay covers one market order. Broader venue claims still require
+additional captures for pending/OCO orders, partial fills, rejected requests, and volatile-period
+latency. Those residuals must not be inferred from the single exact fill. Operational proof for a
+second MT5 profile remains tracked by #44.
 
 ## 2026-06-10 audit addendum — divergences this catalog was missing
 
