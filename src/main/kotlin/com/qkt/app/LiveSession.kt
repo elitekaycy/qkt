@@ -797,6 +797,7 @@ class LiveSession(
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
         val paperBroker = PaperBroker(bus, clock, priceTracker)
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
+        val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()
         // Recovery seeding ran inside each MT5 broker's constructor; mirror the orphan
         // ticket attributions it produced so the state poller can name their strategy.
         for (b in builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>()) {
@@ -809,8 +810,8 @@ class LiveSession(
         val instruments = buildInstrumentRegistry()
         val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
         // #352: live account equity, polled off the engine thread (a network call) into this holder
-        // and read cheaply by StrategyPnL.equityFor. Stays null for paper/backtest, so those keep
-        // the deterministic derived `startingBalance + realized + unrealized`.
+        // and read cheaply by StrategyPnL.equityFor. Allocated portfolio children keep this
+        // disconnected because account equity cannot represent one child's share of the book.
         val brokerEquity =
             java.util.concurrent.atomic
                 .AtomicReference<java.math.BigDecimal?>(null)
@@ -822,7 +823,7 @@ class LiveSession(
                 persistor,
                 accounting = accounting,
                 markTimestamp = clock::now,
-                brokerEquity = { brokerEquity.get() },
+                brokerEquity = { if (usesAllocatedStrategyCapital) null else brokerEquity.get() },
             )
         // Every deploy path needs a starting balance: portfolio deploys pass per-strategy
         // entries in [startingBalances]; standalone deploys fall back to the session-level
@@ -1545,12 +1546,13 @@ class LiveSession(
         )
 
         // #352: poll real account equity off the engine thread so sizing + drawdown track the
-        // broker's account (commissions, swaps, deposits), not just engine-derived PnL. Single-
-        // strategy only — account equity maps cleanly to one strategy. Capability is static: a
+        // broker's account (commissions, swaps, deposits), not just engine-derived PnL. Standalone
+        // single-strategy only — allocated portfolio children do not own the whole account.
+        // Capability is static: a
         // transiently failed startup read must not disable polling for the entire session. Failed
         // reads retain the last-known value and alert once stale. The network call stays off the consumer.
         val equityPoller: java.util.concurrent.ScheduledExecutorService? =
-            if (strategies.size == 1 && broker.supportsAccountEquity) {
+            if (!usesAllocatedStrategyCapital && strategies.size == 1 && broker.supportsAccountEquity) {
                 val monitor =
                     BrokerEquityMonitor(
                         broker = broker,
