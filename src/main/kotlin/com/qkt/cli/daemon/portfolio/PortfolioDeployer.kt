@@ -459,7 +459,7 @@ class PortfolioDeployer(
                         startedAt.toString(),
                         session.recentTrades(),
                         layers,
-                        pnl = session.pnlSnapshot(compiledChild.ast.name),
+                        pnl = session.pnlSnapshot(compiledChild.strategyId),
                         persistenceHealth = session.persistenceHealth(),
                     )
                 },
