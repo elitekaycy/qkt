@@ -15,6 +15,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
@@ -311,6 +314,29 @@ class PortfolioDeployerE2ETest {
             val rowsB = childB.live.dailySummaryRows()
             assertThat(rowsA.first().equity).isEqualByComparingTo(BigDecimal("60000"))
             assertThat(rowsB.first().equity).isEqualByComparingTo(BigDecimal("40000"))
+
+            val http = OkHttpClient()
+            val statusEquities =
+                listOf(childA, childB).map { child ->
+                    http
+                        .newCall(Request.Builder().url("http://127.0.0.1:${child.port}/status").build())
+                        .execute()
+                        .use { response ->
+                            assertThat(response.code).`as`("${child.name} /status").isEqualTo(200)
+                            val body = response.body?.string() ?: error("${child.name} returned no status body")
+                            BigDecimal(
+                                Json
+                                    .parseToJsonElement(body)
+                                    .jsonObject
+                                    .getValue("equity")
+                                    .jsonPrimitive
+                                    .content,
+                            )
+                        }
+                }
+            assertThat(statusEquities[0]).isEqualByComparingTo("60000")
+            assertThat(statusEquities[1]).isEqualByComparingTo("40000")
+            assertThat(statusEquities.reduce(BigDecimal::add)).isEqualByComparingTo("100000")
         } finally {
             record.supervisor.stop()
             for (child in record.children) runCatching { child.close() }
