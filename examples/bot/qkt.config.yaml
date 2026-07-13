@@ -1,0 +1,20 @@
+# Starter config for the qkt bot CLI (one-shot manual/AI trading).
+# Copy next to where you run `qkt bot ...` (or pass --config).
+
+brokers:
+  exness:
+    type: mt5
+    gateway_url: "http://127.0.0.1:8000"   # your mt5-gateway
+    magic: 777001
+    symbol_suffix: "m"                      # Exness appends m: XAUUSD -> XAUUSDm
+
+account:
+  currency: USD
+
+# Optional: egress every bot command/order to qkt-insights.
+# insights:
+#   enabled: true
+#   url: "https://insights.example.com/ingest"
+#   token: "${QKT_INSIGHTS_TOKEN}"
+#   instance_id: "bot-laptop"
+#   events: [order, trade, lifecycle]

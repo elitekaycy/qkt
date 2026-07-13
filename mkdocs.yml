@@ -179,6 +179,7 @@ nav:
           - BASKET (synthetic instruments): reference/dsl/basket.md
       - DSL grammar (cheat sheet): reference/dsl-grammar.md
       - CLI commands: reference/cli-commands.md
+      - Bot CLI (one-shot trading): reference/bot-cli.md
       - Config reference: reference/config-schema.md
   - Operations:
       - operations/index.md
