@@ -108,6 +108,11 @@ class PortfolioBacktestLiveParityTest {
     fun `portfolio backtest and live-paper produce identical per-child trades`() {
         val tickSeq = ticks()
         val startingBalance = BigDecimal("10000")
+        val startingBalances =
+            mapOf(
+                "book:a" to BigDecimal("6000"),
+                "book:b" to BigDecimal("4000"),
+            )
 
         val backtestResult =
             Backtest(
@@ -115,6 +120,7 @@ class PortfolioBacktestLiveParityTest {
                 ticks = tickSeq,
                 initialTimestamp = tickSeq.first().timestamp,
                 startingBalance = startingBalance,
+                startingBalances = startingBalances,
             ).run()
 
         val liveTrades = mutableListOf<Pair<String, Trade>>()
@@ -125,6 +131,8 @@ class PortfolioBacktestLiveParityTest {
                 source = FakeSource(tickSeq),
                 symbols = listOf(symA, symB),
                 clock = liveClock,
+                initialBalance = startingBalance,
+                startingBalances = startingBalances,
                 onTrade = { trade, _, strategyId -> liveTrades.add(strategyId to trade) },
             ).start()
         check(session.awaitTermination(Duration.ofSeconds(10))) { "live session did not terminate" }
@@ -146,6 +154,14 @@ class PortfolioBacktestLiveParityTest {
             assertThat(l.price).isEqualByComparingTo(b.price)
             assertThat(l.timestamp).isEqualTo(b.timestamp)
             assertThat(l.orderId).isEqualTo(b.orderId)
+        }
+
+        val liveEquity = session.dailySummaryRows().associate { it.strategyId to it.equity }
+        for ((strategyId, allocatedCapital) in startingBalances) {
+            val report = backtestResult.perStrategy.getValue(strategyId)
+            assertThat(report.equityCurve.first().equity).isEqualByComparingTo(allocatedCapital)
+            assertThat(report.equityCurve.last().equity)
+                .isEqualByComparingTo(liveEquity.getValue(strategyId))
         }
     }
 }
