@@ -103,7 +103,8 @@ reconciliation fails.
 Before committing real money, run the tick-feed drift check:
 
 ```bash
-docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 300 --mt5-profile exness
+docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 300 \
+  --mt5-profile exness --reference mt5-history
 ```
 
 Reports the absolute price difference between TradingView ticks (what your strategies see) and MT5 ticks (where orders fill). If `p95 abs diff` is wider than your stop-loss buffer, tighten or widen accordingly.

@@ -166,7 +166,8 @@ Drop the file into `./strategies/` (mounted into the qkt container at `/strategi
 Before deploying, verify the broker's ticks are clean:
 
 ```bash
-docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 --mt5-profile exness
+docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 \
+  --mt5-profile exness --reference mt5-history
 ```
 
 If you see gaps, out-of-order ticks, or duplicates — investigate before deploying. A flaky feed wrecks even a good strategy.

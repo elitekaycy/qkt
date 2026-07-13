@@ -261,18 +261,40 @@ class MT5ClientTest {
 
     @Test
     fun `getTick hits symbol_info_tick and preserves epoch time`() {
-        val serverEpochMs = 1_700_000_000L
+        val serverEpoch = 1_700_000_000L
+        val serverEpochMs = 1_700_000_000_123L
         server.enqueue(
             MockResponse().setBody(
-                """{"bid":"4561.510","ask":"4561.818","time":$serverEpochMs}""",
+                """{"bid":"4561.510","ask":"4561.818","time":$serverEpoch,"time_msc":$serverEpochMs}""",
             ),
         )
         val tick = client.getTick("XAUUSDm")!!
         assertThat(tick.bid).isEqualByComparingTo("4561.510")
         assertThat(tick.ask).isEqualByComparingTo("4561.818")
-        assertThat(tick.time).isEqualTo(serverEpochMs)
+        assertThat(tick.time).isEqualTo(serverEpoch)
+        assertThat(tick.timeMs).isEqualTo(serverEpochMs)
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/symbol_info_tick/XAUUSDm")
+    }
+
+    @Test
+    fun `getTicksRange preserves millisecond timestamps and bid ask`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ok":true,"data":[{"bid":"1.10001","ask":"1.10009","time":1700000000,"time_msc":1700000000123}]}""",
+            ),
+        )
+
+        val ticks = client.getTicksRange("EURUSDm", 1_700_000_000_000L, 1_700_000_001_000L)!!
+
+        assertThat(ticks).hasSize(1)
+        assertThat(ticks.single().bid).isEqualByComparingTo("1.10001")
+        assertThat(ticks.single().ask).isEqualByComparingTo("1.10009")
+        assertThat(ticks.single().timeMs).isEqualTo(1_700_000_000_123L)
+        assertThat(server.takeRequest().path)
+            .startsWith("/copy_ticks_range?symbol=EURUSDm")
+            .contains("from_date=2023-11-14T22%3A13%3A20Z")
+            .contains("to_date=2023-11-14T22%3A13%3A21Z")
     }
 
     @Test

@@ -7,7 +7,10 @@ data class MT5Tick(
     val symbol: String,
     val bid: BigDecimal,
     val ask: BigDecimal,
+    /** Venue epoch seconds retained for gateway compatibility. */
     val time: Long,
+    /** Venue epoch milliseconds, used for exact live/history reconciliation. */
+    val timeMs: Long = time * 1_000L,
 )
 
 /** Account-level snapshot from the MT5 venue — used for equity and leverage tracking. */
