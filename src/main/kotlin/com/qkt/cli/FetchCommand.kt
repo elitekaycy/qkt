@@ -87,6 +87,7 @@ class FetchCommand(
         println("qkt fetch: $broker:$symbol @ $tfArg from $fromDate to $toDate ($totalDays days)")
 
         var fetched = 0
+        var empty = 0
         var skipped = 0
         var idx = 0
         var day = fromDate
@@ -108,7 +109,14 @@ class FetchCommand(
                     return ExitCodes.USER_ERROR
                 }
             if (bars.isEmpty()) {
-                println("  [$idx/$totalDays] $day  empty (no bars returned by broker)")
+                if (fetcher.isExpectedEmpty(symbol, TimeRange(rangeStart, rangeEnd))) {
+                    store.writeDay(broker, symbol, tfArg, day, bars)
+                    store.recordDay(broker, symbol, tfArg, day)
+                    empty++
+                    println("  [$idx/$totalDays] $day  recorded empty (market closed)")
+                } else {
+                    println("  [$idx/$totalDays] $day  empty (open session; left uncovered for retry)")
+                }
             } else {
                 store.writeDay(broker, symbol, tfArg, day, bars)
                 store.recordDay(broker, symbol, tfArg, day)
@@ -117,7 +125,7 @@ class FetchCommand(
             }
             day = day.plusDays(1)
         }
-        println("qkt fetch: done — fetched=$fetched skipped=$skipped total=$totalDays")
+        println("qkt fetch: done — fetched=$fetched empty=$empty skipped=$skipped total=$totalDays")
         return ExitCodes.SUCCESS
     }
 
@@ -154,7 +162,7 @@ class FetchCommand(
     }
 
     private fun buildFetcher(broker: String): BarFetcher? =
-        when (broker) {
+        when (broker.uppercase()) {
             "BYBIT_SPOT" ->
                 BybitFetcher(BybitKlineClient(category = "spot"))
             "BYBIT_LINEAR" ->
@@ -188,7 +196,7 @@ class FetchCommand(
                         return null
                     }
                 val profile =
-                    profiles.firstOrNull { it.name == broker } ?: run {
+                    profiles.firstOrNull { it.name.equals(broker, ignoreCase = true) } ?: run {
                         System.err.println(
                             "qkt: no broker profile named '$broker' in qkt.config.yaml; " +
                                 "known: ${profiles.joinToString(", ") { it.name }}",
@@ -203,28 +211,47 @@ class FetchCommand(
                         apiKey = profile.apiKey,
                     ),
                     MT5Symbol(profile.symbolPolicy),
+                    profile.symbolCalendars,
                 )
             }
         }
 
     /** Thin adapter so MT5 and Bybit fetchers share a common shape for [run]. */
-    private interface BarFetcher {
+    private fun interface BarFetcher {
         fun fetch(
             symbol: String,
             window: TimeWindow,
             range: TimeRange,
         ): List<Candle>
+
+        fun isExpectedEmpty(
+            symbol: String,
+            range: TimeRange,
+        ): Boolean = false
     }
 
     private class Mt5Fetcher(
         private val inner: Mt5BarFetcher,
         private val symbols: MT5Symbol,
+        private val calendars: com.qkt.broker.mt5.SymbolCalendars,
     ) : BarFetcher {
         override fun fetch(
             symbol: String,
             window: TimeWindow,
             range: TimeRange,
         ): List<Candle> = inner.fetchRange(symbols.toBroker(symbol), window, range).toList()
+
+        override fun isExpectedEmpty(
+            symbol: String,
+            range: TimeRange,
+        ): Boolean {
+            var instant = range.from
+            while (instant.isBefore(range.to)) {
+                if (calendars.calendarFor(symbol).isInSession(symbol, instant)) return false
+                instant = instant.plusSeconds(3_600L)
+            }
+            return true
+        }
     }
 
     private class BybitFetcher(

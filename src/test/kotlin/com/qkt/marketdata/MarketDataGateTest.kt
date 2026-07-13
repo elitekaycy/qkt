@@ -2,6 +2,12 @@ package com.qkt.marketdata
 
 import com.qkt.common.Money
 import com.qkt.common.MutableClock
+import com.qkt.common.Side
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
+import com.qkt.positions.PositionTracker
+import com.qkt.risk.Decision
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -132,4 +138,38 @@ class MarketDataGateTest {
         val gate = MarketDataGate(TickingClock(0L))
         assertThat(gate.isHealthy("NEVER_SEEN")).isTrue()
     }
+
+    @Test
+    fun `stale data blocks entries but permits exits and recovers automatically`() {
+        val clock = TickingClock(1L)
+        val gate = MarketDataGate(clock, minStaleAgeMs = 1_000L)
+        val rule = MarketDataHealthRule(gate)
+        val positions = PositionTracker()
+        val entry = marketOrder("entry", Side.BUY)
+        val exit = marketOrder("exit", Side.SELL, closesTicket = "42")
+
+        gate.observe(tick("100", clock.t))
+        clock.t += 2_000L
+
+        assertThat(rule.evaluate(entry, positions)).isInstanceOf(Decision.Reject::class.java)
+        assertThat(rule.evaluate(exit, positions)).isEqualTo(Decision.Approve)
+
+        gate.observe(tick("100", clock.t))
+        assertThat(rule.evaluate(entry, positions)).isEqualTo(Decision.Approve)
+    }
+
+    private fun marketOrder(
+        id: String,
+        side: Side,
+        closesTicket: String? = null,
+    ): OrderRequest.Market =
+        OrderRequest.Market(
+            id = id,
+            symbol = "X",
+            side = side,
+            quantity = BigDecimal.ONE,
+            timeInForce = TimeInForce.GTC,
+            timestamp = 1L,
+            closesTicket = closesTicket,
+        )
 }
