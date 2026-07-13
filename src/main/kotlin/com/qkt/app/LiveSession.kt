@@ -1599,6 +1599,7 @@ class LiveSession(
                         deployedIds = { strategies.map { it.first } },
                         pollIntervalMs = insightsStatePollMs,
                         backfillDays = insightsDealBackfillDays,
+                        emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
                     ).also { it.start() }
             } else {
                 null
