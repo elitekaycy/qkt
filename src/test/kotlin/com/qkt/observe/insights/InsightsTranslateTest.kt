@@ -257,6 +257,12 @@ class InsightsTranslateTest {
                 swap = BigDecimal("-0.12"),
                 openedAt = 1781200000000L,
                 strategyId = "hedge_straddle",
+                stopLoss = BigDecimal("2290.0"),
+                takeProfit = BigDecimal("2350.5"),
+                requestedStopLoss = BigDecimal("2291.0"),
+                requestedTakeProfit = BigDecimal("2350.5"),
+                magic = 10001,
+                clientOrderId = "qkt-abc-123",
             )
         val orphan =
             attributed.copy(
@@ -266,6 +272,12 @@ class InsightsTranslateTest {
                 swap = null,
                 openedAt = null,
                 strategyId = null,
+                stopLoss = null,
+                takeProfit = null,
+                requestedStopLoss = null,
+                requestedTakeProfit = null,
+                magic = null,
+                clientOrderId = null,
             )
         val env =
             InsightsTranslate.statePositions(
@@ -284,8 +296,58 @@ class InsightsTranslateTest {
         assertThat(json).contains(""""currentPrice":2310.2""")
         assertThat(json).contains(""""openedAt":1781200000000""")
         assertThat(json).contains(""""strategyId":"hedge_straddle"""")
+        assertThat(json).contains(""""stopLoss":2290.0""")
+        assertThat(json).contains(""""takeProfit":2350.5""")
+        assertThat(json).contains(""""requestedStopLoss":2291.0""")
+        assertThat(json).contains(""""magic":10001""")
+        assertThat(json).contains(""""clientOrderId":"qkt-abc-123"""")
         // The orphan ticket appears with its nulls absent, not serialized as null.
         assertThat(json).contains(""""ticket":"124"""")
+        assertThat(json).doesNotContain("null")
+    }
+
+    @Test
+    fun `state orders carries each resting order and omits null optionals`() {
+        val order =
+            StatePendingOrder(
+                ticket = "501",
+                symbol = "EXNESS:XAUUSD",
+                side = "BUY",
+                orderType = "ORDER_TYPE_BUY_LIMIT",
+                qty = BigDecimal("0.01"),
+                price = BigDecimal("2250.0"),
+                stopLoss = BigDecimal("2200.0"),
+                takeProfit = BigDecimal("2400.0"),
+                expiresAt = 1781300000000L,
+                createdAt = 1781200000000L,
+                magic = 10001,
+                clientOrderId = "qkt-ord-2",
+                strategyId = "hedge_straddle",
+            )
+        val bare =
+            order.copy(
+                ticket = "502",
+                price = null,
+                stopLoss = null,
+                takeProfit = null,
+                expiresAt = null,
+                createdAt = null,
+                magic = null,
+                clientOrderId = null,
+                strategyId = null,
+            )
+        val env = InsightsTranslate.stateOrders(ts = 1718000000000L, broker = "EXNESS", orders = listOf(order, bare))
+        assertThat(env.id).isEqualTo("pord-EXNESS-1718000000000")
+        assertThat(env.type).isEqualTo("state.orders")
+        assertThat(env.strategyId).isNull()
+        val json = env.toJson("qkt-prod")
+        assertThat(json).contains(""""ticket":"501"""")
+        assertThat(json).contains(""""orderType":"ORDER_TYPE_BUY_LIMIT"""")
+        assertThat(json).contains(""""price":2250.0""")
+        assertThat(json).contains(""""stopLoss":2200.0""")
+        assertThat(json).contains(""""expiresAt":1781300000000""")
+        assertThat(json).contains(""""strategyId":"hedge_straddle"""")
+        assertThat(json).contains(""""ticket":"502"""")
         assertThat(json).doesNotContain("null")
     }
 
@@ -334,6 +396,8 @@ class InsightsTranslateTest {
                 magic = 10001,
                 comment = "dsl-hedge_straddle",
                 ts = 1781201000000L,
+                fee = BigDecimal("-0.75"),
+                clientOrderId = "qkt-abc-123",
             )
         val env = InsightsTranslate.brokerDeal(deal, strategyId = "hedge_straddle")
         assertThat(env.id).isEqualTo("deal-EXNESS-456")
@@ -351,6 +415,8 @@ class InsightsTranslateTest {
         assertThat(json).contains(""""profit":9.7""")
         assertThat(json).contains(""""commission":-0.07""")
         assertThat(json).contains(""""swap":-0.12""")
+        assertThat(json).contains(""""fee":-0.75""")
+        assertThat(json).contains(""""clientOrderId":"qkt-abc-123"""")
         assertThat(json).contains(""""magic":10001""")
         assertThat(json).contains(""""ts":1781201000000""")
         assertThat(json).contains(""""strategyId":"hedge_straddle"""")

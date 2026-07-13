@@ -12,7 +12,8 @@ import org.slf4j.LoggerFactory
  * after a restart dedupes at the collector instead of double-counting.
  *
  * e.g. one cycle for EXNESS emits one "state.account", one "state.positions" (full
- * replace), and one "broker.deal" per deal booked since the previous cycle.
+ * replace), one "state.orders" (full replace), and — when the DEAL family is enabled —
+ * one "broker.deal" per deal booked since the previous cycle.
  */
 class BrokerStatePoller(
     private val brokers: List<Broker>,
@@ -24,6 +25,12 @@ class BrokerStatePoller(
     private val pollIntervalMs: Long = 10_000L,
     /** How far back the first cycle fetches deals; later cycles fetch only new ones. */
     private val backfillDays: Long = 30L,
+    /**
+     * Whether deal history is emitted. Gated by the DEAL insights family — the poller
+     * itself rides STATE, so a config enabling state but not deal gets account,
+     * positions, and pending orders without the deal stream.
+     */
+    private val emitDeals: Boolean = true,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(BrokerStatePoller::class.java)
@@ -98,20 +105,53 @@ class BrokerStatePoller(
                             swap = t.swap,
                             openedAt = t.openedAt,
                             strategyId = attribution.ownerOf(t.ticket) ?: attribution.fromComment(t.comment, deployed),
+                            stopLoss = t.stopLoss,
+                            takeProfit = t.takeProfit,
+                            requestedStopLoss = t.requestedStopLoss,
+                            requestedTakeProfit = t.requestedTakeProfit,
+                            magic = t.magic,
+                            clientOrderId = t.clientOrderId,
                         )
                     },
             ),
         )
 
-        var newest = lastDealTs.getOrPut(broker) { now - backfillDays * DAY_MS }
-        for (d in broker.deals(newest + 1, now)) {
-            val strategyId =
-                attribution.ownerOf(d.positionTicket ?: d.dealTicket)
-                    ?: attribution.fromComment(d.comment, deployed)
-            sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
-            if (d.ts > newest) newest = d.ts
+        sink.offer(
+            InsightsTranslate.stateOrders(
+                ts = now,
+                broker = account.broker,
+                orders =
+                    broker.pendingOrders().map { o ->
+                        StatePendingOrder(
+                            ticket = o.ticket,
+                            symbol = o.symbol,
+                            side = o.side.name,
+                            orderType = o.orderType,
+                            qty = o.qty,
+                            price = o.price,
+                            stopLoss = o.stopLoss,
+                            takeProfit = o.takeProfit,
+                            expiresAt = o.expiresAt,
+                            createdAt = o.createdAt,
+                            magic = o.magic,
+                            clientOrderId = o.clientOrderId,
+                            strategyId = attribution.ownerOf(o.ticket) ?: attribution.fromComment(o.comment, deployed),
+                        )
+                    },
+            ),
+        )
+
+        if (emitDeals) {
+            var newest = lastDealTs.getOrPut(broker) { now - backfillDays * DAY_MS }
+            for (d in broker.deals(newest + 1, now)) {
+                val strategyId =
+                    attribution.ownerOf(d.positionTicket ?: d.dealTicket)
+                        ?: attribution.fromComment(d.comment, deployed)
+                sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
+                if (d.ts > newest) newest = d.ts
+            }
+            lastDealTs[broker] = newest
         }
-        lastDealTs[broker] = newest
 
         // Prune only after the deal fetch: a position that closed since the last cycle
         // is already gone from [tickets], and its closing deal arrives in this same
