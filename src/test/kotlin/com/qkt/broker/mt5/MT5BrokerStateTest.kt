@@ -23,6 +23,7 @@ class MT5BrokerStateTest {
     private var accountResponse: () -> MockResponse = { MockResponse().setResponseCode(404) }
     private var positionsResponse: () -> MockResponse = { MockResponse().setBody("[]") }
     private var dealsResponse: () -> MockResponse = { MockResponse().setResponseCode(404) }
+    private var ordersResponse: () -> MockResponse = { MockResponse().setBody("[]") }
 
     @BeforeEach
     fun setup() {
@@ -34,7 +35,7 @@ class MT5BrokerStateTest {
                     val path = request.path.orEmpty()
                     return when {
                         path.startsWith("/get_positions") -> positionsResponse()
-                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> ordersResponse()
                         path.startsWith("/account") -> accountResponse()
                         path.startsWith("/history_deals_get") -> dealsResponse()
                         else -> MockResponse().setResponseCode(404)
@@ -101,7 +102,7 @@ class MT5BrokerStateTest {
                     """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700040000000},""" +
                     """{"ticket":457,"order":790,"position_id":123,"symbol":"XAUUSDm","type":1,"entry":1,""" +
                     """"volume":"0.01","price":"2310.2","profit":"9.7","commission":"-0.07","swap":"-0.12",""" +
-                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700050000000}]""",
+                    """"fee":"-0.75","magic":10001,"comment":"dsl-hedge_straddle","client_order_id":"qkt-abc-123","time_msc":1700050000000}]""",
             )
         }
         broker = newBroker()
@@ -126,6 +127,11 @@ class MT5BrokerStateTest {
         assertThat(closed.magic).isEqualTo(10001)
         assertThat(closed.comment).isEqualTo("dsl-hedge_straddle")
         assertThat(closed.ts).isEqualTo(1_700_050_000_000L)
+        assertThat(closed.fee!!).isEqualByComparingTo("-0.75")
+        assertThat(closed.clientOrderId).isEqualTo("qkt-abc-123")
+        // The opening leg carried fee 0 and no client id.
+        assertThat(opened.fee!!).isEqualByComparingTo("0")
+        assertThat(opened.clientOrderId).isNull()
     }
 
     @Test
@@ -160,8 +166,8 @@ class MT5BrokerStateTest {
             MockResponse().setBody(
                 """[{"ticket":2832831596,"symbol":"XAUUSDm","type":1,"volume":"0.01",""" +
                     """"price_open":"2300.5","price_current":"2310.2","sl":"0","tp":"0",""" +
-                    """"profit":"-9.3","swap":"-0.12","magic":10001,"time_msc":1700000000000,""" +
-                    """"comment":"dsl-hedge_straddle"}]""",
+                    """"profit":"-9.3","swap":"-0.12","magic":10001,"client_order_id":"qkt-pos-1",""" +
+                    """"time_msc":1700000000000,"comment":"dsl-hedge_straddle"}]""",
             )
         }
         broker = newBroker()
@@ -178,6 +184,43 @@ class MT5BrokerStateTest {
         assertThat(t.swap!!).isEqualByComparingTo("-0.12")
         assertThat(t.openedAt).isEqualTo(1_700_000_000_000L)
         assertThat(t.comment).isEqualTo("dsl-hedge_straddle")
+        assertThat(t.magic).isEqualTo(10001)
+        assertThat(t.clientOrderId).isEqualTo("qkt-pos-1")
+    }
+
+    @Test
+    fun `pendingOrders maps resting orders with protective levels and expiry`() {
+        ordersResponse = {
+            MockResponse().setBody(
+                """[{"ticket":501,"symbol":"XAUUSDm","type":"ORDER_TYPE_BUY_LIMIT","volume":"0.01",""" +
+                    """"price_open":"2250.0","sl":"2200.0","tp":"2400.0","magic":10001,""" +
+                    """"time_setup":1700000000000,"time_expiration":1700003600000,""" +
+                    """"comment":"dsl-hedge_straddle","client_order_id":"qkt-ord-2"}]""",
+            )
+        }
+        broker = newBroker()
+        val orders = broker.pendingOrders()
+        assertThat(orders).hasSize(1)
+        val o = orders[0]
+        assertThat(o.ticket).isEqualTo("501")
+        assertThat(o.symbol).isEqualTo("EXNESS:XAUUSD")
+        assertThat(o.side).isEqualTo(Side.BUY)
+        assertThat(o.orderType).isEqualTo("ORDER_TYPE_BUY_LIMIT")
+        assertThat(o.qty).isEqualByComparingTo("0.01")
+        assertThat(o.price!!).isEqualByComparingTo("2250.0")
+        assertThat(o.stopLoss!!).isEqualByComparingTo("2200.0")
+        assertThat(o.takeProfit!!).isEqualByComparingTo("2400.0")
+        assertThat(o.expiresAt).isEqualTo(1_700_003_600_000L)
+        assertThat(o.createdAt).isEqualTo(1_700_000_000_000L)
+        assertThat(o.magic).isEqualTo(10001)
+        assertThat(o.clientOrderId).isEqualTo("qkt-ord-2")
+    }
+
+    @Test
+    fun `pendingOrders is empty when the gateway read fails`() {
+        broker = newBroker()
+        ordersResponse = { MockResponse().setResponseCode(500).setBody("boom") }
+        assertThat(broker.pendingOrders()).isEmpty()
     }
 
     @Test
