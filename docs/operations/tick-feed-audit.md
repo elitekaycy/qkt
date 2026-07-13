@@ -36,7 +36,7 @@ Flags:
 - `--poll-ms` — MT5 poll cadence (default 250 ms). Leave default.
 - `--reference` — `tradingview` (default) or `mt5-history` for a single-source
   production path.
-- `--settle-ms` — wait before reading MT5 history (default 5000 ms). This avoids
+- `--settle-ms` — wait before reading MT5 history (default 15000 ms). This avoids
   comparing a just-arrived quote before the terminal commits it to history.
 - `--json` — emit a single-line JSON result to stdout instead of the human table.
 - `--out <path>` — also persist the JSON to a file (regardless of `--json`). Parent dirs are created. Lets you skip the stdout-piping dance below.
@@ -108,6 +108,12 @@ consistent with the low tick rate in this window rather than transport delay.
 This proves that the live, raw-history, and M1 paths agree, but 15 ticks in two minutes
 is not a representative liquid-hours quality bound. A London or early-New-York run is
 still required before closing the issue.
+
+An isolated `XAUUSDm` validation on 2026-07-13 also established the settlement bound used
+by the operator command. With the former 5000 ms default, 20 of 21 live ticks matched and
+one had not appeared in history when queried. Repeating with 15000 ms produced 74 of 74
+exact timestamp and bid/ask matches. The default is therefore 15000 ms; persisted artifacts
+record `duration_seconds`, `poll_ms`, and `settle_ms` so this parameter is reviewable.
 
 ### Previous TradingView attempt (2026-06-03)
 
