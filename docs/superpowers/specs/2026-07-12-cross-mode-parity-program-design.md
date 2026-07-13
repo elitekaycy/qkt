@@ -100,5 +100,10 @@ not MT5 venue evidence.
 
 `MT5GoldenFixture` and `MT5GoldenVerifier` implement the versioned capture schema, strict loader,
 deterministic simulator replay, explicit price/volume tolerance checks, and aggregate partial-deal
-comparison. The committed synthetic fixture exercises only this machinery and is rejected by the
-authenticity gate. The MT5 demo golden evidence row remains unproven pending an authentic capture.
+comparison. The synthetic fixture exercises only this machinery and is rejected by the authenticity
+gate. `mt5-golden-exness-demo-2026-06-19.json` replays a retained Exness trial-account XAUUSD market
+order against its raw bid/ask ticks at zero price and volume tolerance. Its sanitized source artifact
+retains the demo account mode, symbol metadata, MT5 history order, deal, and raw tick window under a
+verified SHA-256. The originating strategy was external to qkt and the transient `order_send` retcode
+was not retained, so the fixture encodes retcode `0` and proves acceptance from MT5 order state `4`
+plus the linked deal instead of inventing a response code.
