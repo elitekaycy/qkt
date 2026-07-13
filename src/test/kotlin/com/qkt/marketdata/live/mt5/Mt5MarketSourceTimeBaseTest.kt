@@ -25,6 +25,7 @@ class Mt5MarketSourceTimeBaseTest {
 
             val bars = source.bars("TEST:EURUSD", WINDOW, RANGE).toList()
 
+            assertThat(bars.single().symbol).isEqualTo("TEST:EURUSD")
             assertThat(bars.single().startTime).isEqualTo(Instant.parse("2026-07-15T08:00:00Z").toEpochMilli())
         } finally {
             server.shutdown()
