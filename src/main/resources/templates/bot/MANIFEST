@@ -1,0 +1,3 @@
+# Files layered by `qkt create template --kind bot` (on top of the mt5 base).
+SYSTEM_PROMPT.md.tmpl
+BOT.md.tmpl

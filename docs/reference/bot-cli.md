@@ -23,7 +23,8 @@ external AI  ──shell──▶  qkt bot ...  ──HTTP──▶  mt5-gateway
 - Symbols are always `BROKER:SYMBOL` (e.g. `EXNESS:XAUUSD`); the prefix must match a
   configured broker or the command fails closed.
 
-A ready-to-copy starter lives in `examples/ai-overlay/` (config template plus an AI
+A ready-to-copy starter lives in `examples/bot/`, or scaffold a full project with
+`qkt create template <path> --kind bot` (MT5 compose stack plus an AI
 system-prompt describing this whole surface).
 
 ## Common flags
