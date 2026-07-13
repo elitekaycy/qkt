@@ -156,7 +156,7 @@ order, max open exposure per symbol, allowed symbols. Absent block → validatio
 - Phase changelog after merge (`docs/phases/`), per the standard lifecycle.
 - `docs/bot-cli.md` — user-facing cookbook: every command, flag reference, JSON output
   schemas, exit codes, error codes, the fail-closed list, and the risk divergences.
-- `examples/ai-overlay/` — the getting-started template: a ready-to-paste AI
+- `examples/bot/` + `qkt create template --kind bot` — the getting-started template: a ready-to-paste AI
   system-prompt describing the command surface and schemas (always `--json`, check
   `qkt bot account` before sizing, ...) plus a starter `qkt.config.yaml`.
 

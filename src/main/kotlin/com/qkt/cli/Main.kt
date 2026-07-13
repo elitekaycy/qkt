@@ -70,7 +70,8 @@ private fun printHelp() {
             qkt <subcommand> [arguments]
 
         PROJECT SCAFFOLDING
-            create template <path>  scaffold a project (--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit)
+            create template <path>  scaffold a project
+                                    (--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit|bot)
 
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file

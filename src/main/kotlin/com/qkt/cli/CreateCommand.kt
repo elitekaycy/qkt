@@ -9,7 +9,9 @@ import java.nio.file.Path
  * so a new operator can go from "I have qkt installed" to "I have a daemon running
  * on docker-compose" in two commands. Default kind is `mt5` — the canonical full
  * stack with `mt5-gateway`; `minimal` skips the gateway for paper-only / backtest
- * exploration; `bybit` swaps MT5 out for direct Bybit REST API (testnet by default).
+ * exploration; `bybit` swaps MT5 out for direct Bybit REST API (testnet by default);
+ * `bot` layers the `qkt bot` AI-agent files (system prompt, bot guide) on the
+ * mt5 stack.
  */
 class CreateCommand(
     private val args: Args,
@@ -42,6 +44,7 @@ class CreateCommand(
                 "backtest" -> listOf("minimal", "backtest")
                 "portfolio" -> listOf("minimal", "portfolio")
                 "mt5-ci" -> listOf("mt5", "mt5-ci")
+                "bot" -> listOf("mt5", "bot")
                 else -> listOf(kind)
             }
         return when (val result = scaffolder.scaffoldLayers(layers, target, tokens)) {
@@ -70,6 +73,7 @@ class CreateCommand(
     }
 
     private companion object {
-        private val VALID_KINDS = linkedSetOf("mt5", "mt5-ci", "backtest", "portfolio", "minimal", "bybit")
+        private val VALID_KINDS =
+            linkedSetOf("mt5", "mt5-ci", "backtest", "portfolio", "minimal", "bybit", "bot")
     }
 }
