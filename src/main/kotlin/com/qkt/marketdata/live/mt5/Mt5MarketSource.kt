@@ -82,6 +82,7 @@ class Mt5MarketSource(
                 normalizeBidBarsToMid = true,
                 apiKey = profile.apiKey,
             ).fetchRange(wire, window, range)
+                .map { candle -> candle.copy(symbol = symbol) }
                 .toList()
         validateRecentTimeBase(bareSymbol, wire, window, range, candles)
         return candles.asSequence()
