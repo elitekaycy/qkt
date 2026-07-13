@@ -110,9 +110,9 @@ class IndicatorWarmerPerStreamTest {
                 seed =
                     mapOf(
                         ("X" to TimeWindow.ONE_MINUTE) to
-                            (0..4).map { candle("X", candleStart + it * 60_000L, 60_000L) },
+                            (0..4).map { candle("X", candleStart + (55 + it) * 60_000L, 60_000L) },
                         ("Y" to TimeWindow.ONE_HOUR) to
-                            (0..2).map { candle("Y", candleStart + it * 3_600_000L, 3_600_000L) },
+                            (0..2).map { candle("Y", candleStart - (2 - it) * 3_600_000L, 3_600_000L) },
                     ),
             )
         val warmer = IndicatorWarmer(source, pipeline(source))
@@ -137,7 +137,11 @@ class IndicatorWarmerPerStreamTest {
     fun `per-stream warmup skips symbols with WarmupSpec None`() {
         val source =
             RecordingMarketSource(
-                seed = mapOf(("X" to TimeWindow.ONE_MINUTE) to listOf(candle("X", candleStart, 60_000L))),
+                seed =
+                    mapOf(
+                        ("X" to TimeWindow.ONE_MINUTE) to
+                            listOf(candle("X", candleStart + 59 * 60_000L, 60_000L)),
+                    ),
             )
         val warmer = IndicatorWarmer(source, pipeline(source))
 
@@ -161,7 +165,7 @@ class IndicatorWarmerPerStreamTest {
                 seed =
                     mapOf(
                         ("X" to TimeWindow.ONE_MINUTE) to
-                            (0..2).map { candle("X", candleStart + it * 60_000L, 60_000L) },
+                            (0..2).map { candle("X", candleStart + (57 + it) * 60_000L, 60_000L) },
                     ),
             )
         val pipe = pipeline(source)
@@ -187,8 +191,10 @@ class IndicatorWarmerPerStreamTest {
             RecordingMarketSource(
                 seed =
                     mapOf(
-                        ("X" to TimeWindow.ONE_MINUTE) to listOf(candle("X", candleStart, 60_000L)),
-                        ("Y" to TimeWindow.ONE_MINUTE) to listOf(candle("Y", candleStart, 60_000L)),
+                        ("X" to TimeWindow.ONE_MINUTE) to
+                            listOf(candle("X", candleStart + 59 * 60_000L, 60_000L)),
+                        ("Y" to TimeWindow.ONE_MINUTE) to
+                            listOf(candle("Y", candleStart + 59 * 60_000L, 60_000L)),
                     ),
             )
         val warmer = IndicatorWarmer(source, pipeline(source))
@@ -205,7 +211,16 @@ class IndicatorWarmerPerStreamTest {
 
     @Test
     fun `same symbol at two windows keeps both warmup requests`() {
-        val source = RecordingMarketSource(seed = emptyMap())
+        val source =
+            RecordingMarketSource(
+                seed =
+                    mapOf(
+                        ("X" to TimeWindow.ONE_MINUTE) to
+                            (0..4).map { candle("X", candleStart + (55 + it) * 60_000L, 60_000L) },
+                        ("X" to TimeWindow.ONE_HOUR) to
+                            (0..2).map { candle("X", candleStart - (2 - it) * 3_600_000L, 3_600_000L) },
+                    ),
+            )
         val warmer = IndicatorWarmer(source, pipeline(source))
 
         warmer.warmup(
