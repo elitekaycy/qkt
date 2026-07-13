@@ -137,6 +137,7 @@ class BotActionCompilerTest {
         assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("2590")
         assertThat(bracket.takeProfit).isEqualByComparingTo("2620")
         assertThat(bracket.timeInForce).isEqualTo(TimeInForce.DAY)
+        assertThat(bracket.expiresAt).isEqualTo(86_400_000L)
     }
 
     @Test
