@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "kind": "MT5_DEMO_SESSION",
+    "capturedAtUtc": "2026-06-19T03:00:05.223Z",
+    "captureId": "exness-demo-xauusdm-2867967948",
+    "sourceArtifactSha256": "0a28b8f3649ddce70e208ab545c212ae7129dffa597327dfa33c56585e918694",
+    "sourceHost": "bot1:qkt-livebook-mt5-gateway-1",
+    "notes": "Authentic Exness MT5 trial-account history. The originating PA strategy was external to qkt; its retained market-order history, correlation comment, deal, symbol metadata, and raw ticks are normalized into the qkt replay schema. The transient order_send retcode was unavailable and is encoded as 0, not inferred."
+  },
+  "account": {
+    "mode": "demo",
+    "serverTimeZone": "new_york_close",
+    "brokerProfile": "exness-external-demo-capture",
+    "accountCurrency": "USD"
+  },
+  "instrument": {
+    "qktSymbol": "EXNESS:XAUUSD",
+    "venueSymbol": "XAUUSDm",
+    "contractSize": "100.0",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "volumeMax": "200.0",
+    "pointSize": "0.001",
+    "digits": 3,
+    "tradeStopsLevelPoints": 0
+  },
+  "tolerances": {
+    "pricePoints": 0,
+    "volumeSteps": 0
+  },
+  "ticks": [
+    {"sequence": 1, "timestampMs": 1781838003867, "symbol": "EXNESS:XAUUSD", "bid": "4177.082", "ask": "4177.342"},
+    {"sequence": 2, "timestampMs": 1781838004589, "symbol": "EXNESS:XAUUSD", "bid": "4177.028", "ask": "4177.288"},
+    {"sequence": 3, "timestampMs": 1781838005196, "symbol": "EXNESS:XAUUSD", "bid": "4176.976", "ask": "4177.236"},
+    {"sequence": 5, "timestampMs": 1781838006350, "symbol": "EXNESS:XAUUSD", "bid": "4176.948", "ask": "4177.208"},
+    {"sequence": 6, "timestampMs": 1781838006851, "symbol": "EXNESS:XAUUSD", "bid": "4176.894", "ask": "4177.154"},
+    {"sequence": 7, "timestampMs": 1781838008151, "symbol": "EXNESS:XAUUSD", "bid": "4176.911", "ask": "4177.171"}
+  ],
+  "submissions": [
+    {
+      "sequence": 4,
+      "clientOrder": {
+        "id": "PA|xauusd_hedge-",
+        "strategyId": "external-demo-capture",
+        "symbol": "EXNESS:XAUUSD",
+        "side": "BUY",
+        "kind": "MARKET",
+        "quantity": "0.05",
+        "timeInForce": "GTC",
+        "timestampMs": 1781838005222
+      },
+      "venueRequest": {
+        "clientOrderId": "PA|xauusd_hedge-",
+        "symbol": "XAUUSDm",
+        "action": "DEAL",
+        "orderType": "BUY",
+        "volume": "0.05",
+        "magic": 200002,
+        "typeTime": "GTC"
+      }
+    }
+  ],
+  "venueOrders": [
+    {
+      "clientOrderId": "PA|xauusd_hedge-",
+      "brokerOrderId": "2867967948",
+      "accepted": true,
+      "retcode": 0,
+      "status": "FILLED",
+      "comment": "MT5 history state=4; transient order_send retcode unavailable"
+    }
+  ],
+  "venueDeals": [
+    {
+      "clientOrderId": "PA|xauusd_hedge-",
+      "dealId": "2336471757",
+      "positionTicket": "2867967948",
+      "side": "BUY",
+      "executedVolume": "0.05",
+      "price": "4177.236",
+      "retcode": 0,
+      "commission": "0.0",
+      "swap": "0.0",
+      "fee": "0.0"
+    }
+  ]
+}

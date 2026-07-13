@@ -13,7 +13,7 @@ evidence and explicitly identify the external MT5 fixture still required.
 - [x] Add CLI double-run determinism for paper, MT5 sim, bars, tick-fills, and portfolio.
 - [x] Add a reviewed source-clock allowlist test.
 - [x] Add the MT5 demo fixture schema and replay verifier.
-- [ ] Obtain and review an authentic MT5 demo capture; do not substitute synthetic data.
-- [ ] Update parity claims to cite exact test coverage and residual gaps.
+- [x] Obtain and review an authentic MT5 demo capture; do not substitute synthetic data.
+- [x] Update parity claims to cite exact test coverage and residual gaps.
 - [ ] Run full gates, PR to dev, promote through testing/main, and close #645 only if every
       acceptance row, including the authentic MT5 fixture, is proven.
