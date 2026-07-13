@@ -34,6 +34,10 @@ internal fun runMain(argv: Array<String>): Int {
             "preflight" -> PreflightCommand(args).run()
             "promotion" -> PromotionCommand(args).run()
             "incident" -> IncidentCommand(args).run()
+            "bot" ->
+                com.qkt.cli.bot
+                    .BotCommand(args)
+                    .run()
             "daemon" -> DaemonCommand(args).run()
             "logs" -> LogsCommand(args).run()
             "status" -> StatusCommand(args).run()
@@ -66,7 +70,8 @@ private fun printHelp() {
             qkt <subcommand> [arguments]
 
         PROJECT SCAFFOLDING
-            create template <path>  scaffold a project (--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit)
+            create template <path>  scaffold a project
+                                    (--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit|bot)
 
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
@@ -93,6 +98,12 @@ private fun printHelp() {
             logs <name> [-f]        tail per-strategy log file
             stop <name> [--flatten] gracefully stop a deployed strategy
             start <portfolio>/<c>   clear operator-stop on a portfolio child
+
+        ONE-SHOT TRADING (AI/manual overlay)
+            bot buy|sell ...        place a one-shot order (see qkt bot help)
+            bot close|modify|cancel manage venue positions and pending orders
+            bot account|positions|orders|quote|bars|history|eval
+                                    read venue truth and evaluate indicators
 
         VENUE / FEED
             brokers list            list configured broker profiles
