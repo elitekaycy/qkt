@@ -80,7 +80,8 @@ If readiness is 503, inspect `docker compose logs mt5-gateway`; VNC remains avai
 Before deploying a real strategy, verify the gateway's ticks match what you expect. The `audit-ticks` CLI captures live ticks for a few minutes and reports any anomalies:
 
 ```bash
-docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 --mt5-profile exness
+docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 \
+  --mt5-profile exness --reference mt5-history
 ```
 
 Output:

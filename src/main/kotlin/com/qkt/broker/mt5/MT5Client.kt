@@ -1,7 +1,9 @@
 package com.qkt.broker.mt5
 
 import java.math.BigDecimal
+import java.net.URLEncoder
 import java.time.Duration
+import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -492,12 +494,53 @@ class MT5Client(
         val raw = getWithRetry("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
         val rawTime = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        val rawTimeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: rawTime * 1_000L
         return MT5Tick(
             symbol = brokerSymbol,
             bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             time = rawTime,
+            timeMs = rawTimeMs,
         )
+    }
+
+    /** Return raw venue ticks for the inclusive UTC millisecond window. */
+    fun getTicksRange(
+        brokerSymbol: String,
+        fromUtcMs: Long,
+        toUtcMs: Long,
+    ): List<MT5Tick>? {
+        require(toUtcMs >= fromUtcMs) { "MT5 tick-history range ends before it starts" }
+        val from =
+            URLEncoder.encode(
+                Instant
+                    .ofEpochMilli(fromUtcMs)
+                    .toString(),
+                Charsets.UTF_8,
+            )
+        val to =
+            URLEncoder.encode(
+                Instant
+                    .ofEpochMilli(toUtcMs)
+                    .toString(),
+                Charsets.UTF_8,
+            )
+        val raw =
+            getWithRetry(
+                "$gatewayUrl/copy_ticks_range?symbol=$brokerSymbol&from_date=$from&to_date=$to",
+            ) ?: return null
+        val rows = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
+        return rows.map { element ->
+            val obj = element.jsonObject
+            val time = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+            MT5Tick(
+                symbol = brokerSymbol,
+                bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+                ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+                time = time,
+                timeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: time * 1_000L,
+            )
+        }
     }
 
     /**

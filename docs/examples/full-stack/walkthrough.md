@@ -125,23 +125,29 @@ If `exness` is missing, the `qkt.config.yaml` didn't load — check the bind-mou
 This is the step new operators skip and regret. Capture a minute of ticks from each venue and check for anomalies:
 
 ```bash
-docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 --mt5-profile exness
+docker compose exec qkt qkt audit-ticks \
+  --symbol EURUSD --duration 60 --mt5-profile exness \
+  --reference mt5-history
 ```
 
 Expected output:
 
 ```text
-audit-ticks EURUSD via exness
-  ticks received:    412
-  bid range:         1.0828–1.0834
-  ask range:         1.0829–1.0835
-  spread (avg):      1.2 points
-  duplicates:        0
-  out-of-order:      0
-  gaps > 5s:         0
+poll samples:             240
+unique in-window ticks:   96
+history ticks:            121
+exact timestamp matches:  96
+exact bid/ask matches:    96
+timestamp price mismatch: 0
+missing from history:     0
+quote age p95 ms:         380
+result:                   PASS
 ```
 
-Today `qkt audit-ticks` is MT5-only (it requires a `--mt5-profile` and uses the gateway directly). Auditing the Bybit feed is on the roadmap as part of broader broker-tick audit support — see [Planned features](../../planned.md).
+The default reference compares TradingView with MT5. `--reference mt5-history` is the
+appropriate mode when the deployed strategy and execution path both use MT5. Auditing
+the Bybit feed is on the roadmap as part of broader broker-tick audit support — see
+[Planned features](../../planned.md).
 
 If you see gaps, out-of-order ticks, or duplicates — investigate before deploying. A flaky feed wrecks even a good strategy.
 
