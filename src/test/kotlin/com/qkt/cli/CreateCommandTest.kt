@@ -297,6 +297,29 @@ class CreateCommandTest {
     }
 
     @Test
+    fun `kind bot layers ai agent files on the mt5 stack`(
+        @TempDir tmp: Path,
+    ) {
+        val target = tmp.resolve("project")
+        val (code, _, _) = invoke("create", "template", target.toString(), "--kind", "bot")
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+
+        for (entry in MT5_EXPECTED_FILES) {
+            assertThat(target.resolve(entry))
+                .withFailMessage("expected mt5 base file $entry at $target")
+                .exists()
+        }
+        val prompt = Files.readString(target.resolve("SYSTEM_PROMPT.md"))
+        assertThat(prompt).contains("qkt bot buy")
+        assertThat(prompt).contains("--dry-run")
+        assertThat(prompt).contains("--as <your-agent-name>")
+        assertThat(prompt).contains("qkt ${BuildInfo.VERSION}")
+        val bot = Files.readString(target.resolve("BOT.md"))
+        assertThat(bot).contains("SYSTEM_PROMPT.md")
+        assertThat(bot).contains("qkt bot account --json")
+    }
+
+    @Test
     fun `unknown --kind errors out and lists valid kinds`(
         @TempDir tmp: Path,
     ) {

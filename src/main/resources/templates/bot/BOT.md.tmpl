@@ -1,0 +1,28 @@
+# Bot CLI in this project
+
+This project was scaffolded with `--kind bot`: the standard MT5 compose
+stack plus the files an AI trading overlay needs. The `qkt.config.yaml` here is
+what `qkt bot` reads when run from this directory.
+
+## Wire an AI agent
+
+1. Bring the stack up (`make up`) and complete the one-time MT5 login (see README).
+2. Give your agent shell access with this directory as its working directory.
+3. Paste `SYSTEM_PROMPT.md` into the agent's system prompt and set its `--as` name.
+
+## Smoke-test the surface by hand
+
+```bash
+qkt bot account --json
+qkt bot quote EXNESS:XAUUSD --json
+qkt bot buy 0.01 EXNESS:XAUUSD --sl by:5 --tp by:10 --dry-run --json   # offline preview
+qkt bot buy 0.01 EXNESS:XAUUSD --sl by:5 --tp by:10 --as smoke --json  # real (demo!) order
+qkt bot positions --json
+qkt bot close EXNESS:XAUUSD --all --json
+```
+
+Every trade is journaled under the qkt state directory (`bot/<as>/journal-*.jsonl`)
+and, when the `insights:` block is enabled, egressed to qkt-insights with the
+canonical DSL text and its sha256.
+
+Full reference: https://elitekaycy.github.io/qkt/reference/bot-cli/ (qkt {{QKT_VERSION}})
