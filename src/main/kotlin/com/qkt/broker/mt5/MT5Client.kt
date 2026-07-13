@@ -22,9 +22,11 @@ import org.slf4j.LoggerFactory
 /**
  * Low-level HTTP client for the `mt5-gateway` service.
  *
- * One client per [MT5Broker]. Handles JSON serialization, retries on GETs (POST /order
+ * Handles JSON serialization, retries on GETs (POST /order
  * is deliberately not retried — duplicate placement is worse than a surfaced failure),
  * broker-local query windows and UTC epoch timestamps returned by MT5, plus basic error parsing.
+ * Daemon deployments may share one instance across strategy-local brokers; [readCache] collapses
+ * their identical snapshot reads without sharing any broker attribution state.
  */
 class MT5Client(
     private val gatewayUrl: String,
@@ -32,6 +34,7 @@ class MT5Client(
     private val httpTimeoutMs: Long = 5000,
     private val retryAttempts: Int = 3,
     private val apiKey: String? = null,
+    private val readCache: MT5ReadCache? = null,
 ) {
     private val log = LoggerFactory.getLogger(MT5Client::class.java)
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,6 +58,7 @@ class MT5Client(
         }.getOrDefault(false)
 
     fun placeOrder(req: MT5OrderRequest): MT5OrderResponse {
+        readCache?.clear()
         val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
@@ -62,7 +66,12 @@ class MT5Client(
                 .post(body)
                 .build()
         // POST /order is NOT retried: duplicate placement is worse than a surfaced failure.
-        val resp = http.newCall(request).execute()
+        val resp =
+            try {
+                http.newCall(request).execute()
+            } finally {
+                readCache?.clear()
+            }
         resp.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
@@ -88,6 +97,7 @@ class MT5Client(
         req: MT5OrderRequest,
         onResult: (MT5OrderResponse) -> Unit,
     ) {
+        readCache?.clear()
         val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
@@ -100,6 +110,7 @@ class MT5Client(
                     call: Call,
                     e: java.io.IOException,
                 ) {
+                    readCache?.clear()
                     onResult(errorResponse("IO error: ${e.message}"))
                 }
 
@@ -107,6 +118,7 @@ class MT5Client(
                     call: Call,
                     response: Response,
                 ) {
+                    readCache?.clear()
                     response.use {
                         val raw = it.body?.string().orEmpty()
                         val result =
@@ -219,12 +231,18 @@ class MT5Client(
         ticket: Long,
         volume: BigDecimal? = null,
     ): MT5OrderResponse {
+        readCache?.clear()
         val body = encodeClosePosition(ticket, volume).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/close_position", apiKey)
                 .post(body)
                 .build()
-        val resp = http.newCall(request).execute()
+        val resp =
+            try {
+                http.newCall(request).execute()
+            } finally {
+                readCache?.clear()
+            }
         resp.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
@@ -253,6 +271,7 @@ class MT5Client(
         partial: Boolean = false,
         onResult: (MT5OrderResponse) -> Unit,
     ) {
+        readCache?.clear()
         val path: String
         val payload: String
         if (partial) {
@@ -274,6 +293,7 @@ class MT5Client(
                     call: Call,
                     e: java.io.IOException,
                 ) {
+                    readCache?.clear()
                     onResult(errorResponse("IO error: ${e.message}"))
                 }
 
@@ -281,6 +301,7 @@ class MT5Client(
                     call: Call,
                     response: Response,
                 ) {
+                    readCache?.clear()
                     response.use {
                         val raw = it.body?.string().orEmpty()
                         val result =
@@ -323,12 +344,18 @@ class MT5Client(
         sl: BigDecimal? = null,
         tp: BigDecimal? = null,
     ): MT5OrderResponse {
+        readCache?.clear()
         val body = encodeModifyPosition(ticket, sl, tp).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/modify_sl_tp", apiKey)
                 .post(body)
                 .build()
-        val resp = http.newCall(request).execute()
+        val resp =
+            try {
+                http.newCall(request).execute()
+            } finally {
+                readCache?.clear()
+            }
         resp.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
@@ -348,6 +375,7 @@ class MT5Client(
         tp: BigDecimal? = null,
         onResult: (MT5OrderResponse) -> Unit,
     ) {
+        readCache?.clear()
         val body = encodeModifyPosition(ticket, sl, tp).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/modify_sl_tp", apiKey)
@@ -359,6 +387,7 @@ class MT5Client(
                     call: Call,
                     e: java.io.IOException,
                 ) {
+                    readCache?.clear()
                     onResult(errorResponse("IO error: ${e.message}"))
                 }
 
@@ -366,6 +395,7 @@ class MT5Client(
                     call: Call,
                     response: Response,
                 ) {
+                    readCache?.clear()
                     response.use {
                         val raw = it.body?.string().orEmpty()
                         val result =
@@ -552,11 +582,17 @@ class MT5Client(
      * shape silently succeeded against gateways that returned an HTML 404 page.
      */
     fun cancelOrder(ticket: Long): String {
+        readCache?.clear()
         val request =
             mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
                 .delete()
                 .build()
-        val resp = http.newCall(request).execute()
+        val resp =
+            try {
+                http.newCall(request).execute()
+            } finally {
+                readCache?.clear()
+            }
         resp.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
@@ -579,6 +615,7 @@ class MT5Client(
         ticket: Long,
         onResult: (MT5OrderResponse) -> Unit,
     ) {
+        readCache?.clear()
         val request =
             mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
                 .delete()
@@ -589,6 +626,7 @@ class MT5Client(
                     call: Call,
                     e: java.io.IOException,
                 ) {
+                    readCache?.clear()
                     log.warn("MT5Client cancelOrder($ticket) IO error: ${e.message}")
                     onResult(errorResponse("IO error: ${e.message}"))
                 }
@@ -597,6 +635,7 @@ class MT5Client(
                     call: Call,
                     response: Response,
                 ) {
+                    readCache?.clear()
                     response.use {
                         val raw = it.body?.string().orEmpty()
                         if (!it.isSuccessful) {
@@ -642,12 +681,18 @@ class MT5Client(
         ticket: Long,
         mods: MT5OrderModification,
     ): MT5OrderResponse {
+        readCache?.clear()
         val body = encodeModification(mods).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
                 .put(body)
                 .build()
-        val resp = http.newCall(request).execute()
+        val resp =
+            try {
+                http.newCall(request).execute()
+            } finally {
+                readCache?.clear()
+            }
         resp.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
@@ -671,6 +716,23 @@ class MT5Client(
     }
 
     private fun getWithRetry(url: String): String? {
+        val cache = readCache
+        return if (cache != null && isSnapshotRead(url)) {
+            cache.get(url) { getFromNetworkWithRetry(url) }
+        } else {
+            getFromNetworkWithRetry(url)
+        }
+    }
+
+    private fun isSnapshotRead(url: String): Boolean =
+        when (url.substringAfter(gatewayUrl)) {
+            "/account", "/get_positions", "/orders" -> true
+            else ->
+                url.startsWith("$gatewayUrl/get_positions?") ||
+                    url.startsWith("$gatewayUrl/orders?")
+        }
+
+    private fun getFromNetworkWithRetry(url: String): String? {
         var attempt = 0
         var lastError: Exception? = null
         while (attempt <= retryAttempts) {
