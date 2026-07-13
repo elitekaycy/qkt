@@ -67,6 +67,10 @@ data class BrokerDeal(
     val comment: String?,
     /** Deal execution time, UTC epoch millis. */
     val ts: Long,
+    /** Broker fee distinct from commission and swap; null when the venue omits it. */
+    val fee: BigDecimal? = null,
+    /** Full untruncated client order id the deal was placed under; null when unknown. */
+    val clientOrderId: String? = null,
 )
 
 /** One venue position ticket, broker-valued. */
@@ -95,4 +99,35 @@ data class BrokerPositionTicket(
     val requestedStopLoss: BigDecimal? = null,
     /** Take-profit qkt last requested for this ticket; null when none was requested or attribution is unknown. */
     val requestedTakeProfit: BigDecimal? = null,
+    /** Venue magic number the position was opened under; null when the venue has none. */
+    val magic: Int? = null,
+    /** Full untruncated client order id that opened the position; null when unknown. */
+    val clientOrderId: String? = null,
+)
+
+/** One resting (pending) order at the venue — a limit/stop waiting to trigger. */
+data class BrokerPendingOrder(
+    /** Venue ticket of the pending order. */
+    val ticket: String,
+    /** qkt-side symbol with broker prefix, e.g. "EXNESS:XAUUSD". */
+    val symbol: String,
+    val side: Side,
+    /** Venue order type string, e.g. "ORDER_TYPE_BUY_LIMIT". */
+    val orderType: String,
+    val qty: BigDecimal,
+    /** Trigger/limit price the order rests at; null when the venue omits it. */
+    val price: BigDecimal?,
+    /** Stop-loss attached to the resting order; null when unsupported. Zero means absent on MT5. */
+    val stopLoss: BigDecimal? = null,
+    /** Take-profit attached to the resting order; null when unsupported. Zero means absent on MT5. */
+    val takeProfit: BigDecimal? = null,
+    /** Expiry, UTC epoch millis; null when good-till-cancelled or not exposed. */
+    val expiresAt: Long? = null,
+    /** Placement time, UTC epoch millis; null when not exposed. */
+    val createdAt: Long? = null,
+    /** Venue magic number; null when the venue has none. */
+    val magic: Int? = null,
+    val comment: String? = null,
+    /** Full untruncated client order id; null when unknown. */
+    val clientOrderId: String? = null,
 )

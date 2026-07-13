@@ -168,6 +168,12 @@ interface Broker {
     /** Whether [positionTickets] is authoritative venue truth rather than the empty default. */
     val supportsPositionTickets: Boolean get() = false
 
+    /**
+     * Resting (pending) orders at the venue - limits/stops waiting to trigger, with
+     * their protective levels and expiry. Empty when unsupported or the read failed.
+     */
+    fun pendingOrders(): List<BrokerPendingOrder> = emptyList()
+
     /** Position accounting mode for [symbol]; unknown modes must be reconciled as hedging. */
     fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.UNKNOWN
 }
