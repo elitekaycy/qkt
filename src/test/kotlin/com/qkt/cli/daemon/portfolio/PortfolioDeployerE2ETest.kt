@@ -1,5 +1,8 @@
 package com.qkt.cli.daemon.portfolio
 
+import com.qkt.app.BrokerFactory
+import com.qkt.broker.Broker
+import com.qkt.broker.PaperBroker
 import com.qkt.cli.daemon.StateDir
 import com.qkt.dsl.portfolio.PortfolioLoader
 import com.qkt.marketdata.Tick
@@ -293,10 +296,22 @@ class PortfolioDeployerE2ETest {
         @TempDir tmp: Path,
     ) {
         val stateDir = StateDir.resolve(tmp.toString())
+        val accountEquityReads = AtomicInteger()
+        val accountEquityBroker: BrokerFactory = { bus, clock, prices, _, _ ->
+            object : Broker by PaperBroker(bus, clock, prices) {
+                override val supportsAccountEquity: Boolean = true
+
+                override fun accountEquity(): BigDecimal {
+                    accountEquityReads.incrementAndGet()
+                    return BigDecimal("100000")
+                }
+            }
+        }
         val deployer =
             PortfolioDeployer(
                 stateDir = stateDir,
                 marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+                brokerFactories = mapOf("backtest" to accountEquityBroker),
             )
 
         val portfolioPath = Path.of("src/test/resources/dsl/portfolio_weighted.qkt")
@@ -304,6 +319,8 @@ class PortfolioDeployerE2ETest {
         val record = deployer.deploy("weighted_book", compiled)
 
         try {
+            Thread.sleep(100L)
+            assertThat(accountEquityReads.get()).isZero()
             val childrenByAlias = record.children.associateBy { it.childMeta?.alias }
             val childA = childrenByAlias["a"] ?: error("child 'a' missing")
             val childB = childrenByAlias["b"] ?: error("child 'b' missing")
