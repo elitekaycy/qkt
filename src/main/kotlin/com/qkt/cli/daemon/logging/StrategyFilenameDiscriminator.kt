@@ -4,8 +4,8 @@ import ch.qos.logback.classic.sift.MDCBasedDiscriminator
 import ch.qos.logback.classic.spi.ILoggingEvent
 
 /**
- * Substitutes `/` with `__` in the strategy MDC value so per-strategy log file names
- * are filesystem-safe for child names like `mybook/trend`. Mirrors `StateDir.logFile`.
+ * Substitutes portfolio separators with `__` in the strategy MDC value so canonical
+ * child ids such as `mybook:trend` map to the local file used by `StateDir.logFile`.
  */
 class StrategyFilenameDiscriminator : MDCBasedDiscriminator() {
     init {
@@ -15,6 +15,6 @@ class StrategyFilenameDiscriminator : MDCBasedDiscriminator() {
 
     override fun getDiscriminatingValue(e: ILoggingEvent): String {
         val raw = e.mdcPropertyMap?.get("strategy") ?: return defaultValue
-        return raw.replace("/", "__")
+        return raw.replace("/", "__").replace(":", "__")
     }
 }
