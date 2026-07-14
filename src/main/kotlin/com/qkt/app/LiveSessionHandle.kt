@@ -30,6 +30,9 @@ interface LiveSessionHandle {
     /** Symbols whose market data is currently stale, with quote age in ms (#395). */
     fun staleSymbols(): Map<String, Long> = emptyMap()
 
+    /** Symbols whose broker tick clock is out of tolerance, with the measured skew in ms (#810). */
+    fun clockSkewedSymbols(): Map<String, Long> = emptyMap()
+
     /** Durable-state write counters used by `/status` and operator automation. */
     fun persistenceHealth(): PersistenceHealth = PersistenceHealth.DISABLED
 

@@ -84,12 +84,16 @@ class StrategyHandleMdcRoutingTest {
         @TempDir tmp: Path,
     ) {
         val stateDir = StateDir.resolve(tmp.toString())
+        // Ticks straddle the minute boundary nearest to the wall clock: the second tick
+        // closes the first 1m bar (firing the rule) while every tick stays inside the
+        // market-data gate's clock-skew tolerance in this wall-clock session.
+        val boundary = (System.currentTimeMillis() + 30_000L) / 60_000L * 60_000L
         val ticks =
             (0 until 5).map {
                 Tick(
                     symbol = "BACKTEST:BTCUSDT",
                     price = BigDecimal("42000.0").add(BigDecimal(it * 10)),
-                    timestamp = 1_705_276_800_000L + it * 60_000L,
+                    timestamp = boundary + (it * 2_000L - 2_000L),
                 )
             }
         val factory =

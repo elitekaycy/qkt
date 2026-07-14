@@ -102,6 +102,8 @@ data class StatusSnapshot(
     val inboundQueueDepth: Int = 0,
     /** Symbols whose market data is currently stale (quote age past threshold). */
     val staleSymbols: List<String> = emptyList(),
+    /** Symbols whose broker tick clock is out of tolerance, with the measured skew in ms. */
+    val clockSkewedSymbols: Map<String, Long> = emptyMap(),
     /** Durable state-writer health; failed writes make restart state stale. */
     val persistence: PersistenceHealthDto = PersistenceHealthDto(),
 )
