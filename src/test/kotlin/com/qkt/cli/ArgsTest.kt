@@ -46,4 +46,18 @@ class ArgsTest {
     fun `options is empty when the flag is absent`() {
         assertThat(Args(arrayOf("backtest", "s.qkt")).options("param")).isEmpty()
     }
+
+    @Test
+    fun `positional does not read an option value as a positional`() {
+        val a = Args(arrayOf("positions", "--json", "--config", "./qkt.config.yaml"))
+        assertThat(a.positional(0)).isNull()
+    }
+
+    @Test
+    fun `positional stops at the first flag`() {
+        val a = Args(arrayOf("buy", "0.01", "EXNESS:XAUUSD", "--sl", "3993", "trailing"))
+        assertThat(a.positional(0)).isEqualTo("0.01")
+        assertThat(a.positional(1)).isEqualTo("EXNESS:XAUUSD")
+        assertThat(a.positional(2)).isNull()
+    }
 }
