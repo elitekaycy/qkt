@@ -113,12 +113,16 @@ class MT5DaemonE2ETest {
         @TempDir tmp: Path,
     ) {
         val stateDir = StateDir.resolve(tmp.toString())
+        // Straddle the minute boundary nearest to the wall clock so the second tick
+        // closes a 1m bar (firing the rule) while staying inside the market-data
+        // gate's clock-skew tolerance in this wall-clock session.
+        val boundary = (System.currentTimeMillis() + 30_000L) / 60_000L * 60_000L
         val ticks =
             (0 until 3).map {
                 Tick(
                     symbol = "EXNESS:EURUSD",
                     price = BigDecimal("1.10").add(BigDecimal("0.0001").multiply(BigDecimal(it))),
-                    timestamp = 1_705_276_800_000L + it * 60_000L,
+                    timestamp = boundary + (it * 2_000L - 2_000L),
                 )
             }
 
@@ -184,13 +188,16 @@ class MT5DaemonE2ETest {
         @TempDir tmp: Path,
     ) {
         val stateDir = StateDir.resolve(tmp.toString())
-        val baseTs = 1_705_276_800_000L
+        // Two 1m bar closes around the boundary nearest to the wall clock: the BUY
+        // fires from a tick inside the clock-skew tolerance; the final tick only
+        // triggers the CLOSE, which is risk-reducing and passes the gate regardless.
+        val boundary = (System.currentTimeMillis() + 30_000L) / 60_000L * 60_000L
         val ticks =
             listOf(
-                Tick("EXNESS:EURUSD", BigDecimal("1.1000"), baseTs),
-                Tick("EXNESS:EURUSD", BigDecimal("1.1000"), baseTs + 60_000L),
-                Tick("EXNESS:EURUSD", BigDecimal("1.1011"), baseTs + 120_000L),
-                Tick("EXNESS:EURUSD", BigDecimal("1.1011"), baseTs + 180_000L),
+                Tick("EXNESS:EURUSD", BigDecimal("1.1000"), boundary - 2_000L),
+                Tick("EXNESS:EURUSD", BigDecimal("1.1000"), boundary + 2_000L),
+                Tick("EXNESS:EURUSD", BigDecimal("1.1011"), boundary + 58_000L),
+                Tick("EXNESS:EURUSD", BigDecimal("1.1011"), boundary + 62_000L),
             )
         val profile =
             MT5DefaultProfiles.exness.copy(
