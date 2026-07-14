@@ -67,17 +67,27 @@ class PerStrategyAppenderTest {
             MDC.remove("strategy")
         }
 
+        MDC.put("strategy", "book:child")
+        try {
+            log.info("hello from portfolio child")
+        } finally {
+            MDC.remove("strategy")
+        }
+
         // Allow flush via logger context stop/restart in afterEach; for now read files.
         // Logback FileAppender is synchronous, so by this point the file is written.
         val alphaLog = tmp.resolve("logs/alpha.log")
         val betaLog = tmp.resolve("logs/beta.log")
+        val childLog = tmp.resolve("logs/book__child.log")
         assertThat(Files.exists(alphaLog)).isTrue
         assertThat(Files.exists(betaLog)).isTrue
+        assertThat(Files.exists(childLog)).isTrue
         val alphaText = Files.readString(alphaLog)
         val betaText = Files.readString(betaLog)
         assertThat(alphaText).contains("hello from alpha")
         assertThat(alphaText).doesNotContain("hello from beta")
         assertThat(betaText).contains("hello from beta")
         assertThat(betaText).doesNotContain("hello from alpha")
+        assertThat(Files.readString(childLog)).contains("hello from portfolio child")
     }
 }
