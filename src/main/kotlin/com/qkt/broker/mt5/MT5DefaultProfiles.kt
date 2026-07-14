@@ -8,7 +8,11 @@ package com.qkt.broker.mt5
  * differs (gateway URL, magic number, restrictions).
  */
 object MT5DefaultProfiles {
-    /** Exness — adds `m` suffix to FX, maps NAS100→USTEC, and uses a New York-close clock. */
+    /**
+     * Exness — adds `m` suffix to FX, maps NAS100→USTEC, and uses a UTC server clock.
+     * Exness runs GMT+0 servers, unlike the New York-close (UTC+2/+3) clock most forex
+     * brokers use; measured against Exness-MT5Trial9, raw tick epochs match UTC (#812).
+     */
     val exness =
         MT5BrokerProfile(
             name = "exness",
@@ -25,7 +29,7 @@ object MT5DefaultProfiles {
                             "NGAS" to "XNGUSD",
                         ),
                 ),
-            serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
+            serverTimeZone = MT5ServerTimeZone.UTC,
             magic = 10001,
         )
 
