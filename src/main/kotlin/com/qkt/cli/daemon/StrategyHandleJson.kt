@@ -65,6 +65,7 @@ internal fun buildSnapshot(
     pnl: SessionPnl = SessionPnl.ZERO,
     inboundQueueDepth: Int = 0,
     staleSymbols: List<String> = emptyList(),
+    clockSkewedSymbols: Map<String, Long> = emptyMap(),
     openPositions: List<com.qkt.positions.Position> = emptyList(),
     persistenceHealth: com.qkt.persistence.PersistenceHealth = com.qkt.persistence.PersistenceHealth.DISABLED,
 ): StatusSnapshot {
@@ -98,6 +99,7 @@ internal fun buildSnapshot(
         streamBrokers = streamBrokers,
         inboundQueueDepth = inboundQueueDepth,
         staleSymbols = staleSymbols,
+        clockSkewedSymbols = clockSkewedSymbols,
         persistence =
             PersistenceHealthDto(
                 enabled = persistenceHealth.enabled,

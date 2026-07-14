@@ -365,6 +365,7 @@ class StrategyHandle(
                             pnl = session.pnlSnapshot(ast.name),
                             inboundQueueDepth = session.inboundQueueDepth(),
                             staleSymbols = session.staleSymbols().keys.sorted(),
+                            clockSkewedSymbols = session.clockSkewedSymbols(),
                             openPositions = session.positionsFor(ast.name),
                             persistenceHealth = session.persistenceHealth(),
                         )
