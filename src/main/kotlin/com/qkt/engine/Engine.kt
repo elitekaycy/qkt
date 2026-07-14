@@ -29,7 +29,7 @@ class Engine(
      * Must be called from a single thread — `Engine` is not thread-safe.
      */
     fun onTick(tick: Tick) {
-        priceTracker.update(tick.symbol, tick.price)
+        priceTracker.update(tick)
         log.debug("ingested tick {} @ {}", tick.symbol, tick.price)
         bus.publish(TickEvent(tick))
     }
