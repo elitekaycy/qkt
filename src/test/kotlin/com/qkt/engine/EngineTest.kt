@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
+import com.qkt.common.Side
 import com.qkt.events.TickEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
@@ -38,5 +39,23 @@ class EngineTest {
         engine.onTick(tick)
 
         assertThat(received).containsExactly(tick)
+    }
+
+    @Test
+    fun `onTick updates executable quote sides before publishing TickEvent`() {
+        val seenBuyPrices = mutableListOf<BigDecimal?>()
+        bus.subscribe<TickEvent> { seenBuyPrices.add(tracker.executionPrice("XAUUSD", Side.BUY)) }
+
+        engine.onTick(
+            Tick(
+                symbol = "XAUUSD",
+                price = Money.of("2400.0"),
+                timestamp = 999L,
+                bid = Money.of("2399.5"),
+                ask = Money.of("2400.5"),
+            ),
+        )
+
+        assertThat(seenBuyPrices.single()).isEqualByComparingTo("2400.5")
     }
 }

@@ -1,5 +1,9 @@
 package com.qkt.broker.mt5
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
@@ -11,6 +15,8 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
+import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -21,11 +27,13 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 
 class MT5BrokerIntegrationTest {
     private lateinit var server: MockWebServer
     private lateinit var broker: MT5Broker
     private lateinit var bus: EventBus
+    private lateinit var prices: MarketPriceTracker
 
     // Placement is async (OkHttp dispatcher thread), so events land off the test thread.
     private val captured = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent>()
@@ -73,6 +81,7 @@ class MT5BrokerIntegrationTest {
         server.enqueue(MockResponse().setBody("[]"))
 
         val clock = FixedClock(time = 1_700_000_000_000L)
+        prices = MarketPriceTracker()
         bus = EventBus(clock, MonotonicSequenceGenerator())
         bus.subscribe<BrokerEvent.OrderFilled> { e -> captured.add(e) }
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> captured.add(e) }
@@ -92,6 +101,7 @@ class MT5BrokerIntegrationTest {
                 profile,
                 bus,
                 clock,
+                priceTracker = prices,
                 recoveryReadAttempts = 3,
                 recoveryReadBackoffMs = 1L,
             )
@@ -992,6 +1002,216 @@ class MT5BrokerIntegrationTest {
         // OrderAccepted but no OrderFilled — pending fills arrive via the position poller in Phase 26c.
         assertThat(captured).hasSize(1)
         assertThat(captured[0]).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
+    }
+
+    @Test
+    fun `already-crossed BUY stop submits MARKET at the ask and logs the conversion`() {
+        prices.update(
+            Tick(
+                symbol = "EXNESS:EURUSD",
+                price = BigDecimal("1.1049"),
+                timestamp = 1L,
+                bid = BigDecimal("1.1048"),
+                ask = BigDecimal("1.1051"),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"1.1052","comment":"ok"}}""",
+            ),
+        )
+        val logger = LoggerFactory.getLogger(MT5Broker::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(appender)
+        try {
+            broker.submit(
+                OrderRequest.Stop(
+                    id = "crossed-buy",
+                    symbol = "EXNESS:EURUSD",
+                    side = Side.BUY,
+                    quantity = BigDecimal("0.1"),
+                    stopPrice = BigDecimal("1.1050"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "s1",
+                ),
+            )
+            awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+
+            repeat(3) { server.takeRequest() }
+            val body = server.takeRequest().body.readUtf8()
+            assertThat(body).contains("\"type\":\"BUY\"")
+            assertThat(body).doesNotContain("BUY_STOP")
+            assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).hasSize(1)
+            assertThat(appender.list.filter { it.level == Level.INFO }.map { it.formattedMessage })
+                .anyMatch {
+                    it.contains("crossed-buy") &&
+                        it.contains("stop_price=1.1050") &&
+                        it.contains("market_price=1.1051") &&
+                        it.contains("MARKET")
+                }
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
+        }
+    }
+
+    @Test
+    fun `already-crossed SELL stop submits MARKET at the bid`() {
+        prices.update(
+            Tick(
+                symbol = "EXNESS:EURUSD",
+                price = BigDecimal("1.1051"),
+                timestamp = 1L,
+                bid = BigDecimal("1.1049"),
+                ask = BigDecimal("1.1052"),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"1.1048","comment":"ok"}}""",
+            ),
+        )
+
+        broker.submit(
+            OrderRequest.Stop(
+                id = "crossed-sell",
+                symbol = "EXNESS:EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+            ),
+        )
+
+        repeat(3) { server.takeRequest() }
+        assertThat(server.takeRequest().body.readUtf8()).contains("\"type\":\"SELL\"")
+    }
+
+    @Test
+    fun `uncrossed stop remains native pending`() {
+        prices.update(
+            Tick(
+                symbol = "EXNESS:EURUSD",
+                price = BigDecimal("1.1048"),
+                timestamp = 1L,
+                bid = BigDecimal("1.1047"),
+                ask = BigDecimal("1.1049"),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":42,"deal":0,"price":"1.1050","comment":"ok"}}""",
+            ),
+        )
+
+        broker.submit(
+            OrderRequest.Stop(
+                id = "resting-buy",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+            ),
+        )
+
+        repeat(3) { server.takeRequest() }
+        assertThat(server.takeRequest().body.readUtf8()).contains("\"type\":\"BUY_STOP\"")
+    }
+
+    @Test
+    fun `already-crossed StopLimit submits LIMIT at its limit price`() {
+        prices.update(
+            Tick(
+                symbol = "EXNESS:EURUSD",
+                price = BigDecimal("1.1051"),
+                timestamp = 1L,
+                bid = BigDecimal("1.1050"),
+                ask = BigDecimal("1.1052"),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":43,"deal":0,"price":"1.1040","comment":"ok"}}""",
+            ),
+        )
+
+        broker.submit(
+            OrderRequest.StopLimit(
+                id = "crossed-stop-limit",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                limitPrice = BigDecimal("1.1040"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                expiresAt = 1_800_000_000_000L,
+            ),
+        )
+
+        repeat(3) { server.takeRequest() }
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"type\":\"BUY_LIMIT\"")
+        assertThat(body).contains("\"price\":1.104")
+        assertThat(body).contains("\"expiration\":1800000000")
+        assertThat(body).doesNotContain("BUY_STOP_LIMIT")
+    }
+
+    @Test
+    fun `already-crossed bracket stop submits MARKET with protective legs intact`() {
+        prices.update(
+            Tick(
+                symbol = "EXNESS:EURUSD",
+                price = BigDecimal("1.1051"),
+                timestamp = 1L,
+                bid = BigDecimal("1.1050"),
+                ask = BigDecimal("1.1052"),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":2,"price":"1.1052","comment":"ok"}}""",
+            ),
+        )
+        val entry =
+            OrderRequest.Stop(
+                id = "crossed-bracket-entry",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.1"),
+                stopPrice = BigDecimal("1.1050"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+
+        broker.submit(
+            OrderRequest.Bracket(
+                id = "crossed-bracket",
+                symbol = entry.symbol,
+                side = entry.side,
+                quantity = entry.quantity,
+                entry = entry,
+                takeProfit = BigDecimal("1.1080"),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("1.1020")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            ),
+        )
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+
+        repeat(3) { server.takeRequest() }
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"type\":\"BUY\"")
+        assertThat(body).contains("\"sl\":1.102")
+        assertThat(body).contains("\"tp\":1.108")
+        assertThat(body).doesNotContain("BUY_STOP")
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).hasSize(1)
     }
 
     @Test
