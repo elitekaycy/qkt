@@ -16,8 +16,15 @@ class Args(
     val subcommand: String = argv.getOrNull(0) ?: "help"
     private val rest: List<String> = argv.drop(1)
 
-    /** Returns the [idx]th non-flag token after the subcommand, or `null` if absent. */
-    fun positional(idx: Int): String? = rest.filter { !it.startsWith("--") }.getOrNull(idx)
+    /**
+     * Returns the [idx]th positional token after the subcommand, or `null` if absent.
+     *
+     * Positionals are the tokens before the first `--` flag. Stopping there keeps a
+     * flag's value from being read as a positional — the parser doesn't know which
+     * flags carry values, so `positions --config ./qkt.config.yaml` must not treat
+     * the path as positional 0. Convention across all subcommands: positionals first.
+     */
+    fun positional(idx: Int): String? = rest.takeWhile { !it.startsWith("--") }.getOrNull(idx)
 
     /** `true` iff `--[name]` is present. Use [option] for flags that carry a value. */
     fun flag(name: String): Boolean = "--$name" in rest
