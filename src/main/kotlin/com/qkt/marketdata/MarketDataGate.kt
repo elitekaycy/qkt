@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
- * Runtime judgment layer over live market data (FIA §1.3). Three checks, per symbol:
+ * Runtime judgment layer over live market data (FIA §1.3). Four checks, per symbol:
  *
  *  - **Stale quotes** — when no tick has arrived for [staleAgeMultiple] x the symbol's
  *    smoothed inter-tick gap (floored at [minStaleAgeMs]), the symbol is unhealthy and
@@ -14,6 +14,11 @@ import org.slf4j.LoggerFactory
  *    short-window mean is rejected. A short cluster at a coherent new level re-baselines
  *    the window so genuine gaps do not freeze marks and triggers indefinitely.
  *  - **Crossed books** (bid > ask) are treated as outliers.
+ *  - **Clock skew** — when a fresh tick's broker timestamp is more than [maxClockSkewMs]
+ *    from the local clock (#810), the feed's time base is wrong — usually a
+ *    misconfigured broker `server_time_zone` shifting every timestamp by whole hours.
+ *    A skewed clock mislabels bars, evaluates session windows at the wrong hours, and
+ *    dates GTD expirations in the past, so NEW orders are suppressed until it realigns.
  *
  * This sits ABOVE the hard ingestion floor (zero/negative prices, #379): the floor
  * rejects the malformed, this layer rejects the implausible. Statistics run on Double —
@@ -24,6 +29,7 @@ class MarketDataGate(
     private val staleAgeMultiple: Double = DEFAULT_STALE_AGE_MULTIPLE,
     private val minStaleAgeMs: Long = DEFAULT_MIN_STALE_AGE_MS,
     private val outlierSigma: Double = DEFAULT_OUTLIER_SIGMA,
+    private val maxClockSkewMs: Long = DEFAULT_MAX_CLOCK_SKEW_MS,
     /** Invoked once per unhealthy transition; recovery permits a later transition to alert again. */
     private val onUnhealthy: (symbol: String, reason: String) -> Unit = { _, _ -> },
 ) {
@@ -39,6 +45,8 @@ class MarketDataGate(
         var windowHead = 0
         var windowSize = 0
         var staleAlerted = false
+        var lastSkewMs = 0L
+        var skewAlerted = false
         var rejectedOutlierRun = 0
         var rebaselineCandidate = 0.0
         var rebaselineCandidateCount = 0
@@ -80,6 +88,10 @@ class MarketDataGate(
     fun observe(tick: Tick): Verdict {
         val state = bySymbol.getOrPut(tick.symbol) { SymbolState() }
         val now = clock.now()
+
+        // Every fresh tick re-measures the feed's time base: a broker timestamp hours
+        // from the local clock is a time-zone misconfiguration, not latency.
+        if (tick.timestamp > 0L) state.lastSkewMs = tick.timestamp - now
 
         val crossed = tick.bid != null && tick.ask != null && tick.bid > tick.ask
         val price = tick.price.toDouble()
@@ -123,6 +135,15 @@ class MarketDataGate(
         if (state.staleAlerted) {
             state.staleAlerted = false
             log.info("market data for {} healthy again", tick.symbol)
+        }
+        if (state.skewAlerted && kotlin.math.abs(state.lastSkewMs) <= maxClockSkewMs) {
+            state.skewAlerted = false
+            log.info(
+                "market data for {} clock realigned: skew {}ms within {}ms tolerance",
+                tick.symbol,
+                state.lastSkewMs,
+                maxClockSkewMs,
+            )
         }
         return Verdict.OK
     }
@@ -201,6 +222,20 @@ class MarketDataGate(
             }
             return false
         }
+        if (kotlin.math.abs(state.lastSkewMs) > maxClockSkewMs) {
+            if (!state.skewAlerted) {
+                state.skewAlerted = true
+                log.error(
+                    "market data for {} CLOCK-SKEWED: broker tick time {}ms from local clock " +
+                        "exceeds {}ms tolerance — suppressing new orders (check server_time_zone)",
+                    symbol,
+                    state.lastSkewMs,
+                    maxClockSkewMs,
+                )
+                onUnhealthy(symbol, "broker tick clock skew ${state.lastSkewMs}ms exceeds ${maxClockSkewMs}ms")
+            }
+            return false
+        }
         val threshold = staleThresholdMs(state)
         val age = clock.now() - state.lastSeenMs
         val healthy = age <= threshold
@@ -222,6 +257,12 @@ class MarketDataGate(
         return maxOf(fromGap, minStaleAgeMs)
     }
 
+    /** Symbols whose broker tick clock is out of tolerance, with the last measured skew in ms. */
+    fun clockSkewedSymbols(): Map<String, Long> =
+        bySymbol
+            .filterValues { kotlin.math.abs(it.lastSkewMs) > maxClockSkewMs }
+            .mapValues { (_, st) -> st.lastSkewMs }
+
     /** Symbols currently failing the staleness check, with their quote age in ms. */
     fun staleSymbols(): Map<String, Long> {
         val now = clock.now()
@@ -234,6 +275,11 @@ class MarketDataGate(
         const val DEFAULT_STALE_AGE_MULTIPLE: Double = 5.0
         const val DEFAULT_MIN_STALE_AGE_MS: Long = 10_000L
         const val DEFAULT_OUTLIER_SIGMA: Double = 6.0
+
+        // Far above honest feed latency (poll interval + gateway round-trip, sparse
+        // symbols gap ~15s), far below the whole-hour offsets a wrong time zone
+        // produces — the smallest real misconfiguration is 3_600_000ms.
+        const val DEFAULT_MAX_CLOCK_SKEW_MS: Long = 60_000L
         private const val WINDOW_SIZE = 64
         private const val MIN_WINDOW_FOR_OUTLIER = 16
         private const val EWMA_ALPHA = 0.1
@@ -246,9 +292,10 @@ class MarketDataGate(
 
 /**
  * Pre-trade rule companion to [MarketDataGate]: rejects NEW-exposure orders for a
- * symbol whose data is stale; risk-REDUCING orders (opposite side, no larger than the
- * open position, or close-by-ticket) still pass — frozen data is a reason to stop
- * adding risk, not a reason to trap the position.
+ * symbol whose data is unhealthy (stale quotes or a skewed broker clock);
+ * risk-REDUCING orders (opposite side, no larger than the open position, or
+ * close-by-ticket) still pass — bad data is a reason to stop adding risk, not a
+ * reason to trap the position.
  */
 class MarketDataHealthRule(
     private val gate: MarketDataGate,
@@ -260,7 +307,8 @@ class MarketDataHealthRule(
         if (gate.isHealthy(request.symbol)) return com.qkt.risk.Decision.Approve
         if (com.qkt.risk.isRiskReducing(request, positions)) return com.qkt.risk.Decision.Approve
         return com.qkt.risk.Decision.Reject(
-            "market data for ${request.symbol} is stale — new orders suppressed until data resumes",
+            "market data for ${request.symbol} is unhealthy (stale or clock-skewed) — " +
+                "new orders suppressed until data recovers",
         )
     }
 }

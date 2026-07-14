@@ -53,14 +53,14 @@ class OrderManagerGtdSweepTest {
     }
 
     @Test
-    fun `pending GTD order with expired deadline is cancelled on the next tick`() {
+    fun `pending GTD order whose deadline passes while resting is cancelled on the next tick`() {
         val clock = FixedClock(1_000L)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
         val cancellations = mutableListOf<BrokerEvent.OrderCancelled>()
         bus.subscribe<BrokerEvent.OrderCancelled> { cancellations.add(it) }
         val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
-        om.submit(pendingLimit(expiresAt = 500L)) // already past
+        om.submit(pendingLimit(expiresAt = 1_500L)) // valid at submit, expires while resting
         clock.time = 2_000L
         bus.publish(TickEvent(Tick("X", BigDecimal("100"), 2_000L)))
         assertThat(cancellations.map { it.clientOrderId }).contains("ord-1")
@@ -87,7 +87,7 @@ class OrderManagerGtdSweepTest {
         val cancellations = mutableListOf<BrokerEvent.OrderCancelled>()
         bus.subscribe<BrokerEvent.OrderCancelled> { cancellations.add(it) }
         val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
-        om.submit(pendingLimit(expiresAt = 500L)) // already past
+        om.submit(pendingLimit(expiresAt = 1_500L)) // valid at submit — the venue owns expiry from here
         clock.time = 2_000L
         bus.publish(TickEvent(Tick("X", BigDecimal("100"), 2_000L)))
         assertThat(cancellations).noneMatch { it.clientOrderId == "ord-1" }

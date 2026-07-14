@@ -18,7 +18,7 @@ class MT5BrokerProfileLoaderTest {
         val ex = profiles.first { it.name == "exness" }
         assertThat(ex.gatewayUrl).isEqualTo("http://h:5005")
         assertThat(ex.symbolPolicy.suffix).isEqualTo("m")
-        assertThat(ex.serverTimeZone).isEqualTo(MT5ServerTimeZone.NEW_YORK_CLOSE)
+        assertThat(ex.serverTimeZone).isEqualTo(MT5ServerTimeZone.UTC)
         assertThat(ex.magic).isEqualTo(10001)
     }
 

@@ -1675,6 +1675,8 @@ class LiveSession(
 
             override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
 
+            override fun clockSkewedSymbols(): Map<String, Long> = marketDataGate.clockSkewedSymbols()
+
             override fun persistenceHealth(): PersistenceHealth = persistor.healthSnapshot()
 
             override fun reconcile(): ReconcileReport {
