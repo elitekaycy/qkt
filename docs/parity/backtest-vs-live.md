@@ -168,6 +168,7 @@ test class that pins it.
 | Freeze-level in backtest | Live `modifyPosition` rejects SL/TP moves inside `SYMBOL_TRADE_FREEZE_LEVEL` (surfaced + logged); the mt5-sim does not model freeze-level, so a backtest trail always tightens where live may be refused | #638 residual |
 | Tick-fills synthetic marks | A symbol with an open position but no live orders resolves SYNTHETIC under `--tick-fills`, so its intrabar equity marks come from synthetic points (fills are exact; drawdown sampling is approximate) | #642 residual |
 | Venue partials on fallback exits | When a venue partial fills a fallback (non-attached) bracket, exits are sized to the first fill's volume; a later remainder fill has no engine exit | follow-up if partial-fill venues go live |
+| Already-crossed native stops | The fill decision is aligned: MT5 converts a STOP already through the latest ask/bid to MARKET (StopLimit to LIMIT), matching the engine-held path. Backtest fills on its crossing tick, while live fills after dispatch at the venue's later executable price, so latency/slippage can still change the fill price | #815; decision pinned by `AlreadyCrossedStopParityTest`, live wire/protection by `MT5BrokerIntegrationTest` |
 
 ## File pointers
 

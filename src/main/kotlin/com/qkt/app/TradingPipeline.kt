@@ -252,7 +252,7 @@ class TradingPipeline(
 
         windowAggregator = if (candleWindow != null) CandleAggregator(bus, candleWindow) else null
 
-        bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick.symbol, e.tick.price) }
+        bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick) }
 
         strategies.forEach { (strategyId, strategy) ->
             tradeHistory.restore(strategyId)
