@@ -1420,6 +1420,8 @@ class OrderManager(
     }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
+        val expiresAt = request.expiresAt
+        if (expiresAt != null && expiresAt <= clock.now()) return rejectExpiredBeforeSubmit(request, expiresAt)
         update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
         val ack = broker.submit(request)
         if (!ack.accepted && orders[request.id]?.state?.isTerminal != true) {
@@ -1427,6 +1429,29 @@ class OrderManager(
             exposureEntries.remove(request.id)
         }
         return ack
+    }
+
+    // A GTD deadline at or past the current clock can only round-trip into a venue
+    // rejection (MT5 retcode 10022), so it is refused here with both clocks in the
+    // reason — a bar-clock vs wall-clock divergence (#811) is visible at its first
+    // occurrence instead of masquerading as a venue error.
+    private fun rejectExpiredBeforeSubmit(
+        request: OrderRequest,
+        expiresAt: Long,
+    ): SubmitAck {
+        val now = clock.now()
+        val reason = "expired before submit: expiresAt=$expiresAt now=$now"
+        log.warn("order {} {} — rejected locally, not sent to broker", request.id, reason)
+        bus.publish(
+            BrokerEvent.OrderRejected(
+                clientOrderId = request.id,
+                brokerOrderId = null,
+                reason = reason,
+                strategyId = request.strategyId,
+                timestamp = now,
+            ),
+        )
+        return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = false, rejectReason = reason)
     }
 
     private fun submitRegisteredToBroker(request: OrderRequest): SubmitAck {
