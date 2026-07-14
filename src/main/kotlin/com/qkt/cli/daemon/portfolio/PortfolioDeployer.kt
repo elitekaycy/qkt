@@ -377,10 +377,12 @@ class PortfolioDeployer(
                 symbols = compiledChild.symbols,
                 candleWindow = candleWindow,
                 accountingConfig = accountingConfig,
-                mdcStrategy = childName,
+                // Insights and trading events must use the same canonical child id.
+                // The filename discriminator still maps ':' to '__' for local logs.
+                mdcStrategy = compiledChild.strategyId,
                 onTrade = { trade, realized, strategyId ->
                     onBookRealized(strategyId, realized)
-                    com.qkt.cli.daemon.logging.withMdc("strategy", childName) {
+                    com.qkt.cli.daemon.logging.withMdc("strategy", compiledChild.strategyId) {
                         com.qkt.cli.daemon.logging.withMdc("parent", portfolioName) {
                             ring.append("trade", tradeToJson(trade, realized))
                             com.qkt.cli.daemon.TradeLog
@@ -389,7 +391,7 @@ class PortfolioDeployer(
                     }
                 },
                 onSignal = { sig ->
-                    com.qkt.cli.daemon.logging.withMdc("strategy", childName) {
+                    com.qkt.cli.daemon.logging.withMdc("strategy", compiledChild.strategyId) {
                         com.qkt.cli.daemon.logging.withMdc("parent", portfolioName) {
                             ring.append("signal", signalToJson(sig))
                         }
