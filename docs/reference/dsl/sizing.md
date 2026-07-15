@@ -6,11 +6,12 @@ Every way to specify the size of a `BUY` or `SELL` order. Sizing is the single m
 
 | Form | Meaning |
 | --- | --- |
-| `SIZING <number>` | Fixed lots / units |
-| `SIZING <pct> PCT OF EQUITY` | Percentage of total equity (cash + open P&L) |
-| `SIZING <pct> PCT OF BALANCE` | Percentage of cash balance only |
-| `SIZING <usd> USD` | Fixed USD notional value |
+| `SIZING <expression>` | Computed lots / units |
+| `SIZING <expression> PCT OF EQUITY` | Percentage of total equity (cash + open P&L) |
+| `SIZING <expression> PCT OF BALANCE` | Percentage of cash balance only |
+| `SIZING <expression> USD` | Computed USD notional value |
 | `SIZING <N> PCT RISK` | Sized so a stop-out loses N% of equity (sugar over `SIZING RISK N/100`) |
+| `SIZING RISK $ <expression>` | Computed account-currency risk with bracket stop geometry |
 | `SIZING POSITION.<stream>` | The full current position quantity (for closes/scaling) |
 
 ## Fixed quantity
@@ -114,6 +115,30 @@ RULES
 
 This is anti-martingale sizing: base risk remains `$100`, and only current win-streak profit is pressed. `STREAK.banked` resets to `0` after a losing close.
 
+## Computed set-once sizing
+
+Every numeric sizing form above carries an expression, not just a numeric literal. That means inverse-volatility and discrete conviction tiers can be composed directly with a structural bracket. Risk sizing converts the computed account-currency budget through the resolved stop distance, contract size, and quote-to-account rate at the normal sizing boundary:
+
+```qkt
+LET conviction = CASE
+  WHEN sweepConfirm AND vrConfirm AND silverConfirm THEN 2
+  WHEN sweepConfirm AND vrConfirm THEN 1.5
+  ELSE 1
+END
+LET riskBudget = 100 * conviction
+
+RULES
+  WHEN shock AND POSITION.gold = 0
+  THEN SELL gold SIZING RISK $ riskBudget BRACKET {
+    STOP LOSS AT gold.high + 1.2 * atr(gold.candle, 14),
+    TAKE PROFIT AT sma(gold.close, 20)
+  }
+```
+
+The sizing expression is evaluated once when the action constructs the order request. The resulting request carries a fixed quantity through submission and fill; it is not reevaluated on later bars. Use `RESIZE` only when continuous target rebalancing is intentional.
+
+Quantity cannot be selected after the order's own fill because the venue requires quantity at submission. "Set once at entry" therefore means evaluation from the latest deterministic strategy state when QKT creates the entry order. Bracket stop geometry is available to `PCT RISK`, `SIZING RISK <fraction>`, and `SIZING RISK $ <expression>` during that evaluation.
+
 ## Defaults via DEFAULTS
 
 If most of your strategies use the same sizing, hoist it:
@@ -149,6 +174,7 @@ See [STACK](stack.md).
 - **Broker minimum sizes.** MT5 brokers enforce a minimum lot (`volumeMin`) and step (`volumeStep`). If your computed size is below the minimum, the order rejects.
 - **Whole-number lots on some venues.** Futures often require integer contracts. A computed size of `0.327` will round (typically down) or reject. Check your venue's specs.
 - **Sizing units are venue-side.** A "size of 0.1" means 0.1 of the venue's unit (lots, contracts, base currency) — not 0.1 USD or 0.1% of anything.
+- **Computed entry sizing is set once.** It does not track the expression after QKT emits the order. Use `RESIZE` for deliberate per-bar rebalancing.
 
 ## What this composes with
 

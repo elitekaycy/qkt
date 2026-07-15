@@ -232,4 +232,31 @@ class OrderSurfaceEndToEndTest {
             )
         }.doesNotThrowAnyException()
     }
+
+    @Test
+    fun `computed CASE risk sizing resolves once into a bracket quantity`() {
+        val strategy =
+            compile(
+                """
+                STRATEGY computed_bracket_sizing VERSION 1
+                SYMBOLS
+                  btc = BACKTEST:BTCUSDT EVERY 1m
+                LET conviction = CASE WHEN btc.close >= 100 THEN 1.5 ELSE 1 END
+                RULES
+                  WHEN btc.close > 0
+                  THEN BUY btc SIZING RISK ${'$'} (100 * conviction) BRACKET {
+                    STOP LOSS BY 5,
+                    TAKE PROFIT BY 10
+                  }
+                """.trimIndent(),
+            )
+        val captured = mutableListOf<Signal>()
+
+        strategy.onCandle(candle("100"), fundedContext(), captured::add)
+
+        val bracket = (captured.single() as Signal.Submit).request as OrderRequest.Bracket
+        assertThat(bracket.quantity).isEqualByComparingTo("30")
+        assertThat((bracket.stopLoss as StopLossSpec.Fixed).price).isEqualByComparingTo("95")
+        assertThat(bracket.takeProfit).isEqualByComparingTo("110")
+    }
 }
