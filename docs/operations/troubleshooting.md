@@ -148,7 +148,7 @@ This is the most common complaint. Six things, in order of how often they happen
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Backtest is slow | High-resolution data + long range | Use `EVERY 5m` or `EVERY 15m` for sweeps; reduce date range |
-| Daemon high CPU when idle | Polling loops too aggressive | Check broker profile `pollIntervalMs` — default is 1000 |
+| Daemon or MT5 gateway high CPU when idle | Polling loops too aggressive | Tune `tick_poll_interval_ms` separately from the position/order `poll_interval_ms`; both are milliseconds and default to 1000. Keep reconciliation fast enough for pending-fill and OCO detection. |
 | Memory growth over time | Position tracker accumulating closed positions | Restart daemon nightly; long-running daemons aren't yet stress-tested |
 | JVM startup ~3s | This is normal | Daemon process amortizes startup over its uptime |
 

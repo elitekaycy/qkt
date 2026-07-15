@@ -50,7 +50,12 @@ class Mt5MarketSourceTest {
                     """{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":1778662794911,"volume":0,"volume_real":0}""",
                 ),
             )
-            val profile = exness.copy(gatewayUrl = server.url("/").toString().trimEnd('/'), pollIntervalMs = 5L)
+            val profile =
+                exness.copy(
+                    gatewayUrl = server.url("/").toString().trimEnd('/'),
+                    pollIntervalMs = 100_000L,
+                    tickPollIntervalMs = 5L,
+                )
             // Crypto calendar is always in-session, so the round never skips — lets the test
             // fetch a tick regardless of wall-clock (the old `calendar = null` no-gating intent).
             val source =

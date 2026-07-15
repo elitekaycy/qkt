@@ -376,6 +376,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `server_time_zone` | zone id | yes for fresh profile | inherited or built-in | MT5 server clock. Use `new_york_close` for UTC+2/+3 following US DST, or an IANA id such as `Europe/Helsinki`. |
 | `server_tz_offset_hours` | int | no | none | Legacy fixed-offset alternative. Cannot be combined with `server_time_zone`; does not handle DST. |
 | `poll_interval_ms` | long | no | `1000` | Position and pending-order polling cadence. |
+| `tick_poll_interval_ms` | long | no | `1000` | Live quote polling cadence. When omitted beside an explicitly configured `poll_interval_ms`, inherits that value for backward compatibility. Set both keys to tune quote and reconciliation load independently. |
 | `http_timeout_ms` | long | no | `5000` | Gateway HTTP timeout. |
 | `retry_attempts` | int | no | `3` | Gateway retry attempts. |
 | `deviation_points` | int | no | `20` | Market-order price deviation tolerance. |
