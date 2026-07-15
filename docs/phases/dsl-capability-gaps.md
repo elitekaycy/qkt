@@ -36,6 +36,13 @@ Multi-series (compiler path, like `resid`):
 - NR7 / inside-bar → `.high`/`.low` with `HIGHEST`/`LOWEST` over a range expression and the
   built-in one-bar lag (`HIGHEST(g.high, 1)` = yesterday's high).
 - Rejection wick → `g.high - (CASE WHEN g.open > g.close THEN g.open ELSE g.close END)`.
+- Computed set-once entry sizing with a bracket (#818) → numeric sizing forms carry an
+  expression; compose bracket-derived inverse volatility and `CASE` conviction tiers directly
+  on `BUY`/`SELL`.
+- Extreme-reaction fade (#822) → `lag`, `abs`, `percentile_rank`, and
+  `POSITION.<stream>.holding_duration` compose into the executable fixed-elapsed-horizon recipe.
+  Exact-tick execution correctly does not fill a close-derived signal at the already-completed
+  signal-bar close.
 
 ## Usage
 
@@ -53,6 +60,6 @@ indicators, Percentile rank, Math helpers) for worked, copy-pasteable examples.
 
 ## References
 
-- Issues: #479, #501, #502, #503, #504, #505, #506, #507, #508.
+- Issues: #479, #501, #502, #503, #504, #505, #506, #507, #508, #818, #822.
 - Indicators: `PercentileRank`, `SessionVwap`, `SessionRange`, `ConfirmRatio` under
   `com.qkt.indicators.catalog`; `MOD`/`FLOOR`/`CEIL`/`ROUND` in `com.qkt.dsl.stdlib.FuncRegistry`.
