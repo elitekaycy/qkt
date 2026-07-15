@@ -161,4 +161,82 @@ class ForgeThesisExpressibilityTest {
             """.trimIndent(),
         )
     }
+
+    @Test
+    fun `computed conviction sizing composes with an entry bracket`() {
+        // #818: BUY/SELL sizing already accepts arbitrary expressions. The expression is
+        // evaluated once when the action emits its order; it is not the per-bar RESIZE path.
+        ok(
+            """
+            STRATEGY conviction_sizing VERSION 1
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 4h WARMUP 500 BARS,
+              silver = BACKTEST:XAGUSD EVERY 4h WARMUP 500 BARS,
+              sweep = BACKTEST:XAUUSD EVERY 30m WARMUP 120 BARS
+            LET goldReturn = (gold.close - lag(gold.close, 1)) / lag(gold.close, 1),
+                silverReturn = (silver.close - lag(silver.close, 1)) / lag(silver.close, 1),
+                shock = percentile_rank(abs(goldReturn), 500) >= 0.95,
+                sweepConfirm = sweep.close > sweep.open,
+                vrConfirm = variance_ratio(gold.close, 5, 120) < 1,
+                silverConfirm = percentile_rank(abs(silverReturn), 500) >= 0.95,
+                conviction = CASE
+                  WHEN sweepConfirm AND vrConfirm AND silverConfirm THEN 2
+                  WHEN sweepConfirm AND vrConfirm THEN 1.5
+                  ELSE 1
+                END,
+                riskBudget = 100 * conviction
+            RULES
+              WHEN shock AND goldReturn > 0 AND POSITION.gold = 0
+              THEN SELL gold SIZING RISK ${'$'} riskBudget BRACKET {
+                STOP LOSS AT gold.high + 1.2 * atr(gold.candle, 14),
+                TAKE PROFIT AT sma(gold.close, 20)
+              }
+              WHEN POSITION.gold != 0 AND POSITION.gold.holding_duration >= 8 * 4 * 60 * 60
+              THEN CLOSE gold
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun `extreme reaction fade composes from percentile rank and fixed elapsed hold`() {
+        // #822: this is the executable translation of the close-to-close study. The signal
+        // is known only after the shock bar closes, so exact-tick execution deliberately does
+        // not grant the strategy that already-completed close as a fill.
+        ok(
+            """
+            STRATEGY extreme_reaction VERSION 1
+            DEFAULTS { SIZING = 0.01 TIF = GTC }
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 4h WARMUP 500 BARS
+            LET prior = lag(gold.close, 1),
+                reaction = (gold.close - prior) / prior,
+                shock = percentile_rank(abs(reaction), 500) >= 0.95
+            RULES
+              WHEN shock AND reaction > 0 AND POSITION.gold = 0 THEN SELL gold
+              WHEN shock AND reaction < 0 AND POSITION.gold = 0 THEN BUY gold
+              WHEN POSITION.gold != 0 AND POSITION.gold.holding_duration >= 8 * 4 * 60 * 60
+              THEN CLOSE gold
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun `hour drift continuation composes from UTC time and fixed elapsed hold`() {
+        // #823: the executable one-bar translation enters only after the flagged 30-minute
+        // candle has closed, then exits once 30 minutes have elapsed from the actual fill.
+        ok(
+            """
+            STRATEGY hour_drift VERSION 1
+            DEFAULTS { SIZING = 0.01 TIF = GTC }
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 30m WARMUP 2 BARS
+            LET move = gold.close - lag(gold.close, 1)
+            RULES
+              WHEN NOW.HOUR_UTC = 23 AND move > 0 AND POSITION.gold = 0 THEN BUY gold
+              WHEN NOW.HOUR_UTC = 23 AND move < 0 AND POSITION.gold = 0 THEN SELL gold
+              WHEN POSITION.gold != 0 AND POSITION.gold.holding_duration >= 30 * 60
+              THEN CLOSE gold
+            """.trimIndent(),
+        )
+    }
 }
