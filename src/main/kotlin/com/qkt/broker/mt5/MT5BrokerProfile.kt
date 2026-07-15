@@ -13,7 +13,9 @@ import java.math.BigDecimal
  * [capabilityRestrictions] subtracts from [MT5Protocol.capabilities] to model
  * brokers that disable certain order types. [symbolCalendars] picks the trading-session
  * calendar per symbol, so one broker can offer FX, crypto, and index CFDs at once; it
- * defaults to all-FX, matching the historical single-calendar behaviour.
+ * defaults to all-FX, matching the historical single-calendar behaviour. Live quote
+ * polling uses [tickPollIntervalMs], independently of the position and pending-order
+ * reconciliation cadence in [pollIntervalMs].
  */
 data class MT5BrokerProfile(
     val name: String,
@@ -22,6 +24,7 @@ data class MT5BrokerProfile(
     val serverTimeZone: MT5ServerTimeZone = MT5ServerTimeZone.UTC,
     val magic: Int,
     val instrumentOverrides: Map<String, InstrumentSpec> = emptyMap(),
+    /** Position and pending-order reconciliation cadence in milliseconds. */
     val pollIntervalMs: Long = 1000,
     val httpTimeoutMs: Long = 5000,
     val retryAttempts: Int = 3,
@@ -34,7 +37,14 @@ data class MT5BrokerProfile(
     val expectedTradeMode: MT5TradeMode? = null,
     val expectedAccountCurrency: String? = null,
     val expectedLeverage: Int? = null,
+    /** Live quote polling cadence in milliseconds. */
+    val tickPollIntervalMs: Long = 1000,
 ) {
+    init {
+        require(pollIntervalMs > 0L) { "MT5 reconciliation poll interval must be positive" }
+        require(tickPollIntervalMs > 0L) { "MT5 tick poll interval must be positive" }
+    }
+
     /** Effective capabilities for this profile after applying [capabilityRestrictions]. */
     val capabilities: Set<OrderTypeCapability>
         get() = MT5Protocol.capabilities - capabilityRestrictions
