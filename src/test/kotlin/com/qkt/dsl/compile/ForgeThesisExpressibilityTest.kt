@@ -219,4 +219,24 @@ class ForgeThesisExpressibilityTest {
             """.trimIndent(),
         )
     }
+
+    @Test
+    fun `hour drift continuation composes from UTC time and fixed elapsed hold`() {
+        // #823: the executable one-bar translation enters only after the flagged 30-minute
+        // candle has closed, then exits once 30 minutes have elapsed from the actual fill.
+        ok(
+            """
+            STRATEGY hour_drift VERSION 1
+            DEFAULTS { SIZING = 0.01 TIF = GTC }
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 30m WARMUP 2 BARS
+            LET move = gold.close - lag(gold.close, 1)
+            RULES
+              WHEN NOW.HOUR_UTC = 23 AND move > 0 AND POSITION.gold = 0 THEN BUY gold
+              WHEN NOW.HOUR_UTC = 23 AND move < 0 AND POSITION.gold = 0 THEN SELL gold
+              WHEN POSITION.gold != 0 AND POSITION.gold.holding_duration >= 30 * 60
+              THEN CLOSE gold
+            """.trimIndent(),
+        )
+    }
 }

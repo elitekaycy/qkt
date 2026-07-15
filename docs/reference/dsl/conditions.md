@@ -168,6 +168,14 @@ THEN CLOSE gold
 
 This measures 32 elapsed hours from the executable fill. It does not grant a completed signal bar's close as an entry fill: a close-derived signal is only known after that bar closes, and the order fills on the next executable quote. It also counts elapsed market closures, so it is not an eight-observed-bar counter across a weekend. Research built from `close.shift(-8)` must disclose both differences when it is translated to exact-tick execution; a loss of expectancy under those executable semantics is not an indicator gap.
 
+The same pattern expresses a one-bar elapsed hold on a 30-minute stream:
+
+```qkt
+WHEN POSITION.gold != 0
+ AND POSITION.gold.holding_duration >= 30 * 60
+THEN CLOSE gold
+```
+
 ## Position-state guards
 
 The most common entry guard pattern:
