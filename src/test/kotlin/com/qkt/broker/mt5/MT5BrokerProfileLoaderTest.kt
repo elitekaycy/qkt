@@ -20,6 +20,8 @@ class MT5BrokerProfileLoaderTest {
         assertThat(ex.symbolPolicy.suffix).isEqualTo("m")
         assertThat(ex.serverTimeZone).isEqualTo(MT5ServerTimeZone.UTC)
         assertThat(ex.magic).isEqualTo(10001)
+        assertThat(ex.pollIntervalMs).isEqualTo(1000L)
+        assertThat(ex.tickPollIntervalMs).isEqualTo(1000L)
     }
 
     @Test
@@ -55,6 +57,84 @@ class MT5BrokerProfileLoaderTest {
         val env = mapOf("QKT_BROKER_EXNESS_GATEWAY_URL" to "http://prod:7000")
         val profiles = loader.load(raw, MT5DefaultProfiles.all, env = env)
         assertThat(profiles.first { it.name == "exness" }.gatewayUrl).isEqualTo("http://prod:7000")
+    }
+
+    @Test
+    fun `legacy poll interval still controls reconciliation and ticks`() {
+        val raw = mapOf("exness" to mapOf("type" to "mt5", "poll_interval_ms" to "3000"))
+
+        val profile = loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()).single()
+
+        assertThat(profile.pollIntervalMs).isEqualTo(3000L)
+        assertThat(profile.tickPollIntervalMs).isEqualTo(3000L)
+    }
+
+    @Test
+    fun `tick poll interval can be tuned independently`() {
+        val raw =
+            mapOf(
+                "exness" to
+                    mapOf(
+                        "type" to "mt5",
+                        "poll_interval_ms" to "3000",
+                        "tick_poll_interval_ms" to "1000",
+                    ),
+            )
+
+        val profile = loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()).single()
+
+        assertThat(profile.pollIntervalMs).isEqualTo(3000L)
+        assertThat(profile.tickPollIntervalMs).isEqualTo(1000L)
+    }
+
+    @Test
+    fun `split poll intervals inherit through profile chains`() {
+        val raw =
+            linkedMapOf(
+                "desk" to
+                    mapOf(
+                        "type" to "mt5",
+                        "extends" to "exness",
+                        "magic" to "11001",
+                        "poll_interval_ms" to "3000",
+                        "tick_poll_interval_ms" to "750",
+                    ),
+                "desk-child" to
+                    mapOf(
+                        "type" to "mt5",
+                        "extends" to "desk",
+                        "magic" to "11002",
+                    ),
+            )
+
+        val child = loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()).last()
+
+        assertThat(child.pollIntervalMs).isEqualTo(3000L)
+        assertThat(child.tickPollIntervalMs).isEqualTo(750L)
+    }
+
+    @Test
+    fun `tick poll environment override is independent`() {
+        val raw = mapOf("exness" to mapOf("type" to "mt5", "poll_interval_ms" to "3000"))
+        val env = mapOf("QKT_BROKER_EXNESS_TICK_POLL_INTERVAL_MS" to "750")
+
+        val profile = loader.load(raw, MT5DefaultProfiles.all, env).single()
+
+        assertThat(profile.pollIntervalMs).isEqualTo(3000L)
+        assertThat(profile.tickPollIntervalMs).isEqualTo(750L)
+    }
+
+    @Test
+    fun `poll intervals must be positive`() {
+        val tickRaw = mapOf("exness" to mapOf("type" to "mt5", "tick_poll_interval_ms" to "0"))
+        val reconciliationRaw = mapOf("exness" to mapOf("type" to "mt5", "poll_interval_ms" to "0"))
+
+        assertThatThrownBy { loader.load(tickRaw, MT5DefaultProfiles.all, env = emptyMap()) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("tick poll interval must be positive")
+        assertThatThrownBy { loader.load(reconciliationRaw, MT5DefaultProfiles.all, env = emptyMap()) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("reconciliation poll interval must be positive")
     }
 
     @Test

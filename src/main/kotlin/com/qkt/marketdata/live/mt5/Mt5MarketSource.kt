@@ -55,7 +55,7 @@ class Mt5MarketSource(
                 Mt5TickFeedSource(
                     baseUrl = profile.gatewayUrl,
                     symbolMap = wireToQkt,
-                    pollIntervalMs = profile.pollIntervalMs,
+                    pollIntervalMs = profile.tickPollIntervalMs,
                     http = http,
                     serverTimeZone = profile.serverTimeZone,
                     clock = clock,
