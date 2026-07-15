@@ -124,6 +124,17 @@ class MT5BrokerProfileLoader {
             } else {
                 base?.symbolCalendars ?: SymbolCalendars.fxDefault()
             }
+        val explicitPollInterval = pickExplicit("poll_interval_ms", fields, env, name)
+        val pollIntervalMs = explicitPollInterval?.toLong() ?: base?.pollIntervalMs ?: 1000L
+        // Before tick_poll_interval_ms existed, poll_interval_ms controlled both venue
+        // reconciliation and quote ingestion. Preserve that behavior for an explicitly
+        // configured legacy interval; otherwise inherit the independently resolved tick
+        // cadence. Operators opt into split tuning by setting both fields.
+        val tickPollIntervalMs =
+            pickExplicit("tick_poll_interval_ms", fields, env, name)?.toLong()
+                ?: explicitPollInterval?.toLong()
+                ?: base?.tickPollIntervalMs
+                ?: 1000L
         return MT5BrokerProfile(
             name = name,
             gatewayUrl = gatewayUrl,
@@ -131,9 +142,8 @@ class MT5BrokerProfileLoader {
             serverTimeZone = serverTimeZone,
             magic = magic,
             instrumentOverrides = instrumentOverrides,
-            pollIntervalMs =
-                pick("poll_interval_ms", fields, env, name, base?.pollIntervalMs?.toString())?.toLong()
-                    ?: 1000L,
+            pollIntervalMs = pollIntervalMs,
+            tickPollIntervalMs = tickPollIntervalMs,
             httpTimeoutMs =
                 pick("http_timeout_ms", fields, env, name, base?.httpTimeoutMs?.toString())?.toLong()
                     ?: 5000L,
@@ -167,11 +177,18 @@ class MT5BrokerProfileLoader {
         env: Map<String, String>,
         name: String,
         baseValue: String?,
+    ): String? =
+        pickExplicit(field, fields, env, name)
+            ?: baseValue
+
+    private fun pickExplicit(
+        field: String,
+        fields: Map<String, String>,
+        env: Map<String, String>,
+        name: String,
     ): String? {
         val envKey = "QKT_BROKER_${name.uppercase().replace("-", "_")}_${field.uppercase()}"
-        return env[envKey]
-            ?: fields[field]
-            ?: baseValue
+        return env[envKey] ?: fields[field]
     }
 
     private fun calendarByName(

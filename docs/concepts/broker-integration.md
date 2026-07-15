@@ -82,6 +82,12 @@ On daemon startup, `MT5StateRecovery` snapshots open positions filtered by magic
 
 `MT5PositionPoller` runs at `pollIntervalMs` (default 1000ms) per profile. Diffs the current snapshot against the previous; emits `BrokerEvent.OrderFilled` for each disappeared ticket (broker-side SL/TP fired). Approximate close price = last known position price; future enhancement queries deal history for exact.
 
+Live quotes use the independent `tickPollIntervalMs` cadence. Configuration exposes these as
+`poll_interval_ms` and `tick_poll_interval_ms`. Keeping them separate lets a daemon reduce
+terminal reconciliation load without silently slowing strategy market data. A legacy profile
+that sets only `poll_interval_ms` retains the old coupled behavior; set both keys to opt into
+independent tuning.
+
 ## Cross-broker same-symbol
 
 **Not supported in v1.** Two profiles handling `EURUSD` in one strategy would conflate at `PositionTracker` (keys by symbol only). Workaround: run as two separate qkt deployments. Future v2 refactors `CompositeBroker` + `PositionTracker` + `BrokerEvent` to key on `(brokerName, symbol)`.
