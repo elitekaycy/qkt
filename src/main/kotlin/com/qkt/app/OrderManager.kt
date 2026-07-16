@@ -205,12 +205,67 @@ class OrderManager(
     private val stacks: StackTracker = StackTracker()
 
     private val riskByClientOrderId: MutableMap<String, BigDecimal> = java.util.concurrent.ConcurrentHashMap()
+    private val protectionByClientOrderId: MutableMap<String, ProtectionLevels> =
+        java.util.concurrent.ConcurrentHashMap()
+    private val reportBracketByClientOrderId: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
+
+    /** Exact protective stop and target prices resolved for an entry fill. */
+    data class ProtectionLevels(
+        val stopLoss: BigDecimal,
+        val takeProfit: BigDecimal,
+    )
+
+    /** Dollar risk and protective prices resolved against one exact entry fill. */
+    data class EntryRiskReport(
+        val riskUsd: BigDecimal,
+        val protection: ProtectionLevels,
+    )
 
     /**
      * Returns and removes the recorded risk for [clientOrderId]. Designed to be called once per
      * fill — the entry is consumed so the map doesn't grow unbounded over a long-running session.
      */
     fun riskUsdFor(clientOrderId: String): BigDecimal? = riskByClientOrderId.remove(clientOrderId)
+
+    /** Resolved venue prices attached to an entry fill; consumed once by the backtest report. */
+    fun protectionFor(clientOrderId: String): ProtectionLevels? = protectionByClientOrderId.remove(clientOrderId)
+
+    /**
+     * Resolve and consume an entry bracket using the broker's actual [fillPrice] and [quantity].
+     * The accounting subscriber runs before the ordinary order-state subscriber, so report
+     * generation must not depend on [onFilled] having re-anchored relative children first.
+     */
+    fun entryRiskForFill(
+        clientOrderId: String,
+        quantity: BigDecimal,
+        fillPrice: BigDecimal,
+        symbol: String,
+    ): EntryRiskReport? {
+        if (!trackRisk) return null
+        val bracket = reportBracketByClientOrderId[clientOrderId] ?: return null
+        val ids = listOf(bracket.id, bracket.entry.id, clientOrderId).distinct()
+        for (id in ids) {
+            reportBracketByClientOrderId.remove(id)
+            riskByClientOrderId.remove(id)
+            protectionByClientOrderId.remove(id)
+        }
+        val resolved = resolveBracketAtFill(bracket, fillPrice)
+        val stopPrice = stopPriceAtEntry(resolved, fillPrice)
+        return EntryRiskReport(
+            riskUsd = calculateRisk(quantity, fillPrice, stopPrice, symbol),
+            protection = ProtectionLevels(stopPrice, resolved.takeProfit),
+        )
+    }
+
+    private fun recordProtection(
+        clientOrderIds: List<String>,
+        stopLoss: BigDecimal,
+        takeProfit: BigDecimal,
+    ) {
+        if (!trackRisk) return
+        val protection = ProtectionLevels(stopLoss, takeProfit)
+        for (id in clientOrderIds) protectionByClientOrderId[id] = protection
+    }
 
     private fun recordRisk(
         clientOrderIds: List<String>,
@@ -222,15 +277,33 @@ class OrderManager(
         // Risk-per-trade is consumed only by the backtest report (via [riskUsdFor] in ReplayEngine).
         // In live nothing reads it, so recording would just leak ~2 entries per bracket forever.
         if (!trackRisk) return
-        val contractSize = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
-        val risk =
-            entry
-                .subtract(stop)
-                .abs()
-                .multiply(quantity, Money.CONTEXT)
-                .multiply(contractSize, Money.CONTEXT)
+        val risk = calculateRisk(quantity, entry, stop, symbol)
         for (id in clientOrderIds) riskByClientOrderId[id] = risk
     }
+
+    private fun calculateRisk(
+        quantity: BigDecimal,
+        entry: BigDecimal,
+        stop: BigDecimal,
+        symbol: String,
+    ): BigDecimal {
+        val contractSize = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
+        return entry
+            .subtract(stop)
+            .abs()
+            .multiply(quantity, Money.CONTEXT)
+            .multiply(contractSize, Money.CONTEXT)
+    }
+
+    private fun stopPriceAtEntry(
+        bracket: OrderRequest.Bracket,
+        entryPrice: BigDecimal,
+    ): BigDecimal =
+        when (val stop = bracket.stopLoss) {
+            is StopLossSpec.Fixed -> stop.price
+            is StopLossSpec.ArmedTrail ->
+                if (bracket.side == Side.BUY) entryPrice - stop.trailDistance else entryPrice + stop.trailDistance
+        }
 
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
@@ -572,6 +645,15 @@ class OrderManager(
                         stop = riskStop,
                         symbol = request.symbol,
                     )
+                    recordProtection(
+                        clientOrderIds = listOf(request.id, request.entry.id),
+                        stopLoss = riskStop,
+                        takeProfit = request.takeProfit,
+                    )
+                }
+                if (trackRisk) {
+                    reportBracketByClientOrderId[request.id] = request
+                    reportBracketByClientOrderId[request.entry.id] = request
                 }
                 val caps = broker.capabilitiesFor(request.symbol)
                 val isArmedTrail = request.stopLoss is StopLossSpec.ArmedTrail
@@ -1894,6 +1976,14 @@ class OrderManager(
             }
         if (!applied) return
         exposureEntries.remove(e.clientOrderId)
+        reportBracketByClientOrderId.remove(e.clientOrderId)?.let { bracket ->
+            reportBracketByClientOrderId.remove(bracket.id)
+            reportBracketByClientOrderId.remove(bracket.entry.id)
+            riskByClientOrderId.remove(bracket.id)
+            riskByClientOrderId.remove(bracket.entry.id)
+            protectionByClientOrderId.remove(bracket.id)
+            protectionByClientOrderId.remove(bracket.entry.id)
+        }
         failOcoOnReject(e.clientOrderId)
     }
 

@@ -38,6 +38,8 @@ class HtmlReportWriterTest {
         assertThat(html).contains("Monte Carlo")
         assertThat(html).contains("Trades")
         assertThat(html).contains("riskUsd")
+        assertThat(html).contains("<th>Stop</th><th>Target</th>")
+        assertThat(html).contains("<td>90</td><td>120</td>")
         assertThat(html).contains("Run evidence")
         assertThat(html).contains("sha256:strategy")
         assertThat(html).contains("paper-fast")
@@ -115,10 +117,12 @@ class HtmlReportWriterTest {
             trades =
                 listOf(
                     TradeRecord(
-                        Trade("o-1", "BTCUSDT", BigDecimal("100"), BigDecimal("1"), Side.BUY, 0L),
-                        BigDecimal("5"),
-                        "test",
-                        BigDecimal("10"),
+                        trade = Trade("o-1", "BTCUSDT", BigDecimal("100"), BigDecimal("1"), Side.BUY, 0L),
+                        realized = BigDecimal("5"),
+                        strategyId = "test",
+                        riskUsd = BigDecimal("10"),
+                        stopLossPrice = BigDecimal("90"),
+                        takeProfitPrice = BigDecimal("120"),
                     ),
                 ),
             rejections = emptyList(),
