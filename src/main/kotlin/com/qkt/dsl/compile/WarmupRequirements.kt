@@ -199,7 +199,7 @@ object WarmupRequirements {
                 walkExpr(ot.limitPrice, out)
             }
             is TrailingBy -> walkExpr(ot.distance, out)
-            is TrailingPct -> walkExpr(ot.frac, out)
+            is TrailingPct -> walkExpr(ot.percent, out)
             else -> Unit
         }
     }

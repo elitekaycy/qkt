@@ -177,7 +177,7 @@ internal fun collectMetaRefs(
                 walkExpr(o.limitPrice)
             }
             is TrailingBy -> walkExpr(o.distance)
-            is TrailingPct -> walkExpr(o.frac)
+            is TrailingPct -> walkExpr(o.percent)
         }
     }
 

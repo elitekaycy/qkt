@@ -19,7 +19,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *
  * ```yaml
  * - label: rf-fixed-0.01-10000
- *   params: { slpct: "0.01", rrmult: "2" }   # override LET params, like --param
+ *   params: { slpct: "0.4", rrmult: "2" }   # bracket PCT uses whole percentage points
  *   strategy: /run/variant.qkt               # optional; default = the swept strategy
  *   broker: mt5-sim                           # optional; paper | mt5-sim
  *   instruments: /run/instruments.1.5x.yaml   # optional; layered over the standard registry

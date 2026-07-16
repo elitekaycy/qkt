@@ -117,7 +117,7 @@ STACK_AT MFE >= atr(gold, 14) WITHIN 30m       -- rejected at compile time
 
 `SIZING` for `STACK_AT` is limited to literal lots (`SizeQty`) and arithmetic over `ENTRY_QTY`. Risk-fraction (`RISK 0.01`), notional (`100 USD`), and percent-of-equity sizing are not supported for stacks.
 
-`BRACKET` for `STACK_AT` must use `BY <distance>` for both legs. `AT <price>`, `PCT <frac>`, and `RR <multiplier>` forms are rejected — the stack's bracket is computed from the stack's own entry price at fire time, so absolute and ratio-based forms don't translate cleanly.
+`BRACKET` for `STACK_AT` must use `BY <distance>` for both legs. `AT <price>`, `PCT <percent>`, and `RR <multiplier>` forms are rejected — the stack's bracket is computed from the stack's own entry price at fire time, so absolute and ratio-based forms don't translate cleanly.
 
 ## Reading MFE and MAE from the DSL
 

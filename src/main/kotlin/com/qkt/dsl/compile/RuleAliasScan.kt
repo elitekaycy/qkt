@@ -156,7 +156,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
                 walkExpr(o.limitPrice)
             }
             is TrailingBy -> walkExpr(o.distance)
-            is TrailingPct -> walkExpr(o.frac)
+            is TrailingPct -> walkExpr(o.percent)
         }
     }
 
