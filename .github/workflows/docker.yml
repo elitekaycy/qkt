@@ -66,6 +66,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
+        # The testing build has a fixed :edge tag and fixed OCI labels below, so it does not need
+        # repository metadata. Keeping it off this path prevents a transient GitHub metadata API
+        # outage from blocking publication after runtime-smoke has already passed.
+        if: github.ref != 'refs/heads/testing'
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/qkt
@@ -118,7 +122,9 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/qkt:edge
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha
