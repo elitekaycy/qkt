@@ -48,23 +48,35 @@ class PortfolioRiskAggregator(
     private val clock: Clock,
     private val onSample: (Long) -> Unit = {},
 ) {
+    private data class RealizedFill(
+        val strategyId: String,
+        val realized: BigDecimal,
+    )
+
     private val log = LoggerFactory.getLogger(PortfolioRiskAggregator::class.java)
+    private val pendingFills = ConcurrentLinkedQueue<RealizedFill>()
     private var childrenHalted = false
     private val bookHaltedChildren = mutableSetOf<ChildRiskTarget>()
     private var childHaltReason: String? = null
     private var childHaltScope: HaltScope? = null
 
-    /** Feed one child fill into the book's single daily-PnL and equity state writer. */
-    @Synchronized
+    /** Queue one child fill for the book's single risk-heartbeat writer. */
     fun recordRealized(
         strategyId: String,
         realized: BigDecimal,
     ) {
-        bookRiskState.onFill(strategyId, realized)
+        pendingFills.add(RealizedFill(strategyId, realized))
     }
 
     @Synchronized
     fun evaluate() {
+        // Child snapshots can wait for their engine threads. Fill callbacks only enqueue above,
+        // so an engine never waits for this monitor while the risk heartbeat waits for it.
+        while (true) {
+            val fill = pendingFills.peek() ?: break
+            bookRiskState.onFill(fill.strategyId, fill.realized)
+            pendingFills.poll()
+        }
         onSample(clock.now())
         bookRiskState.clearExpiredDailyHalts()
         if (bookRiskState.halted) {
