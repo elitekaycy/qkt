@@ -232,7 +232,7 @@ internal object StrategyDataRequirementScanner {
                     walk(orderType.limitPrice)
                 }
                 is TrailingBy -> walk(orderType.distance)
-                is TrailingPct -> walk(orderType.frac)
+                is TrailingPct -> walk(orderType.percent)
                 Market, null -> Unit
             }
         }

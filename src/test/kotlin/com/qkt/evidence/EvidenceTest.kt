@@ -35,6 +35,7 @@ class EvidenceTest {
         val json = EvidenceJson.render(evidence)
 
         assertThat(json).contains("\"command\":[\"backtest\",\"s \\\"one\\\".qkt\"]")
+        assertThat(json).contains("\"dslPercentConvention\":\"whole-percentage-points\"")
         assertThat(json).contains("\"importedFileHashes\":{\"a\":\"sha256:a\",\"z\":\"sha256:z\"}")
         assertThat(json).contains("\"warning\":\"not\\npinned\"")
         assertThat(json).contains("\"execution\":{\"preset\":\"paper-fast\",\"broker\":\"paper\"")

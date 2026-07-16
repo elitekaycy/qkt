@@ -37,7 +37,7 @@ BUY <stream>
     [ TIF <gtc|ioc|fok|day> ]
 ```
 
-Trailing-stop order types ship as `ORDER_TYPE = TRAILING BY <distance>` and `ORDER_TYPE = TRAILING PCT <fraction>` (see [Trailing stop](../../how-to/add-stop-loss.md#trailing-stop) in the stop-loss recipe).
+Trailing-stop order types ship as `ORDER_TYPE = TRAILING BY <distance>` and `ORDER_TYPE = TRAILING PCT <percent>` (see [Trailing stop](../../how-to/add-stop-loss.md#trailing-stop) in the stop-loss recipe). `1 PCT` means 1%; the percentage must be greater than 0 and less than 100.
 
 ### Minimal BUY (uses DEFAULTS)
 

@@ -131,6 +131,7 @@ class HtmlReportWriter(
             append("<table><tbody>")
             append("<tr><td>qkt version</td><td>${html(e.qktVersion)}</td></tr>")
             append("<tr><td>git SHA</td><td>${html(e.gitSha)}</td></tr>")
+            append("<tr><td>DSL percentages</td><td>${html(e.dslPercentConvention)}</td></tr>")
             append("<tr><td>strategy hash</td><td>${html(e.strategyHash)}</td></tr>")
             e.configHash?.let { append("<tr><td>config hash</td><td>${html(it)}</td></tr>") }
             e.dataset?.let {

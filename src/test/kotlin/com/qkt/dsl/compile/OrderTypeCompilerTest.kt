@@ -16,6 +16,7 @@ import com.qkt.marketdata.Candle
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class OrderTypeCompilerTest {
@@ -181,8 +182,8 @@ class OrderTypeCompilerTest {
     }
 
     @Test
-    fun `TrailingPct builds TrailingStop with PERCENT mode and 0-100 scale`() {
-        val c = compiler().compile(TrailingPct(NumLit(BigDecimal("0.05"))))
+    fun `TrailingPct treats its operand as whole percentage points`() {
+        val c = compiler().compile(TrailingPct(NumLit(BigDecimal("5"))))
         val req =
             c.buildRequest.evaluate(
                 ec = ec("100"),
@@ -196,5 +197,39 @@ class OrderTypeCompilerTest {
             ) as OrderRequest.TrailingStop
         assertThat(req.trailMode).isEqualTo(TrailMode.PERCENT)
         assertThat(req.trailAmount).isEqualByComparingTo("5")
+    }
+
+    @Test
+    fun `TrailingPct rejects non-positive percentages`() {
+        val c = compiler().compile(TrailingPct(NumLit(BigDecimal.ZERO)))
+        assertThatThrownBy {
+            c.buildRequest.evaluate(
+                ec = ec("100"),
+                id = "id-6",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.SELL,
+                qty = BigDecimal.ONE,
+                tif = TimeInForce.GTC,
+                strategyId = "s",
+                ts = 0L,
+            )
+        }.hasMessageContaining("greater than 0")
+    }
+
+    @Test
+    fun `TrailingPct rejects percentages that cannot leave a positive trail`() {
+        val c = compiler().compile(TrailingPct(NumLit(BigDecimal("100"))))
+        assertThatThrownBy {
+            c.buildRequest.evaluate(
+                ec = ec("100"),
+                id = "id-7",
+                symbol = "BACKTEST:BTCUSDT",
+                side = Side.SELL,
+                qty = BigDecimal.ONE,
+                tif = TimeInForce.GTC,
+                strategyId = "s",
+                ts = 0L,
+            )
+        }.hasMessageContaining("less than 100")
     }
 }

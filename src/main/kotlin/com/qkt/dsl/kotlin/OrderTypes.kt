@@ -22,4 +22,4 @@ fun stopLimit(
 
 fun trailingBy(distance: ExprAst): OrderTypeAst = TrailingBy(distance)
 
-fun trailingPct(frac: ExprAst): OrderTypeAst = TrailingPct(frac)
+fun trailingPct(percent: ExprAst): OrderTypeAst = TrailingPct(percent)

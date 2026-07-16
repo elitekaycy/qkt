@@ -62,15 +62,19 @@ The stop adapts: wide when the market's choppy, tight when calm. The 3× ATR tar
 
 ## Trailing stop
 
-`TRAILING BY <distance>` and `TRAILING PCT <fraction>` are first-class order types. Use them as the order type on `BUY` / `SELL`:
+`TRAILING BY <distance>` and `TRAILING PCT <percent>` are first-class order types. Use them as the order type on `BUY` / `SELL`; the operand uses whole percentage points, so `1` means 1%:
 
 ```qkt
 -- Absolute trail: stop follows the favorable price by a fixed distance.
 BUY btc SIZING 0.1 ORDER_TYPE = TRAILING BY atr(btc, 14) * 2
 
 -- Percent trail: stop follows by a fraction (0.05 = 5%).
-SELL btc SIZING 0.1 ORDER_TYPE = TRAILING PCT 0.05
+SELL btc SIZING 0.1 ORDER_TYPE = TRAILING PCT 5
 ```
+
+Runtimes before this convention was aligned interpreted `0.05` as 5%. On current
+runtimes the economically equivalent value is `5`. Trailing percentages must be
+greater than 0 and less than 100.
 
 **Semantics:** The trail level ratchets in the favorable direction (high-water mark for a SELL exit, low-water mark for a BUY entry/stop) and fires when price reverses by the trail distance.
 

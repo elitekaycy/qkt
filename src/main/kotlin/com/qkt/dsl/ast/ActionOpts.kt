@@ -96,8 +96,9 @@ data class TrailingBy(
     val distance: ExprAst,
 ) : OrderTypeAst
 
+/** Trailing-stop distance in percentage points, so `1` means one percent. */
 data class TrailingPct(
-    val frac: ExprAst,
+    val percent: ExprAst,
 ) : OrderTypeAst
 
 sealed interface ChildPriceAst

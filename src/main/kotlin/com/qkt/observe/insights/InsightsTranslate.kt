@@ -758,7 +758,7 @@ object InsightsTranslate {
             is com.qkt.dsl.ast.TrailingBy ->
                 mapOf("type" to "TrailingBy", "distance" to exprPayload(orderType.distance))
             is com.qkt.dsl.ast.TrailingPct ->
-                mapOf("type" to "TrailingPct", "frac" to exprPayload(orderType.frac))
+                mapOf("type" to "TrailingPct", "percent" to exprPayload(orderType.percent))
         }
 
     private fun childPricePayload(child: ChildPriceAst?): Map<String, Any?>? =

@@ -58,7 +58,7 @@ class ParserOrderTypeTest {
 
     @Test
     fun `trailing pct frac`() {
-        assertThat(ot("TRAILING PCT 0.01")).isInstanceOf(TrailingPct::class.java)
+        assertThat(ot("TRAILING PCT 1")).isInstanceOf(TrailingPct::class.java)
     }
 
     @Test

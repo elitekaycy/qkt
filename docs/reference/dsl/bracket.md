@@ -47,6 +47,11 @@ For BTC at $67,000 long, stop at $66,330, target at $69,010.
 The value is a percentage, not a fraction: `1 PCT` means 1%. Stop-loss percentages
 must be greater than 0 and less than 50; larger values are rejected as likely mistakes.
 
+> **Compatibility:** runtimes before commit `788a90f1` interpreted this operand as a
+> fraction (`0.004` meant 0.4%). Current runtimes use percentage points, so the
+> economically equivalent value is `0.4`. Migrate old strategy sources and parameter
+> grids before replaying them on a current runtime.
+
 ### `AT <price_expression>` — absolute price
 
 ```qkt
@@ -106,7 +111,7 @@ Trailing stops aren't a `BRACKET` leg — they're an order type on the entry its
 
 ```qkt
 BUY btc SIZING 0.1 ORDER_TYPE = TRAILING BY atr(btc, 14) * 2
-SELL btc SIZING 0.1 ORDER_TYPE = TRAILING PCT 0.05
+SELL btc SIZING 0.1 ORDER_TYPE = TRAILING PCT 5
 ```
 
 See [the stop-loss recipe](../../how-to/add-stop-loss.md#trailing-stop) for semantics and engine-vs-broker routing.

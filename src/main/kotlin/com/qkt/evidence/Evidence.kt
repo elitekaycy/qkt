@@ -8,6 +8,7 @@ data class EvidenceEnvelope(
     val qktVersion: String,
     val gitSha: String,
     val buildTimestamp: String,
+    val dslPercentConvention: String = "whole-percentage-points",
     val command: List<String> = emptyList(),
     val strategyHash: String,
     val importedFileHashes: Map<String, String> = emptyMap(),
@@ -92,6 +93,7 @@ object EvidenceJson {
             append("\"qktVersion\":").append(jsonString(e.qktVersion))
             append(",\"gitSha\":").append(jsonString(e.gitSha))
             append(",\"buildTimestamp\":").append(jsonString(e.buildTimestamp))
+            append(",\"dslPercentConvention\":").append(jsonString(e.dslPercentConvention))
             append(",\"command\":").append(stringList(e.command))
             append(",\"strategyHash\":").append(jsonString(e.strategyHash))
             append(",\"importedFileHashes\":").append(stringMap(e.importedFileHashes))

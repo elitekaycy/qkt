@@ -193,7 +193,7 @@ private fun subst(
                 limitPrice = subst(o.limitPrice, v, alias),
             )
         is TrailingBy -> o.copy(distance = subst(o.distance, v, alias))
-        is TrailingPct -> o.copy(frac = subst(o.frac, v, alias))
+        is TrailingPct -> o.copy(percent = subst(o.percent, v, alias))
     }
 
 private fun subst(

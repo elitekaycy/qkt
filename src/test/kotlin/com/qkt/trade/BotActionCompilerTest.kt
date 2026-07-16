@@ -114,6 +114,16 @@ class BotActionCompilerTest {
     }
 
     @Test
+    fun `pct exits reject invalid percentages consistently`() {
+        assertThatThrownBy {
+            compile(intent(sl = ExitSpec.Pct(BigDecimal("0"))))
+        }.hasMessageContaining("greater than 0")
+        assertThatThrownBy {
+            compile(intent(sl = ExitSpec.Pct(BigDecimal("50"))))
+        }.hasMessageContaining("less than 50")
+    }
+
+    @Test
     fun `single exit rides alongside a plain request`() {
         val out = compile(intent(tp = ExitSpec.At(BigDecimal("2700"))))
         assertThat(out.request).isInstanceOf(OrderRequest.Market::class.java)
