@@ -65,6 +65,7 @@ class BacktestReportWriter(
             StringBuilder(
                 "timestamp,strategy,symbol,side,quantity,price,realized,nativeRealized,nativeCurrency," +
                     "accountRealized,accountCurrency,fxRate,fxRateTimestamp,fxSource,riskUsd,brokerOrderId," +
+                    "stopLossPrice,takeProfitPrice," +
                     "accountPositionQtyBefore,accountPositionAvgEntryBefore,accountPositionQtyAfter," +
                     "accountPositionAvgEntryAfter,strategyPositionQtyBefore,strategyPositionAvgEntryBefore," +
                     "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional\n",
@@ -107,6 +108,10 @@ class BacktestReportWriter(
                 .append(r.riskUsd?.toPlainString() ?: "")
                 .append(',')
                 .append(r.trade.orderId)
+                .append(',')
+                .append(r.stopLossPrice?.toPlainString() ?: "")
+                .append(',')
+                .append(r.takeProfitPrice?.toPlainString() ?: "")
                 .append(',')
                 .append(r.accountPositionBefore?.quantity?.toPlainString() ?: "")
                 .append(',')

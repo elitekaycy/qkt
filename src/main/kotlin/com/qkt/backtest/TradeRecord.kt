@@ -9,6 +9,8 @@ data class TradeRecord(
     val realized: BigDecimal,
     val strategyId: String,
     val riskUsd: BigDecimal? = null,
+    val stopLossPrice: BigDecimal? = null,
+    val takeProfitPrice: BigDecimal? = null,
     val nativeRealized: BigDecimal? = null,
     val nativeCurrency: String? = null,
     val accountRealized: BigDecimal? = null,

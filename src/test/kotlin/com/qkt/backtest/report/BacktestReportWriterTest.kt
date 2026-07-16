@@ -66,6 +66,7 @@ class BacktestReportWriterTest {
         val tradesCsv = Files.readString(dir.resolve("trades.csv"))
         assertThat(tradesCsv.lines().first())
             .contains("nativeRealized,nativeCurrency,accountRealized,accountCurrency,fxRate")
+        assertThat(tradesCsv.lines().first()).contains("riskUsd,brokerOrderId,stopLossPrice,takeProfitPrice")
     }
 
     @Test

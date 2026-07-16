@@ -344,13 +344,21 @@ class ReplayEngine(
                 candleWindow = candleWindow,
                 candleHub = candleHub,
                 onAccountedFill = { trade, converted, strategyId, fillState ->
-                    val risk = holder[0]?.orderManager?.riskUsdFor(trade.orderId)
+                    val entryRisk =
+                        holder[0]?.orderManager?.entryRiskForFill(
+                            clientOrderId = trade.orderId,
+                            quantity = trade.quantity,
+                            fillPrice = trade.price,
+                            symbol = trade.symbol,
+                        )
                     tradeRecords.add(
                         TradeRecord(
                             trade = trade,
                             realized = converted.account.amount,
                             strategyId = strategyId,
-                            riskUsd = risk,
+                            riskUsd = entryRisk?.riskUsd,
+                            stopLossPrice = entryRisk?.protection?.stopLoss,
+                            takeProfitPrice = entryRisk?.protection?.takeProfit,
                             nativeRealized = converted.native.amount,
                             nativeCurrency = converted.native.normalizedCurrency,
                             accountRealized = converted.account.amount,
