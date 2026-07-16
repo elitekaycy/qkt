@@ -138,7 +138,7 @@ class ExprTransform(
             is Stop -> Stop(expr(o.price))
             is StopLimit -> StopLimit(expr(o.stopPrice), expr(o.limitPrice))
             is TrailingBy -> TrailingBy(expr(o.distance))
-            is TrailingPct -> TrailingPct(expr(o.frac))
+            is TrailingPct -> TrailingPct(expr(o.percent))
         }
 
     fun tif(t: TifAst): TifAst =

@@ -16,6 +16,7 @@ import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.compile.BracketPercent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
@@ -124,7 +125,8 @@ private fun resolveExit(
             is ChildBy -> applyDistance(side, entry, literal(child.distance, "exit BY"), isStop)
             is ChildPct -> {
                 val pct = literal(child.percent, "exit PCT")
-                val dist = entry.multiply(pct, Money.CONTEXT).divide(BigDecimal(100), Money.CONTEXT)
+                val fraction = BracketPercent.fraction(pct, isStopLoss = isStop)
+                val dist = entry.multiply(fraction, Money.CONTEXT)
                 applyDistance(side, entry, dist, isStop)
             }
             is ChildRr -> {
