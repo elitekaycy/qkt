@@ -5,6 +5,7 @@ import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.persistence.PersistedRiskState
+import com.qkt.pnl.PnLProvider
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.DailyDrawdownBasis
@@ -17,6 +18,9 @@ import com.qkt.risk.rules.MaxDailyDrawdown
 import com.qkt.risk.rules.MaxDailyLoss
 import com.qkt.risk.rules.MaxDrawdown
 import java.math.BigDecimal
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -59,7 +63,7 @@ class PortfolioRiskAggregatorTest {
     }
 
     private fun bookRiskState(
-        pnl: FakePnL,
+        pnl: PnLProvider,
         clock: Clock,
         persist: ((PersistedRiskState) -> Unit)? = null,
     ): RiskState =
@@ -95,6 +99,81 @@ class PortfolioRiskAggregatorTest {
         assertThat(state.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("-1100")
         assertThat(child.flattened).isEqualTo(1)
         assertThat(child.halted).contains("daily loss")
+    }
+
+    @Test
+    fun `book sampling does not block concurrent child fill accounting`() {
+        val clock = TestClock(0L)
+        val state = bookRiskState(FakePnL(BigDecimal.ZERO, BigDecimal.ZERO), clock)
+        val fillRecorded = CountDownLatch(1)
+        val fillExecutor = Executors.newSingleThreadExecutor()
+        var fillSubmitted = false
+        lateinit var aggregator: PortfolioRiskAggregator
+        aggregator =
+            PortfolioRiskAggregator(
+                children = emptyList(),
+                bookRiskState = state,
+                haltRules = emptyList(),
+                clock = clock,
+                onSample = {
+                    if (!fillSubmitted) {
+                        fillSubmitted = true
+                        fillExecutor.execute {
+                            aggregator.recordRealized("alpha", BigDecimal("12.50"))
+                            fillRecorded.countDown()
+                        }
+                        assertThat(fillRecorded.await(1, TimeUnit.SECONDS))
+                            .describedAs("the child engine fill callback can enter while book sampling waits")
+                            .isTrue()
+                    }
+                },
+            )
+
+        try {
+            aggregator.evaluate()
+            aggregator.evaluate()
+        } finally {
+            fillExecutor.shutdownNow()
+        }
+
+        assertThat(state.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("12.50")
+    }
+
+    @Test
+    fun `child fill callbacks defer cross-engine pnl reads to the risk heartbeat`() {
+        val clock = TestClock(0L)
+        var pnlReads = 0
+        val pnl =
+            object : PnLProvider {
+                override fun realizedTotal(): BigDecimal {
+                    pnlReads++
+                    return BigDecimal.ZERO
+                }
+
+                override fun unrealizedTotal(): BigDecimal = BigDecimal.ZERO
+
+                override fun unrealizedFor(symbol: String): BigDecimal = BigDecimal.ZERO
+
+                override fun totalPnL(): BigDecimal = BigDecimal.ZERO
+            }
+        val state = bookRiskState(pnl, clock)
+        val aggregator =
+            PortfolioRiskAggregator(
+                children = emptyList(),
+                bookRiskState = state,
+                haltRules = emptyList(),
+                clock = clock,
+            )
+
+        aggregator.recordRealized("alpha", BigDecimal("12.50"))
+
+        assertThat(pnlReads).isZero()
+        assertThat(state.dailyPnLTracker.globalRealizedToday()).isZero()
+
+        aggregator.evaluate()
+
+        assertThat(pnlReads).isPositive()
+        assertThat(state.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("12.50")
     }
 
     @Test
