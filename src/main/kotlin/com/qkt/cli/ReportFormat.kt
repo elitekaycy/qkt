@@ -94,6 +94,7 @@ object ReportPrinter {
         out.println()
         out.println("Run evidence")
         out.println("  qkt:       ${e.qktVersion} (${e.gitSha})")
+        out.println("  pct DSL:   ${e.dslPercentConvention}")
         out.println("  strategy:  ${e.strategyHash}")
         e.configHash?.let { out.println("  config:    $it") }
         e.dataset?.let {

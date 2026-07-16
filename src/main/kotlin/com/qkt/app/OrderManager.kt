@@ -13,6 +13,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackEntryRef
+import com.qkt.dsl.compile.BracketPercent
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.At
@@ -960,13 +961,8 @@ class OrderManager(
             is com.qkt.dsl.ast.ChildAt -> evaluateAt(childPrice.price, fillPrice).setScale(Money.SCALE, Money.ROUNDING)
             is com.qkt.dsl.ast.ChildPct -> {
                 val percent = evaluateAt(childPrice.percent, fillPrice)
-                require(percent.signum() > 0) { "bracket PCT must be greater than 0, was $percent" }
-                if (isStopLoss) {
-                    require(percent < BigDecimal("50")) {
-                        "STOP LOSS PCT must be less than 50, was $percent"
-                    }
-                }
-                val distance = fillPrice.multiply(percent.divide(BigDecimal("100"), Money.CONTEXT), Money.CONTEXT)
+                val fraction = BracketPercent.fraction(percent, isStopLoss)
+                val distance = fillPrice.multiply(fraction, Money.CONTEXT)
                 (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
             }
             is com.qkt.dsl.ast.ChildRr -> {

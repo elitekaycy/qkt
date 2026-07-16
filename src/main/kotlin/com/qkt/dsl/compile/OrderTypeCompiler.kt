@@ -1,6 +1,5 @@
 package com.qkt.dsl.compile
 
-import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
@@ -153,11 +152,12 @@ class OrderTypeCompiler(
     }
 
     private fun compileTrailingPct(o: TrailingPct): CompiledOrderType {
-        val fracEval = exprCompiler.compile(o.frac)
+        val percentEval = exprCompiler.compile(o.percent)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val f = fracEval.evaluateNumber(ec) ?: return@BuildRequest null
-                val percent = f.multiply(BigDecimal("100"), Money.CONTEXT)
+                val percent = percentEval.evaluateNumber(ec) ?: return@BuildRequest null
+                require(percent.signum() > 0) { "TRAILING PCT must be greater than 0, was $percent" }
+                require(percent < BigDecimal("100")) { "TRAILING PCT must be less than 100, was $percent" }
                 OrderRequest.TrailingStop(
                     id,
                     symbol,
