@@ -46,6 +46,19 @@ Multi-series (compiler path, like `resid`):
 - Hour-drift continuation (#823) → `NOW.HOUR_UTC`, `lag`, and
   `POSITION.<stream>.holding_duration` compose into the executable 30-minute recipe with the
   same post-close fill boundary.
+- Completed-session fades (#833, #835) → `session_range_high` / `session_range_low` are
+  evaluable in `WHEN` expressions after their one-day warmup. Replay tests exercise both
+  directions against a completed 13:00–21:00 UTC range. An observed four trades in a short
+  reproduction window is a research sample-size result, not an unsupported trigger.
+- Extreme-reaction fade (#834) → duplicate reproduction report for #822. The existing
+  percentile-rank and fixed-elapsed-hold compile test remains the capability proof.
+- Fixed-horizon ratio recipes (#836, #837, #838) → cross-stream division feeds `zscore`
+  directly, signed thresholds select continuation or fade direction, and
+  `POSITION.<stream>.holding_duration` supplies the 4- or 12-bar elapsed exit.
+
+Compilation and trigger evaluation prove that qkt can represent and execute these recipes.
+They do not prove that a reported research edge survives the executable post-close fill model;
+trade count and PnL remain research-validation outcomes rather than DSL capability criteria.
 
 ## Usage
 
@@ -63,6 +76,7 @@ indicators, Percentile rank, Math helpers) for worked, copy-pasteable examples.
 
 ## References
 
-- Issues: #479, #501, #502, #503, #504, #505, #506, #507, #508, #818, #822, #823.
+- Issues: #479, #501, #502, #503, #504, #505, #506, #507, #508, #818, #822, #823,
+  #833, #834, #835, #836, #837, #838.
 - Indicators: `PercentileRank`, `SessionVwap`, `SessionRange`, `ConfirmRatio` under
   `com.qkt.indicators.catalog`; `MOD`/`FLOOR`/`CEIL`/`ROUND` in `com.qkt.dsl.stdlib.FuncRegistry`.
