@@ -5,6 +5,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.ExitReason
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.MarketPriceTracker
 import java.math.BigDecimal
@@ -288,8 +289,8 @@ class MT5PositionPollerCloseTest {
         server.enqueue(
             MockResponse().setBody(
                 """[{"ticket":1,"entry":0,"price":"1.1000","volume":"0.10","commission":"-0.70"},
-                    {"ticket":2,"entry":1,"price":"1.0940","volume":"0.05","commission":"-0.35","swap":"-0.55"},
-                    {"ticket":3,"entry":1,"price":"1.0960","volume":"0.05","commission":"-0.35","swap":"-0.55"}]""",
+                    {"ticket":2,"entry":1,"price":"1.0940","volume":"0.05","commission":"-0.35","swap":"-0.55","reason":4},
+                    {"ticket":3,"entry":1,"price":"1.0960","volume":"0.05","commission":"-0.35","swap":"-0.55","reason":4}]""",
             ),
         )
 
@@ -310,6 +311,7 @@ class MT5PositionPollerCloseTest {
         assertThat(fills).hasSize(1)
         // (1.0940 * 0.05 + 1.0960 * 0.05) / 0.10 = 1.0950 — the deal truth, not 1.1200.
         assertThat(fills.single().price).isEqualByComparingTo("1.0950")
+        assertThat(fills.single().exitReason).isEqualTo(ExitReason.STOP)
         // Costs sum over all the position's deals: 0.70 + 0.35 + 0.35 commission + 1.10 swap.
         assertThat(fills.single().venueCosts).isEqualByComparingTo("2.50")
     }

@@ -109,7 +109,7 @@ internal fun collectMetaRefs(
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
             is AccountRef, is StreakRef, is TradesRef, is CooldownRef, is PositionRef, is StateAccessor,
             is SequenceAccessor,
-            StackEntryRef, EntryQty, LastTradingDayOfMonth,
+            StackEntryRef, EntryQty, LastTradingDayOfMonth, is com.qkt.dsl.ast.ExitRef,
             -> Unit
             is StreamFieldRef -> {
                 if (e.field in ExprCompiler.META_FIELDS) {
@@ -171,7 +171,9 @@ internal fun collectMetaRefs(
             null -> Unit
             Market -> Unit
             is Limit -> walkExpr(o.price)
+            is com.qkt.dsl.ast.ExitRelativeLimit -> walkExpr(o.price.dist)
             is Stop -> walkExpr(o.price)
+            is com.qkt.dsl.ast.ExitRelativeStop -> walkExpr(o.price.dist)
             is StopLimit -> {
                 walkExpr(o.stopPrice)
                 walkExpr(o.limitPrice)
@@ -246,6 +248,15 @@ internal fun collectMetaRefs(
             when (child) {
                 is Buy -> walkOpts(child.opts)
                 is Sell -> walkOpts(child.opts)
+                is Log -> child.fields.values.forEach(::walkExpr)
+                else -> Unit
+            }
+        }
+        (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose).forEach { child ->
+            when (child) {
+                is Buy -> walkOpts(child.opts)
+                is Sell -> walkOpts(child.opts)
+                is Log -> child.fields.values.forEach(::walkExpr)
                 else -> Unit
             }
         }

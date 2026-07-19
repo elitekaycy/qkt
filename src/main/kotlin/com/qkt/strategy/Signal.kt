@@ -15,17 +15,20 @@ sealed class Signal {
     data class Buy(
         val symbol: String,
         val size: BigDecimal,
+        val exitHook: com.qkt.dsl.compile.ExitHookRef? = null,
     ) : Signal()
 
     /** Open a short position at market (or close a long, depending on current state). */
     data class Sell(
         val symbol: String,
         val size: BigDecimal,
+        val exitHook: com.qkt.dsl.compile.ExitHookRef? = null,
     ) : Signal()
 
     /** Submit a fully-constructed [OrderRequest] — limit, stop, bracket, scale-out, etc. */
     data class Submit(
         val request: OrderRequest,
+        val exitHook: com.qkt.dsl.compile.ExitHookRef? = null,
     ) : Signal()
 
     /** Cancel every working order on [symbol]. Emitted by DSL `CANCEL` actions. */

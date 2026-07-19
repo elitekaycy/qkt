@@ -124,7 +124,7 @@ object InsightsTranslate {
                 "qty" to e.quantity,
                 "venueCosts" to e.venueCosts,
                 "typedVenueCosts" to venueCostsPayload(e.typedVenueCosts),
-            ),
+            ) + (e.exitReason?.let { mapOf("exitReason" to it.name) } ?: emptyMap()),
         )
 
     fun fromOrderPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled): InsightsEnvelope =
@@ -143,7 +143,7 @@ object InsightsTranslate {
                 "cumulativeQty" to e.cumulativeFilled,
                 "venueCosts" to e.venueCosts,
                 "typedVenueCosts" to venueCostsPayload(e.typedVenueCosts),
-            ),
+            ) + (e.exitReason?.let { mapOf("exitReason" to it.name) } ?: emptyMap()),
         )
 
     fun fromOrderCancelled(e: BrokerEvent.OrderCancelled): InsightsEnvelope =
@@ -765,8 +765,20 @@ object InsightsTranslate {
                 mapOf("type" to "Market")
             is com.qkt.dsl.ast.Limit ->
                 mapOf("type" to "Limit", "price" to exprPayload(orderType.price))
+            is com.qkt.dsl.ast.ExitRelativeLimit ->
+                mapOf(
+                    "type" to "ExitRelativeLimit",
+                    "sense" to orderType.price.sense.name,
+                    "distance" to exprPayload(orderType.price.dist),
+                )
             is com.qkt.dsl.ast.Stop ->
                 mapOf("type" to "Stop", "price" to exprPayload(orderType.price))
+            is com.qkt.dsl.ast.ExitRelativeStop ->
+                mapOf(
+                    "type" to "ExitRelativeStop",
+                    "sense" to orderType.price.sense.name,
+                    "distance" to exprPayload(orderType.price.dist),
+                )
             is com.qkt.dsl.ast.StopLimit ->
                 mapOf(
                     "type" to "StopLimit",

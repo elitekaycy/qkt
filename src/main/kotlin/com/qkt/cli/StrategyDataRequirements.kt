@@ -206,6 +206,7 @@ internal object StrategyDataRequirementScanner {
                 is TradesRef,
                 is CooldownRef,
                 is StringLit,
+                is com.qkt.dsl.ast.ExitRef,
                 null,
                 -> Unit
             }
@@ -226,7 +227,9 @@ internal object StrategyDataRequirementScanner {
         fun walkOrder(orderType: OrderTypeAst?) {
             when (orderType) {
                 is Limit -> walk(orderType.price)
+                is com.qkt.dsl.ast.ExitRelativeLimit -> walk(orderType.price.dist)
                 is Stop -> walk(orderType.price)
+                is com.qkt.dsl.ast.ExitRelativeStop -> walk(orderType.price.dist)
                 is StopLimit -> {
                     walk(orderType.stopPrice)
                     walk(orderType.limitPrice)
@@ -334,6 +337,8 @@ internal object StrategyDataRequirementScanner {
             walkStack(opts.stack)
             opts.stackAts.forEach(::walkStackAt)
             opts.onFill.forEach { walkAction(it) }
+            (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose)
+                .forEach { walkAction(it) }
         }
 
         walkAction = { action ->

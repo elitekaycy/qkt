@@ -12,8 +12,8 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /**
- * On-disk [StatePersistor]. Serializes the four state shapes to atomic JSON files under
- * `<rootDir>/<strategyId>/{legbook.json,bracket-pairs.json,pending-orders.json,pending-stacks.json}`.
+ * On-disk [StatePersistor]. Serializes engine state to atomic JSON files under
+ * `<rootDir>/<strategyId>/`.
  *
  * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
  * an entry-only risk halt. Most load failures return null and log; risk-state load failures are
@@ -64,6 +64,7 @@ class FileStatePersistor(
         const val PNL_FILE = "pnl.json"
         const val TRADE_HISTORY_FILE = "trade-history.json"
         const val SEQUENCES_FILE = "sequences.json"
+        const val EXIT_HOOKS_FILE = "exit-hooks.json"
         const val SCHEMA_VERSION = 1
     }
 
@@ -96,6 +97,38 @@ class FileStatePersistor(
         runCatching { json.encodeToString(SequencesDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, SEQUENCES_FILE, it) }
             .onFailure { e -> log.warn("saveSequences encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun saveExitHooks(
+        strategyId: String,
+        bindings: List<PersistedExitHookBinding>,
+    ) {
+        val dto =
+            ExitHooksDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                bindings = bindings.map(ExitHookBindingDto::fromDomain),
+            )
+        runCatching { json.encodeToString(ExitHooksDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, EXIT_HOOKS_FILE, it) }
+            .onFailure { e -> log.warn("saveExitHooks encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> {
+        val raw = writer.read(strategyId, EXIT_HOOKS_FILE) ?: return emptyList()
+        val dto =
+            try {
+                json.decodeFromString(ExitHooksDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                throw IllegalStateException("loadExitHooks parse failed for $strategyId", e)
+            }
+        require(dto.version == SCHEMA_VERSION) {
+            "loadExitHooks schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
+        }
+        require(dto.strategyId == strategyId) {
+            "loadExitHooks strategy mismatch: file=${dto.strategyId}, requested=$strategyId"
+        }
+        return dto.bindings.map { it.toDomain() }
     }
 
     override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> {
@@ -637,6 +670,69 @@ private data class SequenceSnapshotDto(
     val price: String,
     val timeMs: Long,
 )
+
+@Serializable
+private data class ExitHooksDto(
+    val version: Int,
+    val strategyId: String,
+    val bindings: List<ExitHookBindingDto>,
+)
+
+@Serializable
+private data class ExitHookBindingDto(
+    val bindingId: String,
+    val strategyId: String,
+    val symbol: String,
+    val entrySide: String,
+    val definitionId: String,
+    val fingerprint: String,
+    val entryOrderIds: List<String>,
+    val stopOrderIds: List<String>,
+    val takeProfitOrderIds: List<String>,
+    val closeOrderIds: List<String> = emptyList(),
+    val brokerTickets: List<String> = emptyList(),
+    val activeQuantity: String,
+    val exitQuantity: String,
+    val exitPnl: String,
+) {
+    fun toDomain(): PersistedExitHookBinding =
+        PersistedExitHookBinding(
+            bindingId = bindingId,
+            strategyId = strategyId,
+            symbol = symbol,
+            entrySide = Side.valueOf(entrySide),
+            definitionId = definitionId,
+            fingerprint = fingerprint,
+            entryOrderIds = entryOrderIds,
+            stopOrderIds = stopOrderIds,
+            takeProfitOrderIds = takeProfitOrderIds,
+            closeOrderIds = closeOrderIds,
+            brokerTickets = brokerTickets,
+            activeQuantity = BigDecimal(activeQuantity),
+            exitQuantity = BigDecimal(exitQuantity),
+            exitPnl = BigDecimal(exitPnl),
+        )
+
+    companion object {
+        fun fromDomain(binding: PersistedExitHookBinding): ExitHookBindingDto =
+            ExitHookBindingDto(
+                bindingId = binding.bindingId,
+                strategyId = binding.strategyId,
+                symbol = binding.symbol,
+                entrySide = binding.entrySide.name,
+                definitionId = binding.definitionId,
+                fingerprint = binding.fingerprint,
+                entryOrderIds = binding.entryOrderIds,
+                stopOrderIds = binding.stopOrderIds,
+                takeProfitOrderIds = binding.takeProfitOrderIds,
+                closeOrderIds = binding.closeOrderIds,
+                brokerTickets = binding.brokerTickets,
+                activeQuantity = binding.activeQuantity.toPlainString(),
+                exitQuantity = binding.exitQuantity.toPlainString(),
+                exitPnl = binding.exitPnl.toPlainString(),
+            )
+    }
+}
 
 @Serializable
 private data class OrderRequestDto(

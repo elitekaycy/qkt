@@ -290,6 +290,7 @@ class MT5PositionPoller(
                 timestamp = now,
                 updatesOrderExecution = false,
                 venueCosts = venueCosts,
+                exitReason = closingDealExitReason(newClosingDeals),
             ),
         )
     }

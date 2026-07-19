@@ -58,6 +58,7 @@ private fun mergeOpts(
         stackAts = opts.stackAts,
         // OTO children specify their own sizing/order type; defaults are not merged into them.
         onFill = opts.onFill,
+        exitHooks = opts.exitHooks,
     )
 }
 

@@ -3,6 +3,7 @@ package com.qkt.events
 import com.qkt.accounting.VenueCost
 import com.qkt.broker.OrderModification
 import com.qkt.common.Side
+import com.qkt.execution.ExitReason
 import java.math.BigDecimal
 
 /**
@@ -87,6 +88,8 @@ sealed interface BrokerEvent : Event {
          * broker adapters and logs that cannot provide a breakdown yet.
          */
         val typedVenueCosts: List<VenueCost> = emptyList(),
+        /** Venue/engine classification for a position-closing fill, when known. */
+        val exitReason: ExitReason? = null,
     ) : OrderEvent
 
     /**
@@ -107,6 +110,8 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
         val venueCosts: BigDecimal = BigDecimal.ZERO,
         val typedVenueCosts: List<VenueCost> = emptyList(),
+        /** Venue/engine classification for a position-closing partial fill, when known. */
+        val exitReason: ExitReason? = null,
     ) : OrderEvent
 
     /** The order was cancelled by the strategy, the engine, or the venue. */

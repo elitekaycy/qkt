@@ -21,6 +21,7 @@ class NoopStatePersistor : StatePersistor {
         var pnl: PersistedPnl? = null,
         var tradeHistory: PersistedTradeHistory? = null,
         var sequences: Map<String, PersistedSequenceState> = emptyMap(),
+        var exitHooks: List<PersistedExitHookBinding> = emptyList(),
     )
 
     private val state: ConcurrentHashMap<String, StrategyState> = ConcurrentHashMap()
@@ -130,6 +131,16 @@ class NoopStatePersistor : StatePersistor {
 
     override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> =
         state[strategyId]?.sequences ?: emptyMap()
+
+    override fun saveExitHooks(
+        strategyId: String,
+        bindings: List<PersistedExitHookBinding>,
+    ) {
+        stateFor(strategyId).exitHooks = bindings.toList()
+    }
+
+    override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> =
+        state[strategyId]?.exitHooks ?: emptyList()
 
     override fun clearStrategy(strategyId: String) {
         state.remove(strategyId)

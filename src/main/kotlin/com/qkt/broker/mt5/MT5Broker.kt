@@ -14,6 +14,7 @@ import com.qkt.common.IdGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.ExitReason
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
@@ -657,6 +658,7 @@ class MT5Broker(
                     strategyId = request.strategyId,
                     timestamp = clock.now(),
                     venueCosts = venueCosts,
+                    exitReason = ExitReason.CLOSE,
                 ),
             )
         }
@@ -732,6 +734,7 @@ class MT5Broker(
                             strategyId = request.strategyId,
                             timestamp = clock.now(),
                             venueCosts = venueCosts,
+                            exitReason = ExitReason.CLOSE,
                         ),
                     )
                     log.info(
@@ -1396,6 +1399,7 @@ class MT5Broker(
                         timestamp = clock.now(),
                         updatesOrderExecution = false,
                         venueCosts = if (index == closingDeals.lastIndex) venueCosts else BigDecimal.ZERO,
+                        exitReason = closingDealExitReason(listOf(deal)),
                     ),
                 )
             }

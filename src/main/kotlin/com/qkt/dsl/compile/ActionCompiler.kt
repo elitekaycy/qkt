@@ -16,6 +16,7 @@ import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
+import com.qkt.dsl.ast.ExitHooksAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Log
@@ -44,7 +45,10 @@ class ActionCompiler(
     private val ids: IdGenerator = SequentialIdGenerator(prefix = "dsl-anonymous-"),
     private val pendingStacks: PendingStacks? = null,
     private val baskets: Map<String, List<String>> = emptyMap(),
+    exitExprCompiler: ExprCompiler? = null,
+    private val exitHookCatalog: ExitHookCatalog = ExitHookCatalog(),
 ) {
+    private val exitExprCompiler = exitExprCompiler ?: exprCompiler.forExitHooks()
     private val orderTypeCompiler = OrderTypeCompiler(exprCompiler)
     private val childPriceResolver = ChildPriceResolver(exprCompiler)
     private val sizingCompiler = SizingCompiler(exprCompiler)
@@ -345,6 +349,9 @@ class ActionCompiler(
         opts: ActionOpts,
         side: Side,
     ): (EvalContext) -> List<Signal> {
+        if (!opts.exitHooks.isEmpty()) {
+            return compileWithExitHooks(stream, opts, side)
+        }
         baskets[stream]?.let { constituents ->
             return compileBasketFanOut(stream, constituents, opts, side)
         }
@@ -600,6 +607,63 @@ class ActionCompiler(
             }
 
             listOf(Signal.Submit(finalRequest))
+        }
+    }
+
+    private fun compileWithExitHooks(
+        stream: String,
+        opts: ActionOpts,
+        side: Side,
+    ): (EvalContext) -> List<Signal> {
+        require(opts.onFill.isEmpty()) { "Exit hooks cannot be combined with ON_FILL in v1." }
+        require(opts.oco == null && opts.stackAts.isEmpty()) {
+            "Exit hooks support plain, BRACKET, or STACK parents in v1; OCO and STACK_AT are not supported."
+        }
+        val children = opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose
+        children.forEach { child ->
+            require(child is Buy || child is Sell || child is Log) {
+                "Exit-hook children must be BUY, SELL, or LOG actions; got ${child::class.simpleName}"
+            }
+            val childOpts =
+                when (child) {
+                    is Buy -> child.opts
+                    is Sell -> child.opts
+                    is Log -> return@forEach
+                    else -> error("validated above")
+                }
+            require(childOpts.exitHooks.isEmpty() && childOpts.onFill.isEmpty()) {
+                "Exit-hook children cannot declare ON_FILL or nested ON_* hooks in v1."
+            }
+            require(childOpts.oco == null && childOpts.stack == null && childOpts.stackAts.isEmpty()) {
+                "Exit-hook children may carry a BRACKET but not OCO, STACK, or STACK_AT in v1."
+            }
+        }
+        val childCompiler =
+            ActionCompiler(
+                exprCompiler = exitExprCompiler,
+                strategyLogger = strategyLogger,
+                ids = ids,
+                pendingStacks = pendingStacks,
+                baskets = baskets,
+                exitExprCompiler = exitExprCompiler,
+                exitHookCatalog = exitHookCatalog,
+            )
+        val ref = exitHookCatalog.register(opts.exitHooks, childCompiler::compile)
+        val base =
+            compileBuySell(
+                stream,
+                opts.copy(exitHooks = ExitHooksAst()),
+                side,
+            )
+        return { ctx ->
+            base(ctx).map { signal ->
+                when (signal) {
+                    is Signal.Buy -> signal.copy(exitHook = ref)
+                    is Signal.Sell -> signal.copy(exitHook = ref)
+                    is Signal.Submit -> signal.copy(exitHook = ref)
+                    else -> error("Exit hooks require an order-producing BUY/SELL action")
+                }
+            }
         }
     }
 

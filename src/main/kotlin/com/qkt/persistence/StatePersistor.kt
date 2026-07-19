@@ -26,7 +26,8 @@ data class PersistenceHealth(
 
 /**
  * Durable storage for the in-memory engine state that doesn't survive restart:
- * leg metadata, bracket linkages, in-flight orders, and STACK_AT tier-fired state.
+ * leg metadata, bracket linkages, in-flight orders, STACK_AT tier-fired state,
+ * and active DSL exit hooks.
  *
  * Production implementations ([FileStatePersistor]) write atomic JSON files under
  * `<stateRoot>/<strategyId>/`, where the root is the daemon state directory (honors
@@ -148,6 +149,15 @@ interface StatePersistor : AutoCloseable {
     /** Restore DSL `SEQUENCE` progress for [strategyId]; empty when none persisted. */
     fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> = emptyMap()
 
+    /** Persist active one-shot DSL exit-hook bindings for restart recovery. */
+    fun saveExitHooks(
+        strategyId: String,
+        bindings: List<PersistedExitHookBinding>,
+    ) {}
+
+    /** Restore active DSL exit-hook bindings for [strategyId]. */
+    fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> = emptyList()
+
     fun clearStrategy(strategyId: String)
 }
 
@@ -190,6 +200,24 @@ data class PersistedSequenceState(
     val snapshots: List<PersistedSequenceSnapshot>,
     val lastValues: Map<String, Boolean> = emptyMap(),
     val completePulse: Boolean = false,
+)
+
+/** Durable lifecycle state for one hook-bearing parent order. */
+data class PersistedExitHookBinding(
+    val bindingId: String,
+    val strategyId: String,
+    val symbol: String,
+    val entrySide: Side,
+    val definitionId: String,
+    val fingerprint: String,
+    val entryOrderIds: List<String>,
+    val stopOrderIds: List<String>,
+    val takeProfitOrderIds: List<String>,
+    val closeOrderIds: List<String> = emptyList(),
+    val brokerTickets: List<String> = emptyList(),
+    val activeQuantity: BigDecimal,
+    val exitQuantity: BigDecimal,
+    val exitPnl: BigDecimal,
 )
 
 data class PersistedLeg(
