@@ -62,6 +62,41 @@ class ForgeReproductionExpressibilityTest {
         )
     }
 
+    @Test
+    fun `daily gold silver ratio continuation composes with a fixed five bar hold`() {
+        compiles(
+            """
+            STRATEGY daily_gold_silver_ratio_continuation VERSION 1
+            DEFAULTS { SIZING = 0.01 }
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 1d WARMUP 120 BARS,
+              silver = BACKTEST:XAGUSD EVERY 1d WARMUP 120 BARS
+            LET ratioZ = zscore(gold.close / silver.close, 120)
+            RULES
+              WHEN ratioZ >= 2.5 AND POSITION.gold = 0 THEN BUY gold
+              WHEN POSITION.gold != 0 AND POSITION.gold.holding_duration >= 5 * 24 * 60 * 60
+              THEN CLOSE gold
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun `lower tail return shock composes with a fixed four bar hold`() {
+        compiles(
+            """
+            STRATEGY lower_tail_return_shock_fade VERSION 1
+            DEFAULTS { SIZING = 0.01 }
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 30m WARMUP 500 BARS
+            LET returnRank = percentile_rank(gold.close / lag(gold.close, 1) - 1, 500)
+            RULES
+              WHEN returnRank <= 0.05 AND POSITION.gold = 0 THEN BUY gold
+              WHEN POSITION.gold != 0 AND POSITION.gold.holding_duration >= 4 * 30 * 60
+              THEN CLOSE gold
+            """.trimIndent(),
+        )
+    }
+
     private fun compiles(source: String) {
         assertThatCode {
             val parsed = Dsl.parse(source)
