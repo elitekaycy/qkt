@@ -170,6 +170,8 @@ object WarmupRequirements {
         // OTO (ON_FILL) children warm the gate too — an indicator in a child's price computes
         // garbage on a half-warm window exactly like one in the parent.
         opts.onFill.forEach { walkAction(it, out) }
+        (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose)
+            .forEach { walkAction(it, out) }
     }
 
     private fun walkSizing(

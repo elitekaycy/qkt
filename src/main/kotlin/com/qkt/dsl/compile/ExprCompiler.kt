@@ -13,6 +13,8 @@ import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
+import com.qkt.dsl.ast.ExitField
+import com.qkt.dsl.ast.ExitRef
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
@@ -44,7 +46,15 @@ class ExprCompiler(
     private val bindings: IndicatorBinding.Bag = IndicatorBinding.Bag(),
     private val aggregates: AggregateBinding.Bag = AggregateBinding.Bag(),
     private val baskets: Map<String, List<String>> = emptyMap(),
+    private val allowExitAccess: Boolean = false,
 ) {
+    internal fun forExitHooks(): ExprCompiler =
+        if (allowExitAccess) {
+            this
+        } else {
+            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true)
+        }
+
     fun compile(
         expr: ExprAst,
         ruleAlias: String? = null,
@@ -85,6 +95,30 @@ class ExprCompiler(
                     ctx.entryPrice?.let { Value.Num(it) }
                         ?: error("'entry' is only valid in an ON_FILL child price; it refers to the parent fill price")
                 }
+            is ExitRef -> {
+                if (!allowExitAccess) {
+                    error("EXIT.${expr.field.name.lowercase()} is only valid inside ON_STOP, ON_TP, or ON_CLOSE")
+                }
+                CompiledExpr { ctx ->
+                    val exit =
+                        ctx.exitContext
+                            ?: error("EXIT.${expr.field.name.lowercase()} is only valid in an exit hook")
+                    when (expr.field) {
+                        ExitField.PRICE -> Value.Num(exit.price)
+                        ExitField.SIDE -> Value.Str(exit.side.name)
+                        ExitField.QTY -> Value.Num(exit.quantity)
+                        ExitField.PNL -> Value.Num(exit.pnl)
+                        ExitField.REASON ->
+                            Value.Str(
+                                if (exit.reason == com.qkt.execution.ExitReason.TAKE_PROFIT) {
+                                    "TP"
+                                } else {
+                                    exit.reason.name
+                                },
+                            )
+                    }
+                }
+            }
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
 

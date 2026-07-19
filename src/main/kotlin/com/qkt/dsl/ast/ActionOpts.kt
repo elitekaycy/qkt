@@ -20,7 +20,19 @@ data class ActionOpts(
      * the common case. Children are themselves [ActionAst] (BUY/SELL only), validated at compile.
      */
     val onFill: List<ActionAst> = emptyList(),
+    /** One-shot actions dispatched when the parent position exits. */
+    val exitHooks: ExitHooksAst = ExitHooksAst(),
 )
+
+/** Exit-triggered child actions attached to one BUY/SELL action. */
+data class ExitHooksAst(
+    val onStop: List<ActionAst> = emptyList(),
+    val onTakeProfit: List<ActionAst> = emptyList(),
+    val onClose: List<ActionAst> = emptyList(),
+) {
+    /** True when at least one exit hook is declared. */
+    fun isEmpty(): Boolean = onStop.isEmpty() && onTakeProfit.isEmpty() && onClose.isEmpty()
+}
 
 /**
  * One `STACK_AT` clause attached to a BUY/SELL action.
@@ -83,8 +95,18 @@ data class Limit(
     val price: ExprAst,
 ) : OrderTypeAst
 
+/** Hook-only pending limit resolved from the closing fill and its side. */
+data class ExitRelativeLimit(
+    val price: DirRel,
+) : OrderTypeAst
+
 data class Stop(
     val price: ExprAst,
+) : OrderTypeAst
+
+/** Hook-only pending stop resolved from the closing fill and its side. */
+data class ExitRelativeStop(
+    val price: DirRel,
 ) : OrderTypeAst
 
 data class StopLimit(

@@ -140,6 +140,7 @@ class TradingPipeline(
     private val bookScaleFor: (String) -> BigDecimal = { BigDecimal.ONE },
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
+    private val exitHookManager = ExitHookManager(persistor)
 
     /**
      * Apply the book scale to a new order: a scale of exactly 1.0 and risk-reducing orders pass
@@ -297,6 +298,17 @@ class TradingPipeline(
                             logSubmitContext(request)
                             when (val decision = riskEngine.approve(request)) {
                                 is Decision.Approve -> {
+                                    val exitHook =
+                                        when (sig) {
+                                            is com.qkt.strategy.Signal.Buy -> sig.exitHook
+                                            is com.qkt.strategy.Signal.Sell -> sig.exitHook
+                                            is com.qkt.strategy.Signal.Submit -> sig.exitHook
+                                            else -> null
+                                        }
+                                    if (exitHook != null) {
+                                        exitHookManager.register(strategyId, request, exitHook)
+                                    }
+                                    exitHookManager.trackCloseRequest(strategyId, request)
                                     registerOcoEntryLegs(strategyId, request)
                                     registerLegClose(strategyId, request)
                                     bus.publish(OrderEvent(request))
@@ -329,6 +341,7 @@ class TradingPipeline(
                     candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
                 }
                 strategy.bindToHub(candleHub, ctx, emit)
+                exitHookManager.bind(strategyId, strategy, emit)
                 strategy.bindSchedules(scheduleRunner, ctx, clock.now(), emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
                 wireStackOrchestrator(strategy, strategyId, emit)
@@ -409,15 +422,23 @@ class TradingPipeline(
             strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
             tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
             val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
+            val reducedExposure = closesExposure(strategyBefore, strategyAfter)
             if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
                 pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
             }
-            if (closesExposure(strategyBefore, strategyAfter)) {
+            if (reducedExposure) {
                 pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
             }
             riskState.onFill(e.strategyId, netAccountStratRealized)
             if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
+            exitHookManager.onFill(
+                event = e,
+                netRealizedPnl = netAccountStratRealized,
+                strategyAfterQuantity = strategyAfter?.quantity ?: BigDecimal.ZERO,
+                reducedExposure = reducedExposure,
+                deferDispatch = true,
+            )
 
             val trade =
                 Trade(
@@ -443,6 +464,7 @@ class TradingPipeline(
                 ),
             )
         }
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> exitHookManager.dispatchReady(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
             if (e.strategyId.isBlank()) return@subscribe
             riskState.beforeFill(e.strategyId)
@@ -458,6 +480,7 @@ class TradingPipeline(
                     timestamp = e.timestamp,
                     venueCosts = e.venueCosts,
                     typedVenueCosts = e.typedVenueCosts,
+                    exitReason = e.exitReason,
                 )
             val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
             val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
@@ -495,26 +518,35 @@ class TradingPipeline(
             strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
             tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
             val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
+            val reducedExposure = closesExposure(strategyBefore, strategyAfter)
             if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
                 pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
             }
-            if (closesExposure(strategyBefore, strategyAfter)) {
+            if (reducedExposure) {
                 pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
             }
             riskState.onFill(e.strategyId, netAccountStratRealized)
             if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
             riskEngine.evaluateHaltRules()
+            exitHookManager.onFill(
+                event = asFill,
+                netRealizedPnl = netAccountStratRealized,
+                strategyAfterQuantity = strategyAfter?.quantity ?: BigDecimal.ZERO,
+                reducedExposure = reducedExposure,
+            )
             val trade =
                 Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
             bus.publish(TradeEvent(trade))
             onFilled(trade, accountRealized, e.strategyId)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> exitHookManager.onRejected(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
             strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
+            exitHookManager.onCancelled(e)
             // The losing leg of an OCO bracket cancels once its sibling fills; drop its
             // pre-registered open/close intent so the pending maps don't leak.
             strategyPositions.forgetPending(e.strategyId, e.clientOrderId)

@@ -1,5 +1,7 @@
 package com.qkt.dsl.compile
 
+import com.qkt.common.Side
+import com.qkt.execution.ExitReason
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
@@ -31,6 +33,15 @@ sealed interface Value {
     }
 }
 
+/** Immutable closing-fill values exposed to one exit-hook evaluation. */
+data class ExitContext(
+    val price: BigDecimal,
+    val side: Side,
+    val quantity: BigDecimal,
+    val pnl: BigDecimal,
+    val reason: ExitReason,
+)
+
 class EvalContext(
     val candle: Candle,
     val streams: Map<String, HubKey>,
@@ -50,6 +61,8 @@ class EvalContext(
     val historyAsOfMs: Long? = null,
     /** DSL `SEQUENCE` state visible during the current rule evaluation pass. */
     val sequences: SequenceStateView = NoopSequenceStateView,
+    /** Closing-fill context; non-null only while an exit hook is executing. */
+    val exitContext: ExitContext? = null,
 ) {
     fun nowMs(): Long = evaluationTimeMs ?: strategyContext.clock.now()
 
@@ -67,6 +80,7 @@ class EvalContext(
             evaluationTimeMs,
             historyAsOfMs,
             sequences,
+            exitContext,
         )
 
     /** A copy of this context evaluated at [timeMs], used for delayed signal builders. */
@@ -83,6 +97,7 @@ class EvalContext(
             timeMs,
             historyAsOfMs,
             sequences,
+            exitContext,
         )
 }
 

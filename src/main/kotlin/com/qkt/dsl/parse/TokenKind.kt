@@ -102,6 +102,7 @@ enum class TokenKind {
     FOK,
     DAY,
     GTD,
+    UNTIL,
 
     HOUR,
     WEEKDAY,
@@ -117,6 +118,9 @@ enum class TokenKind {
     STOP_LOSS,
     TAKE_PROFIT,
     ON_FILL,
+    ON_STOP,
+    ON_TP,
+    ON_CLOSE,
 
     EVERY,
     CROSSES,
@@ -151,6 +155,7 @@ enum class TokenKind {
     MAE,
     RECOVER,
     ENTRY_QTY,
+    EXIT,
 
     WARMUP,
     BARS,

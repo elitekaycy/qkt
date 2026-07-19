@@ -115,7 +115,7 @@ data class SnapshotPlan(
                 is CalendarWindow,
                 is SessionWindow,
                 LastTradingDayOfMonth,
-                EntryQty,
+                EntryQty, is com.qkt.dsl.ast.ExitRef,
                 -> {}
             }
         }

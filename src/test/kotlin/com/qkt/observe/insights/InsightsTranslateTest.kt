@@ -15,6 +15,7 @@ import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.At
+import com.qkt.execution.ExitReason
 import com.qkt.execution.ExpiryAction
 import com.qkt.execution.Immediate
 import com.qkt.execution.LayerSpec
@@ -129,6 +130,7 @@ class InsightsTranslateTest {
                 quantity = BigDecimal("0.10"),
                 strategyId = "latch",
                 venueCosts = BigDecimal("0.02"),
+                exitReason = ExitReason.STOP,
                 timestamp = 1718000000000L,
                 sequenceId = 7L,
             )
@@ -138,6 +140,7 @@ class InsightsTranslateTest {
         assertThat(json).contains(""""type":"order.filled"""")
         assertThat(json).contains(""""price":2350.50""")
         assertThat(json).contains(""""qty":0.10""")
+        assertThat(json).contains(""""exitReason":"STOP"""")
         assertThat(json).contains(""""strategyId":"latch"""")
         assertThat(json).doesNotContain(""""price":"2350.50"""")
     }
