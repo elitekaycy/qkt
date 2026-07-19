@@ -35,6 +35,9 @@ BUY <stream>
     [ BRACKET { ... } ]
     [ STACK ... ]
     [ TIF <gtc|ioc|fok|day> ]
+    [ ON_STOP { ... } ]
+    [ ON_TP { ... } ]
+    [ ON_CLOSE { ... } ]
 ```
 
 Trailing-stop order types ship as `ORDER_TYPE = TRAILING BY <distance>` and `ORDER_TYPE = TRAILING PCT <percent>` (see [Trailing stop](../../how-to/add-stop-loss.md#trailing-stop) in the stop-loss recipe). `1 PCT` means 1%; the percentage must be greater than 0 and less than 100.
@@ -196,6 +199,74 @@ The two legs typically share a `TIF GTD UNTIL NOW + <duration>` clause so both e
 - [NOW](now.md) — session-hour gating + `NOW + duration` for GTD expiry
 - [BRACKET](bracket.md) — per-leg SL/TP attached to the surviving fill
 
+## Exit hooks: `ON_STOP`, `ON_TP`, and `ON_CLOSE`
+
+A `BUY` or `SELL` can attach one-shot actions to the way its position exits:
+
+```qkt
+BUY gold SIZING 0.1
+  BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 100 }
+  ON_STOP {
+    SELL gold SIZING EXIT.qty
+      BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 100 }
+  }
+  ON_TP {
+    BUY gold SIZING EXIT.qty
+      ORDER_TYPE = LIMIT WITH 30
+      TIF GTD UNTIL NOW + 2h
+  }
+  ON_CLOSE {
+    BUY gold SIZING 0.05
+  }
+```
+
+- `ON_STOP` runs when the stop-loss closes the hooked position.
+- `ON_TP` runs when the take-profit closes it.
+- `ON_CLOSE` runs for another flatten, including an explicit `CLOSE`, a time/risk exit,
+  or a venue-side manual close.
+
+The child actions travel through the ordinary strategy signal, book-scaling, risk, and
+broker path. A hook fires once after its hooked position is fully closed; partial exit
+fills accumulate until that point. Hooks and their partial-fill progress survive a
+restart.
+
+### Exit context
+
+Only hook blocks can read the `EXIT` namespace:
+
+| Accessor | Value |
+| --- | --- |
+| `EXIT.price` | Terminal closing fill price |
+| `EXIT.side` | Closing fill side: `BUY` or `SELL` |
+| `EXIT.qty` | Total quantity closed by this exit |
+| `EXIT.pnl` | Net realized strategy PnL accumulated across the exit fills |
+| `EXIT.reason` | `STOP`, `TP`, or `CLOSE` |
+
+Using `EXIT.*` anywhere else is a compile error. String fields such as `EXIT.side` and
+`EXIT.reason` are useful in structured `LOG` fields; numeric fields can size and price
+orders.
+
+Inside a hook, a pending entry can be relative to the exit price:
+
+```qkt
+ORDER_TYPE = LIMIT WITH 30
+ORDER_TYPE = STOP AGAINST 20
+```
+
+`WITH` follows the closing side and `AGAINST` moves opposite it. For example, a
+take-profit that closes a long with `SELL` resolves `LIMIT WITH 30` below the exit
+price, suitable for a pullback re-entry.
+
+### v1 constraints
+
+- Hook blocks contain `BUY`, `SELL`, or `LOG` actions, separated by `;`.
+- A child may carry a `BRACKET` and `TIF GTD`.
+- A child cannot declare `ON_FILL`, another exit hook, `OCO`, `STACK`, or `STACK_AT`.
+- A hook-bearing parent may be plain, `BRACKET`, or `STACK`; it cannot also use
+  `ON_FILL`, `OCO`, or `STACK_AT`.
+
+The one-level nesting limit prevents an accidental infinite stop-and-reverse loop.
+
 ## `LOG`
 
 Emits a structured log line. Three levels (`INFO`, `WARN`, `ERROR`, `DEBUG`) and optional structured fields.
@@ -266,7 +337,8 @@ When you stack modifiers on a `BUY`/`SELL`, the order matters but the parser is 
 5. `STACK <n> SPACING <points> ABOVE|BELOW [WITHIN <duration>]` — pyramiding
 6. `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <qty> BRACKET { ... }` or `STACK_AT MAE >= <threshold> RECOVER <distance> WITHIN <duration> ...` — conditional bracketed stacks (multiple per action allowed; see [STACK_AT](stack-at.md))
 7. `TIF <mode>` — time-in-force
-8. `LOG ...` — usually a separate action after `;` but can be inline-chained
+8. `ON_STOP`, `ON_TP`, and `ON_CLOSE` — one-shot exit hooks
+9. `LOG ...` — usually a separate action after `;` but can be inline-chained
 
 The most common patterns:
 

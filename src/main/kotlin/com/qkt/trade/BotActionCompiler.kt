@@ -90,6 +90,7 @@ private fun rejectEngineManaged(bot: BotAction) {
             opts.stackAts.isNotEmpty() -> "STACK_AT"
             opts.oco != null -> "OCO"
             opts.onFill.isNotEmpty() -> "ON FILL"
+            !opts.exitHooks.isEmpty() -> "exit hooks"
             else -> null
         }
     require(managed == null) {

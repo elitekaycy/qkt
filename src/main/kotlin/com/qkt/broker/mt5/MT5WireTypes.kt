@@ -1,5 +1,6 @@
 package com.qkt.broker.mt5
 
+import com.qkt.execution.ExitReason
 import java.math.BigDecimal
 
 /** Bid/ask tick reported by the gateway. */
@@ -129,7 +130,24 @@ data class MT5Deal(
     val timeMs: Long,
     /** Gateway placement id when the gateway preserves it in deal history. */
     val clientOrderId: String? = null,
+    /** Raw `ENUM_DEAL_REASON`; 4 = SL and 5 = TP in the MT5 API. */
+    val reason: Int? = null,
 )
+
+internal fun closingDealExitReason(deals: List<MT5Deal>): ExitReason? {
+    val closing = deals.filter { it.entry != 0 && it.volume.signum() > 0 }
+    if (closing.isEmpty()) return null
+    val reasons =
+        closing
+            .map {
+                when (it.reason) {
+                    4 -> ExitReason.STOP
+                    5 -> ExitReason.TAKE_PROFIT
+                    else -> ExitReason.CLOSE
+                }
+            }.toSet()
+    return reasons.singleOrNull() ?: ExitReason.CLOSE
+}
 
 /**
  * Fields modifiable on a working order. Only non-null fields are sent.

@@ -27,7 +27,10 @@ import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
+import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.EntryQty
+import com.qkt.dsl.ast.ExitRelativeLimit
+import com.qkt.dsl.ast.ExitRelativeStop
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.FuncCall
@@ -119,7 +122,7 @@ class ExprTransform(
             is CalendarWindow,
             is SessionWindow,
             LastTradingDayOfMonth,
-            EntryQty,
+            EntryQty, is com.qkt.dsl.ast.ExitRef,
             -> e
         }
 
@@ -138,7 +141,15 @@ class ExprTransform(
         when (o) {
             Market -> o
             is Limit -> Limit(expr(o.price))
+            is ExitRelativeLimit ->
+                ExitRelativeLimit(
+                    DirRel(o.price.sense, expr(o.price.dist)),
+                )
             is Stop -> Stop(expr(o.price))
+            is ExitRelativeStop ->
+                ExitRelativeStop(
+                    DirRel(o.price.sense, expr(o.price.dist)),
+                )
             is StopLimit -> StopLimit(expr(o.stopPrice), expr(o.limitPrice))
             is TrailingBy -> TrailingBy(expr(o.distance))
             is TrailingPct -> TrailingPct(expr(o.percent))
@@ -213,6 +224,12 @@ class ExprTransform(
             stack = o.stack?.let(::stack),
             stackAts = o.stackAts.map(::stackAt),
             onFill = o.onFill.map(::action),
+            exitHooks =
+                com.qkt.dsl.ast.ExitHooksAst(
+                    onStop = o.exitHooks.onStop.map(::action),
+                    onTakeProfit = o.exitHooks.onTakeProfit.map(::action),
+                    onClose = o.exitHooks.onClose.map(::action),
+                ),
         )
 
     fun action(a: ActionAst): ActionAst =

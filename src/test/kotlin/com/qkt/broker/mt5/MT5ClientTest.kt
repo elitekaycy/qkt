@@ -597,7 +597,8 @@ class MT5ClientTest {
                     """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700040000000},""" +
                     """{"ticket":457,"order":790,"position_id":123,"symbol":"XAUUSDm","type":1,"entry":1,""" +
                     """"volume":"0.01","price":"2310.2","profit":"9.7","commission":"-0.07","swap":"-0.12",""" +
-                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700050000000}]""",
+                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","reason":5,""" +
+                    """"time_msc":1700050000000}]""",
             ),
         )
         val deals = client.getDeals(fromUtcMs = 1_700_000_000_000L, toUtcMs = 1_700_086_400_000L)!!
@@ -620,6 +621,7 @@ class MT5ClientTest {
         assertThat(closed.fee).isEqualByComparingTo("0")
         assertThat(closed.magic).isEqualTo(10001)
         assertThat(closed.comment).isEqualTo("dsl-hedge_straddle")
+        assertThat(closed.reason).isEqualTo(5)
         assertThat(closed.timeMs).isEqualTo(1_700_050_000_000L)
         val recorded = server.takeRequest()
         assertThat(recorded.method).isEqualTo("GET")

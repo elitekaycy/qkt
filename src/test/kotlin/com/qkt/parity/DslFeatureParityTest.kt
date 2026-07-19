@@ -135,6 +135,30 @@ class DslFeatureParityTest {
     }
 
     @Test
+    fun `exit hook has full-state paper parity`() {
+        val result =
+            assertParity(
+                "exit_hook",
+                """
+                STRATEGY exit_hook VERSION 1
+                SYMBOLS btc = BACKTEST:BTCUSDT EVERY 1m
+                RULES
+                  WHEN btc.close = 100 AND POSITION.btc = 0
+                  THEN BUY btc SIZING 1
+                    BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 50 }
+                    ON_STOP {
+                      SELL btc SIZING EXIT.qty
+                        BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 }
+                    }
+                """.trimIndent(),
+                listOf("100", "100", "94", "94", "90", "90"),
+            )
+
+        assertThat(result.backtest.trades).hasSizeGreaterThanOrEqualTo(3)
+        assertThat(result.live).isEqualTo(result.backtest)
+    }
+
+    @Test
     fun `realized daily-loss halt has matching event tick`() {
         val result =
             DslParityHarness.run(

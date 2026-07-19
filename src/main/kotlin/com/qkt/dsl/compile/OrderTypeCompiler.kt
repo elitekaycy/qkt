@@ -51,11 +51,49 @@ class OrderTypeCompiler(
         when (ot) {
             Market -> compileMarket(targetAlias)
             is Limit -> compileLimit(ot)
+            is com.qkt.dsl.ast.ExitRelativeLimit -> compileExitRelativeLimit(ot)
             is Stop -> compileStop(ot)
+            is com.qkt.dsl.ast.ExitRelativeStop -> compileExitRelativeStop(ot)
             is StopLimit -> compileStopLimit(ot)
             is TrailingBy -> compileTrailingBy(ot)
             is TrailingPct -> compileTrailingPct(ot)
         }
+
+    private fun exitRelativePrice(
+        ec: EvalContext,
+        rel: com.qkt.dsl.ast.DirRel,
+        distance: CompiledExpr,
+    ): BigDecimal? {
+        val exit = ec.exitContext ?: error("direction-relative hook price requires EXIT context")
+        val d = distance.evaluateNumber(ec) ?: return null
+        val direction = if (exit.side == com.qkt.common.Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate()
+        val signed = direction.multiply(d)
+        return if (rel.sense == com.qkt.dsl.ast.DirSense.WITH) {
+            exit.price.add(signed)
+        } else {
+            exit.price.subtract(signed)
+        }
+    }
+
+    private fun compileExitRelativeLimit(o: com.qkt.dsl.ast.ExitRelativeLimit): CompiledOrderType {
+        val distance = exprCompiler.compile(o.price.dist)
+        val build =
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
+                val price = exitRelativePrice(ec, o.price, distance) ?: return@BuildRequest null
+                OrderRequest.Limit(id, symbol, side, qty, price, tif, ts, strategyId)
+            }
+        return CompiledOrderType(build, EntryPriceRef { ec -> exitRelativePrice(ec, o.price, distance) })
+    }
+
+    private fun compileExitRelativeStop(o: com.qkt.dsl.ast.ExitRelativeStop): CompiledOrderType {
+        val distance = exprCompiler.compile(o.price.dist)
+        val build =
+            BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
+                val price = exitRelativePrice(ec, o.price, distance) ?: return@BuildRequest null
+                OrderRequest.Stop(id, symbol, side, qty, price, tif, ts, strategyId)
+            }
+        return CompiledOrderType(build, EntryPriceRef { ec -> exitRelativePrice(ec, o.price, distance) })
+    }
 
     /**
      * The latest close of [targetAlias]'s stream — the evaluating candle when it IS the

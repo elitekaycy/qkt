@@ -181,6 +181,20 @@ data object StackEntryRef : ExprAst
  */
 data object EntryQty : ExprAst
 
+/** A field from the closing fill; valid only inside an `ON_STOP`/`ON_TP`/`ON_CLOSE` block. */
+data class ExitRef(
+    val field: ExitField,
+) : ExprAst
+
+/** Fields exposed through the hook-only `EXIT.*` namespace. */
+enum class ExitField {
+    PRICE,
+    SIDE,
+    QTY,
+    PNL,
+    REASON,
+}
+
 /**
  * Phase 24: explicit null test against [com.qkt.dsl.compile.Value.Undefined].
  *
