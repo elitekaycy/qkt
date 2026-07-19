@@ -228,6 +228,56 @@ sealed interface OrderRequest {
         }
     }
 
+    /**
+     * Engine-managed stop that moves to direction-relative entry targets after
+     * ordered MFE milestones. [steps] are consumed once and the stop never widens.
+     */
+    data class SteppedStop(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val entryPrice: BigDecimal,
+        val initialDistance: BigDecimal,
+        val steps: List<StopLossSpec.Step>,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+        override val strategyId: String = "",
+        override val expiresAt: Long? = null,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(entryPrice.signum() > 0) { "entryPrice must be > 0: $entryPrice" }
+            StopLossSpec.SteppedStop(initialDistance, steps)
+        }
+    }
+
+    /**
+     * Engine-managed stop whose distance tightens at fixed engine-clock intervals
+     * after [timestamp], down to [floorDistance].
+     */
+    data class TimeTighteningStop(
+        override val id: String,
+        override val symbol: String,
+        override val side: Side,
+        override val quantity: BigDecimal,
+        val entryPrice: BigDecimal,
+        val initialDistance: BigDecimal,
+        val tightenBy: BigDecimal,
+        val intervalMs: Long,
+        val floorDistance: BigDecimal,
+        override val timeInForce: TimeInForce,
+        override val timestamp: Long,
+        override val strategyId: String = "",
+        override val expiresAt: Long? = null,
+    ) : OrderRequest {
+        init {
+            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(entryPrice.signum() > 0) { "entryPrice must be > 0: $entryPrice" }
+            StopLossSpec.TimeTighten(initialDistance, tightenBy, intervalMs, floorDistance)
+        }
+    }
+
     /** [TrailingStop] variant that triggers a limit order offset by [limitOffset] from the trail. */
     data class TrailingStopLimit(
         override val id: String,
@@ -409,6 +459,8 @@ fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
         is OrderRequest.TrailingStop -> copy(strategyId = strategyId)
         is OrderRequest.TrailingStopLimit -> copy(strategyId = strategyId)
         is OrderRequest.ArmedTrailingStop -> copy(strategyId = strategyId)
+        is OrderRequest.SteppedStop -> copy(strategyId = strategyId)
+        is OrderRequest.TimeTighteningStop -> copy(strategyId = strategyId)
         is OrderRequest.StandaloneOCO ->
             copy(
                 strategyId = strategyId,
@@ -477,6 +529,8 @@ fun OrderRequest.withExpiresAt(expiresAt: Long?): OrderRequest =
         is OrderRequest.TrailingStop -> copy(expiresAt = expiresAt)
         is OrderRequest.TrailingStopLimit -> copy(expiresAt = expiresAt)
         is OrderRequest.ArmedTrailingStop -> copy(expiresAt = expiresAt)
+        is OrderRequest.SteppedStop -> copy(expiresAt = expiresAt)
+        is OrderRequest.TimeTighteningStop -> copy(expiresAt = expiresAt)
         is OrderRequest.Bracket ->
             copy(expiresAt = expiresAt, entry = entry.withExpiresAt(expiresAt))
         is OrderRequest.StandaloneOCO ->
@@ -514,6 +568,8 @@ fun OrderRequest.scaleQuantity(factor: BigDecimal): OrderRequest {
         is OrderRequest.TrailingStop -> copy(quantity = q)
         is OrderRequest.TrailingStopLimit -> copy(quantity = q)
         is OrderRequest.ArmedTrailingStop -> copy(quantity = q)
+        is OrderRequest.SteppedStop -> copy(quantity = q)
+        is OrderRequest.TimeTighteningStop -> copy(quantity = q)
         is OrderRequest.StandaloneOCO ->
             copy(quantity = q, leg1 = leg1.scaleQuantity(factor), leg2 = leg2.scaleQuantity(factor))
         is OrderRequest.OTO ->

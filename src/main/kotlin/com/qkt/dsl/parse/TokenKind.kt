@@ -59,6 +59,9 @@ enum class TokenKind {
     BY,
     TO,
     PCT,
+    STEP,
+    TIGHTEN,
+    FLOOR,
 
     SIZING,
     MIN_STEP,

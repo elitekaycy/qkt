@@ -66,12 +66,15 @@ import com.qkt.dsl.ast.StackLayer
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
+import com.qkt.dsl.ast.SteppedStopAst
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StopStepAst
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
@@ -150,7 +153,29 @@ class ExprTransform(
     fun childPrice(cp: ChildPriceAst): ChildPriceAst =
         when (cp) {
             is ChildAt -> ChildAt(expr(cp.price))
-            is ChildBy -> ChildBy(expr(cp.distance))
+            is ChildBy ->
+                ChildBy(
+                    distance = expr(cp.distance),
+                    ratchet =
+                        when (val ratchet = cp.ratchet) {
+                            null -> null
+                            is SteppedStopAst ->
+                                SteppedStopAst(
+                                    ratchet.steps.map {
+                                        StopStepAst(
+                                            mfeThreshold = expr(it.mfeThreshold),
+                                            profitDistance = expr(it.profitDistance),
+                                        )
+                                    },
+                                )
+                            is TimeTightenAst ->
+                                TimeTightenAst(
+                                    tightenBy = expr(ratchet.tightenBy),
+                                    interval = ratchet.interval,
+                                    floorDistance = expr(ratchet.floorDistance),
+                                )
+                        },
+                )
             is ChildPct -> ChildPct(expr(cp.percent))
             is ChildRr -> ChildRr(expr(cp.multiplier))
             is ChildArmedTrail -> ChildArmedTrail(expr(cp.trailDistance), expr(cp.mfeThreshold))

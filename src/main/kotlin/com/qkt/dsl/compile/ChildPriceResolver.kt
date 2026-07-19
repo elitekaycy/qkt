@@ -9,6 +9,8 @@ import com.qkt.dsl.ast.ChildPct
 import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.SteppedStopAst
+import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.execution.StopLossSpec
 import java.math.BigDecimal
 
@@ -68,6 +70,47 @@ class ChildPriceResolver(
                     ),
                 )
             }
+            is ChildBy -> {
+                val ratchet = child.ratchet
+                if (ratchet == null) {
+                    val priced = compile(child, ChildKind.STOP_LOSS)
+                    CompiledStopLoss.Dynamic { ec, side, entry ->
+                        priced.evaluate(ec, side, entry, stopDistance = null)?.let { StopLossSpec.Fixed(it) }
+                    }
+                } else {
+                    val initialDistance = literal(child.distance, "STOP LOSS BY <distance>")
+                    val spec =
+                        when (ratchet) {
+                            is SteppedStopAst ->
+                                StopLossSpec.SteppedStop(
+                                    initialDistance = initialDistance,
+                                    steps =
+                                        ratchet.steps.mapIndexed { index, step ->
+                                            StopLossSpec.Step(
+                                                mfeThreshold =
+                                                    literal(
+                                                        step.mfeThreshold,
+                                                        "step ${index + 1} MFE threshold",
+                                                    ),
+                                                profitDistance =
+                                                    literal(
+                                                        step.profitDistance,
+                                                        "step ${index + 1} target",
+                                                    ),
+                                            )
+                                        },
+                                )
+                            is TimeTightenAst ->
+                                StopLossSpec.TimeTighten(
+                                    initialDistance = initialDistance,
+                                    tightenBy = literal(ratchet.tightenBy, "TIGHTEN BY <distance>"),
+                                    intervalMs = ratchet.interval.millis,
+                                    floorDistance = literal(ratchet.floorDistance, "FLOOR <distance>"),
+                                )
+                        }
+                    CompiledStopLoss.Static(spec)
+                }
+            }
             is ChildRr -> error("ChildRr is only valid for TAKE PROFIT, not STOP LOSS")
             else -> {
                 val priced = compile(child, ChildKind.STOP_LOSS)
@@ -89,6 +132,9 @@ class ChildPriceResolver(
                 }
             }
             is ChildBy -> {
+                require(child.ratchet == null || kind == ChildKind.STOP_LOSS) {
+                    "stop ratchets are only valid for STOP LOSS"
+                }
                 val distExpr = exprCompiler.compile(child.distance)
                 CompiledChildPrice { ec, side, entry, _ ->
                     val v = distExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
@@ -136,6 +182,16 @@ class ChildPriceResolver(
                 }
             }
         }
+
+    private fun literal(
+        expression: com.qkt.dsl.ast.ExprAst,
+        label: String,
+    ): BigDecimal {
+        require(expression is NumLit) {
+            "$label must be a numeric literal; got ${expression::class.simpleName}"
+        }
+        return expression.value
+    }
 
     private fun applyDistance(
         side: Side,

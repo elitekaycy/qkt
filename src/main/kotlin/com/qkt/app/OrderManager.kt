@@ -138,6 +138,9 @@ class OrderManager(
      * Never reverts. See #48.
      */
     private val armedTrailArmed: MutableMap<String, Boolean> = mutableMapOf()
+    private val steppedStopIndex: MutableMap<String, Int> = mutableMapOf()
+    private val timeTightenIntervals: MutableMap<String, Long> = mutableMapOf()
+    private val managedStopLevel: MutableMap<String, BigDecimal> = mutableMapOf()
     private var trailingStateDirty = false
 
     private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
@@ -194,6 +197,13 @@ class OrderManager(
     private data class BracketPositionModification(
         val ticket: String,
         val strategyId: String,
+    ) : PendingPositionModification
+
+    private data class RatchetPositionModification(
+        val orderId: String,
+        val ticket: String,
+        val strategyId: String,
+        val stopLoss: BigDecimal,
     ) : PendingPositionModification
 
     private val pendingPositionModifications: MutableMap<String, PendingPositionModification> = mutableMapOf()
@@ -303,6 +313,10 @@ class OrderManager(
             is StopLossSpec.Fixed -> stop.price
             is StopLossSpec.ArmedTrail ->
                 if (bracket.side == Side.BUY) entryPrice - stop.trailDistance else entryPrice + stop.trailDistance
+            is StopLossSpec.SteppedStop ->
+                if (bracket.side == Side.BUY) entryPrice - stop.initialDistance else entryPrice + stop.initialDistance
+            is StopLossSpec.TimeTighten ->
+                if (bracket.side == Side.BUY) entryPrice - stop.initialDistance else entryPrice + stop.initialDistance
         }
 
     init {
@@ -449,8 +463,40 @@ class OrderManager(
         val recovered = mutableListOf<ManagedOrder>()
         for (sid in strategyIds) {
             runCatching {
+                val dynamicStops =
+                    persistor
+                        .loadTrailingStops(sid)
+                        .associateBy { it.clientOrderId }
+                        .toMutableMap()
                 for (leg in persistor.loadOcoLegs(sid)) {
                     if (orders.containsKey(leg.clientOrderId)) continue
+                    val groupId =
+                        (leg.siblingIds + leg.clientOrderId)
+                            .sorted()
+                            .joinToString(prefix = "restored-oco:", separator = "|")
+                    if (isPersistentManagedStop(leg.request)) {
+                        siblings[leg.clientOrderId] = leg.siblingIds
+                        val persisted = dynamicStops.remove(leg.clientOrderId)
+                        if (persisted == null) {
+                            log.warn(
+                                "[restore] dynamic state missing for {}; restarting from its initial stop",
+                                leg.clientOrderId,
+                            )
+                        }
+                        restorePersistentManagedStop(
+                            persisted
+                                ?: com.qkt.persistence.PersistedTrailingStop(
+                                    clientOrderId = leg.clientOrderId,
+                                    brokerOrderId = leg.brokerOrderId,
+                                    strategyId = leg.strategyId,
+                                    request = leg.request,
+                                    armed = false,
+                                    hwm = managedStopEntryPrice(leg.request),
+                                ),
+                            groupId,
+                        )
+                        continue
+                    }
                     val now = clock.now()
                     val managed =
                         ManagedOrder(
@@ -464,35 +510,11 @@ class OrderManager(
                     orders[leg.clientOrderId] = managed
                     indexLive(managed)
                     siblings[leg.clientOrderId] = leg.siblingIds
-                    val groupId =
-                        (leg.siblingIds + leg.clientOrderId)
-                            .sorted()
-                            .joinToString(prefix = "restored-oco:", separator = "|")
                     registerExposure(leg.request, groupId)
                     recovered += managed
                 }
-                for (stop in persistor.loadTrailingStops(sid)) {
-                    if (orders.containsKey(stop.clientOrderId)) continue
-                    val now = clock.now()
-                    val managed =
-                        ManagedOrder(
-                            id = stop.clientOrderId,
-                            request = stop.request,
-                            // PENDING so the per-tick monitor (evaluateTriggers) resumes trailing.
-                            // The trail is engine-managed (fires close-by-ticket), so it is NOT
-                            // handed to broker recovery — the venue holds no working order for it.
-                            state = OrderState.PENDING,
-                            brokerOrderId = stop.brokerOrderId,
-                            createdAt = now,
-                            lastUpdatedAt = now,
-                        )
-                    orders[stop.clientOrderId] = managed
-                    indexLive(managed)
-                    // Restore the trail's progress so an already-armed winner resumes at its prior
-                    // high-water mark instead of re-arming from the entry (#436).
-                    trailingHwm[stop.clientOrderId] = stop.hwm
-                    armedTrailArmed[stop.clientOrderId] = stop.armed
-                    registerExposure(stop.request)
+                for (stop in dynamicStops.values) {
+                    restorePersistentManagedStop(stop, groupId = null)
                 }
             }.onFailure { e -> log.warn("[restore] failed for {}: {}", sid, e.message) }
         }
@@ -500,6 +522,53 @@ class OrderManager(
             broker.recoverPendingOrders(recovered)
         }
     }
+
+    private fun restorePersistentManagedStop(
+        stop: com.qkt.persistence.PersistedTrailingStop,
+        groupId: String?,
+    ) {
+        if (orders.containsKey(stop.clientOrderId)) return
+        val now = clock.now()
+        val managed =
+            ManagedOrder(
+                id = stop.clientOrderId,
+                request = stop.request,
+                // Engine-managed stops are monitors, not venue working orders.
+                state = OrderState.PENDING,
+                brokerOrderId = stop.brokerOrderId,
+                createdAt = now,
+                lastUpdatedAt = now,
+            )
+        orders[stop.clientOrderId] = managed
+        indexLive(managed)
+        trailingHwm[stop.clientOrderId] = stop.hwm
+        when (val request = stop.request) {
+            is OrderRequest.ArmedTrailingStop ->
+                armedTrailArmed[stop.clientOrderId] = stop.armed
+            is OrderRequest.SteppedStop -> {
+                steppedStopIndex[stop.clientOrderId] = stop.stepIndex
+                managedStopLevel[stop.clientOrderId] =
+                    stop.stopLevel
+                        ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
+            }
+            is OrderRequest.TimeTighteningStop -> {
+                timeTightenIntervals[stop.clientOrderId] = stop.elapsedIntervals
+                managedStopLevel[stop.clientOrderId] =
+                    stop.stopLevel
+                        ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
+            }
+            else -> error("unsupported persisted managed stop ${request::class.simpleName}")
+        }
+        registerExposure(stop.request, groupId)
+    }
+
+    private fun managedStopEntryPrice(request: OrderRequest): BigDecimal =
+        when (request) {
+            is OrderRequest.ArmedTrailingStop -> request.entryPrice
+            is OrderRequest.SteppedStop -> request.entryPrice
+            is OrderRequest.TimeTighteningStop -> request.entryPrice
+            else -> error("${request::class.simpleName} is not a persistent managed stop")
+        }
 
     /** Symbol, side, and quantity submitted under [clientOrderId]. */
     data class OrderDetails(
@@ -617,6 +686,8 @@ class OrderManager(
             is OrderRequest.TrailingStop,
             is OrderRequest.TrailingStopLimit,
             is OrderRequest.ArmedTrailingStop,
+            is OrderRequest.SteppedStop,
+            is OrderRequest.TimeTighteningStop,
             -> holdPending(request)
 
             is OrderRequest.StandaloneOCO -> submitOco(request)
@@ -637,6 +708,18 @@ class OrderManager(
                                 } else {
                                     entryEstimate + sl.trailDistance
                                 }
+                            is StopLossSpec.SteppedStop ->
+                                if (request.side == Side.BUY) {
+                                    entryEstimate - sl.initialDistance
+                                } else {
+                                    entryEstimate + sl.initialDistance
+                                }
+                            is StopLossSpec.TimeTighten ->
+                                if (request.side == Side.BUY) {
+                                    entryEstimate - sl.initialDistance
+                                } else {
+                                    entryEstimate + sl.initialDistance
+                                }
                         }
                     recordRisk(
                         clientOrderIds = listOf(request.id, request.entry.id),
@@ -656,7 +739,10 @@ class OrderManager(
                     reportBracketByClientOrderId[request.entry.id] = request
                 }
                 val caps = broker.capabilitiesFor(request.symbol)
-                val isArmedTrail = request.stopLoss is StopLossSpec.ArmedTrail
+                val isEngineManagedStop =
+                    request.stopLoss is StopLossSpec.ArmedTrail ||
+                        request.stopLoss is StopLossSpec.SteppedStop ||
+                        request.stopLoss is StopLossSpec.TimeTighten
                 val needsFillAnchor =
                     (request.stopLossAst != null && request.stopLossAst !is com.qkt.dsl.ast.ChildAt) ||
                         (request.takeProfitAst != null && request.takeProfitAst !is com.qkt.dsl.ast.ChildAt)
@@ -672,7 +758,7 @@ class OrderManager(
                     canAttach -> submitBracketAttached(request)
                     // BRACKET but no position-modify, fixed SL: ship whole (venue attaches SL/TP,
                     // nothing to trail).
-                    !isArmedTrail && !needsFillAnchor && OrderTypeCapability.BRACKET in caps ->
+                    !isEngineManagedStop && !needsFillAnchor && OrderTypeCapability.BRACKET in caps ->
                         submitRegisteredToBroker(request)
                     // No venue attach (backtest / restricted venue): decompose into engine-watched
                     // resting exits.
@@ -919,6 +1005,12 @@ class OrderManager(
                     pending.strategyId,
                     "venue rejected fill-anchored bracket modify for ticket ${pending.ticket}: " +
                         event.rejectReason,
+                )
+            is RatchetPositionModification ->
+                reportProtectionFailure(
+                    pending.strategyId,
+                    "venue rejected stop ratchet ${pending.orderId} at ${pending.stopLoss} " +
+                        "for ticket ${pending.ticket}: ${event.rejectReason}; engine trigger remains active",
                 )
         }
     }
@@ -1257,6 +1349,14 @@ class OrderManager(
                             evaluateAt(ast.trailDistance, fillPrice),
                             evaluateAt(ast.mfeThreshold, fillPrice),
                         )
+                    is com.qkt.dsl.ast.ChildBy ->
+                        if (ast.ratchet != null) {
+                            req.stopLoss
+                        } else {
+                            StopLossSpec.Fixed(
+                                computeChildPrice(ast, req.side, fillPrice, isStopLoss = true),
+                            )
+                        }
                     else ->
                         StopLossSpec.Fixed(
                             computeChildPrice(ast, req.side, fillPrice, isStopLoss = true),
@@ -1267,6 +1367,8 @@ class OrderManager(
             when (stop) {
                 is StopLossSpec.Fixed -> (fillPrice - stop.price).abs()
                 is StopLossSpec.ArmedTrail -> stop.trailDistance
+                is StopLossSpec.SteppedStop -> stop.initialDistance
+                is StopLossSpec.TimeTighten -> stop.initialDistance
             }
         val takeProfit =
             req.takeProfitAst?.let {
@@ -1322,6 +1424,34 @@ class OrderManager(
                         clock.now(),
                         resolved.strategyId,
                     )
+                is StopLossSpec.SteppedStop ->
+                    OrderRequest.SteppedStop(
+                        id = "${resolved.id}-sl",
+                        symbol = resolved.symbol,
+                        side = exitSide,
+                        quantity = exitQuantity,
+                        entryPrice = fillPrice,
+                        initialDistance = spec.initialDistance,
+                        steps = spec.steps,
+                        timeInForce = resolved.timeInForce,
+                        timestamp = clock.now(),
+                        strategyId = resolved.strategyId,
+                    )
+                is StopLossSpec.TimeTighten ->
+                    OrderRequest.TimeTighteningStop(
+                        id = "${resolved.id}-sl",
+                        symbol = resolved.symbol,
+                        side = exitSide,
+                        quantity = exitQuantity,
+                        entryPrice = fillPrice,
+                        initialDistance = spec.initialDistance,
+                        tightenBy = spec.tightenBy,
+                        intervalMs = spec.intervalMs,
+                        floorDistance = spec.floorDistance,
+                        timeInForce = resolved.timeInForce,
+                        timestamp = clock.now(),
+                        strategyId = resolved.strategyId,
+                    )
             }
         return OrderRequest.StandaloneOCO(
             "${resolved.id}-oco",
@@ -1376,6 +1506,38 @@ class OrderManager(
                         entryPrice = entryPrice,
                         trailDistance = spec.trailDistance,
                         mfeThreshold = spec.mfeThreshold,
+                        timeInForce = req.timeInForce,
+                        timestamp = clock.now(),
+                        strategyId = req.strategyId,
+                    )
+                }
+                is StopLossSpec.SteppedStop -> {
+                    val entryPrice = bracketEntryEstimate(req)
+                    OrderRequest.SteppedStop(
+                        id = "${req.id}-sl",
+                        symbol = req.symbol,
+                        side = exitSide,
+                        quantity = req.quantity,
+                        entryPrice = entryPrice,
+                        initialDistance = spec.initialDistance,
+                        steps = spec.steps,
+                        timeInForce = req.timeInForce,
+                        timestamp = clock.now(),
+                        strategyId = req.strategyId,
+                    )
+                }
+                is StopLossSpec.TimeTighten -> {
+                    val entryPrice = bracketEntryEstimate(req)
+                    OrderRequest.TimeTighteningStop(
+                        id = "${req.id}-sl",
+                        symbol = req.symbol,
+                        side = exitSide,
+                        quantity = req.quantity,
+                        entryPrice = entryPrice,
+                        initialDistance = spec.initialDistance,
+                        tightenBy = spec.tightenBy,
+                        intervalMs = spec.intervalMs,
+                        floorDistance = spec.floorDistance,
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
@@ -1446,25 +1608,55 @@ class OrderManager(
         // An armed trail is engine-managed on top of the venue's static pre-arm stop: dispatched
         // on the entry fill, it fires close-by-ticket at the tightened level. A fixed bracket has
         // no engine exit — the venue's attached SL/TP closes it outright.
-        val trail =
-            (req.stopLoss as? StopLossSpec.ArmedTrail)?.let { spec ->
-                OrderRequest.ArmedTrailingStop(
-                    id = "${req.id}-sl",
-                    symbol = req.symbol,
-                    side = exitSide,
-                    quantity = req.quantity,
-                    entryPrice = bracketEntryEstimate(req),
-                    trailDistance = spec.trailDistance,
-                    mfeThreshold = spec.mfeThreshold,
-                    timeInForce = req.timeInForce,
-                    timestamp = now,
-                    strategyId = req.strategyId,
-                )
+        val managedStop =
+            when (val spec = req.stopLoss) {
+                is StopLossSpec.Fixed -> null
+                is StopLossSpec.ArmedTrail ->
+                    OrderRequest.ArmedTrailingStop(
+                        id = "${req.id}-sl",
+                        symbol = req.symbol,
+                        side = exitSide,
+                        quantity = req.quantity,
+                        entryPrice = bracketEntryEstimate(req),
+                        trailDistance = spec.trailDistance,
+                        mfeThreshold = spec.mfeThreshold,
+                        timeInForce = req.timeInForce,
+                        timestamp = now,
+                        strategyId = req.strategyId,
+                    )
+                is StopLossSpec.SteppedStop ->
+                    OrderRequest.SteppedStop(
+                        id = "${req.id}-sl",
+                        symbol = req.symbol,
+                        side = exitSide,
+                        quantity = req.quantity,
+                        entryPrice = bracketEntryEstimate(req),
+                        initialDistance = spec.initialDistance,
+                        steps = spec.steps,
+                        timeInForce = req.timeInForce,
+                        timestamp = now,
+                        strategyId = req.strategyId,
+                    )
+                is StopLossSpec.TimeTighten ->
+                    OrderRequest.TimeTighteningStop(
+                        id = "${req.id}-sl",
+                        symbol = req.symbol,
+                        side = exitSide,
+                        quantity = req.quantity,
+                        entryPrice = bracketEntryEstimate(req),
+                        initialDistance = spec.initialDistance,
+                        tightenBy = spec.tightenBy,
+                        intervalMs = spec.intervalMs,
+                        floorDistance = spec.floorDistance,
+                        timeInForce = req.timeInForce,
+                        timestamp = now,
+                        strategyId = req.strategyId,
+                    )
             }
         update(req.id) {
             it.copy(
                 state = OrderState.WORKING,
-                childClientOrderIds = listOfNotNull(attached.id, trail?.id),
+                childClientOrderIds = listOfNotNull(attached.id, managedStop?.id),
                 lastUpdatedAt = now,
             )
         }
@@ -1478,11 +1670,11 @@ class OrderManager(
                 lastUpdatedAt = now,
             ),
         )
-        if (trail != null) {
+        if (managedStop != null) {
             track(
                 ManagedOrder(
-                    id = trail.id,
-                    request = trail,
+                    id = managedStop.id,
+                    request = managedStop,
                     state = OrderState.CREATED,
                     parentClientOrderId = req.id,
                     createdAt = now,
@@ -1490,7 +1682,7 @@ class OrderManager(
                 ),
             )
             // Arm the trail only once the position exists — dispatched on the entry's fill.
-            pendingChildren[attached.id] = listOf(trail)
+            pendingChildren[attached.id] = listOf(managedStop)
         }
         registerExposure(attached)
         val ack = submitToBroker(attached)
@@ -1717,6 +1909,17 @@ class OrderManager(
             trailingHwm[request.id] = request.entryPrice
             armedTrailArmed[request.id] = false
         }
+        if (request is OrderRequest.SteppedStop) {
+            trailingHwm[request.id] = request.entryPrice
+            steppedStopIndex[request.id] = 0
+            managedStopLevel[request.id] =
+                initialStopLevel(request.side, request.entryPrice, request.initialDistance)
+        }
+        if (request is OrderRequest.TimeTighteningStop) {
+            timeTightenIntervals[request.id] = 0L
+            managedStopLevel[request.id] =
+                initialStopLevel(request.side, request.entryPrice, request.initialDistance)
+        }
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
@@ -1776,6 +1979,9 @@ class OrderManager(
         gtdLive.remove(id)
         trailingHwm.remove(id)
         armedTrailArmed.remove(id)
+        steppedStopIndex.remove(id)
+        timeTightenIntervals.remove(id)
+        managedStopLevel.remove(id)
         siblings.remove(id)
         scaleOutLegs.remove(id)
         pendingChildren.remove(id)
@@ -1929,9 +2135,16 @@ class OrderManager(
         val result = mutableMapOf<String, MutableList<com.qkt.persistence.PersistedTrailingStop>>()
         for ((id, managed) in orders) {
             val request = managed.request
-            if (request !is OrderRequest.ArmedTrailingStop || managed.state != OrderState.PENDING) continue
+            if (!isPersistentManagedStop(request) || managed.state != OrderState.PENDING) continue
             val strategyId = request.strategyId
             if (strategyId.isBlank()) continue
+            val entryPrice =
+                when (request) {
+                    is OrderRequest.ArmedTrailingStop -> request.entryPrice
+                    is OrderRequest.SteppedStop -> request.entryPrice
+                    is OrderRequest.TimeTighteningStop -> request.entryPrice
+                    else -> error("unreachable")
+                }
             result.getOrPut(strategyId) { mutableListOf() }.add(
                 com.qkt.persistence.PersistedTrailingStop(
                     clientOrderId = id,
@@ -1939,7 +2152,10 @@ class OrderManager(
                     strategyId = strategyId,
                     request = request,
                     armed = armedTrailArmed[id] ?: false,
-                    hwm = trailingHwm[id] ?: request.entryPrice,
+                    hwm = trailingHwm[id] ?: entryPrice,
+                    stepIndex = steppedStopIndex[id] ?: 0,
+                    elapsedIntervals = timeTightenIntervals[id] ?: 0L,
+                    stopLevel = managedStopLevel[id],
                 ),
             )
         }
@@ -2066,6 +2282,18 @@ class OrderManager(
                             } else {
                                 e.price + spec.trailDistance
                             }
+                        is StopLossSpec.SteppedStop ->
+                            if (resolved.side == Side.BUY) {
+                                e.price - spec.initialDistance
+                            } else {
+                                e.price + spec.initialDistance
+                            }
+                        is StopLossSpec.TimeTighten ->
+                            if (resolved.side == Side.BUY) {
+                                e.price - spec.initialDistance
+                            } else {
+                                e.price + spec.initialDistance
+                            }
                     }
                 e.brokerOrderId
                     ?.takeIf { it.isNotBlank() }
@@ -2077,10 +2305,22 @@ class OrderManager(
                     }
                 pending.orEmpty().forEach { child ->
                     val anchored =
-                        if (child is OrderRequest.ArmedTrailingStop) {
-                            child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity))
-                        } else {
-                            child
+                        when (child) {
+                            is OrderRequest.ArmedTrailingStop ->
+                                child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity))
+                            is OrderRequest.SteppedStop ->
+                                child.copy(
+                                    entryPrice = e.price,
+                                    quantity = child.quantity.min(e.quantity),
+                                    timestamp = clock.now(),
+                                )
+                            is OrderRequest.TimeTighteningStop ->
+                                child.copy(
+                                    entryPrice = e.price,
+                                    quantity = child.quantity.min(e.quantity),
+                                    timestamp = clock.now(),
+                                )
+                            else -> child
                         }
                     dispatch(anchored)
                 }
@@ -2157,12 +2397,12 @@ class OrderManager(
         for (i in symbolLiveScratch.indices) {
             val managed = symbolLiveScratch[i]
             if (managed.state != OrderState.PENDING) continue
-            if (managed.request is OrderRequest.ArmedTrailingStop &&
+            if (isPersistentManagedStop(managed.request) &&
                 requireArmedTrailTicket &&
-                armedTrailCloseTicket(managed.request) == null
+                managedStopCloseTicket(managed.request) == null
             ) {
                 log.warn(
-                    "cancelling armed trail {} because its venue position ticket no longer exists",
+                    "cancelling engine-managed stop {} because its venue position ticket no longer exists",
                     managed.id,
                 )
                 cancel(managed.id)
@@ -2305,6 +2545,92 @@ class OrderManager(
                     }
                 }
             }
+            is OrderRequest.SteppedStop -> {
+                val currentHwm = trailingHwm[managed.id] ?: request.entryPrice
+                val newHwm =
+                    when (request.side) {
+                        Side.SELL -> if (tickPrice > currentHwm) tickPrice else currentHwm
+                        Side.BUY -> if (tickPrice < currentHwm) tickPrice else currentHwm
+                    }
+                if (newHwm != currentHwm) {
+                    trailingHwm[managed.id] = newHwm
+                    trailingStateDirty = true
+                }
+                val mfe = newHwm.subtract(request.entryPrice).abs()
+                var index = steppedStopIndex[managed.id] ?: 0
+                var level =
+                    managedStopLevel[managed.id]
+                        ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
+                var advanced = false
+                var tightened = false
+                while (index < request.steps.size && mfe >= request.steps[index].mfeThreshold) {
+                    val step = request.steps[index]
+                    val candidate = profitStopLevel(request.side, request.entryPrice, step.profitDistance)
+                    if (isTighter(request.side, candidate, level)) {
+                        level = candidate
+                        managedStopLevel[managed.id] = candidate
+                        tightened = true
+                        log.info(
+                            "stepped stop advanced: order_id={} symbol={} step={} mfe={} stop={}",
+                            managed.id,
+                            request.symbol,
+                            index + 1,
+                            mfe,
+                            candidate,
+                        )
+                    } else {
+                        log.warn(
+                            "stepped stop skipped widening target: order_id={} symbol={} step={} current={} candidate={}",
+                            managed.id,
+                            request.symbol,
+                            index + 1,
+                            level,
+                            candidate,
+                        )
+                    }
+                    index++
+                    advanced = true
+                }
+                if (advanced) {
+                    steppedStopIndex[managed.id] = index
+                    trailingStateDirty = true
+                    persistAll()
+                    if (tightened) modifyManagedStopAtVenue(managed, level, "step-$index")
+                }
+            }
+            is OrderRequest.TimeTighteningStop -> {
+                val floorLevel = initialStopLevel(request.side, request.entryPrice, request.floorDistance)
+                if (managedStopLevel[managed.id]?.compareTo(floorLevel) == 0) return
+                val elapsedMs = (clock.now() - request.timestamp).coerceAtLeast(0L)
+                val intervals = elapsedMs / request.intervalMs
+                val prior = timeTightenIntervals[managed.id] ?: 0L
+                if (intervals > prior) {
+                    val reduction = request.tightenBy.multiply(BigDecimal.valueOf(intervals), Money.CONTEXT)
+                    val distance = request.initialDistance.subtract(reduction, Money.CONTEXT).max(request.floorDistance)
+                    val current =
+                        managedStopLevel[managed.id]
+                            ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
+                    val candidate = initialStopLevel(request.side, request.entryPrice, distance)
+                    timeTightenIntervals[managed.id] = intervals
+                    val tightened = isTighter(request.side, candidate, current)
+                    if (tightened) {
+                        managedStopLevel[managed.id] = candidate
+                        log.info(
+                            "time-tightening stop advanced: order_id={} symbol={} intervals={} distance={} stop={}",
+                            managed.id,
+                            request.symbol,
+                            intervals,
+                            distance,
+                            candidate,
+                        )
+                    }
+                    trailingStateDirty = true
+                    persistAll()
+                    if (tightened) {
+                        modifyManagedStopAtVenue(managed, candidate, "interval-$intervals")
+                    }
+                }
+            }
             else -> {
                 val params = trailParams(request) ?: return
                 val current = trailingHwm[managed.id]
@@ -2342,6 +2668,8 @@ class OrderManager(
                     Side.BUY -> reference + request.trailDistance
                 }
             }
+            is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop ->
+                return managedStopLevel[managed.id]
             else -> {
                 val params = trailParams(request) ?: return null
                 val hwm = trailingHwm[managed.id] ?: return null
@@ -2391,6 +2719,10 @@ class OrderManager(
                 val level = trailLevel(managed) ?: return false
                 // Exit SELL fires when price falls to the stop. Exit BUY fires when
                 // price rises to the stop. Matches [OrderRequest.TrailingStop] semantics.
+                if (request.side == Side.SELL) exec <= level else exec >= level
+            }
+            is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop -> {
+                val level = trailLevel(managed) ?: return false
                 if (request.side == Side.SELL) exec <= level else exec >= level
             }
             else -> false
@@ -2493,7 +2825,18 @@ class OrderManager(
                         strategyId = req.strategyId,
                         // Close the exact venue position by ticket when this exit belongs to an
                         // independent leg (hedging) — otherwise a plain market opens a counter.
-                        closesTicket = armedTrailCloseTicket(req),
+                        closesTicket = managedStopCloseTicket(req),
+                    )
+                is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop ->
+                    OrderRequest.Market(
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side,
+                        quantity = req.quantity,
+                        timeInForce = req.timeInForce,
+                        timestamp = clock.now(),
+                        strategyId = req.strategyId,
+                        closesTicket = managedStopCloseTicket(req),
                     )
                 is OrderRequest.TrailingStopLimit -> {
                     val level = trailLevel(managed) ?: error("TrailingStopLimit level missing for ${managed.id}")
@@ -2515,9 +2858,60 @@ class OrderManager(
         broker.submit(internal)
     }
 
-    private fun armedTrailCloseTicket(request: OrderRequest.ArmedTrailingStop): String? =
+    private fun managedStopCloseTicket(request: OrderRequest): String? =
         closeTicketFor?.invoke(request.strategyId, request.id)
             ?: closePrimaryTicketFor?.invoke(request.strategyId, request.symbol)
+
+    private fun isPersistentManagedStop(request: OrderRequest): Boolean =
+        request is OrderRequest.ArmedTrailingStop ||
+            request is OrderRequest.SteppedStop ||
+            request is OrderRequest.TimeTighteningStop
+
+    private fun initialStopLevel(
+        exitSide: Side,
+        entryPrice: BigDecimal,
+        distance: BigDecimal,
+    ): BigDecimal =
+        if (exitSide == Side.SELL) {
+            entryPrice.subtract(distance, Money.CONTEXT)
+        } else {
+            entryPrice.add(distance, Money.CONTEXT)
+        }
+
+    private fun profitStopLevel(
+        exitSide: Side,
+        entryPrice: BigDecimal,
+        profitDistance: BigDecimal,
+    ): BigDecimal =
+        if (exitSide == Side.SELL) {
+            entryPrice.add(profitDistance, Money.CONTEXT)
+        } else {
+            entryPrice.subtract(profitDistance, Money.CONTEXT)
+        }
+
+    private fun isTighter(
+        exitSide: Side,
+        candidate: BigDecimal,
+        current: BigDecimal,
+    ): Boolean = if (exitSide == Side.SELL) candidate > current else candidate < current
+
+    private fun modifyManagedStopAtVenue(
+        managed: ManagedOrder,
+        stopLoss: BigDecimal,
+        transition: String,
+    ) {
+        if (OrderTypeCapability.POSITION_MODIFY !in broker.capabilitiesFor(managed.request.symbol)) return
+        val ticket = managedStopCloseTicket(managed.request) ?: return
+        val operationId = "ratchet:${managed.id}:$transition"
+        pendingPositionModifications[operationId] =
+            RatchetPositionModification(
+                orderId = managed.id,
+                ticket = ticket,
+                strategyId = managed.request.strategyId,
+                stopLoss = stopLoss,
+            )
+        modifyPositionAsync(operationId, ticket, stopLoss, null)
+    }
 
     private fun blendAvg(
         oldAvg: BigDecimal?,
