@@ -672,12 +672,22 @@ class TradingPipeline(
                     "trailAmount=${request.trailAmount} mode=${request.trailMode} limitOffset=${request.limitOffset}"
                 is com.qkt.execution.OrderRequest.ArmedTrailingStop ->
                     "entry=${request.entryPrice} trail=${request.trailDistance} mfe=${request.mfeThreshold}"
+                is com.qkt.execution.OrderRequest.SteppedStop ->
+                    "entry=${request.entryPrice} initial=${request.initialDistance} steps=${request.steps.size}"
+                is com.qkt.execution.OrderRequest.TimeTighteningStop ->
+                    "entry=${request.entryPrice} initial=${request.initialDistance} " +
+                        "tighten=${request.tightenBy} everyMs=${request.intervalMs} floor=${request.floorDistance}"
                 is com.qkt.execution.OrderRequest.Bracket -> {
                     val sl =
                         when (val s = request.stopLoss) {
                             is com.qkt.execution.StopLossSpec.Fixed -> "stopLoss=${s.price}"
                             is com.qkt.execution.StopLossSpec.ArmedTrail ->
                                 "stopLoss=armed(trail=${s.trailDistance}, mfe=${s.mfeThreshold})"
+                            is com.qkt.execution.StopLossSpec.SteppedStop ->
+                                "stopLoss=stepped(initial=${s.initialDistance}, steps=${s.steps.size})"
+                            is com.qkt.execution.StopLossSpec.TimeTighten ->
+                                "stopLoss=time(initial=${s.initialDistance}, tighten=${s.tightenBy}, " +
+                                    "everyMs=${s.intervalMs}, floor=${s.floorDistance})"
                         }
                     "takeProfit=${request.takeProfit} $sl entry=${request.entry::class.simpleName}"
                 }
