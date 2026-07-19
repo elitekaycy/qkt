@@ -45,7 +45,9 @@ BRACKET {
 
 For BTC at $67,000 long, stop at $66,330, target at $69,010.
 The value is a percentage, not a fraction: `1 PCT` means 1%. Stop-loss percentages
-must be greater than 0 and less than 50; larger values are rejected as likely mistakes.
+must be at least 0.01 and less than 50; take-profit percentages must also be at least
+0.01. Smaller values are rejected with a percent-units hint because they commonly
+indicate a fraction-scale input such as `0.004` where `0.4` was intended.
 
 > **Compatibility:** runtimes before commit `788a90f1` interpreted this operand as a
 > fraction (`0.004` meant 0.4%). Current runtimes use percentage points, so the

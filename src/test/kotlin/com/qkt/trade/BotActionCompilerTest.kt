@@ -119,6 +119,10 @@ class BotActionCompilerTest {
             compile(intent(sl = ExitSpec.Pct(BigDecimal("0"))))
         }.hasMessageContaining("greater than 0")
         assertThatThrownBy {
+            compile(intent(sl = ExitSpec.Pct(BigDecimal("0.004"))))
+        }.hasMessageContaining("minimum 0.01 percentage points")
+            .hasMessageContaining("PCT uses percentage points")
+        assertThatThrownBy {
             compile(intent(sl = ExitSpec.Pct(BigDecimal("50"))))
         }.hasMessageContaining("less than 50")
     }
