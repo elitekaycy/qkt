@@ -20,7 +20,19 @@ data class ActionOpts(
      * the common case. Children are themselves [ActionAst] (BUY/SELL only), validated at compile.
      */
     val onFill: List<ActionAst> = emptyList(),
+    /** One-shot actions dispatched when the parent position exits. */
+    val exitHooks: ExitHooksAst = ExitHooksAst(),
 )
+
+/** Exit-triggered child actions attached to one BUY/SELL action. */
+data class ExitHooksAst(
+    val onStop: List<ActionAst> = emptyList(),
+    val onTakeProfit: List<ActionAst> = emptyList(),
+    val onClose: List<ActionAst> = emptyList(),
+) {
+    /** True when at least one exit hook is declared. */
+    fun isEmpty(): Boolean = onStop.isEmpty() && onTakeProfit.isEmpty() && onClose.isEmpty()
+}
 
 /**
  * One `STACK_AT` clause attached to a BUY/SELL action.
@@ -83,8 +95,18 @@ data class Limit(
     val price: ExprAst,
 ) : OrderTypeAst
 
+/** Hook-only pending limit resolved from the closing fill and its side. */
+data class ExitRelativeLimit(
+    val price: DirRel,
+) : OrderTypeAst
+
 data class Stop(
     val price: ExprAst,
+) : OrderTypeAst
+
+/** Hook-only pending stop resolved from the closing fill and its side. */
+data class ExitRelativeStop(
+    val price: DirRel,
 ) : OrderTypeAst
 
 data class StopLimit(
@@ -109,7 +131,29 @@ data class ChildAt(
 
 data class ChildBy(
     val distance: ExprAst,
+    val ratchet: StopRatchetAst? = null,
 ) : ChildPriceAst
+
+/** Engine-managed policy that tightens a `STOP LOSS BY` child without widening it. */
+sealed interface StopRatchetAst
+
+/** One direction-relative stop target applied after [mfeThreshold] is crossed. */
+data class StopStepAst(
+    val mfeThreshold: ExprAst,
+    val profitDistance: ExprAst,
+)
+
+/** Ordered MFE milestones consumed once by an engine-managed stepped stop. */
+data class SteppedStopAst(
+    val steps: List<StopStepAst>,
+) : StopRatchetAst
+
+/** Fixed-interval distance decay for an engine-managed stop. */
+data class TimeTightenAst(
+    val tightenBy: ExprAst,
+    val interval: DurationAst,
+    val floorDistance: ExprAst,
+) : StopRatchetAst
 
 /** Relative bracket child price in percentage points, so `1` means one percent. */
 data class ChildPct(

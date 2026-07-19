@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ActionAst
+import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
@@ -45,10 +46,45 @@ class AstCompiler {
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
         val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
+        val exitExprCompiler =
+            ExprCompiler(
+                bindings = bindings,
+                aggregates = aggregates,
+                baskets = basketConstituents,
+                allowExitAccess = true,
+            )
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
         val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
         val pendingStacks = PendingStacks()
-        val actionCompiler = ActionCompiler(exprCompiler, strategyLogger, ids, pendingStacks, basketConstituents)
+        val exitHookCatalog =
+            ExitHookCatalog(
+                fingerprintContext =
+                    buildString {
+                        streams.toSortedMap().forEach { (alias, key) ->
+                            append(alias)
+                            append('=')
+                            append(key)
+                            append('\n')
+                        }
+                        basketConstituents.toSortedMap().forEach { (alias, members) ->
+                            append("basket:")
+                            append(alias)
+                            append('=')
+                            append(members.joinToString(","))
+                            append('\n')
+                        }
+                    },
+            )
+        val actionCompiler =
+            ActionCompiler(
+                exprCompiler,
+                strategyLogger,
+                ids,
+                pendingStacks,
+                basketConstituents,
+                exitExprCompiler,
+                exitHookCatalog,
+            )
 
         val whenThens: List<WhenThen> =
             ast.rules.map {
@@ -190,6 +226,7 @@ class AstCompiler {
             quoteFieldStreams = quoteFieldStreams,
             baskets = ast.baskets,
             sequenceRuntime = sequenceRuntime,
+            exitHookCatalog = exitHookCatalog,
         )
     }
 
@@ -368,8 +405,14 @@ class AstCompiler {
                     "action targeting it (BUY/SELL/CLOSE/CANCEL)."
             }
         when (action) {
-            is Buy -> reject(action.stream)
-            is Sell -> reject(action.stream)
+            is Buy -> {
+                reject(action.stream)
+                rejectNestedOrders(action.opts, readOnlyAliases)
+            }
+            is Sell -> {
+                reject(action.stream)
+                rejectNestedOrders(action.opts, readOnlyAliases)
+            }
             is Close -> reject(action.stream)
             is Cancel -> reject(action.stream)
             is OcoEntry -> {
@@ -379,6 +422,15 @@ class AstCompiler {
             is Block -> action.actions.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
             else -> {} // CloseAll/CancelAll (global) and Log: nothing to reject
         }
+    }
+
+    private fun rejectNestedOrders(
+        opts: ActionOpts,
+        readOnlyAliases: Set<String>,
+    ) {
+        opts.onFill.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
+        (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose)
+            .forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
     }
 
     /**
@@ -434,13 +486,58 @@ private class CompiledStrategy(
     override val quoteFieldStreams: Set<String>,
     private val baskets: List<com.qkt.dsl.ast.BasketDecl>,
     private val sequenceRuntime: SequenceRuntime,
+    private val exitHookCatalog: ExitHookCatalog,
 ) : DslCompiledStrategy,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
     private var hubBound: Boolean = false
     private var boundHub: CandleHub? = null
+    private var boundContext: StrategyContext? = null
 
     override val declaredStreams: Map<String, HubKey> get() = streams
+
+    override fun exitHookReferences(): Map<String, ExitHookRef> = exitHookCatalog.references()
+
+    override fun executeExitHook(
+        ref: ExitHookRef,
+        exit: ExitContext,
+        timestampMs: Long,
+    ): List<Signal> {
+        val definition =
+            exitHookCatalog.definition(ref)
+                ?: error(
+                    "Exit-hook definition '${ref.definitionId}' is missing or its fingerprint changed; " +
+                        "refusing to run a stale persisted hook",
+                )
+        val hub = boundHub ?: error("CompiledStrategy must be bound before an exit hook can execute")
+        val ctx = boundContext ?: error("CompiledStrategy context is unavailable for exit-hook execution")
+        val candle =
+            latestKnownCandle(hub)
+                ?: Candle(
+                    symbol = streams.values.firstOrNull()?.qktSymbol ?: error("Strategy declares no streams"),
+                    open = exit.price,
+                    high = exit.price,
+                    low = exit.price,
+                    close = exit.price,
+                    volume = BigDecimal.ZERO,
+                    startTime = timestampMs,
+                    endTime = timestampMs,
+                )
+        val eval =
+            EvalContext(
+                candle = candle,
+                streams = streams,
+                lets = emptyMap(),
+                strategyContext = ctx,
+                snapshotStore = snapshotStore,
+                hub = hub,
+                currentAlias = null,
+                evaluationTimeMs = timestampMs,
+                sequences = sequenceRuntime,
+                exitContext = exit,
+            )
+        return definition.execute(exit.reason, eval)
+    }
 
     override fun bindStatePersistor(
         strategyId: String,
@@ -519,6 +616,7 @@ private class CompiledStrategy(
         validateMetaRefs(ctx)
         hubBound = true
         boundHub = hub
+        boundContext = ctx
 
         // Aliases that belong to ANY sync group are evaluated via the sync callback
         // instead of the per-stream close. Without this split, both gold and silver

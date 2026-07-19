@@ -209,6 +209,25 @@ class AsyncStatePersistor(
     override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> =
         delegate.loadSequences(strategyId)
 
+    override fun saveExitHooks(
+        strategyId: String,
+        bindings: List<PersistedExitHookBinding>,
+    ) {
+        val snapshot =
+            bindings.map {
+                it.copy(
+                    entryOrderIds = it.entryOrderIds.toList(),
+                    stopOrderIds = it.stopOrderIds.toList(),
+                    takeProfitOrderIds = it.takeProfitOrderIds.toList(),
+                    closeOrderIds = it.closeOrderIds.toList(),
+                    brokerTickets = it.brokerTickets.toList(),
+                )
+            }
+        submit("saveExitHooks($strategyId)") { delegate.saveExitHooks(strategyId, snapshot) }
+    }
+
+    override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> = delegate.loadExitHooks(strategyId)
+
     override fun clearStrategy(strategyId: String) {
         submit("clearStrategy $strategyId") { delegate.clearStrategy(strategyId) }
     }

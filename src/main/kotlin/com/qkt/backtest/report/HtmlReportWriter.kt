@@ -282,7 +282,7 @@ class HtmlReportWriter(
         return buildString {
             append("<table><thead><tr>")
             append("<th>Timestamp</th><th>Strategy</th><th>Symbol</th><th>Side</th>")
-            append("<th>Qty</th><th>Price</th><th>riskUsd</th><th>Realized</th>")
+            append("<th>Qty</th><th>Price</th><th>riskUsd</th><th>Stop</th><th>Target</th><th>Realized</th>")
             append("<th>Native</th><th>Account</th><th>FX</th><th>Pos Before</th><th>Pos After</th>")
             append("<th>Strat Before</th><th>Strat After</th><th>Contract</th><th>Notional</th>")
             append("</tr></thead><tbody>")
@@ -300,6 +300,8 @@ class HtmlReportWriter(
                 append("<td>${r.trade.quantity.toPlainString()}</td>")
                 append("<td>${r.trade.price.toPlainString()}</td>")
                 append("<td>${r.riskUsd?.toPlainString() ?: "n/a"}</td>")
+                append("<td>${r.stopLossPrice?.toPlainString() ?: "n/a"}</td>")
+                append("<td>${r.takeProfitPrice?.toPlainString() ?: "n/a"}</td>")
                 append("<td>${r.realized.toPlainString()}</td>")
                 append(
                     "<td>${r.nativeRealized?.toPlainString() ?: "n/a"}" +

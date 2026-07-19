@@ -161,6 +161,13 @@ private fun subst(
         oco = opts.oco?.let { subst(it, v, alias) },
         stack = opts.stack?.let { subst(it, v, alias) },
         stackAts = opts.stackAts.map { subst(it, v, alias) },
+        onFill = opts.onFill.map { subst(it, v, alias) },
+        exitHooks =
+            opts.exitHooks.copy(
+                onStop = opts.exitHooks.onStop.map { subst(it, v, alias) },
+                onTakeProfit = opts.exitHooks.onTakeProfit.map { subst(it, v, alias) },
+                onClose = opts.exitHooks.onClose.map { subst(it, v, alias) },
+            ),
     )
 
 private fun subst(
@@ -186,7 +193,11 @@ private fun subst(
     when (o) {
         is com.qkt.dsl.ast.Market -> o
         is Limit -> o.copy(price = subst(o.price, v, alias))
+        is com.qkt.dsl.ast.ExitRelativeLimit ->
+            o.copy(price = o.price.copy(dist = subst(o.price.dist, v, alias)))
         is Stop -> o.copy(price = subst(o.price, v, alias))
+        is com.qkt.dsl.ast.ExitRelativeStop ->
+            o.copy(price = o.price.copy(dist = subst(o.price.dist, v, alias)))
         is StopLimit ->
             o.copy(
                 stopPrice = subst(o.stopPrice, v, alias),

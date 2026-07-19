@@ -77,6 +77,14 @@ class ChildPriceResolverTest {
     }
 
     @Test
+    fun `PCT rejects fraction-scale bracket distances during strategy compilation`() {
+        assertThatThrownBy {
+            resolver.compile(ChildPct(NumLit(BigDecimal("0.004"))), kind = ChildKind.STOP_LOSS)
+        }.hasMessageContaining("minimum 0.01 percentage points")
+            .hasMessageContaining("PCT uses percentage points")
+    }
+
+    @Test
     fun `RR for take profit uses stop distance`() {
         val r = resolver.compile(ChildRr(NumLit(BigDecimal("3"))), kind = ChildKind.TAKE_PROFIT)
         assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = BigDecimal("5")))

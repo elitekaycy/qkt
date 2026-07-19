@@ -28,6 +28,16 @@ interface DslCompiledStrategy : Strategy {
      */
     val pendingStacks: PendingStacks
 
+    /** Compiled exit-hook identities available for durable binding validation. */
+    fun exitHookReferences(): Map<String, ExitHookRef> = emptyMap()
+
+    /** Execute one validated exit hook against the strategy's latest evaluation state. */
+    fun executeExitHook(
+        ref: ExitHookRef,
+        exit: ExitContext,
+        timestampMs: Long,
+    ): List<Signal> = emptyList()
+
     /**
      * Symbols on which this strategy will create more than one concurrent leg via
      * `STACK_AT`. The runtime verifies that the routing broker for each such symbol

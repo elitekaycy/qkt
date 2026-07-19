@@ -93,7 +93,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
             is Ref, is NowAccessor, is CalendarWindow, is SessionWindow,
             is AccountRef, is StateAccessor, is StreakRef, is TradesRef, is CooldownRef, StackEntryRef, EntryQty,
             is SequenceAccessor,
-            LastTradingDayOfMonth,
+            LastTradingDayOfMonth, is com.qkt.dsl.ast.ExitRef,
             -> Unit
             is PositionRef -> out.add(e.stream)
             is StreamFieldRef -> out.add(e.stream)
@@ -150,7 +150,9 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
         when (o) {
             null, Market -> Unit
             is Limit -> walkExpr(o.price)
+            is com.qkt.dsl.ast.ExitRelativeLimit -> walkExpr(o.price.dist)
             is Stop -> walkExpr(o.price)
+            is com.qkt.dsl.ast.ExitRelativeStop -> walkExpr(o.price.dist)
             is StopLimit -> {
                 walkExpr(o.stopPrice)
                 walkExpr(o.limitPrice)
@@ -230,6 +232,21 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
                     out.add(child.stream)
                     walkOpts(child.opts)
                 }
+                is Log -> child.fields.values.forEach(::walkExpr)
+                else -> Unit
+            }
+        }
+        (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose).forEach { child ->
+            when (child) {
+                is Buy -> {
+                    out.add(child.stream)
+                    walkOpts(child.opts)
+                }
+                is Sell -> {
+                    out.add(child.stream)
+                    walkOpts(child.opts)
+                }
+                is Log -> child.fields.values.forEach(::walkExpr)
                 else -> Unit
             }
         }

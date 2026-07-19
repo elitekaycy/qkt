@@ -45,7 +45,9 @@ BRACKET {
 
 For BTC at $67,000 long, stop at $66,330, target at $69,010.
 The value is a percentage, not a fraction: `1 PCT` means 1%. Stop-loss percentages
-must be greater than 0 and less than 50; larger values are rejected as likely mistakes.
+must be at least 0.01 and less than 50; take-profit percentages must also be at least
+0.01. Smaller values are rejected with a percent-units hint because they commonly
+indicate a fraction-scale input such as `0.004` where `0.4` was intended.
 
 > **Compatibility:** runtimes before commit `788a90f1` interpreted this operand as a
 > fraction (`0.004` meant 0.4%). Current runtimes use percentage points, so the
@@ -142,6 +144,50 @@ Risk-based sizing (`SIZING RISK $ N`) sees `<distance>` as the worst-case stop d
 The arming logic is always engine-managed: brokers that support native brackets see only the entry and TP; the engine owns the stop and re-evaluates its level on every tick.
 
 See [Phase 36 — Armed trailing stop](../../phases/phase-36-armed-trailing-stop.md) for the worked examples and known limitations.
+
+## Stepped stop ratchet
+
+A stepped stop locks discrete, direction-relative profit milestones:
+
+```qkt
+BUY btc SIZING 0.1 BRACKET {
+  STOP LOSS BY 50
+    STEP TO BREAKEVEN AFTER MFE >= 30
+    STEP TO ENTRY + 40 AFTER MFE >= 70,
+  TAKE PROFIT BY 120
+}
+```
+
+The initial stop is 50 points from the fill. At 30 points of MFE it moves to
+entry; at 70 points it moves to 40 points of locked profit. `BREAKEVEN + <d>`
+and `ENTRY + <d>` are equivalent direction-relative targets, so the same source
+works for long and short entries.
+
+Thresholds must be strictly increasing numeric literals. Target distances must
+be non-negative numeric literals. Each step is consumed once. A target that
+would widen the current stop is skipped with an operator warning.
+
+## Time-tightening stop
+
+A time-tightening stop reduces its risk distance on the injected engine clock:
+
+```qkt
+BUY btc SIZING 0.1 BRACKET {
+  STOP LOSS BY 60 TIGHTEN BY 10 EVERY 15m FLOOR 20,
+  TAKE PROFIT BY 120
+}
+```
+
+It starts 60 points from the fill, tightens by 10 points per completed 15-minute
+interval, and stops tightening at a 20-point distance. The initial distance,
+tightening delta, and floor must be positive numeric literals; the floor cannot
+exceed the initial distance.
+
+Both ratchet forms are engine-managed in paper/backtest and live execution. The
+engine evaluates only live stops for the tick's symbol, persists ratchet progress
+for restart, and never widens a stop. On venues with position modification, each
+tightening transition is also mirrored to the venue position so the tighter stop
+continues protecting it if qkt goes offline.
 
 ## How the bracket reaches the broker
 

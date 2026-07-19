@@ -36,6 +36,11 @@ import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.DurationAst
+import com.qkt.dsl.ast.ExitField
+import com.qkt.dsl.ast.ExitHooksAst
+import com.qkt.dsl.ast.ExitRef
+import com.qkt.dsl.ast.ExitRelativeLimit
+import com.qkt.dsl.ast.ExitRelativeStop
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.FuncCall
@@ -107,8 +112,10 @@ import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.SteppedStopAst
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StopStepAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamDecl
@@ -117,6 +124,7 @@ import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TimeOfDay
+import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.dsl.ast.Timezone
 import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
@@ -134,6 +142,7 @@ class Parser(
     private val errors = mutableListOf<ParseError>()
     private var inStackLayerAt: Boolean = false
     private var inOtoChildPrice: Boolean = false
+    private var inExitHook: Boolean = false
 
     fun parseFile(): ParseResult<ParsedFile> =
         when (peek().kind) {
@@ -590,6 +599,21 @@ class Parser(
                 advance()
                 com.qkt.dsl.ast.EntryQty
             }
+            TokenKind.EXIT -> {
+                advance()
+                expect(TokenKind.DOT, "expected '.' after EXIT")
+                val field = expectFieldName().lexeme.uppercase()
+                ExitRef(
+                    when (field) {
+                        "PRICE" -> ExitField.PRICE
+                        "SIDE" -> ExitField.SIDE
+                        "QTY", "QUANTITY" -> ExitField.QTY
+                        "PNL" -> ExitField.PNL
+                        "REASON" -> ExitField.REASON
+                        else -> error("unknown EXIT field '$field'")
+                    },
+                )
+            }
             TokenKind.MAX, TokenKind.MIN, TokenKind.MEAN, TokenKind.SUM -> parseAggregate()
             TokenKind.CASE -> parseCaseWhen()
             TokenKind.ACCOUNT -> {
@@ -925,19 +949,27 @@ class Parser(
             }
             TokenKind.LIMIT -> {
                 advance()
-                expect(TokenKind.AT, "expected AT after LIMIT")
-                Limit(parseExpr())
+                if (inExitHook && peek().kind in setOf(TokenKind.WITH, TokenKind.AGAINST)) {
+                    ExitRelativeLimit(parseDirRel())
+                } else {
+                    expect(TokenKind.AT, "expected AT after LIMIT")
+                    Limit(parseExpr())
+                }
             }
             TokenKind.STOP -> {
                 advance()
-                expect(TokenKind.AT, "expected AT after STOP")
-                val stopPrice = parseExpr()
-                if (peek().kind == TokenKind.LIMIT) {
-                    advance()
-                    expect(TokenKind.AT, "expected AT after LIMIT")
-                    StopLimit(stopPrice, parseExpr())
+                if (inExitHook && peek().kind in setOf(TokenKind.WITH, TokenKind.AGAINST)) {
+                    ExitRelativeStop(parseDirRel())
                 } else {
-                    Stop(stopPrice)
+                    expect(TokenKind.AT, "expected AT after STOP")
+                    val stopPrice = parseExpr()
+                    if (peek().kind == TokenKind.LIMIT) {
+                        advance()
+                        expect(TokenKind.AT, "expected AT after LIMIT")
+                        StopLimit(stopPrice, parseExpr())
+                    } else {
+                        Stop(stopPrice)
+                    }
                 }
             }
             TokenKind.TRAILING -> {
@@ -977,6 +1009,7 @@ class Parser(
             }
             TokenKind.GTD -> {
                 advance()
+                match(TokenKind.UNTIL)
                 Gtd(parseExpr())
             }
             else -> error("expected TIF (GTC/IOC/FOK/DAY/GTD), got '${peek().lexeme}'")
@@ -991,7 +1024,20 @@ class Parser(
             TokenKind.BY -> {
                 advance()
                 val distance = parseExpr()
-                if (match(TokenKind.PCT)) ChildPct(distance) else ChildBy(distance)
+                when {
+                    match(TokenKind.PCT) -> ChildPct(distance)
+                    peek().kind == TokenKind.STEP ->
+                        ChildBy(
+                            distance = distance,
+                            ratchet = parseSteppedStop(),
+                        )
+                    match(TokenKind.TIGHTEN) ->
+                        ChildBy(
+                            distance = distance,
+                            ratchet = parseTimeTighten(),
+                        )
+                    else -> ChildBy(distance)
+                }
             }
             TokenKind.PCT -> {
                 advance()
@@ -1012,6 +1058,47 @@ class Parser(
             }
             else -> error("expected child price (AT/BY/PCT/RR/TRAILING), got '${peek().lexeme}'")
         }
+
+    private fun parseSteppedStop(): com.qkt.dsl.ast.SteppedStopAst {
+        val steps = mutableListOf<com.qkt.dsl.ast.StopStepAst>()
+        while (match(TokenKind.STEP)) {
+            expect(TokenKind.TO, "expected TO after STEP")
+            val target = expect(TokenKind.IDENT, "expected BREAKEVEN or ENTRY after STEP TO")
+            if (!target.lexeme.equals("BREAKEVEN", ignoreCase = true) &&
+                !target.lexeme.equals("ENTRY", ignoreCase = true)
+            ) {
+                error("expected BREAKEVEN or ENTRY after STEP TO")
+            }
+            val profitDistance =
+                if (match(TokenKind.PLUS)) {
+                    parseExpr()
+                } else {
+                    NumLit(BigDecimal.ZERO)
+                }
+            expect(TokenKind.AFTER, "expected AFTER after step target")
+            expect(TokenKind.MFE, "expected MFE after AFTER")
+            expect(TokenKind.GE, "expected '>=' after MFE")
+            steps +=
+                StopStepAst(
+                    mfeThreshold = parseExpr(),
+                    profitDistance = profitDistance,
+                )
+        }
+        return SteppedStopAst(steps)
+    }
+
+    private fun parseTimeTighten(): TimeTightenAst {
+        expect(TokenKind.BY, "expected BY after TIGHTEN")
+        val tightenBy = parseExpr()
+        expect(TokenKind.EVERY, "expected EVERY after TIGHTEN BY <distance>")
+        val interval = parseDuration()
+        expect(TokenKind.FLOOR, "expected FLOOR after tightening interval")
+        return TimeTightenAst(
+            tightenBy = tightenBy,
+            interval = interval,
+            floorDistance = parseExpr(),
+        )
+    }
 
     internal fun parseRules(): List<RuleAst> {
         expect(TokenKind.RULES, "expected RULES")
@@ -1325,6 +1412,9 @@ class Parser(
         var stack: StackAst? = null
         var stackAts: List<StackAtClause> = emptyList()
         var onFill: List<ActionAst> = emptyList()
+        var onStop: List<ActionAst> = emptyList()
+        var onTakeProfit: List<ActionAst> = emptyList()
+        var onClose: List<ActionAst> = emptyList()
         loop@ while (true) {
             when (peek().kind) {
                 TokenKind.SIZING -> {
@@ -1359,6 +1449,21 @@ class Parser(
                     advance()
                     onFill = parseOnFill()
                 }
+                TokenKind.ON_STOP -> {
+                    if (onStop.isNotEmpty()) error("duplicate ON_STOP clause")
+                    advance()
+                    onStop = parseExitHook("ON_STOP")
+                }
+                TokenKind.ON_TP -> {
+                    if (onTakeProfit.isNotEmpty()) error("duplicate ON_TP clause")
+                    advance()
+                    onTakeProfit = parseExitHook("ON_TP")
+                }
+                TokenKind.ON_CLOSE -> {
+                    if (onClose.isNotEmpty()) error("duplicate ON_CLOSE clause")
+                    advance()
+                    onClose = parseExitHook("ON_CLOSE")
+                }
                 else -> break@loop
             }
         }
@@ -1370,7 +1475,17 @@ class Parser(
         }
         // orderType stays null here so DEFAULTS ORDER_TYPE can fill it during the
         // defaults merge; ActionCompiler applies the Market fallback after the merge.
-        return ActionOpts(sizing, orderType, tif, bracket, oco, finalStack, stackAts, onFill)
+        return ActionOpts(
+            sizing,
+            orderType,
+            tif,
+            bracket,
+            oco,
+            finalStack,
+            stackAts,
+            onFill,
+            ExitHooksAst(onStop, onTakeProfit, onClose),
+        )
     }
 
     /**
@@ -1396,6 +1511,29 @@ class Parser(
             inOtoChildPrice = prev
         }
         expect(TokenKind.RBRACE, "expected '}' to close ON_FILL block")
+        return children
+    }
+
+    /**
+     * Parse an exit hook block. Children reuse BUY/SELL parsing, while the compiler
+     * enforces the v1 action and nesting constraints.
+     */
+    private fun parseExitHook(name: String): List<ActionAst> {
+        expect(TokenKind.LBRACE, "expected '{' to open $name block")
+        val children = mutableListOf<ActionAst>()
+        val previous = inExitHook
+        inExitHook = true
+        try {
+            if (peek().kind == TokenKind.RBRACE) error("$name block must contain at least one action")
+            children.add(parseAction())
+            while (match(TokenKind.SEMICOLON)) {
+                if (peek().kind == TokenKind.RBRACE) break
+                children.add(parseAction())
+            }
+        } finally {
+            inExitHook = previous
+        }
+        expect(TokenKind.RBRACE, "expected '}' to close $name block")
         return children
     }
 

@@ -27,7 +27,10 @@ import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
+import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.EntryQty
+import com.qkt.dsl.ast.ExitRelativeLimit
+import com.qkt.dsl.ast.ExitRelativeStop
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.FuncCall
@@ -66,12 +69,15 @@ import com.qkt.dsl.ast.StackLayer
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
+import com.qkt.dsl.ast.SteppedStopAst
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StopStepAst
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
+import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
@@ -116,7 +122,7 @@ class ExprTransform(
             is CalendarWindow,
             is SessionWindow,
             LastTradingDayOfMonth,
-            EntryQty,
+            EntryQty, is com.qkt.dsl.ast.ExitRef,
             -> e
         }
 
@@ -135,7 +141,15 @@ class ExprTransform(
         when (o) {
             Market -> o
             is Limit -> Limit(expr(o.price))
+            is ExitRelativeLimit ->
+                ExitRelativeLimit(
+                    DirRel(o.price.sense, expr(o.price.dist)),
+                )
             is Stop -> Stop(expr(o.price))
+            is ExitRelativeStop ->
+                ExitRelativeStop(
+                    DirRel(o.price.sense, expr(o.price.dist)),
+                )
             is StopLimit -> StopLimit(expr(o.stopPrice), expr(o.limitPrice))
             is TrailingBy -> TrailingBy(expr(o.distance))
             is TrailingPct -> TrailingPct(expr(o.percent))
@@ -150,7 +164,29 @@ class ExprTransform(
     fun childPrice(cp: ChildPriceAst): ChildPriceAst =
         when (cp) {
             is ChildAt -> ChildAt(expr(cp.price))
-            is ChildBy -> ChildBy(expr(cp.distance))
+            is ChildBy ->
+                ChildBy(
+                    distance = expr(cp.distance),
+                    ratchet =
+                        when (val ratchet = cp.ratchet) {
+                            null -> null
+                            is SteppedStopAst ->
+                                SteppedStopAst(
+                                    ratchet.steps.map {
+                                        StopStepAst(
+                                            mfeThreshold = expr(it.mfeThreshold),
+                                            profitDistance = expr(it.profitDistance),
+                                        )
+                                    },
+                                )
+                            is TimeTightenAst ->
+                                TimeTightenAst(
+                                    tightenBy = expr(ratchet.tightenBy),
+                                    interval = ratchet.interval,
+                                    floorDistance = expr(ratchet.floorDistance),
+                                )
+                        },
+                )
             is ChildPct -> ChildPct(expr(cp.percent))
             is ChildRr -> ChildRr(expr(cp.multiplier))
             is ChildArmedTrail -> ChildArmedTrail(expr(cp.trailDistance), expr(cp.mfeThreshold))
@@ -188,6 +224,12 @@ class ExprTransform(
             stack = o.stack?.let(::stack),
             stackAts = o.stackAts.map(::stackAt),
             onFill = o.onFill.map(::action),
+            exitHooks =
+                com.qkt.dsl.ast.ExitHooksAst(
+                    onStop = o.exitHooks.onStop.map(::action),
+                    onTakeProfit = o.exitHooks.onTakeProfit.map(::action),
+                    onClose = o.exitHooks.onClose.map(::action),
+                ),
         )
 
     fun action(a: ActionAst): ActionAst =

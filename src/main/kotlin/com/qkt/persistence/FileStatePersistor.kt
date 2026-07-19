@@ -12,8 +12,8 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /**
- * On-disk [StatePersistor]. Serializes the four state shapes to atomic JSON files under
- * `<rootDir>/<strategyId>/{legbook.json,bracket-pairs.json,pending-orders.json,pending-stacks.json}`.
+ * On-disk [StatePersistor]. Serializes engine state to atomic JSON files under
+ * `<rootDir>/<strategyId>/`.
  *
  * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
  * an entry-only risk halt. Most load failures return null and log; risk-state load failures are
@@ -64,6 +64,7 @@ class FileStatePersistor(
         const val PNL_FILE = "pnl.json"
         const val TRADE_HISTORY_FILE = "trade-history.json"
         const val SEQUENCES_FILE = "sequences.json"
+        const val EXIT_HOOKS_FILE = "exit-hooks.json"
         const val SCHEMA_VERSION = 1
     }
 
@@ -96,6 +97,38 @@ class FileStatePersistor(
         runCatching { json.encodeToString(SequencesDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, SEQUENCES_FILE, it) }
             .onFailure { e -> log.warn("saveSequences encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun saveExitHooks(
+        strategyId: String,
+        bindings: List<PersistedExitHookBinding>,
+    ) {
+        val dto =
+            ExitHooksDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                bindings = bindings.map(ExitHookBindingDto::fromDomain),
+            )
+        runCatching { json.encodeToString(ExitHooksDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, EXIT_HOOKS_FILE, it) }
+            .onFailure { e -> log.warn("saveExitHooks encode failed for $strategyId: ${e.message}") }
+    }
+
+    override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> {
+        val raw = writer.read(strategyId, EXIT_HOOKS_FILE) ?: return emptyList()
+        val dto =
+            try {
+                json.decodeFromString(ExitHooksDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                throw IllegalStateException("loadExitHooks parse failed for $strategyId", e)
+            }
+        require(dto.version == SCHEMA_VERSION) {
+            "loadExitHooks schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
+        }
+        require(dto.strategyId == strategyId) {
+            "loadExitHooks strategy mismatch: file=${dto.strategyId}, requested=$strategyId"
+        }
+        return dto.bindings.map { it.toDomain() }
     }
 
     override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> {
@@ -502,6 +535,9 @@ class FileStatePersistor(
                         request = req,
                         armed = stop.armed,
                         hwm = stop.hwm.toPlainString(),
+                        stepIndex = stop.stepIndex,
+                        elapsedIntervals = stop.elapsedIntervals,
+                        stopLevel = stop.stopLevel?.toPlainString(),
                     )
                 }
             }
@@ -532,6 +568,9 @@ class FileStatePersistor(
                 request = it.request.toDomain(),
                 armed = it.armed,
                 hwm = java.math.BigDecimal(it.hwm),
+                stepIndex = it.stepIndex,
+                elapsedIntervals = it.elapsedIntervals,
+                stopLevel = it.stopLevel?.let { value -> java.math.BigDecimal(value) },
             )
         }
     }
@@ -598,6 +637,15 @@ private data class TrailingStopDto(
     val request: OrderRequestDto,
     val armed: Boolean,
     val hwm: String,
+    val stepIndex: Int = 0,
+    val elapsedIntervals: Long = 0L,
+    val stopLevel: String? = null,
+)
+
+@Serializable
+private data class StopStepDto(
+    val mfeThreshold: String,
+    val profitDistance: String,
 )
 
 @Serializable
@@ -624,6 +672,69 @@ private data class SequenceSnapshotDto(
 )
 
 @Serializable
+private data class ExitHooksDto(
+    val version: Int,
+    val strategyId: String,
+    val bindings: List<ExitHookBindingDto>,
+)
+
+@Serializable
+private data class ExitHookBindingDto(
+    val bindingId: String,
+    val strategyId: String,
+    val symbol: String,
+    val entrySide: String,
+    val definitionId: String,
+    val fingerprint: String,
+    val entryOrderIds: List<String>,
+    val stopOrderIds: List<String>,
+    val takeProfitOrderIds: List<String>,
+    val closeOrderIds: List<String> = emptyList(),
+    val brokerTickets: List<String> = emptyList(),
+    val activeQuantity: String,
+    val exitQuantity: String,
+    val exitPnl: String,
+) {
+    fun toDomain(): PersistedExitHookBinding =
+        PersistedExitHookBinding(
+            bindingId = bindingId,
+            strategyId = strategyId,
+            symbol = symbol,
+            entrySide = Side.valueOf(entrySide),
+            definitionId = definitionId,
+            fingerprint = fingerprint,
+            entryOrderIds = entryOrderIds,
+            stopOrderIds = stopOrderIds,
+            takeProfitOrderIds = takeProfitOrderIds,
+            closeOrderIds = closeOrderIds,
+            brokerTickets = brokerTickets,
+            activeQuantity = BigDecimal(activeQuantity),
+            exitQuantity = BigDecimal(exitQuantity),
+            exitPnl = BigDecimal(exitPnl),
+        )
+
+    companion object {
+        fun fromDomain(binding: PersistedExitHookBinding): ExitHookBindingDto =
+            ExitHookBindingDto(
+                bindingId = binding.bindingId,
+                strategyId = binding.strategyId,
+                symbol = binding.symbol,
+                entrySide = binding.entrySide.name,
+                definitionId = binding.definitionId,
+                fingerprint = binding.fingerprint,
+                entryOrderIds = binding.entryOrderIds,
+                stopOrderIds = binding.stopOrderIds,
+                takeProfitOrderIds = binding.takeProfitOrderIds,
+                closeOrderIds = binding.closeOrderIds,
+                brokerTickets = binding.brokerTickets,
+                activeQuantity = binding.activeQuantity.toPlainString(),
+                exitQuantity = binding.exitQuantity.toPlainString(),
+                exitPnl = binding.exitPnl.toPlainString(),
+            )
+    }
+}
+
+@Serializable
 private data class OrderRequestDto(
     val type: String,
     val id: String,
@@ -642,6 +753,11 @@ private data class OrderRequestDto(
     val entryPrice: String? = null,
     val trailDistance: String? = null,
     val mfeThreshold: String? = null,
+    val initialDistance: String? = null,
+    val steps: List<StopStepDto>? = null,
+    val tightenBy: String? = null,
+    val intervalMs: Long? = null,
+    val floorDistance: String? = null,
     val trailAmount: String? = null,
     val trailMode: String? = null,
     val limitOffset: String? = null,
@@ -726,6 +842,60 @@ private data class OrderRequestDto(
                     mfeThreshold =
                         java.math.BigDecimal(
                             requireNotNull(mfeThreshold) { "ArmedTrailingStop DTO missing mfeThreshold" },
+                        ),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
+            "SteppedStop" ->
+                com.qkt.execution.OrderRequest.SteppedStop(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    entryPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(entryPrice) { "SteppedStop DTO missing entryPrice" },
+                        ),
+                    initialDistance =
+                        java.math.BigDecimal(
+                            requireNotNull(initialDistance) { "SteppedStop DTO missing initialDistance" },
+                        ),
+                    steps =
+                        requireNotNull(steps) { "SteppedStop DTO missing steps" }.map {
+                            com.qkt.execution.StopLossSpec.Step(
+                                mfeThreshold = java.math.BigDecimal(it.mfeThreshold),
+                                profitDistance = java.math.BigDecimal(it.profitDistance),
+                            )
+                        },
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
+            "TimeTighteningStop" ->
+                com.qkt.execution.OrderRequest.TimeTighteningStop(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    entryPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(entryPrice) { "TimeTighteningStop DTO missing entryPrice" },
+                        ),
+                    initialDistance =
+                        java.math.BigDecimal(
+                            requireNotNull(initialDistance) { "TimeTighteningStop DTO missing initialDistance" },
+                        ),
+                    tightenBy =
+                        java.math.BigDecimal(
+                            requireNotNull(tightenBy) { "TimeTighteningStop DTO missing tightenBy" },
+                        ),
+                    intervalMs = requireNotNull(intervalMs) { "TimeTighteningStop DTO missing intervalMs" },
+                    floorDistance =
+                        java.math.BigDecimal(
+                            requireNotNull(floorDistance) { "TimeTighteningStop DTO missing floorDistance" },
                         ),
                     timeInForce = tif,
                     timestamp = timestamp,
@@ -865,6 +1035,44 @@ private data class OrderRequestDto(
                         entryPrice = req.entryPrice.toPlainString(),
                         trailDistance = req.trailDistance.toPlainString(),
                         mfeThreshold = req.mfeThreshold.toPlainString(),
+                        expiresAt = req.expiresAt,
+                    )
+                is com.qkt.execution.OrderRequest.SteppedStop ->
+                    OrderRequestDto(
+                        type = "SteppedStop",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        entryPrice = req.entryPrice.toPlainString(),
+                        initialDistance = req.initialDistance.toPlainString(),
+                        steps =
+                            req.steps.map {
+                                StopStepDto(
+                                    mfeThreshold = it.mfeThreshold.toPlainString(),
+                                    profitDistance = it.profitDistance.toPlainString(),
+                                )
+                            },
+                        expiresAt = req.expiresAt,
+                    )
+                is com.qkt.execution.OrderRequest.TimeTighteningStop ->
+                    OrderRequestDto(
+                        type = "TimeTighteningStop",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        entryPrice = req.entryPrice.toPlainString(),
+                        initialDistance = req.initialDistance.toPlainString(),
+                        tightenBy = req.tightenBy.toPlainString(),
+                        intervalMs = req.intervalMs,
+                        floorDistance = req.floorDistance.toPlainString(),
                         expiresAt = req.expiresAt,
                     )
                 is com.qkt.execution.OrderRequest.StopLimit ->
