@@ -145,6 +145,50 @@ The arming logic is always engine-managed: brokers that support native brackets 
 
 See [Phase 36 — Armed trailing stop](../../phases/phase-36-armed-trailing-stop.md) for the worked examples and known limitations.
 
+## Stepped stop ratchet
+
+A stepped stop locks discrete, direction-relative profit milestones:
+
+```qkt
+BUY btc SIZING 0.1 BRACKET {
+  STOP LOSS BY 50
+    STEP TO BREAKEVEN AFTER MFE >= 30
+    STEP TO ENTRY + 40 AFTER MFE >= 70,
+  TAKE PROFIT BY 120
+}
+```
+
+The initial stop is 50 points from the fill. At 30 points of MFE it moves to
+entry; at 70 points it moves to 40 points of locked profit. `BREAKEVEN + <d>`
+and `ENTRY + <d>` are equivalent direction-relative targets, so the same source
+works for long and short entries.
+
+Thresholds must be strictly increasing numeric literals. Target distances must
+be non-negative numeric literals. Each step is consumed once. A target that
+would widen the current stop is skipped with an operator warning.
+
+## Time-tightening stop
+
+A time-tightening stop reduces its risk distance on the injected engine clock:
+
+```qkt
+BUY btc SIZING 0.1 BRACKET {
+  STOP LOSS BY 60 TIGHTEN BY 10 EVERY 15m FLOOR 20,
+  TAKE PROFIT BY 120
+}
+```
+
+It starts 60 points from the fill, tightens by 10 points per completed 15-minute
+interval, and stops tightening at a 20-point distance. The initial distance,
+tightening delta, and floor must be positive numeric literals; the floor cannot
+exceed the initial distance.
+
+Both ratchet forms are engine-managed in paper/backtest and live execution. The
+engine evaluates only live stops for the tick's symbol, persists ratchet progress
+for restart, and never widens a stop. On venues with position modification, each
+tightening transition is also mirrored to the venue position so the tighter stop
+continues protecting it if qkt goes offline.
+
 ## How the bracket reaches the broker
 
 The DSL submits one `BRACKET` request to the order manager. From there:

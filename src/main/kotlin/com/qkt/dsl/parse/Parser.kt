@@ -107,8 +107,10 @@ import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
 import com.qkt.dsl.ast.StateSource
+import com.qkt.dsl.ast.SteppedStopAst
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
+import com.qkt.dsl.ast.StopStepAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamDecl
@@ -117,6 +119,7 @@ import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TimeOfDay
+import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.dsl.ast.Timezone
 import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
@@ -991,7 +994,20 @@ class Parser(
             TokenKind.BY -> {
                 advance()
                 val distance = parseExpr()
-                if (match(TokenKind.PCT)) ChildPct(distance) else ChildBy(distance)
+                when {
+                    match(TokenKind.PCT) -> ChildPct(distance)
+                    peek().kind == TokenKind.STEP ->
+                        ChildBy(
+                            distance = distance,
+                            ratchet = parseSteppedStop(),
+                        )
+                    match(TokenKind.TIGHTEN) ->
+                        ChildBy(
+                            distance = distance,
+                            ratchet = parseTimeTighten(),
+                        )
+                    else -> ChildBy(distance)
+                }
             }
             TokenKind.PCT -> {
                 advance()
@@ -1012,6 +1028,47 @@ class Parser(
             }
             else -> error("expected child price (AT/BY/PCT/RR/TRAILING), got '${peek().lexeme}'")
         }
+
+    private fun parseSteppedStop(): com.qkt.dsl.ast.SteppedStopAst {
+        val steps = mutableListOf<com.qkt.dsl.ast.StopStepAst>()
+        while (match(TokenKind.STEP)) {
+            expect(TokenKind.TO, "expected TO after STEP")
+            val target = expect(TokenKind.IDENT, "expected BREAKEVEN or ENTRY after STEP TO")
+            if (!target.lexeme.equals("BREAKEVEN", ignoreCase = true) &&
+                !target.lexeme.equals("ENTRY", ignoreCase = true)
+            ) {
+                error("expected BREAKEVEN or ENTRY after STEP TO")
+            }
+            val profitDistance =
+                if (match(TokenKind.PLUS)) {
+                    parseExpr()
+                } else {
+                    NumLit(BigDecimal.ZERO)
+                }
+            expect(TokenKind.AFTER, "expected AFTER after step target")
+            expect(TokenKind.MFE, "expected MFE after AFTER")
+            expect(TokenKind.GE, "expected '>=' after MFE")
+            steps +=
+                StopStepAst(
+                    mfeThreshold = parseExpr(),
+                    profitDistance = profitDistance,
+                )
+        }
+        return SteppedStopAst(steps)
+    }
+
+    private fun parseTimeTighten(): TimeTightenAst {
+        expect(TokenKind.BY, "expected BY after TIGHTEN")
+        val tightenBy = parseExpr()
+        expect(TokenKind.EVERY, "expected EVERY after TIGHTEN BY <distance>")
+        val interval = parseDuration()
+        expect(TokenKind.FLOOR, "expected FLOOR after tightening interval")
+        return TimeTightenAst(
+            tightenBy = tightenBy,
+            interval = interval,
+            floorDistance = parseExpr(),
+        )
+    }
 
     internal fun parseRules(): List<RuleAst> {
         expect(TokenKind.RULES, "expected RULES")

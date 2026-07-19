@@ -925,6 +925,8 @@ class ActionCompiler(
         when (stopLoss) {
             is com.qkt.execution.StopLossSpec.Fixed -> entry.subtract(stopLoss.price).abs()
             is com.qkt.execution.StopLossSpec.ArmedTrail -> stopLoss.trailDistance
+            is com.qkt.execution.StopLossSpec.SteppedStop -> stopLoss.initialDistance
+            is com.qkt.execution.StopLossSpec.TimeTighten -> stopLoss.initialDistance
         }
 
     private fun resolveStaticStopDistance(stop: ChildPriceAst?): BigDecimal? =

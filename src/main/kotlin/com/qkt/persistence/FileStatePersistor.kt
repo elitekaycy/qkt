@@ -502,6 +502,9 @@ class FileStatePersistor(
                         request = req,
                         armed = stop.armed,
                         hwm = stop.hwm.toPlainString(),
+                        stepIndex = stop.stepIndex,
+                        elapsedIntervals = stop.elapsedIntervals,
+                        stopLevel = stop.stopLevel?.toPlainString(),
                     )
                 }
             }
@@ -532,6 +535,9 @@ class FileStatePersistor(
                 request = it.request.toDomain(),
                 armed = it.armed,
                 hwm = java.math.BigDecimal(it.hwm),
+                stepIndex = it.stepIndex,
+                elapsedIntervals = it.elapsedIntervals,
+                stopLevel = it.stopLevel?.let { value -> java.math.BigDecimal(value) },
             )
         }
     }
@@ -598,6 +604,15 @@ private data class TrailingStopDto(
     val request: OrderRequestDto,
     val armed: Boolean,
     val hwm: String,
+    val stepIndex: Int = 0,
+    val elapsedIntervals: Long = 0L,
+    val stopLevel: String? = null,
+)
+
+@Serializable
+private data class StopStepDto(
+    val mfeThreshold: String,
+    val profitDistance: String,
 )
 
 @Serializable
@@ -642,6 +657,11 @@ private data class OrderRequestDto(
     val entryPrice: String? = null,
     val trailDistance: String? = null,
     val mfeThreshold: String? = null,
+    val initialDistance: String? = null,
+    val steps: List<StopStepDto>? = null,
+    val tightenBy: String? = null,
+    val intervalMs: Long? = null,
+    val floorDistance: String? = null,
     val trailAmount: String? = null,
     val trailMode: String? = null,
     val limitOffset: String? = null,
@@ -726,6 +746,60 @@ private data class OrderRequestDto(
                     mfeThreshold =
                         java.math.BigDecimal(
                             requireNotNull(mfeThreshold) { "ArmedTrailingStop DTO missing mfeThreshold" },
+                        ),
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
+            "SteppedStop" ->
+                com.qkt.execution.OrderRequest.SteppedStop(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    entryPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(entryPrice) { "SteppedStop DTO missing entryPrice" },
+                        ),
+                    initialDistance =
+                        java.math.BigDecimal(
+                            requireNotNull(initialDistance) { "SteppedStop DTO missing initialDistance" },
+                        ),
+                    steps =
+                        requireNotNull(steps) { "SteppedStop DTO missing steps" }.map {
+                            com.qkt.execution.StopLossSpec.Step(
+                                mfeThreshold = java.math.BigDecimal(it.mfeThreshold),
+                                profitDistance = java.math.BigDecimal(it.profitDistance),
+                            )
+                        },
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
+            "TimeTighteningStop" ->
+                com.qkt.execution.OrderRequest.TimeTighteningStop(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    entryPrice =
+                        java.math.BigDecimal(
+                            requireNotNull(entryPrice) { "TimeTighteningStop DTO missing entryPrice" },
+                        ),
+                    initialDistance =
+                        java.math.BigDecimal(
+                            requireNotNull(initialDistance) { "TimeTighteningStop DTO missing initialDistance" },
+                        ),
+                    tightenBy =
+                        java.math.BigDecimal(
+                            requireNotNull(tightenBy) { "TimeTighteningStop DTO missing tightenBy" },
+                        ),
+                    intervalMs = requireNotNull(intervalMs) { "TimeTighteningStop DTO missing intervalMs" },
+                    floorDistance =
+                        java.math.BigDecimal(
+                            requireNotNull(floorDistance) { "TimeTighteningStop DTO missing floorDistance" },
                         ),
                     timeInForce = tif,
                     timestamp = timestamp,
@@ -865,6 +939,44 @@ private data class OrderRequestDto(
                         entryPrice = req.entryPrice.toPlainString(),
                         trailDistance = req.trailDistance.toPlainString(),
                         mfeThreshold = req.mfeThreshold.toPlainString(),
+                        expiresAt = req.expiresAt,
+                    )
+                is com.qkt.execution.OrderRequest.SteppedStop ->
+                    OrderRequestDto(
+                        type = "SteppedStop",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        entryPrice = req.entryPrice.toPlainString(),
+                        initialDistance = req.initialDistance.toPlainString(),
+                        steps =
+                            req.steps.map {
+                                StopStepDto(
+                                    mfeThreshold = it.mfeThreshold.toPlainString(),
+                                    profitDistance = it.profitDistance.toPlainString(),
+                                )
+                            },
+                        expiresAt = req.expiresAt,
+                    )
+                is com.qkt.execution.OrderRequest.TimeTighteningStop ->
+                    OrderRequestDto(
+                        type = "TimeTighteningStop",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        entryPrice = req.entryPrice.toPlainString(),
+                        initialDistance = req.initialDistance.toPlainString(),
+                        tightenBy = req.tightenBy.toPlainString(),
+                        intervalMs = req.intervalMs,
+                        floorDistance = req.floorDistance.toPlainString(),
                         expiresAt = req.expiresAt,
                     )
                 is com.qkt.execution.OrderRequest.StopLimit ->
