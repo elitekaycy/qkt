@@ -52,9 +52,12 @@ Multi-series (compiler path, like `resid`):
   reproduction window is a research sample-size result, not an unsupported trigger.
 - Extreme-reaction fade (#834) → duplicate reproduction report for #822. The existing
   percentile-rank and fixed-elapsed-hold compile test remains the capability proof.
-- Fixed-horizon ratio recipes (#836, #837, #838) → cross-stream division feeds `zscore`
+- Fixed-horizon ratio recipes (#836, #837, #838, #839) → cross-stream division feeds `zscore`
   directly, signed thresholds select continuation or fade direction, and
-  `POSITION.<stream>.holding_duration` supplies the 4- or 12-bar elapsed exit.
+  `POSITION.<stream>.holding_duration` supplies the 4-, 5-, or 12-bar elapsed exit.
+- Lower-tail return-shock fade (#840) → the relative return expression feeds
+  `percentile_rank` directly, and the same holding-duration accessor supplies the four-bar
+  elapsed exit.
 
 Compilation and trigger evaluation prove that qkt can represent and execute these recipes.
 They do not prove that a reported research edge survives the executable post-close fill model;
@@ -77,6 +80,6 @@ indicators, Percentile rank, Math helpers) for worked, copy-pasteable examples.
 ## References
 
 - Issues: #479, #501, #502, #503, #504, #505, #506, #507, #508, #818, #822, #823,
-  #833, #834, #835, #836, #837, #838.
+  #833, #834, #835, #836, #837, #838, #839, #840.
 - Indicators: `PercentileRank`, `SessionVwap`, `SessionRange`, `ConfirmRatio` under
   `com.qkt.indicators.catalog`; `MOD`/`FLOOR`/`CEIL`/`ROUND` in `com.qkt.dsl.stdlib.FuncRegistry`.
