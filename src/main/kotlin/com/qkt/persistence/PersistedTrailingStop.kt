@@ -4,14 +4,13 @@ import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
 /**
- * On-disk shape of an engine-managed armed trailing stop so it survives a restart.
+ * On-disk shape of an engine-managed dynamic stop so it survives a restart.
  *
- * The engine runs the trail in memory: [armed] is whether the stop has crossed its arming
- * threshold yet, and [hwm] is the best price reached so far — the high-water mark the stop
- * trails behind. Both are lost on reboot unless persisted; without them a winner that had
- * already armed comes back stop-less until the trail re-arms from the entry. [request] carries
- * the static config (entry price, trail distance, MFE threshold) and [brokerOrderId] the venue
- * ticket the close-by-ticket exit targets.
+ * [armed] and [hwm] carry armed-trail progress. [stepIndex] is the next stepped-stop
+ * milestone, [elapsedIntervals] is the time-tightening cursor, and [stopLevel] is the
+ * last monotonic level. Defaulted ratchet fields keep armed-trail journals backward
+ * compatible. [request] carries static configuration and [brokerOrderId] preserves
+ * the engine-held leg's accepted id.
  */
 data class PersistedTrailingStop(
     val clientOrderId: String,
@@ -20,4 +19,7 @@ data class PersistedTrailingStop(
     val request: OrderRequest,
     val armed: Boolean,
     val hwm: BigDecimal,
+    val stepIndex: Int = 0,
+    val elapsedIntervals: Long = 0L,
+    val stopLevel: BigDecimal? = null,
 )

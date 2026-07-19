@@ -650,6 +650,24 @@ object InsightsTranslate {
                 base["trailDistance"] = request.trailDistance
                 base["mfeThreshold"] = request.mfeThreshold
             }
+            is OrderRequest.SteppedStop -> {
+                base["entryPrice"] = request.entryPrice
+                base["initialDistance"] = request.initialDistance
+                base["steps"] =
+                    request.steps.map {
+                        mapOf(
+                            "mfeThreshold" to it.mfeThreshold,
+                            "profitDistance" to it.profitDistance,
+                        )
+                    }
+            }
+            is OrderRequest.TimeTighteningStop -> {
+                base["entryPrice"] = request.entryPrice
+                base["initialDistance"] = request.initialDistance
+                base["tightenBy"] = request.tightenBy
+                base["intervalMs"] = request.intervalMs
+                base["floorDistance"] = request.floorDistance
+            }
             is OrderRequest.TrailingStopLimit -> {
                 base["trailAmount"] = request.trailAmount
                 base["trailMode"] = request.trailMode.name
@@ -767,7 +785,37 @@ object InsightsTranslate {
             is ChildAt ->
                 mapOf("type" to "At", "price" to exprPayload(child.price))
             is ChildBy ->
-                mapOf("type" to "By", "distance" to exprPayload(child.distance))
+                buildMap {
+                    put("type", "By")
+                    put("distance", exprPayload(child.distance))
+                    when (val ratchet = child.ratchet) {
+                        null -> Unit
+                        is com.qkt.dsl.ast.SteppedStopAst ->
+                            put(
+                                "ratchet",
+                                mapOf(
+                                    "type" to "Stepped",
+                                    "steps" to
+                                        ratchet.steps.map {
+                                            mapOf(
+                                                "mfeThreshold" to exprPayload(it.mfeThreshold),
+                                                "profitDistance" to exprPayload(it.profitDistance),
+                                            )
+                                        },
+                                ),
+                            )
+                        is com.qkt.dsl.ast.TimeTightenAst ->
+                            put(
+                                "ratchet",
+                                mapOf(
+                                    "type" to "TimeTighten",
+                                    "tightenBy" to exprPayload(ratchet.tightenBy),
+                                    "intervalMs" to ratchet.interval.millis,
+                                    "floorDistance" to exprPayload(ratchet.floorDistance),
+                                ),
+                            )
+                    }
+                }
             is ChildPct ->
                 mapOf("type" to "Pct", "percent" to exprPayload(child.percent))
             is ChildRr ->
@@ -804,6 +852,26 @@ object InsightsTranslate {
                     "type" to "ArmedTrail",
                     "trailDistance" to stopLoss.trailDistance,
                     "mfeThreshold" to stopLoss.mfeThreshold,
+                )
+            is StopLossSpec.SteppedStop ->
+                mapOf(
+                    "type" to "SteppedStop",
+                    "initialDistance" to stopLoss.initialDistance,
+                    "steps" to
+                        stopLoss.steps.map {
+                            mapOf(
+                                "mfeThreshold" to it.mfeThreshold,
+                                "profitDistance" to it.profitDistance,
+                            )
+                        },
+                )
+            is StopLossSpec.TimeTighten ->
+                mapOf(
+                    "type" to "TimeTighten",
+                    "initialDistance" to stopLoss.initialDistance,
+                    "tightenBy" to stopLoss.tightenBy,
+                    "intervalMs" to stopLoss.intervalMs,
+                    "floorDistance" to stopLoss.floorDistance,
                 )
         }
 
