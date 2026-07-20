@@ -5,6 +5,10 @@ import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -169,7 +173,7 @@ class SweepCommandTest {
     }
 
     @Test
-    fun `sweep json carries dailyPnL and maxDailyDrawdown per combo`(
+    fun `sweep json carries daily pnl drawdown and fill cost inputs per combo`(
         @TempDir dir: Path,
     ) {
         val args =
@@ -205,6 +209,54 @@ class SweepCommandTest {
         assertThat(json).contains("\"selectionWarnings\":")
         assertThat(json).contains("\"dailyPnL\":")
         assertThat(json).contains("\"maxDailyDrawdown\":")
+        val row =
+            Json
+                .parseToJsonElement(json)
+                .jsonArray
+                .single()
+                .jsonObject
+        val summaries = row.getValue("fillCostSummary").jsonArray
+        assertThat(summaries).isNotEmpty
+        assertThat(
+            summaries.sumOf {
+                it.jsonObject
+                    .getValue("fills")
+                    .jsonPrimitive
+                    .content
+                    .toInt()
+            },
+        ).isEqualTo(
+            row
+                .getValue("trades")
+                .jsonPrimitive
+                .content
+                .toInt(),
+        )
+        assertThat(
+            summaries.all {
+                val summary = it.jsonObject
+                summary
+                    .getValue("day")
+                    .jsonPrimitive
+                    .content == "2026-06-04" &&
+                    summary
+                        .getValue("symbol")
+                        .jsonPrimitive
+                        .content == "BACKTEST:XAUUSD" &&
+                    summary
+                        .getValue("lotsAbs")
+                        .jsonPrimitive
+                        .content
+                        .toBigDecimal()
+                        .signum() > 0 &&
+                    summary
+                        .getValue("notionalAbs")
+                        .jsonPrimitive
+                        .content
+                        .toBigDecimal()
+                        .signum() > 0
+            },
+        ).isTrue()
     }
 
     @Test
