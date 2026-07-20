@@ -224,10 +224,16 @@ val generatedResourcesDir = layout.buildDirectory.dir("generated/resources/build
 val generateBuildInfo by tasks.registering {
     val outDir = generatedResourcesDir
     val versionProvider = providers.provider { project.version.toString() }
+    // Published Docker contexts exclude .git, so CI supplies qktGitSha explicitly.
+    // Local source builds retain the git lookup fallback.
     val gitShaProvider =
-        providers.of(GitShaSource::class) {
-            parameters.repoRoot.set(rootProject.projectDir)
-        }
+        providers
+            .gradleProperty("qktGitSha")
+            .orElse(
+                providers.of(GitShaSource::class) {
+                    parameters.repoRoot.set(rootProject.projectDir)
+                },
+            )
     outputs.dir(outDir)
     inputs.property("version", versionProvider)
     inputs.property("gitSha", gitShaProvider)
