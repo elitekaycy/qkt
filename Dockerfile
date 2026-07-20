@@ -2,7 +2,9 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /src
 COPY . .
-RUN ./gradlew --no-daemon installDist
+# .dockerignore excludes .git; published builds inject their immutable workflow SHA.
+ARG QKT_GIT_SHA=unknown
+RUN ./gradlew --no-daemon installDist -PqktGitSha="$QKT_GIT_SHA"
 # A minimal runtime image: only the JDK modules qkt actually loads. jdeps reports
 # java.base, java.logging, java.naming, java.xml, jdk.httpserver; jdk.crypto.ec (TLS
 # cipher suites for HTTPS) and jdk.unsupported (sun.misc.Unsafe, used by okio/kotlin)
