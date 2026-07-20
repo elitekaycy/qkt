@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.CompositeBroker
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
@@ -308,6 +309,228 @@ class LiveSessionBrokerCoverageTest {
             )
 
         val handle = session.start()
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
+    fun `startup reconcile excludes a ticket clearly owned by another strategy`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("eurusd" to HubKey(broker = "EXNESS", symbol = "EURUSD", timeframe = "5m")),
+            )
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:EURUSD" to
+                            listOf(
+                                com.qkt.positions.Position(
+                                    "EXNESS:EURUSD",
+                                    BigDecimal("0.01"),
+                                    BigDecimal("1.14196"),
+                                ),
+                            ),
+                    )
+
+                override fun positionTickets(): List<BrokerPositionTicket> =
+                    listOf(
+                        BrokerPositionTicket(
+                            ticket = "2981476451",
+                            symbol = "EXNESS:EURUSD",
+                            side = Side.BUY,
+                            qty = BigDecimal("0.01"),
+                            entryPrice = BigDecimal("1.14196"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = null,
+                            comment = "dsl-eurusd_ny_pr",
+                        ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("eurusd_ny_fv_fade" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:EURUSD"),
+                clock = FixedClock(time = 0L),
+                brokerFactories = mapOf("exness" to factory),
+            )
+
+        val handle = session.start()
+        assertThat(handle.dailySummaryRows().single().positionsSummary).isEqualTo("flat")
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
+    fun `startup reconcile keeps an unattributed ticket in the fail closed set`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("eurusd" to HubKey(broker = "EXNESS", symbol = "EURUSD", timeframe = "5m")),
+            )
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:EURUSD" to
+                            listOf(
+                                com.qkt.positions.Position(
+                                    "EXNESS:EURUSD",
+                                    BigDecimal("0.01"),
+                                    BigDecimal("1.14196"),
+                                ),
+                            ),
+                    )
+
+                override fun positionTickets(): List<BrokerPositionTicket> =
+                    listOf(
+                        BrokerPositionTicket(
+                            ticket = "manual-1",
+                            symbol = "EXNESS:EURUSD",
+                            side = Side.BUY,
+                            qty = BigDecimal("0.01"),
+                            entryPrice = BigDecimal("1.14196"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = null,
+                            comment = "",
+                        ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("eurusd_ny_fv_fade" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:EURUSD"),
+                clock = FixedClock(time = 0L),
+                brokerFactories = mapOf("exness" to factory),
+            )
+
+        val ex = catchThrowable { session.start() }
+        assertThat(ex).isInstanceOf(ReconcileException::class.java)
+        assertThat(ex.message).contains("no persisted state")
+    }
+
+    @Test
+    fun `startup reconcile falls back to global positions when ticket read fails`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("eurusd" to HubKey(broker = "EXNESS", symbol = "EURUSD", timeframe = "5m")),
+            )
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:EURUSD" to
+                            listOf(
+                                com.qkt.positions.Position(
+                                    "EXNESS:EURUSD",
+                                    BigDecimal("0.01"),
+                                    BigDecimal("1.14196"),
+                                ),
+                            ),
+                    )
+
+                override fun positionTickets(): List<BrokerPositionTicket> = error("ticket endpoint unavailable")
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("eurusd_ny_fv_fade" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:EURUSD"),
+                clock = FixedClock(time = 0L),
+                brokerFactories = mapOf("exness" to factory),
+            )
+
+        val ex = catchThrowable { session.start() }
+        assertThat(ex).isInstanceOf(ReconcileException::class.java)
+        assertThat(ex.message).contains("no persisted state")
+    }
+
+    @Test
+    fun `startup reconcile attaches a ticket owned by the current strategy`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("eurusd" to HubKey(broker = "EXNESS", symbol = "EURUSD", timeframe = "5m")),
+            )
+        val persistor = NoopStatePersistor()
+        val book = LegBook("EXNESS:EURUSD")
+        book.add(
+            PositionLeg(
+                legId = "eurusd_ny_probe_fade-primary",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.01"),
+                entryPrice = BigDecimal("1.14196"),
+                openedAt = 1_700_000_000_000L,
+                role = LegRole.PRIMARY,
+                brokerTicket = "2981476451",
+            ),
+        )
+        persistor.saveLegBook("eurusd_ny_probe_fade", "EXNESS:EURUSD", book)
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:EURUSD" to
+                            listOf(
+                                com.qkt.positions.Position(
+                                    "EXNESS:EURUSD",
+                                    BigDecimal("0.01"),
+                                    BigDecimal("1.14196"),
+                                ),
+                            ),
+                    )
+
+                override fun positionTickets(): List<BrokerPositionTicket> =
+                    listOf(
+                        BrokerPositionTicket(
+                            ticket = "2981476451",
+                            symbol = "EXNESS:EURUSD",
+                            side = Side.BUY,
+                            qty = BigDecimal("0.01"),
+                            entryPrice = BigDecimal("1.14196"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = null,
+                            comment = "dsl-eurusd_ny_pr",
+                        ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("eurusd_ny_probe_fade" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:EURUSD"),
+                clock = FixedClock(time = 1_700_000_100_000L),
+                brokerFactories = mapOf("exness" to factory),
+                persistor = persistor,
+            )
+
+        val handle = session.start()
+        assertThat(handle.dailySummaryRows().single().positionsSummary)
+            .contains("long 0.01")
+            .contains("EXNESS:EURUSD")
         handle.stop()
         handle.awaitTermination(java.time.Duration.ofSeconds(2))
     }
