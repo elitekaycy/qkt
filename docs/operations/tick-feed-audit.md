@@ -92,7 +92,33 @@ multiple runs over time.
 
 ## Latest result
 
-**Preliminary MT5 path-integrity run — not sufficient to close #54 (2026-07-12).**
+**Representative London-hours MT5 path-integrity run — acceptance met
+(2026-07-20).**
+
+The scheduled bot1 audit ran from `2026-07-20T11:00:10.187Z` through
+`11:10:10.337Z` using the deployed Livebook image
+`ghcr.io/elitekaycy/qkt:sha-fc28a2a` (QKT revision
+`fc28a2afac84ba6c51d0fb480357bc42772a1c3e`, local container image ID
+`sha256:7222f9ec800267212247234b56527248e744a3618dbb908aa87e9a0598ef1fbe`).
+It polled `XAUUSDm` every 250 ms for 600 seconds and allowed 15000 ms for
+history settlement.
+
+The audit made 1970 polls and observed 852 unique live ticks. MT5 history
+returned 1888 ticks for the window; all 852 live ticks had exact timestamp and
+bid/ask matches (`exact_match_ratio=1`). Missing, mismatched, and invalid-live
+counts were all zero. Quote age was 499 ms median, 1191 ms p95, and 2221 ms
+maximum. Spread was 0.24 median and 0.240 maximum. The command exited zero with
+`passed=true`.
+
+The persisted artifact is
+`/opt/qkt/state/audits/XAUUSD-london-20260720T1100Z.json`; its SHA-256 is
+`bf75d27c6f5e6a7816c863ac7fb50da164291eccbde26db99f28f0b5a7f3f0a1`.
+The adjacent log, exit-status, image-ref, and image-digest files preserve the
+operator and runtime evidence. This liquid-hours result establishes zero
+observed drift between the live MT5 endpoint and raw MT5 history for the
+production path and satisfies #54.
+
+### Preliminary Sunday-open validation (2026-07-12)
 
 A read-only bot1 run sampled `AUDUSDm` for 120 seconds at 250 ms during the quiet
 Sunday-open window. It observed 15 new in-window venue ticks; all 15 appeared in
@@ -138,4 +164,4 @@ on, run the cross-source mode from a host TradingView will serve.
 
 | date | symbol | duration | samples | mean | median | p95 | max | notes |
 |------|--------|----------|---------|------|--------|-----|-----|-------|
-|      |        |          |         |      |        |     |     |       |
+| 2026-07-20 | XAUUSD | 600 s | 852 | 0 | 0 | 0 | 0 | MT5 live/history exact 852/852; quote-age p95 1191 ms; spread 0.240 max |
