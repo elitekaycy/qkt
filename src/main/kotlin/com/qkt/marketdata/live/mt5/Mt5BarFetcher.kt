@@ -4,6 +4,7 @@ import com.qkt.broker.mt5.MT5ServerTimeZone
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
+import java.time.Instant
 import okhttp3.OkHttpClient
 
 /**
@@ -12,6 +13,11 @@ import okhttp3.OkHttpClient
  * Translates qkt [TimeWindow] (e.g. 5m → "M5") and [TimeRange] (Instant from/to) into
  * the wire format the gateway expects (naive ISO without zone designator). Bar responses
  * are normalized from broker wall time to UTC using [serverTimeZone].
+ *
+ * The gateway rejects a single `fetch_data_range` spanning more than 31 days, but warmup
+ * on higher timeframes needs longer history (e.g. 4h × 250 bars ≈ 42 days). The range is
+ * therefore fetched in [MAX_CHUNK_DAYS]-day windows and concatenated; each chunk is
+ * filtered to its own half-open window so a bar on a chunk boundary is not double-counted.
  */
 class Mt5BarFetcher(
     private val baseUrl: String,
@@ -28,14 +34,6 @@ class Mt5BarFetcher(
         range: TimeRange,
     ): Sequence<Candle> {
         val tf = windowToTimeframe(window)
-        val startIso =
-            serverTimeZone
-                .toServerLocal(range.from)
-                .toString()
-        val endIso =
-            serverTimeZone
-                .toServerLocal(range.to)
-                .toString()
         val client = Mt5DataClient(baseUrl, http, serverTimeZone, apiKey)
         val midPoint =
             if (normalizeBidBarsToMid) {
@@ -47,16 +45,37 @@ class Mt5BarFetcher(
             } else {
                 null
             }
-        // The gateway includes the currently-open bar when `end` lands inside it;
-        // match Bybit / TradingView / Local boundary semantics so consumers never
-        // see an unclosed bar.
         val fromMs = range.from.toEpochMilli()
         val toMs = range.to.toEpochMilli()
-        return client
-            .fetchBarsByRange(symbol, tf, startIso, endIso, midPoint)
+        return chunkBoundaries(fromMs, toMs)
             .asSequence()
-            .filter { it.startTime in fromMs until toMs }
+            .flatMap { (chunkFromMs, chunkToMs) ->
+                val startIso = serverTimeZone.toServerLocal(Instant.ofEpochMilli(chunkFromMs)).toString()
+                val endIso = serverTimeZone.toServerLocal(Instant.ofEpochMilli(chunkToMs)).toString()
+                client
+                    .fetchBarsByRange(symbol, tf, startIso, endIso, midPoint)
+                    .asSequence()
+                    // The gateway includes the currently-open bar when `end` lands inside it;
+                    // clamp to this chunk's half-open window so consumers never see an unclosed
+                    // bar and adjacent chunks don't both emit the boundary bar.
+                    .filter { it.startTime in chunkFromMs until chunkToMs }
+            }
     }
+
+    /** Contiguous half-open [from, to) sub-ranges of at most [MAX_CHUNK_DAYS] each. */
+    private fun chunkBoundaries(
+        fromMs: Long,
+        toMs: Long,
+    ): List<Pair<Long, Long>> =
+        buildList {
+            val chunkMs = MAX_CHUNK_DAYS * 86_400_000L
+            var start = fromMs
+            while (start < toMs) {
+                val end = minOf(start + chunkMs, toMs)
+                add(start to end)
+                start = end
+            }
+        }
 
     private fun windowToTimeframe(window: TimeWindow): String =
         when (window.durationMs) {
@@ -69,4 +88,9 @@ class Mt5BarFetcher(
             86_400_000L -> "D1"
             else -> error("Unsupported MT5 timeframe: ${window.durationMs}ms")
         }
+
+    private companion object {
+        /** Gateway rejects a `fetch_data_range` wider than 31 days; stay safely under. */
+        const val MAX_CHUNK_DAYS = 30L
+    }
 }
