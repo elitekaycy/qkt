@@ -35,10 +35,14 @@ Optional environment variables have safe defaults:
 - `QKT_EXNESS_MAGIC=10001`
 - `TELEGRAM_ENABLED=false`
 - `QKT_ALERTS_WAIVER_REASON=` (set only if you intentionally run without alerts)
+- `QKT_STARTING_BALANCE=50000` (must match broker account balance at deploy)
 - `QKT_MAX_DAILY_LOSS=100`
 - `QKT_MAX_ORDER_QTY=1`
 - `QKT_MAX_ORDER_NOTIONAL=50000`
 - `QKT_PRICE_COLLAR_PCT=5`
+- `QKT_MAX_DRAWDOWN_PCT=10`
+- `QKT_MAX_DAILY_DRAWDOWN_PCT=5`
+- `QKT_MEASURED_USAGE_HOURS=24`
 - `QKT_INSIGHTS_ENABLED=false`
 - `COMPOSE_PROFILES=insights` when `QKT_INSIGHTS_ENABLED=true`
 - `QKT_INSIGHTS_HOST_PORT=8420`

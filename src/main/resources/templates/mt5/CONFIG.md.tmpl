@@ -26,14 +26,20 @@ and the local MT5 gateway.
 The generated risk defaults are intentionally simple starting points:
 
 ```dotenv
+QKT_STARTING_BALANCE=50000
 QKT_MAX_DAILY_LOSS=100
 QKT_MAX_ORDER_QTY=1
 QKT_MAX_ORDER_NOTIONAL=50000
 QKT_PRICE_COLLAR_PCT=5
+QKT_MAX_DRAWDOWN_PCT=10
+QKT_MAX_DAILY_DRAWDOWN_PCT=5
+QKT_MEASURED_USAGE_HOURS=24
 ```
 
-Treat these as guardrails. Tighten or loosen them only after you understand the
-account size, instrument contract sizes, and strategy sizing.
+`QKT_STARTING_BALANCE` must match the broker account balance at deploy time;
+drawdown limits are calculated from this baseline. Treat these as guardrails.
+Tighten or loosen them only after you understand the account size, instrument
+contract sizes, and strategy sizing.
 
 ## docker-compose.yml
 
@@ -71,11 +77,17 @@ The `risk:` block controls account-level safety limits. The values are expanded
 from `.env`, so operators can change limits without editing YAML:
 
 ```yaml
+starting_balance: ${QKT_STARTING_BALANCE:-50000}
 risk:
   max_daily_loss: ${QKT_MAX_DAILY_LOSS}
   max_order_qty: ${QKT_MAX_ORDER_QTY}
   max_order_notional: ${QKT_MAX_ORDER_NOTIONAL}
   price_collar_pct: ${QKT_PRICE_COLLAR_PCT}
+  max_drawdown_pct: ${QKT_MAX_DRAWDOWN_PCT:-10}
+  max_daily_drawdown_pct: ${QKT_MAX_DAILY_DRAWDOWN_PCT:-5}
+  total_dd_basis: static
+  daily_dd_basis: balance
+  measured_usage_hours: ${QKT_MEASURED_USAGE_HOURS:-24}
 ```
 
 The `brokers.exness` block tells QKT to send orders to the local MT5 gateway.

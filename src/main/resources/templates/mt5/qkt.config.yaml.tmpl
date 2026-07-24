@@ -11,6 +11,8 @@ source: local
 state:
   enabled: true
 
+starting_balance: ${QKT_STARTING_BALANCE:-50000}
+
 runtime:
   mode: production
   waivers:
@@ -22,6 +24,15 @@ risk:
   max_order_qty: ${QKT_MAX_ORDER_QTY}
   max_order_notional: ${QKT_MAX_ORDER_NOTIONAL}
   price_collar_pct: ${QKT_PRICE_COLLAR_PCT}
+  # FTMO-style box defaults: 10% total / 5% daily from the static starting balance.
+  # Tighten these to your prop-firm or account rules before real capital.
+  max_drawdown_pct: ${QKT_MAX_DRAWDOWN_PCT:-10}
+  max_daily_drawdown_pct: ${QKT_MAX_DAILY_DRAWDOWN_PCT:-5}
+  total_dd_basis: static
+  daily_dd_basis: balance
+  # Safe-rollout ramp: for this many hours after deploy, entries above 0.01 lots
+  # reject. Default 24 for real capital; set 0 to trade full size immediately.
+  measured_usage_hours: ${QKT_MEASURED_USAGE_HOURS:-24}
 
 brokers:
   exness:
