@@ -42,6 +42,7 @@ jobs:
       QKT_MAX_ORDER_NOTIONAL: ${{ vars.QKT_MAX_ORDER_NOTIONAL || '50000' }}
       QKT_PRICE_COLLAR_PCT: ${{ vars.QKT_PRICE_COLLAR_PCT || '5' }}
       QKT_INSIGHTS_ENABLED: ${{ vars.QKT_INSIGHTS_ENABLED || 'false' }}
+      QKT_INSIGHTS_BIND_HOST: ${{ vars.QKT_INSIGHTS_BIND_HOST || '127.0.0.1' }}
       QKT_INSIGHTS_HOST_PORT: ${{ vars.QKT_INSIGHTS_HOST_PORT || '8420' }}
       QKT_INSIGHTS_IMAGE: ${{ vars.QKT_INSIGHTS_IMAGE || 'ghcr.io/elitekaycy/qkt-insights:latest' }}
       QKT_INSIGHTS_INSTANCE_ID: ${{ vars.QKT_INSIGHTS_INSTANCE_ID || 'qkt-mt5' }}
@@ -107,6 +108,7 @@ jobs:
             else
               printf 'COMPOSE_PROFILES=\n'
             fi
+            printf 'QKT_INSIGHTS_BIND_HOST=%s\n' "$QKT_INSIGHTS_BIND_HOST"
             printf 'QKT_INSIGHTS_HOST_PORT=%s\n' "$QKT_INSIGHTS_HOST_PORT"
             printf 'QKT_INSIGHTS_IMAGE=%s\n' "$QKT_INSIGHTS_IMAGE"
             printf 'QKT_INSIGHTS_INSTANCE_ID=%s\n' "$QKT_INSIGHTS_INSTANCE_ID"
