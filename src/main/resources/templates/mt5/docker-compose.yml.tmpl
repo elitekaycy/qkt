@@ -11,7 +11,7 @@ services:
     restart: "no"
 
   mt5-gateway:
-    image: ${MT5_GATEWAY_IMAGE:-elitekaycy/mt5-gateway-api:0.3.2}
+    image: ${MT5_GATEWAY_IMAGE:-elitekaycy/mt5-gateway-api:0.3.5}
     restart: unless-stopped
     depends_on:
       init-perms:

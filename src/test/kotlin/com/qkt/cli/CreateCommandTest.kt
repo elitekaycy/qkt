@@ -87,7 +87,7 @@ class CreateCommandTest {
         invoke("create", "template", target.toString())
         val envContent = Files.readString(target.resolve(".env.example"))
         assertThat(envContent).contains("QKT_IMAGE_TAG=v${BuildInfo.VERSION}")
-        assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.2")
+        assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.5")
         assertThat(envContent).contains("Required: headless MT5 login")
         assertThat(envContent).contains("Usually keep defaults")
         assertThat(envContent).contains("Diagnostic fallback only")
@@ -258,9 +258,15 @@ class CreateCommandTest {
         val workflow = Files.readString(target.resolve(".github/workflows/deploy.yml"))
         assertThat(workflow).contains("environment: production")
         assertThat(workflow).contains("\${{ secrets.MT5_PASSWORD }}")
-        assertThat(workflow).contains("printf 'QKT_IMAGE_TAG=v%s")
-        assertThat(workflow).contains("'${BuildInfo.VERSION}'")
-        assertThat(workflow).contains("MT5_GATEWAY_IMAGE=%s\\n' 'elitekaycy/mt5-gateway-api:0.3.2'")
+        assertThat(workflow)
+            .contains("QKT_IMAGE_TAG: \${{ vars.QKT_IMAGE_TAG || 'v${BuildInfo.VERSION}' }}")
+        assertThat(workflow)
+            .contains(
+                "MT5_GATEWAY_IMAGE: \${{ vars.MT5_GATEWAY_IMAGE || " +
+                    "'elitekaycy/mt5-gateway-api:0.3.5' }}",
+            )
+        assertThat(workflow).contains("printf 'QKT_IMAGE_TAG=%s\\n' \"\$QKT_IMAGE_TAG\"")
+        assertThat(workflow).contains("printf 'MT5_GATEWAY_IMAGE=%s\\n' \"\$MT5_GATEWAY_IMAGE\"")
         assertThat(workflow)
             .contains(
                 "MT5_VNC_PASSWORD: \${{ secrets.MT5_VNC_PASSWORD || vars.MT5_VNC_PASSWORD || 'changeme' }}",
