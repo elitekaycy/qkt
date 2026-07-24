@@ -340,6 +340,8 @@ class DaemonCommand(
                     measuredUsageHours = cfg.measuredUsageHours,
                     measuredUsageMaxQty = cfg.measuredUsageMaxQty,
                     persistor = statePersistor,
+                    journalRoot = stateDir.stateRoot.resolve("journal"),
+                    auditJournalRoot = stateDir.stateRoot.resolve("audit-journal"),
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
