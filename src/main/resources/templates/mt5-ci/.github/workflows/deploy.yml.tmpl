@@ -143,9 +143,10 @@ jobs:
           for file in "${strategies[@]}"; do
             target="/strategies/$(basename "$file")"
             docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt parse "$target"
-            # Production preflight performs the full AstCompiler pass before broker checks.
+            # Offline preflight performs parse/compile/symbol/risk checks without reaching
+            # the live gateway; broker/account validation happens host-side after compose up.
             docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt preflight "$target" \
-              --production --config /etc/qkt/qkt.config.yaml --state-dir /tmp/qkt-preflight-state
+              --offline --production --config /etc/qkt/qkt.config.yaml --state-dir /tmp/qkt-preflight-state
           done
 
       - name: Deploy atomically
