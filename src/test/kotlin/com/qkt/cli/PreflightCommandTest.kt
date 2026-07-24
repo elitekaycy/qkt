@@ -224,6 +224,67 @@ class PreflightCommandTest {
     }
 
     @Test
+    fun `offline preflight skips broker gateway checks without connecting`(
+        @TempDir tmp: Path,
+    ) {
+        val strategy = tmp.resolve("s.qkt")
+        Files.writeString(
+            strategy,
+            """
+            STRATEGY s VERSION 1
+            SYMBOLS
+                eur = EXNESS:EURUSD EVERY 1m
+            RULES
+                WHEN eur.close > 0 THEN BUY eur SIZING 0.1
+            """.trimIndent(),
+        )
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            runtime:
+              mode: production
+              waivers:
+                alerts:
+                  reason: "integration test"
+            account:
+              currency: USD
+            risk:
+              max_daily_loss: 100
+            brokers:
+              exness:
+                type: mt5
+                gateway_url: http://unreachable-gateway:9999
+                retry_attempts: 0
+            """.trimIndent(),
+        )
+
+        val onlineChecks =
+            ProductionPreflight.evaluate(
+                configPath = cfg,
+                stateDir = StateDir.resolve(tmp.resolve("state-online").toString()),
+                strategyPath = strategy,
+            )
+        assertThat(onlineChecks.single { it.name == "broker.gateway.exness" }.status)
+            .isEqualTo(PreflightStatus.FAIL)
+
+        val offlineChecks =
+            ProductionPreflight.evaluate(
+                configPath = cfg,
+                stateDir = StateDir.resolve(tmp.resolve("state-offline").toString()),
+                strategyPath = strategy,
+                offline = true,
+            )
+        assertThat(offlineChecks.single { it.name == "broker.gateway.exness" }).satisfies(
+            { check ->
+                assertThat(check.status).isEqualTo(PreflightStatus.WARN)
+                assertThat(check.detail).contains("offline")
+            },
+        )
+        assertThat(offlineChecks.none { it.status == PreflightStatus.FAIL }).isTrue()
+    }
+
+    @Test
     fun `production preflight fails when enabled telegram lacks credentials`(
         @TempDir tmp: Path,
     ) {
