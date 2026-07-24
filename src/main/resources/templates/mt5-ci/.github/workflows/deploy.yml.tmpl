@@ -41,10 +41,14 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       QKT_ALERTS_WAIVER_REASON: ${{ vars.QKT_ALERTS_WAIVER_REASON || '' }}
+      QKT_STARTING_BALANCE: ${{ vars.QKT_STARTING_BALANCE || '50000' }}
       QKT_MAX_DAILY_LOSS: ${{ vars.QKT_MAX_DAILY_LOSS || '100' }}
       QKT_MAX_ORDER_QTY: ${{ vars.QKT_MAX_ORDER_QTY || '1' }}
       QKT_MAX_ORDER_NOTIONAL: ${{ vars.QKT_MAX_ORDER_NOTIONAL || '50000' }}
       QKT_PRICE_COLLAR_PCT: ${{ vars.QKT_PRICE_COLLAR_PCT || '5' }}
+      QKT_MAX_DRAWDOWN_PCT: ${{ vars.QKT_MAX_DRAWDOWN_PCT || '10' }}
+      QKT_MAX_DAILY_DRAWDOWN_PCT: ${{ vars.QKT_MAX_DAILY_DRAWDOWN_PCT || '5' }}
+      QKT_MEASURED_USAGE_HOURS: ${{ vars.QKT_MEASURED_USAGE_HOURS || '24' }}
       QKT_INSIGHTS_ENABLED: ${{ vars.QKT_INSIGHTS_ENABLED || 'false' }}
       QKT_INSIGHTS_BIND_HOST: ${{ vars.QKT_INSIGHTS_BIND_HOST || '127.0.0.1' }}
       QKT_INSIGHTS_HOST_PORT: ${{ vars.QKT_INSIGHTS_HOST_PORT || '8420' }}
@@ -104,10 +108,14 @@ jobs:
             printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
             printf 'TELEGRAM_CHAT_ID=%s\n' "$TELEGRAM_CHAT_ID"
             printf 'QKT_ALERTS_WAIVER_REASON=%s\n' "$QKT_ALERTS_WAIVER_REASON"
+            printf 'QKT_STARTING_BALANCE=%s\n' "$QKT_STARTING_BALANCE"
             printf 'QKT_MAX_DAILY_LOSS=%s\n' "$QKT_MAX_DAILY_LOSS"
             printf 'QKT_MAX_ORDER_QTY=%s\n' "$QKT_MAX_ORDER_QTY"
             printf 'QKT_MAX_ORDER_NOTIONAL=%s\n' "$QKT_MAX_ORDER_NOTIONAL"
             printf 'QKT_PRICE_COLLAR_PCT=%s\n' "$QKT_PRICE_COLLAR_PCT"
+            printf 'QKT_MAX_DRAWDOWN_PCT=%s\n' "$QKT_MAX_DRAWDOWN_PCT"
+            printf 'QKT_MAX_DAILY_DRAWDOWN_PCT=%s\n' "$QKT_MAX_DAILY_DRAWDOWN_PCT"
+            printf 'QKT_MEASURED_USAGE_HOURS=%s\n' "$QKT_MEASURED_USAGE_HOURS"
             printf 'QKT_INSIGHTS_ENABLED=%s\n' "$QKT_INSIGHTS_ENABLED"
             if [ "$QKT_INSIGHTS_ENABLED" = "true" ]; then
               printf 'COMPOSE_PROFILES=%s\n' 'insights'
