@@ -277,7 +277,7 @@ class CreateCommandTest {
         assertThat(workflow).contains("QKT_INSIGHTS_INGEST_TOKEN")
         assertThat(workflow).contains("docker compose --env-file .env config --quiet")
         assertThat(workflow).contains("Parse, compile, and preflight QKT strategies")
-        assertThat(workflow).contains("Production preflight performs the full AstCompiler pass")
+        assertThat(workflow).contains("Offline preflight performs parse/compile/symbol/risk checks")
         assertThat(workflow).contains("qkt parse \"\$target\"")
         assertThat(workflow).contains("qkt preflight \"\$target\"")
         assertThat(workflow).contains("--state-dir /tmp/qkt-preflight-state")
