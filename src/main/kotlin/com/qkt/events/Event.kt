@@ -73,6 +73,19 @@ data class RiskRejectedEvent(
     override val sequenceId: Long = 0L,
 ) : Event
 
+/**
+ * Emitted when a strategy signal is dropped before it becomes an order — e.g. its
+ * portfolio child gate is inactive or an operator stop is in force. Without this event
+ * such drops leave no trace at all (no order exists yet, so no [RiskRejectedEvent] fires).
+ */
+data class SignalSuppressedEvent(
+    val signal: Signal,
+    val strategyId: String,
+    val reason: String,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event
+
 /** A broker-acknowledged fill. P&L attribution and position tracking consume these. */
 data class TradeEvent(
     val trade: Trade,
