@@ -189,6 +189,12 @@ class LiveSession(
      */
     private val startingBalances: Map<String, java.math.BigDecimal> = emptyMap(),
     /**
+     * Balance of the portfolio book this session's strategies trade inside (CAPITAL +
+     * realized PnL of every child), bound by [com.qkt.cli.daemon.portfolio.PortfolioDeployer];
+     * null for standalone deploys. Read by `SIZING … RISK OF BOOK`.
+     */
+    private val bookBalance: com.qkt.pnl.BookBalanceView? = null,
+    /**
      * Injectable event bus for tests that need to observe bus events (e.g. [com.qkt.events.RiskEvent]).
      * When `null` (the default), [start] constructs its own bus — the normal production path.
      * e.g. test passes a bus, subscribes to [com.qkt.events.RiskEvent.Halted], calls
@@ -1215,6 +1221,7 @@ class LiveSession(
                 pacerCooldownDurationMs = perStrategyCooldownAfterLossMs,
                 pacerCooldownAfterConsecutive = perStrategyCooldownAfterLossAfterConsecutive,
                 bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: java.math.BigDecimal.ONE },
+                bookBalance = bookBalance,
                 mode = Mode.LIVE,
                 calendar = calendar,
                 source = source,

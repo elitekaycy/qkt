@@ -138,6 +138,12 @@ class TradingPipeline(
      * [com.qkt.research.ReplayEngine] from the shared book-risk controller.
      */
     private val bookScaleFor: (String) -> BigDecimal = { BigDecimal.ONE },
+    /**
+     * Balance of the portfolio book these strategies trade inside (CAPITAL + realized PnL
+     * of every child); read by `SIZING … RISK OF BOOK`. Null outside a portfolio deploy —
+     * a strategy that needs it then fails at deploy via the capability check, not at signal.
+     */
+    private val bookBalance: com.qkt.pnl.BookBalanceView? = null,
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
     private val exitHookManager = ExitHookManager(persistor)
@@ -280,6 +286,7 @@ class TradingPipeline(
                             pacerCooldownDurationMsFor?.invoke(strategyId) ?: pacerCooldownDurationMs,
                             pacerCooldownAfterConsecutiveFor?.invoke(strategyId) ?: pacerCooldownAfterConsecutive,
                         ),
+                    book = bookBalance,
                 )
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 val t0 = if (latencyEnabled) System.nanoTime() else 0L
@@ -332,6 +339,7 @@ class TradingPipeline(
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
                 requireMultiPositionCapability(strategyId, strategy)
                 requireVolumeCapability(strategyId, strategy)
+                requireBookCapability(strategyId, strategy)
                 strategy.bindStatePersistor(strategyId, persistor)
                 val hubKeys = strategy.declaredStreams.values.toSet() + strategy.retentionByKey.keys
                 for (key in hubKeys) {
@@ -765,6 +773,16 @@ class TradingPipeline(
      * behind an injected-tick backtest) carries no judgment about volume. Per-symbol via
      * [com.qkt.marketdata.source.MarketSource.capabilitiesFor] so routing across a basket is honored.
      */
+    private fun requireBookCapability(
+        strategyId: String,
+        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
+    ) {
+        require(!strategy.usesBookSizing || bookBalance != null) {
+            "Strategy '$strategyId' sizes with RISK OF BOOK but no portfolio book is bound — " +
+                "deploy it as a child of a PORTFOLIO with CAPITAL, or use RISK/PCT RISK sizing"
+        }
+    }
+
     private fun requireVolumeCapability(
         strategyId: String,
         strategy: com.qkt.dsl.compile.DslCompiledStrategy,
