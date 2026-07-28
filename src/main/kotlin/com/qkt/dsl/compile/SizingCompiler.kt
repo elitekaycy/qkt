@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import java.math.BigDecimal
 
@@ -34,6 +35,13 @@ fun CompiledSize.evaluate(
 class SizingCompiler(
     private val exprCompiler: ExprCompiler,
 ) {
+    /**
+     * True once any sizing compiled through this instance was `RISK … OF BOOK`. Deploy
+     * paths read it to fail closed when no book is bound (a standalone deploy has none).
+     */
+    var compiledBookSizing: Boolean = false
+        private set
+
     /**
      * Compiles [sizing]. Risk-based forms require either a positive [stopDistance] known now or
      * [runtimeStopDistanceAvailable] when a bracket will provide the resolved distance later.
@@ -111,6 +119,28 @@ class SizingCompiler(
                     val equity = ec.strategyContext.pnl.equity()
                     val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
                     equity
+                        .multiply(frac, Money.CONTEXT)
+                        .divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
+                }
+            }
+            is SizeRiskFracOfBook -> {
+                compiledBookSizing = true
+                val staticStopDistance = stopDistance?.takeIf { it.signum() > 0 }
+                require(staticStopDistance != null || runtimeStopDistanceAvailable) {
+                    "SIZING RISK <fraction> OF BOOK requires a resolvable stop distance via BRACKET STOP LOSS"
+                }
+                val e = exprCompiler.compile(sizing.frac)
+                CompiledSize { ec, entry, runtimeStopDistance ->
+                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val book =
+                        ec.strategyContext.book
+                            ?: error(
+                                "SIZING RISK OF BOOK requires a portfolio deploy with CAPITAL; " +
+                                    "no book is bound for this strategy",
+                            )
+                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
+                    book
+                        .balance()
                         .multiply(frac, Money.CONTEXT)
                         .divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
                 }

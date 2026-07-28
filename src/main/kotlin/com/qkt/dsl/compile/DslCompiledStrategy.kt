@@ -57,6 +57,14 @@ interface DslCompiledStrategy : Strategy {
         get() = emptySet()
 
     /**
+     * True when any action sizes with `RISK … OF BOOK`. The runtime verifies a portfolio
+     * book is bound before the strategy goes live — a standalone deploy has no book, and
+     * failing at deploy beats erroring on the first signal. False for every other sizing.
+     */
+    val usesBookSizing: Boolean
+        get() = false
+
+    /**
      * Stream aliases whose conditions read quote fields (`bid`/`ask`/`spread`). These
      * evaluate Undefined unless the data source carries real quotes — bar-synthesized
      * backtest feeds do not, so spread-aware rules silently never fire there. The
