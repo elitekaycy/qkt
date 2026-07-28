@@ -74,6 +74,8 @@ class ReplayEngine(
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
     /** Optional per-strategy capital bases; absent ids inherit [startingBalance]. */
     private val startingBalances: Map<String, BigDecimal> = emptyMap(),
+    /** Portfolio CAPITAL for `RISK OF BOOK` sizing; null outside portfolio backtests. */
+    private val bookCapital: BigDecimal? = null,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     private val accountingConfig: AccountingConfig = AccountingConfig(),
     private val tradedSymbols: List<String> = symbols,
@@ -338,6 +340,15 @@ class ReplayEngine(
                 pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
                 pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
                 bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: BigDecimal.ONE },
+                // Same definition as the live PortfolioDeployer binding: CAPITAL + the sum of
+                // per-child realized (NOT the netted account realized, which diverges when
+                // children cross on one symbol) — sizing stays parity-exact.
+                bookBalance =
+                    bookCapital?.let { capital ->
+                        com.qkt.pnl.BookBalanceView {
+                            strategies.fold(capital) { acc, (id, _) -> acc.add(strategyPnL.realizedFor(id)) }
+                        }
+                    },
                 mode = Mode.BACKTEST,
                 calendar = calendar,
                 source = source,

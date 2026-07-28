@@ -65,6 +65,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackAtClause
@@ -219,6 +220,7 @@ internal object StrategyDataRequirementScanner {
                 is SizePctEquity -> walk(sizing.frac)
                 is SizePctBalance -> walk(sizing.frac)
                 is SizeRiskFrac -> walk(sizing.frac)
+                is SizeRiskFracOfBook -> walk(sizing.frac)
                 is SizeRiskAbs -> walk(sizing.usd)
                 is SizePositionFull, null -> Unit
             }

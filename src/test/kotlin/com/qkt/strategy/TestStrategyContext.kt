@@ -84,6 +84,7 @@ fun testStrategyContext(
     quoteToAccountRate: QuoteToAccountRateProvider = QuoteToAccountRateProvider.IDENTITY,
     tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
     pacer: PacerView = NoOpPacerView(),
+    book: com.qkt.pnl.BookBalanceView? = null,
 ): StrategyContext =
     StrategyContext(
         strategyId = strategyId,
@@ -98,4 +99,5 @@ fun testStrategyContext(
         quoteToAccountRate = quoteToAccountRate,
         tradeHistory = tradeHistory,
         pacer = pacer,
+        book = book,
     )

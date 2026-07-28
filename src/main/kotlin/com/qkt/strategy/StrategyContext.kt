@@ -5,6 +5,7 @@ import com.qkt.common.TradingCalendar
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.pnl.BookBalanceView
 import com.qkt.pnl.NoOpTradeHistoryView
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.pnl.TradeHistoryView
@@ -68,4 +69,9 @@ data class StrategyContext(
     val tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
     /** Per-strategy pacing state exposed to DSL via `TRADES.*` and `COOLDOWN.*`. */
     val pacer: PacerView = NoOpPacerView(),
+    /**
+     * Balance of the portfolio book this strategy trades inside (CAPITAL + realized PnL
+     * of every child); null outside a portfolio deploy. Read by `SIZING … RISK OF BOOK`.
+     */
+    val book: BookBalanceView? = null,
 )

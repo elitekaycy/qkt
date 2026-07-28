@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.QuoteToAccountRateProvider
 import com.qkt.strategy.testStrategyContext
@@ -242,5 +243,53 @@ class SizingCompilerTest {
     fun `SizePositionFull returns absolute quantity when flat`() {
         val s = compiler().compile(SizePositionFull("btc"), stopDistance = null, streamAlias = "btc")
         assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"))).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `SizeRiskFracOfBook sizes off the book balance not strategy equity`() {
+        // Book 50000, 1% risk = 500; stop distance 10, contract size 100 -> 500 / 1000 = 0.5.
+        // Strategy equity is 10000, which would give 0.1 — proving the book basis is used.
+        val bookEc =
+            EvalContext(
+                candle = ec.candle,
+                streams = ec.streams,
+                lets = ec.lets,
+                strategyContext =
+                    testStrategyContext(
+                        pnl = ecWithContractSize100.strategyContext.pnl,
+                        instruments = ecWithContractSize100.strategyContext.instruments,
+                        book = { BigDecimal("50000") },
+                    ),
+            )
+        val s =
+            compiler().compile(
+                SizeRiskFracOfBook(NumLit(BigDecimal("0.01"))),
+                stopDistance = BigDecimal("10"),
+                streamAlias = "btc",
+            )
+        assertThat(s.evaluate(bookEc, entryPrice = BigDecimal("100"))).isEqualByComparingTo("0.5")
+    }
+
+    @Test
+    fun `SizeRiskFracOfBook without a bound book fails with an actionable error`() {
+        val s =
+            compiler().compile(
+                SizeRiskFracOfBook(NumLit(BigDecimal("0.01"))),
+                stopDistance = BigDecimal("10"),
+                streamAlias = "btc",
+            )
+        assertThatThrownBy { s.evaluate(ecWithContractSize100, entryPrice = BigDecimal("100")) }
+            .hasMessageContaining("portfolio deploy")
+    }
+
+    @Test
+    fun `SizeRiskFracOfBook without stop distance errors at compile time`() {
+        assertThatThrownBy {
+            compiler().compile(
+                SizeRiskFracOfBook(NumLit(BigDecimal("0.01"))),
+                stopDistance = null,
+                streamAlias = "btc",
+            )
+        }.hasMessageContaining("BRACKET STOP LOSS")
     }
 }
