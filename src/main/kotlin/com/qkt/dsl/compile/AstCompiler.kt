@@ -847,8 +847,33 @@ private class CompiledStrategy(
             )
         for (rule in aliasRules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
-            for (sig in rule.fire(ec, ctx)) emit(sig)
+            fireAndCommit(rule, ec, ctx, emit)
         }
+    }
+
+    /**
+     * Fires [rule] and seals its edge from the submission outcome: an edge whose signals
+     * were all recorded as suppressed (none accepted) re-arms and may fire again next
+     * bar; anything else — an accepted signal, a signal-less fire, or a consumer that
+     * records no outcomes at all — consumes the edge. See [CompiledRule.commitFire].
+     */
+    private fun fireAndCommit(
+        rule: CompiledRule,
+        ec: EvalContext,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        val fired = rule.fire(ec, ctx)
+        if (fired.isEmpty()) {
+            rule.commitFire(true)
+            return
+        }
+        val acceptedBefore = ctx.submissions.accepted
+        val suppressedBefore = ctx.submissions.suppressed
+        for (sig in fired) emit(sig)
+        val anyAccepted = ctx.submissions.accepted > acceptedBefore
+        val anySuppressed = ctx.submissions.suppressed > suppressedBefore
+        rule.commitFire(anyAccepted || !anySuppressed)
     }
 
     // Symbol-keyed view of tick-fed indicator bindings, built on first tick — most strategies
@@ -948,7 +973,7 @@ private class CompiledStrategy(
         // 6. Rules
         for (rule in rules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
-            for (sig in rule.fire(ec, ctx)) emit(sig)
+            fireAndCommit(rule, ec, ctx, emit)
         }
         sequenceRuntime.afterRulePass()
     }
