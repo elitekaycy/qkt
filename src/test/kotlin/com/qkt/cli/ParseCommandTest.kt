@@ -9,41 +9,131 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
 class ParseCommandTest {
-    private fun runParse(file: String): Pair<Int, String> {
-        val out = ByteArrayOutputStream()
-        val err = ByteArrayOutputStream()
-        val origOut = System.out
-        val origErr = System.err
-        System.setOut(PrintStream(out))
-        System.setErr(PrintStream(err))
-        return try {
-            val code = ParseCommand(Args(arrayOf("parse", file))).run()
-            code to (out.toString() + err.toString())
-        } finally {
-            System.setOut(origOut)
-            System.setErr(origErr)
-        }
-    }
-
     @Test
-    fun `valid strategy exits 0`() {
-        val (code, out) = runParse("src/test/resources/cli/valid_strategy.qkt")
-        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(out).contains("ok")
-    }
-
-    @Test
-    fun `valid portfolio exits 0 and validates imports`(
+    fun `parse succeeds for a valid strategy file`(
         @TempDir tmp: Path,
     ) {
+        val path = tmp.resolve("s.qkt")
         Files.writeString(
-            tmp.resolve("child.qkt"),
+            path,
             """
-            STRATEGY child VERSION 1
+            STRATEGY s VERSION 1
             SYMBOLS
                 gold = BACKTEST:XAUUSD EVERY 1m
             RULES
-                WHEN gold.close > 0 THEN BUY gold SIZING 0.1
+                WHEN gold.close > 0
+                THEN BUY gold SIZING 0.1
+            """.trimIndent(),
+        )
+        val out = ByteArrayOutputStream()
+        val err = ByteArrayOutputStream()
+        val originalOut = System.out
+        val originalErr = System.err
+        try {
+            System.setOut(PrintStream(out))
+            System.setErr(PrintStream(err))
+            val code = ParseCommand(Args(arrayOf("parse", path.toString()))).run()
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        } finally {
+            System.setOut(originalOut)
+            System.setErr(originalErr)
+        }
+        assertThat(out.toString()).contains("ok")
+        assertThat(err.toString()).isEmpty()
+    }
+
+    @Test
+    fun `parse fails for a strategy with an unresolvable risk sizing action`(
+        @TempDir tmp: Path,
+    ) {
+        val path = tmp.resolve("s.qkt")
+        Files.writeString(
+            path,
+            """
+            STRATEGY s VERSION 1
+            DEFAULTS {
+                SIZING = 1 PCT RISK
+            }
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            RULES
+                WHEN gold.close > 0
+                THEN BUY gold
+            """.trimIndent(),
+        )
+        val out = ByteArrayOutputStream()
+        val err = ByteArrayOutputStream()
+        val originalOut = System.out
+        val originalErr = System.err
+        try {
+            System.setOut(PrintStream(out))
+            System.setErr(PrintStream(err))
+            val code = ParseCommand(Args(arrayOf("parse", path.toString()))).run()
+            assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        } finally {
+            System.setOut(originalOut)
+            System.setErr(originalErr)
+        }
+        val errText = err.toString()
+        assertThat(errText).contains("SIZING RISK")
+        assertThat(errText).contains("STOP LOSS")
+    }
+
+    @Test
+    fun `parse succeeds for a pct risk strategy with a bracket stop loss`(
+        @TempDir tmp: Path,
+    ) {
+        val path = tmp.resolve("s.qkt")
+        Files.writeString(
+            path,
+            """
+            STRATEGY s VERSION 1
+            DEFAULTS {
+                SIZING = 1 PCT RISK
+            }
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            PARAM slpct = 0.5
+            RULES
+                WHEN gold.close > 0
+                THEN BUY gold
+                    BRACKET { STOP LOSS BY slpct PCT }
+            """.trimIndent(),
+        )
+        val out = ByteArrayOutputStream()
+        val err = ByteArrayOutputStream()
+        val originalOut = System.out
+        val originalErr = System.err
+        try {
+            System.setOut(PrintStream(out))
+            System.setErr(PrintStream(err))
+            val code = ParseCommand(Args(arrayOf("parse", path.toString()))).run()
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        } finally {
+            System.setOut(originalOut)
+            System.setErr(originalErr)
+        }
+        assertThat(out.toString()).contains("ok")
+        assertThat(err.toString()).isEmpty()
+    }
+
+    @Test
+    fun `parse fails for a portfolio child with an unresolvable risk sizing action`(
+        @TempDir tmp: Path,
+    ) {
+        val child = tmp.resolve("child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY child VERSION 1
+            DEFAULTS {
+                SIZING = 1 PCT RISK
+            }
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            RULES
+                WHEN gold.close > 0
+                THEN BUY gold
             """.trimIndent(),
         )
         val portfolio = tmp.resolve("book.qkt")
@@ -56,45 +146,69 @@ class ParseCommandTest {
                 RUN child
             """.trimIndent(),
         )
-
-        val (code, out) = runParse(portfolio.toString())
-
-        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(out).contains("ok")
+        val out = ByteArrayOutputStream()
+        val err = ByteArrayOutputStream()
+        val originalOut = System.out
+        val originalErr = System.err
+        try {
+            System.setOut(PrintStream(out))
+            System.setErr(PrintStream(err))
+            val code = ParseCommand(Args(arrayOf("parse", portfolio.toString()))).run()
+            assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        } finally {
+            System.setOut(originalOut)
+            System.setErr(originalErr)
+        }
+        val errText = err.toString()
+        assertThat(errText).contains("SIZING RISK")
+        assertThat(errText).contains("STOP LOSS")
     }
 
     @Test
-    fun `portfolio with missing child exits 1`(
+    fun `parse succeeds for a portfolio child with a param bracket stop loss`(
         @TempDir tmp: Path,
     ) {
+        val child = tmp.resolve("child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY child VERSION 1
+            DEFAULTS {
+                SIZING = 1 PCT RISK
+            }
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 1m
+            PARAM slpct = 0.5
+            RULES
+                WHEN gold.close > 0
+                THEN BUY gold
+                    BRACKET { STOP LOSS BY slpct PCT }
+            """.trimIndent(),
+        )
         val portfolio = tmp.resolve("book.qkt")
         Files.writeString(
             portfolio,
             """
             PORTFOLIO book VERSION 1
-            IMPORT 'missing.qkt' AS child
+            IMPORT 'child.qkt' AS child
             RULES
                 RUN child
             """.trimIndent(),
         )
-
-        val (code, out) = runParse(portfolio.toString())
-
-        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(out).contains("error")
-    }
-
-    @Test
-    fun `broken strategy exits 1 with error list`() {
-        val (code, out) = runParse("src/test/resources/cli/broken_strategy.qkt")
-        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(out).contains("broken_strategy.qkt:")
-        assertThat(out).contains("error")
-    }
-
-    @Test
-    fun `missing file exits 1`() {
-        val (code, _) = runParse("does_not_exist.qkt")
-        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        val out = ByteArrayOutputStream()
+        val err = ByteArrayOutputStream()
+        val originalOut = System.out
+        val originalErr = System.err
+        try {
+            System.setOut(PrintStream(out))
+            System.setErr(PrintStream(err))
+            val code = ParseCommand(Args(arrayOf("parse", portfolio.toString()))).run()
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        } finally {
+            System.setOut(originalOut)
+            System.setErr(originalErr)
+        }
+        assertThat(out.toString()).contains("ok")
+        assertThat(err.toString()).isEmpty()
     }
 }

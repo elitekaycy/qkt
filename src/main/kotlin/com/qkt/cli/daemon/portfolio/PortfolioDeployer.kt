@@ -69,6 +69,18 @@ class PortfolioDeployer(
         com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    /**
+     * Append-only order-event journal root. When non-null, every portfolio child writes
+     * its order lifecycle (including risk rejections) to `<root>/<strategy>/journal-*.jsonl`.
+     * Must match the journal wiring used by standalone [com.qkt.cli.daemon.StrategyHandle]
+     * so portfolio children have the same audit trail.
+     */
+    private val journalRoot: java.nio.file.Path? = null,
+    /**
+     * Append-only all-event engine audit journal root. When non-null, every portfolio child
+     * writes its full event stream to `<root>/<strategy>/audit-*.jsonl`.
+     */
+    private val auditJournalRoot: java.nio.file.Path? = null,
     /** Telegram alert sink shared across every portfolio child. Default discards events. */
     private val notifier: Notifier = NoopNotifier,
     private val notifyEvents: Set<NotifyEventKind> = emptySet(),
@@ -401,6 +413,14 @@ class PortfolioDeployer(
                 bookRiskController = bookController,
                 brokerFactories = brokerFactories,
                 persistor = persistor,
+                journal =
+                    journalRoot?.let {
+                        com.qkt.observe.OrderJournal(it, com.qkt.common.SystemClock())
+                    },
+                auditJournal =
+                    auditJournalRoot?.let {
+                        com.qkt.observe.EngineAuditJournal(it, compiledChild.strategyId, com.qkt.common.SystemClock())
+                    },
                 notifier = notifier,
                 notifyEvents = notifyEvents,
                 insightsSink = insightsSink,

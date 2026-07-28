@@ -39,6 +39,7 @@ object ProductionPreflight {
         stateDir: StateDir,
         strategyPath: Path? = null,
         forceProduction: Boolean = false,
+        offline: Boolean = false,
     ): List<PreflightCheck> {
         val cfg =
             try {
@@ -68,7 +69,7 @@ object ProductionPreflight {
         checks.add(riskCheck(cfg, production))
         checks.add(brokerConfigCheck(cfg, production))
         checks.add(brokerProfileCheck(cfg, production))
-        checks.addAll(brokerGatewayChecks(cfg, target, production))
+        checks.addAll(brokerGatewayChecks(cfg, target, production, offline))
         checks.add(alertsCheck(cfg, production))
         if (target != null) {
             checks.add(symbolMetadataCheck(target, production))
@@ -239,8 +240,18 @@ object ProductionPreflight {
         cfg: Config,
         target: PreflightTarget?,
         production: Boolean,
+        offline: Boolean,
     ): List<PreflightCheck> {
         val profiles = runCatching { resolveMt5Profiles(cfg) }.getOrElse { return emptyList() }
+        if (offline) {
+            return profiles.map { profile ->
+                PreflightCheck(
+                    "broker.gateway.${profile.name}",
+                    PreflightStatus.WARN,
+                    "offline: gateway reachability skipped",
+                )
+            }
+        }
         return profiles.map { profile ->
             val problems = mutableListOf<String>()
             if (production) {
@@ -448,6 +459,7 @@ class PreflightCommand(
                 stateDir = stateDir,
                 strategyPath = Path.of(strategy),
                 forceProduction = args.flag("production"),
+                offline = args.flag("offline"),
             )
         checks.forEach { println("${it.status.name} ${it.name}: ${it.detail}") }
         return if (checks.any { it.status == PreflightStatus.FAIL }) ExitCodes.USER_ERROR else ExitCodes.SUCCESS
