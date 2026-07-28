@@ -748,7 +748,9 @@ class MT5Client(
             attempt++
             if (attempt <= retryAttempts) Thread.sleep(200L * attempt)
         }
-        if (lastError != null) log.warn("MT5Client GET $url failed after $retryAttempts retries", lastError)
+        // Message-only: a refused/timed-out GET after retries is an expected operational
+        // condition; the okhttp stack adds no signal and floods test output (#879).
+        if (lastError != null) log.warn("MT5Client GET $url failed after $retryAttempts retries: ${lastError.message}")
         return null
     }
 
