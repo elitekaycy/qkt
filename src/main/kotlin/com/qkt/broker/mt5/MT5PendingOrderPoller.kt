@@ -65,6 +65,10 @@ class MT5PendingOrderPoller(
                     } catch (e: InterruptedException) {
                         Thread.currentThread().interrupt()
                         break
+                    } catch (e: java.io.IOException) {
+                        // Message-only: gateway unreachability is expected between retries;
+                        // the stack adds no signal and floods test output (#879).
+                        log.warn("MT5 pending-order poller for ${profile.name} tick failed: ${e.message}")
                     } catch (e: Exception) {
                         log.warn("MT5 pending-order poller for ${profile.name} tick failed", e)
                     }
