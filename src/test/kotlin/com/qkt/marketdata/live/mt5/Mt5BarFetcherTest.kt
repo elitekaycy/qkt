@@ -260,4 +260,48 @@ class Mt5BarFetcherTest {
             server.shutdown()
         }
     }
+
+    @Test
+    fun `warmup wider than the gateway's 31-day cap is fetched in 30-day chunks`() {
+        // 45-day 4h warmup exceeds the gateway's single-request 31-day limit, so it must
+        // arrive as two fetch_data_range calls: [Jan1, Jan31) then [Jan31, Feb15).
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"close":1,"high":1,"low":1,"open":1,"tick_volume":1,"time":"2026-01-05T00:00:00Z"}]""",
+                ),
+            )
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"close":2,"high":2,"low":2,"open":2,"tick_volume":1,"time":"2026-02-01T00:00:00Z"}]""",
+                ),
+            )
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSD",
+                        window = TimeWindow.parse("4h"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-01-01T00:00:00Z"),
+                                to = Instant.parse("2026-02-15T00:00:00Z"),
+                            ),
+                    ).toList()
+
+            assertThat(candles.map { it.startTime })
+                .containsExactly(
+                    Instant.parse("2026-01-05T00:00:00Z").toEpochMilli(),
+                    Instant.parse("2026-02-01T00:00:00Z").toEpochMilli(),
+                )
+            val first = server.takeRequest()
+            assertThat(first.path).contains("start=2026-01-01T00%3A00").contains("end=2026-01-31T00%3A00")
+            val second = server.takeRequest()
+            assertThat(second.path).contains("start=2026-01-31T00%3A00").contains("end=2026-02-15T00%3A00")
+        } finally {
+            server.shutdown()
+        }
+    }
 }
