@@ -1266,6 +1266,19 @@ class LiveSession(
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
+        // The pipeline logs a `submit …` context line before the risk decision; without a
+        // paired rejection line the log reads as if the order reached the venue (#876).
+        bus.subscribe<com.qkt.events.RiskRejectedEvent> { e ->
+            log.warn(
+                "risk rejected {} {} {} {} qty={}: {}",
+                e.request.strategyId,
+                e.request.id,
+                e.request.symbol,
+                e.request.side,
+                e.request.quantity.toPlainString(),
+                e.reason,
+            )
+        }
         journal?.let { wireJournal(bus, it) }
         auditJournal?.let { audit -> bus.subscribeAll { e -> audit.append(e) } }
 
