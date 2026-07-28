@@ -97,6 +97,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.SnapshotBuy
 import com.qkt.dsl.ast.SnapshotKind
@@ -1803,7 +1804,7 @@ class Parser(
                 if (match(TokenKind.DOLLAR)) {
                     SizeRiskAbs(parseExpr())
                 } else {
-                    SizeRiskFrac(parseExpr())
+                    riskFracWithOptionalBookBasis(parseExpr())
                 }
             }
             TokenKind.POSITION -> {
@@ -1834,7 +1835,7 @@ class Parser(
                             require(pct.signum() > 0) {
                                 "SIZING N PCT RISK requires N > 0, got $pct"
                             }
-                            SizeRiskFrac(percentToFraction(e))
+                            riskFracWithOptionalBookBasis(percentToFraction(e))
                         }
                     }
                     TokenKind.PERCENT -> {
@@ -1846,6 +1847,22 @@ class Parser(
                 }
             }
         }
+    }
+
+    /**
+     * `RISK <frac>` sizes off the strategy's own equity; an optional `OF BOOK` suffix
+     * re-bases it on the whole portfolio book (CAPITAL + realized PnL of every child).
+     * BOOK is matched as a contextual identifier, not a reserved keyword, so existing
+     * strategies may keep `book` as an alias or param name.
+     */
+    private fun riskFracWithOptionalBookBasis(frac: ExprAst): SizingAst {
+        if (peek().kind != TokenKind.OF) return SizeRiskFrac(frac)
+        advance()
+        val basis = advance()
+        require(basis.lexeme.uppercase() == "BOOK") {
+            "expected BOOK after OF in SIZING RISK, got '${basis.lexeme}'"
+        }
+        return SizeRiskFracOfBook(frac)
     }
 
     private fun parsePercentOf(e: ExprAst): SizingAst =

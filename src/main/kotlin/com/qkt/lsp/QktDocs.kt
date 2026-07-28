@@ -410,7 +410,9 @@ object QktDocs {
             "CLOSE" to "Action: close the position on a stream. `CLOSE <alias>`.",
             "FLATTEN" to "Action: close every open position for the strategy.",
             "SIZING" to "Position size for an entry: `SIZING <units>`, `SIZING RISK $ <amount>`, or `SIZING <pct>`.",
-            "RISK" to "Risk-based sizing: `SIZING RISK $ <amount>` sizes so the stop loses that amount.",
+            "RISK" to
+                "Risk-based sizing: `SIZING RISK $ <amount>` sizes so the stop loses that amount; " +
+                "`SIZING <N> PCT RISK [OF BOOK]` risks N% of strategy equity (or the portfolio book).",
             "STREAK" to "Trade-streak state namespace: `STREAK.wins`, `STREAK.losses`, `STREAK.banked`.",
             "BRACKET" to "Attaches a stop loss and/or take profit to an entry.",
             "ON_FILL" to

@@ -57,6 +57,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackEntryRef
@@ -141,6 +142,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
             is SizePctEquity -> walkExpr(s.frac)
             is SizePctBalance -> walkExpr(s.frac)
             is SizeRiskFrac -> walkExpr(s.frac)
+            is SizeRiskFracOfBook -> walkExpr(s.frac)
             is SizeRiskAbs -> walkExpr(s.usd)
             is SizePositionFull -> out.add(s.stream)
         }

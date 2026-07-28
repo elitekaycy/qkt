@@ -122,6 +122,7 @@ class PortfolioDeployer(
                     maxDailyDrawdownPct != null ||
                     maxDailyLoss.signum() > 0
             val bookFillBuffer = if (bookRiskEnabled) PortfolioRiskFillBuffer() else null
+            val bookBalance = compiled.ast.capital?.let { PortfolioBookBalance(it) }
             for (compiledChild in compiled.children) {
                 val (handle, wrapper) =
                     createChild(
@@ -131,10 +132,22 @@ class PortfolioDeployer(
                         allocations[compiledChild.alias],
                         bookController,
                         bookFillBuffer?.let { buffer -> buffer::record } ?: { _, _ -> },
+                        bookBalance,
                     )
                 children.add(handle)
                 childWrappers.add(wrapper)
             }
+            // Bind before the supervisor activates any gate: children captured the view at
+            // construction and no entry can size until activation.
+            bookBalance?.bind(
+                compiled.children.zip(childWrappers).map { (child, wrapper) ->
+                    {
+                        wrapper.handle.live
+                            .pnlSnapshot(child.strategyId)
+                            .realized
+                    }
+                },
+            )
             val symbols =
                 compiled.ast.streams
                     .map { it.qktSymbol }
@@ -356,6 +369,7 @@ class PortfolioDeployer(
         allocatedCapital: java.math.BigDecimal? = null,
         bookController: com.qkt.risk.book.BookRiskController? = null,
         onBookRealized: (String, java.math.BigDecimal) -> Unit = { _, _ -> },
+        bookBalance: PortfolioBookBalance? = null,
     ): Pair<StrategyHandle, ChildHandle> {
         val childName = "$portfolioName/${compiledChild.alias}"
         val gateActive = AtomicBoolean(false)
@@ -458,6 +472,7 @@ class PortfolioDeployer(
                 measuredUsageMaxQty = measuredUsageMaxQty,
                 startingBalances =
                     allocatedCapital?.let { mapOf(compiledChild.strategyId to it) } ?: emptyMap(),
+                bookBalance = bookBalance,
             ).start()
 
         val server =

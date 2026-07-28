@@ -8,9 +8,11 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class ParserSizingTest {
@@ -62,5 +64,23 @@ class ParserSizingTest {
     fun `position full`() {
         val r = parseSizing("POSITION.btc") as SizePositionFull
         assertThat(r.stream).isEqualTo("btc")
+    }
+
+    @Test
+    fun `pct risk of book normalizes percent to fraction`() {
+        val r = parseSizing("1.0 PCT RISK OF BOOK") as SizeRiskFracOfBook
+        assertThat((r.frac as NumLit).value).isEqualByComparingTo(BigDecimal("0.01"))
+    }
+
+    @Test
+    fun `risk frac of book`() {
+        val r = parseSizing("RISK 0.01 OF BOOK")
+        assertThat(r).isInstanceOf(SizeRiskFracOfBook::class.java)
+    }
+
+    @Test
+    fun `risk of anything but book rejects`() {
+        assertThatThrownBy { parseSizing("1.0 PCT RISK OF EQUITY") }
+            .hasMessageContaining("BOOK")
     }
 }

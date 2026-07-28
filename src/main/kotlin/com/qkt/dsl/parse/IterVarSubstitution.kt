@@ -52,6 +52,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackAtClause
@@ -181,6 +182,7 @@ private fun subst(
         is SizePctEquity -> s.copy(frac = subst(s.frac, v, alias))
         is SizePctBalance -> s.copy(frac = subst(s.frac, v, alias))
         is SizeRiskFrac -> s.copy(frac = subst(s.frac, v, alias))
+        is SizeRiskFracOfBook -> s.copy(frac = subst(s.frac, v, alias))
         is SizeRiskAbs -> s.copy(usd = subst(s.usd, v, alias))
         is SizePositionFull -> if (s.stream == v) SizePositionFull(alias) else s
     }
