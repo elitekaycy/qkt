@@ -41,6 +41,8 @@ class Backtest(
     private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
     /** Optional per-strategy capital bases; absent ids inherit [startingBalance]. */
     private val startingBalances: Map<String, BigDecimal> = emptyMap(),
+    /** Portfolio CAPITAL for `RISK OF BOOK` sizing; null outside portfolio backtests. */
+    private val bookCapital: BigDecimal? = null,
     private val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
     private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
     private val tradedSymbols: List<String> = symbols,
@@ -91,6 +93,7 @@ class Backtest(
         startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
         /** Optional per-strategy capital bases; absent ids inherit [startingBalance]. */
         startingBalances: Map<String, BigDecimal> = emptyMap(),
+        bookCapital: BigDecimal? = null,
         instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
         accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
         tradedSymbols: List<String> = emptyList(),
@@ -116,6 +119,7 @@ class Backtest(
         cadence = cadence,
         startingBalance = startingBalance,
         startingBalances = startingBalances,
+        bookCapital = bookCapital,
         instruments = instruments,
         accountingConfig = accountingConfig,
         tradedSymbols = tradedSymbols.ifEmpty { ticks.map { it.symbol }.distinct() },
@@ -154,6 +158,7 @@ class Backtest(
             cadence = cadence,
             startingBalance = startingBalance,
             startingBalances = startingBalances,
+            bookCapital = bookCapital,
             instruments = instruments,
             accountingConfig = accountingConfig,
             tradedSymbols = tradedSymbols,
@@ -192,6 +197,7 @@ class Backtest(
             startingBalance: BigDecimal = BigDecimal.ZERO,
             /** Optional per-strategy capital bases; absent ids inherit [startingBalance]. */
             startingBalances: Map<String, BigDecimal> = emptyMap(),
+            bookCapital: BigDecimal? = null,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
             accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
             tradedSymbols: List<String> = request.symbols,
@@ -253,6 +259,7 @@ class Backtest(
                 cadence = cadence,
                 startingBalance = startingBalance,
                 startingBalances = startingBalances,
+                bookCapital = bookCapital,
                 instruments = instruments,
                 accountingConfig = accountingConfig,
                 tradedSymbols = tradedSymbols,
@@ -286,6 +293,7 @@ class Backtest(
             startingBalance: BigDecimal = BigDecimal.ZERO,
             /** Optional per-strategy capital bases; absent ids inherit [startingBalance]. */
             startingBalances: Map<String, BigDecimal> = emptyMap(),
+            bookCapital: BigDecimal? = null,
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
             accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
             tradedSymbols: List<String> = request.symbols,
@@ -354,6 +362,7 @@ class Backtest(
                 cadence = cadence,
                 startingBalance = startingBalance,
                 startingBalances = startingBalances,
+                bookCapital = bookCapital,
                 instruments = instruments,
                 accountingConfig = accountingConfig,
                 tradedSymbols = tradedSymbols,

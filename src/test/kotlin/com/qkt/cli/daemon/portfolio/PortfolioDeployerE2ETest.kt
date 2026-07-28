@@ -26,6 +26,7 @@ import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -477,5 +478,71 @@ class PortfolioDeployerE2ETest {
         }
 
         assertThat(record.supervisor.running).isFalse
+    }
+
+    private fun writeBookSizedPortfolio(
+        tmp: Path,
+        withCapital: Boolean,
+    ): Path {
+        val child = tmp.resolve("child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY book_sized_child VERSION 1
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+            RULES
+                WHEN btc.close > 0 AND POSITION.btc = 0
+                THEN BUY btc SIZING 1.0 PCT RISK OF BOOK BRACKET { STOP LOSS PCT 10, TAKE PROFIT AT 1000000 }
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book_sized VERSION 1${if (withCapital) " CAPITAL 50000" else ""}
+            IMPORT 'child.qkt' AS child
+            RULES
+                RUN child${if (withCapital) " WEIGHT 1.0" else ""}
+            """.trimIndent(),
+        )
+        return portfolio
+    }
+
+    @Test
+    fun `an OF BOOK child deploys when the portfolio declares CAPITAL`(
+        @TempDir tmp: Path,
+    ) {
+        val deployer =
+            PortfolioDeployer(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+            )
+        val record =
+            deployer.deploy(
+                "book_sized",
+                PortfolioLoader.load(writeBookSizedPortfolio(tmp, withCapital = true)),
+            )
+        try {
+            assertThat(record.children).hasSize(1)
+            assertThat(record.children.single().isRunning()).isTrue
+        } finally {
+            record.supervisor.stop()
+            for (child in record.children) runCatching { child.close() }
+        }
+    }
+
+    @Test
+    fun `an OF BOOK child without portfolio CAPITAL fails the deploy with an actionable message`(
+        @TempDir tmp: Path,
+    ) {
+        val deployer =
+            PortfolioDeployer(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+            )
+        assertThatThrownBy {
+            deployer.deploy("book_sized", PortfolioLoader.load(writeBookSizedPortfolio(tmp, withCapital = false)))
+        }.hasMessageContaining("RISK OF BOOK")
     }
 }

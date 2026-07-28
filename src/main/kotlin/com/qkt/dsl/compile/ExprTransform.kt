@@ -61,6 +61,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackAtClause
@@ -133,6 +134,7 @@ class ExprTransform(
             is SizePctEquity -> SizePctEquity(expr(s.frac))
             is SizePctBalance -> SizePctBalance(expr(s.frac))
             is SizeRiskFrac -> SizeRiskFrac(expr(s.frac))
+            is SizeRiskFracOfBook -> SizeRiskFracOfBook(expr(s.frac))
             is SizeRiskAbs -> SizeRiskAbs(expr(s.usd))
             is SizePositionFull -> s
         }

@@ -35,6 +35,7 @@ import com.qkt.dsl.ast.SizePctEquity
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
@@ -183,6 +184,7 @@ object WarmupRequirements {
             is SizeNotional -> walkExpr(sizing.usd, out)
             is SizeRiskAbs -> walkExpr(sizing.usd, out)
             is SizeRiskFrac -> walkExpr(sizing.frac, out)
+            is SizeRiskFracOfBook -> walkExpr(sizing.frac, out)
             is SizePctEquity -> walkExpr(sizing.frac, out)
             is SizePctBalance -> walkExpr(sizing.frac, out)
             else -> Unit

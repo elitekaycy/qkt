@@ -20,6 +20,7 @@ import com.qkt.dsl.ast.SizePositionFull
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StringLit
 import com.qkt.events.BrokerEvent
@@ -753,6 +754,8 @@ object InsightsTranslate {
                 mapOf("type" to "SizePctBalance", "frac" to exprPayload(sizing.frac))
             is SizeRiskFrac ->
                 mapOf("type" to "SizeRiskFrac", "frac" to exprPayload(sizing.frac))
+            is SizeRiskFracOfBook ->
+                mapOf("type" to "SizeRiskFracOfBook", "frac" to exprPayload(sizing.frac))
             is SizeRiskAbs ->
                 mapOf("type" to "SizeRiskAbs", "usd" to exprPayload(sizing.usd))
             is SizePositionFull ->

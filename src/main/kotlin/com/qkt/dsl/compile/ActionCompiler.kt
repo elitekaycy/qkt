@@ -54,6 +54,9 @@ class ActionCompiler(
     private val sizingCompiler = SizingCompiler(exprCompiler)
     private val latchCompiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
 
+    /** True once any compiled action (or latch entry) sized `RISK … OF BOOK`. */
+    val usesBookSizing: Boolean get() = sizingCompiler.compiledBookSizing
+
     /** Default resize deadband: skip a resize whose `|target - current|` is under 5% of target. */
     private val defaultMinStepFraction = BigDecimal("0.05")
 

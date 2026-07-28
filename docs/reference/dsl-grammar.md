@@ -86,6 +86,9 @@ RULES
 SIZING <quantity>
 SIZING <pct> PCT OF (EQUITY | BALANCE)
 SIZING <N> PCT RISK                    -- sugar over SIZING RISK N/100; requires a BRACKET STOP_LOSS
+SIZING <N> PCT RISK OF BOOK            -- same, but risks N% of the portfolio book (CAPITAL + realized
+                                       -- PnL of every child) instead of this strategy's own equity;
+                                       -- only valid for PORTFOLIO children, rejected at deploy otherwise
 SIZING <usd> USD
 SIZING POSITION(<stream>)              -- full current position
 ```
