@@ -29,6 +29,8 @@ jobs:
       MT5_VNC_USER: ${{ vars.MT5_VNC_USER || 'admin' }}
       MT5_VNC_PASSWORD: ${{ secrets.MT5_VNC_PASSWORD || vars.MT5_VNC_PASSWORD || 'changeme' }}
       COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'qkt-mt5' }}
+      QKT_IMAGE_TAG: ${{ vars.QKT_IMAGE_TAG || 'v{{QKT_VERSION}}' }}
+      MT5_GATEWAY_IMAGE: ${{ vars.MT5_GATEWAY_IMAGE || 'elitekaycy/mt5-gateway-api:0.3.5' }}
       QKT_BIND_HOST: ${{ vars.QKT_BIND_HOST || '127.0.0.1' }}
       MT5_API_HOST_PORT: ${{ vars.MT5_API_HOST_PORT || '5020' }}
       MT5_VNC_HOST_PORT: ${{ vars.MT5_VNC_HOST_PORT || '3020' }}
@@ -42,6 +44,7 @@ jobs:
       QKT_MAX_ORDER_NOTIONAL: ${{ vars.QKT_MAX_ORDER_NOTIONAL || '50000' }}
       QKT_PRICE_COLLAR_PCT: ${{ vars.QKT_PRICE_COLLAR_PCT || '5' }}
       QKT_INSIGHTS_ENABLED: ${{ vars.QKT_INSIGHTS_ENABLED || 'false' }}
+      QKT_INSIGHTS_BIND_HOST: ${{ vars.QKT_INSIGHTS_BIND_HOST || '127.0.0.1' }}
       QKT_INSIGHTS_HOST_PORT: ${{ vars.QKT_INSIGHTS_HOST_PORT || '8420' }}
       QKT_INSIGHTS_IMAGE: ${{ vars.QKT_INSIGHTS_IMAGE || 'ghcr.io/elitekaycy/qkt-insights:latest' }}
       QKT_INSIGHTS_INSTANCE_ID: ${{ vars.QKT_INSIGHTS_INSTANCE_ID || 'qkt-mt5' }}
@@ -78,8 +81,8 @@ jobs:
           set -euo pipefail
           umask 077
           {
-            printf 'QKT_IMAGE_TAG=v%s\n' '{{QKT_VERSION}}'
-            printf 'MT5_GATEWAY_IMAGE=%s\n' 'elitekaycy/mt5-gateway-api:0.3.2'
+            printf 'QKT_IMAGE_TAG=%s\n' "$QKT_IMAGE_TAG"
+            printf 'MT5_GATEWAY_IMAGE=%s\n' "$MT5_GATEWAY_IMAGE"
             printf 'QKT_EXNESS_MAGIC=%s\n' "$QKT_EXNESS_MAGIC"
             printf 'MT5_API_KEY=%s\n' "$MT5_API_KEY"
             printf 'MT5_VNC_USER=%s\n' "$MT5_VNC_USER"
@@ -107,6 +110,7 @@ jobs:
             else
               printf 'COMPOSE_PROFILES=\n'
             fi
+            printf 'QKT_INSIGHTS_BIND_HOST=%s\n' "$QKT_INSIGHTS_BIND_HOST"
             printf 'QKT_INSIGHTS_HOST_PORT=%s\n' "$QKT_INSIGHTS_HOST_PORT"
             printf 'QKT_INSIGHTS_IMAGE=%s\n' "$QKT_INSIGHTS_IMAGE"
             printf 'QKT_INSIGHTS_INSTANCE_ID=%s\n' "$QKT_INSIGHTS_INSTANCE_ID"
@@ -143,9 +147,10 @@ jobs:
           for file in "${strategies[@]}"; do
             target="/strategies/$(basename "$file")"
             docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt parse "$target"
-            # Production preflight performs the full AstCompiler pass before broker checks.
+            # Offline preflight performs parse/compile/symbol/risk checks without reaching
+            # the live gateway; broker/account validation happens host-side after compose up.
             docker compose --env-file .env run --rm --no-deps --entrypoint qkt qkt preflight "$target" \
-              --production --config /etc/qkt/qkt.config.yaml --state-dir /tmp/qkt-preflight-state
+              --offline --production --config /etc/qkt/qkt.config.yaml --state-dir /tmp/qkt-preflight-state
           done
 
       - name: Deploy atomically
