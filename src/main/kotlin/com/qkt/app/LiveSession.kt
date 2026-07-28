@@ -49,6 +49,7 @@ import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.WarmupStream
+import com.qkt.strategy.targetSymbol
 import com.qkt.strategy.windowMs
 import java.time.Duration
 import java.time.Instant
@@ -669,6 +670,13 @@ class LiveSession(
                 mapOf("id" to e.request.id, "symbol" to e.request.symbol, "reason" to e.reason),
             )
         }
+        bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e ->
+            journal.append(
+                e.strategyId,
+                "signal-suppressed",
+                mapOf("symbol" to e.signal.targetSymbol(), "reason" to e.reason),
+            )
+        }
         bus.subscribe<RiskEvent.Halted> { e ->
             journal.append(e.strategyId.orEmpty(), "halted", mapOf("reason" to e.reason))
         }
@@ -829,6 +837,7 @@ class LiveSession(
         }
         if (com.qkt.observe.insights.InsightsEventFamily.RISK in insightsEvents) {
             bus.subscribe<com.qkt.events.RiskRejectedEvent> { e -> sink.offer(t.fromRiskRejected(e)) }
+            bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e -> sink.offer(t.fromSignalSuppressed(e)) }
             bus.subscribe<RiskEvent.Halted> { e -> sink.offer(t.fromRiskHalted(e)) }
             bus.subscribe<RiskEvent.Resumed> { e -> sink.offer(t.fromRiskResumed(e)) }
         }
@@ -1283,6 +1292,17 @@ class LiveSession(
                 e.request.symbol,
                 e.request.side,
                 e.request.quantity.toPlainString(),
+                e.reason,
+            )
+        }
+        // A gated drop never becomes an OrderRequest, so the rejection WARN above can't
+        // cover it; without this line such signals vanish without trace (#889).
+        bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e ->
+            log.warn(
+                "signal suppressed {} {} {}: {}",
+                e.strategyId,
+                e.signal.targetSymbol() ?: "-",
+                e.signal::class.simpleName,
                 e.reason,
             )
         }
