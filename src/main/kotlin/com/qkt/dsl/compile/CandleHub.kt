@@ -207,6 +207,14 @@ class CandleHub {
         require(candles.all { it.endTime - it.startTime == expectedDurationMs }) {
             "CandleHub.seed: timeframe mismatch for $key; expected ${expectedDurationMs}ms bars"
         }
+        // Live aggregation and backtests both build bars on the epoch-aligned UTC grid
+        // (00:00, 04:00, ... for 4h). A seed on any other phase (e.g. broker-day-aligned
+        // MT5 history) would warm indicators on bars no other part of qkt ever produces.
+        require(candles.all { it.startTime % expectedDurationMs == 0L }) {
+            "CandleHub.seed: bars for $key are not on the epoch-aligned UTC grid " +
+                "(first offender starts at ${candles.first { it.startTime % expectedDurationMs != 0L }.startTime}); " +
+                "refusing to warm indicators on a shifted grid"
+        }
         val sorted = candles.sortedBy { it.startTime }
         val oldestExisting = slot.ring.firstOrNull()?.startTime ?: Long.MAX_VALUE
         val toPrepend = sorted.filter { it.startTime < oldestExisting }

@@ -86,6 +86,92 @@ class Mt5BarFetcherTest {
     }
 
     @Test
+    fun `multi-hour window fetches H1 and rebuilds bars on the UTC grid`() {
+        // MT5 H4 bars are broker-day-anchored (01:00/05:00/... UTC for a summer New
+        // York-close server), so the fetcher must not request H4 at all: it fetches H1
+        // (hour bars stay hour-aligned in UTC) and rebuilds 4h bars on the epoch grid.
+        val server = MockWebServer().apply { start() }
+        try {
+            val rows =
+                (0 until 8).joinToString(",") { i ->
+                    // Server-local 11:00..18:00 on 2026-07-13 == 08:00..15:00 UTC (UTC+3).
+                    """{"open":${100 + i},"high":${200 + i},"low":${50 + i},"close":${150 + i},""" +
+                        """"tick_volume":1,"time":"2026-07-13T${11 + i}:00:00"}"""
+                }
+            server.enqueue(MockResponse().setBody("[$rows]"))
+            val fetcher =
+                Mt5BarFetcher(
+                    server.url("/").toString().trimEnd('/'),
+                    serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
+                )
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSD",
+                        window = TimeWindow.parse("4h"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-07-13T08:00:00Z"),
+                                to = Instant.parse("2026-07-13T16:00:00Z"),
+                            ),
+                    ).toList()
+
+            assertThat(server.takeRequest().path).contains("timeframe=H1")
+            assertThat(candles).hasSize(2)
+            val first = candles[0]
+            assertThat(first.startTime).isEqualTo(Instant.parse("2026-07-13T08:00:00Z").toEpochMilli())
+            assertThat(first.endTime).isEqualTo(Instant.parse("2026-07-13T12:00:00Z").toEpochMilli())
+            assertThat(first.open).isEqualByComparingTo("100")
+            assertThat(first.high).isEqualByComparingTo("203")
+            assertThat(first.low).isEqualByComparingTo("50")
+            assertThat(first.close).isEqualByComparingTo("153")
+            assertThat(first.volume).isEqualByComparingTo("4")
+            val second = candles[1]
+            assertThat(second.startTime).isEqualTo(Instant.parse("2026-07-13T12:00:00Z").toEpochMilli())
+            assertThat(second.open).isEqualByComparingTo("104")
+            assertThat(second.close).isEqualByComparingTo("157")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `partial trailing bucket is not emitted as a closed bar`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            // Only two H1 bars of the 08:00-12:00 UTC bucket exist and the range ends
+            // mid-bucket — no 4h bar may close from it.
+            val rows =
+                (0 until 2).joinToString(",") { i ->
+                    """{"open":1,"high":1,"low":1,"close":1,"tick_volume":1,"time":"2026-07-13T${11 + i}:00:00"}"""
+                }
+            server.enqueue(MockResponse().setBody("[$rows]"))
+            val fetcher =
+                Mt5BarFetcher(
+                    server.url("/").toString().trimEnd('/'),
+                    serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
+                )
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSD",
+                        window = TimeWindow.parse("4h"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-07-13T08:00:00Z"),
+                                to = Instant.parse("2026-07-13T10:00:00Z"),
+                            ),
+                    ).toList()
+
+            assertThat(candles).isEmpty()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `summer gateway Z label is treated as broker wall time and normalizes to UTC`() {
         val server = MockWebServer().apply { start() }
         try {

@@ -32,6 +32,20 @@ class CandleHubSeedTest {
     }
 
     @Test
+    fun `seed rejects bars off the epoch-aligned grid`() {
+        // A broker-day-anchored 4h history (e.g. MT5 New York-close H4 bars land at
+        // 01:00/05:00 UTC) must fail loudly instead of warming indicators on a grid no
+        // live or backtest bar will ever share.
+        val fourHourKey = HubKey("BACKTEST", "BTCUSDT", "4h")
+        val hub = CandleHub()
+        hub.register(fourHourKey, retention = 10, strategyId = "s")
+        val shifted =
+            candle(3_600_000L).copy(endTime = 3_600_000L + 14_400_000L)
+        assertThatThrownBy { hub.seed(fourHourKey, listOf(shifted)) }
+            .hasMessageContaining("not on the epoch-aligned UTC grid")
+    }
+
+    @Test
     fun `seed on empty input is a no-op`() {
         val hub = CandleHub()
         hub.register(key, retention = 10, strategyId = "s")
