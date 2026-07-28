@@ -96,4 +96,27 @@ class TradingPipelineGateTest {
         assertThat(captured).hasSize(1)
         assertThat(captured.first()).isInstanceOf(Signal.Buy::class.java)
     }
+
+    @Test
+    fun `gate false publishes a suppression event so the drop is auditable`() {
+        val suppressed = mutableListOf<com.qkt.events.SignalSuppressedEvent>()
+        val emittingStrategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("BTCUSDT", BigDecimal.ONE))
+                }
+            }
+        val (pipeline, bus) = newPipeline(listOf("s1" to emittingStrategy)) { false }
+        bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e -> suppressed.add(e) }
+
+        pipeline.ingest(Tick("BTCUSDT", Money.of("100"), 1_000L))
+
+        assertThat(suppressed).hasSize(1)
+        assertThat(suppressed.first().strategyId).isEqualTo("s1")
+        assertThat(suppressed.first().reason).contains("gate")
+    }
 }

@@ -25,6 +25,7 @@ class CompiledRule(
     // above the EMA. Undefined counts as false, so a condition that goes true ->
     // Undefined -> true re-arms and fires again.
     private var wasTrue = false
+    private var pendingCommit = false
 
     fun fire(
         ec: EvalContext,
@@ -32,9 +33,15 @@ class CompiledRule(
     ): List<Signal> {
         val v = condition.evaluate(ec)
         val isTrue = v is Value.Bool && v.v
-        val rising = isTrue && !wasTrue
-        wasTrue = isTrue
-        if (!rising) return emptyList()
+        if (!isTrue) {
+            wasTrue = false
+            pendingCommit = false
+            return emptyList()
+        }
+        if (wasTrue) return emptyList()
+        // Rising edge. The edge is only sealed by [commitFire] once the caller knows
+        // whether any produced signal was actually accepted for submission.
+        pendingCommit = true
 
         val preFireQty =
             ctx.positions.positionFor(ruleSymbol)?.quantity ?: BigDecimal.ZERO
@@ -45,6 +52,20 @@ class CompiledRule(
         if (isOpening) capture(onOpenCaptures, SnapshotOpen, ec)
 
         return action(ec)
+    }
+
+    /**
+     * Seals the edge begun by the last rising [fire]. With [accepted] true the rule stays
+     * quiet while the condition holds (normal edge gating); with false the edge re-arms so
+     * the rule fires again on the next bar the condition still holds. Callers pass false
+     * when every signal of the fire was suppressed before reaching the venue (portfolio
+     * gate inactive, book de-risk, risk reject) — losses a backtest never sees, so without
+     * the re-arm live silently drops entries the backtest takes. No-op without a pending fire.
+     */
+    fun commitFire(accepted: Boolean) {
+        if (!pendingCommit) return
+        pendingCommit = false
+        wasTrue = accepted
     }
 
     private fun capture(

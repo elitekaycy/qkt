@@ -49,3 +49,13 @@ sealed class Signal {
         val ec: com.qkt.dsl.compile.EvalContext,
     ) : Signal()
 }
+
+/** Symbol the signal targets, or null for latch arms (whose legs carry their own symbols). */
+fun Signal.targetSymbol(): String? =
+    when (this) {
+        is Signal.Buy -> symbol
+        is Signal.Sell -> symbol
+        is Signal.Submit -> request.symbol
+        is Signal.CancelPendingForSymbol -> symbol
+        is Signal.ArmLatch -> null
+    }

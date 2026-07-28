@@ -28,10 +28,12 @@ import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.strategy.Signal
+import com.qkt.strategy.targetSymbol
 import java.math.BigDecimal
 
 /**
@@ -220,6 +222,19 @@ object InsightsTranslate {
                     "realized" to realized,
                     "ts" to trade.timestamp,
                 ),
+        )
+
+    fun fromSignalSuppressed(e: SignalSuppressedEvent): InsightsEnvelope =
+        envelope(
+            e.sequenceId,
+            e.timestamp,
+            e.strategyId,
+            "signal.suppressed",
+            mapOf(
+                "reason" to e.reason,
+                "symbol" to e.signal.targetSymbol(),
+                "kind" to e.signal::class.simpleName,
+            ),
         )
 
     fun fromRiskRejected(e: RiskRejectedEvent): InsightsEnvelope =
