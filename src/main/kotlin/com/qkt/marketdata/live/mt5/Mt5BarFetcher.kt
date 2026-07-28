@@ -33,6 +33,27 @@ class Mt5BarFetcher(
         window: TimeWindow,
         range: TimeRange,
     ): Sequence<Candle> {
+        // MT5 aggregates multi-hour bars (H4, D1) on the broker's own day boundary, so a
+        // New York-close broker's H4 bars start at 01:00/05:00/... UTC — off the epoch grid
+        // every other part of qkt (live tick aggregation, backtests) uses. Fetch H1 instead
+        // (hour bars stay hour-aligned for whole-hour server offsets) and rebuild the target
+        // bars on the epoch grid, e.g. broker H4 09:00+13:00 server → qkt 08:00–12:00 UTC.
+        if (window.durationMs > HOUR_MS) {
+            require(window.durationMs % HOUR_MS == 0L) {
+                "Cannot align ${window.durationMs}ms bars to the UTC grid from MT5 history"
+            }
+            val alignedFrom = Instant.ofEpochMilli((range.from.toEpochMilli() / window.durationMs) * window.durationMs)
+            val hourly = fetchRangeRaw(symbol, TimeWindow.parse("1h"), TimeRange(alignedFrom, range.to))
+            return aggregateToGrid(hourly, window, range.to.toEpochMilli())
+        }
+        return fetchRangeRaw(symbol, window, range)
+    }
+
+    private fun fetchRangeRaw(
+        symbol: String,
+        window: TimeWindow,
+        range: TimeRange,
+    ): Sequence<Candle> {
         val tf = windowToTimeframe(window)
         val client = Mt5DataClient(baseUrl, http, serverTimeZone, apiKey)
         val midPoint =
@@ -62,6 +83,46 @@ class Mt5BarFetcher(
             }
     }
 
+    /**
+     * Rebuilds [window]-sized bars on the epoch-aligned UTC grid from hourly bars.
+     *
+     * A bucket is emitted when it holds at least one hourly bar and closes at or before
+     * [upperMs] — partial-coverage buckets are legitimate (a week-open 4h bucket only has
+     * the hours the venue traded, exactly like a bar built live from ticks).
+     */
+    private fun aggregateToGrid(
+        hourly: Sequence<Candle>,
+        window: TimeWindow,
+        upperMs: Long,
+    ): Sequence<Candle> {
+        val durationMs = window.durationMs
+        val buckets = linkedMapOf<Long, MutableList<Candle>>()
+        for (bar in hourly.sortedBy { it.startTime }) {
+            check(bar.startTime % HOUR_MS == 0L) {
+                "MT5 H1 bar at ${Instant.ofEpochMilli(bar.startTime)} is not hour-aligned after " +
+                    "$serverTimeZone conversion; cannot rebuild the UTC grid (non-whole-hour server offset?)"
+            }
+            buckets.getOrPut((bar.startTime / durationMs) * durationMs) { mutableListOf() }.add(bar)
+        }
+        return buckets
+            .asSequence()
+            .filter { (start, _) -> start + durationMs <= upperMs }
+            .map { (start, bars) ->
+                Candle(
+                    symbol = bars.first().symbol,
+                    open = bars.first().open,
+                    high = bars.maxOf { it.high },
+                    low = bars.minOf { it.low },
+                    close = bars.last().close,
+                    volume = bars.sumOf { it.volume },
+                    startTime = start,
+                    endTime = start + durationMs,
+                    bid = bars.last().bid,
+                    ask = bars.last().ask,
+                )
+            }
+    }
+
     /** Contiguous half-open [from, to) sub-ranges of at most [MAX_CHUNK_DAYS] each. */
     private fun chunkBoundaries(
         fromMs: Long,
@@ -84,13 +145,12 @@ class Mt5BarFetcher(
             900_000L -> "M15"
             1_800_000L -> "M30"
             3_600_000L -> "H1"
-            14_400_000L -> "H4"
-            86_400_000L -> "D1"
             else -> error("Unsupported MT5 timeframe: ${window.durationMs}ms")
         }
 
     private companion object {
         /** Gateway rejects a `fetch_data_range` wider than 31 days; stay safely under. */
         const val MAX_CHUNK_DAYS = 30L
+        const val HOUR_MS = 3_600_000L
     }
 }

@@ -293,18 +293,22 @@ class TradingPipeline(
                 bus.publish(SignalEvent(sig, strategyId = strategyId))
                 if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
                     orderManager.cancelPendingForSymbol(sig.symbol)
+                    ctx.submissions.recordAccepted()
                 } else if (sig is com.qkt.strategy.Signal.ArmLatch) {
                     latchManager.arm(sig.compiled, sig.ec)
+                    ctx.submissions.recordAccepted()
                 } else {
                     val built = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
                     if (built != null) {
                         val request = applyBookScale(built)
                         if (request == null) {
+                            ctx.submissions.recordSuppressed()
                             bus.publish(RiskRejectedEvent(built, "book de-risk: new risk suppressed"))
                         } else {
                             logSubmitContext(request)
                             when (val decision = riskEngine.approve(request)) {
                                 is Decision.Approve -> {
+                                    ctx.submissions.recordAccepted()
                                     val exitHook =
                                         when (sig) {
                                             is com.qkt.strategy.Signal.Buy -> sig.exitHook
@@ -320,7 +324,10 @@ class TradingPipeline(
                                     registerLegClose(strategyId, request)
                                     bus.publish(OrderEvent(request))
                                 }
-                                is Decision.Reject -> bus.publish(RiskRejectedEvent(request, decision.reason))
+                                is Decision.Reject -> {
+                                    ctx.submissions.recordSuppressed()
+                                    bus.publish(RiskRejectedEvent(request, decision.reason))
+                                }
                             }
                         }
                     }
@@ -334,7 +341,20 @@ class TradingPipeline(
                 }
             }
             val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
-                if (gate()) rawEmit(sig)
+                if (gate()) {
+                    rawEmit(sig)
+                } else {
+                    ctx.submissions.recordSuppressed()
+                    // No order exists yet, so no RiskRejectedEvent can fire — publish a
+                    // dedicated event or the drop is invisible to journals and operators.
+                    bus.publish(
+                        com.qkt.events.SignalSuppressedEvent(
+                            signal = sig,
+                            strategyId = strategyId,
+                            reason = "portfolio gate inactive or operator stop",
+                        ),
+                    )
+                }
             }
             if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
                 requireMultiPositionCapability(strategyId, strategy)

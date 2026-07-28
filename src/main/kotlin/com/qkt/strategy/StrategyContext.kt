@@ -74,4 +74,32 @@ data class StrategyContext(
      * of every child); null outside a portfolio deploy. Read by `SIZING … RISK OF BOOK`.
      */
     val book: BookBalanceView? = null,
+    /** Written by the pipeline as it processes each emitted signal; read by rule edge gating. */
+    val submissions: SubmissionOutcomes = SubmissionOutcomes(),
 )
+
+/**
+ * Running counts of how the engine disposed of this strategy's emitted signals.
+ *
+ * The pipeline bumps [accepted] for every signal that clears all pre-trade gates (or
+ * needs none, like a cancel) and [suppressed] for every signal it drops before the
+ * venue — portfolio gate inactive, book de-risk, risk reject, unpriceable. Rule edge
+ * gating compares the counters around a fire: when the fire produced only suppressions
+ * it re-arms the edge so the entry retries next bar instead of being silently lost.
+ * Consumers that record nothing (tests, custom harnesses) keep plain edge semantics.
+ * e.g. rule fires → risk engine rejects → suppressed++ → rule fires again next bar.
+ */
+class SubmissionOutcomes {
+    var accepted: Long = 0
+        private set
+    var suppressed: Long = 0
+        private set
+
+    fun recordAccepted() {
+        accepted++
+    }
+
+    fun recordSuppressed() {
+        suppressed++
+    }
+}
