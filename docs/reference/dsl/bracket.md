@@ -65,6 +65,12 @@ BRACKET {
 
 Computed at action-execute time. `btc.close` is the entry price (the close of the bar that fired the rule). Arithmetic, indicator calls, and `LET`-bound values all work.
 
+That bar close is only the placement-time estimate. For fill-anchored fixed brackets,
+live execution modifies venue protection to the actual fill geometry after acceptance.
+If the venue rejects that modification, qkt reports a protection failure and arms an
+engine-held stop at the intended fill-anchored level. Engine-held protection requires
+healthy tick delivery.
+
 ### Mixing
 
 You can mix forms in one bracket:

@@ -130,13 +130,18 @@ SCHEDULE
 - **State between fires** — the pattern "observe an EMA at 09:00, act on the observation at 21:00" needs a mutable-`LET` `SET` action that hasn't shipped yet. Today the closest is to re-evaluate the condition at the action time inside a `CASE`. File an issue if you have a concrete use case.
 - **Sub-minute granularity** — no `EVERY MINUTE` or seconds-level recurrence. Deferred.
 - **Cron syntax** — `0 0 * * *` is not supported. English forms keep the DSL readable.
-- **1Hz live-mode timer for quiet markets** — backtest works fine on the per-tick heartbeat. Live runs may miss scheduled fires during quiet seconds; the `LiveSession`-side timer is a follow-up.
-- **Persistence across daemon restart** — last-fire-time is in-memory only. Restart at 09:00:30 → the 09:00 fire is detected as missed, WARN logged, skipped (intentional).
+- **Sub-second live timing** — live uses a 1Hz heartbeat during quiet markets, so it does not promise sub-second placement.
+- **Persistence across daemon restart** — last-fire-time is in-memory only. Author scheduled entry actions with position/pending guards so a restart cannot duplicate intent.
 
 ## Behavior details worth knowing
 
-- **Fire-once-per-window.** Each trigger advances a watermark. A fire that happens to coincide with multiple eligible times within one heartbeat (e.g. engine paused) emits **once**, with a WARN per skipped fire. Strategies that need catch-up should detect via `NOW` and decide themselves.
-- **Backtest = live parity.** The heartbeat runs from `TradingPipeline.ingest(tick)` using the same clock the rest of the engine uses, so a backtest of `SCHEDULE AT 09:00 UTC` fires at the simulated 09:00, matching what live would produce.
+- **Replay missed occurrences.** When one heartbeat crosses multiple scheduled times,
+  the runner emits each occurrence in timestamp order. Bare scheduled BUY/SELL actions
+  therefore need an explicit position or pending-order guard if catch-up duplication is
+  not intended.
+- **Backtest = live pipeline.** Both modes use the same runner and injected clock.
+  Backtest advances on replay ticks; live also has a 1Hz quiet-market heartbeat, so
+  placement can differ within that timing interval.
 - **Action context.** Schedule fires synthesize the action's `EvalContext.candle` from the latest closed bar across the strategy's declared streams. If no bar has closed yet (warmup-cold), the fire is **skipped with a WARN** rather than crashing. Once any stream has a closed bar, fires evaluate normally. Cross-stream reads inside the action body (`gold.close`, `silver.ask`) work as in `RULES` — they go through the hub's per-stream rings.
 - **Empty `SCHEDULE` block.** Don't write one. The parser doesn't enforce it but adds nothing.
 

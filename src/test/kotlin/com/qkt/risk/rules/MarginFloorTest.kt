@@ -1,6 +1,7 @@
 package com.qkt.risk.rules
 
 import com.qkt.broker.Broker
+import com.qkt.broker.MarginLevelProvider
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.common.Money
 import com.qkt.common.Side
@@ -15,9 +16,10 @@ import org.junit.jupiter.api.Test
 
 class MarginFloorTest {
     private fun brokerAt(level: String?): Broker =
-        object : Broker {
+        object : Broker, MarginLevelProvider {
             override val name = "fake"
             override val capabilities = emptySet<OrderTypeCapability>()
+            override val supportsMarginLevel = true
 
             override fun submit(request: OrderRequest) = error("not used")
 
@@ -75,8 +77,28 @@ class MarginFloorTest {
     }
 
     @Test
-    fun `venues without margin reporting pass everything`() {
+    fun `repeated missing margin reads fail closed for new exposure`() {
         val rule = MarginFloor(brokerAt(null), BigDecimal("200"))
         assertThat(rule.evaluate(entry(), PositionTracker())).isEqualTo(Decision.Approve)
+        assertThat(rule.evaluate(entry(), PositionTracker())).isEqualTo(Decision.Approve)
+        assertThat(rule.evaluate(entry(), PositionTracker())).isInstanceOf(Decision.Reject::class.java)
+    }
+
+    @Test
+    fun `unsupported margin reads never enter degradation`() {
+        val broker =
+            object : Broker {
+                override val name = "paper"
+                override val capabilities = emptySet<OrderTypeCapability>()
+
+                override fun submit(request: OrderRequest) = error("not used")
+
+                override fun cancel(orderId: String) = error("not used")
+            }
+        val rule = MarginFloor(broker, BigDecimal("200"))
+
+        repeat(5) {
+            assertThat(rule.evaluate(entry(), PositionTracker())).isEqualTo(Decision.Approve)
+        }
     }
 }

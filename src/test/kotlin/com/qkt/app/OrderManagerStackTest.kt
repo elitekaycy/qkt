@@ -980,6 +980,9 @@ class OrderManagerStackTest {
         assertThat((fallback?.request as OrderRequest.Stop).stopPrice).isEqualByComparingTo("49950")
         assertThat(alerts.single()).contains("engine-held stop armed at 49950")
 
+        manager.cancelEntriesForHalt("alpha")
+        assertThat(manager.getOrder("${stack.id}-l1-sl")?.state).isEqualTo(OrderState.PENDING)
+
         bus.publish(TickEvent(Tick("BTCUSDT", BigDecimal("49940"), clock.now())))
 
         val close = broker.submits.last() as OrderRequest.Market

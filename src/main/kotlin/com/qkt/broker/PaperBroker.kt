@@ -8,11 +8,14 @@ import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TriggerType
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.buyExecPrice
 import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
+import java.math.RoundingMode
 import org.slf4j.LoggerFactory
 
 /**
@@ -30,6 +33,7 @@ class PaperBroker(
     private val bus: EventBus,
     private val clock: Clock,
     private val priceProvider: MarketPriceProvider,
+    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     /**
      * Bar-research mode: fill a triggered Stop/Limit (or if-touched-market) at its own
      * price level instead of the price of the tick that triggered it.
@@ -74,26 +78,61 @@ class PaperBroker(
         )
 
     override fun submit(request: OrderRequest): SubmitAck {
+        val sized = sizeForVenue(request) ?: return rejectBelowMinimum(request)
         bus.publish(
             BrokerEvent.OrderAccepted(
+                clientOrderId = sized.id,
+                brokerOrderId = sized.id,
+                strategyId = sized.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        when (sized) {
+            is OrderRequest.Market -> fillMarket(sized)
+            is OrderRequest.Limit, is OrderRequest.Stop,
+            is OrderRequest.StopLimit, is OrderRequest.IfTouched,
+            ->
+                working.add(sized)
+            else -> error("PaperBroker received unexpected order type: ${sized::class.simpleName}")
+        }
+        return SubmitAck(
+            clientOrderId = sized.id,
+            brokerOrderId = sized.id,
+            accepted = true,
+        )
+    }
+
+    private fun sizeForVenue(request: OrderRequest): OrderRequest? {
+        val meta = instruments.lookup(request.symbol) ?: return request
+        val quantity =
+            request.quantity
+                .divide(meta.volumeStep, 0, RoundingMode.DOWN)
+                .multiply(meta.volumeStep)
+        return if (quantity.signum() == 0 || quantity < meta.volumeMin) null else request.withQuantity(quantity)
+    }
+
+    private fun rejectBelowMinimum(request: OrderRequest): SubmitAck {
+        val meta = requireNotNull(instruments.lookup(request.symbol))
+        val quantized =
+            request.quantity
+                .divide(meta.volumeStep, 0, RoundingMode.DOWN)
+                .multiply(meta.volumeStep)
+        val reason =
+            "quantized volume $quantized below venue volumeMin ${meta.volumeMin} for ${request.symbol}"
+        bus.publish(
+            BrokerEvent.OrderRejected(
                 clientOrderId = request.id,
                 brokerOrderId = request.id,
+                reason = reason,
                 strategyId = request.strategyId,
                 timestamp = clock.now(),
             ),
         )
-        when (request) {
-            is OrderRequest.Market -> fillMarket(request)
-            is OrderRequest.Limit, is OrderRequest.Stop,
-            is OrderRequest.StopLimit, is OrderRequest.IfTouched,
-            ->
-                working.add(request)
-            else -> error("PaperBroker received unexpected order type: ${request::class.simpleName}")
-        }
         return SubmitAck(
             clientOrderId = request.id,
             brokerOrderId = request.id,
-            accepted = true,
+            accepted = false,
+            rejectReason = reason,
         )
     }
 
@@ -309,4 +348,14 @@ class PaperBroker(
             else -> false
         }
     }
+
+    private fun OrderRequest.withQuantity(quantity: BigDecimal): OrderRequest =
+        when (this) {
+            is OrderRequest.Market -> copy(quantity = quantity)
+            is OrderRequest.Limit -> copy(quantity = quantity)
+            is OrderRequest.Stop -> copy(quantity = quantity)
+            is OrderRequest.StopLimit -> copy(quantity = quantity)
+            is OrderRequest.IfTouched -> copy(quantity = quantity)
+            else -> error("PaperBroker received unexpected order type: ${this::class.simpleName}")
+        }
 }

@@ -41,13 +41,17 @@ import org.junit.jupiter.api.io.TempDir
 class PortfolioDeployerE2ETest {
     private class BoundedFeed(
         private val ticks: List<Tick>,
+        private val delayMs: Long = 0L,
     ) : TickFeed {
         private val idx = AtomicInteger(0)
         private val gate = CountDownLatch(1)
 
         override fun next(): Tick? {
             val i = idx.getAndIncrement()
-            if (i < ticks.size) return ticks[i]
+            if (i < ticks.size) {
+                if (delayMs > 0L) Thread.sleep(delayMs)
+                return ticks[i]
+            }
             gate.await(30, TimeUnit.SECONDS)
             return null
         }
@@ -59,13 +63,14 @@ class PortfolioDeployerE2ETest {
 
     private class FakeSource(
         private val ticks: List<Tick>,
+        private val delayMs: Long = 0L,
     ) : MarketSource {
         override val name: String = "Fake"
         override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.LIVE_TICKS)
 
         override fun supports(symbol: String): Boolean = true
 
-        override fun liveTicks(symbols: List<String>): TickFeed = BoundedFeed(ticks)
+        override fun liveTicks(symbols: List<String>): TickFeed = BoundedFeed(ticks, delayMs)
     }
 
     private class RoutedSource(
@@ -516,7 +521,27 @@ class PortfolioDeployerE2ETest {
         val deployer =
             PortfolioDeployer(
                 stateDir = StateDir.resolve(tmp.resolve("state").toString()),
-                marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+                marketSourceProvider = { symbols ->
+                    FakeSource(
+                        ticksFor(symbols.first()).map { it.copy(price = BigDecimal("100")) },
+                        delayMs = 100L,
+                    )
+                },
+                clock = com.qkt.common.FixedClock(1_705_276_860_000L),
+                instrumentRegistry =
+                    object : com.qkt.instrument.InstrumentRegistry {
+                        override fun lookup(qktSymbol: String) =
+                            com.qkt.instrument.InstrumentMeta(
+                                qktSymbol = qktSymbol,
+                                contractSize = BigDecimal.ONE,
+                                volumeStep = BigDecimal("0.001"),
+                                volumeMin = BigDecimal("0.001"),
+                                volumeMax = null,
+                                pointSize = BigDecimal("0.01"),
+                                digits = 2,
+                                tradeStopsLevelPoints = 0,
+                            )
+                    },
             )
         val record =
             deployer.deploy(
@@ -525,7 +550,21 @@ class PortfolioDeployerE2ETest {
             )
         try {
             assertThat(record.children).hasSize(1)
-            assertThat(record.children.single().isRunning()).isTrue
+            val child = record.children.single()
+            assertThat(child.isRunning()).isTrue
+            val deadline =
+                System.nanoTime() +
+                    java.time.Duration
+                        .ofSeconds(2)
+                        .toNanos()
+            while (child.live.recentTrades().isEmpty() && System.nanoTime() < deadline) Thread.sleep(10)
+            assertThat(child.live.recentTrades()).hasSize(1)
+            assertThat(
+                child.live
+                    .recentTrades()
+                    .single()
+                    .quantity,
+            ).isEqualByComparingTo("50")
         } finally {
             record.supervisor.stop()
             for (child in record.children) runCatching { child.close() }

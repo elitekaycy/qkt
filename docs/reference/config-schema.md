@@ -301,6 +301,10 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `max_daily_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global daily-drawdown halt. |
 | `total_dd_basis` | `static` | halt rules | `static` uses initial balance. `trailing` uses high-water equity. |
 | `daily_dd_basis` | `balance` | halt rules | `balance` uses day-start closed balance. `equity` includes open float. |
+
+`balance` is retained as the compatibility default, but it ignores intraday open
+loss. Accounts governed by equity-based daily-loss mandates (including many funded
+account programs) should set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.max_daily_loss` | unset | daemon and backtest risk layering | Per-strategy daily realized-loss halt. |
 | `per_strategy.<name>.max_position_size` | unset | daemon pre-trade controls | Caps absolute position size for one strategy. |
 | `per_strategy.<name>.max_open_positions` | unset | daemon pre-trade controls | Caps non-zero symbols for one strategy. |

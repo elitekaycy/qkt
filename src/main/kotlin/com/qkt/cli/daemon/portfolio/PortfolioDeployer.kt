@@ -38,6 +38,7 @@ class PortfolioDeployer(
     private val stateDir: StateDir,
     private val marketSourceProvider: (List<String>) -> MarketSource,
     private val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = emptyMap(),
+    private val instrumentRegistry: com.qkt.instrument.InstrumentRegistry? = null,
     private val ringSize: Int = 1000,
     private val bind: String = "127.0.0.1",
     /**
@@ -68,6 +69,9 @@ class PortfolioDeployer(
     private val measuredUsageMaxQty: java.math.BigDecimal =
         com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
+    private val calendar: com.qkt.common.TradingCalendar =
+        com.qkt.common.TradingCalendar
+            .fxDefault(),
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /**
      * Append-only order-event journal root. When non-null, every portfolio child writes
@@ -109,10 +113,17 @@ class PortfolioDeployer(
             require((maxDrawdownPct == null && maxDailyDrawdownPct == null) || bookCapital != null) {
                 "portfolio drawdown limits require portfolio CAPITAL or book_risk.capital"
             }
+            val bookWindow =
+                compiled.ast.streams
+                    .firstOrNull()
+                    ?.timeframe
+                    ?.let(TimeWindow::parse)
+            val bookAnnualization =
+                bookWindow?.let(calendar::tradingPeriodsPerYear) ?: java.math.BigDecimal("252")
             val bookController =
                 if (bookRiskConfig != null && bookCapital != null) {
                     com.qkt.risk.book
-                        .BookRiskController(bookRiskConfig, bookCapital)
+                        .BookRiskController(bookRiskConfig, bookCapital, bookAnnualization)
                 } else {
                     null
                 }
@@ -153,7 +164,14 @@ class PortfolioDeployer(
                     .map { it.qktSymbol }
                     .distinct()
             val hasConditionalRules = compiled.ast.rules.any { it is WhenRun }
-            val riskAggregator = buildRiskAggregator(portfolioName, compiled, childWrappers, bookController)
+            val riskAggregator =
+                buildRiskAggregator(
+                    portfolioName,
+                    compiled,
+                    childWrappers,
+                    bookController,
+                    sampleOnEvaluate = bookWindow == null,
+                )
             if (riskAggregator != null) bookFillBuffer?.bind(riskAggregator)
             val supervisor =
                 PortfolioSupervisor(
@@ -201,6 +219,7 @@ class PortfolioDeployer(
         compiled: PortfolioCompiled,
         wrappers: List<ChildHandle>,
         bookController: com.qkt.risk.book.BookRiskController?,
+        sampleOnEvaluate: Boolean,
     ): PortfolioRiskAggregator? {
         val capital = compiled.ast.capital
         val controllerCapital = bookRiskConfig?.capital ?: capital
@@ -272,31 +291,38 @@ class PortfolioDeployer(
                 }
             }
         val childPairs = compiled.children.zip(wrappers)
-        return PortfolioRiskAggregator(targets, bookRiskState, haltRules, clock) { timestamp ->
-            val controller = bookController ?: return@PortfolioRiskAggregator
-            val legs =
-                childPairs.flatMap { (child, wrapper) ->
-                    wrapper.handle.live.bookLegs(child.strategyId)
-                }
-            val perStrategyPnl =
-                childPairs.associate { (child, wrapper) ->
-                    val pnl = wrapper.handle.live.pnlSnapshot(child.strategyId)
-                    child.strategyId to pnl.realized.add(pnl.unrealized)
-                }
-            val equity =
-                riskCapital.add(
-                    perStrategyPnl.values.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add),
+        return PortfolioRiskAggregator(
+            children = targets,
+            bookRiskState = bookRiskState,
+            haltRules = haltRules,
+            clock = clock,
+            onSample = { timestamp ->
+                val controller = bookController ?: return@PortfolioRiskAggregator
+                val legs =
+                    childPairs.flatMap { (child, wrapper) ->
+                        wrapper.handle.live.bookLegs(child.strategyId)
+                    }
+                val perStrategyPnl =
+                    childPairs.associate { (child, wrapper) ->
+                        val pnl = wrapper.handle.live.pnlSnapshot(child.strategyId)
+                        child.strategyId to pnl.realized.add(pnl.unrealized)
+                    }
+                val equity =
+                    riskCapital.add(
+                        perStrategyPnl.values.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add),
+                    )
+                controller.onSample(
+                    com.qkt.risk.book.BookSnapshot(
+                        timestamp,
+                        equity,
+                        com.qkt.risk.book
+                            .bookExposure(legs, timestampMs = timestamp),
+                        perStrategyPnl,
+                    ),
                 )
-            controller.onSample(
-                com.qkt.risk.book.BookSnapshot(
-                    timestamp,
-                    equity,
-                    com.qkt.risk.book
-                        .bookExposure(legs, timestampMs = timestamp),
-                    perStrategyPnl,
-                ),
-            )
-        }
+            },
+            sampleOnEvaluate = sampleOnEvaluate,
+        )
     }
 
     private fun childInsightsMetadata(
@@ -402,6 +428,8 @@ class PortfolioDeployer(
                 source = source,
                 symbols = compiledChild.symbols,
                 candleWindow = candleWindow,
+                clock = clock,
+                calendar = calendar,
                 accountingConfig = accountingConfig,
                 // Insights and trading events must use the same canonical child id.
                 // The filename discriminator still maps ':' to '__' for local logs.
@@ -426,6 +454,7 @@ class PortfolioDeployer(
                 gate = effectiveActive,
                 bookRiskController = bookController,
                 brokerFactories = brokerFactories,
+                instrumentRegistry = instrumentRegistry,
                 persistor = persistor,
                 journal =
                     journalRoot?.let {

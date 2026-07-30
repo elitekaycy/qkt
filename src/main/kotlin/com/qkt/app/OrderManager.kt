@@ -76,6 +76,13 @@ class OrderManager(
     private val trackRisk: Boolean = false,
     /** Raises an operator alert when a filled position cannot retain venue-side protection. */
     private val onProtectionFailure: (strategyId: String, message: String) -> Unit = { _, _ -> },
+    /**
+     * Returns a rejection reason when an engine-held request may no longer reach the broker.
+     * Live wiring uses this to re-check halt state when a deferred entry materializes or fires.
+     */
+    private val engineHeldSubmissionBlockReason: (OrderRequest) -> String? = { null },
+    /** Identifies requests that reduce current exposure and must survive a halt cancel sweep. */
+    private val isRiskReducingForHalt: (OrderRequest) -> Boolean = { false },
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -118,6 +125,14 @@ class OrderManager(
      * drains it once per pass, reclaiming it if nothing references it and re-queuing it otherwise.
      */
     private val gcQueue: ArrayDeque<String> = ArrayDeque()
+
+    private data class HaltCancelState(
+        var attempts: Int,
+        var nextAttemptAtMs: Long,
+        var alerted: Boolean = false,
+    )
+
+    private val haltCancellations: MutableMap<String, HaltCancelState> = mutableMapOf()
 
     // Reusable per-tick scratch buffers for [evaluateTriggers]. Each is cleared and refilled every
     // tick; ArrayList.clear() retains capacity, so steady-state per-tick list allocation is zero.
@@ -197,6 +212,7 @@ class OrderManager(
     private data class BracketPositionModification(
         val ticket: String,
         val strategyId: String,
+        val fallbackStop: OrderRequest.Stop?,
     ) : PendingPositionModification
 
     private data class RatchetPositionModification(
@@ -207,6 +223,7 @@ class OrderManager(
     ) : PendingPositionModification
 
     private val pendingPositionModifications: MutableMap<String, PendingPositionModification> = mutableMapOf()
+    private val persistedStrategies = mutableSetOf<String>()
 
     private val scaleOutLegs: MutableMap<String, Pair<OrderRequest.ScaleOut, BigDecimal>> = mutableMapOf()
 
@@ -327,6 +344,7 @@ class OrderManager(
         bus.subscribe<BrokerEvent.OrderFilled> { e -> evaluateStackFlat(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> onPartiallyFilled(e) }
         bus.subscribe<BrokerEvent.OrderCancelled> { e -> onCancelled(e) }
+        bus.subscribe<BrokerEvent.OrderCancelFailed> { e -> onCancelFailed(e) }
         bus.subscribe<BrokerEvent.PositionModificationCompleted> { e -> onPositionModificationCompleted(e) }
         bus.subscribe<TickEvent> { e -> evaluateTriggers(e.tick) }
     }
@@ -448,6 +466,67 @@ class OrderManager(
         for (id in pending) cancel(id)
     }
 
+    /**
+     * Cancel active entry intent after a risk halt, optionally limited to [strategyId].
+     *
+     * Protective monitors, risk-reducing exits, and composite containers whose entry has filled
+     * remain active. Their risk-increasing pending children are still cancelled individually.
+     */
+    fun cancelEntriesForHalt(strategyId: String? = null) {
+        val entryIds =
+            orders.values
+                .filter { managed ->
+                    (managed.state == OrderState.PENDING || managed.state == OrderState.WORKING) &&
+                        (strategyId == null || managed.request.strategyId == strategyId) &&
+                        !mustSurviveHalt(managed)
+                }.map { it.id }
+        for (id in entryIds) {
+            haltCancellations[id] = HaltCancelState(attempts = 1, nextAttemptAtMs = clock.now() + HALT_CANCEL_RETRY_MS)
+            cancel(id)
+        }
+    }
+
+    private fun mustSurviveHalt(managed: ManagedOrder): Boolean {
+        if (managed.id in engineHeldCloseTickets) return true
+        if (isPersistentManagedStop(managed.request)) return true
+        if (isRiskReducingForHalt(managed.request)) return true
+        return managed.childClientOrderIds.any { childId ->
+            orders[childId]?.state == OrderState.FILLED
+        }
+    }
+
+    /** Retry halt-owned cancellations that have not produced a terminal broker event. */
+    fun retryHaltCancellations(nowMs: Long) {
+        val due = haltCancellations.filterValues { nowMs >= it.nextAttemptAtMs }.keys.toList()
+        for (id in due) {
+            val managed = orders[id]
+            if (managed == null || managed.state.isTerminal) {
+                haltCancellations.remove(id)
+                continue
+            }
+            val state = haltCancellations[id] ?: continue
+            state.attempts += 1
+            state.nextAttemptAtMs = nowMs + haltCancelDelayMs(state.attempts)
+            if (state.attempts >= HALT_CANCEL_ALERT_ATTEMPTS && !state.alerted) {
+                state.alerted = true
+                reportProtectionFailure(
+                    managed.request.strategyId,
+                    "CRITICAL halt cancellation remains unconfirmed for ${managed.id} " +
+                        "after ${state.attempts} attempts",
+                )
+            }
+            broker.cancel(id)
+        }
+    }
+
+    private fun onCancelFailed(event: BrokerEvent.OrderCancelFailed) {
+        val state = haltCancellations[event.clientOrderId] ?: return
+        state.nextAttemptAtMs = minOf(state.nextAttemptAtMs, clock.now() + HALT_CANCEL_RETRY_MS)
+    }
+
+    private fun haltCancelDelayMs(attempts: Int): Long =
+        (HALT_CANCEL_RETRY_MS * (1L shl (attempts - 1).coerceAtMost(5))).coerceAtMost(HALT_CANCEL_MAX_RETRY_MS)
+
     fun getOrder(clientOrderId: String): ManagedOrder? = orders[clientOrderId]
 
     /** Sibling order ids linked to [clientOrderId] — exposed for restart-recovery tests. */
@@ -457,66 +536,103 @@ class OrderManager(
      * Rebuild OCO leg tracking and sibling linkage from the persistor for [strategyIds],
      * then hand the legs to the broker so it can reconcile them against venue truth —
      * re-seeding still-pending legs and republishing any fill missed during downtime.
-     * Called once at session startup. Best-effort: a persistor failure leaves state empty.
+     * Called once at session startup. Persistence read failures abort startup rather than silently
+     * discarding live order state.
      */
     fun restore(strategyIds: List<String>) {
         val recovered = mutableListOf<ManagedOrder>()
         for (sid in strategyIds) {
-            runCatching {
-                val dynamicStops =
-                    persistor
-                        .loadTrailingStops(sid)
-                        .associateBy { it.clientOrderId }
-                        .toMutableMap()
-                for (leg in persistor.loadOcoLegs(sid)) {
-                    if (orders.containsKey(leg.clientOrderId)) continue
-                    val groupId =
-                        (leg.siblingIds + leg.clientOrderId)
-                            .sorted()
-                            .joinToString(prefix = "restored-oco:", separator = "|")
-                    if (isPersistentManagedStop(leg.request)) {
-                        siblings[leg.clientOrderId] = leg.siblingIds
-                        val persisted = dynamicStops.remove(leg.clientOrderId)
-                        if (persisted == null) {
-                            log.warn(
-                                "[restore] dynamic state missing for {}; restarting from its initial stop",
-                                leg.clientOrderId,
-                            )
-                        }
-                        restorePersistentManagedStop(
-                            persisted
-                                ?: com.qkt.persistence.PersistedTrailingStop(
-                                    clientOrderId = leg.clientOrderId,
-                                    brokerOrderId = leg.brokerOrderId,
-                                    strategyId = leg.strategyId,
-                                    request = leg.request,
-                                    armed = false,
-                                    hwm = managedStopEntryPrice(leg.request),
-                                ),
-                            groupId,
-                        )
-                        continue
-                    }
-                    val now = clock.now()
-                    val managed =
-                        ManagedOrder(
-                            id = leg.clientOrderId,
-                            request = leg.request,
-                            state = OrderState.WORKING,
-                            brokerOrderId = leg.brokerOrderId,
-                            createdAt = now,
-                            lastUpdatedAt = now,
-                        )
-                    orders[leg.clientOrderId] = managed
-                    indexLive(managed)
+            persistedStrategies.add(sid)
+            val dynamicStops =
+                persistor
+                    .loadTrailingStops(sid)
+                    .associateBy { it.clientOrderId }
+                    .toMutableMap()
+            for (leg in persistor.loadOcoLegs(sid)) {
+                if (orders.containsKey(leg.clientOrderId)) continue
+                val groupId =
+                    (leg.siblingIds + leg.clientOrderId)
+                        .sorted()
+                        .joinToString(prefix = "restored-oco:", separator = "|")
+                if (isPersistentManagedStop(leg.request)) {
                     siblings[leg.clientOrderId] = leg.siblingIds
-                    registerExposure(leg.request, groupId)
-                    recovered += managed
+                    val persisted = dynamicStops.remove(leg.clientOrderId)
+                    if (persisted == null) {
+                        log.warn(
+                            "[restore] dynamic state missing for {}; restarting from its initial stop",
+                            leg.clientOrderId,
+                        )
+                    }
+                    restorePersistentManagedStop(
+                        persisted
+                            ?: com.qkt.persistence.PersistedTrailingStop(
+                                clientOrderId = leg.clientOrderId,
+                                brokerOrderId = leg.brokerOrderId,
+                                strategyId = leg.strategyId,
+                                request = leg.request,
+                                armed = false,
+                                hwm = managedStopEntryPrice(leg.request),
+                            ),
+                        groupId,
+                    )
+                    continue
                 }
-                for (stop in dynamicStops.values) {
-                    restorePersistentManagedStop(stop, groupId = null)
+                val now = clock.now()
+                val managed =
+                    ManagedOrder(
+                        id = leg.clientOrderId,
+                        request = leg.request,
+                        state = OrderState.WORKING,
+                        brokerOrderId = leg.brokerOrderId,
+                        createdAt = now,
+                        lastUpdatedAt = now,
+                    )
+                orders[leg.clientOrderId] = managed
+                indexLive(managed)
+                siblings[leg.clientOrderId] = leg.siblingIds
+                registerExposure(leg.request, groupId)
+                recovered += managed
+            }
+            for (stop in dynamicStops.values) {
+                restorePersistentManagedStop(stop, groupId = null)
+            }
+            val pairs = persistor.loadBracketPairs(sid)
+            for (pair in pairs) {
+                val exitIds = listOfNotNull(pair.stopLossClientOrderId, pair.takeProfitClientOrderId)
+                for (exitId in exitIds) {
+                    siblings[exitId] = exitIds.filter { it != exitId }
                 }
-            }.onFailure { e -> log.warn("[restore] failed for {}: {}", sid, e.message) }
+            }
+            for ((id, request) in persistor.loadPendingOrders(sid)) {
+                if (orders.containsKey(id)) continue
+                if (isPersistentManagedStop(request)) {
+                    restorePersistentManagedStop(
+                        com.qkt.persistence.PersistedTrailingStop(
+                            clientOrderId = id,
+                            brokerOrderId = null,
+                            strategyId = sid,
+                            request = request,
+                            armed = false,
+                            hwm = managedStopEntryPrice(request),
+                        ),
+                        groupId = null,
+                    )
+                    continue
+                }
+                val now = clock.now()
+                val managed =
+                    ManagedOrder(
+                        id = id,
+                        request = request,
+                        state = OrderState.WORKING,
+                        createdAt = now,
+                        lastUpdatedAt = now,
+                    )
+                orders[id] = managed
+                indexLive(managed)
+                registerExposure(request)
+                recovered += managed
+            }
         }
         if (recovered.isNotEmpty()) {
             broker.recoverPendingOrders(recovered)
@@ -1000,12 +1116,19 @@ class OrderManager(
                         },
                 )
             }
-            is BracketPositionModification ->
+            is BracketPositionModification -> {
+                pending.fallbackStop?.let { armFillAnchoredFallbackStop(it, pending.ticket) }
                 reportProtectionFailure(
                     pending.strategyId,
                     "venue rejected fill-anchored bracket modify for ticket ${pending.ticket}: " +
-                        event.rejectReason,
+                        "${event.rejectReason}; " +
+                        if (pending.fallbackStop != null) {
+                            "engine-held stop armed at ${pending.fallbackStop.stopPrice.toPlainString()}"
+                        } else {
+                            "engine-managed protection remains active"
+                        },
                 )
+            }
             is RatchetPositionModification ->
                 reportProtectionFailure(
                     pending.strategyId,
@@ -1022,6 +1145,27 @@ class OrderManager(
         log.error("position protection failure: {}", message)
         runCatching { onProtectionFailure(strategyId, message) }
             .onFailure { log.error("stack protection alert failed for strategy {}", strategyId, it) }
+    }
+
+    private fun armFillAnchoredFallbackStop(
+        stop: OrderRequest.Stop,
+        ticket: String,
+    ) {
+        if (orders.containsKey(stop.id)) return
+        val now = clock.now()
+        val managed =
+            ManagedOrder(
+                id = stop.id,
+                request = stop,
+                state = OrderState.PENDING,
+                createdAt = now,
+                lastUpdatedAt = now,
+            )
+        orders[stop.id] = managed
+        indexLive(managed)
+        engineHeldCloseTickets[stop.id] = ticket
+        registerExposure(stop)
+        persistAll()
     }
 
     private fun attachLayerSl(
@@ -1220,7 +1364,12 @@ class OrderManager(
                 triggerPrice,
                 parent.side,
             )
-            dispatch(pending)
+            val blockReason = engineHeldSubmissionBlockReason(pending)
+            if (blockReason == null) {
+                dispatch(pending)
+            } else {
+                rejectEngineHeld(pending, blockReason)
+            }
         }
     }
 
@@ -1257,7 +1406,18 @@ class OrderManager(
                     else -> error("unsupported op in stack trigger: ${expr.op}")
                 }
             }
+
             else -> error("unsupported trigger expression: $expr")
+        }
+
+    /** Active protective orders that require ticks on the engine thread to trigger. */
+    fun engineHeldProtectiveStopCount(): Int =
+        orders.values.count { managed ->
+            !managed.state.isTerminal &&
+                (
+                    managed.id in engineHeldCloseTickets ||
+                        isPersistentManagedStop(managed.request)
+                )
         }
 
     private fun resolveLayerQuantity(layer: LayerSpec): BigDecimal {
@@ -1693,6 +1853,7 @@ class OrderManager(
         val expiresAt = request.expiresAt
         if (expiresAt != null && expiresAt <= clock.now()) return rejectExpiredBeforeSubmit(request, expiresAt)
         update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
+        persistSubmissionIntent(request.strategyId)
         val ack = broker.submit(request)
         if (!ack.accepted && orders[request.id]?.state?.isTerminal != true) {
             update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
@@ -2011,6 +2172,9 @@ class OrderManager(
 
     private fun track(managed: ManagedOrder) {
         orders[managed.id] = managed
+        managed.request.strategyId
+            .takeIf { it.isNotBlank() }
+            ?.let(persistedStrategies::add)
         indexLive(managed)
         persistAll()
     }
@@ -2044,9 +2208,11 @@ class OrderManager(
     }
 
     /**
-     * Snapshot pending orders + bracket pairs per strategy to the configured persistor.
-     * Best-effort: failures inside the persistor are swallowed so the order pipeline keeps
-     * running. Called after every state mutation by [track] / [update] / [recordSiblings].
+     * Snapshot all active leaf orders and linked engine state per strategy.
+     *
+     * Routine mutation snapshots are best-effort so an asynchronous persistence failure does
+     * not block event dispatch. Venue-bound intent takes the fail-closed synchronous path in
+     * [persistSubmissionIntent].
      */
     private fun persistAll() {
         runCatching {
@@ -2055,7 +2221,7 @@ class OrderManager(
             val pairsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.BracketPair>> = mutableMapOf()
 
             for ((id, managed) in orders) {
-                if (managed.state == OrderState.PENDING || managed.state == OrderState.CREATED) {
+                if (!managed.state.isTerminal) {
                     val sid = managed.request.strategyId
                     if (sid.isBlank()) continue
                     // Composite shapes (OCO, OTO, Bracket, ScaleOut, TimeExit, Stack) are
@@ -2107,7 +2273,7 @@ class OrderManager(
             val trailingStopsByStrategy = trailingStopsByStrategy()
             val strategies =
                 (
-                    pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +
+                    persistedStrategies + pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +
                         trailingStopsByStrategy.keys
                 ).toSet()
             for (sid in strategies) {
@@ -2118,6 +2284,20 @@ class OrderManager(
             }
             trailingStateDirty = false
         }
+    }
+
+    private fun persistSubmissionIntent(strategyId: String) {
+        if (strategyId.isBlank()) return
+        persistedStrategies.add(strategyId)
+        val active =
+            orders
+                .asSequence()
+                .filter { (_, managed) ->
+                    managed.request.strategyId == strategyId &&
+                        !managed.state.isTerminal &&
+                        !managed.request.isCompositeShape()
+                }.associate { (id, managed) -> id to managed.request }
+        persistor.savePendingOrdersSync(strategyId, active)
     }
 
     /** Flushes HWM-only armed-trail changes at the live heartbeat cadence. */
@@ -2186,6 +2366,7 @@ class OrderManager(
     }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
+        haltCancellations.remove(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
@@ -2228,6 +2409,7 @@ class OrderManager(
     }
 
     private fun onFilled(e: BrokerEvent.OrderFilled) {
+        haltCancellations.remove(e.clientOrderId)
         if (!e.updatesOrderExecution) {
             log.info(
                 "position close observed order_id={} broker_order_id={} — terminal order record unchanged",
@@ -2299,8 +2481,23 @@ class OrderManager(
                     ?.takeIf { it.isNotBlank() }
                     ?.let { ticket ->
                         val operationId = "bracket:${e.clientOrderId}:${e.sequenceId}"
+                        val fallbackStop =
+                            if (resolved.stopLoss is StopLossSpec.Fixed) {
+                                OrderRequest.Stop(
+                                    id = "${resolved.id}-sl",
+                                    symbol = resolved.symbol,
+                                    side = if (resolved.side == Side.BUY) Side.SELL else Side.BUY,
+                                    quantity = e.quantity,
+                                    stopPrice = sl,
+                                    timeInForce = resolved.timeInForce,
+                                    timestamp = clock.now(),
+                                    strategyId = resolved.strategyId,
+                                )
+                            } else {
+                                null
+                            }
                         pendingPositionModifications[operationId] =
-                            BracketPositionModification(ticket, resolved.strategyId)
+                            BracketPositionModification(ticket, resolved.strategyId, fallbackStop)
                         modifyPositionAsync(operationId, ticket, sl, resolved.takeProfit)
                     }
                 pending.orEmpty().forEach { child ->
@@ -2368,12 +2565,14 @@ class OrderManager(
     }
 
     private fun onCancelled(e: BrokerEvent.OrderCancelled) {
+        haltCancellations.remove(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
         exposureEntries.remove(e.clientOrderId)
+        pendingChildren.remove(e.clientOrderId)?.forEach { child -> cancel(child.id) }
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
             e.clientOrderId,
@@ -2756,7 +2955,6 @@ class OrderManager(
                 tickPrice,
             )
         }
-        update(managed.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
         val internal: OrderRequest =
             when (val req = managed.request) {
                 is OrderRequest.Stop ->
@@ -2768,7 +2966,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
-                        closesTicket = engineHeldCloseTickets.remove(req.id),
+                        closesTicket = engineHeldCloseTickets[req.id],
                     )
                 is OrderRequest.StopLimit ->
                     OrderRequest.Limit(
@@ -2855,7 +3053,31 @@ class OrderManager(
                 }
                 else -> error("Not a Tier 2 fallback type: ${req::class.simpleName}")
             }
+        val blockReason = engineHeldSubmissionBlockReason(internal)
+        if (blockReason != null) {
+            rejectEngineHeld(internal, blockReason)
+            return
+        }
+        engineHeldCloseTickets.remove(managed.id)
+        update(managed.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
+        persistSubmissionIntent(internal.strategyId)
         broker.submit(internal)
+    }
+
+    private fun rejectEngineHeld(
+        request: OrderRequest,
+        reason: String,
+    ) {
+        update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
+        exposureEntries.remove(request.id)
+        log.warn("engine-held order {} blocked before broker submission: {}", request.id, reason)
+        bus.publish(com.qkt.events.RiskRejectedEvent(request, reason, timestamp = clock.now()))
+    }
+
+    private companion object {
+        const val HALT_CANCEL_RETRY_MS = 1_000L
+        const val HALT_CANCEL_MAX_RETRY_MS = 30_000L
+        const val HALT_CANCEL_ALERT_ATTEMPTS = 3
     }
 
     private fun managedStopCloseTicket(request: OrderRequest): String? =

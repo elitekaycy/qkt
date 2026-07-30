@@ -41,4 +41,5 @@ fun Signal.toOrderRequest(
         is Signal.Submit -> request.withStrategyId(strategyId)
         is Signal.CancelPendingForSymbol -> null
         is Signal.ArmLatch -> null
+        is Signal.Suppressed -> null
     }
