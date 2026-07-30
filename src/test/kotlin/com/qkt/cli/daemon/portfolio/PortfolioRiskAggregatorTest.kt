@@ -140,6 +140,28 @@ class PortfolioRiskAggregatorTest {
     }
 
     @Test
+    fun `candle-aligned controller sampling is independent of the risk heartbeat`() {
+        val clock = TestClock(0L)
+        val state = bookRiskState(FakePnL(BigDecimal.ZERO, BigDecimal.ZERO), clock)
+        val timestamps = mutableListOf<Long>()
+        val aggregator =
+            PortfolioRiskAggregator(
+                children = emptyList(),
+                bookRiskState = state,
+                haltRules = emptyList(),
+                clock = clock,
+                onSample = timestamps::add,
+                sampleOnEvaluate = false,
+            )
+
+        aggregator.evaluate()
+        aggregator.sample(60_000L)
+        aggregator.evaluate()
+
+        assertThat(timestamps).containsExactly(60_000L)
+    }
+
+    @Test
     fun `child fill callbacks defer cross-engine pnl reads to the risk heartbeat`() {
         val clock = TestClock(0L)
         var pnlReads = 0

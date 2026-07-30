@@ -3,6 +3,7 @@ package com.qkt.persistence
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -67,7 +68,7 @@ class FileStatePersistorBracketPairsTest {
     }
 
     @Test
-    fun `loadBracketPairs returns empty on version mismatch`(
+    fun `loadBracketPairs rejects a version mismatch`(
         @TempDir tmp: Path,
     ) {
         val dir = tmp.resolve("hedge")
@@ -77,6 +78,8 @@ class FileStatePersistorBracketPairsTest {
             """{"version":99,"strategyId":"hedge","pairs":[]}""",
         )
         val persistor = FileStatePersistor(tmp)
-        assertThat(persistor.loadBracketPairs("hedge")).isEmpty()
+        assertThatThrownBy { persistor.loadBracketPairs("hedge") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("schema mismatch")
     }
 }

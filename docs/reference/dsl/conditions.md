@@ -109,6 +109,11 @@ btc.close CROSSES ABOVE highest(btc.close, 20)     -- Donchian breakout
 
 The second argument can be a constant; `rsi CROSSES BELOW 70` fires on the bar where RSI drops from ≥70 to <70.
 
+Equality belongs to the not-above side. `CROSSES ABOVE` fires when the prior value was
+equal to or below the boundary and the current value is strictly above it.
+`CROSSES BELOW` fires when the prior value was strictly above and the current value is
+equal to or below it, so a touch from above counts as a below cross.
+
 ## Range checks
 
 ### `BETWEEN`
@@ -141,8 +146,8 @@ These functions/properties act like read-only stream-field accesses:
 | `account.equity` | Current account equity (cash + open P&L) |
 | `account.balance` | Cash balance only (excludes unrealized P&L) |
 | `POSITION.<stream>` | Net position quantity (positive=long, negative=short, 0=flat) |
-| `POSITION.<stream>.pnl` | Open P&L on the current position |
-| `POSITION.<stream>.entry_price` | Average entry price |
+| `POSITION.<stream>.pnl` | Strategy P&L for the stream |
+| `POSITION.<stream>.entry_price` | Average entry price, or `null` while flat |
 | `POSITION.<stream>.holding_duration` | How long the position has been open (seconds) |
 
 ```qkt

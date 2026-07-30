@@ -89,6 +89,8 @@ class LiveSession(
     private val gate: () -> Boolean = { true },
     private val bookRiskController: com.qkt.risk.book.BookRiskController? = null,
     private val brokerFactories: Map<String, BrokerFactory> = emptyMap(),
+    /** Explicit instrument metadata source for embedded and deterministic test sessions. */
+    private val instrumentRegistry: com.qkt.instrument.InstrumentRegistry? = null,
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /**
      * When `false` (default), a mismatch between broker positions and persisted leg
@@ -230,6 +232,7 @@ class LiveSession(
 
         /** Tick-queue poll timeout — bounds the control-queue re-check latency. */
         const val QUEUE_POLL_MS: Long = 25L
+        const val STOP_DRAIN_GRACE_MS: Long = 2_000L
         const val FLATTEN_VERIFY_POLL_MS: Long = 100L
 
         /** HTTP/operator snapshot requests fail loud instead of waiting forever on a stalled engine. */
@@ -465,6 +468,28 @@ class LiveSession(
                         val attachLegs =
                             if (ticketsForStrategy.isNotEmpty()) {
                                 ticketsForStrategy.map { t ->
+                                    val venueStop = t.stopLoss?.takeIf { it.signum() > 0 }
+                                    val venueTarget = t.takeProfit?.takeIf { it.signum() > 0 }
+                                    if (venueStop == null) {
+                                        log.error(
+                                            "ADOPTING UNPROTECTED position after explicit ignore-mismatches ack: " +
+                                                "strategy={} symbol={} ticket={} venueStop=none venueTarget={}",
+                                            strategyId,
+                                            symbol,
+                                            t.ticket,
+                                            venueTarget?.toPlainString() ?: "none",
+                                        )
+                                    } else {
+                                        log.warn(
+                                            "adopting position after explicit ignore-mismatches ack: " +
+                                                "strategy={} symbol={} ticket={} venueStop={} venueTarget={}",
+                                            strategyId,
+                                            symbol,
+                                            t.ticket,
+                                            venueStop.toPlainString(),
+                                            venueTarget?.toPlainString() ?: "none",
+                                        )
+                                    }
                                     com.qkt.positions.PositionLeg(
                                         legId = "$strategyId-$symbol-reconciled-${t.ticket}",
                                         symbol = symbol,
@@ -578,6 +603,7 @@ class LiveSession(
      * paper-only strategies that don't need contract-size-aware math keep working.
      */
     private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
+        instrumentRegistry?.let { return it }
         val mt5Registries =
             builtBrokers
                 .filterIsInstance<com.qkt.broker.mt5.MT5Broker>()
@@ -907,6 +933,7 @@ class LiveSession(
         // the sink those events dispatch inline against a half-built pipeline (#388).
         // They queue here and drain, in order, once the engine loop starts.
         val running = AtomicBoolean(true)
+        val stopping = AtomicBoolean(false)
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
         val paperBroker = PaperBroker(bus, clock, priceTracker)
@@ -1083,6 +1110,7 @@ class LiveSession(
                 priceCollarFrac = priceCollarFrac,
                 accounting = accounting,
             )
+        var engineHeldProtectiveStopCount: () -> Int = { 0 }
         // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
         // frozen data and drops implausible ticks before they poison indicators.
         val marketDataGate =
@@ -1095,7 +1123,10 @@ class LiveSession(
                                 notifier.notify(
                                     NotificationEvent.StrategyError(
                                         strategyId = strategyId,
-                                        message = "market data unhealthy for $symbol: $reason",
+                                        message =
+                                            "market data unhealthy for $symbol: $reason; " +
+                                                "${engineHeldProtectiveStopCount()} engine-held protective stop(s) " +
+                                                "cannot trigger without ticks",
                                         timestamp = clock.now(),
                                     ),
                                 )
@@ -1279,6 +1310,7 @@ class LiveSession(
                     }.onFailure { t -> recordNotificationFailure(strategyId, "ProtectionFailure", t) }
                 },
             )
+        engineHeldProtectiveStopCount = pipeline.orderManager::engineHeldProtectiveStopCount
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
@@ -1328,10 +1360,8 @@ class LiveSession(
         bus.subscribe<RiskEvent.Halted> { ev ->
             dailyTracker.recordHalt(ev.strategyId ?: ownerStrategyId)
         }
-        // A halt is only a kill switch if it also takes down what is RESTING at the
-        // venue: pendings (incl. STACK_AT layers) left alive keep filling into exactly
-        // the situation the halt declared bad (FIA §1.11, RTS 6). Runs on the engine
-        // thread via the bus reroute, so OrderManager state stays single-threaded.
+        // Runs on the engine thread via the bus reroute, so OrderManager state stays
+        // single-threaded. The sweep removes entry intent only; protective exits survive.
         bus.subscribe<RiskEvent.Halted> { ev ->
             if (!ev.cancelWorkingOrders) {
                 log.error(
@@ -1340,11 +1370,13 @@ class LiveSession(
                 )
                 return@subscribe
             }
-            log.warn("halt ({}): cancelling venue-resting pendings for {} symbol(s)", ev.reason, symbols.size)
-            for (symbol in symbols) {
-                runCatching { pipeline.orderManager.cancelPendingForSymbol(symbol) }
-                    .onFailure { e -> log.error("halt pending-cancel failed for {}: {}", symbol, e.message) }
-            }
+            log.warn(
+                "halt ({}): cancelling active entry orders for scope {}",
+                ev.reason,
+                ev.strategyId ?: "global",
+            )
+            runCatching { pipeline.orderManager.cancelEntriesForHalt(ev.strategyId) }
+                .onFailure { e -> log.error("halt entry-cancel failed: {}", e.message) }
         }
 
         if (perStreamSpecs.isNotEmpty()) {
@@ -1440,8 +1472,59 @@ class LiveSession(
         // state from its own worker thread.
         fun doFlatten() {
             val strategyId = strategies.firstOrNull()?.first ?: return
+            if (broker.supportsPositionTickets) {
+                val deployedIds = strategies.map { it.first }
+                val tickets = broker.positionTickets()
+                for (ticket in tickets) {
+                    val owner =
+                        ticketAttribution.ownerOf(ticket.ticket)
+                            ?: ticketAttribution.fromComment(ticket.comment, deployedIds)
+                    if (owner != strategyId) {
+                        if (owner == null) {
+                            log.error(
+                                "flatten skipped unattributed ticket {} on {}; operator intervention required",
+                                ticket.ticket,
+                                ticket.symbol,
+                            )
+                        }
+                        continue
+                    }
+                    pipeline.orderManager.cancelPendingForSymbol(ticket.symbol)
+                    val side =
+                        if (ticket.side == com.qkt.common.Side.BUY) {
+                            com.qkt.common.Side.SELL
+                        } else {
+                            com.qkt.common.Side.BUY
+                        }
+                    bus.publish(
+                        com.qkt.events.OrderEvent(
+                            com.qkt.execution.OrderRequest.Market(
+                                id = ids.next(),
+                                symbol = ticket.symbol,
+                                side = side,
+                                quantity = ticket.qty,
+                                timeInForce = com.qkt.execution.TimeInForce.GTC,
+                                timestamp = clock.now(),
+                                strategyId = strategyId,
+                                closesTicket = ticket.ticket,
+                            ),
+                        ),
+                    )
+                }
+                return
+            }
             for ((symbol, pos) in positions.allPositions()) {
                 if (pos.quantity.signum() == 0) continue
+                if (broker.positionAccountingMode(symbol) != com.qkt.broker.PositionAccountingMode.NETTING) {
+                    log.error(
+                        "flatten cannot safely close {} on broker {} without position tickets; " +
+                            "accounting mode is {}",
+                        symbol,
+                        broker.name,
+                        broker.positionAccountingMode(symbol),
+                    )
+                    continue
+                }
                 pipeline.orderManager.cancelPendingForSymbol(symbol)
                 val side =
                     if (pos.quantity.signum() > 0) com.qkt.common.Side.SELL else com.qkt.common.Side.BUY
@@ -1570,11 +1653,22 @@ class LiveSession(
                     }
                 }
                 try {
+                    var stopDeadlineNanos: Long? = null
                     while (running.get()) {
-                        val msg: Inbound =
+                        val msg: Inbound? =
                             control.poll()
-                                ?: tickQueue.poll(QUEUE_POLL_MS, TimeUnit.MILLISECONDS)
-                                ?: continue
+                                ?: if (stopDeadlineNanos == null) {
+                                    tickQueue.poll(QUEUE_POLL_MS, TimeUnit.MILLISECONDS)
+                                } else {
+                                    control.poll(QUEUE_POLL_MS, TimeUnit.MILLISECONDS)
+                                }
+                        if (msg == null) {
+                            val deadline = stopDeadlineNanos
+                            if (deadline != null && System.nanoTime() >= deadline && control.isEmpty()) {
+                                running.set(false)
+                            }
+                            continue
+                        }
                         when (msg) {
                             is Inbound.FeedTick -> processTick(msg)
                             is Inbound.BusEvent ->
@@ -1597,10 +1691,17 @@ class LiveSession(
                             is Inbound.FeedEnded -> {
                                 // Feed ended (finite source drained): process every tick already
                                 // queued before stopping, so no tick is dropped.
-                                while (true) processTick(tickQueue.poll() ?: break)
-                                if (msg.unexpected) notifyUnexpectedFeedEnd(msg.reason)
-                                running.set(false)
+                                if (!stopping.get()) {
+                                    while (true) processTick(tickQueue.poll() ?: break)
+                                    if (msg.unexpected) notifyUnexpectedFeedEnd(msg.reason)
+                                    running.set(false)
+                                }
                             }
+                            is Inbound.GracefulStop -> stopDeadlineNanos = msg.deadlineNanos
+                        }
+                        val deadline = stopDeadlineNanos
+                        if (deadline != null && System.nanoTime() >= deadline && control.isEmpty()) {
+                            running.set(false)
                         }
                     }
                 } catch (e: InterruptedException) {
@@ -1799,7 +1900,16 @@ class LiveSession(
                     // Recheck thread liveness so a finite feed cannot strand the query on shutdown.
                 }
             }
-            return if (result.isDone) result.get() else read()
+            return if (result.isDone) {
+                result.get()
+            } else {
+                check(terminated.await(0L, TimeUnit.MILLISECONDS)) {
+                    "live engine stopped without publishing its termination barrier"
+                }
+                // CountDownLatch establishes a happens-before edge from the engine's final
+                // mutation to this read. The engine is terminated, so no concurrent writer exists.
+                read()
+            }
         }
 
         return object : LiveSessionHandle {
@@ -1808,7 +1918,8 @@ class LiveSession(
             override val droppedTicks: Long
                 get() =
                     (if (feed is LiveTickFeed) feed.droppedTicks.get() else 0L) +
-                        droppedInboundTicks.get()
+                        droppedInboundTicks.get() +
+                        pipeline.droppedLateTicks()
 
             override fun inboundQueueDepth(): Int = control.size + tickQueue.size
 
@@ -1828,7 +1939,14 @@ class LiveSession(
                 // to this strategy by attribution and keyed identically to the engine tracker.
                 // getOpenPositions() is magic-global and ticketless, which made the old diff
                 // double-count (prefixed vs bare key) and cry wolf on a shared account (#413).
-                val brokerTickets = runCatching { broker.positionTickets() }.getOrElse { emptyList() }
+                var brokerReadError: String? = null
+                val brokerTickets =
+                    try {
+                        broker.positionTickets()
+                    } catch (e: Exception) {
+                        brokerReadError = e.message ?: e::class.simpleName ?: "unknown broker read failure"
+                        emptyList()
+                    }
                 val accountingModes =
                     symbols.associate { symbol ->
                         symbol.substringAfter(":") to broker.positionAccountingMode(symbol)
@@ -1845,15 +1963,16 @@ class LiveSession(
                     engineEquity = engineState.second,
                     brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
                     protectionDeltas = reconcileProtectionDeltas(ownerId, brokerTickets, ticketAttribution),
+                    brokerReadFailed = brokerReadError != null,
+                    brokerReadError = brokerReadError,
                 )
             }
 
             override fun stop() {
-                running.set(false)
-                thread.interrupt()
+                if (!stopping.compareAndSet(false, true)) return
                 feedThread.interrupt()
+                runCatching { feed.close() }
                 runCatching { brokerStatePoller?.close() }
-                runCatching { riskState.persistAnchorsIfDirty() }
                 // Stop the schedule heartbeat thread so it doesn't outlive the session.
                 runCatching {
                     scheduleHeartbeat.shutdownNow()
@@ -1861,9 +1980,21 @@ class LiveSession(
                 }
                 // Stop the broker-equity poller (#352) so it doesn't outlive the session.
                 runCatching { equityPoller?.shutdownNow() }
+                tickQueue.clear()
+                val drainGraceMs = if (builtBrokers.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
+                control.put(
+                    Inbound.GracefulStop(
+                        deadlineNanos = System.nanoTime() + drainGraceMs * 1_000_000L,
+                    ),
+                )
+                if (!terminated.await(drainGraceMs + 500L, TimeUnit.MILLISECONDS)) {
+                    running.set(false)
+                    thread.interrupt()
+                }
                 // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
                 // so a long-running daemon cycling strategies doesn't accumulate threads.
                 for (b in builtBrokers) runCatching { b.shutdown() }
+                runCatching { riskState.persistAnchorsIfDirty() }
                 // Drop hub registrations attributed to this session's strategies so
                 // their aggregators and listener closures fall out of scope.
                 for ((strategyId, _) in strategies) {
@@ -2106,5 +2237,9 @@ private sealed interface Inbound {
     data class FeedEnded(
         val unexpected: Boolean,
         val reason: String,
+    ) : Inbound
+
+    data class GracefulStop(
+        val deadlineNanos: Long,
     ) : Inbound
 }

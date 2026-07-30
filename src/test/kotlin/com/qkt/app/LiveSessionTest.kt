@@ -10,7 +10,10 @@ import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.compile.PendingStacks
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.InMemoryMarketSource
+import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.observe.OrderJournal
 import com.qkt.persistence.NoopStatePersistor
 import com.qkt.persistence.PersistedPnl
@@ -688,6 +691,122 @@ class LiveSessionTest {
         assertThat(result.verifiedFlat).describedAs(result.toString()).isTrue
         assertThat(result.remainingTickets).isEmpty()
         assertThat(closeThreads.single()).isEqualTo(Thread.currentThread().name)
+    }
+
+    @Test
+    fun `ordinary flatten closes every hedged ticket instead of netting to zero`() {
+        val firstTick = Tick("EXNESS:X", Money.of("100"), now.toEpochMilli())
+        val source =
+            object : MarketSource {
+                override val name: String = "blocking"
+                override val capabilities: Set<MarketSourceCapability> =
+                    setOf(MarketSourceCapability.LIVE_TICKS)
+
+                override fun supports(symbol: String): Boolean = true
+
+                override fun liveTicks(symbols: List<String>): TickFeed =
+                    object : TickFeed {
+                        private var emitted = false
+
+                        override fun next(): Tick? {
+                            if (!emitted) {
+                                emitted = true
+                                return firstTick
+                            }
+                            return try {
+                                Thread.sleep(Long.MAX_VALUE)
+                                null
+                            } catch (_: InterruptedException) {
+                                null
+                            }
+                        }
+
+                        override fun close() = Unit
+                    }
+            }
+        val tickets = java.util.concurrent.CopyOnWriteArrayList<com.qkt.broker.BrokerPositionTicket>()
+        val ticketCloses = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val factory: BrokerFactory = { bus, clock, prices, _, _ ->
+            val delegate = com.qkt.broker.PaperBroker(bus, clock, prices)
+            bus.subscribe<com.qkt.events.BrokerEvent.OrderFilled> { fill ->
+                tickets.add(
+                    com.qkt.broker.BrokerPositionTicket(
+                        ticket = requireNotNull(fill.brokerOrderId),
+                        symbol = fill.symbol,
+                        side = fill.side,
+                        qty = fill.quantity,
+                        entryPrice = fill.price,
+                        currentPrice = fill.price,
+                        profit = BigDecimal.ZERO,
+                        swap = BigDecimal.ZERO,
+                        openedAt = fill.timestamp,
+                        comment = fill.clientOrderId,
+                    ),
+                )
+            }
+            object : com.qkt.broker.Broker by delegate {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun positionAccountingMode(symbol: String) = com.qkt.broker.PositionAccountingMode.HEDGING
+
+                override fun positionTickets(): List<com.qkt.broker.BrokerPositionTicket> = tickets.toList()
+
+                override fun submit(request: com.qkt.execution.OrderRequest): com.qkt.broker.SubmitAck {
+                    val closeTicket = (request as? com.qkt.execution.OrderRequest.Market)?.closesTicket
+                    if (closeTicket != null) {
+                        ticketCloses.add(closeTicket)
+                        tickets.removeIf { it.ticket == closeTicket }
+                        return com.qkt.broker.SubmitAck(request.id, closeTicket, accepted = true)
+                    }
+                    return delegate.submit(request)
+                }
+            }
+        }
+        val strategy =
+            object : DslCompiledStrategy {
+                private var fired = false
+                override val declaredStreams: Map<String, HubKey> =
+                    mapOf("x" to HubKey("EXNESS", "X", "1m"))
+                override val retentionByKey: Map<HubKey, Int> = emptyMap()
+                override val pendingStacks: PendingStacks = PendingStacks()
+
+                override fun bindToHub(
+                    hub: CandleHub,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) = Unit
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    if (fired) return
+                    fired = true
+                    emit(Signal.Buy(tick.symbol, Money.of("1")))
+                    emit(Signal.Sell(tick.symbol, Money.of("1")))
+                }
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                source = source,
+                symbols = listOf("EXNESS:X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                brokerFactories = mapOf("exness" to factory),
+            ).start()
+        val openDeadline = System.nanoTime() + Duration.ofSeconds(2).toNanos()
+        while (tickets.size < 2 && System.nanoTime() < openDeadline) Thread.sleep(10)
+
+        handle.flatten()
+        val closeDeadline = System.nanoTime() + Duration.ofSeconds(2).toNanos()
+        while (ticketCloses.size < 2 && System.nanoTime() < closeDeadline) Thread.sleep(10)
+        handle.stop()
+        handle.awaitTermination(Duration.ofSeconds(2))
+
+        assertThat(ticketCloses).containsExactlyInAnyOrder("ORD-0", "ORD-1")
+        assertThat(tickets).isEmpty()
     }
 
     @Test

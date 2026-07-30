@@ -13,6 +13,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.At
 import com.qkt.execution.ExitReason
@@ -471,6 +472,25 @@ class InsightsTranslateTest {
         assertThat(env.payload).containsEntry("symbol", "XAUUSD")
         assertThat(env.payload).containsEntry("side", "BUY")
         assertThat(env.payload["qty"]).isEqualTo(BigDecimal("0.25"))
+    }
+
+    @Test
+    fun `suppressed signal preserves reason and target`() {
+        val env =
+            InsightsTranslate.fromSignalSuppressed(
+                SignalSuppressedEvent(
+                    signal = Signal.Suppressed("XAUUSD", "resize quantized to zero"),
+                    strategyId = "latch",
+                    reason = "resize quantized to zero",
+                    timestamp = 1718000000000L,
+                    sequenceId = 12L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("signal.suppressed")
+        assertThat(env.strategyId).isEqualTo("latch")
+        assertThat(env.payload).containsEntry("symbol", "XAUUSD")
+        assertThat(env.payload).containsEntry("reason", "resize quantized to zero")
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
@@ -95,7 +96,7 @@ class MT5PositionPoller(
      * [CLOSED_TICKET_RETENTION_MULTIPLIER] × [MT5BrokerProfile.pollIntervalMs] purely for
      * memory hygiene — far longer than any plausible snapshot hiccup.
      */
-    private val closedTickets: MutableMap<Long, Long> = mutableMapOf()
+    private val closedTickets: MutableMap<Long, Long> = ConcurrentHashMap()
     private val observedClosingDeals: MutableMap<Long, MutableSet<Long>> = mutableMapOf()
 
     fun start() {
@@ -131,6 +132,9 @@ class MT5PositionPoller(
         thread?.join(5000)
         thread = null
     }
+
+    /** True after this poller has already emitted the ticket's venue-close fill. */
+    internal fun hasPublishedClose(ticket: Long): Boolean = ticket in closedTickets
 
     internal fun tick() {
         if (sessionGate != null && !sessionGate(Instant.ofEpochMilli(clock.now()))) {

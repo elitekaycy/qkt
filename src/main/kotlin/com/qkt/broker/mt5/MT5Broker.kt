@@ -4,6 +4,7 @@ import com.qkt.broker.Broker
 import com.qkt.broker.BrokerAccountState
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.BrokerPositionTicket
+import com.qkt.broker.MarginLevelProvider
 import com.qkt.broker.OrderModification
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
@@ -20,6 +21,10 @@ import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import org.slf4j.LoggerFactory
@@ -169,7 +174,8 @@ class MT5Broker(
         SequentialIdGenerator(
             prefix = "mt5-${profile.magic}-${strategyName ?: "session"}-${clock.now()}",
         ),
-) : Broker {
+) : Broker,
+    MarginLevelProvider {
     override val name: String = profile.name
     override val supportsPositionTickets: Boolean = true
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
@@ -178,6 +184,10 @@ class MT5Broker(
     override val supportsNativeGtd: Boolean = true
 
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
+    private val unknownResolveExecutor: ScheduledExecutorService =
+        Executors.newScheduledThreadPool(2) { task ->
+            Thread(task, "qkt-mt5-unknown-resolve-${profile.name}").apply { isDaemon = true }
+        }
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
     private val gatewayDown = AtomicBoolean(false)
@@ -337,6 +347,8 @@ class MT5Broker(
 
     override val supportsAccountEquity: Boolean = true
 
+    override val supportsMarginLevel: Boolean = true
+
     override fun accountEquity(): java.math.BigDecimal? =
         runCatching { client.getAccount() }
             .getOrNull()
@@ -429,7 +441,10 @@ class MT5Broker(
         // on a transient outage would wipe them.
         val positions =
             client.getPositions(magic = profile.magic)
-                ?: error("MT5Broker ${profile.name} positionTickets: gateway read failed")
+                ?: error(
+                    "MT5Broker ${profile.name} positionTickets: gateway read failed" +
+                        client.lastReadFailure()?.let { " ($it)" }.orEmpty(),
+                )
         return positions.map { p ->
             BrokerPositionTicket(
                 ticket = p.ticket.toString(),
@@ -591,7 +606,9 @@ class MT5Broker(
             if (!isOrderSuccessful(resp.result.retcode)) {
                 val message = resp.errorMessage ?: "close_position retcode=${resp.result.retcode}"
                 if (isAmbiguousSendFailure(message)) {
-                    resolveUnknownCloseOutcome(request, ticket, closeQuantity, closeStartedAtMs, message)
+                    executeUnknownResolution {
+                        resolveUnknownCloseOutcome(request, ticket, closeQuantity, closeStartedAtMs, message)
+                    }
                     return@closePositionAsync
                 }
                 recentlyClosedByTicket.remove(ticket)
@@ -617,6 +634,7 @@ class MT5Broker(
                     // The venue changed state, so a rejection would invite a duplicate close.
                     // Keep the order accepted-but-unresolved and alert; the position poller will
                     // reconcile the remaining venue quantity without sending a second close.
+                    recentlyClosedByTicket.remove(ticket)
                     bus.publish(
                         BrokerEvent.OrderAccepted(
                             clientOrderId = request.id,
@@ -715,6 +733,15 @@ class MT5Broker(
                             positionClosed = !positionRemainsOpen,
                             nowMs = clock.now(),
                         )
+                    if (poller.hasPublishedClose(ticket)) {
+                        log.info(
+                            "MT5Broker {} close {} was already published by the position poller for ticket {}",
+                            profile.name,
+                            request.id,
+                            ticket,
+                        )
+                        return
+                    }
                     bus.publish(
                         BrokerEvent.OrderAccepted(
                             clientOrderId = request.id,
@@ -760,6 +787,19 @@ class MT5Broker(
             UNKNOWN_RESOLVE_ATTEMPTS,
         )
         publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
+        scheduleUnknownCloseResolution(request, ticket, requestedQuantity, closeStartedAtMs, cause)
+    }
+
+    private fun scheduleUnknownCloseResolution(
+        request: OrderRequest.Market,
+        ticket: Long,
+        requestedQuantity: BigDecimal,
+        closeStartedAtMs: Long,
+        cause: String,
+    ) {
+        scheduleUnknownResolution {
+            resolveUnknownCloseOutcome(request, ticket, requestedQuantity, closeStartedAtMs, cause)
+        }
     }
 
     /**
@@ -1002,7 +1042,9 @@ class MT5Broker(
             // order may have reached MT5 and filled. Telling the strategy "rejected"
             // makes it re-fire and double the position; resolve against venue truth first.
             if (message != null && isAmbiguousSendFailure(message)) {
-                resolveUnknownOutcome(request, placement, placementStartedAtMs, protection, message)
+                executeUnknownResolution {
+                    resolveUnknownOutcome(request, placement, placementStartedAtMs, protection, message)
+                }
                 return
             }
             reject(request, message ?: "retcode=${resp.result.retcode}")
@@ -1025,13 +1067,15 @@ class MT5Broker(
             resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL &&
             resp.result.volume?.signum() != 1
         ) {
-            resolveUnknownOutcome(
-                request,
-                placement,
-                placementStartedAtMs,
-                protection,
-                "partial fill response omitted actual volume",
-            )
+            executeUnknownResolution {
+                resolveUnknownOutcome(
+                    request,
+                    placement,
+                    placementStartedAtMs,
+                    protection,
+                    "partial fill response omitted actual volume",
+                )
+            }
             return
         }
         // Register the venue ticket BEFORE announcing acceptance so any consumer reacting to
@@ -1314,6 +1358,39 @@ class MT5Broker(
             UNKNOWN_RESOLVE_ATTEMPTS,
         )
         publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
+        scheduleUnknownPlacementResolution(request, placement, placementStartedAtMs, protection, cause)
+    }
+
+    private fun scheduleUnknownPlacementResolution(
+        request: OrderRequest,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
+        protection: PositionProtection?,
+        cause: String,
+    ) {
+        scheduleUnknownResolution {
+            resolveUnknownOutcome(request, placement, placementStartedAtMs, protection, cause)
+        }
+    }
+
+    private fun executeUnknownResolution(task: () -> Unit) {
+        try {
+            unknownResolveExecutor.execute(task)
+        } catch (failure: RejectedExecutionException) {
+            if (!unknownResolveExecutor.isShutdown) throw failure
+        }
+    }
+
+    private fun scheduleUnknownResolution(task: () -> Unit) {
+        try {
+            unknownResolveExecutor.schedule(
+                task,
+                maxOf(profile.pollIntervalMs, UNKNOWN_PERIODIC_RESOLVE_MIN_MS),
+                TimeUnit.MILLISECONDS,
+            )
+        } catch (failure: RejectedExecutionException) {
+            if (!unknownResolveExecutor.isShutdown) throw failure
+        }
     }
 
     private fun dealPositionKey(deal: MT5Deal): Long =
@@ -1585,7 +1662,10 @@ class MT5Broker(
         // flat while holding leveraged positions re-enters and doubles up (#376).
         val positions =
             client.getPositions(magic = profile.magic)
-                ?: error("MT5Broker ${profile.name} getOpenPositions: gateway read failed")
+                ?: error(
+                    "MT5Broker ${profile.name} getOpenPositions: gateway read failed" +
+                        client.lastReadFailure()?.let { " ($it)" }.orEmpty(),
+                )
         val out: MutableMap<String, MutableList<com.qkt.positions.Position>> = mutableMapOf()
         for (p in positions) {
             val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(p.symbol)}"
@@ -1621,7 +1701,27 @@ class MT5Broker(
             )
         val pending = snapshot.pendingOrders
         val positions = snapshot.positions
-        val actions = classifyOcoRecovery(orders, pending.map { it.ticket }.toSet(), positions)
+        val resolvedOrders =
+            orders.map { order ->
+                if (order.brokerOrderId != null) return@map order
+                val pendingMatch =
+                    pending.firstOrNull {
+                        it.clientOrderId == order.id ||
+                            matchesComment(it.comment, order.id)
+                    }
+                val positionMatch =
+                    positions.firstOrNull {
+                        it.clientOrderId == order.id ||
+                            matchesComment(it.comment, order.id)
+                    }
+                val ticket = pendingMatch?.ticket ?: positionMatch?.ticket
+                if (ticket == null) {
+                    order
+                } else {
+                    order.copy(brokerOrderId = ticket.toString())
+                }
+            }
+        val actions = classifyOcoRecovery(resolvedOrders, pending.map { it.ticket }.toSet(), positions)
         // Pass 1: re-seed every still-pending leg before any fill is emitted, so a
         // cancel triggered by pass 2 can resolve its sibling's ticket.
         for (a in actions) {
@@ -1688,6 +1788,15 @@ class MT5Broker(
                     orderId,
                     ticket,
                     response.errorMessage ?: "retcode=${response.result.retcode}",
+                )
+                bus.publish(
+                    BrokerEvent.OrderCancelFailed(
+                        clientOrderId = orderId,
+                        brokerOrderId = ticket.toString(),
+                        reason = response.errorMessage ?: "retcode=${response.result.retcode}",
+                        strategyId = meta.strategyId,
+                        timestamp = clock.now(),
+                    ),
                 )
                 return@cancelOrderAsync
             }
@@ -2009,7 +2118,9 @@ class MT5Broker(
                 profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER,
                 profile.httpTimeoutMs + profile.pollIntervalMs,
             )
-        recentlyClosedByTicket.entries.removeIf { now - it.value.startedAt >= ttlMs }
+        recentlyClosedByTicket.entries.removeIf {
+            it.value.confirmed && now - it.value.startedAt >= ttlMs
+        }
         val marker = recentlyClosedByTicket[ticket] ?: return EngineCloseState.NONE
         if (!marker.confirmed) return EngineCloseState.PENDING
         recentlyClosedByTicket.remove(ticket, marker)
@@ -2111,6 +2222,7 @@ class MT5Broker(
     override fun shutdown() {
         poller.stop()
         pendingPoller.stop()
+        unknownResolveExecutor.shutdownNow()
     }
 
     companion object {
@@ -2123,6 +2235,7 @@ class MT5Broker(
 
         /** Venue queries before giving up on resolving an UNKNOWN send outcome. */
         private const val UNKNOWN_RESOLVE_ATTEMPTS: Int = 4
+        private const val UNKNOWN_PERIODIC_RESOLVE_MIN_MS: Long = 5_000L
 
         /** Maximum distance from placement time for legacy comment-based correlation. */
         private const val UNKNOWN_CORRELATION_WINDOW_MS: Long = 60_000L

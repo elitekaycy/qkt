@@ -88,6 +88,24 @@ interface DslCompiledStrategy : Strategy {
         // default no-op
     }
 
+    /** Re-arm the rule edge that produced a rejected order, if this strategy owns it. */
+    fun onOrderRejected(clientOrderId: String) {
+        // default no-op
+    }
+
+    /** Associate an emitted signal with the client order id assigned by the pipeline. */
+    fun onOrderSubmitted(
+        signal: Signal,
+        clientOrderId: String,
+    ) {
+        // default no-op
+    }
+
+    /** Forget rule ownership after an order reaches a non-rejected terminal state. */
+    fun onOrderTerminal(clientOrderId: String) {
+        // default no-op
+    }
+
     /**
      * Register every `SCHEDULE` clause this strategy declared with [runner]. Called
      * after [bindToHub]. Strategies with no `SCHEDULE` block have nothing to register

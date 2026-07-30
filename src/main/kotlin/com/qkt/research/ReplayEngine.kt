@@ -44,6 +44,8 @@ import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RiskState
+import com.qkt.risk.StrategyRiskLimits
+import com.qkt.risk.StrategyRiskRuleFactory
 import com.qkt.strategy.Mode
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
@@ -74,6 +76,9 @@ class ReplayEngine(
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
     /** Optional per-strategy capital bases; absent ids inherit [startingBalance]. */
     private val startingBalances: Map<String, BigDecimal> = emptyMap(),
+    private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
+    private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
+    private val strategyRiskLimits: Map<String, StrategyRiskLimits> = emptyMap(),
     /** Portfolio CAPITAL for `RISK OF BOOK` sizing; null outside portfolio backtests. */
     private val bookCapital: BigDecimal? = null,
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
@@ -214,7 +219,14 @@ class ReplayEngine(
         }
         val brokerFactory: () -> com.qkt.broker.Broker = {
             when (executionConfig.brokerKind) {
-                BrokerKind.PAPER -> PaperBroker(bus, clock, priceTracker, fillAtTriggerPrice = barFills)
+                BrokerKind.PAPER ->
+                    PaperBroker(
+                        bus,
+                        clock,
+                        priceTracker,
+                        instruments,
+                        fillAtTriggerPrice = barFills,
+                    )
                 BrokerKind.MT5_SIM ->
                     MT5BrokerSimulator(
                         bus,
@@ -244,8 +256,19 @@ class ReplayEngine(
             }
         // Mirror the live RiskState construction (balance basis + halt rules) so a
         // strategy that would halt live halts at the same point in its backtest.
-        val riskState = RiskState(pnl, strategyPnL, clock, bus, startingBalance)
+        val riskState = RiskState(pnl, strategyPnL, clock, bus, startingBalance, dailyDdBasis)
         riskState.warmupComplete = true
+        val strategyRuleSet =
+            StrategyRiskRuleFactory.build(
+                strategyIds = strategies.map { it.first },
+                limitsByStrategy = strategyRiskLimits,
+                strategyPositions = strategyPositions,
+                pacerLedger = pacerLedger,
+                clock = clock,
+                totalDdBasis = totalDdBasis,
+                startingBalance = startingBalance,
+                startingBalances = startingBalances,
+            )
         // The same always-on pre-trade controls live runs (#393): a backtest must show
         // the rejection a live deploy would produce, not sail past it.
         val preTradeRules =
@@ -271,7 +294,13 @@ class ReplayEngine(
                         .BookExposureLimit(it, priceTracker, instruments, accounting),
                 )
             } ?: emptyList()
-        val riskEngine = RiskEngine(rules + preTradeRules + bookRules, haltRules, positions, riskState)
+        val riskEngine =
+            RiskEngine(
+                rules + strategyRuleSet.riskRules + preTradeRules + bookRules,
+                haltRules + strategyRuleSet.haltRules,
+                positions,
+                riskState,
+            )
         bus.subscribe<com.qkt.events.RiskEvent.Halted> { halts.add(it) }
 
         collector =
@@ -409,8 +438,10 @@ class ReplayEngine(
         // Match the live kill-switch: a halt must remove every resting pending before
         // another replay tick can trigger it. RiskEngine only rejects new submissions;
         // without this subscription backtests could fill old entries after the halt.
-        bus.subscribe<com.qkt.events.RiskEvent.Halted> {
-            for (symbol in tradedSymbols) pipeline.orderManager.cancelPendingForSymbol(symbol)
+        bus.subscribe<com.qkt.events.RiskEvent.Halted> { event ->
+            if (event.cancelWorkingOrders) {
+                pipeline.orderManager.cancelEntriesForHalt(event.strategyId)
+            }
         }
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible

@@ -51,6 +51,11 @@ internal fun signalToJson(sig: com.qkt.strategy.Signal) =
                 put("kind", JsonPrimitive("arm_latch"))
                 put("name", JsonPrimitive(sig.compiled.name ?: ""))
             }
+            is com.qkt.strategy.Signal.Suppressed -> {
+                put("kind", JsonPrimitive("suppressed"))
+                put("symbol", JsonPrimitive(sig.symbol))
+                put("reason", JsonPrimitive(sig.reason))
+            }
         }
     }
 
@@ -64,6 +69,7 @@ internal fun buildSnapshot(
     streamBrokers: Map<String, String> = emptyMap(),
     pnl: SessionPnl = SessionPnl.ZERO,
     inboundQueueDepth: Int = 0,
+    droppedTicks: Long = 0L,
     staleSymbols: List<String> = emptyList(),
     clockSkewedSymbols: Map<String, Long> = emptyMap(),
     openPositions: List<com.qkt.positions.Position> = emptyList(),
@@ -98,6 +104,7 @@ internal fun buildSnapshot(
         pendingStackLayers = pendingStackLayers,
         streamBrokers = streamBrokers,
         inboundQueueDepth = inboundQueueDepth,
+        droppedTicks = droppedTicks,
         staleSymbols = staleSymbols,
         clockSkewedSymbols = clockSkewedSymbols,
         persistence =

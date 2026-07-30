@@ -130,6 +130,35 @@ class BybitSpotStateRecoveryTest {
     }
 
     @Test
+    fun `reconcile does not cancel a missing known order when execution evidence exists`() {
+        val client = FakeBybitClient()
+        client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
+        client.responses["/v5/execution/list"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c1","orderId":"abc","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"e1","category":"spot"}]}}"""
+
+        val bus = newBus()
+        val events = mutableListOf<BrokerEvent>()
+        bus.subscribe<BrokerEvent.OrderFilled> { events.add(it) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { events.add(it) }
+        val known =
+            mapOf(
+                "c1" to BybitSpotStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
+            )
+
+        BybitSpotStateRecovery(
+            transport = client,
+            bus = bus,
+            clock = FixedClock(1_000_000L),
+            getKnownOrders = { known },
+            lastFillTimeProvider = { 500_000L },
+            seenExecIds = mutableSetOf(),
+        ).reconcile()
+
+        assertThat(events).hasSize(1)
+        assertThat(events.single()).isInstanceOf(BrokerEvent.OrderFilled::class.java)
+    }
+
+    @Test
     fun `reconcile dedups executions by execId via seenExecIds`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()

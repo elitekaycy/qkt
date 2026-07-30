@@ -450,7 +450,7 @@ class StrategyRegistryTest {
     }
 
     @Test
-    fun `resync failure leaves the old strategy registered and resumed`(
+    fun `resync drains the old strategy before replacement creation`(
         @TempDir tmp: Path,
     ) {
         val state = StateDir.resolve(tmp.toString())
@@ -462,11 +462,11 @@ class StrategyRegistryTest {
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("replacement failed")
 
-        assertThat(registry.get("alpha")).isSameAs(old)
-        assertThat(old.isRunning()).isTrue()
+        assertThat(registry.get("alpha")).isNull()
+        assertThat(old.isRunning()).isFalse()
         assertThat(events).contains("halt:alpha:alpha-v1.qkt:operator resync")
-        assertThat(events).contains("resume:alpha:alpha-v1.qkt")
-        assertThat(events).doesNotContain("stop:alpha:alpha-v1.qkt")
+        assertThat(events).contains("stop:alpha:alpha-v1.qkt")
+        assertThat(events).doesNotContain("resume:alpha:alpha-v1.qkt")
     }
 
     @Test

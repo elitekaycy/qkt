@@ -28,10 +28,9 @@ class StrategyRegistry(
     /**
      * Replace an already-deployed standalone strategy under the same operator-facing name.
      *
-     * The old session is halted before the replacement is created, so it cannot submit new
-     * risk while the daemon validates and starts the replacement. If replacement creation
-     * fails, the old session is resumed and remains registered. The old handle is closed only
-     * after the new handle has been installed in the registry.
+     * The old session is halted, drained, and removed before the replacement is created. This
+     * forbids two sessions from sharing one account/magic or racing durable-state writes. A
+     * replacement startup failure leaves the strategy undeployed and must be retried explicitly.
      */
     fun resyncStrategy(
         name: String,
@@ -43,15 +42,10 @@ class StrategyRegistry(
         val old = handles[name] ?: error("strategy '$name' is not deployed")
         check(old.childMeta == null) { "strategy '$name' is a portfolio child; resync the parent portfolio" }
         old.live.halt("operator resync")
-        val replacement =
-            try {
-                factory.create(name, file, ignoreMismatches)
-            } catch (e: Exception) {
-                old.live.resume()
-                throw e
-            }
+        handles.remove(name, old)
+        old.close()
+        val replacement = factory.create(name, file, ignoreMismatches)
         handles[name] = replacement
-        runCatching { old.close() }
         return replacement
     }
 
@@ -95,6 +89,30 @@ class StrategyRegistry(
         }
         portfolios[record.name] = record
         for (child in record.children) handles[child.name] = child
+    }
+
+    /**
+     * Retires and drains an existing portfolio before its replacement sessions are created.
+     * [replacementAliases] are validated first so a known registry conflict does not cause downtime.
+     */
+    fun retirePortfolioForResync(
+        name: String,
+        replacementAliases: List<String>,
+    ) {
+        val old = portfolios[name] ?: error("portfolio '$name' is not deployed")
+        val oldChildNames = old.children.map { it.name }.toSet()
+        val replacementNames = replacementAliases.map { "$name/$it" }
+        val conflicting =
+            replacementNames.firstOrNull { childName ->
+                handles.containsKey(childName) && childName !in oldChildNames
+            }
+        check(conflicting == null) { "child name '$conflicting' already in use" }
+
+        portfolios.remove(name, old)
+        old.children.forEach { handles.remove(it.name, it) }
+        old.children.forEach { it.live.halt("operator resync") }
+        old.supervisor.stop()
+        old.children.forEach { it.close() }
     }
 
     /**

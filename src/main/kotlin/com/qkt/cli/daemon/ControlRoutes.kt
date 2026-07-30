@@ -193,7 +193,8 @@ object ControlRoutes {
                 """{"name":"${h.name}","running":${h.isRunning()},""" +
                     """"halted":${h.live.isHalted()},""" +
                     """"lastEventAgeMs":${ageMs ?: "null"},""" +
-                    """"inboundQueueDepth":${h.live.inboundQueueDepth()}}"""
+                    """"inboundQueueDepth":${h.live.inboundQueueDepth()},""" +
+                    """"droppedTicks":${h.live.droppedTicks}}"""
             }
         respond(
             ex,
@@ -458,6 +459,8 @@ object ControlRoutes {
             200,
             """{"strategy":"$name","clean":${report.clean},"deltas":$deltas,""" +
                 """"protectionDeltas":$protectionDeltas,""" +
+                """"brokerReadFailed":${report.brokerReadFailed},""" +
+                """"brokerReadError":${jsonStringOrNull(report.brokerReadError)},""" +
                 """"engineEquity":"${report.engineEquity.toPlainString()}",""" +
                 """"brokerEquity":${report.brokerEquity?.let { "\"${it.toPlainString()}\"" } ?: "null"}}""",
         )
@@ -1108,8 +1111,10 @@ object ControlRoutes {
         val record =
             try {
                 val compiled = PortfolioLoader.load(path)
+                registry.retirePortfolioForResync(name, compiled.children.map { it.alias })
                 val replacement = portfolioDeployer.deploy(name, compiled)
-                registry.resyncPortfolio(replacement)
+                registry.registerPortfolio(replacement)
+                replacement
             } catch (e: IllegalStateException) {
                 val msg = (e.message ?: "conflict").replace("\"", "'")
                 return respond(ex, 409, """{"error":"$msg"}""")

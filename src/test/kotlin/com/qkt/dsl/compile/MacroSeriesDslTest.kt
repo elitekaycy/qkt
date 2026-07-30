@@ -57,4 +57,34 @@ class MacroSeriesDslTest {
         val ex = catchThrowable { compile(src) }
         assertThat(ex.message).contains("read-only")
     }
+
+    @Test
+    fun `resizing a MACRO stream is a compile error`() {
+        val src =
+            """
+            STRATEGY s VERSION 1
+            SYMBOLS
+                real10y = MACRO:DFII10 EVERY 1d
+            RULES
+                WHEN real10y.value < 2 THEN RESIZE real10y TO 1
+            """.trimIndent()
+
+        assertThat(catchThrowable { compile(src) }.message).contains("read-only")
+    }
+
+    @Test
+    fun `latching a MACRO stream is a compile error`() {
+        val src =
+            """
+            STRATEGY s VERSION 1
+            SYMBOLS
+                real10y = MACRO:DFII10 EVERY 1d
+            RULES
+                WHEN real10y.value < 2 THEN LATCH real10y OFFSET 1 ARM 5m {
+                    ENTER MARKET SIZING 1
+                }
+            """.trimIndent()
+
+        assertThat(catchThrowable { compile(src) }.message).contains("read-only")
+    }
 }

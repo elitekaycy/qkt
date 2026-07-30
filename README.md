@@ -58,6 +58,10 @@ That's a complete strategy: a 9/21 EMA crossover on 5-minute gold, one position 
 
 ## Install
 
+The GitHub release is the canonical stable distribution. A versioned image such as
+`ghcr.io/elitekaycy/qkt:v0.47.1` is built from the same tag; `:latest`, `:dev`, and
+`:edge` are moving main, authoring, and testing channels rather than release pins.
+
 ### Docker (no local Java)
 
 Two ready-made images, nothing to install.

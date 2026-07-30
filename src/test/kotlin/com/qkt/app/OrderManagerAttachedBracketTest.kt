@@ -7,6 +7,8 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.dsl.ast.ChildBy
+import com.qkt.dsl.ast.NumLit
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
@@ -199,6 +201,57 @@ class OrderManagerAttachedBracketTest {
         val shipped = broker.submits.single()
         assertThat(shipped).isInstanceOf(OrderRequest.Bracket::class.java)
         assertThat(shipped.id).isEqualTo("stk-tier0-entry")
+    }
+
+    @Test
+    fun `rejected fill anchored fixed stop modify arms an engine held ticket close`() {
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps).apply { rejectPositionModifications = true }
+        val alerts = mutableListOf<String>()
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                onProtectionFailure = { _, message -> alerts += message },
+            )
+        val entry =
+            OrderRequest.Market(
+                id = "fill-entry",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "fill-bracket",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                entry = entry,
+                takeProfit = Money.of("120"),
+                stopLoss = StopLossSpec.Fixed(Money.of("90")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+                takeProfitAst = ChildBy(NumLit(Money.of("20"))),
+                stopLossAst = ChildBy(NumLit(Money.of("10"))),
+            )
+
+        om.submit(bracket)
+        broker.emitFill(broker.submits.single(), price = Money.of("105"))
+        assertThat((om.getOrder("fill-bracket-sl")?.request as OrderRequest.Stop).stopPrice)
+            .isEqualByComparingTo("95")
+        assertThat(alerts.single()).contains("engine-held stop armed at 95")
+
+        bus.publish(TickEvent(Tick("X", Money.of("94"), 1L)))
+        val close = broker.submits.last() as OrderRequest.Market
+        assertThat(close.closesTicket).isEqualTo("fill-entry")
     }
 
     @Test

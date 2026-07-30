@@ -115,7 +115,14 @@ class ActionCompiler(
                     ?.let { step -> delta.abs().divide(step, 0, RoundingMode.DOWN).multiply(step) }
                     ?: delta.abs()
             if (quantity.signum() == 0 || quantity < (instrument?.volumeMin ?: BigDecimal.ZERO)) {
-                return@resize emptyList()
+                return@resize listOf(
+                    Signal.Suppressed(
+                        symbol = symbol,
+                        reason =
+                            "RESIZE delta ${delta.abs().toPlainString()} quantized below venue minimum " +
+                                "${(instrument?.volumeMin ?: BigDecimal.ZERO).toPlainString()}",
+                    ),
+                )
             }
             // Grow with a same-side add (the tracker averages it into the primary); shrink/flatten
             // by closing the PRIMARY's exact venue ticket. A plain opposite market would open a

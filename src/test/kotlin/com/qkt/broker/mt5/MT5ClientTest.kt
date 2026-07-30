@@ -136,6 +136,16 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `failed GET retains gateway detail for the broker error`() {
+        server.enqueue(MockResponse().setResponseCode(503).setBody("""{"error":"terminal unavailable"}"""))
+
+        assertThat(client.getPositions()).isNull()
+        assertThat(client.lastReadFailure())
+            .contains("HTTP 503")
+            .contains("terminal unavailable")
+    }
+
+    @Test
     fun `retcode success family includes done placed and partial`() {
         // 10008 (placed) and 10010 (partial) mean the venue owns the order; treating
         // them as rejections double-submits on the strategy's next attempt.
