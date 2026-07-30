@@ -193,6 +193,13 @@ class LexerTest {
     }
 
     @Test
+    fun `rejects unterminated block comments`() {
+        assertThatThrownBy { Lexer("STRATEGY\n  /* never closed").tokenize() }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("Unterminated block comment at line 2 col 3")
+    }
+
+    @Test
     fun `recognizes broker-symbol colon syntax`() {
         val tokens = Lexer("BYBIT:BTCUSDT").tokenize()
         assertThat(tokens.map { it.kind }).containsExactly(

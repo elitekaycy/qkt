@@ -20,7 +20,7 @@ external AI  ──shell──▶  qkt bot ...  ──HTTP──▶  mt5-gateway
   `~/.config/qkt/qkt.config.yaml`, `~/.qkt/qkt.config.yaml`.
 - Optionally an `insights:` block for egress. Without it, trades are journaled locally
   only.
-- Symbols are always `BROKER:SYMBOL` (e.g. `EXNESS:XAUUSD`); the prefix must match a
+- Symbols are always `BROKER:SYMBOL` (e.g. `MT5:XAUUSD`); the prefix must match a
   configured broker or the command fails closed.
 
 A ready-to-copy starter lives in `examples/bot/`, or scaffold a full project with
@@ -43,13 +43,13 @@ Positional arguments must come before flags (the CLI arg parser is positional-fi
 ## Trading
 
 ```bash
-qkt bot buy  0.5 EXNESS:XAUUSD                              # market
-qkt bot buy  0.5 EXNESS:XAUUSD --sl by:30 --tp rr:2         # bracket, venue-attached SL/TP
-qkt bot sell 0.2 EXNESS:XAUUSD --limit 2680 --tif day       # pending limit, expires end of UTC day
-qkt bot buy  0.1 EXNESS:XAUUSD --stop 2700 --expires 2026-07-14T00:00:00Z
-qkt bot buy  0.1 EXNESS:XAUUSD --stop-limit 2700:2701       # stop-limit trigger:limit
-qkt bot buy  EXNESS:XAUUSD --sizing "2 % OF EQUITY" --sl by:30
-qkt bot buy  EXNESS:XAUUSD --sizing "RISK 0.01" --sl by:30 --tp rr:2
+qkt bot buy  0.5 MT5:XAUUSD                              # market
+qkt bot buy  0.5 MT5:XAUUSD --sl by:30 --tp rr:2         # bracket, venue-attached SL/TP
+qkt bot sell 0.2 MT5:XAUUSD --limit 2680 --tif day       # pending limit, expires end of UTC day
+qkt bot buy  0.1 MT5:XAUUSD --stop 2700 --expires 2026-07-14T00:00:00Z
+qkt bot buy  0.1 MT5:XAUUSD --stop-limit 2700:2701       # stop-limit trigger:limit
+qkt bot buy  MT5:XAUUSD --sizing "2 % OF EQUITY" --sl by:30
+qkt bot buy  MT5:XAUUSD --sizing "RISK 0.01" --sl by:30 --tp rr:2
 ```
 
 - Exit specs (`--sl` / `--tp`): `2610` or `at:2610` (absolute), `by:30` (price-unit
@@ -71,13 +71,13 @@ qkt bot buy  EXNESS:XAUUSD --sizing "RISK 0.01" --sl by:30 --tp rr:2
 Managing what's open:
 
 ```bash
-qkt bot close  EXNESS:XAUUSD                      # single open position: closes it
-qkt bot close  EXNESS:XAUUSD --ticket 123456      # specific ticket
-qkt bot close  EXNESS:XAUUSD --ticket 123456 --partial 0.2
-qkt bot close  EXNESS:XAUUSD --all
-qkt bot modify EXNESS:XAUUSD --ticket 123456 --sl 2605          # keeps the current TP
-qkt bot cancel EXNESS:XAUUSD --order 654321
-qkt bot cancel EXNESS:XAUUSD --all                 # every pending order on the symbol
+qkt bot close  MT5:XAUUSD                      # single open position: closes it
+qkt bot close  MT5:XAUUSD --ticket 123456      # specific ticket
+qkt bot close  MT5:XAUUSD --ticket 123456 --partial 0.2
+qkt bot close  MT5:XAUUSD --all
+qkt bot modify MT5:XAUUSD --ticket 123456 --sl 2605          # keeps the current TP
+qkt bot cancel MT5:XAUUSD --order 654321
+qkt bot cancel MT5:XAUUSD --all                 # every pending order on the symbol
 ```
 
 `modify` reads the position first and preserves the level you did not pass (the MT5
@@ -87,13 +87,13 @@ gateway clears an omitted SL/TP, so sending only one would silently drop the oth
 
 ```bash
 qkt bot account --json
-qkt bot positions EXNESS:XAUUSD --json     # omit the symbol for all positions
-qkt bot orders EXNESS:XAUUSD --json
-qkt bot quote EXNESS:XAUUSD --json
-qkt bot bars EXNESS:XAUUSD --tf 1h --count 100 --json
+qkt bot positions MT5:XAUUSD --json     # omit the symbol for all positions
+qkt bot orders MT5:XAUUSD --json
+qkt bot quote MT5:XAUUSD --json
+qkt bot bars MT5:XAUUSD --tf 1h --count 100 --json
 qkt bot history --since 30d --json         # closed deals; also ISO-8601 or epoch ms
-qkt bot eval "ema(21)" EXNESS:XAUUSD --tf 1h --json
-qkt bot eval "rsi(14)" EXNESS:XAUUSD --tf 15m --count 300 --json
+qkt bot eval "ema(21)" MT5:XAUUSD --tf 1h --json
+qkt bot eval "rsi(14)" MT5:XAUUSD --tf 15m --count 300 --json
 ```
 
 Queries read venue truth directly — positions opened by deployed strategies are
@@ -109,7 +109,7 @@ literal arguments (`ema`, `sma`, `rsi`, `atr`, `stddev`, ...). Two-series indica
 
 ```json
 {"ok":true,"ticket":123456,"deal":789,"fillPrice":2650.5,"retcode":10009,
- "error":null,"symbol":"EXNESS:XAUUSD","side":"BUY","lots":0.5,
+ "error":null,"symbol":"MT5:XAUUSD","side":"BUY","lots":0.5,
  "sl":2620.50,"tp":2710.50,"as":"manual",
  "canonicalDsl":"STRATEGY bot VERSION 1\n...","sha256":"<hex>","qktVersion":"..."}
 ```
@@ -138,7 +138,7 @@ single `WHEN true THEN BUY/SELL ...` rule) that the standard parser validates:
 STRATEGY bot VERSION 1
 
 SYMBOLS
-    x = EXNESS:XAUUSD EVERY 1m
+    x = MT5:XAUUSD EVERY 1m
 
 RULES
     WHEN true

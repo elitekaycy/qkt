@@ -36,12 +36,13 @@ risk:
   daily_dd_basis: balance
 
 brokers:
-  exness:
+  mt5:
     type: mt5
-    extends: exness
-    gateway_url: ${EXNESS_GATEWAY_URL:-http://mt5-gateway:5001}
-    api_key: ${QKT_BROKER_EXNESS_API_KEY}
-    magic: ${QKT_MAGIC:-4242}
+    gateway_url: ${QKT_BROKER_GATEWAY_URL:-http://mt5-gateway:5001}
+    api_key: ${QKT_BROKER_API_KEY}
+    server_time_zone: ${QKT_BROKER_SERVER_TIME_ZONE}
+    symbol_suffix: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+    magic: ${QKT_BROKER_MAGIC:-4242}
     deviation_points: 30
     poll_interval_ms: 1000
     http_timeout_ms: 5000

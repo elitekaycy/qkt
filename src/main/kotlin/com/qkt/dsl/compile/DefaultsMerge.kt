@@ -68,7 +68,7 @@ private fun mergeBracket(
     defTP: ChildPriceAst?,
 ): BracketAst? {
     if (actionBracket == null) {
-        if (defSL != null && defTP != null) return BracketAst(defSL, defTP)
+        if (defSL != null || defTP != null) return BracketAst(defSL, defTP)
         return null
     }
     return BracketAst(actionBracket.stopLoss ?: defSL, actionBracket.takeProfit ?: defTP)

@@ -53,7 +53,7 @@ Phase 12c collapses the "one terminal per strategy" UX into a single daemon proc
 
 ### Docker
 
-- **`Dockerfile`** at repo root — multi-stage. Stage 1: `eclipse-temurin:21-jdk` runs `./gradlew installDist`. Stage 2: `eclipse-temurin:21-jre`, copies the install dist, runs as a non-root `qkt` user, `WORKDIR /strategies`, `EXPOSE 40000-50000`. Entrypoint: `qkt daemon --load-dir /strategies`.
+- **`Dockerfile`** at repo root — multi-stage. Stage 1: `eclipse-temurin:21-jdk` runs `./gradlew installDist`. Stage 2: `eclipse-temurin:21-jre`, copies the install dist, runs as a non-root `qkt` user with `WORKDIR /strategies`. Entrypoint: `qkt daemon --load-dir /strategies`.
 - **`./gradlew dockerBuild`** Gradle task — runs `docker build -t qkt:local .`.
 - **`DockerImageTest`** with `@Tag("dockerSmoke")` — runs `docker run --rm qkt:local --version` via `ProcessBuilder`. Excluded from default `./gradlew test` runs.
 - **`examples/docker/Dockerfile`** + **`examples/docker/README.md`** + **`examples/docker/strategies/sample.qkt`** — user template extending the base image.
@@ -137,7 +137,6 @@ Pull the published image and run as the container's PID 1:
 $ docker pull ghcr.io/elitekaycy/qkt:0.13.0
 $ docker run -d --name qkt-prop \
     -v $(pwd)/strategies:/strategies \
-    -p 47000-47100:47000-47100 \
     ghcr.io/elitekaycy/qkt:0.13.0
 
 $ docker exec qkt-prop qkt list
@@ -145,7 +144,7 @@ NAME       UPTIME     PORT     TRADES   STATE
 ema-fast   00:00:42   47291    3        running
 
 $ docker exec qkt-prop qkt logs ema-fast -f
-$ curl http://localhost:47291/status              # observability port mapped through Docker
+$ docker exec qkt-prop qkt status ema-fast
 ```
 
 ### Extend the base image with a strategy bundle
@@ -161,7 +160,7 @@ COPY qkt.config.yaml /etc/qkt/qkt.config.yaml
 
 ```bash
 $ docker build -t my-prop:0.1 .
-$ docker run -d -p 47000-47100:47000-47100 my-prop:0.1
+$ docker run -d --name my-prop my-prop:0.1
 ```
 
 ### Shared CandleHub — automatic dedup

@@ -98,8 +98,9 @@ MT5_LOGIN=12345678
 MT5_PASSWORD=your-demo-password
 MT5_SERVER=Exness-MT5Trial
 MT5_ENABLE_ALGO_TRADING=1
+MT5_API_KEY=replace-with-a-long-random-gateway-token
 VNC_PASSWORD=changeme
-EXNESS_GATEWAY_URL=http://mt5-gateway:5001
+QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
 The `qkt.config.yaml.example` ships with an `exness` profile pre-configured.
@@ -214,10 +215,10 @@ docker compose exec qkt qkt logs momentum-live -f
 
 You'll see live EURUSD ticks arriving, indicators warming up, and eventually the cross-up condition firing.
 
-Check status from outside the container:
+Check status through the container-local control plane:
 
 ```bash
-curl http://localhost:47291/status | python3 -m json.tool
+docker compose exec qkt qkt status momentum-live
 ```
 
 The MT5 GUI (via VNC) will show your demo account's positions in the **Trade** tab tagged with `magic=4242` (the magic number from `qkt.config.yaml`).

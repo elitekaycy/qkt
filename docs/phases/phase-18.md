@@ -46,8 +46,9 @@ STRATEGY momentum VERSION 1
 SYMBOLS
     eur = EXNESS:EURUSD EVERY 1m
 RULES
-    WHEN ema(eur, 9) crosses ABOVE ema(eur, 21)
-    THEN BUY eur SIZING 0.1 BRACKET STOP_LOSS BY 1 PCT TAKE_PROFIT BY 2 PCT
+    WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)
+    THEN BUY eur SIZING 0.1
+         BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 ```
 
 ```bash

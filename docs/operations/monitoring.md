@@ -12,7 +12,10 @@ qkt exposes several observability surfaces. This page covers what's instrumented
 | `/logs` (tail of file logs) | yes | — | `${QKT_STATE_DIR}/logs/<name>.log` |
 | `/stop` (control endpoint) | yes (POST) | — | — |
 
-Each running strategy gets its own port from the daemon's port pool (default `47000-47100`). The port is printed on stdout at deploy time (`QKT_PORT=47291`) and visible in `qkt list`.
+Each running strategy gets an ephemeral loopback port. The port is printed on
+stdout at deploy time (`QKT_PORT=47291`) and visible in `qkt list`. In Docker,
+run probes from the qkt container with `docker compose exec qkt`; the servers
+are intentionally not published on the host.
 
 ## What to scrape
 

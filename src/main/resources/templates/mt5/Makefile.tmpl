@@ -61,7 +61,7 @@ stop:
 # Usage: make audit-ticks SYMBOL=XAUUSD [DUR=5m]
 audit-ticks:
 	@test -n "$(SYMBOL)" || (echo "usage: make audit-ticks SYMBOL=XAUUSD"; exit 1)
-	docker compose exec qkt qkt audit-ticks EXNESS:$(SYMBOL) --duration $${DUR:-5m} --out /var/lib/qkt/audit-$(SYMBOL).json
+	docker compose exec qkt qkt audit-ticks --symbol $(SYMBOL) --mt5-profile mt5 --duration $${DUR:-5m} --out /var/lib/qkt/audit-$(SYMBOL).json
 
 # Shell into the qkt container.
 shell:

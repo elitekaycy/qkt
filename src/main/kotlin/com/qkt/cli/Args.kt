@@ -14,7 +14,60 @@ class Args(
 
     /** First argv token. Defaults to `"help"` when argv is empty. */
     val subcommand: String = argv.getOrNull(0) ?: "help"
-    private val rest: List<String> = argv.drop(1)
+    private var rest: List<String> = argv.drop(1)
+
+    /**
+     * Validates option tokens before a command performs work and expands supported short aliases.
+     *
+     * [valueOptions] consume the following token, [flags] do not, and [optionalValueOptions]
+     * support both forms. Unknown long or single-dash options fail closed.
+     */
+    internal fun validateOptions(
+        valueOptions: Set<String> = emptySet(),
+        flags: Set<String> = emptySet(),
+        optionalValueOptions: Set<String> = emptySet(),
+        shortAliases: Map<String, String> = emptyMap(),
+    ) {
+        rest =
+            rest.map { token ->
+                if (token.startsWith("-") && !token.startsWith("--")) {
+                    shortAliases[token] ?: token
+                } else {
+                    token
+                }
+            }
+
+        var i = 0
+        while (i < rest.size) {
+            val token = rest[i]
+            if (!token.startsWith("-") || token == "-") {
+                i++
+                continue
+            }
+            if (!token.startsWith("--")) {
+                throw ArgError("unknown flag $token")
+            }
+            val name = token.removePrefix("--")
+            when (name) {
+                in flags -> i++
+                in valueOptions -> {
+                    if (i + 1 >= rest.size || rest[i + 1].startsWith("--")) {
+                        throw ArgError("missing value for --$name")
+                    }
+                    i += 2
+                }
+                in optionalValueOptions -> {
+                    i +=
+                        if (i + 1 < rest.size && !rest[i + 1].startsWith("-")) {
+                            2
+                        } else {
+                            1
+                        }
+                }
+                else -> throw ArgError("unknown flag --$name")
+            }
+        }
+    }
 
     /**
      * Returns the [idx]th positional token after the subcommand, or `null` if absent.
