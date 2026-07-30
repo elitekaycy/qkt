@@ -60,4 +60,43 @@ class ArgsTest {
         assertThat(a.positional(1)).isEqualTo("EXNESS:XAUUSD")
         assertThat(a.positional(2)).isNull()
     }
+
+    @Test
+    fun `validation rejects an unknown long flag`() {
+        val args = Args(arrayOf("backtest", "s.qkt", "--report", "out"))
+
+        assertThatThrownBy {
+            args.validateOptions(valueOptions = setOf("report-dir"))
+        }.isInstanceOf(ArgError::class.java)
+            .hasMessage("unknown flag --report")
+    }
+
+    @Test
+    fun `validation rejects an unknown single-dash flag`() {
+        val args = Args(arrayOf("logs", "alpha", "-x"))
+
+        assertThatThrownBy {
+            args.validateOptions(flags = setOf("follow"), shortAliases = mapOf("-f" to "--follow"))
+        }.isInstanceOf(ArgError::class.java)
+            .hasMessage("unknown flag -x")
+    }
+
+    @Test
+    fun `validation expands a supported short flag`() {
+        val args = Args(arrayOf("logs", "alpha", "-f"))
+
+        args.validateOptions(flags = setOf("follow"), shortAliases = mapOf("-f" to "--follow"))
+
+        assertThat(args.flag("follow")).isTrue()
+    }
+
+    @Test
+    fun `validation catches a missing option value`() {
+        val args = Args(arrayOf("backtest", "s.qkt", "--from"))
+
+        assertThatThrownBy {
+            args.validateOptions(valueOptions = setOf("from"))
+        }.isInstanceOf(ArgError::class.java)
+            .hasMessage("missing value for --from")
+    }
 }

@@ -2,8 +2,8 @@
 #
 # - `${VAR}` values are substituted from environment variables at load time.
 # - Broker entries with `type: mt5` route through the MT5 broker (Phase 17/18).
-# - Built-in profiles (exness, icmarkets, ftmo, pepperstone) supply sensible defaults;
-#   listing a profile by its built-in name partially overrides those defaults.
+# - The neutral `mt5` profile below requires the broker's server clock explicitly.
+# - Built-in profiles remain available when broker-specific defaults are desired.
 # - For multi-account same-broker setups, use `extends:` with a distinct name.
 #
 # Run `qkt brokers list` to see the resolved profile set.
@@ -19,16 +19,18 @@ log_level: info
 #   api_secret: ${BYBIT_API_SECRET}
 
 brokers:
-  # Use the built-in exness defaults; override only the gateway URL.
-  exness:
+  mt5:
     type: mt5
-    gateway_url: ${QKT_EXNESS_URL:-http://mt5-gateway:5001}
-    api_key: ${QKT_BROKER_EXNESS_API_KEY}
+    gateway_url: ${QKT_BROKER_GATEWAY_URL:-http://mt5-gateway:5001}
+    api_key: ${QKT_BROKER_API_KEY}
+    server_time_zone: ${QKT_BROKER_SERVER_TIME_ZONE}
+    symbol_suffix: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+    magic: ${QKT_BROKER_MAGIC:-10001}
 
-  # Example: a second Exness account on a separate gateway/login.
-  # exness-personal:
+  # Example: a second account on a separate gateway/login.
+  # mt5-personal:
   #   type: mt5
-  #   extends: exness
+  #   extends: mt5
   #   gateway_url: http://mt5-gateway-2:5001
   #   magic: 10005
 

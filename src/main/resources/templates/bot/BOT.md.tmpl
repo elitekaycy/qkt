@@ -14,11 +14,11 @@ what `qkt bot` reads when run from this directory.
 
 ```bash
 qkt bot account --json
-qkt bot quote EXNESS:XAUUSD --json
-qkt bot buy 0.01 EXNESS:XAUUSD --sl by:5 --tp by:10 --dry-run --json   # offline preview
-qkt bot buy 0.01 EXNESS:XAUUSD --sl by:5 --tp by:10 --as smoke --json  # real (demo!) order
+qkt bot quote MT5:XAUUSD --json
+qkt bot buy 0.01 MT5:XAUUSD --sl by:5 --tp by:10 --dry-run --json   # offline preview
+qkt bot buy 0.01 MT5:XAUUSD --sl by:5 --tp by:10 --as smoke --json  # real (demo!) order
 qkt bot positions --json
-qkt bot close EXNESS:XAUUSD --all --json
+qkt bot close MT5:XAUUSD --all --json
 ```
 
 Every trade is journaled under the qkt state directory (`bot/<as>/journal-*.jsonl`)

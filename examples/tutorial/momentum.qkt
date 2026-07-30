@@ -1,0 +1,13 @@
+STRATEGY momentum VERSION 1
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+
+RULES
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 0.1 ; LOG "long entry"
+
+    WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
+     AND POSITION.btc > 0
+    THEN CLOSE btc ; LOG "exit"

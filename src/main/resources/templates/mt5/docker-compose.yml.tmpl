@@ -68,9 +68,12 @@ services:
     command: ["--config", "/etc/qkt/qkt.config.yaml", "--control-port", "47000"]
     environment:
       QKT_STATE_DIR: /var/lib/qkt
-      QKT_EXNESS_URL: http://mt5-gateway:5001
-      QKT_EXNESS_MAGIC: ${QKT_EXNESS_MAGIC:-10001}
-      QKT_BROKER_EXNESS_API_KEY: ${MT5_API_KEY}
+      QKT_DATA_HOME: /var/lib/qkt/data
+      QKT_BROKER_GATEWAY_URL: http://mt5-gateway:5001
+      QKT_BROKER_API_KEY: ${MT5_API_KEY}
+      QKT_BROKER_SERVER_TIME_ZONE: ${QKT_BROKER_SERVER_TIME_ZONE:?QKT_BROKER_SERVER_TIME_ZONE must be set in .env}
+      QKT_BROKER_SYMBOL_SUFFIX: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+      QKT_BROKER_MAGIC: ${QKT_BROKER_MAGIC:-10001}
       TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}

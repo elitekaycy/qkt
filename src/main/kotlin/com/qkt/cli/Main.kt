@@ -4,9 +4,17 @@ fun main(argv: Array<String>) {
     kotlin.system.exitProcess(runMain(argv))
 }
 
-internal fun runMain(argv: Array<String>): Int {
-    val args = Args(argv)
-    return try {
+internal fun runMain(argv: Array<String>): Int =
+    try {
+        val args = Args(argv)
+        CliOptionSchemas.forSubcommand(args.subcommand)?.let { schema ->
+            args.validateOptions(
+                valueOptions = schema.values,
+                flags = schema.flags,
+                optionalValueOptions = schema.optionalValues,
+                shortAliases = schema.shortAliases,
+            )
+        }
         when (args.subcommand) {
             "parse" -> ParseCommand(args).run()
             "lsp" -> LspCommand().run()
@@ -59,7 +67,6 @@ internal fun runMain(argv: Array<String>): Int {
         System.err.println("qkt: error: ${e.message}")
         ExitCodes.ARG_ERROR
     }
-}
 
 private fun printHelp() {
     println(

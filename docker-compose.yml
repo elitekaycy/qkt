@@ -56,14 +56,17 @@ services:
         condition: service_healthy
     environment:
       - QKT_STATE_DIR=/var/lib/qkt
+      - QKT_DATA_HOME=/var/lib/qkt/data
       - QKT_CONFIG=/etc/qkt/qkt.config.yaml
-      - QKT_BROKER_EXNESS_API_KEY=${MT5_API_KEY}
+      - QKT_BROKER_GATEWAY_URL=http://mt5-gateway:5001
+      - QKT_BROKER_API_KEY=${MT5_API_KEY}
+      - QKT_BROKER_SERVER_TIME_ZONE=${QKT_BROKER_SERVER_TIME_ZONE}
+      - QKT_BROKER_SYMBOL_SUFFIX=${QKT_BROKER_SYMBOL_SUFFIX:-}
+      - QKT_BROKER_MAGIC=${QKT_BROKER_MAGIC:-10001}
     volumes:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
       - qkt-state:/var/lib/qkt
-    ports:
-      - "47000-47100:47000-47100"   # observability ports for deployed strategies
     # ENTRYPOINT inherited from Dockerfile: qkt daemon --load-dir /strategies
 
 volumes:

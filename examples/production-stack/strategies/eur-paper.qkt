@@ -1,7 +1,7 @@
 STRATEGY eur_paper VERSION 1
 
 SYMBOLS
-    eur = EXNESS:EURUSD EVERY 5m
+    eur = MT5:EURUSD EVERY 5m
 
 RULES
     WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)

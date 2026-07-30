@@ -63,6 +63,16 @@ class ExprCompilerOperatorsTest {
     }
 
     @Test
+    fun `division by zero is undefined`() {
+        val v =
+            ExprCompiler()
+                .compile(BinaryOp(BinOp.DIV, NumLit(BigDecimal.TEN), NumLit(BigDecimal.ZERO)))
+                .evaluate(ctx)
+
+        assertThat(v).isEqualTo(Value.Undefined)
+    }
+
+    @Test
     fun `comparison greater-than`() {
         val v =
             ExprCompiler()

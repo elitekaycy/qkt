@@ -18,7 +18,7 @@ export PATH="$PWD/build/install/qkt/bin:$PATH"
 qkt --version
 ```
 
-You should see `qkt 0.21.0` (or later).
+You should see `qkt 0.47.1` (or later).
 
 ## 2. Write a strategy
 
@@ -32,7 +32,11 @@ SYMBOLS
 
 RULES
     WHEN btc.close > 100
-    THEN BUY btc SIZING 0.1 BRACKET STOP_LOSS BY 50 PCT TAKE_PROFIT BY 100 PCT
+    THEN BUY btc SIZING 0.1
+         BRACKET {
+           STOP_LOSS BY 2 PCT,
+           TAKE_PROFIT BY 4 PCT
+         }
 ```
 
 The `BACKTEST:` prefix means "no live broker" — orders fill against an in-process paper broker.
@@ -40,7 +44,10 @@ The `BACKTEST:` prefix means "no live broker" — orders fill against an in-proc
 ## 3. Backtest it
 
 ```sh
-qkt backtest momentum.qkt --report ./out
+qkt backtest momentum.qkt \
+    --data-root data/sample \
+    --from 2024-01-15 --to 2024-01-17 \
+    --report-dir ./out
 ```
 
 Outputs:
@@ -73,6 +80,9 @@ Live trading requires `mt5-gateway` running alongside qkt. The gateway runs MT5 
 ### 5a. Spin up the stack
 
 ```sh
+cp .env.example .env
+cp qkt.config.yaml.example qkt.config.yaml
+# Fill the MT5 credentials, QKT_BROKER_SERVER_TIME_ZONE, and VNC password in .env.
 docker compose up -d
 ```
 
@@ -90,17 +100,23 @@ VNC at `localhost:3000` remains available for diagnosis when automatic resolutio
 
 ### 5c. Configure the broker profile
 
-Edit `qkt.config.yaml`:
+Edit `qkt.config.yaml`; inside Compose the gateway hostname is
+`mt5-gateway`, not `localhost`:
 
 ```yaml
 brokers:
-  exness:
+  mt5:
     type: mt5
-    gateway_url: http://localhost:5001
-    api_key: ${QKT_BROKER_EXNESS_API_KEY}
+    gateway_url: ${QKT_BROKER_GATEWAY_URL:-http://mt5-gateway:5001}
+    api_key: ${QKT_BROKER_API_KEY}
+    server_time_zone: ${QKT_BROKER_SERVER_TIME_ZONE}
+    symbol_suffix: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+    magic: ${QKT_BROKER_MAGIC:-10001}
 ```
 
-Built-in defaults already cover Exness's symbol suffix (`m`), aliases (NAS100→USTEC), TZ, and magic. Override only what differs.
+Set the server clock from your broker's MT5 contract. Use `UTC`,
+`new_york_close`, an IANA zone, or a fixed offset such as `+02:00`. Set the
+symbol suffix only when the broker appends one.
 
 ### 5d. Write a live strategy
 
@@ -108,14 +124,18 @@ Built-in defaults already cover Exness's symbol suffix (`m`), aliases (NAS100→
 STRATEGY live_eur VERSION 1
 
 SYMBOLS
-    eur = EXNESS:EURUSD EVERY 1m
+    eur = MT5:EURUSD EVERY 1m
 
 RULES
-    WHEN ema(eur, 9) crosses ABOVE ema(eur, 21)
-    THEN BUY eur SIZING 0.01 BRACKET STOP_LOSS BY 30 PCT TAKE_PROFIT BY 60 PCT
+    WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)
+    THEN BUY eur SIZING 0.01
+         BRACKET {
+           STOP_LOSS BY 0.5 PCT,
+           TAKE_PROFIT BY 1 PCT
+         }
 ```
 
-The `EXNESS:` prefix routes orders to the configured profile (MT5 today, any other protocol tomorrow).
+The `MT5:` prefix routes orders to the neutral broker profile.
 
 ### 5e. Deploy
 
@@ -132,7 +152,7 @@ qkt logs live_eur --follow
 Before committing real money, run the tick-feed drift check:
 
 ```sh
-qkt audit-ticks --symbol EURUSD --duration 300 --mt5-profile exness
+qkt audit-ticks --symbol EURUSD --duration 300 --mt5-profile mt5
 ```
 
 Reports the absolute price difference between TradingView (the tick source qkt's strategies see) and MT5 (where orders actually fill). If `p95 abs diff` is wider than your stop-loss buffer, tighten or expand stops accordingly.
@@ -157,19 +177,19 @@ Distinct profiles via `extends:`:
 
 ```yaml
 brokers:
-  exness-personal:
+  mt5-personal:
     type: mt5
-    extends: exness
+    extends: mt5
     gateway_url: http://localhost:5001
     magic: 10005
-  exness-corporate:
+  mt5-corporate:
     type: mt5
-    extends: exness
+    extends: mt5
     gateway_url: http://localhost:5006
     magic: 10006
 ```
 
-Strategies reference `EXNESS-PERSONAL:` or `EXNESS-CORPORATE:`.
+Strategies reference `MT5-PERSONAL:` or `MT5-CORPORATE:`.
 
 ### Portfolio of strategies
 
