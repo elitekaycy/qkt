@@ -4,7 +4,7 @@
 STRATEGY ema_cross VERSION 1
 
 SYMBOLS
-    gold = EXNESS:XAUUSD EVERY 5m WARMUP 50 BARS
+    gold = MT5:XAUUSD EVERY 5m WARMUP 50 BARS
 
 RULES
     WHEN ema(gold.close, 9) CROSSES ABOVE ema(gold.close, 21)

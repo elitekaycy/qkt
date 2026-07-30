@@ -70,7 +70,7 @@ qkt status --deep || echo "qkt is unhealthy — check logs"
 | `Address already in use` on startup | Previous daemon didn't shut down cleanly | `qkt daemon stop` then restart, or check for orphaned `qkt` processes |
 | `Could not find qkt.config.yaml` | Working directory wrong | `cd` to the directory containing the config or pass `--config /path/to/file` |
 | `MT5 gateway connection refused` (live) | Gateway container not healthy | `docker compose ps`; if gateway is `unhealthy`, VNC at `:3000` and log in |
-| `Failed to bind port 47000-47100` | Port range collision | Restart daemon with a different range; or kill the process holding the port |
+| `observability bind failed` | The selected ephemeral loopback port became unavailable | Restart the affected deployment and use `qkt list` to discover its new port |
 
 ## `qkt deploy` fails
 

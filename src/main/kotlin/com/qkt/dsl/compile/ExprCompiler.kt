@@ -876,7 +876,16 @@ class ExprCompiler(
             BinOp.ADD -> numericBinary(l, r) { a, b -> a.add(b, Money.CONTEXT) }
             BinOp.SUB -> numericBinary(l, r) { a, b -> a.subtract(b, Money.CONTEXT) }
             BinOp.MUL -> numericBinary(l, r) { a, b -> a.multiply(b, Money.CONTEXT) }
-            BinOp.DIV -> numericBinary(l, r) { a, b -> a.divide(b, Money.CONTEXT) }
+            BinOp.DIV ->
+                CompiledExpr { ctx ->
+                    val lv = l.evaluate(ctx)
+                    val rv = r.evaluate(ctx)
+                    if (lv !is Value.Num || rv !is Value.Num || rv.v.signum() == 0) {
+                        Value.Undefined
+                    } else {
+                        Value.Num(lv.v.divide(rv.v, Money.CONTEXT))
+                    }
+                }
             BinOp.AND -> kleeneAnd(l, r)
             BinOp.OR -> kleeneOr(l, r)
         }

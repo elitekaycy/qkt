@@ -21,7 +21,7 @@ docker compose up -d
    └─ qkt           (daemon)
          • depends_on: mt5-gateway healthy
          • mounts: ./strategies:/strategies, ./qkt.config.yaml:/etc/qkt/qkt.config.yaml
-         • port 47000-47100 → per-strategy observability
+         • loopback-only control and per-strategy observability inside the container
 ```
 
 ## First run

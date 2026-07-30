@@ -12,10 +12,9 @@ Live trading routes orders through a per-broker `mt5-gateway` HTTP service that 
 
 ```bash
 cp .env.example .env
-# Edit .env: MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, MT5_API_KEY
+# Edit .env: MT5 credentials, API key, broker server clock, and symbol suffix
 
 cp qkt.config.yaml.example qkt.config.yaml
-# Adjust profile entries if you're not using Exness
 
 docker compose up -d
 ```
@@ -37,21 +36,25 @@ A 200 response with `"status":"ready"` confirms the API, terminal, and account. 
 
 ## 3. Configure the broker profile
 
-Built-in defaults cover Exness, ICMarkets, FTMO, Pepperstone. To use Exness, the minimum config is:
+The default stack uses a neutral profile and requires broker-specific behavior
+to be explicit:
 
 ```yaml title="qkt.config.yaml"
 brokers:
-  exness:
+  mt5:
     type: mt5
-    gateway_url: http://mt5-gateway:5001
-    api_key: ${QKT_BROKER_EXNESS_API_KEY}
+    gateway_url: ${QKT_BROKER_GATEWAY_URL:-http://mt5-gateway:5001}
+    api_key: ${QKT_BROKER_API_KEY}
+    server_time_zone: ${QKT_BROKER_SERVER_TIME_ZONE}
+    symbol_suffix: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+    magic: ${QKT_BROKER_MAGIC:-10001}
 ```
 
 The `gateway_url` matches the Docker service name. On a non-Docker setup, use `http://localhost:5001`.
-Built-in profiles use the DST-aware `new_york_close` server clock. Keep the gateway's
-`MT5_SERVER_UTC_OFFSET_SECONDS=0`; qkt performs the single broker-wall-to-UTC conversion for
-both historical bars and live ticks. Fresh custom profiles must set `server_time_zone` to
-`new_york_close` or an IANA zone id.
+Keep the gateway's `MT5_SERVER_UTC_OFFSET_SECONDS=0`; qkt performs the single
+broker-wall-to-UTC conversion for both historical bars and live ticks. Set
+`server_time_zone` to `UTC`, `new_york_close`, an IANA zone id, or a fixed
+offset such as `+02:00`.
 
 For multi-account, distinct profiles via `extends:` — see the [configure-mt5-broker](../how-to/index.md) recipe.
 
@@ -61,7 +64,7 @@ For multi-account, distinct profiles via `extends:` — see the [configure-mt5-b
 docker compose exec qkt qkt brokers list
 ```
 
-Should show your `exness` profile with the resolved gateway URL.
+Should show your `mt5` profile with the resolved gateway URL.
 
 ## 5. Write a live strategy
 
@@ -69,14 +72,18 @@ Should show your `exness` profile with the resolved gateway URL.
 STRATEGY live_eur VERSION 1
 
 SYMBOLS
-    eur = EXNESS:EURUSD EVERY 1m
+    eur = MT5:EURUSD EVERY 1m
 
 RULES
-    WHEN ema(eur, 9) crosses ABOVE ema(eur, 21)
-    THEN BUY eur SIZING 0.01 BRACKET STOP_LOSS BY 30 PCT TAKE_PROFIT BY 60 PCT
+    WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)
+    THEN BUY eur SIZING 0.01
+         BRACKET {
+           STOP_LOSS BY 0.5 PCT,
+           TAKE_PROFIT BY 1 PCT
+         }
 ```
 
-The `EXNESS:` prefix routes orders to the configured profile.
+The `MT5:` prefix routes orders to the configured profile.
 
 ## 6. Deploy
 
@@ -104,7 +111,7 @@ Before committing real money, run the tick-feed drift check:
 
 ```bash
 docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 300 \
-  --mt5-profile exness --reference mt5-history
+  --mt5-profile mt5 --reference mt5-history
 ```
 
 Reports the absolute price difference between TradingView ticks (what your strategies see) and MT5 ticks (where orders fill). If `p95 abs diff` is wider than your stop-loss buffer, tighten or widen accordingly.
@@ -119,7 +126,7 @@ docker compose down -v         # also wipes the volume
 ## Common issues
 
 - **Readiness returns 503.** Check the container logs for broker resolution/login errors, then use VNC if needed.
-- **Symbol not found.** Verify the broker's actual symbol via the MT5 market watch — Exness uses `m` suffix (`EURUSDm`), ICMarkets uses `.raw`. The `MT5Symbol` translator handles this if your profile is right.
+- **Symbol not found.** Verify the actual symbol in MT5 Market Watch and set `QKT_BROKER_SYMBOL_SUFFIX` or explicit aliases to match it.
 - **Orders rejected with retcode 10018.** Market closed (weekend / outside session). Wait for the broker's session.
 
 ## Next

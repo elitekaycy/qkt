@@ -124,7 +124,6 @@ RULES
 | `stopLoss` | Default stop-loss distance/price | inside `BRACKET { STOP_LOSS ... }` |
 | `takeProfit` | Default take-profit | inside `BRACKET { TAKE_PROFIT ... }` |
 | `tif` | Default time-in-force | `TIF GTC / IOC / FOK / DAY` |
-| `magic` | Default broker magic number | broker-side audit tag |
 
 ### The `SYMBOL` placeholder
 
@@ -181,7 +180,8 @@ If you find yourself writing the same `BRACKET { ... }` clause in five rules, ho
 - **`SYMBOL` only in `DEFAULTS`.** Don't try to use it in `RULES`.
 - **Forward references in `LET` fail.** Order matters; declare what you reference before you reference it.
 - **`DEFAULTS` doesn't apply to engine-managed wrappers.** A `STACK` layer-list with explicit per-layer overrides shadows the default `sizing`. A `TIME_EXIT` wrapper around a market order takes the inner's `tif`, not the default.
-- **Default `magic` is broker-specific.** Most strategies leave this alone; the broker profile in `qkt.config.yaml` sets it. Only override if you have a multi-strategy account where you need to tag orders distinctly within one daemon.
+- **Broker magic is not a DSL default.** Configure it on the broker profile in
+  `qkt.config.yaml`; it identifies that routed account/profile at the venue.
 
 ## See also
 

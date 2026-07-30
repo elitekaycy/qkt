@@ -20,7 +20,7 @@ RULES
   activity is tracked separately from other operators.
 - Preview first: run the order once with `--dry-run` and inspect the canonical DSL
   it prints; only then run it for real.
-- Symbols are always `BROKER:SYMBOL`, e.g. `EXNESS:XAUUSD`.
+- Symbols are always `BROKER:SYMBOL`, e.g. `MT5:XAUUSD`.
 - Positional arguments come before flags.
 
 ANALYZE
