@@ -8,7 +8,7 @@ DEFAULTS {
 }
 
 SYMBOLS
-    gold = EXNESS:XAUUSD EVERY 5m WARMUP 100 BARS
+    gold = MT5:XAUUSD EVERY 5m WARMUP 100 BARS
 
 RULES
     WHEN ema(gold.close, 9) CROSSES ABOVE ema(gold.close, 21)

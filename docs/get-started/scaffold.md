@@ -51,7 +51,7 @@ Only deployment-specific values need changing:
   and starting balance.
 
 The generated MT5 gateway requires `MT5_API_KEY`; QKT receives the same value as
-`QKT_BROKER_EXNESS_API_KEY`. Credentials are never stored in `qkt.config.yaml`.
+`QKT_BROKER_API_KEY`. Credentials are never stored in `qkt.config.yaml`.
 
 ## GitHub deployment
 
@@ -62,8 +62,10 @@ The `mt5-ci` template deploys pushes to `main` through a GitHub environment name
 - `MT5_LOGIN`, `MT5_PASSWORD`, `MT5_API_KEY`, `MT5_VNC_PASSWORD`
 - optionally `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 
-Optional environment variables include `DEPLOY_PORT`, `DEPLOY_PATH`,
-`MT5_SERVER`, `MT5_VNC_USER`, `QKT_EXNESS_MAGIC`, and `TELEGRAM_ENABLED`.
+Required environment variables include `MT5_SERVER` and
+`QKT_BROKER_SERVER_TIME_ZONE`. Optional variables include `DEPLOY_PORT`,
+`DEPLOY_PATH`, `MT5_VNC_USER`, `QKT_BROKER_MAGIC`,
+`QKT_BROKER_SYMBOL_SUFFIX`, and `TELEGRAM_ENABLED`.
 The workflow validates required secrets, renders a mode-600 `.env`, validates
 Compose, transfers the project without deleting persistent state/data, then
 pulls and starts the pinned images.

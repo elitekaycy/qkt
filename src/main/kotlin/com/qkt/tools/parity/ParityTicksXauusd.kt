@@ -23,7 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  *   OUT=docs/parity/parity-ticks-xauusd.md
  *
  * Prerequisite: SSH tunnel to the MT5 gateway:
- *   ssh -L 5002:localhost:5002 root@173.249.58.247
+ *   ssh -L 5002:localhost:5002 <deploy-user>@<gateway-host>
  */
 fun main() {
     val tvSymbol = System.getenv("TV_SYMBOL") ?: "OANDA:XAUUSD"

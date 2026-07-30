@@ -38,9 +38,28 @@ class ConfigLocateTest {
         val explicit = tmp.resolve("explicit.yaml")
         Files.writeString(located, "runtime:\n  mode: production")
 
-        assertThat(Config.resolvePath(explicit.toString(), listOf(missing, located))).isEqualTo(explicit)
-        assertThat(Config.resolvePath(null, listOf(missing, located))).isEqualTo(located)
-        assertThat(Config.resolvePath(null, listOf(missing))).isEqualTo(Path.of("./qkt.config.yaml"))
+        assertThat(Config.resolvePath(explicit.toString(), listOf(missing, located), emptyMap())).isEqualTo(explicit)
+        assertThat(Config.resolvePath(null, listOf(missing, located), emptyMap())).isEqualTo(located)
+        assertThat(Config.resolvePath(null, listOf(missing), emptyMap())).isEqualTo(Path.of("./qkt.config.yaml"))
+    }
+
+    @Test
+    fun `resolvePath honors QKT_CONFIG after an explicit flag and before default locations`(
+        @TempDir tmp: Path,
+    ) {
+        val explicit = tmp.resolve("explicit.yaml")
+        val fromEnv = tmp.resolve("env.yaml")
+        val located = tmp.resolve("located.yaml")
+
+        assertThat(Config.resolvePath(null, listOf(located), mapOf("QKT_CONFIG" to fromEnv.toString())))
+            .isEqualTo(fromEnv)
+        assertThat(
+            Config.resolvePath(
+                explicit.toString(),
+                listOf(located),
+                mapOf("QKT_CONFIG" to fromEnv.toString()),
+            ),
+        ).isEqualTo(explicit)
     }
 
     @Test

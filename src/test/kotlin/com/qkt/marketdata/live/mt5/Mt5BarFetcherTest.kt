@@ -7,9 +7,58 @@ import java.time.Instant
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class Mt5BarFetcherTest {
+    @Test
+    fun `multi-hour warmup rejects windows that cannot align to the UTC hour grid`() {
+        val fetcher = Mt5BarFetcher("http://unused")
+
+        assertThatThrownBy {
+            fetcher
+                .fetchRange(
+                    symbol = "XAUUSD",
+                    window = TimeWindow(5_400_000L),
+                    range =
+                        TimeRange(
+                            from = Instant.parse("2026-07-13T08:00:00Z"),
+                            to = Instant.parse("2026-07-13T12:30:00Z"),
+                        ),
+                ).toList()
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("Cannot align 5400000ms bars to the UTC grid")
+    }
+
+    @Test
+    fun `multi-hour warmup rejects H1 bars that are not UTC-hour aligned`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"close":1,"high":1,"low":1,"open":1,"tick_volume":1,"time":"2026-07-13T11:30:00Z"}]""",
+                ),
+            )
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+
+            assertThatThrownBy {
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSD",
+                        window = TimeWindow.parse("4h"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-07-13T08:00:00Z"),
+                                to = Instant.parse("2026-07-13T12:00:00Z"),
+                            ),
+                    ).toList()
+            }.isInstanceOf(IllegalStateException::class.java)
+                .hasMessageContaining("is not hour-aligned after")
+        } finally {
+            server.shutdown()
+        }
+    }
+
     @Test
     fun `live warmup converts MT5 bid bars to mid using recorded spread`() {
         val server = MockWebServer().apply { start() }

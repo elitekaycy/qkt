@@ -40,7 +40,7 @@ qkt --version
 Expected output:
 
 ```text
-qkt 0.25.0
+qkt 0.47.1 (<git-sha>) built <timestamp>
 ```
 
 If you see that, you're set. The PATH export only lasts for this shell session — for permanent use, add it to your `~/.bashrc` or `~/.zshrc`.
@@ -103,14 +103,12 @@ RULES
     # Buy when the 9-period moving average crosses above the 21-period one
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
      AND POSITION.btc = 0
-    THEN BUY btc SIZING 0.1
-         LOG "long entry"
+    THEN BUY btc SIZING 0.1 ; LOG "long entry"
 
     # Sell to close when the trend reverses
     WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
      AND POSITION.btc > 0
-    THEN CLOSE btc
-         LOG "exit"
+    THEN CLOSE btc ; LOG "exit"
 ```
 
 Let's unpack what's new:
@@ -141,45 +139,44 @@ We'll use this sample for the tutorial. In real use you'd fetch a longer period 
 ```bash
 qkt backtest strategies/momentum.qkt \
     --data-root data/sample \
-    --from 2024-01-15 --to 2024-01-17
+    --from 2024-01-15 --to 2024-01-17 \
+    --report-dir out/tutorial-momentum
 ```
 
-(Adjust the date range to whatever the sample covers — `ls data/sample/symbols/BTCUSD/` shows the available days.)
+The bundled sample covers this exact range; `ls data/sample/symbols/BTCUSDT/`
+shows the two daily partitions and their manifest.
 
-You should see output like:
+The command produces:
 
 ```text
-[INFO] qkt 0.25.0 — strategy momentum v1 — backtest
-
-Trades:           4
-Final realized:   -127.50
-Win rate:         0.250
-Sharpe (daily):   n/a (insufficient samples)
-Max drawdown:     -180.25
-
-Report: ./reports/momentum-<timestamp>.html
+qkt: tick coverage BTCUSDT 2/2 trading days
+Trades:           2
+Final realized:   12.00000000   (net of commission and swap)
+Final unrealized: 0.00000000
+Total PnL:        12.00000000
+Win rate:         1.00000000
 ```
 
 A few things to notice:
 
-- **`Trades: 4`** — the strategy fired 4 entry/exit cycles across the sample data. That's a small sample; real backtests use months.
-- **`Final realized: -127.50`** — net loss. Two days is too short for a momentum strategy to find a sustained move.
-- **`Win rate: 0.250`** — 25% of trades closed in profit. Momentum strategies typically have low win rates by design — they catch fewer but bigger winners. Two days is too short to show that.
-- **`Sharpe (daily): n/a`** — can't compute risk-adjusted return on 2 days.
-- **`Max drawdown: -180.25`** — worst peak-to-trough loss.
+- **`Trades: 2`** — one entry fill and one exit fill. This is an execution smoke test, not a statistically useful sample.
+- **`Final realized: 12.00000000`** — the fixture's one closed position made 12 account-currency units under the optimistic paper fill model.
+- **`Win rate: 1.00000000`** — the one decided round trip closed in profit. Do not infer strategy quality from one trade.
 
 Open the HTML report to see charts:
 
 ```bash
 # Mac
-open reports/momentum-*.html
+open out/tutorial-momentum/report.html
 # Linux
-xdg-open reports/momentum-*.html
+xdg-open out/tutorial-momentum/report.html
 # Windows
-start reports/momentum-*.html
+start out/tutorial-momentum/report.html
 ```
 
-You'll see the equity curve, drawdown periods, and per-trade table. **Don't be alarmed by the negative P&L** — two days isn't enough data to evaluate any strategy. The point of this run is to prove the strategy works end-to-end, not that it's profitable.
+You'll see the equity curve, drawdown periods, and per-trade table. Two days and
+one round trip are not enough data to evaluate any strategy. The point of this
+run is to prove the strategy works end-to-end, not that it is profitable.
 
 ## Part 6 — Read the report
 
@@ -257,6 +254,6 @@ RULES
 - **`./gradlew installDist` failed** — usually JDK version mismatch. Run `java -version` and confirm 21. If older, install Temurin 21.
 - **`qkt: command not found`** — the `PATH` export only lasts for one shell. Re-run `export PATH="$PWD/build/install/qkt/bin:$PATH"`.
 - **`Symbol BTCUSDT not found`** — the data path is wrong. Check `data/sample/symbols/` and adjust `--data-root` to point at it.
-- **HTML report doesn't open** — find it at `reports/momentum-<timestamp>.html` and open manually.
+- **HTML report doesn't open** — find it at `out/tutorial-momentum/report.html` and open manually.
 
 Anything else? Check the [debug recipe](../how-to/debug-not-firing.md) or [open an issue](https://github.com/elitekaycy/qkt/issues/new).

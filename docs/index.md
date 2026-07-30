@@ -8,7 +8,7 @@ hide:
 <section class="qkt-hero qkt-hero--split" markdown="0">
   <div class="qkt-hero__left">
     <div class="qkt-hero__meta">
-      <span class="pill pill--accent">qkt v0.24</span>
+      <span class="pill pill--accent">qkt pre-1.0</span>
       <span class="pill">free &amp; open source</span>
       <span class="pill pill--warn">pre-1.0 — paper accounts only</span>
     </div>
@@ -46,8 +46,8 @@ hide:
          <span class="nf">ema</span><span class="p">(</span><span class="nv">btc</span><span class="p">.</span><span class="na">close</span><span class="p">,</span> <span class="mi">21</span><span class="p">)</span>
     <span class="k">THEN</span> <span class="kr">BUY</span> <span class="n">btc</span> <span class="kp">SIZING</span> <span class="mf">0.1</span>
          <span class="kp">BRACKET</span> <span class="p">{</span>
-           <span class="kp">STOP_LOSS</span> <span class="kp">BY</span> <span class="mi">50</span> <span class="kp">PCT</span><span class="p">,</span>
-           <span class="kp">TAKE_PROFIT</span> <span class="kp">BY</span> <span class="mi">100</span> <span class="kp">PCT</span>
+           <span class="kp">STOP_LOSS</span> <span class="kp">BY</span> <span class="mi">2</span> <span class="kp">PCT</span><span class="p">,</span>
+           <span class="kp">TAKE_PROFIT</span> <span class="kp">BY</span> <span class="mi">4</span> <span class="kp">PCT</span>
          <span class="p">}</span>
 </code></pre>
       <footer class="qkt-codeframe__foot">

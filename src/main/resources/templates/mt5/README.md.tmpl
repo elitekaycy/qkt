@@ -36,13 +36,16 @@ ssh -L 3020:127.0.0.1:3020 -L 5020:127.0.0.1:5020 <user>@<host>
 
 ## Environment Values
 
-Start by editing only the broker login and API token values:
+Start by editing the broker login, API token, server clock, and optional symbol
+suffix:
 
 ```dotenv
 MT5_LOGIN=
 MT5_PASSWORD=
-MT5_SERVER=Exness-MT5Trial9
+MT5_SERVER=
 MT5_API_KEY=replace-with-a-long-random-value
+QKT_BROKER_SERVER_TIME_ZONE=
+QKT_BROKER_SYMBOL_SUFFIX=
 ```
 
 These risk defaults are generated for you. They are intentionally conservative
@@ -62,7 +65,7 @@ COMPOSE_PROJECT_NAME=qkt-mt5
 QKT_BIND_HOST=127.0.0.1
 MT5_API_HOST_PORT=5020
 MT5_VNC_HOST_PORT=3020
-QKT_EXNESS_MAGIC=10001
+QKT_BROKER_MAGIC=10001
 ```
 
 Alerts and qkt-insights are optional. For real capital, prefer enabling alerts

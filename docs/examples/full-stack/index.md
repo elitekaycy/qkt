@@ -46,7 +46,7 @@ MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=
 
 # ---- Internal (don't change unless you know why) ----
-EXNESS_GATEWAY_URL=http://mt5-gateway:5001
+QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
 ## `docker-compose.yml`
@@ -87,7 +87,7 @@ services:
       BYBIT_API_KEY: ${BYBIT_API_KEY}
       BYBIT_API_SECRET: ${BYBIT_API_SECRET}
       BYBIT_TESTNET: ${BYBIT_TESTNET}
-      EXNESS_GATEWAY_URL: ${EXNESS_GATEWAY_URL}
+      QKT_BROKER_EXNESS_GATEWAY_URL: ${QKT_BROKER_EXNESS_GATEWAY_URL}
       QKT_BROKER_EXNESS_API_KEY: ${MT5_API_KEY}
       QKT_STATE_DIR: /var/lib/qkt
     volumes:
@@ -96,7 +96,6 @@ services:
       - ./reports:/var/lib/qkt/reports
       - qkt-state:/var/lib/qkt
     ports:
-      - "47000-47100:47000-47100"      # per-strategy observability
       - "47999:47999"                  # daemon control plane (internal)
     command:
       - daemon
@@ -143,7 +142,7 @@ brokers:
   exness:
     type: mt5
     extends: exness                   # inherits built-in suffix + tz settings
-    gateway_url: ${EXNESS_GATEWAY_URL}
+    gateway_url: ${QKT_BROKER_EXNESS_GATEWAY_URL}
     api_key: ${QKT_BROKER_EXNESS_API_KEY}
     magic: 4242                       # unique per qkt instance
     deviation_points: 30              # max slippage on market orders

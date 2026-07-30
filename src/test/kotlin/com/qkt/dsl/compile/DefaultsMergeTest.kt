@@ -57,6 +57,30 @@ class DefaultsMergeTest {
     }
 
     @Test
+    fun `defaults stopLoss builds a partial bracket when action has none`() {
+        val action = Buy("btc", ActionOpts(sizing = SizeQty(NumLit(BigDecimal.ONE))))
+        val defaults = DefaultsBlock(stopLoss = ChildBy(NumLit(BigDecimal("5"))))
+
+        val merged = mergeDefaults(action, defaults) as Buy
+
+        assertThat(merged.opts.bracket).isEqualTo(
+            BracketAst(stopLoss = ChildBy(NumLit(BigDecimal("5"))), takeProfit = null),
+        )
+    }
+
+    @Test
+    fun `defaults takeProfit builds a partial bracket when action has none`() {
+        val action = Buy("btc", ActionOpts(sizing = SizeQty(NumLit(BigDecimal.ONE))))
+        val defaults = DefaultsBlock(takeProfit = ChildRr(NumLit(BigDecimal("3"))))
+
+        val merged = mergeDefaults(action, defaults) as Buy
+
+        assertThat(merged.opts.bracket).isEqualTo(
+            BracketAst(stopLoss = null, takeProfit = ChildRr(NumLit(BigDecimal("3")))),
+        )
+    }
+
+    @Test
     fun `defaults fill missing bracket child`() {
         val action =
             Buy(

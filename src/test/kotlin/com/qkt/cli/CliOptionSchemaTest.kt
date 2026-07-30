@@ -1,0 +1,56 @@
+package com.qkt.cli
+
+import org.assertj.core.api.Assertions.assertThatCode
+import org.junit.jupiter.api.Test
+
+class CliOptionSchemaTest {
+    @Test
+    fun `experiment schema preserves backtest pass-through options`() {
+        val args =
+            Args(
+                arrayOf(
+                    "experiment",
+                    "run",
+                    "--plan",
+                    "plan.yaml",
+                    "--data-root",
+                    "data",
+                    "--starting-balance",
+                    "10000",
+                    "--bars",
+                ),
+            )
+
+        assertThatCode { validate(args) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `promotion schema preserves paper validation metrics`() {
+        val args =
+            Args(
+                arrayOf(
+                    "promotion",
+                    "paper",
+                    "strategy",
+                    "--paper-days",
+                    "7",
+                    "--avg-slippage-bps",
+                    "1.5",
+                    "--paper-status",
+                    "passed",
+                ),
+            )
+
+        assertThatCode { validate(args) }.doesNotThrowAnyException()
+    }
+
+    private fun validate(args: Args) {
+        val schema = checkNotNull(CliOptionSchemas.forSubcommand(args.subcommand))
+        args.validateOptions(
+            valueOptions = schema.values,
+            flags = schema.flags,
+            optionalValueOptions = schema.optionalValues,
+            shortAliases = schema.shortAliases,
+        )
+    }
+}

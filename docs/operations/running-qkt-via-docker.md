@@ -46,10 +46,11 @@ folder is your `~/qkt-lab` from the outside. A typical first session looks like 
 
 ```bash
 qkt --help                                        # see what qkt can do
-qkt create template mystrat.qkt --kind minimal    # start from a ready-made example
-vim mystrat.qkt                                    # edit it (live errors + completion for .qkt)
-qkt parse mystrat.qkt                              # check it's valid
-qkt backtest mystrat.qkt --from 2024-03-01 --to 2024-03-05
+qkt create template mystrat --kind minimal        # scaffold a project directory
+cd mystrat
+vim strategies/ema_cross.qkt                      # edit it (live errors + completion for .qkt)
+qkt parse strategies/ema_cross.qkt                # check it is valid
+qkt backtest strategies/ema_cross.qkt --from 2024-03-01 --to 2024-03-05
 ```
 
 That's the whole loop: scaffold, edit, check, backtest — repeat.

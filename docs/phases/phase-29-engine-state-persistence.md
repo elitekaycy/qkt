@@ -133,7 +133,7 @@ The `--reconcile=ignore-mismatches` flag is intentional opt-in to make the unsaf
 brokers:
   exness:
     type: mt5
-    gateway_url: ${MT5_GATEWAY_URL}
+    gateway_url: ${QKT_BROKER_GATEWAY_URL}
 # state: defaults to enabled at ~/.qkt/state
 ```
 

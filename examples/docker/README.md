@@ -8,14 +8,14 @@ strategy files, and manage strategies via `docker exec`.
 Either pull from ghcr.io:
 
 ```sh
-docker pull ghcr.io/elitekaycy/qkt:0.13.0
+docker pull ghcr.io/elitekaycy/qkt:latest
 ```
 
 Or build it locally from the qkt repo root:
 
 ```sh
 ./gradlew dockerBuild      # tags qkt:local
-docker tag qkt:local ghcr.io/elitekaycy/qkt:0.13.0
+docker tag qkt:local ghcr.io/elitekaycy/qkt:latest
 ```
 
 ## 2. Build your image
@@ -29,13 +29,12 @@ docker build -t my-prop:0.1 .
 ## 3. Run the daemon
 
 The base image's `ENTRYPOINT` is `qkt daemon --load-dir /strategies`. Each `.qkt` file in
-`/strategies/` is auto-deployed at startup. The control plane binds an ephemeral port on
-`127.0.0.1`; per-strategy observability ports are in the `40000-50000` range and exposed.
+`/strategies/` is auto-deployed at startup. The control plane and per-strategy
+observability servers bind ephemeral loopback ports inside the container; manage
+them with `docker exec`.
 
 ```sh
-docker run -d --name qkt-prop \
-    -p 47000-47100:47000-47100 \
-    my-prop:0.1
+docker run -d --name qkt-prop my-prop:0.1
 ```
 
 ## 4. Inspect what's running
@@ -72,7 +71,6 @@ For persistent log retention across container restarts, mount the state director
 ```sh
 docker run -d --name qkt-prop \
     -v $(pwd)/qkt-state:/var/lib/qkt \
-    -p 47000-47100:47000-47100 \
     my-prop:0.1
 ```
 

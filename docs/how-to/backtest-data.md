@@ -201,6 +201,9 @@ FX backtests size correctly out of the box.
 `instruments.yaml` is an **override**, not a requirement. Drop it at `<data-root>/instruments.yaml`
 (i.e. `~/.qkt/data/instruments.yaml`) or pass `--instruments <path>` to set a broker's commission
 and overnight swap (both default to zero), or add a symbol the standard table doesn't cover.
+The repository's `data/instruments.yaml` is a starter for the bundled
+`BACKTEST:BTCUSDT` tutorial. Copy an entry and replace every contract field from
+your venue's symbol specification before using another non-standard instrument.
 Entries are keyed by the
 broker-prefixed symbol from your strategy:
 

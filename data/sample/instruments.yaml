@@ -1,0 +1,9 @@
+instruments:
+  - qktSymbol: BACKTEST:BTCUSDT
+    contractSize: 1
+    volumeStep: 0.001
+    volumeMin: 0.001
+    volumeMax: 100
+    pointSize: 0.01
+    digits: 2
+    tradeStopsLevelPoints: 0

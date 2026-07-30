@@ -308,7 +308,10 @@ The classic floor-trader pivots, computed from the **prior completed UTC day's**
 ```qkt
 -- Fade a stretch above the central pivot back toward it; stop just beyond R1.
 WHEN gold.close > pivot_p(gold.candle) + atr(gold.candle, 14) AND POSITION.gold = 0
-THEN SELL gold BRACKET STOP LOSS AT pivot_r1(gold.candle) TAKE PROFIT AT pivot_p(gold.candle)
+THEN SELL gold BRACKET {
+    STOP LOSS AT pivot_r1(gold.candle),
+    TAKE PROFIT AT pivot_p(gold.candle)
+}
 ```
 
 The levels are `null` until the first full UTC day completes.

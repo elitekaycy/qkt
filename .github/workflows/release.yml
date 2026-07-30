@@ -35,6 +35,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Verify release tag matches VERSION
+        run: scripts/verify-version-tag.sh "$GITHUB_REF_NAME"
 
       - name: Build VSCode extension (.vsix) into editor/vscode/
         working-directory: editor/vscode

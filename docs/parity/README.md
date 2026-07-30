@@ -17,7 +17,8 @@ builder, and compares against the broker's own bars from the MT5 gateway.
 (~0.37 bps on gold), p95 0.369, max 0.717. The price level a backtest sees tracks the broker feed
 to a fraction of a dollar. Spread (the cost a paper backtest ignores) is reported alongside.
 
-**Regenerate** (needs the SSH tunnel to the gateway, `ssh -L 5003:localhost:5003 root@173.249.58.247`):
+**Regenerate** (needs a tunnel to your gateway,
+`ssh -L 5003:localhost:5003 <deploy-user>@<gateway-host>`):
 
 ```sh
 DAY=2026-06-04 MT5_URL=http://localhost:5003 ./gradlew runParityDataXauusd
@@ -33,10 +34,10 @@ backtest source. Kept as a second opinion on the broker feed.
 
 ### Bars: XAUUSD M5 — TV vs MT5
 
-**Prereq:** SSH tunnel to the MT5 gateway running on `173.249.58.247`:
+**Prereq:** SSH tunnel to an MT5 gateway:
 
 ```sh
-ssh -L 5003:localhost:5003 root@173.249.58.247
+ssh -L 5003:localhost:5003 <deploy-user>@<gateway-host>
 ```
 
 (Keep the tunnel open while the harness runs.)

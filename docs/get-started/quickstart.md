@@ -14,7 +14,7 @@ export PATH="$PWD/build/install/qkt/bin:$PATH"
 qkt --version
 ```
 
-You should see `qkt 0.22.0` or later.
+You should see `qkt 0.47.1` or later.
 
 ## 2. Write your first strategy
 
@@ -28,7 +28,11 @@ SYMBOLS
 
 RULES
     WHEN btc.close > 100
-    THEN BUY btc SIZING 0.1 BRACKET STOP_LOSS BY 50 PCT TAKE_PROFIT BY 100 PCT
+    THEN BUY btc SIZING 0.1
+         BRACKET {
+           STOP_LOSS BY 2 PCT,
+           TAKE_PROFIT BY 4 PCT
+         }
 ```
 
 The `BACKTEST:` prefix means "no live broker" — orders fill against an in-process paper broker.
@@ -36,7 +40,10 @@ The `BACKTEST:` prefix means "no live broker" — orders fill against an in-proc
 ## 3. Backtest it
 
 ```bash
-qkt backtest momentum.qkt --report ./out
+qkt backtest momentum.qkt \
+    --data-root data/sample \
+    --from 2024-01-15 --to 2024-01-17 \
+    --report-dir ./out
 ```
 
 Outputs:

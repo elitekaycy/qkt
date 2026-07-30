@@ -24,7 +24,7 @@ jobs:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/qkt' }}
       MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
       MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-      MT5_SERVER: ${{ vars.MT5_SERVER || 'Exness-MT5Trial9' }}
+      MT5_SERVER: ${{ vars.MT5_SERVER || '' }}
       MT5_API_KEY: ${{ secrets.MT5_API_KEY }}
       MT5_VNC_USER: ${{ vars.MT5_VNC_USER || 'admin' }}
       MT5_VNC_PASSWORD: ${{ secrets.MT5_VNC_PASSWORD || vars.MT5_VNC_PASSWORD || 'changeme' }}
@@ -34,7 +34,9 @@ jobs:
       QKT_BIND_HOST: ${{ vars.QKT_BIND_HOST || '127.0.0.1' }}
       MT5_API_HOST_PORT: ${{ vars.MT5_API_HOST_PORT || '5020' }}
       MT5_VNC_HOST_PORT: ${{ vars.MT5_VNC_HOST_PORT || '3020' }}
-      QKT_EXNESS_MAGIC: ${{ vars.QKT_EXNESS_MAGIC || '10001' }}
+      QKT_BROKER_SERVER_TIME_ZONE: ${{ vars.QKT_BROKER_SERVER_TIME_ZONE || '' }}
+      QKT_BROKER_SYMBOL_SUFFIX: ${{ vars.QKT_BROKER_SYMBOL_SUFFIX || '' }}
+      QKT_BROKER_MAGIC: ${{ vars.QKT_BROKER_MAGIC || '10001' }}
       TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -61,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS \
-            MT5_LOGIN MT5_PASSWORD MT5_API_KEY; do
+            MT5_LOGIN MT5_PASSWORD MT5_SERVER MT5_API_KEY QKT_BROKER_SERVER_TIME_ZONE; do
             test -n "${!name:-}" || { echo "::error::$name is required in the production environment"; exit 1; }
           done
           if [ "${TELEGRAM_ENABLED}" = "true" ]; then
@@ -83,7 +85,9 @@ jobs:
           {
             printf 'QKT_IMAGE_TAG=%s\n' "$QKT_IMAGE_TAG"
             printf 'MT5_GATEWAY_IMAGE=%s\n' "$MT5_GATEWAY_IMAGE"
-            printf 'QKT_EXNESS_MAGIC=%s\n' "$QKT_EXNESS_MAGIC"
+            printf 'QKT_BROKER_SERVER_TIME_ZONE=%s\n' "$QKT_BROKER_SERVER_TIME_ZONE"
+            printf 'QKT_BROKER_SYMBOL_SUFFIX=%s\n' "$QKT_BROKER_SYMBOL_SUFFIX"
+            printf 'QKT_BROKER_MAGIC=%s\n' "$QKT_BROKER_MAGIC"
             printf 'MT5_API_KEY=%s\n' "$MT5_API_KEY"
             printf 'MT5_VNC_USER=%s\n' "$MT5_VNC_USER"
             printf 'MT5_VNC_PASSWORD=%s\n' "$MT5_VNC_PASSWORD"

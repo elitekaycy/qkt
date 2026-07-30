@@ -79,8 +79,9 @@ class Mt5TickFeedSourceTest {
                 }
             }
         server.start()
+        var source: Mt5TickFeedSource? = null
         try {
-            val source =
+            source =
                 Mt5TickFeedSource(
                     baseUrl = server.url("/").toString().trimEnd('/'),
                     symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
@@ -99,10 +100,10 @@ class Mt5TickFeedSourceTest {
             while (reconnects.get() == 0 && System.currentTimeMillis() < deadline) {
                 Thread.sleep(20L)
             }
-            source.stop()
             assertThat(disconnects.get()).isEqualTo(1)
             assertThat(reconnects.get()).isEqualTo(1)
         } finally {
+            source?.stop()
             server.shutdown()
         }
     }

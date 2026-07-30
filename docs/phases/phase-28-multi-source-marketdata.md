@@ -147,12 +147,12 @@ Routes to `BybitLinearMarketSource` (`/v5/public/linear`). Same shape as spot bu
 brokers:
   latch:
     type: mt5
-    gateway_url: http://173.249.58.247:5003
+    gateway_url: http://<gateway-host>:5003
     symbol_suffix: ""
     magic: 100
   hedge:
     type: mt5
-    gateway_url: http://173.249.58.247:5002
+    gateway_url: http://<gateway-host>:5002
     symbol_suffix: m
     magic: 200
 ```
