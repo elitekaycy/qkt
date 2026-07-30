@@ -2,90 +2,88 @@
 
 ## Versioning
 
-SemVer 0.x.y while pre-1.0:
+qkt uses semantic versions while pre-1.0:
 
-- **minor (`0.X.0`)** — phase number. Phase 10 → `0.10.x`. Phase 11 → `0.11.x`.
-- **patch (`0.X.Y`)** — sub-phase letters (a/b/c/d-a/d-b/...) in chronological order, or hotfixes between phases. Phase 10 = `0.10.0`, Phase 10b = `0.10.1`, a hypothetical Phase 10c hotfix = `0.10.2`.
+- **minor (`0.X.0`)**: a substantial phase or intentionally breaking public change
+- **patch (`0.X.Y`)**: a compatible feature set, sub-phase, or hotfix
 
-Breaking changes are acceptable in minor bumps until 1.0. This matches the "no backwards compatibility cruft" stance documented in the qkt skill.
+`VERSION` is the single release version consumed by Gradle, the CLI, generated
+scaffolds, distribution names, and container metadata. Change it through a reviewed
+PR before creating a tag.
 
-Once a stable public DSL ships and the API is documented as stable, we bump to `1.0.0` and standard SemVer rules apply (no breaking changes in minor).
+## Distribution channels
 
-## Tagging
+| Channel | Source | Intended use |
+|---|---|---|
+| GitHub release and `ghcr.io/elitekaycy/qkt:vX.Y.Z` | immutable `vX.Y.Z` tag | canonical stable install |
+| `ghcr.io/elitekaycy/qkt:latest` | `main` | current promoted main |
+| `ghcr.io/elitekaycy/qkt:edge` | `testing` | integration-tested staging |
+| `ghcr.io/elitekaycy/qkt:dev` | `main` | authoring image with editor tools |
 
-After a `merge: phase X ...` commit lands on main:
+Generated deployment projects pin `v<VERSION>`. Do not publish a qkt build whose tag
+differs from `VERSION`: both release and Docker workflows run
+`scripts/verify-version-tag.sh`, and the essentials workflow tests that gate.
 
-```bash
-git checkout main && git pull
-git tag -a v0.X.Y -m "phase X — <short description>"
-git push origin v0.X.Y
-```
+## Promotion
 
-Tags are annotated and immutable. **Never** force-update or delete a published tag. If you push a wrong tag, immediately push a corrected next-patch tag and note the mistake in the release notes.
+Changes reach a release through the protected branch flow:
 
-## GitHub Release
+1. Merge reviewed feature branches into `dev`.
+2. Let the green `check.yml` run fast-forward `dev` to `testing`.
+3. Wait for `integration.yml` on the exact `testing` SHA.
+4. Run the `promote-to-main` workflow. It verifies that integration evidence and
+   creates or reuses a `testing -> main` PR.
+5. Merge the promotion PR after its required checks.
+6. Wait for `integration.yml` and `docker.yml` on the promoted `main` SHA.
 
-```bash
-gh release create v0.X.Y \
-  --title "v0.X.Y — phase X <description>" \
-  --notes-file docs/phases/phase-<N>-<topic>.md
-```
+Do not push directly to `dev`, `testing`, or `main`.
 
-If no phase changelog exists (phases 1-6 predate the convention), use `--notes "<merge commit subject>"` instead.
+## Tag And Publish
 
-Mark as "Latest release" if it is.
-
-## Binary distribution (since Phase 12a)
-
-Phase 12a ships the `qkt` CLI binary via Gradle's `application` plugin. Each release should attach a tarball so users can install without building from source.
-
-```bash
-./gradlew distTar
-gh release upload v0.X.Y build/distributions/qkt-0.X.Y.tar
-```
-
-The release body should document install:
+Tag the exact promoted main commit only after the main checks pass:
 
 ```bash
-curl -L -o qkt.tar https://github.com/<owner>/<repo>/releases/download/v0.X.Y/qkt-0.X.Y.tar
-tar -xf qkt.tar
-export PATH="$PWD/qkt-0.X.Y/bin:$PATH"
-qkt --version
+git fetch origin
+release_sha="$(git rev-parse origin/main)"
+version="$(tr -d '\r\n' < VERSION)"
+scripts/verify-version-tag.sh "v$version"
+git tag -a "v$version" "$release_sha" -m "release: v$version"
+git push origin "v$version"
 ```
 
-## Hotfix policy
+The tag push starts two pipelines:
 
-Pre-1.0 hotfixes:
-1. Fix on a `fix-<short-description>` branch off main.
-2. Merge via `--no-ff` with `merge: fix <description>`.
-3. Tag as the next patch on the current minor: e.g. if main is at `v0.10.1`, the hotfix is `v0.10.2`.
-4. No back-port branches. Users on older minors update to latest.
+- `release.yml` builds and verifies the ordinary tarball, self-contained Linux
+  bundle, self-contained Windows zip, and VS Code extension, then creates the GitHub
+  release with generated notes.
+- `docker.yml` smoke-tests the runtime image and publishes the versioned GHCR image
+  with provenance and an SBOM.
 
-## Mapping phase merges to versions
+The GitHub release event then starts the Winget submission workflow. Do not run
+`gh release create` or upload Gradle artifacts manually during the normal path; that
+duplicates and can race the automated publisher.
 
-| Phase merge | Version |
-|---|---|
-| phase 1 trading engine | v0.1.0 |
-| phase 2a event bus | v0.2.0 |
-| phase 2b candle aggregator | v0.2.1 |
-| phase 3 risk and positions | v0.3.0 |
-| phase 3b pnl and bigdecimal | v0.3.1 |
-| phase 4 backtest harness | v0.4.0 |
-| phase 5 indicators | v0.5.0 |
-| phase 6 data store | v0.6.0 |
-| phase 6 cleanup | v0.6.1 |
-| phase 7a live runtime refactor | v0.7.0 |
-| phase 7b live runtime + warmup | v0.7.1 |
-| phase 7c TradingView vendor | v0.7.2 |
-| phase 7d-a broker abstraction | v0.7.3 |
-| phase 7d-b OrderManager | v0.7.4 |
-| phase 7e Bybit Spot + composite | v0.7.5 |
-| phase 7f broker resilience | v0.7.6 |
-| phase 7g reconciliation + balances | v0.7.7 |
-| phase 7h derivatives + rate limit | v0.7.8 |
-| phase 8 strategy context + pnl attribution | v0.8.0 |
-| phase 9 risk engine | v0.9.0 |
-| phase 10 backtest reporting | v0.10.0 |
-| phase 10b parameter sweep | v0.10.1 |
+## Verification
 
-Intermediate maintenance merges (TradingView fixes, onTick/onCandle refactor) are not tagged — they are not user-facing milestones.
+Before announcing the release, verify all of the following:
+
+```bash
+gh release view "v$version"
+gh run list --workflow release.yml --limit 1
+gh run list --workflow docker.yml --limit 1
+docker pull "ghcr.io/elitekaycy/qkt:v$version"
+docker run --rm --entrypoint qkt "ghcr.io/elitekaycy/qkt:v$version" --version
+```
+
+The release must contain the Linux tarballs and Windows zip, and `qkt --version` from
+the image must report the tagged version and release SHA.
+
+## Failure And Hotfix Policy
+
+Tags are annotated and immutable. Never force-update or delete a published tag. If
+the tag is wrong, fix forward with the next patch version and explain the superseded
+release in its notes.
+
+For a hotfix, branch from `dev`, merge through `dev -> testing -> main`, increment
+`VERSION`, and repeat the same tag workflow. There are no backport branches before
+1.0; users update to the latest patch.
