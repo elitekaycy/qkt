@@ -4,6 +4,7 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -80,7 +81,7 @@ class FileStatePersistorPendingStacksTest {
     }
 
     @Test
-    fun `loadPendingStacks returns empty on version mismatch`(
+    fun `loadPendingStacks rejects a version mismatch`(
         @TempDir tmp: Path,
     ) {
         val dir = tmp.resolve("hedge")
@@ -90,6 +91,8 @@ class FileStatePersistorPendingStacksTest {
             """{"version":99,"strategyId":"hedge","perPrimary":[]}""",
         )
         val persistor = FileStatePersistor(tmp)
-        assertThat(persistor.loadPendingStacks("hedge")).isEmpty()
+        assertThatThrownBy { persistor.loadPendingStacks("hedge") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("schema mismatch")
     }
 }

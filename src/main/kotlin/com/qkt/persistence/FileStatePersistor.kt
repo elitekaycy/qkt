@@ -16,8 +16,8 @@ import org.slf4j.LoggerFactory
  * `<rootDir>/<strategyId>/`.
  *
  * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
- * an entry-only risk halt. Most load failures return null and log; risk-state load failures are
- * surfaced so a live session cannot silently discard a halt or reset its daily-loss budget.
+ * an entry-only risk halt. Existing state that cannot be read, parsed, or validated fails startup
+ * so a live session cannot silently reset durable risk or execution state.
  */
 class FileStatePersistor(
     rootDir: Path,
@@ -96,7 +96,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(SequencesDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, SEQUENCES_FILE, it) }
-            .onFailure { e -> log.warn("saveSequences encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveSequences encode for $strategyId", e) }
     }
 
     override fun saveExitHooks(
@@ -111,7 +111,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(ExitHooksDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, EXIT_HOOKS_FILE, it) }
-            .onFailure { e -> log.warn("saveExitHooks encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveExitHooks encode for $strategyId", e) }
     }
 
     override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> {
@@ -137,12 +137,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(SequencesDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadSequences parse failed for $strategyId: ${e.message}")
-                return emptyMap()
+                throw IllegalStateException("loadSequences parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadSequences schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return emptyMap()
+        require(dto.version == SCHEMA_VERSION) {
+            "loadSequences schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return dto.sequences.associate { state ->
             state.name to
@@ -182,7 +180,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(TradeHistoryDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, TRADE_HISTORY_FILE, it) }
-            .onFailure { e -> log.warn("saveTradeHistory encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveTradeHistory encode for $strategyId", e) }
     }
 
     override fun loadTradeHistory(strategyId: String): PersistedTradeHistory? {
@@ -191,12 +189,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(TradeHistoryDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadTradeHistory parse failed for $strategyId: ${e.message}")
-                return null
+                throw IllegalStateException("loadTradeHistory parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadTradeHistory schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return null
+        require(dto.version == SCHEMA_VERSION) {
+            "loadTradeHistory schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return PersistedTradeHistory(
             outcomes =
@@ -222,7 +218,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(PnlDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, PNL_FILE, it) }
-            .onFailure { e -> log.warn("savePnl encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("savePnl encode for $strategyId", e) }
     }
 
     override fun loadPnl(strategyId: String): PersistedPnl? {
@@ -231,12 +227,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(PnlDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadPnl parse failed for $strategyId: ${e.message}")
-                return null
+                throw IllegalStateException("loadPnl parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadPnl schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return null
+        require(dto.version == SCHEMA_VERSION) {
+            "loadPnl schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return PersistedPnl(realized = dto.realized.toBigDecimal())
     }
@@ -273,7 +267,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(RiskStateDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, RISK_STATE_FILE, it) }
-            .onFailure { e -> log.warn("saveRiskState encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveRiskState encode for $strategyId", e) }
     }
 
     override fun loadRiskState(strategyId: String): PersistedRiskState? {
@@ -321,7 +315,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(LegBookDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, fileNameFor(symbol, LEGBOOK_FILE), it) }
-            .onFailure { e -> log.warn("saveLegBook encode failed for $strategyId/$symbol: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveLegBook encode for $strategyId/$symbol", e) }
     }
 
     override fun loadLegBook(
@@ -333,12 +327,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(LegBookDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadLegBook parse failed for $strategyId/$symbol: ${e.message}")
-                return null
+                throw IllegalStateException("loadLegBook parse failed for $strategyId/$symbol", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadLegBook schema mismatch for $strategyId/$symbol: ${dto.version} != $SCHEMA_VERSION")
-            return null
+        require(dto.version == SCHEMA_VERSION) {
+            "loadLegBook schema mismatch for $strategyId/$symbol: ${dto.version} != $SCHEMA_VERSION"
         }
         return PersistedLegBook(
             strategyId = dto.strategyId,
@@ -359,7 +351,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(BracketPairsDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, BRACKET_PAIRS_FILE, it) }
-            .onFailure { e -> log.warn("saveBracketPairs encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveBracketPairs encode for $strategyId", e) }
     }
 
     override fun loadBracketPairs(strategyId: String): List<BracketPair> {
@@ -368,12 +360,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(BracketPairsDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadBracketPairs parse failed for $strategyId: ${e.message}")
-                return emptyList()
+                throw IllegalStateException("loadBracketPairs parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadBracketPairs schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return emptyList()
+        require(dto.version == SCHEMA_VERSION) {
+            "loadBracketPairs schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return dto.pairs.map { it.toDomain() }
     }
@@ -396,7 +386,18 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(PendingOrdersDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, PENDING_ORDERS_FILE, it) }
-            .onFailure { e -> log.warn("savePendingOrders encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("savePendingOrders encode for $strategyId", e) }
+    }
+
+    override fun savePendingOrdersSync(
+        strategyId: String,
+        orders: Map<String, OrderRequest>,
+    ) {
+        val failuresBefore = failedWrites
+        savePendingOrders(strategyId, orders)
+        check(failedWrites == failuresBefore) {
+            "durable pending-order intent write failed for $strategyId"
+        }
     }
 
     override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> {
@@ -405,12 +406,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(PendingOrdersDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadPendingOrders parse failed for $strategyId: ${e.message}")
-                return emptyMap()
+                throw IllegalStateException("loadPendingOrders parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadPendingOrders schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return emptyMap()
+        require(dto.version == SCHEMA_VERSION) {
+            "loadPendingOrders schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return dto.orders.associate { it.clientOrderId to it.request.toDomain() }
     }
@@ -435,7 +434,7 @@ class FileStatePersistor(
             )
         runCatching { json.encodeToString(PendingStacksDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, PENDING_STACKS_FILE, it) }
-            .onFailure { e -> log.warn("savePendingStacks encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("savePendingStacks encode for $strategyId", e) }
     }
 
     override fun loadPendingStacks(strategyId: String): Map<String, PersistedTierState> {
@@ -444,12 +443,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(PendingStacksDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadPendingStacks parse failed for $strategyId: ${e.message}")
-                return emptyMap()
+                throw IllegalStateException("loadPendingStacks parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadPendingStacks schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return emptyMap()
+        require(dto.version == SCHEMA_VERSION) {
+            "loadPendingStacks schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return dto.perPrimary.associate { entry ->
             entry.primaryLegId to
@@ -487,7 +484,7 @@ class FileStatePersistor(
         val dto = OcoLegsDto(version = SCHEMA_VERSION, strategyId = strategyId, legs = entries)
         runCatching { json.encodeToString(OcoLegsDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, OCO_LEGS_FILE, it) }
-            .onFailure { e -> log.warn("saveOcoLegs encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveOcoLegs encode for $strategyId", e) }
     }
 
     override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> {
@@ -496,12 +493,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(OcoLegsDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadOcoLegs parse failed for $strategyId: ${e.message}")
-                return emptyList()
+                throw IllegalStateException("loadOcoLegs parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadOcoLegs schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return emptyList()
+        require(dto.version == SCHEMA_VERSION) {
+            "loadOcoLegs schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return dto.legs.map {
             PersistedOcoLeg(
@@ -544,7 +539,7 @@ class FileStatePersistor(
         val dto = TrailingStopsDto(version = SCHEMA_VERSION, strategyId = strategyId, stops = entries)
         runCatching { json.encodeToString(TrailingStopsDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, TRAILING_STOPS_FILE, it) }
-            .onFailure { e -> log.warn("saveTrailingStops encode failed for $strategyId: ${e.message}") }
+            .onFailure { e -> writer.recordFailure("saveTrailingStops encode for $strategyId", e) }
     }
 
     override fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> {
@@ -553,12 +548,10 @@ class FileStatePersistor(
             try {
                 json.decodeFromString(TrailingStopsDto.serializer(), raw)
             } catch (e: SerializationException) {
-                log.warn("loadTrailingStops parse failed for $strategyId: ${e.message}")
-                return emptyList()
+                throw IllegalStateException("loadTrailingStops parse failed for $strategyId", e)
             }
-        if (dto.version != SCHEMA_VERSION) {
-            log.warn("loadTrailingStops schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION")
-            return emptyList()
+        require(dto.version == SCHEMA_VERSION) {
+            "loadTrailingStops schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
         }
         return dto.stops.map {
             PersistedTrailingStop(

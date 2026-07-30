@@ -10,6 +10,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
@@ -192,6 +193,41 @@ class OrderManagerTier2FallbackTest {
         bus.publish(TickEvent(Tick("EURUSD", Money.of("1.080"), 2L)))
 
         assertThat(broker.submits).hasSize(1)
+    }
+
+    @Test
+    fun `engine-held entry is rejected instead of firing after a halt`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, capabilities = tier1Only)
+        val rejected = mutableListOf<RiskRejectedEvent>()
+        bus.subscribe<RiskRejectedEvent> { rejected += it }
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                engineHeldSubmissionBlockReason = { "halted: persistence failure" },
+            )
+
+        om.submit(
+            OrderRequest.Stop(
+                id = "held-entry",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                stopPrice = Money.of("1.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "A",
+            ),
+        )
+        bus.publish(TickEvent(Tick("EURUSD", Money.of("1.11"), 1L)))
+
+        assertThat(broker.submits).isEmpty()
+        assertThat(om.getOrder("held-entry")).isNull()
+        assertThat(rejected.single().reason).isEqualTo("halted: persistence failure")
     }
 
     @Test

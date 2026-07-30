@@ -5,6 +5,7 @@ import com.qkt.broker.bybit.BybitBalanceTranslator
 import com.qkt.broker.bybit.BybitOrderTranslator
 import com.qkt.broker.bybit.BybitSymbol
 import com.qkt.broker.bybit.BybitTransport
+import com.qkt.broker.bybit.requireBybitOk
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
@@ -13,7 +14,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.slf4j.LoggerFactory
 
 /** On-startup state reconciliation for [BybitSpotBroker] — replays open orders + balances. */
 class BybitSpotStateRecovery(
@@ -24,7 +24,6 @@ class BybitSpotStateRecovery(
     private val lastFillTimeProvider: () -> Long,
     private val seenExecIds: MutableSet<String>,
 ) : BrokerStateRecovery {
-    private val log = LoggerFactory.getLogger(BybitSpotStateRecovery::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
 
@@ -37,12 +36,9 @@ class BybitSpotStateRecovery(
 
     override fun reconcile() {
         synchronized(lock) {
-            runCatching { reconcileOpenOrders() }
-                .onFailure { log.warn("Open-orders reconcile failed: {}", it.message) }
-            runCatching { reconcileExecutions() }
-                .onFailure { log.warn("Executions reconcile failed: {}", it.message) }
-            runCatching { reconcileBalances() }
-                .onFailure { log.warn("Balances reconcile failed: {}", it.message) }
+            val executedOrderIds = reconcileExecutions()
+            reconcileOpenOrders(executedOrderIds)
+            reconcileBalances()
         }
     }
 
@@ -63,19 +59,20 @@ class BybitSpotStateRecovery(
         )
     }
 
-    private fun reconcileOpenOrders() {
+    private fun reconcileOpenOrders(executedOrderIds: Set<String>) {
         val response =
             transport.getSigned(
                 "/v5/order/realtime",
                 mapOf("category" to "spot", "openOnly" to "0", "limit" to "50"),
             )
-        val tree = json.parseToJsonElement(response).jsonObject
-        if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
-        val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
+        val tree = requireBybitOk(response, "open-order reconcile", json)
+        val list =
+            tree["result"]?.jsonObject?.get("list")?.jsonArray
+                ?: throw IllegalStateException("open-order reconcile response omitted result.list")
         val openOrderIds = list.mapNotNull { it.jsonObject["orderLinkId"]?.jsonPrimitive?.content }.toSet()
         val known = getKnownOrders()
         for ((id, view) in known) {
-            if (id !in openOrderIds) {
+            if (id !in openOrderIds && id !in executedOrderIds) {
                 bus.publish(
                     BrokerEvent.OrderCancelled(
                         clientOrderId = id,
@@ -89,11 +86,12 @@ class BybitSpotStateRecovery(
         }
     }
 
-    private fun reconcileExecutions() {
+    private fun reconcileExecutions(): Set<String> {
         val startTime = (lastFillTimeProvider() - 60_000L).coerceAtLeast(0L)
         var cursor = ""
         var totalProcessed = 0
         val cap = MAX_EXECUTIONS_PER_RECONCILE
+        val executedOrderIds = mutableSetOf<String>()
         while (totalProcessed < cap) {
             val params =
                 buildMap {
@@ -103,12 +101,14 @@ class BybitSpotStateRecovery(
                     if (cursor.isNotEmpty()) put("cursor", cursor)
                 }
             val response = transport.getSigned("/v5/execution/list", params)
-            val tree = json.parseToJsonElement(response).jsonObject
-            if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
-            val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
+            val tree = requireBybitOk(response, "execution reconcile", json)
+            val list =
+                tree["result"]?.jsonObject?.get("list")?.jsonArray
+                    ?: throw IllegalStateException("execution reconcile response omitted result.list")
             var newThisPage = 0
             for (entry in list) {
                 val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
+                executedOrderIds.add(exec.clientOrderId)
                 if (!seenExecIds.add(exec.execId)) continue
                 val qktSymbol = BybitSymbol.toQkt(category = "spot", bare = exec.bareSymbol)
                 val strategyId = getKnownOrders()[exec.clientOrderId]?.strategyId ?: ""
@@ -126,7 +126,7 @@ class BybitSpotStateRecovery(
                 )
                 newThisPage++
                 totalProcessed++
-                if (totalProcessed >= cap) return
+                if (totalProcessed >= cap) return executedOrderIds
             }
             cursor = tree["result"]
                 ?.jsonObject
@@ -137,6 +137,7 @@ class BybitSpotStateRecovery(
             // already-seen execs (e.g. a misconfigured page response) would otherwise spin.
             if (cursor.isEmpty() || list.isEmpty() || newThisPage == 0) break
         }
+        return executedOrderIds
     }
 
     companion object {

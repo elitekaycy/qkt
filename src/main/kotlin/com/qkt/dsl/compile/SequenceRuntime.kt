@@ -99,6 +99,13 @@ class SequenceRuntime(
     private val states = sequences.associate { it.name to RuntimeState() }.toMutableMap()
     private var persistor: StatePersistor? = null
     private var strategyId: String = ""
+    private var ruleEdges: List<CompiledRule> = emptyList()
+    private var restoredRuleEdges: Map<String, Boolean> = emptyMap()
+
+    internal fun bindRuleEdges(rules: List<CompiledRule>) {
+        ruleEdges = rules
+        restoreRuleEdges()
+    }
 
     /** Attach durable state and restore any persisted sequence progress for [strategyId]. */
     fun bindPersistor(
@@ -108,6 +115,8 @@ class SequenceRuntime(
         this.strategyId = strategyId
         this.persistor = persistor
         val persisted = runCatching { persistor.loadSequences(strategyId) }.getOrDefault(emptyMap())
+        restoredRuleEdges = persisted[RULE_EDGE_STATE]?.lastValues.orEmpty()
+        restoreRuleEdges()
         for ((name, state) in persisted) {
             val runtime = states[name] ?: continue
             runtime.stage = state.stage
@@ -119,6 +128,22 @@ class SequenceRuntime(
             runtime.lastValues.clear()
             runtime.lastValues.putAll(state.lastValues)
         }
+    }
+
+    private fun restoreRuleEdges() {
+        if (restoredRuleEdges.isEmpty() || ruleEdges.isEmpty()) return
+        for (rule in ruleEdges) {
+            restoredRuleEdges[rule.edgeStateKey]?.let(rule::restoreEdgeState)
+        }
+    }
+
+    internal fun persistRuleEdges() {
+        var dirty = false
+        for (rule in ruleEdges) {
+            if (rule.consumeEdgeDirty()) dirty = true
+        }
+        if (!dirty) return
+        persist()
     }
 
     /**
@@ -141,8 +166,13 @@ class SequenceRuntime(
         }
     }
 
-    /** Clear any completion pulses after rules have had exactly one pass to observe them. */
-    fun afterRulePass() {
+    /**
+     * Clear completion pulses after rules have observed them. [deferCompletion] keeps a
+     * pulse live when every consuming signal was suppressed, allowing the re-armed rule
+     * to retry on the next bar.
+     */
+    fun afterRulePass(deferCompletion: Boolean = false) {
+        if (deferCompletion) return
         var changed = false
         for ((name, state) in states) {
             if (!state.completePulse) continue
@@ -236,21 +266,35 @@ class SequenceRuntime(
         val p = persistor ?: return
         if (strategyId.isBlank()) return
         val persisted =
-            states.mapValues { (name, state) ->
-                val sequence = byName.getValue(name)
+            states
+                .mapValues { (name, state) ->
+                    val sequence = byName.getValue(name)
+                    PersistedSequenceState(
+                        name = name,
+                        stage = state.stage,
+                        snapshots =
+                            sequence.stages.mapNotNull { stage ->
+                                state.snapshots[stage.name]?.let {
+                                    PersistedSequenceSnapshot(it.stage, it.price, it.timeMs)
+                                }
+                            },
+                        lastValues = state.lastValues.toMap(),
+                        completePulse = state.completePulse,
+                    )
+                }.toMutableMap()
+        if (ruleEdges.isNotEmpty()) {
+            persisted[RULE_EDGE_STATE] =
                 PersistedSequenceState(
-                    name = name,
-                    stage = state.stage,
-                    snapshots =
-                        sequence.stages.mapNotNull { stage ->
-                            state.snapshots[stage.name]?.let {
-                                PersistedSequenceSnapshot(it.stage, it.price, it.timeMs)
-                            }
-                        },
-                    lastValues = state.lastValues.toMap(),
-                    completePulse = state.completePulse,
+                    name = RULE_EDGE_STATE,
+                    stage = 0,
+                    snapshots = emptyList(),
+                    lastValues = ruleEdges.associate { it.edgeStateKey to it.edgeState },
                 )
-            }
+        }
         runCatching { p.saveSequences(strategyId, persisted) }
+    }
+
+    private companion object {
+        const val RULE_EDGE_STATE = "__qkt_rule_edges__"
     }
 }

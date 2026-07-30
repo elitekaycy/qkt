@@ -10,6 +10,7 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -188,7 +189,7 @@ class FileStatePersistorPendingOrdersTest {
     }
 
     @Test
-    fun `loadPendingOrders returns empty on version mismatch`(
+    fun `loadPendingOrders rejects a version mismatch`(
         @TempDir tmp: Path,
     ) {
         val dir = tmp.resolve("hedge")
@@ -198,6 +199,8 @@ class FileStatePersistorPendingOrdersTest {
             """{"version":99,"strategyId":"hedge","orders":[]}""",
         )
         val persistor = FileStatePersistor(tmp)
-        assertThat(persistor.loadPendingOrders("hedge")).isEmpty()
+        assertThatThrownBy { persistor.loadPendingOrders("hedge") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("schema mismatch")
     }
 }

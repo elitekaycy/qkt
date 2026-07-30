@@ -7,10 +7,12 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.Tick
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -148,5 +150,52 @@ class OrderManagerOtoTest {
 
         assertThat(broker.cancels).contains("p1")
         assertThat(om.getOrder("c1")?.state).isEqualTo(OrderState.CANCELLED)
+    }
+
+    @Test
+    fun `GTD parent expiry never submits OTO children`() {
+        val clock = FixedClock(time = 1_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val parent =
+            OrderRequest.Limit(
+                id = "p1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("100"),
+                timeInForce = TimeInForce.GTD,
+                timestamp = 1_000L,
+                expiresAt = 1_500L,
+            )
+        val child =
+            OrderRequest.Limit(
+                id = "c1",
+                symbol = "X",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("110"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1_000L,
+            )
+        om.submit(
+            OrderRequest.OTO(
+                id = "oto1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                parent = parent,
+                children = listOf(child),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1_000L,
+            ),
+        )
+
+        clock.time = 2_000L
+        bus.publish(TickEvent(Tick("X", Money.of("101"), 2_000L)))
+
+        assertThat(broker.submits.map { it.id }).containsExactly("p1")
+        assertThat(om.getOrder("c1")).isNull()
     }
 }

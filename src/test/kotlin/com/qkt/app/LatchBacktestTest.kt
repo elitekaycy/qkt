@@ -26,6 +26,7 @@ import com.qkt.dsl.compile.LatchCompiler
 import com.qkt.dsl.compile.PendingStacks
 import com.qkt.dsl.compile.SizingCompiler
 import com.qkt.engine.Engine
+import com.qkt.events.SignalSuppressedEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.NullMarketSource
@@ -39,6 +40,7 @@ import com.qkt.strategy.Mode
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
+import java.util.concurrent.atomic.AtomicBoolean
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -135,11 +137,13 @@ class LatchBacktestTest {
         val strategyPnL: StrategyPnL,
         val strategyPositions: StrategyPositionTracker,
         val clock: FixedClock,
+        val bus: EventBus,
     )
 
     private fun harness(
         ast: Latch = latchAst,
         declaredStreams: Map<String, HubKey> = mapOf(streamAlias to hubKey),
+        gate: () -> Boolean = { true },
     ): Harness {
         val clock = FixedClock(time = 0L)
         val ids = SequentialIdGenerator()
@@ -175,8 +179,9 @@ class LatchBacktestTest {
                 calendar = TradingCalendar.crypto(),
                 source = NullMarketSource,
                 candleWindow = null,
+                gate = gate,
             )
-        return Harness(pipeline, strategyPnL, strategyPositions, clock)
+        return Harness(pipeline, strategyPnL, strategyPositions, clock, bus)
     }
 
     @Test
@@ -226,6 +231,25 @@ class LatchBacktestTest {
         assertThat(realized)
             .withFailMessage("expected zero realized PnL with no wire cross, got $realized")
             .isEqualByComparingTo(BigDecimal.ZERO)
+    }
+
+    @Test
+    fun `latch fire routes through the strategy gate and suppression event`() {
+        val enabled = AtomicBoolean(true)
+        val h = harness(gate = enabled::get)
+        val suppressed = mutableListOf<SignalSuppressedEvent>()
+        h.bus.subscribe<SignalSuppressedEvent> { suppressed.add(it) }
+
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 0L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.00"), 60_001L))
+        enabled.set(false)
+        h.pipeline.ingest(Tick(symbol, BigDecimal("2000.60"), 60_002L))
+        h.pipeline.ingest(Tick(symbol, BigDecimal("1996.40"), 60_003L))
+
+        assertThat(h.strategyPositions.positionFor(strategyId, symbol)).isNull()
+        assertThat(suppressed).hasSize(1)
+        assertThat(suppressed.single().signal).isInstanceOf(Signal.Submit::class.java)
+        assertThat(suppressed.single().strategyId).isEqualTo(strategyId)
     }
 
     @Test

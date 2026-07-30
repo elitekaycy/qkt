@@ -48,6 +48,12 @@ sealed class Signal {
         val compiled: com.qkt.dsl.compile.CompiledLatch,
         val ec: com.qkt.dsl.compile.EvalContext,
     ) : Signal()
+
+    /** Intent intentionally suppressed before an order could be constructed. */
+    data class Suppressed(
+        val symbol: String,
+        val reason: String,
+    ) : Signal()
 }
 
 /** Symbol the signal targets, or null for latch arms (whose legs carry their own symbols). */
@@ -58,4 +64,5 @@ fun Signal.targetSymbol(): String? =
         is Signal.Submit -> request.symbol
         is Signal.CancelPendingForSymbol -> symbol
         is Signal.ArmLatch -> null
+        is Signal.Suppressed -> symbol
     }

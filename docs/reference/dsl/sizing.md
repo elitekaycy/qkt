@@ -11,6 +11,7 @@ Every way to specify the size of a `BUY` or `SELL` order. Sizing is the single m
 | `SIZING <expression> PCT OF BALANCE` | Percentage of cash balance only |
 | `SIZING <expression> USD` | Computed USD notional value |
 | `SIZING <N> PCT RISK` | Sized so a stop-out loses N% of equity (sugar over `SIZING RISK N/100`) |
+| `SIZING <N> PCT RISK OF BOOK` | Sized so a stop-out loses N% of the portfolio book balance |
 | `SIZING RISK $ <expression>` | Computed account-currency risk with bracket stop geometry |
 | `SIZING POSITION.<stream>` | The full current position quantity (for closes/scaling) |
 
@@ -83,6 +84,20 @@ Sizes the position so that, if the stop hits, the loss is exactly N% of equity. 
 Requires a `BRACKET` with a `STOP_LOSS` — without one the compiler rejects the strategy because no stop distance can be established safely.
 
 **When to use:** the default for portable strategies. Risk-percent sizing scales correctly with account size, stop distance, and instrument volatility.
+
+### Portfolio book risk
+
+```qkt
+BUY btc SIZING 0.5 PCT RISK OF BOOK
+    BRACKET { STOP LOSS BY 500 }
+```
+
+`OF BOOK` is available to portfolio children and uses `CAPITAL + realized PnL` across
+all children. It deliberately excludes unrealized PnL, so an open-book drawdown does
+not reduce subsequent sizes. Treat that balance-style basis as a leverage risk; use
+book exposure and drawdown limits to cap new exposure. A standalone strategy, or a
+portfolio child without a bound book balance, fails closed instead of falling back to
+strategy equity.
 
 ## Computing risk-based size manually
 

@@ -53,8 +53,7 @@ internal class StateFileWriter(
             val target = dir.resolve(fileName)
             // Unique temp per write. A shared temp lets concurrent writers to the same
             // target collide: one writer's rename consumes the temp another is mid-write on,
-            // so the loser's move fails. e.g. two saves of bracket-pairs.json racing under
-            // the async persistor's caller-runs fallback.
+            // so the loser's move fails.
             val temp = Files.createTempFile(dir, "$fileName.", ".tmp")
             try {
                 // DSYNC forces the bytes to the device before the rename commits — a
@@ -116,9 +115,17 @@ internal class StateFileWriter(
         return try {
             Files.readString(target)
         } catch (e: Exception) {
-            log.warn("StateFileWriter.read failed for $strategyName/$fileName: ${e.message}")
-            null
+            throw IllegalStateException("StateFileWriter.read failed for $strategyName/$fileName", e)
         }
+    }
+
+    fun recordFailure(
+        operation: String,
+        error: Throwable,
+    ) {
+        failedWrites.incrementAndGet()
+        if (consecutiveFailures.getAndIncrement() == 0L) failureEpisodes.incrementAndGet()
+        log.error("$operation FAILED: ${error.message}", error)
     }
 
     fun deleteStrategy(strategyName: String) {
