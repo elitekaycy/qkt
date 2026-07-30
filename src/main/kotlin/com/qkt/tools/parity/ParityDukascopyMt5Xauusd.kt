@@ -41,7 +41,7 @@ import java.time.ZoneOffset
  *   OUT=docs/parity/parity-dukascopy-vs-mt5-xauusd.md
  *
  * Prerequisite: SSH tunnel to the MT5 gateway:
- *   ssh -L 5003:localhost:5003 root@173.249.58.247
+ *   ssh -L 5003:localhost:5003 <deploy-user>@<gateway-host>
  */
 fun main() {
     val dukaSymbol = System.getenv("DUKA_SYMBOL") ?: "XAUUSD"

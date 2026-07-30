@@ -23,13 +23,13 @@
 
 ---
 
-**qkt** is an event-driven trading engine in Kotlin. You describe a strategy in a small, readable DSL — symbols, indicators, and `WHEN … THEN …` rules — and qkt compiles it into a runnable strategy. The *same* compiled strategy backtests against historical data and trades live; the only things that change are the data feed and the clock. Backtests are deterministic and bit-identical to a live replay, so what you measure is what you get.
+**qkt** is an event-driven trading engine in Kotlin. You describe a strategy in a small, readable DSL — symbols, indicators, and `WHEN … THEN …` rules — and qkt compiles it into a runnable strategy. The same compiled strategy and engine pipeline run in backtest and live modes. Determinism is pinned for identical inputs at the shared pipeline and paper-broker boundary; venue execution and operational effects remain explicit divergences in the [backtest/live parity register](docs/parity/backtest-vs-live.md).
 
 ```sql
 STRATEGY ema_cross VERSION 1
 
 SYMBOLS
-  gold = EXNESS:XAUUSD EVERY 5m WARMUP 50 BARS
+  gold = MT5:XAUUSD EVERY 5m WARMUP 50 BARS
 
 RULES
   WHEN ema(gold.close, 9) CROSSES ABOVE ema(gold.close, 21)
@@ -58,6 +58,10 @@ That's a complete strategy: a 9/21 EMA crossover on 5-minute gold, one position 
 
 ## Install
 
+The GitHub release is the canonical stable distribution. A versioned image such as
+`ghcr.io/elitekaycy/qkt:v0.47.1` is built from the same tag; `:latest`, `:dev`, and
+`:edge` are moving main, authoring, and testing channels rather than release pins.
+
 ### Docker (no local Java)
 
 Two ready-made images, nothing to install.
@@ -75,7 +79,6 @@ docker exec -it qkt-dev bash          # qkt + vim ready; then: qkt create templa
 ```bash
 docker run -d --name qkt \
   -v "$(pwd)/strategies:/strategies" \
-  -p 47000-47100:47000-47100 \
   ghcr.io/elitekaycy/qkt:latest
 docker exec qkt qkt list
 ```

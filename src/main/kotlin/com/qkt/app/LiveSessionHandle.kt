@@ -183,6 +183,8 @@ data class ReconcileReport(
     val engineEquity: java.math.BigDecimal,
     val brokerEquity: java.math.BigDecimal?,
     val protectionDeltas: List<PositionProtectionDelta> = emptyList(),
+    val brokerReadFailed: Boolean = false,
+    val brokerReadError: String? = null,
 ) {
-    val clean: Boolean get() = deltas.isEmpty() && protectionDeltas.isEmpty()
+    val clean: Boolean get() = !brokerReadFailed && deltas.isEmpty() && protectionDeltas.isEmpty()
 }

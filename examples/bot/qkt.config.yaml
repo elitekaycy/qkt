@@ -2,11 +2,13 @@
 # Copy next to where you run `qkt bot ...` (or pass --config).
 
 brokers:
-  exness:
+  mt5:
     type: mt5
-    gateway_url: "http://127.0.0.1:8000"   # your mt5-gateway
-    magic: 777001
-    symbol_suffix: "m"                      # Exness appends m: XAUUSD -> XAUUSDm
+    gateway_url: ${QKT_BROKER_GATEWAY_URL:-http://127.0.0.1:8000}
+    api_key: ${QKT_BROKER_API_KEY}
+    server_time_zone: ${QKT_BROKER_SERVER_TIME_ZONE}
+    symbol_suffix: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+    magic: ${QKT_BROKER_MAGIC:-777001}
 
 account:
   currency: USD

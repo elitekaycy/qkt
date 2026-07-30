@@ -82,7 +82,7 @@ class FakeBybitClient : BybitTransport {
         val matched = responsesByPredicate.firstOrNull { it.first(path, q) }
         if (matched != null) return matched.second
         return responses[path]
-            ?: """{"retCode":0,"retMsg":"OK","result":{}}"""
+            ?: defaultGetResponse(path)
     }
 
     override fun subscribe(
@@ -116,4 +116,14 @@ class FakeBybitClient : BybitTransport {
         isConnected = true
         onReconnectListeners.forEach { it() }
     }
+
+    private fun defaultGetResponse(path: String): String =
+        when (path) {
+            "/v5/execution/list",
+            "/v5/order/realtime",
+            "/v5/account/wallet-balance",
+            "/v5/position/list",
+            -> """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
+            else -> """{"retCode":0,"retMsg":"OK","result":{}}"""
+        }
 }

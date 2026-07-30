@@ -59,13 +59,16 @@ services:
         condition: service_healthy
     environment:
       QKT_STATE_DIR: /var/lib/qkt
-      QKT_BROKER_EXNESS_API_KEY: ${MT5_API_KEY}
-      EXNESS_GATEWAY_URL: ${EXNESS_GATEWAY_URL:-http://mt5-gateway:5001}
+      QKT_DATA_HOME: /var/lib/qkt/data
+      QKT_BROKER_API_KEY: ${MT5_API_KEY}
+      QKT_BROKER_GATEWAY_URL: ${QKT_BROKER_GATEWAY_URL:-http://mt5-gateway:5001}
+      QKT_BROKER_SERVER_TIME_ZONE: ${QKT_BROKER_SERVER_TIME_ZONE}
+      QKT_BROKER_SYMBOL_SUFFIX: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+      QKT_BROKER_MAGIC: ${QKT_BROKER_MAGIC:-4242}
       INGEST_TOKEN: ${INGEST_TOKEN}
       QKT_INSTANCE_ID: ${QKT_INSTANCE_ID:-qkt-prod}
       QKT_STARTING_BALANCE: ${QKT_STARTING_BALANCE:-10000}
       QKT_RUNTIME_MODE: ${QKT_RUNTIME_MODE:-paper}
-      QKT_MAGIC: ${QKT_MAGIC:-4242}
       QKT_LOG_LEVEL: ${QKT_LOG_LEVEL:-info}
       QKT_STATE_ASYNC: ${QKT_STATE_ASYNC:-true}
       QKT_INSIGHTS_JOURNAL_ENABLED: ${QKT_INSIGHTS_JOURNAL_ENABLED:-true}
@@ -74,8 +77,6 @@ services:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
       - qkt-state:/var/lib/qkt
-    ports:
-      - "127.0.0.1:47000-47100:47000-47100"
     networks: [qkt-net]
 
 networks:

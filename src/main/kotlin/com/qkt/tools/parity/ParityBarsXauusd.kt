@@ -18,7 +18,7 @@ import java.time.Instant
  *   OUT=docs/parity/parity-bars-xauusd-m5.md
  *
  * Prerequisite: SSH tunnel to the MT5 gateway:
- *   ssh -L 5003:localhost:5003 root@173.249.58.247
+ *   ssh -L 5003:localhost:5003 <deploy-user>@<gateway-host>
  */
 fun main() {
     val tvSymbol = System.getenv("TV_SYMBOL") ?: "OANDA:XAUUSD"

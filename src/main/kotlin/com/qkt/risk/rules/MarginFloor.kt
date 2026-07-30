@@ -1,6 +1,7 @@
 package com.qkt.risk.rules
 
 import com.qkt.broker.Broker
+import com.qkt.broker.MarginLevelProvider
 import com.qkt.execution.OrderRequest
 import com.qkt.positions.PositionProvider
 import com.qkt.risk.Decision
@@ -20,6 +21,8 @@ class MarginFloor(
     private val broker: Broker,
     private val floorPct: BigDecimal,
 ) : RiskRule {
+    private var missingReads = 0
+
     init {
         require(floorPct.signum() > 0) { "floorPct must be > 0: $floorPct" }
     }
@@ -29,7 +32,17 @@ class MarginFloor(
         positions: PositionProvider,
     ): Decision {
         if (isRiskReducing(request, positions)) return Decision.Approve
-        val level = broker.marginLevel() ?: return Decision.Approve
+        if ((broker as? MarginLevelProvider)?.supportsMarginLevel != true) return Decision.Approve
+        val level = broker.marginLevel()
+        if (level == null) {
+            missingReads += 1
+            return if (missingReads >= MISSING_READ_REJECT_THRESHOLD) {
+                Decision.Reject("margin level unavailable after $missingReads reads — new exposure blocked")
+            } else {
+                Decision.Approve
+            }
+        }
+        missingReads = 0
         if (level.signum() == 0) return Decision.Approve
         return if (level < floorPct) {
             Decision.Reject(
@@ -39,5 +52,9 @@ class MarginFloor(
         } else {
             Decision.Approve
         }
+    }
+
+    private companion object {
+        const val MISSING_READ_REJECT_THRESHOLD = 3
     }
 }

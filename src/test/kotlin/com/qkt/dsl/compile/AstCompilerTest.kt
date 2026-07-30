@@ -138,4 +138,38 @@ class AstCompilerTest {
         assertThatThrownBy { AstCompiler().compile(parsed.value) }
             .hasMessageContaining("read-only")
     }
+
+    @Test
+    fun `chained comparisons are rejected`() {
+        val parsed =
+            Dsl.parse(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS
+                  btc = BACKTEST:BTCUSDT EVERY 1m
+                RULES
+                  WHEN btc.close < 100 < 200 THEN BUY btc SIZING 1
+                """.trimIndent(),
+            ) as ParseResult.Success
+
+        assertThatThrownBy { AstCompiler().compile(parsed.value) }
+            .hasMessageContaining("Chained comparisons")
+    }
+
+    @Test
+    fun `fractional indicator periods are rejected`() {
+        val parsed =
+            Dsl.parse(
+                """
+                STRATEGY s VERSION 1
+                SYMBOLS
+                  btc = BACKTEST:BTCUSDT EVERY 1m
+                RULES
+                  WHEN ema(btc.close, 9.5) > 0 THEN BUY btc SIZING 1
+                """.trimIndent(),
+            ) as ParseResult.Success
+
+        assertThatThrownBy { AstCompiler().compile(parsed.value) }
+            .hasMessageContaining("integer")
+    }
 }

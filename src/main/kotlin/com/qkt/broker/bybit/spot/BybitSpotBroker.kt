@@ -9,6 +9,8 @@ import com.qkt.broker.bybit.BybitOrderTranslator
 import com.qkt.broker.bybit.BybitSymbol
 import com.qkt.broker.bybit.BybitTransport
 import com.qkt.broker.bybit.boundedExecIdSet
+import com.qkt.broker.bybit.requireBybitOk
+import com.qkt.broker.bybit.resolveBybitOrder
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.net.PeriodicReconciler
@@ -181,28 +183,88 @@ class BybitSpotBroker(
                 if (!ack.accepted) forgetTracking(request.id)
             },
             onFailure = { e ->
-                log.warn("Bybit submit failed: {}", e.message)
-                forgetTracking(request.id)
-                bus.publish(
-                    BrokerEvent.OrderRejected(
-                        clientOrderId = request.id,
-                        brokerOrderId = null,
-                        reason = e.message ?: "transport failure",
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
+                resolvePlacementFailure(request, e)
             },
         )
+    }
+
+    private fun resolvePlacementFailure(
+        request: OrderRequest,
+        failure: Throwable,
+    ) {
+        val attempt = runCatching { resolveBybitOrder(transport, "spot", request.id, json) }
+        if (attempt.isFailure) {
+            log.error(
+                "Bybit submit outcome unknown for {}; tracking retained: send={} resolve={}",
+                request.id,
+                failure.message,
+                attempt.exceptionOrNull()?.message,
+            )
+            return
+        }
+        val resolution = attempt.getOrNull()
+        if (resolution == null) {
+            forgetTracking(request.id)
+            bus.publish(
+                BrokerEvent.OrderRejected(
+                    clientOrderId = request.id,
+                    brokerOrderId = null,
+                    reason = "placement not found after transport failure: ${failure.message}",
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+            return
+        }
+        when (resolution.status) {
+            "Rejected" ->
+                bus.publish(
+                    BrokerEvent.OrderRejected(
+                        request.id,
+                        resolution.brokerOrderId,
+                        "venue resolved placement as rejected",
+                        request.strategyId,
+                        clock.now(),
+                    ),
+                )
+            "Cancelled" ->
+                bus.publish(
+                    BrokerEvent.OrderCancelled(
+                        request.id,
+                        resolution.brokerOrderId,
+                        "venue resolved placement as cancelled",
+                        request.strategyId,
+                        clock.now(),
+                    ),
+                )
+            else ->
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        request.id,
+                        resolution.brokerOrderId,
+                        request.strategyId,
+                        clock.now(),
+                    ),
+                )
+        }
     }
 
     override fun cancel(orderId: String) {
         val symbol = symbolByClientOrderId[orderId] ?: return
         val body = BybitOrderTranslator.toCancelBody(symbol = symbol, orderLinkId = orderId)
-        try {
-            transport.postSigned("/v5/order/cancel", body)
-        } catch (e: Exception) {
+        runCatching {
+            requireBybitOk(transport.postSigned("/v5/order/cancel", body), "order cancel", json)
+        }.onFailure { e ->
             log.warn("Bybit cancel failed for {}: {}", orderId, e.message)
+            bus.publish(
+                BrokerEvent.OrderCancelFailed(
+                    clientOrderId = orderId,
+                    brokerOrderId = null,
+                    reason = e.message ?: "cancel failure",
+                    strategyId = strategyByClientOrderId[orderId].orEmpty(),
+                    timestamp = clock.now(),
+                ),
+            )
         }
     }
 

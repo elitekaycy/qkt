@@ -119,8 +119,14 @@ class CreateCommandTest {
         assertThat(config).contains("max_daily_loss: \${QKT_MAX_DAILY_LOSS}")
         assertThat(config).contains("max_order_notional: \${QKT_MAX_ORDER_NOTIONAL}")
         assertThat(config).contains("type: mt5")
-        assertThat(config).contains("gateway_url: \${QKT_EXNESS_URL:-http://mt5-gateway:5001}")
-        assertThat(config).contains("api_key: \${QKT_BROKER_EXNESS_API_KEY}")
+        assertThat(config).contains(
+            "gateway_url: \${QKT_BROKER_GATEWAY_URL:-http://mt5-gateway:5001}",
+        )
+        assertThat(config).contains("api_key: \${QKT_BROKER_API_KEY}")
+        assertThat(config).contains("server_time_zone: \${QKT_BROKER_SERVER_TIME_ZONE}")
+        assertThat(config).contains("symbol_suffix: \${QKT_BROKER_SYMBOL_SUFFIX:-}")
+        assertThat(config).contains("magic: \${QKT_BROKER_MAGIC:-10001}")
+        assertThat(config).doesNotContain("exness", "EXNESS")
         assertThat(config).contains("insights:")
         assertThat(config).contains("enabled: \${QKT_INSIGHTS_ENABLED}")
         assertThat(config).contains("url: http://qkt-insights:8420/ingest")
@@ -133,6 +139,9 @@ class CreateCommandTest {
         assertThat(compose).contains("QKT_MAX_ORDER_QTY: \${QKT_MAX_ORDER_QTY")
         assertThat(compose).contains("QKT_MAX_ORDER_NOTIONAL: \${QKT_MAX_ORDER_NOTIONAL")
         assertThat(compose).contains("QKT_PRICE_COLLAR_PCT: \${QKT_PRICE_COLLAR_PCT")
+        assertThat(compose).contains("QKT_DATA_HOME: /var/lib/qkt/data")
+        assertThat(compose).contains("QKT_BROKER_GATEWAY_URL: http://mt5-gateway:5001")
+        assertThat(compose).contains("QKT_BROKER_API_KEY: \${MT5_API_KEY}")
     }
 
     @Test

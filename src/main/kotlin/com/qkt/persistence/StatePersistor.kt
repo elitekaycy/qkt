@@ -67,6 +67,15 @@ interface StatePersistor : AutoCloseable {
         orders: Map<String, OrderRequest>,
     )
 
+    /**
+     * Durably records venue-bound order intent before submission. Async decorators must
+     * bypass their queue so acceptance cannot precede the recovery record.
+     */
+    fun savePendingOrdersSync(
+        strategyId: String,
+        orders: Map<String, OrderRequest>,
+    ) = savePendingOrders(strategyId, orders)
+
     fun loadPendingOrders(strategyId: String): Map<String, OrderRequest>
 
     fun savePendingStacks(

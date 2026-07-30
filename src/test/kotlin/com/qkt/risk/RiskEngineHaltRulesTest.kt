@@ -62,6 +62,22 @@ class RiskEngineHaltRulesTest {
         assertThat(state.haltReason).isEqualTo("after the throw")
     }
 
+    @Test
+    fun `evaluateHaltRules halts after repeated rule failures`() {
+        val state = newRiskState()
+        state.warmupComplete = true
+        val throwingRule =
+            object : HaltRule {
+                override fun evaluate(riskState: RiskState): HaltDecision = error("broken feed")
+            }
+        val engine = RiskEngine(emptyList(), listOf(throwingRule), PositionTracker(), state)
+
+        repeat(3) { engine.evaluateHaltRules() }
+
+        assertThat(state.halted).isTrue
+        assertThat(state.haltReason).contains("halt-rule evaluation failed 3 consecutive times")
+    }
+
     private fun newRiskState(): RiskState {
         val clock = FixedClock(0L)
         val sequencer = MonotonicSequenceGenerator()

@@ -29,7 +29,7 @@ MT5_PASSWORD=your-mt5-password
 MT5_SERVER=Exness-MT5Trial
 MT5_ENABLE_ALGO_TRADING=1
 VNC_PASSWORD=pickanything
-EXNESS_GATEWAY_URL=http://mt5-gateway:5001
+QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
 The `MT5_SERVER` value comes from Exness — it's usually `Exness-MT5Trial` for demo or `Exness-MT5Real` for live. Check the email Exness sent at signup.
@@ -43,7 +43,7 @@ brokers:
   exness:
     type: mt5
     extends: exness          # inherits suffix, tz, defaults
-    gateway_url: ${EXNESS_GATEWAY_URL}
+    gateway_url: ${QKT_BROKER_EXNESS_GATEWAY_URL}
     magic: 4242              # unique per qkt deployment; identifies your orders on restart
 ```
 

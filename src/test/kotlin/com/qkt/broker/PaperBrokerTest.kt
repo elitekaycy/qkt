@@ -9,8 +9,11 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
+import com.qkt.instrument.InstrumentMeta
+import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -22,6 +25,90 @@ class PaperBrokerTest {
         price: String,
         ts: Long = 1L,
     ) = Tick(symbol, Money.of(price), ts)
+
+    private fun instrumentRegistry(
+        volumeStep: String,
+        volumeMin: String,
+    ): InstrumentRegistry =
+        object : InstrumentRegistry {
+            override fun lookup(qktSymbol: String): InstrumentMeta =
+                InstrumentMeta(
+                    qktSymbol = qktSymbol,
+                    contractSize = BigDecimal.ONE,
+                    volumeStep = BigDecimal(volumeStep),
+                    volumeMin = BigDecimal(volumeMin),
+                    volumeMax = null,
+                    pointSize = BigDecimal("0.01"),
+                    digits = 2,
+                    tradeStopsLevelPoints = 0,
+                )
+        }
+
+    @Test
+    fun `volume is quantized down to instrument step before fill`() {
+        val tracker = MarketPriceTracker()
+        tracker.update("XAUUSD", Money.of("2000"))
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val broker =
+            PaperBroker(
+                bus,
+                FixedClock(0L),
+                tracker,
+                instrumentRegistry(volumeStep = "0.1", volumeMin = "0.1"),
+            )
+
+        val ack =
+            broker.submit(
+                OrderRequest.Market(
+                    id = "quantized",
+                    symbol = "XAUUSD",
+                    side = Side.BUY,
+                    quantity = Money.of("0.19"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(ack.accepted).isTrue()
+        assertThat(fills.single().quantity).isEqualByComparingTo("0.1")
+    }
+
+    @Test
+    fun `volume below instrument minimum is rejected without a fill`() {
+        val tracker = MarketPriceTracker()
+        tracker.update("XAUUSD", Money.of("2000"))
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val rejections = mutableListOf<BrokerEvent.OrderRejected>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        bus.subscribe<BrokerEvent.OrderRejected> { rejections.add(it) }
+        val broker =
+            PaperBroker(
+                bus,
+                FixedClock(0L),
+                tracker,
+                instrumentRegistry(volumeStep = "0.1", volumeMin = "0.2"),
+            )
+
+        val ack =
+            broker.submit(
+                OrderRequest.Market(
+                    id = "too-small",
+                    symbol = "XAUUSD",
+                    side = Side.BUY,
+                    quantity = Money.of("0.19"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            )
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(ack.rejectReason).contains("below venue volumeMin 0.2")
+        assertThat(rejections.single().reason).contains("quantized volume 0.1")
+        assertThat(fills).isEmpty()
+    }
 
     @Test
     fun `Market fills at last tracker price`() {

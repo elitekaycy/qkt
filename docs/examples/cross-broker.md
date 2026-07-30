@@ -71,7 +71,7 @@ brokers:
   exness:
     type: mt5
     extends: exness                     # built-in profile
-    gateway_url: ${EXNESS_GATEWAY_URL}
+    gateway_url: ${QKT_BROKER_EXNESS_GATEWAY_URL}
     api_key: ${QKT_BROKER_EXNESS_API_KEY}
     magic: 4242
 
@@ -120,14 +120,12 @@ services:
     environment:
       - BYBIT_API_KEY=${BYBIT_API_KEY}
       - BYBIT_API_SECRET=${BYBIT_API_SECRET}
-      - EXNESS_GATEWAY_URL=http://mt5-gateway:5001
+      - QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
       - QKT_BROKER_EXNESS_API_KEY=${MT5_API_KEY}
     volumes:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro
       - qkt-state:/var/lib/qkt
-    ports:
-      - "47000-47100:47000-47100"      # per-strategy observability ports
     command: ["daemon", "--load-dir", "/strategies"]
     restart: unless-stopped
 
@@ -151,7 +149,7 @@ MT5_SERVER=Exness-MT5Trial
 MT5_ENABLE_ALGO_TRADING=1
 MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=changeme
-EXNESS_GATEWAY_URL=http://mt5-gateway:5001
+QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
 ## How to run it

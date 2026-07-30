@@ -96,9 +96,9 @@ SIZING POSITION(<stream>)              -- full current position
 ### Bracket
 
 ```qkt
-BRACKET STOP_LOSS BY <pct> PCT TAKE_PROFIT BY <pct> PCT
-BRACKET STOP_LOSS AT <price-expr> TAKE_PROFIT AT <price-expr>
-BRACKET STOP_LOSS BY ATR(<symbol>, 14) * 2
+BRACKET { STOP_LOSS BY <pct> PCT, TAKE_PROFIT BY <pct> PCT }
+BRACKET { STOP_LOSS AT <price-expr>, TAKE_PROFIT AT <price-expr> }
+BRACKET { STOP_LOSS BY ATR(<symbol>, 14) * 2 }
 ```
 
 The compiler routes `BRACKET` to native broker support if the broker has the `BRACKET` capability (MT5, PaperBroker), else falls back to engine-managed SL/TP via separate orders.

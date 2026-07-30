@@ -27,6 +27,7 @@ class RiskEngine(
     private val riskState: RiskState,
 ) {
     private val log = LoggerFactory.getLogger(RiskEngine::class.java)
+    private val haltRuleFailures = java.util.IdentityHashMap<HaltRule, Int>()
     private var pendingExposure: PendingOrderExposureProvider = PendingOrderExposureProvider.NONE
     private val positionsWithPendingExposure =
         object : PositionProvider {
@@ -89,9 +90,23 @@ class RiskEngine(
                             riskState.halt(decision.reason, decision.scope)
                         }
                 }
+                haltRuleFailures.remove(rule)
             } catch (e: Exception) {
-                log.warn("HaltRule {} threw: {}", rule::class.simpleName, e.message)
+                val failures = (haltRuleFailures[rule] ?: 0) + 1
+                haltRuleFailures[rule] = failures
+                log.warn("HaltRule {} threw ({}/{}): {}", rule::class.simpleName, failures, 3, e.message)
+                if (failures >= HALT_RULE_FAILURE_THRESHOLD) {
+                    riskState.halt(
+                        "halt-rule evaluation failed $failures consecutive times: " +
+                            "${rule::class.simpleName}: ${e.message}",
+                    )
+                    return
+                }
             }
         }
+    }
+
+    private companion object {
+        const val HALT_RULE_FAILURE_THRESHOLD = 3
     }
 }

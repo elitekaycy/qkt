@@ -4,6 +4,7 @@ import java.math.BigDecimal
 import java.net.URLEncoder
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -38,10 +40,16 @@ class MT5Client(
 ) {
     private val log = LoggerFactory.getLogger(MT5Client::class.java)
     private val json = Json { ignoreUnknownKeys = true }
+    private val lastReadFailureRef = AtomicReference<String?>(null)
+    private val dispatcher =
+        Dispatcher().apply {
+            maxRequestsPerHost = 16
+        }
 
     private val http: OkHttpClient =
         OkHttpClient
             .Builder()
+            .dispatcher(dispatcher)
             .callTimeout(Duration.ofMillis(httpTimeoutMs))
             .connectTimeout(Duration.ofMillis(httpTimeoutMs))
             .build()
@@ -735,24 +743,33 @@ class MT5Client(
 
     private fun getFromNetworkWithRetry(url: String): String? {
         var attempt = 0
-        var lastError: Exception? = null
+        var failure: String? = null
         while (attempt <= retryAttempts) {
             try {
                 val resp = http.newCall(mt5RequestBuilder(url, apiKey).build()).execute()
                 resp.use {
-                    if (it.isSuccessful) return it.body?.string().orEmpty()
+                    val raw = it.body?.string().orEmpty()
+                    if (it.isSuccessful) {
+                        lastReadFailureRef.set(null)
+                        return raw
+                    }
+                    failure = "HTTP ${it.code}: $raw"
                 }
             } catch (e: java.io.IOException) {
-                lastError = e
+                failure = "IO error: ${e.message}"
             }
             attempt++
             if (attempt <= retryAttempts) Thread.sleep(200L * attempt)
         }
+        lastReadFailureRef.set(failure ?: "gateway read failed")
         // Message-only: a refused/timed-out GET after retries is an expected operational
         // condition; the okhttp stack adds no signal and floods test output (#879).
-        if (lastError != null) log.warn("MT5Client GET $url failed after $retryAttempts retries: ${lastError.message}")
+        log.warn("MT5Client GET $url failed after $retryAttempts retries: {}", lastReadFailureRef.get())
         return null
     }
+
+    /** Detail from the most recent failed GET, cleared by the next successful network read. */
+    fun lastReadFailure(): String? = lastReadFailureRef.get()
 
     private fun encodeOrder(req: MT5OrderRequest): String {
         val sb = StringBuilder("{")

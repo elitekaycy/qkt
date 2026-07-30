@@ -46,6 +46,7 @@ internal class BrokerEquityMonitor(
         val isStale = staleForMs == null || staleForMs >= staleAfterMs
         if (consecutiveFailures >= FAILURE_ALERT_THRESHOLD && isStale && !staleAlerted) {
             staleAlerted = true
+            equity.set(null)
             log.error(
                 "Broker equity for {} unavailable for {} consecutive polls (staleForMs={})",
                 broker.name,

@@ -32,6 +32,21 @@ data class PerStrategyRisk(
     val lossStreakHalt: Int? = null,
     val lossStreakHaltScope: com.qkt.risk.HaltScope = com.qkt.risk.HaltScope.PERSISTENT,
 ) {
+    /** Convert CLI configuration into the runtime-neutral replay limits model. */
+    fun toLimits(): com.qkt.risk.StrategyRiskLimits =
+        com.qkt.risk.StrategyRiskLimits(
+            maxDailyLoss = maxDailyLoss,
+            maxPositionSize = maxPositionSize,
+            maxOpenPositions = maxOpenPositions,
+            maxDrawdownPct = maxDrawdownPct,
+            maxDailyDrawdownPct = maxDailyDrawdownPct,
+            maxTradesPerDay = maxTradesPerDay,
+            cooldownAfterLossMs = cooldownAfterLossMs,
+            cooldownAfterLossAfterConsecutive = cooldownAfterLossAfterConsecutive,
+            lossStreakHalt = lossStreakHalt,
+            lossStreakHaltScope = lossStreakHaltScope,
+        )
+
     init {
         if (maxDailyLoss != null) {
             require(maxDailyLoss.signum() > 0) { "PerStrategyRisk.maxDailyLoss must be > 0: $maxDailyLoss" }

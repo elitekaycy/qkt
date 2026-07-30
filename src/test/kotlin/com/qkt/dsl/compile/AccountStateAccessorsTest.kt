@@ -1,7 +1,12 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.ast.StateAccessor
+import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.marketdata.Candle
+import com.qkt.strategy.testStrategyContext
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.Test
@@ -171,6 +176,34 @@ class AccountStateAccessorsTest {
         org.assertj.core.api.Assertions
             .assertThatThrownBy { AstCompiler().compile(parsed) }
             .hasMessageContaining("ACCOUNT field")
+    }
+
+    @Test
+    fun `POSITION entry_price is undefined while flat`() {
+        val compiled = ExprCompiler().compile(StateAccessor(StateSource.POSITION_AVG_PRICE, "g"))
+        val candle =
+            Candle(
+                symbol = "X:Y",
+                open = BigDecimal.ONE,
+                high = BigDecimal.ONE,
+                low = BigDecimal.ONE,
+                close = BigDecimal.ONE,
+                volume = BigDecimal.ZERO,
+                startTime = 0L,
+                endTime = 60_000L,
+            )
+
+        val value =
+            compiled.evaluate(
+                EvalContext(
+                    candle = candle,
+                    streams = mapOf("g" to HubKey("X", "Y", "1m")),
+                    lets = emptyMap(),
+                    strategyContext = testStrategyContext(),
+                ),
+            )
+
+        assertThat(value).isEqualTo(Value.Undefined)
     }
 
     @Test

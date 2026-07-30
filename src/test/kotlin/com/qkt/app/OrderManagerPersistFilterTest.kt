@@ -1,7 +1,9 @@
 package com.qkt.app
 
+import com.qkt.broker.Broker
 import com.qkt.broker.FakeBroker
 import com.qkt.broker.OrderTypeCapability
+import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test
 class OrderManagerPersistFilterTest {
     private class RecordingPersistor : StatePersistor {
         val pendingSnapshots: MutableList<Map<String, OrderRequest>> = mutableListOf()
+        var onSyncSave: (() -> Unit)? = null
 
         override fun saveLegBook(
             strategyId: String,
@@ -49,6 +52,14 @@ class OrderManagerPersistFilterTest {
         }
 
         override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> = emptyMap()
+
+        override fun savePendingOrdersSync(
+            strategyId: String,
+            orders: Map<String, OrderRequest>,
+        ) {
+            pendingSnapshots.add(orders.toMap())
+            onSyncSave?.invoke()
+        }
 
         override fun savePendingStacks(
             strategyId: String,
@@ -112,5 +123,30 @@ class OrderManagerPersistFilterTest {
             .noneMatch { it is OrderRequest.ScaleOut }
             .noneMatch { it is OrderRequest.TimeExit }
             .noneMatch { it is OrderRequest.Stack }
+    }
+
+    @Test
+    fun `venue submission happens only after durable intent is recorded`() {
+        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+        val persistor = RecordingPersistor()
+        var intentRecorded = false
+        persistor.onSyncSave = { intentRecorded = true }
+        val broker =
+            object : Broker {
+                override val name = "ordering"
+                override val capabilities = setOf(OrderTypeCapability.LIMIT)
+
+                override fun submit(request: OrderRequest): SubmitAck {
+                    check(intentRecorded) { "broker submit preceded durable intent" }
+                    return SubmitAck(request.id, request.id, accepted = true)
+                }
+
+                override fun cancel(orderId: String) = Unit
+            }
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), FixedClock(0L), persistor)
+
+        manager.submit(limit("limit-1", Side.BUY, "100"))
+
+        assertThat(persistor.pendingSnapshots.last()).containsKey("limit-1")
     }
 }

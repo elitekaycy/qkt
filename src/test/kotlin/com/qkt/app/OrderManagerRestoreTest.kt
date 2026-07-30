@@ -6,11 +6,14 @@ import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.TickEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.Tick
+import com.qkt.persistence.BracketPair
 import com.qkt.persistence.FileStatePersistor
 import com.qkt.persistence.PersistedOcoLeg
 import java.math.BigDecimal
@@ -92,6 +95,42 @@ class OrderManagerRestoreTest {
         om.restore(listOf("alpha"))
 
         assertThat(broker.recovered).isEmpty()
+    }
+
+    @Test
+    fun `restore adopts a single pending order and enforces its GTD expiry`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val request =
+            OrderRequest.Stop(
+                id = "entry-stop",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("1"),
+                stopPrice = BigDecimal("2000"),
+                timeInForce = TimeInForce.GTD,
+                timestamp = 0L,
+                strategyId = "alpha",
+                expiresAt = 1_000L,
+            )
+        persistor.savePendingOrders("alpha", mapOf(request.id to request))
+        persistor.saveBracketPairs(
+            "alpha",
+            listOf(BracketPair(request.id, "entry-stop-sl", "entry-stop-tp", null)),
+        )
+        val clock = FixedClock(2_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val broker = RecordingBroker(LogBroker(bus, clock))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor)
+
+        om.restore(listOf("alpha"))
+
+        assertThat(broker.recovered.map { it.id }).containsExactly("entry-stop")
+        assertThat(om.getOrder("entry-stop")?.state).isEqualTo(OrderState.WORKING)
+        bus.publish(TickEvent(Tick("XAUUSD", BigDecimal("1990"), clock.now())))
+        assertThat(om.getOrder("entry-stop")).isNull()
+        assertThat(persistor.loadPendingOrders("alpha")).isEmpty()
     }
 
     @Test

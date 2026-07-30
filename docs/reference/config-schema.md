@@ -4,23 +4,28 @@
 
 ## Resolution and substitution
 
-qkt looks for config in this order when a command does not receive `--config <path>`:
+qkt resolves config in this order:
 
-1. `./qkt.config.yaml`
-2. `/etc/qkt/qkt.config.yaml` on non-Windows systems
-3. `$XDG_CONFIG_HOME/qkt/qkt.config.yaml` or the platform config equivalent
-4. `~/.qkt/qkt.config.yaml`
+1. `--config <path>`
+2. `QKT_CONFIG`
+3. `./qkt.config.yaml`
+4. `/etc/qkt/qkt.config.yaml` on non-Windows systems
+5. `$XDG_CONFIG_HOME/qkt/qkt.config.yaml` or the platform config equivalent
+6. `~/.qkt/qkt.config.yaml`
 
 Environment and system-property substitution works in any scalar value:
 
 ```yaml
 brokers:
-  exness:
+  mt5:
     type: mt5
-    gateway_url: ${EXNESS_GATEWAY_URL:-http://localhost:5001}
+    gateway_url: ${QKT_BROKER_GATEWAY_URL:-http://localhost:5001}
 ```
 
-`--config` wins where a command supports it. Broker env overrides of the form `QKT_BROKER_<NAME>_<FIELD>` win over file values for MT5 broker profile scalar fields.
+Broker env overrides of the form `QKT_BROKER_<NAME>_<FIELD>` win over file
+values for MT5 broker profile scalar fields. They are profile-scoped operational
+overrides; reusable scaffolds use neutral substitution variables such as
+`QKT_BROKER_GATEWAY_URL`.
 
 ## Minimal research config
 
@@ -106,11 +111,13 @@ promotion:
   max_paper_slippage_bps: 3.0
 
 brokers:
-  exness:
+  mt5:
     type: mt5
-    extends: exness
-    gateway_url: ${EXNESS_GATEWAY_URL:-http://localhost:5001}
-    magic: 10001
+    gateway_url: ${QKT_BROKER_GATEWAY_URL:-http://localhost:5001}
+    api_key: ${QKT_BROKER_API_KEY}
+    server_time_zone: ${QKT_BROKER_SERVER_TIME_ZONE}
+    symbol_suffix: ${QKT_BROKER_SYMBOL_SUFFIX:-}
+    magic: ${QKT_BROKER_MAGIC:-10001}
     calendars:
       "BTC*": crypto
       "*": fx
@@ -294,6 +301,10 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `max_daily_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global daily-drawdown halt. |
 | `total_dd_basis` | `static` | halt rules | `static` uses initial balance. `trailing` uses high-water equity. |
 | `daily_dd_basis` | `balance` | halt rules | `balance` uses day-start closed balance. `equity` includes open float. |
+
+`balance` is retained as the compatibility default, but it ignores intraday open
+loss. Accounts governed by equity-based daily-loss mandates (including many funded
+account programs) should set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.max_daily_loss` | unset | daemon and backtest risk layering | Per-strategy daily realized-loss halt. |
 | `per_strategy.<name>.max_position_size` | unset | daemon pre-trade controls | Caps absolute position size for one strategy. |
 | `per_strategy.<name>.max_open_positions` | unset | daemon pre-trade controls | Caps non-zero symbols for one strategy. |
@@ -370,7 +381,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `brokers.<name>.type` | string | yes | none | Currently `mt5` for config-driven MT5 profiles. |
 | `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or earlier user profile. |
 | `gateway_url` | URL | yes for fresh profile | inherited or built-in | MT5 gateway HTTP base URL. |
-| `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; prefer `${QKT_BROKER_<NAME>_API_KEY}`. |
+| `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; use a neutral variable such as `${QKT_BROKER_API_KEY}` in reusable scaffolds. |
 | `symbol_suffix` | string | no | inherited or empty | Appended to broker symbol names. |
 | `magic` | int | yes for fresh profile | inherited or built-in | Must be unique across MT5 profiles. |
 | `server_time_zone` | zone id | yes for fresh profile | inherited or built-in | MT5 server clock. Use `new_york_close` for UTC+2/+3 following US DST, or an IANA id such as `Europe/Helsinki`. |

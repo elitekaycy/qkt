@@ -2,6 +2,7 @@ package com.qkt.marketdata
 
 import com.qkt.common.Side
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Read-only view of the latest known price per symbol.
@@ -25,19 +26,19 @@ interface MarketPriceProvider {
 }
 
 /**
- * Mutable price store updated by exactly one producer (the engine).
+ * Mutable price store updated by the engine and safely read by broker worker threads.
  *
  * Implements [MarketPriceProvider]; expose to consumers via the interface type so they
- * can't accidentally write. Not thread-safe; qkt's engine is single-threaded by design.
+ * can't accidentally write. Each update replaces one immutable snapshot atomically.
  */
 class MarketPriceTracker : MarketPriceProvider {
-    private class PriceSnapshot(
-        var last: BigDecimal,
-        var buyExecution: BigDecimal,
-        var sellExecution: BigDecimal,
+    private data class PriceSnapshot(
+        val last: BigDecimal,
+        val buyExecution: BigDecimal,
+        val sellExecution: BigDecimal,
     )
 
-    private val prices = mutableMapOf<String, PriceSnapshot>()
+    private val prices = ConcurrentHashMap<String, PriceSnapshot>()
 
     /** Updates a single-price mark, using it as the execution fallback for both sides. */
     fun update(
@@ -63,14 +64,7 @@ class MarketPriceTracker : MarketPriceProvider {
         buyExecution: BigDecimal,
         sellExecution: BigDecimal,
     ) {
-        val current = prices[symbol]
-        if (current == null) {
-            prices[symbol] = PriceSnapshot(last, buyExecution, sellExecution)
-        } else {
-            current.last = last
-            current.buyExecution = buyExecution
-            current.sellExecution = sellExecution
-        }
+        prices[symbol] = PriceSnapshot(last, buyExecution, sellExecution)
     }
 
     override fun lastPrice(symbol: String): BigDecimal? = prices[symbol]?.last

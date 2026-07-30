@@ -18,6 +18,8 @@ class CompiledRule(
     private val onSellCaptures: List<Pair<String, CompiledExpr>>,
     private val onOpenCaptures: List<Pair<String, CompiledExpr>>,
     val referencedAliases: Set<String>,
+    val consumesSequenceCompletion: Boolean = false,
+    internal val edgeStateKey: String = ruleAlias,
 ) {
     // Action gating is edge-driven (reference/dsl/conditions.md): the action runs on the
     // false->true transition of the condition, not on every bar it stays true. Without
@@ -26,6 +28,22 @@ class CompiledRule(
     // Undefined -> true re-arms and fires again.
     private var wasTrue = false
     private var pendingCommit = false
+    private var rejectedDuringCommit = false
+    private var edgeDirty = false
+
+    internal val edgeState: Boolean
+        get() = wasTrue
+
+    internal fun restoreEdgeState(value: Boolean) {
+        wasTrue = value
+        edgeDirty = false
+    }
+
+    internal fun consumeEdgeDirty(): Boolean {
+        val dirty = edgeDirty
+        edgeDirty = false
+        return dirty
+    }
 
     fun fire(
         ec: EvalContext,
@@ -34,8 +52,10 @@ class CompiledRule(
         val v = condition.evaluate(ec)
         val isTrue = v is Value.Bool && v.v
         if (!isTrue) {
+            if (wasTrue) edgeDirty = true
             wasTrue = false
             pendingCommit = false
+            rejectedDuringCommit = false
             return emptyList()
         }
         if (wasTrue) return emptyList()
@@ -62,10 +82,24 @@ class CompiledRule(
      * gate inactive, book de-risk, risk reject) — losses a backtest never sees, so without
      * the re-arm live silently drops entries the backtest takes. No-op without a pending fire.
      */
-    fun commitFire(accepted: Boolean) {
-        if (!pendingCommit) return
+    internal fun commitFire(accepted: Boolean): RuleCommitOutcome? {
+        if (!pendingCommit) return null
         pendingCommit = false
-        wasTrue = accepted
+        val committed = accepted && !rejectedDuringCommit
+        rejectedDuringCommit = false
+        if (wasTrue != committed) edgeDirty = true
+        wasTrue = committed
+        return if (committed) RuleCommitOutcome.ACCEPTED else RuleCommitOutcome.REARMED
+    }
+
+    /** Re-arm this edge after the venue or pre-trade gate rejects its emitted order. */
+    internal fun rearmAfterRejection() {
+        if (pendingCommit) {
+            rejectedDuringCommit = true
+        } else {
+            if (wasTrue) edgeDirty = true
+            wasTrue = false
+        }
     }
 
     private fun capture(
@@ -78,4 +112,9 @@ class CompiledRule(
             if (r is Value.Num) ec.snapshotStore.captureSlot(ruleAlias, name, kind, r.v)
         }
     }
+}
+
+internal enum class RuleCommitOutcome {
+    ACCEPTED,
+    REARMED,
 }

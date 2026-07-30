@@ -15,13 +15,18 @@ qkt.config.yaml    QKT runtime behavior: broker, risk, alerts, state
 ```dotenv
 MT5_LOGIN=
 MT5_PASSWORD=
-MT5_SERVER=Exness-MT5Trial9
+MT5_SERVER=
 MT5_API_KEY=replace-with-a-long-random-value
+QKT_BROKER_SERVER_TIME_ZONE=
+QKT_BROKER_SYMBOL_SUFFIX=
 ```
 
 `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER` are your broker login details.
 `MT5_API_KEY` is not from the broker; it is a private token shared between QKT
-and the local MT5 gateway.
+and the local MT5 gateway. `QKT_BROKER_SERVER_TIME_ZONE` is required because
+MT5 brokers expose different server clocks; use `UTC`, `new_york_close`, an
+IANA zone, or a fixed offset such as `+02:00`. Set
+`QKT_BROKER_SYMBOL_SUFFIX` when the venue appends a suffix to symbols.
 
 The generated risk defaults are intentionally simple starting points:
 
@@ -60,8 +65,8 @@ QKT_INSIGHTS_HOST_PORT=8420
 ## qkt.config.yaml
 
 `source: local` means QKT does not open a TradingView fallback feed for unknown
-symbols. This does not disable MT5 data. Streams such as `EXNESS:EURUSD` still
-route through `brokers.exness`, so the same MT5 account provides both market data
+symbols. This does not disable MT5 data. Streams such as `MT5:EURUSD` still
+route through `brokers.mt5`, so the same MT5 account provides both market data
 and execution.
 
 `runtime.mode: production` makes QKT fail closed. The daemon should refuse to
@@ -78,7 +83,7 @@ risk:
   price_collar_pct: ${QKT_PRICE_COLLAR_PCT}
 ```
 
-The `brokers.exness` block tells QKT to send orders to the local MT5 gateway.
+The `brokers.mt5` block tells QKT to send orders to the local MT5 gateway.
 Strategies should use the configured broker profile instead of calling external
 systems directly.
 
@@ -94,4 +99,3 @@ position, lifecycle, and log events to qkt-insights and keeps a local journal.
 QKT writes runtime state under `./state`, mounted into the container at
 `/var/lib/qkt`. Do not delete it casually: it is what lets the daemon recover
 ledger, strategy, and runtime state after restarts.
-

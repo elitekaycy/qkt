@@ -100,6 +100,8 @@ data class StatusSnapshot(
      * flags a stalled or slow engine thread before backlog turns into dropped ticks.
      */
     val inboundQueueDepth: Int = 0,
+    /** Feed, inbound-queue, and finalized-candle late ticks discarded by this session. */
+    val droppedTicks: Long = 0L,
     /** Symbols whose market data is currently stale (quote age past threshold). */
     val staleSymbols: List<String> = emptyList(),
     /** Symbols whose broker tick clock is out of tolerance, with the measured skew in ms. */

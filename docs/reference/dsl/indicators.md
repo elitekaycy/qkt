@@ -59,7 +59,10 @@ atr(<stream>, <period>)       -- Average True Range
 atr(btc, 14)                  -- standard 14-bar ATR on btc stream
 ```
 
-ATR is Wilder's smoothed average of true range. Uses high/low/close — so you pass the **stream**, not `stream.close`. Used heavily in stop-loss sizing (`STOP_LOSS BY atr(btc, 14) * 2`).
+ATR is Wilder's smoothed average of true range. Uses high/low/close — so you pass the
+**stream**, not `stream.close`. A period-N ATR becomes defined after N+1 candles
+because the first true range needs a previous close. It is used heavily in stop-loss
+sizing (`STOP_LOSS BY atr(btc, 14) * 2`).
 
 ### MACD
 
@@ -268,6 +271,10 @@ vwap_session_stdev(<stream>, <anchorHour>)  -- volume-weighted stddev around tha
 
 `vwap_session` is the volume-weighted average of typical price `(high+low+close)/3`, accumulated since the most recent `<anchorHour>:00` UTC and reset each day at that hour — `anchorHour = 0` is the classic session-open VWAP, `anchorHour = 12` anchors at the London/NY overlap. Pass the **stream** (it needs volume). `vwap_session_stdev` is the volume-weighted standard deviation of price around that running VWAP, so a strategy bands the VWAP and fades touches of the bands back toward it.
 
+The input must include the anchor candle. If observation starts after the anchor,
+both values remain `null` until the next session anchor rather than constructing a
+partial-session VWAP.
+
 ```qkt
 -- Fade the upper 2-sigma band of the overlap-anchored session VWAP back to VWAP.
 LET vwap = vwap_session(gold, 12)
@@ -308,7 +315,10 @@ The classic floor-trader pivots, computed from the **prior completed UTC day's**
 ```qkt
 -- Fade a stretch above the central pivot back toward it; stop just beyond R1.
 WHEN gold.close > pivot_p(gold.candle) + atr(gold.candle, 14) AND POSITION.gold = 0
-THEN SELL gold BRACKET STOP LOSS AT pivot_r1(gold.candle) TAKE PROFIT AT pivot_p(gold.candle)
+THEN SELL gold BRACKET {
+    STOP LOSS AT pivot_r1(gold.candle),
+    TAKE PROFIT AT pivot_p(gold.candle)
+}
 ```
 
 The levels are `null` until the first full UTC day completes.

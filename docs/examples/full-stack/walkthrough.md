@@ -46,7 +46,7 @@ MT5_ENABLE_ALGO_TRADING=1
 MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=changeme
 
-EXNESS_GATEWAY_URL=http://mt5-gateway:5001
+QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
 For Bybit testnet API keys: [testnet.bybit.com → API Management](https://testnet.bybit.com/app/user/api-management). Real and testnet keys are different — don't mix them.
@@ -80,7 +80,7 @@ docker compose ps
 # Output:
 #   NAME           STATUS              PORTS
 #   mt5-gateway    Up (healthy)        0.0.0.0:3000->3000/tcp, 0.0.0.0:5001->5001/tcp
-#   qkt            Up                  0.0.0.0:47000-47100->47000-47100/tcp
+#   qkt            Up
 ```
 
 If `mt5-gateway` is `Up (unhealthy)`, it's still booting Wine + MT5. Wait 60 seconds and re-check.
@@ -193,7 +193,7 @@ You'll see ticks arrive + rule evaluations. When a condition transitions to true
 Check status from outside the container:
 
 ```bash
-curl http://localhost:47291/status | jq
+docker compose exec qkt qkt status btc-trend
 ```
 
 Returns the full `StatusSnapshot` — positions, recent trades, equity, pending stack layers, etc.
@@ -217,7 +217,7 @@ docker compose down -v              # full wipe — state + logs gone
 ## What to do next
 
 - **Adapt the strategies.** Change parameters, swap symbols, try different timeframes. Validate with `qkt resync --dry-run`, then apply with `qkt resync --as <name>`.
-- **Add more strategies.** Drop more `.qkt` files into `strategies/` and deploy them. The daemon hosts as many as you have (within the port range).
+- **Add more strategies.** Drop more `.qkt` files into `strategies/` and deploy them. The daemon assigns each one an ephemeral loopback port.
 - **Backtest first.** Don't deploy a strategy you haven't backtested. Run `qkt backtest strategies/btc-trend.qkt --from 2024-01-01 --to 2024-06-01` to validate.
 - **Set up alerts.** The observability HTTP endpoints (`/status`, `/events`, `/health`) are scrape-able by Prometheus. See [operations/logging](../../operations/logging.md).
 

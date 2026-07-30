@@ -22,7 +22,7 @@ object LatchManagerFixture {
     fun manager(
         emit: (OrderRequest) -> Unit,
         now: Long = 0L,
-    ): LatchManager = LatchManager(emit, FixedClock(time = now))
+    ): LatchManager = LatchManager(FixedClock(time = now), emit)
 
     fun ec(symbol: String): EvalContext {
         val candle =

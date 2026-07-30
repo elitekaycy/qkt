@@ -86,9 +86,26 @@ class PortfolioSupervisor(
             Thread({
                 org.slf4j.MDC.put("strategy", ast.name)
                 try {
+                    var consecutiveFailures = 0
                     while (runFlag.get()) {
-                        runCatching { agg.evaluate() }
-                            .onFailure { log.warn("portfolio risk eval failed: {}", it.message) }
+                        try {
+                            agg.evaluate()
+                            consecutiveFailures = 0
+                        } catch (e: Exception) {
+                            consecutiveFailures++
+                            log.warn(
+                                "portfolio risk eval failed ({}/{}): {}",
+                                consecutiveFailures,
+                                RISK_FAILURE_THRESHOLD,
+                                e.message,
+                            )
+                            if (consecutiveFailures >= RISK_FAILURE_THRESHOLD) {
+                                agg.failClosed(
+                                    "portfolio risk evaluation failed $consecutiveFailures consecutive times: " +
+                                        "${e.message}",
+                                )
+                            }
+                        }
                         Thread.sleep(riskIntervalMs)
                     }
                 } catch (e: InterruptedException) {
@@ -211,7 +228,10 @@ class PortfolioSupervisor(
         val window = TimeWindow.parse(ast.streams.first().timeframe)
         val bus = EventBus(SystemClock(), MonotonicSequenceGenerator())
         CandleAggregator(bus, window)
-        bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
+        bus.subscribe<CandleEvent> { e ->
+            riskAggregator?.sample(e.candle.endTime)
+            onCandle(e.candle)
+        }
 
         val feed = source.liveTicks(symbols)
         try {
@@ -253,5 +273,9 @@ class PortfolioSupervisor(
         override fun equity(): BigDecimal = BigDecimal.ZERO
 
         override fun balance(): BigDecimal = BigDecimal.ZERO
+    }
+
+    private companion object {
+        const val RISK_FAILURE_THRESHOLD = 3
     }
 }

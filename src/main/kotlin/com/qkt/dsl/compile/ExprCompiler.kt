@@ -407,11 +407,12 @@ class ExprCompiler(
             StateSource.POSITION_AVG_PRICE ->
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
-                    val price =
-                        ctx.strategyContext.positions
-                            .positionFor(symbol)
-                            ?.avgEntryPrice ?: BigDecimal.ZERO
-                    Value.Num(price)
+                    val position = ctx.strategyContext.positions.positionFor(symbol)
+                    if (position == null || position.quantity.signum() == 0) {
+                        Value.Undefined
+                    } else {
+                        Value.Num(position.avgEntryPrice)
+                    }
                 }
             // pnl = strategy-level realized + this-symbol unrealized.
             // Strategy-level realized isn't tracked per-symbol in StrategyPnL today;
@@ -630,6 +631,7 @@ class ExprCompiler(
         val spec =
             com.qkt.dsl.stdlib.IndicatorRegistry
                 .spec(call.name)
+        if (spec != null) validateIntegerIndicatorArgs(call, spec.seriesCount)
         val binding =
             if (spec != null && spec.seriesCount >= 2) {
                 // #319 two-series (e.g. correlation): compile both series args and bind as a pair,
@@ -668,6 +670,27 @@ class ExprCompiler(
         return CompiledExpr {
             val v = binding.indicator.value()
             if (v == null || !binding.indicator.isReady) Value.Undefined else Value.Num(v)
+        }
+    }
+
+    private fun validateIntegerIndicatorArgs(
+        call: IndicatorCall,
+        seriesCount: Int,
+    ) {
+        val fractionalIndexes =
+            when (call.name.uppercase()) {
+                "KELTNER_UPPER", "KELTNER_MIDDLE", "KELTNER_LOWER",
+                "BOLLINGER_UPPER", "BOLLINGER_MIDDLE", "BOLLINGER_LOWER",
+                -> setOf(1)
+                else -> emptySet()
+            }
+        call.args.drop(seriesCount).forEachIndexed { index, arg ->
+            if (index in fractionalIndexes) return@forEachIndexed
+            if (arg is NumLit) {
+                require(arg.value.stripTrailingZeros().scale() <= 0) {
+                    "Indicator ${call.name} argument ${index + 1} must be an integer literal; got ${arg.value}"
+                }
+            }
         }
     }
 
@@ -876,7 +899,16 @@ class ExprCompiler(
             BinOp.ADD -> numericBinary(l, r) { a, b -> a.add(b, Money.CONTEXT) }
             BinOp.SUB -> numericBinary(l, r) { a, b -> a.subtract(b, Money.CONTEXT) }
             BinOp.MUL -> numericBinary(l, r) { a, b -> a.multiply(b, Money.CONTEXT) }
-            BinOp.DIV -> numericBinary(l, r) { a, b -> a.divide(b, Money.CONTEXT) }
+            BinOp.DIV ->
+                CompiledExpr { ctx ->
+                    val lv = l.evaluate(ctx)
+                    val rv = r.evaluate(ctx)
+                    if (lv !is Value.Num || rv !is Value.Num || rv.v.signum() == 0) {
+                        Value.Undefined
+                    } else {
+                        Value.Num(lv.v.divide(rv.v, Money.CONTEXT))
+                    }
+                }
             BinOp.AND -> kleeneAnd(l, r)
             BinOp.OR -> kleeneOr(l, r)
         }

@@ -21,18 +21,23 @@ required.
 When `QKT_INSIGHTS_ENABLED=true`, also set `QKT_INSIGHTS_INGEST_TOKEN`,
 `QKT_INSIGHTS_ADMIN_PASSWORD`, and `QKT_INSIGHTS_SESSION_SECRET`.
 
+Required environment variables:
+
+- `MT5_SERVER` (the broker-specific MT5 server identifier)
+- `QKT_BROKER_SERVER_TIME_ZONE` (`UTC`, `new_york_close`, an IANA zone, or a fixed offset)
+
 Optional environment variables have safe defaults:
 
 - `DEPLOY_PORT=22`
 - `DEPLOY_PATH=/opt/qkt`
-- `MT5_SERVER=Exness-MT5Trial9`
 - `MT5_VNC_USER=admin`
 - `MT5_VNC_PASSWORD=changeme`
 - `COMPOSE_PROJECT_NAME=qkt-mt5`
 - `QKT_BIND_HOST=127.0.0.1`
 - `MT5_API_HOST_PORT=5020`
 - `MT5_VNC_HOST_PORT=3020`
-- `QKT_EXNESS_MAGIC=10001`
+- `QKT_BROKER_MAGIC=10001`
+- `QKT_BROKER_SYMBOL_SUFFIX=` (set when the venue appends a symbol suffix)
 - `TELEGRAM_ENABLED=false`
 - `QKT_ALERTS_WAIVER_REASON=` (set only if you intentionally run without alerts)
 - `QKT_MAX_DAILY_LOSS=100`

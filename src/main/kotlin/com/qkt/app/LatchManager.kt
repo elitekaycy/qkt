@@ -28,8 +28,8 @@ import org.slf4j.LoggerFactory
  * the strategy re-arms on the next qualifying event.
  */
 class LatchManager(
-    private val emit: (OrderRequest) -> Unit,
     private val clock: Clock,
+    private val defaultEmit: ((OrderRequest) -> Unit)? = null,
 ) {
     private val log = LoggerFactory.getLogger(LatchManager::class.java)
 
@@ -40,6 +40,7 @@ class LatchManager(
         val expiresAt: Long,
         val compiled: CompiledLatch,
         val ec: EvalContext,
+        val emit: (OrderRequest) -> Unit,
         var pendingDirection: Int = 0,
         var pendingSinceMs: Long? = null,
     )
@@ -57,9 +58,20 @@ class LatchManager(
         compiled: CompiledLatch,
         ec: EvalContext,
         now: Long = clock.now(),
+        emit: ((OrderRequest) -> Unit)? = null,
     ) {
-        val ref = (compiled.reference.evaluate(ec) as Value.Num).v
-        val off = (compiled.offset.evaluate(ec) as Value.Num).v
+        val ref =
+            (compiled.reference.evaluate(ec) as? Value.Num)?.v
+                ?: run {
+                    log.warn("latch arm skipped because its reference is not ready: name={}", compiled.name)
+                    return
+                }
+        val off =
+            (compiled.offset.evaluate(ec) as? Value.Num)?.v
+                ?: run {
+                    log.warn("latch arm skipped because its offset is not ready: name={}", compiled.name)
+                    return
+                }
         armed.add(
             ArmedLatch(
                 symbol = ec.candle.symbol,
@@ -68,6 +80,7 @@ class LatchManager(
                 expiresAt = now + compiled.armWindowMs,
                 compiled = compiled,
                 ec = ec,
+                emit = emit ?: requireNotNull(defaultEmit) { "LatchManager.arm requires an emit callback" },
             ),
         )
     }
@@ -236,7 +249,7 @@ class LatchManager(
                 log.warn("latch entry skipped: no price snapshot for stream={}", entry.streamAlias)
                 return@forEach
             }
-            entry.builder.build(direction, anchor, ec)?.let(emit)
+            entry.builder.build(direction, anchor, ec)?.let(latch.emit)
         }
     }
 

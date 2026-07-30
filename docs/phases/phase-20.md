@@ -17,7 +17,7 @@ Phase 20 ships the operational handoff layer. Three deliverables: a top-level `Q
 
 - `docker-compose.yml` at repo root. Spins up `mt5-gateway` (Wine + MT5 + Flask API on port 5001 + VNC on port 3000) and `qkt` daemon together. Healthcheck-gated dependency: qkt waits for gateway to be ready.
 - `.env.example` — template for MT5 credentials and VNC password.
-- `qkt.config.yaml.example` — annotated config showing how to override built-in `exness` defaults, extend with multiple accounts, or define a fresh broker. Uses `${QKT_EXNESS_URL:-...}` fallback syntax for the gateway URL so the same file works against both `localhost:5001` and `mt5-gateway:5001` (Docker network DNS).
+- `qkt.config.yaml.example` — annotated config showing how to define an MT5 broker or extend a built-in profile for multiple accounts. The current scaffold uses a broker-neutral gateway variable so it works against both `localhost:5001` and `mt5-gateway:5001` (Docker network DNS).
 - `strategies/` directory with a README — operators drop `.qkt` files in, compose mounts them at `/strategies` for auto-deploy.
 
 ### Documentation plan
@@ -58,10 +58,11 @@ docker compose exec qkt qkt brokers list
 cat > strategies/eur.qkt <<'EOF'
 STRATEGY eur VERSION 1
 SYMBOLS
-    eur = EXNESS:EURUSD EVERY 1m
+    eur = MT5:EURUSD EVERY 1m
 RULES
-    WHEN ema(eur, 9) crosses ABOVE ema(eur, 21)
-    THEN BUY eur SIZING 0.01 BRACKET STOP_LOSS BY 30 PCT TAKE_PROFIT BY 60 PCT
+    WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)
+    THEN BUY eur SIZING 0.01
+         BRACKET { STOP_LOSS BY 0.5 PCT, TAKE_PROFIT BY 1 PCT }
 EOF
 
 # Either restart compose for auto-deploy, or hot-deploy:
@@ -73,7 +74,7 @@ docker compose exec qkt qkt logs eur --follow
 ### Pre-launch tick audit
 
 ```sh
-docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 300 --mt5-profile exness
+docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 300 --mt5-profile mt5
 ```
 
 ### Tear down

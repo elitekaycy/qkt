@@ -124,6 +124,16 @@ sealed interface BrokerEvent : Event {
         override val sequenceId: Long = 0L,
     ) : OrderEvent
 
+    /** A requested cancellation could not be confirmed; the order remains active. */
+    data class OrderCancelFailed(
+        override val clientOrderId: String,
+        override val brokerOrderId: String?,
+        val reason: String,
+        override val strategyId: String = "",
+        override val timestamp: Long = 0L,
+        override val sequenceId: Long = 0L,
+    ) : OrderEvent
+
     /**
      * The venue accepted a modification to a working order.
      *

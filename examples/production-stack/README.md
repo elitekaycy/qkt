@@ -42,7 +42,7 @@ Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` from `.env`.
 
 ## Paper/Demo Validation
 
-The included `strategies/eur-paper.qkt` is intentionally small and uses the `EXNESS:EURUSD` MT5 route. With demo MT5 credentials this exercises the same qkt runtime path as live trading:
+The included `strategies/eur-paper.qkt` is intentionally small and uses the `MT5:EURUSD` broker-neutral profile. With demo MT5 credentials this exercises the same qkt runtime path as live trading:
 
 1. MT5 gateway provides live ticks and broker responses.
 2. qkt daemon runs the strategy and broker adapter.
@@ -67,7 +67,7 @@ Before using real capital:
 
 - Keep `QKT_RUNTIME_MODE=paper` until the strategy has enough paper days/trades for your gate.
 - Use an MT5 demo account first, then a live account only after feed, fills, and qkt-insights data are verified.
-- Set unique `QKT_MAGIC` per qkt instance/account.
+- Set a unique `QKT_BROKER_MAGIC` per qkt instance/account.
 - Replace mutable `:latest` image tags in `QKT_IMAGE` and `QKT_INSIGHTS_IMAGE` with immutable `:v*` or `:sha-*` GHCR tags once published.
 - Back up the `qkt-state` and `qkt-insights-data` Docker volumes. The qkt volume contains the local insights replay journal when `QKT_INSIGHTS_JOURNAL_ENABLED=true`.
 - Keep MT5 HTTP and VNC ports bound to `127.0.0.1` unless there is a controlled private network in front of them.

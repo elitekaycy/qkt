@@ -34,7 +34,7 @@ Phase 16 turns the backtest output into a presentation-grade artifact. Phase 10 
 ### Running a backtest and opening the report
 
 ```bash
-qkt backtest my-strategy.qkt --report ./out
+qkt backtest my-strategy.qkt --from 2024-01-01 --to 2024-02-01 --report-dir ./out
 open ./out/report.html      # macOS
 xdg-open ./out/report.html  # linux
 ```
