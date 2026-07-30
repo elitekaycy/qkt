@@ -55,6 +55,7 @@ internal data class HaltConfig(
     val maxDrawdownPct: BigDecimal?,
     val maxDailyDrawdownPct: BigDecimal?,
     val totalDdBasis: com.qkt.risk.DrawdownBasis,
+    val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis,
 )
 
 /**
@@ -145,50 +146,18 @@ class BacktestContext private constructor(
                 totalDdBasis = haltConfig.totalDdBasis,
                 startingBalance = startingBalance,
             )
-        val pacerLedger = com.qkt.risk.PacerLedger()
-        val pacerRiskRules = mutableListOf<com.qkt.risk.RiskRule>()
-        val pacerHaltRules = mutableListOf<com.qkt.risk.HaltRule>()
-        val pacerClock = com.qkt.common.FixedClock(range.from.toEpochMilli())
-        for ((strategyId, _) in strats) {
-            val cfg = perStrategyRisk[strategyId] ?: continue
-            cfg.maxTradesPerDay?.let {
-                pacerRiskRules.add(
-                    com.qkt.risk.rules
-                        .MaxTradesPerDay(it, pacerLedger, pacerClock, strategyId),
-                )
-            }
-            cfg.cooldownAfterLossMs?.let {
-                pacerRiskRules.add(
-                    com.qkt.risk.rules.CooldownAfterLoss(
-                        durationMs = it,
-                        ledger = pacerLedger,
-                        clock = pacerClock,
-                        afterConsecutive = cfg.cooldownAfterLossAfterConsecutive,
-                        strategyId = strategyId,
-                    ),
-                )
-            }
-            cfg.lossStreakHalt?.let {
-                pacerHaltRules.add(
-                    com.qkt.risk.rules.LossStreakHalt(
-                        strategyId = strategyId,
-                        maxLosses = it,
-                        ledger = pacerLedger,
-                        scope = cfg.lossStreakHaltScope,
-                    ),
-                )
-            }
-        }
         return Backtest.fromStore(
             strategies = strats,
-            rules = pacerRiskRules,
-            haltRules = haltRules + pacerHaltRules,
+            haltRules = haltRules,
             calendar = calendar,
             store = store,
             request = MarketRequest(symbols = replaySymbols, from = range.from, to = range.to),
             candleWindow = candleWindow,
             startingBalance = startingBalance,
             startingBalances = startingBalances,
+            dailyDdBasis = haltConfig.dailyDdBasis,
+            totalDdBasis = haltConfig.totalDdBasis,
+            strategyRiskLimits = perStrategyRisk.mapValues { (_, limits) -> limits.toLimits() },
             bookCapital = bookCapital,
             instruments = instruments,
             accountingConfig = accountingConfig,
@@ -197,7 +166,6 @@ class BacktestContext private constructor(
             brokerKind = effectiveExecution.brokerKind,
             executionConfig = effectiveExecution,
             bookRiskConfig = bookRiskConfig,
-            pacerLedger = pacerLedger,
             pacerCooldownDurationMsFor = { id -> perStrategyRisk[id]?.cooldownAfterLossMs },
             pacerCooldownAfterConsecutiveFor = { id ->
                 perStrategyRisk[id]?.cooldownAfterLossAfterConsecutive ?: 1
@@ -432,6 +400,7 @@ class BacktestContext private constructor(
                     maxDrawdownPct = cfg.maxDrawdownPct,
                     maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
                     totalDdBasis = cfg.totalDdBasis,
+                    dailyDdBasis = cfg.dailyDdBasis,
                 )
 
             // --bars research tier: feed each symbol at the COARSEST built tf that divides its finest
@@ -717,6 +686,7 @@ class BacktestContext private constructor(
                     maxDrawdownPct = cfg.maxDrawdownPct,
                     maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
                     totalDdBasis = cfg.totalDdBasis,
+                    dailyDdBasis = cfg.dailyDdBasis,
                 )
 
             return BacktestContext(

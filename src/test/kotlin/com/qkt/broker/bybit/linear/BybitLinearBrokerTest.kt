@@ -71,11 +71,13 @@ class BybitLinearBrokerTest {
     }
 
     @Test
-    fun `getOpenPositions returns empty on non-zero retCode`() {
+    fun `getOpenPositions fails closed on non-zero retCode`() {
         val client = FakeBybitClient()
         val broker = makeBroker(client)
         client.responses["/v5/position/list"] = """{"retCode":10001,"retMsg":"err","result":{"list":[]}}"""
-        assertThat(broker.getOpenPositions()).isEmpty()
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { broker.getOpenPositions() }
+            .hasMessageContaining("retCode=10001")
     }
 
     @Test
@@ -160,6 +162,74 @@ class BybitLinearBrokerTest {
         assertThat(ack.accepted).isTrue
         assertThat(rejects).hasSize(1)
         assertThat(rejects.single().reason).contains("connection reset")
+    }
+
+    @Test
+    fun `submit transport failure resolves accepted venue order before rejecting`() {
+        val client = FakeBybitClient()
+        val bus = newBus()
+        val accepts = mutableListOf<BrokerEvent.OrderAccepted>()
+        val rejects = mutableListOf<BrokerEvent.OrderRejected>()
+        bus.subscribe<BrokerEvent.OrderAccepted> { accepts.add(it) }
+        bus.subscribe<BrokerEvent.OrderRejected> { rejects.add(it) }
+        client.asyncFailures.add(
+            { path: String, _: String -> path == "/v5/order/create" } to RuntimeException("timeout after send"),
+        )
+        val broker = makeBroker(client, bus)
+        client.responses["/v5/order/realtime"] =
+            """
+            {"retCode":0,"retMsg":"OK","result":{"list":[
+              {"orderLinkId":"c1","orderId":"venue-1","orderStatus":"New"}
+            ]}}
+            """.trimIndent()
+
+        broker.submit(
+            OrderRequest.Market(
+                id = "c1",
+                symbol = "BYBIT_LINEAR:BTCUSDT",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            ),
+        )
+
+        assertThat(rejects).isEmpty()
+        assertThat(accepts.single().brokerOrderId).isEqualTo("venue-1")
+        assertThat(accepts.single().strategyId).isEqualTo("alpha")
+    }
+
+    @Test
+    fun `cancel failure publishes event and retains order tracking`() {
+        val client = FakeBybitClient()
+        val bus = newBus()
+        val failures = mutableListOf<BrokerEvent.OrderCancelFailed>()
+        bus.subscribe<BrokerEvent.OrderCancelFailed> { failures.add(it) }
+        val broker = makeBroker(client, bus)
+        broker.submit(
+            OrderRequest.Limit(
+                id = "c1",
+                symbol = "BYBIT_LINEAR:BTCUSDT",
+                side = Side.BUY,
+                quantity = Money.of("0.01"),
+                limitPrice = Money.of("60000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            ),
+        )
+        client.responses["/v5/order/cancel"] =
+            """{"retCode":10001,"retMsg":"cannot cancel","result":{}}"""
+
+        broker.cancel("c1")
+        broker.cancel("c1")
+
+        assertThat(failures).hasSize(2)
+        assertThat(failures).allSatisfy {
+            assertThat(it.strategyId).isEqualTo("alpha")
+            assertThat(it.reason).contains("cannot cancel")
+        }
     }
 
     @Test

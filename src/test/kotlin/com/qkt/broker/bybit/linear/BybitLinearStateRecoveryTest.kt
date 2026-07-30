@@ -4,6 +4,7 @@ import com.qkt.broker.bybit.FakeBybitClient
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
+import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
@@ -29,6 +30,41 @@ class BybitLinearStateRecoveryTest {
         override fun positionFor(symbol: String): Position? = map[symbol]
 
         override fun allPositions(): Map<String, Position> = map
+    }
+
+    @Test
+    fun `reconcile does not cancel a missing known order when execution evidence exists`() {
+        val client = FakeBybitClient()
+        seedAllEmpty(client)
+        client.responses["/v5/execution/list"] =
+            """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c1","orderId":"abc","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"e1","category":"linear"}]}}"""
+
+        val bus = newBus()
+        val events = mutableListOf<BrokerEvent>()
+        bus.subscribe<BrokerEvent.OrderFilled> { events.add(it) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { events.add(it) }
+        val known =
+            mapOf(
+                "c1" to
+                    com.qkt.broker.bybit.spot.BybitSpotStateRecovery.ManagedOrderView(
+                        "c1",
+                        "BYBIT_LINEAR:BTCUSDT",
+                        Side.BUY,
+                    ),
+            )
+
+        BybitLinearStateRecovery(
+            transport = client,
+            bus = bus,
+            clock = FixedClock(1_000_000L),
+            positionProvider = FixedPositionProvider(emptyMap()),
+            getKnownOrders = { known },
+            lastFillTimeProvider = { 500_000L },
+            seenExecIds = mutableSetOf(),
+        ).reconcile()
+
+        assertThat(events).hasSize(1)
+        assertThat(events.single()).isInstanceOf(BrokerEvent.OrderFilled::class.java)
     }
 
     @Test

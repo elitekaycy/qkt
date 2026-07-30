@@ -179,6 +179,17 @@ interface Broker {
 }
 
 /**
+ * Opt-in capability for brokers that expose authoritative [Broker.marginLevel] data.
+ *
+ * Kept separate from [Broker] so adding the capability does not break existing broker
+ * implementations compiled against an earlier qkt release.
+ */
+interface MarginLevelProvider {
+    /** Whether margin-level reads are supported for this broker composition. */
+    val supportsMarginLevel: Boolean
+}
+
+/**
  * Fields a strategy or operator can change on a working order.
  *
  * Only non-null fields are applied; brokers ignore unset ones.

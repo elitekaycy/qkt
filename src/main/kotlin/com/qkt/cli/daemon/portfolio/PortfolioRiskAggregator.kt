@@ -47,6 +47,7 @@ class PortfolioRiskAggregator(
     private val haltRules: List<HaltRule>,
     private val clock: Clock,
     private val onSample: (Long) -> Unit = {},
+    private val sampleOnEvaluate: Boolean = true,
 ) {
     private data class RealizedFill(
         val strategyId: String,
@@ -77,7 +78,7 @@ class PortfolioRiskAggregator(
             bookRiskState.onFill(fill.strategyId, fill.realized)
             pendingFills.poll()
         }
-        onSample(clock.now())
+        if (sampleOnEvaluate) sample(clock.now())
         bookRiskState.clearExpiredDailyHalts()
         if (bookRiskState.halted) {
             if (!childrenHalted) {
@@ -96,6 +97,19 @@ class PortfolioRiskAggregator(
             haltRules.firstNotNullOfOrNull { it.evaluate(bookRiskState) as? HaltDecision.Halt } ?: return
         bookRiskState.halt(breach.reason, breach.scope)
         haltChildren(breach.reason, breach.scope)
+    }
+
+    /** Feed one candle-aligned book snapshot into the controller. */
+    @Synchronized
+    fun sample(timestampMs: Long) {
+        onSample(timestampMs)
+    }
+
+    /** Fail closed when the supervisor cannot evaluate book risk repeatedly. */
+    @Synchronized
+    fun failClosed(reason: String) {
+        if (!bookRiskState.halted) bookRiskState.halt(reason, HaltScope.PERSISTENT)
+        if (!childrenHalted) haltChildren(reason, HaltScope.PERSISTENT)
     }
 
     private fun haltChildren(

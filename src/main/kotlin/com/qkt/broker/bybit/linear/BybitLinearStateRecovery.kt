@@ -4,6 +4,7 @@ import com.qkt.broker.BrokerStateRecovery
 import com.qkt.broker.bybit.BybitBalanceTranslator
 import com.qkt.broker.bybit.BybitOrderTranslator
 import com.qkt.broker.bybit.BybitTransport
+import com.qkt.broker.bybit.requireBybitOk
 import com.qkt.broker.bybit.spot.BybitSpotStateRecovery
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
@@ -14,7 +15,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.slf4j.LoggerFactory
 
 /** On-startup state reconciliation for [BybitLinearBroker] — replays open orders + positions. */
 class BybitLinearStateRecovery(
@@ -27,36 +27,32 @@ class BybitLinearStateRecovery(
     private val seenExecIds: MutableSet<String>,
     private val positionTolerance: BigDecimal = BigDecimal("0.00000001"),
 ) : BrokerStateRecovery {
-    private val log = LoggerFactory.getLogger(BybitLinearStateRecovery::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
 
     override fun reconcile() {
         synchronized(lock) {
-            runCatching { reconcileOpenOrders() }
-                .onFailure { log.warn("Open-orders reconcile failed: {}", it.message) }
-            runCatching { reconcileExecutions() }
-                .onFailure { log.warn("Executions reconcile failed: {}", it.message) }
-            runCatching { reconcileBalances() }
-                .onFailure { log.warn("Balances reconcile failed: {}", it.message) }
-            runCatching { reconcilePositions() }
-                .onFailure { log.warn("Positions reconcile failed: {}", it.message) }
+            val executedOrderIds = reconcileExecutions()
+            reconcileOpenOrders(executedOrderIds)
+            reconcileBalances()
+            reconcilePositions()
         }
     }
 
-    private fun reconcileOpenOrders() {
+    private fun reconcileOpenOrders(executedOrderIds: Set<String>) {
         val response =
             transport.getSigned(
                 "/v5/order/realtime",
                 mapOf("category" to "linear", "openOnly" to "0", "limit" to "50"),
             )
-        val tree = json.parseToJsonElement(response).jsonObject
-        if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
-        val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
+        val tree = requireBybitOk(response, "open-order reconcile", json)
+        val list =
+            tree["result"]?.jsonObject?.get("list")?.jsonArray
+                ?: throw IllegalStateException("open-order reconcile response omitted result.list")
         val openOrderIds = list.mapNotNull { it.jsonObject["orderLinkId"]?.jsonPrimitive?.content }.toSet()
         val known = getKnownOrders()
         for ((id, view) in known) {
-            if (id !in openOrderIds) {
+            if (id !in openOrderIds && id !in executedOrderIds) {
                 bus.publish(
                     BrokerEvent.OrderCancelled(
                         clientOrderId = id,
@@ -70,11 +66,12 @@ class BybitLinearStateRecovery(
         }
     }
 
-    private fun reconcileExecutions() {
+    private fun reconcileExecutions(): Set<String> {
         val startTime = (lastFillTimeProvider() - 60_000L).coerceAtLeast(0L)
         var cursor = ""
         var totalProcessed = 0
         val cap = BybitSpotStateRecovery.MAX_EXECUTIONS_PER_RECONCILE
+        val executedOrderIds = mutableSetOf<String>()
         while (totalProcessed < cap) {
             val params =
                 buildMap {
@@ -84,12 +81,14 @@ class BybitLinearStateRecovery(
                     if (cursor.isNotEmpty()) put("cursor", cursor)
                 }
             val response = transport.getSigned("/v5/execution/list", params)
-            val tree = json.parseToJsonElement(response).jsonObject
-            if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
-            val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
+            val tree = requireBybitOk(response, "execution reconcile", json)
+            val list =
+                tree["result"]?.jsonObject?.get("list")?.jsonArray
+                    ?: throw IllegalStateException("execution reconcile response omitted result.list")
             var newThisPage = 0
             for (entry in list) {
                 val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
+                executedOrderIds.add(exec.clientOrderId)
                 if (!seenExecIds.add(exec.execId)) continue
                 val qktSymbol = "BYBIT_LINEAR:${exec.bareSymbol}"
                 val strategyId = getKnownOrders()[exec.clientOrderId]?.strategyId ?: ""
@@ -107,7 +106,7 @@ class BybitLinearStateRecovery(
                 )
                 newThisPage++
                 totalProcessed++
-                if (totalProcessed >= cap) return
+                if (totalProcessed >= cap) return executedOrderIds
             }
             cursor = tree["result"]
                 ?.jsonObject
@@ -118,6 +117,7 @@ class BybitLinearStateRecovery(
             // already-seen execs would otherwise spin.
             if (cursor.isEmpty() || list.isEmpty() || newThisPage == 0) break
         }
+        return executedOrderIds
     }
 
     private fun reconcileBalances() {
@@ -143,9 +143,10 @@ class BybitLinearStateRecovery(
                 "/v5/position/list",
                 mapOf("category" to "linear", "settleCoin" to "USDT"),
             )
-        val tree = json.parseToJsonElement(response).jsonObject
-        if (tree["retCode"]?.jsonPrimitive?.content?.toIntOrNull() != 0) return
-        val list = tree["result"]?.jsonObject?.get("list")?.jsonArray ?: return
+        val tree = requireBybitOk(response, "position reconcile", json)
+        val list =
+            tree["result"]?.jsonObject?.get("list")?.jsonArray
+                ?: throw IllegalStateException("position reconcile response omitted result.list")
 
         val brokerPositions: Map<String, Pair<BigDecimal, BigDecimal>> =
             list

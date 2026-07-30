@@ -23,7 +23,8 @@ class CompositeBroker(
     private val routes: List<Pair<SymbolPattern, Broker>>,
     private val fallback: Broker? = null,
     bus: EventBus? = null,
-) : Broker {
+) : Broker,
+    MarginLevelProvider {
     private val log = LoggerFactory.getLogger(CompositeBroker::class.java)
 
     override val name: String = "Composite"
@@ -41,10 +42,19 @@ class CompositeBroker(
 
     private val orderIdToBroker: MutableMap<String, Broker> = mutableMapOf()
     private val accountEquityBroker: Broker? = allLeaves().distinct().filter { it.supportsAccountEquity }.singleOrNull()
+    private val marginLevelBroker: Broker? =
+        allLeaves()
+            .distinct()
+            .filter { (it as? MarginLevelProvider)?.supportsMarginLevel == true }
+            .singleOrNull()
 
     override val supportsAccountEquity: Boolean get() = accountEquityBroker != null
 
     override fun accountEquity(): java.math.BigDecimal? = accountEquityBroker?.accountEquity()
+
+    override val supportsMarginLevel: Boolean get() = marginLevelBroker != null
+
+    override fun marginLevel(): java.math.BigDecimal? = marginLevelBroker?.marginLevel()
 
     /**
      * Venue ticket → owning leaf, captured from each fill's `brokerOrderId` (the same value the

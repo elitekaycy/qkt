@@ -1,7 +1,10 @@
 package com.qkt.app
 
+import com.qkt.broker.Broker
 import com.qkt.broker.LogBroker
+import com.qkt.broker.OrderModification
 import com.qkt.broker.PaperBroker
+import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -522,6 +525,107 @@ class OrderManagerTest {
 
         assertThat(om.getOrder(eurusd.id)?.state).isEqualTo(OrderState.CANCELLED)
         assertThat(om.getOrder(xauusd.id)?.state).isEqualTo(OrderState.WORKING)
+    }
+
+    @Test
+    fun `halt cancellation is strategy scoped and preserves risk reducing exits`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = LogBroker(bus, clock)
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                isRiskReducingForHalt = { it.id == "a-exit" },
+            )
+
+        fun limit(
+            id: String,
+            strategyId: String,
+            side: Side,
+        ) = OrderRequest.Limit(
+            id = id,
+            symbol = "EURUSD",
+            side = side,
+            quantity = Money.of("1"),
+            limitPrice = Money.of("1.10"),
+            timeInForce = TimeInForce.GTC,
+            timestamp = 0L,
+            strategyId = strategyId,
+        )
+
+        om.submit(limit("a-entry", "A", Side.BUY))
+        om.submit(limit("a-exit", "A", Side.SELL))
+        om.submit(limit("b-entry", "B", Side.BUY))
+
+        om.cancelEntriesForHalt("A")
+
+        assertThat(om.getOrder("a-entry")?.state).isEqualTo(OrderState.CANCELLED)
+        assertThat(om.getOrder("a-exit")?.state).isEqualTo(OrderState.WORKING)
+        assertThat(om.getOrder("b-entry")?.state).isEqualTo(OrderState.WORKING)
+    }
+
+    @Test
+    fun `halt cancellation retries until confirmed and alerts after repeated misses`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val cancellations = mutableListOf<String>()
+        val alerts = mutableListOf<String>()
+        val broker =
+            object : Broker {
+                override val name = "unconfirmed-cancel"
+                override val capabilities = emptySet<com.qkt.broker.OrderTypeCapability>()
+
+                override fun submit(request: OrderRequest): SubmitAck {
+                    bus.publish(
+                        BrokerEvent.OrderAccepted(
+                            request.id,
+                            request.id,
+                            request.strategyId,
+                            clock.now(),
+                        ),
+                    )
+                    return SubmitAck(request.id, request.id, accepted = true)
+                }
+
+                override fun cancel(orderId: String) {
+                    cancellations += orderId
+                }
+
+                override fun modify(
+                    orderId: String,
+                    changes: OrderModification,
+                ) = SubmitAck(orderId, orderId, accepted = false)
+            }
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                onProtectionFailure = { _, message -> alerts += message },
+            )
+        om.submit(
+            OrderRequest.Limit(
+                id = "entry",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("1.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "A",
+            ),
+        )
+
+        om.cancelEntriesForHalt("A")
+        om.retryHaltCancellations(1_000L)
+        om.retryHaltCancellations(3_000L)
+
+        assertThat(cancellations).containsExactly("entry", "entry", "entry")
+        assertThat(alerts.single()).contains("CRITICAL", "unconfirmed", "entry")
     }
 
     @Test

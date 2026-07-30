@@ -4,6 +4,7 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -37,7 +38,7 @@ class FileStatePersistorPnlTest {
     }
 
     @Test
-    fun `loadPnl returns null on version mismatch`(
+    fun `loadPnl fails closed on version mismatch`(
         @TempDir tmp: Path,
     ) {
         val dir = tmp.resolve("latch")
@@ -47,17 +48,21 @@ class FileStatePersistorPnlTest {
             """{"version":99,"strategyId":"latch","realized":"5"}""",
         )
         val persistor = FileStatePersistor(tmp)
-        assertThat(persistor.loadPnl("latch")).isNull()
+        assertThatThrownBy { persistor.loadPnl("latch") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("schema mismatch")
     }
 
     @Test
-    fun `loadPnl returns null on corrupt json`(
+    fun `loadPnl fails closed on corrupt json`(
         @TempDir tmp: Path,
     ) {
         val dir = tmp.resolve("latch")
         Files.createDirectories(dir)
         Files.writeString(dir.resolve("pnl.json"), "{not json")
         val persistor = FileStatePersistor(tmp)
-        assertThat(persistor.loadPnl("latch")).isNull()
+        assertThatThrownBy { persistor.loadPnl("latch") }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("loadPnl parse failed")
     }
 }

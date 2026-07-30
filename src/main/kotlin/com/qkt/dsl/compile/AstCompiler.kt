@@ -9,8 +9,10 @@ import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.OcoEntry
+import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SequenceDecl
 import com.qkt.dsl.ast.SeriesSymbols
@@ -96,7 +98,9 @@ class AstCompiler {
         val readOnlyAliases = streams.filterValues { it.broker == "MACRO" || it.broker == SeriesSymbols.BROKER }.keys
         whenThens.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
+        validateResizeProtection(ast)
         val resolvedConditions: List<ExprAst> = whenThens.map { resolver.resolve(it.cond) }
+        resolvedConditions.forEach(::rejectChainedComparisons)
         val resolvedSequenceConditions: List<ExprAst> =
             ast.sequences.flatMap { sequence -> sequence.stages.map { resolver.resolve(it.condition) } }
         val plan = SnapshotPlan.scan(resolvedConditions + resolvedSequenceConditions)
@@ -115,7 +119,7 @@ class AstCompiler {
             }
 
         val rules: List<CompiledRule> =
-            whenThens.zip(resolvedConditions).map { (rule, cond) ->
+            whenThens.zip(resolvedConditions).mapIndexed { ruleIndex, (rule, cond) ->
                 val primary: ActionAst =
                     when (val a = rule.action) {
                         is Block -> a.actions.firstOrNull { it !is Log } ?: a.actions.first()
@@ -155,9 +159,10 @@ class AstCompiler {
                     onSellCaptures = plan.captureOnSell.map { it to letCompiledRhs.getValue(it) },
                     onOpenCaptures = plan.captureOnOpen.map { it to letCompiledRhs.getValue(it) },
                     referencedAliases = referencedAliases,
+                    consumesSequenceCompletion = readsSequenceCompletion(cond),
+                    edgeStateKey = "$ruleAlias#$ruleIndex",
                 )
             }
-
         val maxRolling = plan.rollingMaxN.values.maxOrNull() ?: 0
         val retention = maxOf(1, maxRolling + 1)
         val retentionByKey: Map<HubKey, Int> =
@@ -168,6 +173,7 @@ class AstCompiler {
                 .flatMap { collectStackAtSymbols(it.action, streams) }
                 .toSet()
         val sequenceRuntime = compileSequences(ast.sequences, streams, exprCompiler, resolver)
+        sequenceRuntime.bindRuleEdges(rules)
 
         // Symbols whose feed must supply volume because a VWAP/OBV binds to them (#301).
         val volumeRequiringSymbols: Set<String> =
@@ -313,7 +319,24 @@ class AstCompiler {
                     walk(e.elseExpr)
                 }
                 is com.qkt.dsl.ast.IsNull -> walk(e.expr)
-                else -> Unit
+                is com.qkt.dsl.ast.NumLit,
+                is com.qkt.dsl.ast.BoolLit,
+                is com.qkt.dsl.ast.StringLit,
+                is com.qkt.dsl.ast.Ref,
+                is com.qkt.dsl.ast.NowAccessor,
+                is com.qkt.dsl.ast.CalendarWindow,
+                is com.qkt.dsl.ast.SessionWindow,
+                com.qkt.dsl.ast.LastTradingDayOfMonth,
+                is com.qkt.dsl.ast.AccountRef,
+                is com.qkt.dsl.ast.StreakRef,
+                is com.qkt.dsl.ast.TradesRef,
+                is com.qkt.dsl.ast.CooldownRef,
+                is com.qkt.dsl.ast.StateAccessor,
+                com.qkt.dsl.ast.StackEntryRef,
+                com.qkt.dsl.ast.EntryQty,
+                is com.qkt.dsl.ast.ExitRef,
+                is com.qkt.dsl.ast.SequenceAccessor,
+                -> Unit
             }
         }
         walk(expr)
@@ -361,7 +384,25 @@ class AstCompiler {
                     walk(e.elseExpr)
                 }
                 is com.qkt.dsl.ast.IsNull -> walk(e.expr)
-                else -> Unit
+                is com.qkt.dsl.ast.NumLit,
+                is com.qkt.dsl.ast.BoolLit,
+                is com.qkt.dsl.ast.StringLit,
+                is com.qkt.dsl.ast.Ref,
+                is com.qkt.dsl.ast.NowAccessor,
+                is com.qkt.dsl.ast.CalendarWindow,
+                is com.qkt.dsl.ast.SessionWindow,
+                com.qkt.dsl.ast.LastTradingDayOfMonth,
+                is com.qkt.dsl.ast.AccountRef,
+                is com.qkt.dsl.ast.StreakRef,
+                is com.qkt.dsl.ast.TradesRef,
+                is com.qkt.dsl.ast.CooldownRef,
+                is com.qkt.dsl.ast.PositionRef,
+                is com.qkt.dsl.ast.StateAccessor,
+                com.qkt.dsl.ast.StackEntryRef,
+                com.qkt.dsl.ast.EntryQty,
+                is com.qkt.dsl.ast.ExitRef,
+                is com.qkt.dsl.ast.SequenceAccessor,
+                -> Unit
             }
         }
         conditions.forEach(::walk)
@@ -415,14 +456,83 @@ class AstCompiler {
                 rejectNestedOrders(action.opts, readOnlyAliases)
             }
             is Close -> reject(action.stream)
+            is Resize -> reject(action.stream)
             is Cancel -> reject(action.stream)
+            is Latch -> {
+                reject(action.stream)
+                action.entries.mapNotNull { it.stream }.forEach(::reject)
+            }
             is OcoEntry -> {
                 rejectReadOnlyOrders(action.leg1, readOnlyAliases)
                 rejectReadOnlyOrders(action.leg2, readOnlyAliases)
             }
             is Block -> action.actions.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
-            else -> {} // CloseAll/CancelAll (global) and Log: nothing to reject
+            CloseAll, CancelAll, is Log -> Unit
         }
+    }
+
+    private fun rejectChainedComparisons(expr: ExprAst) {
+        fun walk(current: ExprAst) {
+            when (current) {
+                is com.qkt.dsl.ast.CmpOp -> {
+                    require(current.lhs !is com.qkt.dsl.ast.CmpOp && current.rhs !is com.qkt.dsl.ast.CmpOp) {
+                        "Chained comparisons are not supported; combine explicit comparisons with AND"
+                    }
+                    walk(current.lhs)
+                    walk(current.rhs)
+                }
+                is com.qkt.dsl.ast.BinaryOp -> {
+                    walk(current.lhs)
+                    walk(current.rhs)
+                }
+                is com.qkt.dsl.ast.UnaryOp -> walk(current.arg)
+                is com.qkt.dsl.ast.Crosses -> {
+                    walk(current.lhs)
+                    walk(current.rhs)
+                }
+                is com.qkt.dsl.ast.FuncCall -> current.args.forEach(::walk)
+                is com.qkt.dsl.ast.IndicatorCall -> current.args.forEach(::walk)
+                is com.qkt.dsl.ast.Aggregate -> walk(current.series)
+                is com.qkt.dsl.ast.Between -> {
+                    walk(current.v)
+                    walk(current.lo)
+                    walk(current.hi)
+                }
+                is com.qkt.dsl.ast.InList -> {
+                    walk(current.v)
+                    current.members.forEach(::walk)
+                }
+                is com.qkt.dsl.ast.CaseWhen -> {
+                    current.branches.forEach { (condition, branch) ->
+                        walk(condition)
+                        walk(branch)
+                    }
+                    walk(current.elseExpr)
+                }
+                is com.qkt.dsl.ast.IsNull -> walk(current.expr)
+                is com.qkt.dsl.ast.NumLit,
+                is com.qkt.dsl.ast.BoolLit,
+                is com.qkt.dsl.ast.StringLit,
+                is com.qkt.dsl.ast.Ref,
+                is com.qkt.dsl.ast.StreamFieldRef,
+                is com.qkt.dsl.ast.NowAccessor,
+                is com.qkt.dsl.ast.CalendarWindow,
+                is com.qkt.dsl.ast.SessionWindow,
+                com.qkt.dsl.ast.LastTradingDayOfMonth,
+                is com.qkt.dsl.ast.AccountRef,
+                is com.qkt.dsl.ast.StreakRef,
+                is com.qkt.dsl.ast.TradesRef,
+                is com.qkt.dsl.ast.CooldownRef,
+                is com.qkt.dsl.ast.PositionRef,
+                is com.qkt.dsl.ast.StateAccessor,
+                com.qkt.dsl.ast.StackEntryRef,
+                com.qkt.dsl.ast.EntryQty,
+                is com.qkt.dsl.ast.ExitRef,
+                is com.qkt.dsl.ast.SequenceAccessor,
+                -> Unit
+            }
+        }
+        walk(expr)
     }
 
     private fun rejectNestedOrders(
@@ -432,6 +542,61 @@ class AstCompiler {
         opts.onFill.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
         (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose)
             .forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
+    }
+
+    private fun validateResizeProtection(ast: StrategyAst) {
+        val resizedStreams = mutableSetOf<String>()
+        val bracketedStreams = mutableSetOf<String>()
+
+        fun walk(action: ActionAst) {
+            when (action) {
+                is Resize -> resizedStreams.add(action.stream)
+                is Buy -> {
+                    if (action.opts.bracket != null) bracketedStreams.add(action.stream)
+                    action.opts.onFill.forEach(::walk)
+                    action.opts.exitHooks.onStop
+                        .forEach(::walk)
+                    action.opts.exitHooks.onTakeProfit
+                        .forEach(::walk)
+                    action.opts.exitHooks.onClose
+                        .forEach(::walk)
+                }
+                is Sell -> {
+                    if (action.opts.bracket != null) bracketedStreams.add(action.stream)
+                    action.opts.onFill.forEach(::walk)
+                    action.opts.exitHooks.onStop
+                        .forEach(::walk)
+                    action.opts.exitHooks.onTakeProfit
+                        .forEach(::walk)
+                    action.opts.exitHooks.onClose
+                        .forEach(::walk)
+                }
+                is Latch ->
+                    action.entries
+                        .filter { it.bracket != null }
+                        .forEach { bracketedStreams.add(it.stream ?: action.stream) }
+                is Block -> action.actions.forEach(::walk)
+                is OcoEntry -> {
+                    walk(action.leg1)
+                    walk(action.leg2)
+                }
+                else -> Unit
+            }
+        }
+
+        ast.rules
+            .filterIsInstance<WhenThen>()
+            .map { mergeDefaults(it.action, ast.defaults) }
+            .forEach(::walk)
+        ast.schedules
+            .map { mergeDefaults(it.action, ast.defaults) }
+            .forEach(::walk)
+
+        val unsafe = resizedStreams.intersect(bracketedStreams)
+        require(unsafe.isEmpty()) {
+            "RESIZE cannot target bracket-managed positions; protective child quantities " +
+                "would not track a resized parent. Remove RESIZE or BRACKET for: ${unsafe.sorted().joinToString()}"
+        }
     }
 
     /**
@@ -495,6 +660,8 @@ private class CompiledStrategy(
     private var hubBound: Boolean = false
     private var boundHub: CandleHub? = null
     private var boundContext: StrategyContext? = null
+    private val ruleByOrderId: MutableMap<String, CompiledRule> = mutableMapOf()
+    private val ruleBySignal: java.util.IdentityHashMap<Signal, CompiledRule> = java.util.IdentityHashMap()
 
     override val declaredStreams: Map<String, HubKey> get() = streams
 
@@ -546,6 +713,26 @@ private class CompiledStrategy(
         persistor: com.qkt.persistence.StatePersistor,
     ) {
         sequenceRuntime.bindPersistor(strategyId, persistor)
+    }
+
+    override fun onOrderRejected(clientOrderId: String) {
+        ruleByOrderId.remove(clientOrderId)?.rearmAfterRejection()
+        sequenceRuntime.persistRuleEdges()
+    }
+
+    override fun onOrderSubmitted(
+        signal: Signal,
+        clientOrderId: String,
+    ) {
+        val rule = ruleBySignal.remove(signal) ?: return
+        ruleByOrderId[clientOrderId] = rule
+        if (signal is Signal.Submit) {
+            correlationIds(signal.request).forEach { ruleByOrderId[it] = rule }
+        }
+    }
+
+    override fun onOrderTerminal(clientOrderId: String) {
+        ruleByOrderId.remove(clientOrderId)
     }
 
     override fun bindSchedules(
@@ -666,11 +853,14 @@ private class CompiledStrategy(
                     if (alias in basketAliases) continue
                     runSequencesForAlias(alias, bars.getValue(alias), hub, ctx)
                 }
+                var deferSequenceCompletion = false
                 for (alias in group.aliases) {
                     if (alias in basketAliases) continue
-                    fireRulesForAlias(alias, bars.getValue(alias), hub, ctx, emit)
+                    deferSequenceCompletion =
+                        fireRulesForAlias(alias, bars.getValue(alias), hub, ctx, emit) ||
+                        deferSequenceCompletion
                 }
-                sequenceRuntime.afterRulePass()
+                sequenceRuntime.afterRulePass(deferSequenceCompletion)
             }
         }
 
@@ -701,8 +891,8 @@ private class CompiledStrategy(
                 hub.publish(basketKey, composite)
                 updatePerAlias(basket.alias, composite, hub, ctx)
                 runSequencesForAlias(basket.alias, composite, hub, ctx)
-                fireRulesForAlias(basket.alias, composite, hub, ctx, emit)
-                sequenceRuntime.afterRulePass()
+                val deferSequenceCompletion = fireRulesForAlias(basket.alias, composite, hub, ctx, emit)
+                sequenceRuntime.afterRulePass(deferSequenceCompletion)
             }
         }
     }
@@ -729,8 +919,8 @@ private class CompiledStrategy(
     ) {
         updatePerAlias(alias, candle, hub, ctx)
         runSequencesForAlias(alias, candle, hub, ctx)
-        fireRulesForAlias(alias, candle, hub, ctx, emit)
-        sequenceRuntime.afterRulePass()
+        val deferSequenceCompletion = fireRulesForAlias(alias, candle, hub, ctx, emit)
+        sequenceRuntime.afterRulePass(deferSequenceCompletion)
     }
 
     /**
@@ -831,8 +1021,8 @@ private class CompiledStrategy(
         hub: CandleHub,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
-    ) {
-        val aliasRules = rulesByAlias[alias] ?: return
+    ): Boolean {
+        val aliasRules = rulesByAlias[alias] ?: return false
         val ec =
             EvalContext(
                 candle = candle,
@@ -845,10 +1035,21 @@ private class CompiledStrategy(
                 evaluationTimeMs = candle.endTime,
                 sequences = sequenceRuntime,
             )
+        var consumerFired = false
+        var consumerAccepted = false
         for (rule in aliasRules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
-            fireAndCommit(rule, ec, ctx, emit)
+            when (fireAndCommit(rule, ec, ctx, emit)) {
+                SequenceFireOutcome.ACCEPTED -> {
+                    consumerFired = true
+                    consumerAccepted = true
+                }
+                SequenceFireOutcome.SUPPRESSED -> consumerFired = true
+                SequenceFireOutcome.NOT_CONSUMING -> Unit
+            }
         }
+        sequenceRuntime.persistRuleEdges()
+        return consumerFired && !consumerAccepted
     }
 
     /**
@@ -862,18 +1063,47 @@ private class CompiledStrategy(
         ec: EvalContext,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
-    ) {
+    ): SequenceFireOutcome {
         val fired = rule.fire(ec, ctx)
         if (fired.isEmpty()) {
-            rule.commitFire(true)
-            return
+            return when (rule.commitFire(true)) {
+                RuleCommitOutcome.ACCEPTED ->
+                    if (rule.consumesSequenceCompletion) {
+                        SequenceFireOutcome.ACCEPTED
+                    } else {
+                        SequenceFireOutcome.NOT_CONSUMING
+                    }
+                RuleCommitOutcome.REARMED ->
+                    if (rule.consumesSequenceCompletion) {
+                        SequenceFireOutcome.SUPPRESSED
+                    } else {
+                        SequenceFireOutcome.NOT_CONSUMING
+                    }
+                null -> SequenceFireOutcome.NOT_CONSUMING
+            }
         }
+        val orderIds =
+            fired
+                .filterIsInstance<Signal.Submit>()
+                .flatMap { correlationIds(it.request) }
+        fired.forEach { ruleBySignal[it] = rule }
+        orderIds.forEach { ruleByOrderId[it] = rule }
         val acceptedBefore = ctx.submissions.accepted
         val suppressedBefore = ctx.submissions.suppressed
         for (sig in fired) emit(sig)
         val anyAccepted = ctx.submissions.accepted > acceptedBefore
         val anySuppressed = ctx.submissions.suppressed > suppressedBefore
-        rule.commitFire(anyAccepted || !anySuppressed)
+        val accepted = anyAccepted || !anySuppressed
+        val committed = rule.commitFire(accepted)
+        if (committed == RuleCommitOutcome.REARMED) {
+            fired.forEach(ruleBySignal::remove)
+            orderIds.forEach(ruleByOrderId::remove)
+        }
+        return when {
+            committed == null || !rule.consumesSequenceCompletion -> SequenceFireOutcome.NOT_CONSUMING
+            committed == RuleCommitOutcome.ACCEPTED -> SequenceFireOutcome.ACCEPTED
+            else -> SequenceFireOutcome.SUPPRESSED
+        }
     }
 
     // Symbol-keyed view of tick-fed indicator bindings, built on first tick — most strategies
@@ -921,6 +1151,7 @@ private class CompiledStrategy(
                 strategyContext = ctx,
                 snapshotStore = snapshotStore,
                 evaluationTimeMs = candle.endTime,
+                sequences = sequenceRuntime,
             )
 
         // 1. Position transitions for this candle's symbol
@@ -971,10 +1202,60 @@ private class CompiledStrategy(
         sequenceRuntime.onCandle(candle, ec) { aliases -> warmupGate.isWarm(aliases) }
 
         // 6. Rules
+        var consumerFired = false
+        var consumerAccepted = false
         for (rule in rules) {
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
-            fireAndCommit(rule, ec, ctx, emit)
+            when (fireAndCommit(rule, ec, ctx, emit)) {
+                SequenceFireOutcome.ACCEPTED -> {
+                    consumerFired = true
+                    consumerAccepted = true
+                }
+                SequenceFireOutcome.SUPPRESSED -> consumerFired = true
+                SequenceFireOutcome.NOT_CONSUMING -> Unit
+            }
         }
-        sequenceRuntime.afterRulePass()
+        sequenceRuntime.persistRuleEdges()
+        sequenceRuntime.afterRulePass(consumerFired && !consumerAccepted)
+    }
+
+    private enum class SequenceFireOutcome {
+        NOT_CONSUMING,
+        ACCEPTED,
+        SUPPRESSED,
     }
 }
+
+private fun correlationIds(request: com.qkt.execution.OrderRequest): List<String> =
+    when (request) {
+        is com.qkt.execution.OrderRequest.Bracket ->
+            listOf(request.id, request.entry.id)
+        is com.qkt.execution.OrderRequest.StandaloneOCO ->
+            listOf(request.id) + correlationIds(request.leg1) + correlationIds(request.leg2)
+        is com.qkt.execution.OrderRequest.OTO ->
+            listOf(request.id) + correlationIds(request.parent)
+        else -> listOf(request.id)
+    }
+
+private fun readsSequenceCompletion(expr: ExprAst): Boolean =
+    when (expr) {
+        is com.qkt.dsl.ast.SequenceAccessor -> expr.stage == null && expr.field == "complete"
+        is com.qkt.dsl.ast.BinaryOp -> readsSequenceCompletion(expr.lhs) || readsSequenceCompletion(expr.rhs)
+        is com.qkt.dsl.ast.UnaryOp -> readsSequenceCompletion(expr.arg)
+        is com.qkt.dsl.ast.CmpOp -> readsSequenceCompletion(expr.lhs) || readsSequenceCompletion(expr.rhs)
+        is com.qkt.dsl.ast.Crosses -> readsSequenceCompletion(expr.lhs) || readsSequenceCompletion(expr.rhs)
+        is com.qkt.dsl.ast.FuncCall -> expr.args.any(::readsSequenceCompletion)
+        is com.qkt.dsl.ast.IndicatorCall -> expr.args.any(::readsSequenceCompletion)
+        is com.qkt.dsl.ast.Aggregate -> readsSequenceCompletion(expr.series)
+        is com.qkt.dsl.ast.Between ->
+            readsSequenceCompletion(expr.v) ||
+                readsSequenceCompletion(expr.lo) ||
+                readsSequenceCompletion(expr.hi)
+        is com.qkt.dsl.ast.InList ->
+            readsSequenceCompletion(expr.v) || expr.members.any(::readsSequenceCompletion)
+        is com.qkt.dsl.ast.CaseWhen ->
+            expr.branches.any { readsSequenceCompletion(it.first) || readsSequenceCompletion(it.second) } ||
+                readsSequenceCompletion(expr.elseExpr)
+        is com.qkt.dsl.ast.IsNull -> readsSequenceCompletion(expr.expr)
+        else -> false
+    }

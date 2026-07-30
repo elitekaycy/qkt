@@ -91,6 +91,13 @@ object InsightsTranslate {
                             "armWindowMs" to s.compiled.armWindowMs,
                             "expiresAt" to e.timestamp + s.compiled.armWindowMs,
                         )
+                is Signal.Suppressed ->
+                    "signal.suppressed" to
+                        mapOf(
+                            "intent" to "SUPPRESSED",
+                            "symbol" to s.symbol,
+                            "reason" to s.reason,
+                        )
             }
         return envelope(e.sequenceId, e.timestamp, strategyId, type, payload)
     }

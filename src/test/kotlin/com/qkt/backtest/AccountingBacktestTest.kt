@@ -28,12 +28,12 @@ class AccountingBacktestTest {
                 instruments = StandardInstrumentRegistry,
             ).run()
 
-        assertThat(result.global.realizedTotal).isEqualByComparingTo("0.66225166")
-        assertThat(result.global.totalPnL).isEqualByComparingTo("0.66225166")
+        assertThat(result.global.realizedTotal).isEqualByComparingTo("6.62251656")
+        assertThat(result.global.totalPnL).isEqualByComparingTo("6.62251656")
         val close = result.trades.last()
-        assertThat(close.nativeRealized).isEqualByComparingTo("100.00000000")
+        assertThat(close.nativeRealized).isEqualByComparingTo("1000.00000000")
         assertThat(close.nativeCurrency).isEqualTo("JPY")
-        assertThat(close.accountRealized).isEqualByComparingTo("0.66225166")
+        assertThat(close.accountRealized).isEqualByComparingTo("6.62251656")
         assertThat(close.accountCurrency).isEqualTo("USD")
         assertThat(close.fxRate).isEqualByComparingTo("0.006622516556291391")
         assertThat(
@@ -64,7 +64,7 @@ class AccountingBacktestTest {
                 tradedSymbols = listOf(traded),
             ).run()
 
-        assertThat(result.global.realizedTotal).isEqualByComparingTo("0.66225166")
+        assertThat(result.global.realizedTotal).isEqualByComparingTo("6.62251656")
         assertThat(result.trades.last().nativeCurrency).isEqualTo("JPY")
         assertThat(result.trades.last().fxSource).isEqualTo("market:USDJPY")
     }
@@ -85,8 +85,8 @@ class AccountingBacktestTest {
             ).run()
 
         assertThat(result.global.realizedTotal).isEqualByComparingTo("0.00000000")
-        assertThat(result.global.unrealizedTotal).isEqualByComparingTo("0.66225166")
-        assertThat(result.global.totalPnL).isEqualByComparingTo("0.66225166")
+        assertThat(result.global.unrealizedTotal).isEqualByComparingTo("6.62251656")
+        assertThat(result.global.totalPnL).isEqualByComparingTo("6.62251656")
     }
 
     private fun roundTripStrategy(tradedSymbol: String = symbol): Strategy =
@@ -100,8 +100,8 @@ class AccountingBacktestTest {
             ) {
                 if (tick.symbol != tradedSymbol) return
                 when (step++) {
-                    0 -> emit(Signal.Buy(tradedSymbol, Money.of("0.001")))
-                    1 -> emit(Signal.Sell(tradedSymbol, Money.of("0.001")))
+                    0 -> emit(Signal.Buy(tradedSymbol, Money.of("0.01")))
+                    1 -> emit(Signal.Sell(tradedSymbol, Money.of("0.01")))
                 }
             }
         }
@@ -117,7 +117,7 @@ class AccountingBacktestTest {
             ) {
                 if (!bought) {
                     bought = true
-                    emit(Signal.Buy(symbol, Money.of("0.001")))
+                    emit(Signal.Buy(symbol, Money.of("0.01")))
                 }
             }
         }

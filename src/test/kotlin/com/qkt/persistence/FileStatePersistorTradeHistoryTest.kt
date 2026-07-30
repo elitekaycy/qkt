@@ -1,8 +1,10 @@
 package com.qkt.persistence
 
 import java.math.BigDecimal
+import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -39,5 +41,18 @@ class FileStatePersistorTradeHistoryTest {
         @TempDir tmp: Path,
     ) {
         assertThat(FileStatePersistor(tmp).loadTradeHistory("absent")).isNull()
+    }
+
+    @Test
+    fun `loadTradeHistory fails closed on corrupt state`(
+        @TempDir tmp: Path,
+    ) {
+        val dir = tmp.resolve("latch")
+        Files.createDirectories(dir)
+        Files.writeString(dir.resolve("trade-history.json"), "{broken")
+
+        assertThatThrownBy { FileStatePersistor(tmp).loadTradeHistory("latch") }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("loadTradeHistory parse failed")
     }
 }

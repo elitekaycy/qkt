@@ -8,6 +8,7 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -86,7 +87,7 @@ class FileStatePersistorLegBookTest {
     }
 
     @Test
-    fun `loadLegBook returns null on version mismatch`(
+    fun `loadLegBook rejects a version mismatch`(
         @TempDir tmp: Path,
     ) {
         val dir = tmp.resolve("hedge")
@@ -96,18 +97,22 @@ class FileStatePersistorLegBookTest {
             """{"version":99,"strategyId":"hedge","symbol":"XAUUSDm","legs":[]}""",
         )
         val persistor = FileStatePersistor(tmp)
-        assertThat(persistor.loadLegBook("hedge", "XAUUSDm")).isNull()
+        assertThatThrownBy { persistor.loadLegBook("hedge", "XAUUSDm") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("schema mismatch")
     }
 
     @Test
-    fun `loadLegBook returns null on corrupted JSON`(
+    fun `loadLegBook rejects corrupted JSON`(
         @TempDir tmp: Path,
     ) {
         val dir = tmp.resolve("hedge")
         Files.createDirectories(dir)
         Files.writeString(dir.resolve("XAUUSDm-legbook.json"), "{not valid json")
         val persistor = FileStatePersistor(tmp)
-        assertThat(persistor.loadLegBook("hedge", "XAUUSDm")).isNull()
+        assertThatThrownBy { persistor.loadLegBook("hedge", "XAUUSDm") }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("parse failed")
     }
 
     @Test

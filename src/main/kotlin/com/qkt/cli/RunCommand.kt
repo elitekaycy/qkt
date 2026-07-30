@@ -261,6 +261,11 @@ class RunCommand(
                     put("kind", JsonPrimitive("arm_latch"))
                     put("name", JsonPrimitive(sig.compiled.name ?: ""))
                 }
+                is com.qkt.strategy.Signal.Suppressed -> {
+                    put("kind", JsonPrimitive("suppressed"))
+                    put("symbol", JsonPrimitive(sig.symbol))
+                    put("reason", JsonPrimitive(sig.reason))
+                }
             }
         }
 

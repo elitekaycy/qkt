@@ -1,6 +1,8 @@
 package com.qkt.persistence
 
 import com.qkt.common.Side
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.positions.LegBook
 import com.qkt.positions.LegRole
 import com.qkt.positions.PositionLeg
@@ -121,5 +123,28 @@ class AsyncStatePersistorTest {
         val loaded = FileStatePersistor(tmp).loadLegBook("hedge", "XAUUSDm")
         assertThat(loaded).isNotNull
         assertThat(loaded!!.legs).hasSize(1)
+    }
+
+    @Test
+    fun `synchronous pending intent drains older queued snapshots first`() {
+        val delegate = NoopStatePersistor()
+        val queued =
+            OrderRequest.Market(
+                id = "older",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val intent = queued.copy(id = "intent")
+
+        AsyncStatePersistor(delegate).use { async ->
+            async.savePendingOrders("alpha", mapOf(queued.id to queued))
+            async.savePendingOrdersSync("alpha", mapOf(intent.id to intent))
+
+            assertThat(delegate.loadPendingOrders("alpha")).containsOnlyKeys("intent")
+        }
     }
 }

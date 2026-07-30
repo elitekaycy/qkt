@@ -6,6 +6,8 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import org.slf4j.LoggerFactory
 
 /**
@@ -21,7 +23,8 @@ import org.slf4j.LoggerFactory
  * Trade-off: a crash between "engine mutated state" and "executor drained the queue"
  * loses up to [queueCapacity] in-flight writes. For typical trade-event rates the
  * window is < 1 second. The bus's single-threaded ordering guarantee is preserved (the
- * executor processes submissions in FIFO order).
+ * executor processes submissions in FIFO order). A full queue applies backpressure to
+ * the submitter; it never runs a newer write ahead of queued snapshots.
  *
  * Closing the executor with [close] is a soft drain — pending writes complete; new
  * submissions are rejected after.
@@ -46,14 +49,18 @@ class AsyncStatePersistor(
             TimeUnit.MILLISECONDS,
             LinkedBlockingQueue(queueCapacity),
             { r -> Thread(r, "qkt-persistence-async").apply { isDaemon = true } },
-        ).also { it.rejectedExecutionHandler = CountingCallerRunsPolicy(callerRunsCount) }
+        ).also {
+            it.rejectedExecutionHandler = ThreadPoolExecutor.AbortPolicy()
+            it.prestartCoreThread()
+        }
 
     private val shutdownTimeoutMs: Long = shutdownTimeoutMs
+    private val submissionLock = ReentrantLock()
 
     /** Current depth of the pending-write queue. Operators can watch for sustained high values. */
     val queueSize: Int get() = executor.queue.size
 
-    /** Cumulative count of writes that fell back to caller-runs because the queue was full. */
+    /** Cumulative count of writes that encountered a full queue and applied backpressure. */
     val callerRunsTotal: Long get() = callerRunsCount.get()
 
     override fun healthSnapshot(): PersistenceHealth =
@@ -61,35 +68,37 @@ class AsyncStatePersistor(
             .healthSnapshot()
             .copy(queueSize = queueSize, callerRunsTotal = callerRunsTotal)
 
-    private class CountingCallerRunsPolicy(
-        private val counter: java.util.concurrent.atomic.AtomicLong,
-    ) : java.util.concurrent.RejectedExecutionHandler {
-        private val delegate = ThreadPoolExecutor.CallerRunsPolicy()
-
-        override fun rejectedExecution(
-            r: Runnable,
-            executor: ThreadPoolExecutor,
-        ) {
-            counter.incrementAndGet()
-            delegate.rejectedExecution(r, executor)
-        }
-    }
-
     private fun submit(
         label: String,
         action: () -> Unit,
     ) {
-        if (executor.isShutdown) {
-            log.warn("$label dropped: executor is shut down")
-            return
-        }
-        try {
-            executor.execute {
+        val task =
+            Runnable {
                 runCatching { action() }
                     .onFailure { e -> log.warn("$label failed: ${e.message}") }
             }
-        } catch (e: RejectedExecutionException) {
-            log.warn("$label rejected by executor: ${e.message}")
+        submissionLock.withLock {
+            if (executor.isShutdown) {
+                log.warn("$label dropped: executor is shut down")
+                return
+            }
+            try {
+                executor.execute(task)
+            } catch (_: RejectedExecutionException) {
+                if (executor.isShutdown) {
+                    log.warn("$label dropped: executor is shut down")
+                    return
+                }
+                callerRunsCount.incrementAndGet()
+                try {
+                    // Backpressure preserves the single-writer FIFO instead of running a
+                    // newer snapshot ahead of queued work on the submitting thread.
+                    executor.queue.put(task)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    log.warn("$label interrupted while waiting for persistence capacity")
+                }
+            }
         }
     }
 
@@ -135,6 +144,16 @@ class AsyncStatePersistor(
 
     override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> =
         delegate.loadPendingOrders(strategyId)
+
+    override fun savePendingOrdersSync(
+        strategyId: String,
+        orders: Map<String, OrderRequest>,
+    ) {
+        submissionLock.withLock {
+            check(awaitDrainLocked()) { "timed out draining persistence queue before order intent" }
+            delegate.savePendingOrdersSync(strategyId, orders.toMap())
+        }
+    }
 
     override fun savePendingStacks(
         strategyId: String,
@@ -245,9 +264,12 @@ class AsyncStatePersistor(
     }
 
     /** Test seam: flush all pending writes synchronously. Blocks up to [timeoutMs]. */
-    fun awaitDrain(timeoutMs: Long = 5_000L): Boolean {
+    fun awaitDrain(timeoutMs: Long = 5_000L): Boolean = submissionLock.withLock { awaitDrainLocked(timeoutMs) }
+
+    private fun awaitDrainLocked(timeoutMs: Long = 5_000L): Boolean {
+        if (executor.isTerminated) return true
         val latch = java.util.concurrent.CountDownLatch(1)
-        executor.execute { latch.countDown() }
+        executor.queue.put(Runnable { latch.countDown() })
         return latch.await(timeoutMs, TimeUnit.MILLISECONDS)
     }
 }

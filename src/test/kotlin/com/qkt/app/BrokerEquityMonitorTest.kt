@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 
 class BrokerEquityMonitorTest {
     @Test
-    fun `failures retain the last equity and alert once until recovery`() {
+    fun `stale broker equity is cleared until a fresh sample recovers`() {
         val clock = FixedClock(0L)
         val answers = listOf(BigDecimal("10000"), null, null, null, null, BigDecimal("10025"))
         var next = 0
@@ -28,7 +28,11 @@ class BrokerEquityMonitorTest {
         repeat(4) { failure ->
             clock.time = (failure + 1) * 5_000L
             monitor.tick()
-            assertThat(equity.get()).isEqualByComparingTo("10000")
+            if (failure < 2) {
+                assertThat(equity.get()).isEqualByComparingTo("10000")
+            } else {
+                assertThat(equity.get()).isNull()
+            }
         }
 
         assertThat(alerts).containsExactly(3 to 15_000L)

@@ -147,6 +147,11 @@ class TradingPipeline(
 ) {
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
     private val exitHookManager = ExitHookManager(persistor)
+    private val dslStrategiesById: Map<String, com.qkt.dsl.compile.DslCompiledStrategy> =
+        strategies
+            .mapNotNull { (id, strategy) ->
+                (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)?.let { id to it }
+            }.toMap()
 
     /**
      * Apply the book scale to a new order: a scale of exactly 1.0 and risk-reducing orders pass
@@ -205,21 +210,19 @@ class TradingPipeline(
             // daemon's risk map doesn't grow unbounded.
             trackRisk = mode == Mode.BACKTEST,
             onProtectionFailure = onProtectionFailure,
+            engineHeldSubmissionBlockReason = { request ->
+                when {
+                    !riskState.isStrategyHalted(request.strategyId) -> null
+                    com.qkt.risk.isRiskReducing(request, positions) -> null
+                    else -> "halted: ${riskState.haltReasonFor(request.strategyId) ?: "halted"}"
+                }
+            },
+            isRiskReducingForHalt = { request ->
+                com.qkt.risk.isRiskReducing(request, positions)
+            },
         )
     val latchManager: LatchManager =
         LatchManager(
-            emit = { req0 ->
-                val req = applyBookScale(req0)
-                if (req == null) {
-                    bus.publish(com.qkt.events.RiskRejectedEvent(req0, "book de-risk: new risk suppressed"))
-                } else {
-                    when (val decision = riskEngine.approve(req)) {
-                        is com.qkt.risk.Decision.Approve -> bus.publish(com.qkt.events.OrderEvent(req))
-                        is com.qkt.risk.Decision.Reject ->
-                            bus.publish(com.qkt.events.RiskRejectedEvent(req, decision.reason))
-                    }
-                }
-            },
             clock = clock,
         )
 
@@ -288,18 +291,39 @@ class TradingPipeline(
                         ),
                     book = bookBalance,
                 )
+            lateinit var emit: (com.qkt.strategy.Signal) -> Unit
             val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
                 val t0 = if (latencyEnabled) System.nanoTime() else 0L
                 bus.publish(SignalEvent(sig, strategyId = strategyId))
-                if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
+                if (sig is com.qkt.strategy.Signal.Suppressed) {
+                    ctx.submissions.recordSuppressed()
+                    bus.publish(
+                        com.qkt.events.SignalSuppressedEvent(
+                            signal = sig,
+                            strategyId = strategyId,
+                            reason = sig.reason,
+                        ),
+                    )
+                } else if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
                     orderManager.cancelPendingForSymbol(sig.symbol)
                     ctx.submissions.recordAccepted()
                 } else if (sig is com.qkt.strategy.Signal.ArmLatch) {
-                    latchManager.arm(sig.compiled, sig.ec)
+                    latchManager.arm(
+                        sig.compiled,
+                        sig.ec,
+                        emit = { request ->
+                            emit(
+                                com.qkt.strategy.Signal
+                                    .Submit(request),
+                            )
+                        },
+                    )
                     ctx.submissions.recordAccepted()
                 } else {
                     val built = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
                     if (built != null) {
+                        (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)
+                            ?.onOrderSubmitted(sig, built.id)
                         val request = applyBookScale(built)
                         if (request == null) {
                             ctx.submissions.recordSuppressed()
@@ -340,7 +364,7 @@ class TradingPipeline(
                     )
                 }
             }
-            val emit: (com.qkt.strategy.Signal) -> Unit = { sig ->
+            emit = { sig ->
                 if (gate()) {
                     rawEmit(sig)
                 } else {
@@ -566,20 +590,26 @@ class TradingPipeline(
                 Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
             bus.publish(TradeEvent(trade))
             onFilled(trade, accountRealized, e.strategyId)
+            dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> exitHookManager.onRejected(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
+            dslStrategiesById[e.strategyId]?.onOrderRejected(e.clientOrderId)
             strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             exitHookManager.onCancelled(e)
+            dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
             // The losing leg of an OCO bracket cancels once its sibling fills; drop its
             // pre-registered open/close intent so the pending maps don't leak.
             strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
-        bus.subscribe<RiskRejectedEvent> { e -> onRejected(e) }
+        bus.subscribe<RiskRejectedEvent> { e ->
+            dslStrategiesById[e.request.strategyId]?.onOrderRejected(e.request.id)
+            onRejected(e)
+        }
         bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
     }
 
@@ -669,6 +699,7 @@ class TradingPipeline(
      */
     fun scheduleHeartbeat(nowMs: Long) {
         orderManager.persistTrailingStateIfDirty()
+        orderManager.retryHaltCancellations(nowMs)
         scheduleRunner.tick(nowMs)
         sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
@@ -677,6 +708,9 @@ class TradingPipeline(
         windowAggregator?.flushClosed(nowMs)
         candleHub.flushClosed(nowMs)
     }
+
+    /** Late ticks rejected after their candle was finalized. */
+    fun droppedLateTicks(): Long = windowAggregator?.droppedLateTicks ?: 0L
 
     fun ingestForWarmup(tick: Tick) {
         bus.publish(WarmupTickEvent(tick))
