@@ -149,9 +149,11 @@ These functions/properties act like read-only stream-field accesses:
 | `POSITION.<stream>.pnl` | Strategy P&L for the stream |
 | `POSITION.<stream>.entry_price` | Average entry price, or `null` while flat |
 | `POSITION.<stream>.holding_duration` | How long the position has been open (seconds) |
+| `OPEN_ORDERS.<stream>` | Active risk-increasing entry-order count for this strategy and stream |
 
 ```qkt
 WHEN POSITION.btc = 0
+ AND OPEN_ORDERS.btc = 0
  AND account.equity > 1000
 THEN BUY btc SIZING 0.1
 
@@ -186,7 +188,9 @@ THEN CLOSE gold
 The most common entry guard pattern:
 
 ```qkt
-WHEN <signal_condition> AND POSITION.btc = 0
+WHEN <signal_condition>
+ AND POSITION.btc = 0
+ AND OPEN_ORDERS.btc = 0
 THEN BUY btc ...                  -- enter only when flat
 ```
 
@@ -197,7 +201,9 @@ WHEN <exit_condition> AND POSITION.btc > 0
 THEN CLOSE btc                    -- exit only when long
 ```
 
-Without the position guard, the entry rule could re-fire on subsequent ticks if the signal stays true (you'd pyramid in). Always guard entries with position state unless you specifically want to add to a position.
+`POSITION.btc = 0` prevents a second entry after a fill. `OPEN_ORDERS.btc = 0` prevents another entry while a limit, stop, trailing, or other risk-increasing entry is still active. The count is scoped to the current strategy and symbol, includes partially filled entries, and returns to zero on fill, cancellation, rejection, or expiry. Protective and other risk-reducing exits are excluded, including an OTO child after its entry parent fills.
+
+Without these guards, the entry rule can re-fire after its condition becomes false and true again, creating a second pending order or pyramiding after a fill. Omit a guard only when that behavior is intentional.
 
 ## Lookback (`[N]`)
 

@@ -497,6 +497,12 @@ class ExprCompiler(
                         .lastTradeAtFor(symbol)
                         ?.let { Value.Num(BigDecimal.valueOf(it)) } ?: Value.Undefined
                 }
+            StateSource.OPEN_ORDERS ->
+                CompiledExpr { ctx ->
+                    val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
+                    val count = ctx.strategyContext.openOrders.entryCountFor(symbol)
+                    Value.Num(BigDecimal.valueOf(count.toLong()))
+                }
             else -> throw IllegalArgumentException("StateAccessor source ${ref.source} is not supported")
         }
 

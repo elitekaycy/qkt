@@ -56,6 +56,7 @@ class ExpressiveCoreBuildersTest {
         val btc = StreamRef("btc")
         assertThat(position(btc)).isEqualTo(PositionRef("btc"))
         assertThat(positionAvgPrice(btc)).isEqualTo(StateAccessor(StateSource.POSITION_AVG_PRICE, "btc"))
+        assertThat(openOrders(btc)).isEqualTo(StateAccessor(StateSource.OPEN_ORDERS, "btc"))
     }
 
     @Test

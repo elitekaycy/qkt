@@ -39,6 +39,7 @@ import com.qkt.positions.StrategyPositionViewImpl
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
+import com.qkt.strategy.OpenOrderView
 import com.qkt.strategy.QuoteToAccountRateProvider
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
@@ -289,6 +290,7 @@ class TradingPipeline(
                             pacerCooldownDurationMsFor?.invoke(strategyId) ?: pacerCooldownDurationMs,
                             pacerCooldownAfterConsecutiveFor?.invoke(strategyId) ?: pacerCooldownAfterConsecutive,
                         ),
+                    openOrders = OpenOrderView { symbol -> orderManager.activeEntryOrderCount(strategyId, symbol) },
                     book = bookBalance,
                 )
             lateinit var emit: (com.qkt.strategy.Signal) -> Unit
