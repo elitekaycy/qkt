@@ -32,6 +32,8 @@ Changes flow one way: `feature -> dev -> testing -> main`.
 - Use imperative, lowercase subjects, max 70 chars, no trailing period.
 - PRs need a clear summary, changes, tests, docs, compatibility, out-of-scope,
   and risk notes.
+- Solo-maintained PRs may merge once required checks pass and review threads are
+  resolved; there is no time-based minimum before merge.
 
 ## Architecture Invariants
 
