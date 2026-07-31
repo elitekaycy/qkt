@@ -1,4 +1,7 @@
-.PHONY: up down restart logs status list verify-live preflight deploy resync resync-dry-run reconcile stop audit-ticks shell
+.PHONY: up down restart logs status list verify-live preflight approve approve-all deploy resync resync-dry-run reconcile stop audit-ticks shell
+
+PROMOTION_ACTOR ?= operator
+PROMOTION_REASON ?= operator approved production deployment
 
 # Bring up qkt + mt5-gateway. First boot can take several minutes while MT5 initializes under Wine.
 up:
@@ -32,8 +35,18 @@ preflight:
 	@test -n "$(STRAT)" || (echo "usage: make preflight STRAT=<name>"; exit 1)
 	docker compose exec qkt qkt preflight /strategies/$(STRAT).qkt --production --config /etc/qkt/qkt.config.yaml
 
+# Record explicit operator approval for one strategy before deployment.
+approve:
+	@test -n "$(STRAT)" || (echo "usage: make approve STRAT=<name>"; exit 1)
+	docker compose exec qkt qkt promotion approve /strategies/$(STRAT).qkt --as $(STRAT) --state production --reason "$(PROMOTION_REASON)" --actor "$(PROMOTION_ACTOR)"
+
+# Bootstrap promotion records before first startup, including portfolio roots.
+approve-all:
+	docker compose run --rm init-perms
+	docker compose run --rm --no-deps -e QKT_PROMOTION_ACTOR="$(PROMOTION_ACTOR)" -e QKT_PROMOTION_REASON="$(PROMOTION_REASON)" --entrypoint /bin/sh qkt /deploy-scripts/approve-promotions.sh
+
 # Hot-deploy a strategy. Usage: make deploy STRAT=ema_cross
-deploy:
+deploy: approve
 	@test -n "$(STRAT)" || (echo "usage: make deploy STRAT=<name>"; exit 1)
 	docker compose exec qkt qkt deploy /strategies/$(STRAT).qkt --as $(STRAT)
 

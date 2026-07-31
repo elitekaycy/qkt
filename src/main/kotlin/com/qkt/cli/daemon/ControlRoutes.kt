@@ -233,14 +233,16 @@ object ControlRoutes {
             val uptime = now - h.startedAt.toEpochMilli()
             val state = if (h.isRunning()) "running" else "stopped"
             val streamBrokersJson = renderStreamBrokers(h.live.streamBrokers())
+            val meta = h.childMeta
             val promotionJson =
                 renderPromotionFields(
-                    name = h.name,
-                    sourceFile = h.sourceFile,
+                    // A portfolio is deployed and promoted as one unit. Its children inherit the
+                    // parent's gate result instead of requiring synthetic per-alias approvals.
+                    name = meta?.parent ?: h.name,
+                    sourceFile = h.sourceFile?.takeIf { meta == null },
                     store = promotionStore,
                     gates = promotionGates,
                 )
-            val meta = h.childMeta
             if (meta != null) {
                 val gateState =
                     when {
