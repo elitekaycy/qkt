@@ -42,11 +42,12 @@ class PortfolioDeployerBacktestParityTest {
         val registry = unitRegistry()
         val bookRisk = BookRiskConfig(allocation = Allocation())
         val deployedCompiled = PortfolioLoader.load(portfolioFile)
+        val sources = mutableListOf<HeldSource>()
         val deployer =
             PortfolioDeployer(
                 stateDir = StateDir.resolve(tmp.resolve("state").toString()),
                 marketSourceProvider = { requested ->
-                    HeldSource(ticks.filter { it.symbol in requested })
+                    HeldSource(ticks.filter { it.symbol in requested }).also(sources::add)
                 },
                 instrumentRegistry = registry,
                 bookRiskConfig = bookRisk,
@@ -56,9 +57,14 @@ class PortfolioDeployerBacktestParityTest {
             )
         val record = deployer.deploy("parity_book", deployedCompiled)
         try {
-            val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
-            while (record.children.any { it.live.recentTrades().isEmpty() } && System.nanoTime() < deadline) {
-                Thread.sleep(10L)
+            assertThat(sources).hasSize(record.children.size + 1)
+            sources.last().release()
+            awaitCondition {
+                record.children.all { it.childMeta?.gateActive?.get() == true }
+            }
+            for ((child, source) in record.children.zip(sources.dropLast(1))) {
+                source.release()
+                awaitCondition { child.live.recentTrades().isNotEmpty() }
             }
 
             val replayCompiled = PortfolioLoader.load(portfolioFile)
@@ -149,21 +155,32 @@ class PortfolioDeployerBacktestParityTest {
     private class HeldSource(
         private val ticks: List<Tick>,
     ) : MarketSource {
+        private val released = CountDownLatch(1)
+
         override val name = "portfolio-parity"
         override val capabilities = setOf(MarketSourceCapability.LIVE_TICKS)
 
         override fun supports(symbol: String) = true
 
-        override fun liveTicks(symbols: List<String>): TickFeed = HeldFeed(ticks)
+        override fun liveTicks(symbols: List<String>): TickFeed = HeldFeed(ticks, released)
+
+        fun release() {
+            released.countDown()
+        }
     }
 
     private class HeldFeed(
         private val ticks: List<Tick>,
+        private val released: CountDownLatch,
     ) : TickFeed {
         private val index = AtomicInteger()
         private val closed = CountDownLatch(1)
 
         override fun next(): Tick? {
+            while (released.count > 0L && closed.count > 0L) {
+                released.await(10L, TimeUnit.MILLISECONDS)
+            }
+            if (closed.count == 0L) return null
             val next = index.getAndIncrement()
             if (next < ticks.size) return ticks[next]
             closed.await(30, TimeUnit.SECONDS)
@@ -173,5 +190,13 @@ class PortfolioDeployerBacktestParityTest {
         override fun close() {
             closed.countDown()
         }
+    }
+
+    private fun awaitCondition(condition: () -> Boolean) {
+        val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
+        while (!condition() && System.nanoTime() < deadline) {
+            Thread.sleep(10L)
+        }
+        assertThat(condition()).isTrue()
     }
 }
