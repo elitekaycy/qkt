@@ -101,6 +101,7 @@ make status                     # deep daemon and loaded-strategy health
 make list                       # show deployed strategies
 make verify-live                # CI-safe live verification
 make preflight STRAT=ema_cross  # production preflight
+make approve-all                # approve all strategies before first startup
 make deploy STRAT=ema_cross     # deploy strategies/ema_cross.qkt
 make resync-dry-run STRAT=ema_cross
 make resync STRAT=ema_cross
@@ -129,7 +130,8 @@ ssh -L 8420:127.0.0.1:8420 <user>@<host>
 1. Backtest, review, and validate the strategy outside this deployment repo.
 2. Copy the live-ready `.qkt` file into `strategies/`.
 3. Run `make preflight STRAT=<name>`.
-4. Deploy with `make deploy STRAT=<name>`.
+4. Deploy with `make deploy STRAT=<name>`; this records the operator promotion
+   approval before deployment.
 5. Confirm `make verify-live`, ticks, logs, and reconcile output.
 6. For edits, run `make resync-dry-run`, then `make resync`, then `make reconcile`.
 
