@@ -372,11 +372,9 @@ class FileStatePersistor(
         strategyId: String,
         orders: Map<String, OrderRequest>,
     ) {
-        // Composite shapes (OCO, Bracket, etc.) are filtered upstream by [com.qkt.app.OrderManager]
-        // because their recovery flows through dedicated channels (oco-legs.json, bracket pairs).
-        // If one still arrives here, [OrderRequestDto.fromDomain] returns null and the entry is
-        // silently dropped — this path stays quiet so the operational log doesn't fill with
-        // false positives during a healthy run.
+        // Composite shapes with dedicated recovery channels are filtered upstream by
+        // [com.qkt.app.OrderManager]. Pre-fill Brackets are retained here because their
+        // entry-to-exit arming state must survive a restart.
         val entries = orders.mapNotNull { (cid, req) -> OrderRequestDto.fromDomain(req)?.let { cid to it } }
         val dto =
             PendingOrdersDto(
@@ -754,6 +752,11 @@ private data class OrderRequestDto(
     val trailAmount: String? = null,
     val trailMode: String? = null,
     val limitOffset: String? = null,
+    val entry: OrderRequestDto? = null,
+    val takeProfit: String? = null,
+    val stopLossType: String? = null,
+    val takeProfitAst: ChildPriceAstDto? = null,
+    val stopLossAst: ChildPriceAstDto? = null,
 ) {
     fun toDomain(): com.qkt.execution.OrderRequest {
         val sideEnum =
@@ -956,6 +959,92 @@ private data class OrderRequestDto(
                     strategyId = strategyId,
                     expiresAt = expiresAt,
                 )
+            "Bracket" -> {
+                val stopLoss =
+                    when (val stopType = requireNotNull(stopLossType) { "Bracket DTO missing stopLossType" }) {
+                        "Fixed" ->
+                            com.qkt.execution.StopLossSpec.Fixed(
+                                java.math.BigDecimal(
+                                    requireNotNull(stopPrice) { "Fixed bracket DTO missing stopPrice" },
+                                ),
+                            )
+                        "ArmedTrail" ->
+                            com.qkt.execution.StopLossSpec.ArmedTrail(
+                                trailDistance =
+                                    java.math.BigDecimal(
+                                        requireNotNull(trailDistance) {
+                                            "ArmedTrail bracket DTO missing trailDistance"
+                                        },
+                                    ),
+                                mfeThreshold =
+                                    java.math.BigDecimal(
+                                        requireNotNull(mfeThreshold) {
+                                            "ArmedTrail bracket DTO missing mfeThreshold"
+                                        },
+                                    ),
+                            )
+                        "SteppedStop" ->
+                            com.qkt.execution.StopLossSpec.SteppedStop(
+                                initialDistance =
+                                    java.math.BigDecimal(
+                                        requireNotNull(initialDistance) {
+                                            "SteppedStop bracket DTO missing initialDistance"
+                                        },
+                                    ),
+                                steps =
+                                    requireNotNull(steps) { "SteppedStop bracket DTO missing steps" }.map {
+                                        com.qkt.execution.StopLossSpec.Step(
+                                            mfeThreshold = java.math.BigDecimal(it.mfeThreshold),
+                                            profitDistance = java.math.BigDecimal(it.profitDistance),
+                                        )
+                                    },
+                            )
+                        "TimeTighten" ->
+                            com.qkt.execution.StopLossSpec.TimeTighten(
+                                initialDistance =
+                                    java.math.BigDecimal(
+                                        requireNotNull(initialDistance) {
+                                            "TimeTighten bracket DTO missing initialDistance"
+                                        },
+                                    ),
+                                tightenBy =
+                                    java.math.BigDecimal(
+                                        requireNotNull(tightenBy) {
+                                            "TimeTighten bracket DTO missing tightenBy"
+                                        },
+                                    ),
+                                intervalMs =
+                                    requireNotNull(intervalMs) {
+                                        "TimeTighten bracket DTO missing intervalMs"
+                                    },
+                                floorDistance =
+                                    java.math.BigDecimal(
+                                        requireNotNull(floorDistance) {
+                                            "TimeTighten bracket DTO missing floorDistance"
+                                        },
+                                    ),
+                            )
+                        else -> error("Unknown bracket stop-loss type in persisted state: $stopType")
+                    }
+                com.qkt.execution.OrderRequest.Bracket(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    entry = requireNotNull(entry) { "Bracket DTO missing entry" }.toDomain(),
+                    takeProfit =
+                        java.math.BigDecimal(
+                            requireNotNull(takeProfit) { "Bracket DTO missing takeProfit" },
+                        ),
+                    stopLoss = stopLoss,
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                    takeProfitAst = takeProfitAst?.toDomain(),
+                    stopLossAst = stopLossAst?.toDomain(),
+                )
+            }
             else -> error("Unknown OrderRequest type in persisted state: $type")
         }
     }
@@ -1111,15 +1200,189 @@ private data class OrderRequestDto(
                         limitOffset = req.limitOffset.toPlainString(),
                         expiresAt = req.expiresAt,
                     )
+                is com.qkt.execution.OrderRequest.Bracket -> {
+                    val stopFields =
+                        when (val stop = req.stopLoss) {
+                            is com.qkt.execution.StopLossSpec.Fixed ->
+                                BracketStopFields(
+                                    type = "Fixed",
+                                    stopPrice = stop.price.toPlainString(),
+                                )
+                            is com.qkt.execution.StopLossSpec.ArmedTrail ->
+                                BracketStopFields(
+                                    type = "ArmedTrail",
+                                    trailDistance = stop.trailDistance.toPlainString(),
+                                    mfeThreshold = stop.mfeThreshold.toPlainString(),
+                                )
+                            is com.qkt.execution.StopLossSpec.SteppedStop ->
+                                BracketStopFields(
+                                    type = "SteppedStop",
+                                    initialDistance = stop.initialDistance.toPlainString(),
+                                    steps =
+                                        stop.steps.map {
+                                            StopStepDto(
+                                                mfeThreshold = it.mfeThreshold.toPlainString(),
+                                                profitDistance = it.profitDistance.toPlainString(),
+                                            )
+                                        },
+                                )
+                            is com.qkt.execution.StopLossSpec.TimeTighten ->
+                                BracketStopFields(
+                                    type = "TimeTighten",
+                                    initialDistance = stop.initialDistance.toPlainString(),
+                                    tightenBy = stop.tightenBy.toPlainString(),
+                                    intervalMs = stop.intervalMs,
+                                    floorDistance = stop.floorDistance.toPlainString(),
+                                )
+                        }
+                    OrderRequestDto(
+                        type = "Bracket",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        expiresAt = req.expiresAt,
+                        entry =
+                            requireNotNull(fromDomain(req.entry)) {
+                                "Bracket entry ${req.entry::class.simpleName} cannot be persisted"
+                            },
+                        takeProfit = req.takeProfit.toPlainString(),
+                        stopLossType = stopFields.type,
+                        stopPrice = stopFields.stopPrice,
+                        trailDistance = stopFields.trailDistance,
+                        mfeThreshold = stopFields.mfeThreshold,
+                        initialDistance = stopFields.initialDistance,
+                        steps = stopFields.steps,
+                        tightenBy = stopFields.tightenBy,
+                        intervalMs = stopFields.intervalMs,
+                        floorDistance = stopFields.floorDistance,
+                        takeProfitAst = req.takeProfitAst?.let(ChildPriceAstDto::fromDomain),
+                        stopLossAst = req.stopLossAst?.let(ChildPriceAstDto::fromDomain),
+                    )
+                }
                 // Composite variants are persisted by their dedicated paths (OCO legs,
                 // bracket pairs, stack tiers), not as flat pending orders — skip them here.
                 is com.qkt.execution.OrderRequest.StandaloneOCO,
                 is com.qkt.execution.OrderRequest.OTO,
-                is com.qkt.execution.OrderRequest.Bracket,
                 is com.qkt.execution.OrderRequest.ScaleOut,
                 is com.qkt.execution.OrderRequest.TimeExit,
                 is com.qkt.execution.OrderRequest.Stack,
                 -> null
+            }
+    }
+}
+
+private data class BracketStopFields(
+    val type: String,
+    val stopPrice: String? = null,
+    val trailDistance: String? = null,
+    val mfeThreshold: String? = null,
+    val initialDistance: String? = null,
+    val steps: List<StopStepDto>? = null,
+    val tightenBy: String? = null,
+    val intervalMs: Long? = null,
+    val floorDistance: String? = null,
+)
+
+@Serializable
+private data class ChildPriceAstDto(
+    val type: String,
+    val first: FillAnchorExprDto,
+    val second: FillAnchorExprDto? = null,
+) {
+    fun toDomain(): com.qkt.dsl.ast.ChildPriceAst =
+        when (type) {
+            "At" ->
+                com.qkt.dsl.ast
+                    .ChildAt(first.toDomain())
+            "By" ->
+                com.qkt.dsl.ast
+                    .ChildBy(first.toDomain())
+            "Pct" ->
+                com.qkt.dsl.ast
+                    .ChildPct(first.toDomain())
+            "Rr" ->
+                com.qkt.dsl.ast
+                    .ChildRr(first.toDomain())
+            "ArmedTrail" ->
+                com.qkt.dsl.ast.ChildArmedTrail(
+                    trailDistance = first.toDomain(),
+                    mfeThreshold =
+                        requireNotNull(second) {
+                            "ArmedTrail child-price DTO missing mfeThreshold"
+                        }.toDomain(),
+                )
+            else -> error("Unknown bracket child-price type in persisted state: $type")
+        }
+
+    companion object {
+        fun fromDomain(value: com.qkt.dsl.ast.ChildPriceAst): ChildPriceAstDto =
+            when (value) {
+                is com.qkt.dsl.ast.ChildAt ->
+                    ChildPriceAstDto("At", FillAnchorExprDto.fromDomain(value.price))
+                is com.qkt.dsl.ast.ChildBy ->
+                    ChildPriceAstDto("By", FillAnchorExprDto.fromDomain(value.distance))
+                is com.qkt.dsl.ast.ChildPct ->
+                    ChildPriceAstDto("Pct", FillAnchorExprDto.fromDomain(value.percent))
+                is com.qkt.dsl.ast.ChildRr ->
+                    ChildPriceAstDto("Rr", FillAnchorExprDto.fromDomain(value.multiplier))
+                is com.qkt.dsl.ast.ChildArmedTrail ->
+                    ChildPriceAstDto(
+                        "ArmedTrail",
+                        FillAnchorExprDto.fromDomain(value.trailDistance),
+                        FillAnchorExprDto.fromDomain(value.mfeThreshold),
+                    )
+            }
+    }
+}
+
+@Serializable
+private data class FillAnchorExprDto(
+    val type: String,
+    val value: String? = null,
+    val op: String? = null,
+    val lhs: FillAnchorExprDto? = null,
+    val rhs: FillAnchorExprDto? = null,
+) {
+    fun toDomain(): com.qkt.dsl.ast.ExprAst =
+        when (type) {
+            "NumLit" ->
+                com.qkt.dsl.ast.NumLit(
+                    java.math.BigDecimal(requireNotNull(value) { "NumLit fill-anchor DTO missing value" }),
+                )
+            "Entry" -> com.qkt.dsl.ast.StackEntryRef
+            "BinaryOp" ->
+                com.qkt.dsl.ast.BinaryOp(
+                    op =
+                        com.qkt.dsl.ast.BinOp.valueOf(
+                            requireNotNull(op) { "BinaryOp fill-anchor DTO missing op" },
+                        ),
+                    lhs = requireNotNull(lhs) { "BinaryOp fill-anchor DTO missing lhs" }.toDomain(),
+                    rhs = requireNotNull(rhs) { "BinaryOp fill-anchor DTO missing rhs" }.toDomain(),
+                )
+            else -> error("Unknown fill-anchor expression type in persisted state: $type")
+        }
+
+    companion object {
+        fun fromDomain(value: com.qkt.dsl.ast.ExprAst): FillAnchorExprDto =
+            when (value) {
+                is com.qkt.dsl.ast.NumLit ->
+                    FillAnchorExprDto("NumLit", value = value.value.toPlainString())
+                com.qkt.dsl.ast.StackEntryRef -> FillAnchorExprDto("Entry")
+                is com.qkt.dsl.ast.BinaryOp ->
+                    FillAnchorExprDto(
+                        type = "BinaryOp",
+                        op = value.op.name,
+                        lhs = fromDomain(value.lhs),
+                        rhs = fromDomain(value.rhs),
+                    )
+                else ->
+                    error(
+                        "Unsupported persisted fill-anchor expression ${value::class.simpleName}",
+                    )
             }
     }
 }

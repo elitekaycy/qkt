@@ -1,5 +1,7 @@
 package com.qkt.cli.daemon.portfolio
 
+import com.qkt.accounting.AccountCurrency
+import com.qkt.accounting.AccountingConfig
 import com.qkt.app.BrokerFactory
 import com.qkt.broker.Broker
 import com.qkt.broker.PaperBroker
@@ -39,6 +41,109 @@ import org.junit.jupiter.api.io.TempDir
  * stop tears the whole thing down cleanly.
  */
 class PortfolioDeployerE2ETest {
+    @Test
+    fun `always-run book risk samples portfolio candles and children subscribe FX conversion symbols`(
+        @TempDir tmp: Path,
+    ) {
+        val child = tmp.resolve("child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY parity_child VERSION 1
+            SYMBOLS
+                x = BACKTEST:X EVERY 1m
+            RULES
+                WHEN x.close > 0 THEN BUY x SIZING 1
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO parity_book VERSION 1 CAPITAL 10000
+            SYMBOLS
+                x = BACKTEST:X EVERY 1m
+            IMPORT 'child.qkt' AS child
+            RULES
+                RUN child WEIGHT 1
+            """.trimIndent(),
+        )
+        val requested = java.util.concurrent.CopyOnWriteArrayList<List<String>>()
+        val deployer =
+            PortfolioDeployer(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = { symbols ->
+                    requested.add(symbols)
+                    FakeSource(emptyList())
+                },
+                bookRiskConfig =
+                    com.qkt.risk.book.BookRiskConfig(
+                        allocation =
+                            com.qkt.risk.book
+                                .Allocation(),
+                    ),
+                accountingConfig =
+                    AccountingConfig(
+                        accountCurrency = AccountCurrency("USD"),
+                        symbols = mapOf("JPYUSD" to "EXNESS:USDJPY"),
+                    ),
+            )
+
+        val record = deployer.deploy("parity_book", PortfolioLoader.load(portfolio))
+        try {
+            assertThat(requested)
+                .contains(listOf("BACKTEST:X", "EXNESS:USDJPY"))
+                .contains(listOf("BACKTEST:X"))
+        } finally {
+            record.supervisor.stop()
+            for (deployedChild in record.children) runCatching { deployedChild.close() }
+        }
+    }
+
+    @Test
+    fun `book annualization uses the configured symbol calendar`(
+        @TempDir tmp: Path,
+    ) {
+        val child = tmp.resolve("child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY calendar_child VERSION 1
+            SYMBOLS
+                btc = BYBIT_LINEAR:BTCUSDT EVERY 1h
+            RULES
+                WHEN btc.close > 0 THEN BUY btc SIZING 1
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO calendar_book VERSION 1
+            SYMBOLS
+                btc = BYBIT_LINEAR:BTCUSDT EVERY 1h
+            IMPORT 'child.qkt' AS child
+            RULES
+                RUN child
+            """.trimIndent(),
+        )
+        val deployer =
+            PortfolioDeployer(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = { FakeSource(emptyList()) },
+                calendar =
+                    com.qkt.common.TradingCalendar
+                        .fxDefault(),
+                calendarFor = {
+                    com.qkt.common.TradingCalendar
+                        .crypto()
+                },
+            )
+
+        assertThat(deployer.bookAnnualization(PortfolioLoader.load(portfolio)))
+            .isEqualByComparingTo("8766")
+    }
+
     private class BoundedFeed(
         private val ticks: List<Tick>,
         private val delayMs: Long = 0L,
@@ -92,12 +197,27 @@ class PortfolioDeployerE2ETest {
 
     private class ManualFeed : TickFeed {
         private val queue = LinkedBlockingQueue<Tick>()
+        private val readCalls =
+            java.util.concurrent.atomic
+                .AtomicInteger()
 
         fun offer(tick: Tick) {
             queue.put(tick)
         }
 
+        fun awaitReadCalls(
+            expected: Int,
+            timeoutMs: Long = 2_000L,
+        ): Boolean {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (readCalls.get() < expected && System.currentTimeMillis() < deadline) {
+                Thread.sleep(5L)
+            }
+            return readCalls.get() >= expected
+        }
+
         override fun next(): Tick? {
+            readCalls.incrementAndGet()
             val tick = queue.take()
             return tick.takeUnless { it.symbol == CLOSE_SYMBOL }
         }
@@ -483,6 +603,155 @@ class PortfolioDeployerE2ETest {
         }
 
         assertThat(record.supervisor.running).isFalse
+    }
+
+    @Test
+    fun `losing live fill shrinks the next order and book exposure rejects the following order`(
+        @TempDir tmp: Path,
+    ) {
+        val child = tmp.resolve("risk-child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY risk_child VERSION 1
+            SYMBOLS
+                x = PAPER:X EVERY 1m
+            RULES
+                WHEN x.close = 100 THEN BUY x SIZING 1
+                WHEN x.close = 90 THEN SELL x SIZING 1
+                WHEN x.close = 91 THEN BUY x SIZING 1
+                WHEN x.close = 92 THEN BUY x SIZING 3
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("risk-book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO risk_book VERSION 1 CAPITAL 1000
+            SYMBOLS
+                x = PAPER:X EVERY 1m
+            IMPORT 'risk-child.qkt' AS child
+            RULES
+                WHEN x.close > 0 RUN child WEIGHT 1.0
+            """.trimIndent(),
+        )
+        val childFeed = ManualFeed()
+        val bookFeed = ManualFeed()
+
+        fun source(feed: ManualFeed) =
+            object : MarketSource {
+                override val name = "Manual"
+                override val capabilities = setOf(MarketSourceCapability.LIVE_TICKS)
+
+                override fun supports(symbol: String): Boolean = true
+
+                override fun liveTicks(symbols: List<String>): TickFeed = feed
+            }
+        val sourceCalls =
+            java.util.concurrent.atomic
+                .AtomicInteger()
+        val instruments =
+            object : com.qkt.instrument.InstrumentRegistry {
+                override fun lookup(qktSymbol: String) =
+                    com.qkt.instrument.InstrumentMeta(
+                        qktSymbol = qktSymbol,
+                        contractSize = BigDecimal.ONE,
+                        volumeStep = BigDecimal("0.1"),
+                        volumeMin = BigDecimal("0.1"),
+                        volumeMax = null,
+                        pointSize = BigDecimal("0.01"),
+                        digits = 2,
+                        tradeStopsLevelPoints = 0,
+                    )
+            }
+        val deployer =
+            PortfolioDeployer(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = {
+                    if (sourceCalls.getAndIncrement() == 0) source(childFeed) else source(bookFeed)
+                },
+                instrumentRegistry = instruments,
+                maxDailyLoss = BigDecimal.ZERO,
+                marginFloorPct = BigDecimal.ZERO,
+                riskIntervalMs = 10L,
+                clock = com.qkt.common.FixedClock(1_700_000_000_000L),
+                bookRiskConfig =
+                    com.qkt.risk.book.BookRiskConfig(
+                        capital = BigDecimal("1000"),
+                        limits =
+                            com.qkt.risk.book.BookLimits(
+                                maxGrossExposure = BigDecimal("0.15"),
+                            ),
+                        deRisk =
+                            com.qkt.risk.book.DeRisk(
+                                listOf(
+                                    com.qkt.risk.book.Rung(
+                                        drawdown = BigDecimal("0.005"),
+                                        factor = BigDecimal("0.5"),
+                                    ),
+                                ),
+                            ),
+                    ),
+            )
+        val record = deployer.deploy("risk_book", PortfolioLoader.load(portfolio))
+        val live = record.children.single().live
+
+        try {
+            var bookTimestamp = 1_700_000_000_000L
+            bookFeed.offer(Tick("PAPER:X", BigDecimal("100"), bookTimestamp))
+            bookTimestamp += 60_001L
+            bookFeed.offer(Tick("PAPER:X", BigDecimal("100"), bookTimestamp))
+            assertThat(bookFeed.awaitReadCalls(3)).isTrue()
+            assertThat(
+                record.supervisor.children
+                    .single()
+                    .effectiveActive,
+            ).isTrue()
+
+            var timestamp = 1_700_000_000_000L
+            var offeredTicks = 0
+
+            fun offerAndAwait(
+                price: String,
+                expectedTrades: Int,
+            ) {
+                childFeed.offer(Tick("PAPER:X", BigDecimal(price), timestamp))
+                offeredTicks++
+                timestamp += 60_001L
+                val deadline = System.currentTimeMillis() + 2_000L
+                while (
+                    (
+                        live.recentTrades().size < expectedTrades ||
+                            !childFeed.awaitReadCalls(offeredTicks + 1, timeoutMs = 0L)
+                    ) &&
+                    System.currentTimeMillis() < deadline
+                ) {
+                    Thread.sleep(5)
+                }
+            }
+
+            offerAndAwait("100", 0)
+            offerAndAwait("100", 1)
+            offerAndAwait("90", 1)
+            offerAndAwait("90", 2)
+            bookTimestamp += 60_001L
+            bookFeed.offer(Tick("PAPER:X", BigDecimal("100"), bookTimestamp))
+            assertThat(bookFeed.awaitReadCalls(4)).isTrue()
+            offerAndAwait("91", 2)
+            offerAndAwait("91", 3)
+            bookTimestamp += 60_001L
+            bookFeed.offer(Tick("PAPER:X", BigDecimal("91"), bookTimestamp))
+            assertThat(bookFeed.awaitReadCalls(5)).isTrue()
+            offerAndAwait("92", 3)
+            offerAndAwait("92", 3)
+
+            assertThat(live.recentTrades().map { it.quantity.stripTrailingZeros().toPlainString() })
+                .containsExactly("1", "1", "0.5")
+            assertThat(live.positionsFor("risk_book:child").single().quantity).isEqualByComparingTo("0.5")
+        } finally {
+            record.supervisor.stop()
+            for (handle in record.children) runCatching { handle.close() }
+        }
     }
 
     private fun writeBookSizedPortfolio(

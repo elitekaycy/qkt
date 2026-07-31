@@ -102,11 +102,13 @@ class RunCommand(
                 ?.let { TimeWindow.parse(it) }
 
         var accountingConfig = com.qkt.accounting.AccountingConfig()
+        var liveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: run {
                 val configPath = Config.resolvePath(args.option("config"))
                 val cfg = Config.load(configPath)
                 accountingConfig = cfg.accountingConfig
+                liveEquityBasis = cfg.liveEquityBasis
                 val mt5Profiles =
                     try {
                         com.qkt.broker.mt5
@@ -126,10 +128,11 @@ class RunCommand(
                     }
                 MarketSourceFactory.composite(mt5Profiles)
             }
-        val marketSource = effectiveSourceFactory(symbols)
+        val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
+        val marketSource = effectiveSourceFactory(feedSymbols)
 
         println("[INFO] qkt ${BuildInfo.VERSION} — strategy ${ast.name} v${ast.version} — paper-trading")
-        println("[INFO] subscribed: ${symbols.joinToString(", ")}")
+        println("[INFO] subscribed: ${feedSymbols.joinToString(", ")}")
 
         val ring = EventRing(capacity = ringSize)
         val startMs = System.currentTimeMillis()
@@ -140,8 +143,10 @@ class RunCommand(
                 strategies = listOf(ast.name to strategy),
                 source = marketSource,
                 symbols = symbols,
+                feedSymbols = feedSymbols,
                 candleWindow = candleWindow,
                 accountingConfig = accountingConfig,
+                equityBasis = liveEquityBasis,
                 onTrade = { trade, realized, _ ->
                     val ts = Instant.ofEpochMilli(trade.timestamp)
                     println(

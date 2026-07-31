@@ -54,6 +54,33 @@ class BacktestRiskParityTest {
         assertThat(equity.halts.single().reason).contains("strategy daily drawdown")
     }
 
+    @Test
+    fun `portfolio drawdown breach flattens every child on the breach tick`() {
+        val result =
+            Backtest(
+                strategies = listOf("alpha" to buyFirstTick(), "beta" to buyFirstTick()),
+                ticks = listOf(tick("100", 1L), tick("80", 2L), tick("70", 3L)),
+                startingBalance = BigDecimal("100"),
+                startingBalances = mapOf("alpha" to BigDecimal("50"), "beta" to BigDecimal("50")),
+                bookCapital = BigDecimal("100"),
+                dailyDdBasis = DailyDrawdownBasis.EQUITY,
+                haltRules =
+                    HaltRules.standard(
+                        maxDailyLoss = BigDecimal.ZERO,
+                        maxDailyDrawdownPct = BigDecimal("0.10"),
+                    ),
+            ).run()
+
+        assertThat(result.halts).hasSize(1)
+        assertThat(result.finalPositions).isEmpty()
+        assertThat(result.finalPositionsByStrategy.values).allSatisfy { positions ->
+            assertThat(positions).isEmpty()
+        }
+        assertThat(result.trades.filter { it.reducedExposure })
+            .hasSize(2)
+            .allSatisfy { record -> assertThat(record.trade.timestamp).isEqualTo(2L) }
+    }
+
     private fun dailyDrawdownRun(
         basis: DailyDrawdownBasis,
         perStrategy: Boolean,

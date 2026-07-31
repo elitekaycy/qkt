@@ -15,3 +15,6 @@ object Account {
 fun position(stream: StreamRef): ExprAst = PositionRef(stream.alias)
 
 fun positionAvgPrice(stream: StreamRef): ExprAst = StateAccessor(StateSource.POSITION_AVG_PRICE, stream.alias)
+
+/** Active risk-increasing entry-order count for [stream]. */
+fun openOrders(stream: StreamRef): ExprAst = StateAccessor(StateSource.OPEN_ORDERS, stream.alias)

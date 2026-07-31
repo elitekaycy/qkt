@@ -39,6 +39,7 @@ import com.qkt.positions.StrategyPositionViewImpl
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
+import com.qkt.strategy.OpenOrderView
 import com.qkt.strategy.QuoteToAccountRateProvider
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
@@ -289,6 +290,7 @@ class TradingPipeline(
                             pacerCooldownDurationMsFor?.invoke(strategyId) ?: pacerCooldownDurationMs,
                             pacerCooldownAfterConsecutiveFor?.invoke(strategyId) ?: pacerCooldownAfterConsecutive,
                         ),
+                    openOrders = OpenOrderView { symbol -> orderManager.activeEntryOrderCount(strategyId, symbol) },
                     book = bookBalance,
                 )
             lateinit var emit: (com.qkt.strategy.Signal) -> Unit
@@ -437,10 +439,8 @@ class TradingPipeline(
             val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
             val contractSize = instruments.lookup(e.symbol)?.contractSize
             val cs = contractSize ?: BigDecimal.ONE
-            // Commission is a per-fill cash charge (#335). Net it out of the realized PnL the
-            // accumulators see, so equity/drawdown/Sharpe go net; trade-level stats below stay
-            // gross, and the report's commissionPaid bridges the two. Zero unless a backtest
-            // configured a rate, so live and pre-cost-model runs are unchanged.
+            // Commission is a per-fill cash charge (#335). Net it out of realized PnL for
+            // accumulators, close callbacks, and report outcomes so equity and exit statistics agree.
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             // Venue-reported costs (MT5 deal commission/swap, Bybit execFee) net out the
             // same way the modeled commission does — equity and halt inputs must be
@@ -502,7 +502,11 @@ class TradingPipeline(
                     timestamp = e.timestamp,
                 )
             bus.publish(TradeEvent(trade))
-            onFilled(trade, accountRealized, e.strategyId)
+            onFilled(
+                trade,
+                if (reducedExposure) netAccountStratRealized else accountStratRealized,
+                e.strategyId,
+            )
             onAccountedFill(
                 trade,
                 convertedRealized,
@@ -513,6 +517,8 @@ class TradingPipeline(
                     strategyPositionBefore = strategyBefore,
                     strategyPositionAfter = strategyPositions.positionFor(e.strategyId, e.symbol),
                     contractSize = contractSize,
+                    netAccountRealized = netAccountStratRealized,
+                    reducedExposure = reducedExposure,
                 ),
             )
         }
@@ -534,7 +540,9 @@ class TradingPipeline(
                     typedVenueCosts = e.typedVenueCosts,
                     exitReason = e.exitReason,
                 )
-            val cs = instruments.lookup(e.symbol)?.contractSize ?: BigDecimal.ONE
+            val accountBefore = positions.positionFor(e.symbol)
+            val contractSize = instruments.lookup(e.symbol)?.contractSize
+            val cs = contractSize ?: BigDecimal.ONE
             val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             val venueCosts =
@@ -546,14 +554,15 @@ class TradingPipeline(
             val costs = commission.add(venueCosts)
             val rawRealized = positions.applyFill(asFill)
             val realized = rawRealized.multiply(cs)
-            val accountRealized =
+            val convertedRealized =
                 accounting
                     .convertPnl(
                         symbol = e.symbol,
                         nativeAmount = realized,
                         timestamp = e.timestamp,
                         referencePrice = e.price,
-                    ).account.amount
+                    )
+            val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
             val rawStratRealized = strategyPositions.applyFill(asFill)
@@ -589,7 +598,25 @@ class TradingPipeline(
             val trade =
                 Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
             bus.publish(TradeEvent(trade))
-            onFilled(trade, accountRealized, e.strategyId)
+            onFilled(
+                trade,
+                if (reducedExposure) netAccountStratRealized else accountStratRealized,
+                e.strategyId,
+            )
+            onAccountedFill(
+                trade,
+                convertedRealized,
+                e.strategyId,
+                com.qkt.backtest.FillState(
+                    accountPositionBefore = accountBefore,
+                    accountPositionAfter = positions.positionFor(e.symbol),
+                    strategyPositionBefore = strategyBefore,
+                    strategyPositionAfter = strategyPositions.positionFor(e.strategyId, e.symbol),
+                    contractSize = contractSize,
+                    netAccountRealized = netAccountStratRealized,
+                    reducedExposure = reducedExposure,
+                ),
+            )
             dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }

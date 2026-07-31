@@ -58,6 +58,7 @@ class PortfolioDeployer(
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
     private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+    private val liveEquityBasis: com.qkt.app.LiveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE,
     private val maxOrderQty: java.math.BigDecimal =
         com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
     private val maxOrderNotional: java.math.BigDecimal =
@@ -72,6 +73,8 @@ class PortfolioDeployer(
     private val calendar: com.qkt.common.TradingCalendar =
         com.qkt.common.TradingCalendar
             .fxDefault(),
+    /** Resolves the live calendar per routed qkt symbol; null retains [calendar]. */
+    private val calendarFor: ((String) -> com.qkt.common.TradingCalendar)? = null,
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /**
      * Append-only order-event journal root. When non-null, every portfolio child writes
@@ -118,8 +121,7 @@ class PortfolioDeployer(
                     .firstOrNull()
                     ?.timeframe
                     ?.let(TimeWindow::parse)
-            val bookAnnualization =
-                bookWindow?.let(calendar::tradingPeriodsPerYear) ?: java.math.BigDecimal("252")
+            val bookAnnualization = bookAnnualization(compiled)
             val bookController =
                 if (bookRiskConfig != null && bookCapital != null) {
                     com.qkt.risk.book
@@ -178,8 +180,8 @@ class PortfolioDeployer(
                     ast = compiled.ast,
                     children = childWrappers,
                     marketSource =
-                        if (!hasConditionalRules ||
-                            symbols.isEmpty()
+                        if (symbols.isEmpty() ||
+                            (!hasConditionalRules && bookController == null)
                         ) {
                             null
                         } else {
@@ -406,7 +408,8 @@ class PortfolioDeployer(
             compiledChild.ast.streams
                 .map { it.qktSymbol }
                 .distinct()
-        val source = marketSourceProvider(symbols)
+        val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
+        val source = marketSourceProvider(feedSymbols)
         val ring = EventRing(capacity = ringSize)
         val startMs = System.currentTimeMillis()
         val startedAt = Instant.ofEpochMilli(startMs)
@@ -416,6 +419,7 @@ class PortfolioDeployer(
                 .firstOrNull()
                 ?.timeframe
                 ?.let { TimeWindow.parse(it) }
+        val childCalendar = symbols.firstOrNull()?.let(::calendarForSymbol) ?: calendar
 
         // Match the shared-account portfolio backtest: this cap is book-wide, not N
         // independent child budgets that multiply the configured loss limit.
@@ -427,10 +431,12 @@ class PortfolioDeployer(
                 haltRules = haltRules,
                 source = source,
                 symbols = compiledChild.symbols,
+                feedSymbols = feedSymbols,
                 candleWindow = candleWindow,
                 clock = clock,
-                calendar = calendar,
+                calendar = childCalendar,
                 accountingConfig = accountingConfig,
+                equityBasis = liveEquityBasis,
                 // Insights and trading events must use the same canonical child id.
                 // The filename discriminator still maps ':' to '__' for local logs.
                 mdcStrategy = compiledChild.strategyId,
@@ -568,6 +574,15 @@ class PortfolioDeployer(
                 operatorStop = operatorStop,
             )
         return handle to wrapper
+    }
+
+    private fun calendarForSymbol(qktSymbol: String): com.qkt.common.TradingCalendar =
+        calendarFor?.invoke(qktSymbol) ?: calendar
+
+    internal fun bookAnnualization(compiled: PortfolioCompiled): java.math.BigDecimal {
+        val stream = compiled.ast.streams.firstOrNull() ?: return java.math.BigDecimal("252")
+        val window = TimeWindow.parse(stream.timeframe)
+        return calendarForSymbol(stream.qktSymbol).tradingPeriodsPerYear(window)
     }
 
     private companion object {

@@ -211,7 +211,7 @@ THEN BUY btc SIZING 0.1
      BRACKET {
        STOP_LOSS BY 200,
        TAKE_PROFIT BY 500
-     }
+     } ;
      LOG "long entry"
 ```
 

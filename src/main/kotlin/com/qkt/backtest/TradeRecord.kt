@@ -23,4 +23,6 @@ data class TradeRecord(
     val strategyPositionBefore: Position? = null,
     val strategyPositionAfter: Position? = null,
     val contractSize: BigDecimal? = null,
+    /** True when the fill reduced strategy-owned exposure and therefore represents an exit outcome. */
+    val reducedExposure: Boolean = true,
 )

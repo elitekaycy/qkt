@@ -116,6 +116,10 @@ RULES
                                           -- → all come from DEFAULTS
 ```
 
+`stopLoss` and `takeProfit` form one bracket. If defaults supply either leg,
+the merged action must supply the other leg explicitly or through `DEFAULTS`;
+an incomplete bracket is rejected when the strategy compiles.
+
 ### Available default keys
 
 | Key | What it sets | Maps to |
@@ -133,6 +137,7 @@ Inside `DEFAULTS`, the literal `SYMBOL` substitutes for whatever stream alias th
 DEFAULTS {
   stopLoss = atr(SYMBOL, 14) * 2     -- → atr(btc, 14) * 2 for rules on btc,
                                      --   atr(eur, 14) * 2 for rules on eur
+  takeProfit = atr(SYMBOL, 14) * 4
 }
 ```
 
@@ -157,7 +162,9 @@ RULES
 
 ### Partial defaults
 
-You can set just one default and let others stay required:
+Independent defaults can be partial. The exception is bracket protection:
+`stopLoss` and `takeProfit` must be complete after the action-level override is
+merged.
 
 ```qkt
 DEFAULTS {

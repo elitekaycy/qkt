@@ -195,6 +195,9 @@ class OrderManager(
     private val ocoByLeg2: MutableMap<String, OcoSequence> = mutableMapOf()
 
     private val pendingChildren: MutableMap<String, List<OrderRequest>> = mutableMapOf()
+
+    /** Original pre-fill brackets retained until their entry resolves, for durable re-arming. */
+    private val preFillBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
     private val fillAnchoredFallbackBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
     private val fillAnchoredAttachedBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
 
@@ -605,6 +608,10 @@ class OrderManager(
             }
             for ((id, request) in persistor.loadPendingOrders(sid)) {
                 if (orders.containsKey(id)) continue
+                if (request is OrderRequest.Bracket) {
+                    restorePendingBracket(request, recovered)
+                    continue
+                }
                 if (isPersistentManagedStop(request)) {
                     restorePersistentManagedStop(
                         com.qkt.persistence.PersistedTrailingStop(
@@ -636,6 +643,95 @@ class OrderManager(
         }
         if (recovered.isNotEmpty()) {
             broker.recoverPendingOrders(recovered)
+        }
+    }
+
+    private fun restorePendingBracket(
+        request: OrderRequest.Bracket,
+        recovered: MutableList<ManagedOrder>,
+    ) {
+        val caps = broker.capabilitiesFor(request.symbol)
+        val isEngineManagedStop = request.stopLoss !is StopLossSpec.Fixed
+        val needsFillAnchor =
+            (request.stopLossAst != null && request.stopLossAst !is com.qkt.dsl.ast.ChildAt) ||
+                (request.takeProfitAst != null && request.takeProfitAst !is com.qkt.dsl.ast.ChildAt)
+        val canAttach =
+            OrderTypeCapability.BRACKET in caps && OrderTypeCapability.POSITION_MODIFY in caps
+        val now = clock.now()
+
+        when {
+            canAttach -> {
+                val attached = request.copy(id = request.entry.id)
+                val managed =
+                    ManagedOrder(
+                        id = attached.id,
+                        request = attached,
+                        state = OrderState.WORKING,
+                        createdAt = now,
+                        lastUpdatedAt = now,
+                    )
+                orders[attached.id] = managed
+                indexLive(managed)
+                preFillBrackets[attached.id] = request
+                if (needsFillAnchor) fillAnchoredAttachedBrackets[attached.id] = request
+                buildAttachedManagedStop(request, now)?.let { stop ->
+                    track(
+                        ManagedOrder(
+                            id = stop.id,
+                            request = stop,
+                            state = OrderState.CREATED,
+                            parentClientOrderId = request.id,
+                            createdAt = now,
+                            lastUpdatedAt = now,
+                        ),
+                    )
+                    pendingChildren[attached.id] = listOf(stop)
+                }
+                registerExposure(attached)
+                recovered += managed
+            }
+            !isEngineManagedStop && !needsFillAnchor && OrderTypeCapability.BRACKET in caps -> {
+                val managed =
+                    ManagedOrder(
+                        id = request.id,
+                        request = request,
+                        state = OrderState.WORKING,
+                        createdAt = now,
+                        lastUpdatedAt = now,
+                    )
+                orders[request.id] = managed
+                indexLive(managed)
+                registerExposure(request)
+                recovered += managed
+            }
+            else -> {
+                val entry = request.entry.withStrategyId(request.strategyId)
+                val managed =
+                    ManagedOrder(
+                        id = entry.id,
+                        request = entry,
+                        state = OrderState.WORKING,
+                        createdAt = now,
+                        lastUpdatedAt = now,
+                    )
+                orders[entry.id] = managed
+                indexLive(managed)
+                preFillBrackets[entry.id] = request
+                if (needsFillAnchor) {
+                    fillAnchoredFallbackBrackets[entry.id] = request
+                } else {
+                    pendingChildren[entry.id] =
+                        listOf(
+                            bracketExitOco(
+                                request,
+                                bracketEntryEstimate(request),
+                                request.quantity,
+                            ),
+                        )
+                }
+                registerExposure(entry)
+                recovered += managed
+            }
         }
     }
 
@@ -703,6 +799,38 @@ class OrderManager(
         orders[clientOrderId]?.request?.let { OrderDetails(it.symbol, it.side, it.quantity) }
 
     fun activeOrders(): List<ManagedOrder> = orders.values.filter { !it.state.isTerminal }
+
+    /**
+     * Count active, risk-increasing entry orders for [strategyId] on [symbol].
+     *
+     * The count uses the existing per-symbol live index and exposure registry, so its hot-path
+     * cost is O(active orders for this symbol), not O(all orders). Dormant composite children and
+     * protective or otherwise risk-reducing exits are excluded. Submitted and partially-filled
+     * entries count as active to cover the acknowledgement and residual-fill lifecycle windows.
+     */
+    fun activeEntryOrderCount(
+        strategyId: String,
+        symbol: String,
+    ): Int {
+        val ids = liveBySymbol[symbol] ?: return 0
+        var count = 0
+        for (id in ids) {
+            if (id !in exposureEntries) continue
+            val managed = orders[id] ?: error("live order index desync: $id")
+            if (managed.request.strategyId != strategyId) continue
+            val activeEntry =
+                when (managed.state) {
+                    OrderState.PENDING,
+                    OrderState.SUBMITTED,
+                    OrderState.WORKING,
+                    OrderState.PARTIALLY_FILLED,
+                    -> true
+                    else -> false
+                }
+            if (activeEntry && !mustSurviveHalt(managed)) count++
+        }
+        return count
+    }
 
     /**
      * Read-only: true iff a live order on [symbol] could fill within the bar range `[low, high]`.
@@ -1510,7 +1638,7 @@ class OrderManager(
                             evaluateAt(ast.mfeThreshold, fillPrice),
                         )
                     is com.qkt.dsl.ast.ChildBy ->
-                        if (ast.ratchet != null) {
+                        if (req.stopLoss !is StopLossSpec.Fixed) {
                             req.stopLoss
                         } else {
                             StopLossSpec.Fixed(
@@ -1728,6 +1856,7 @@ class OrderManager(
                 timestamp = clock.now(),
                 strategyId = req.strategyId,
             )
+        preFillBrackets[req.entry.id] = req
         if (req.takeProfitAst != null || req.stopLossAst != null) {
             fillAnchoredFallbackBrackets[req.entry.id] = req
         }
@@ -1754,7 +1883,6 @@ class OrderManager(
      * tightened level — finer than the static venue stop, which remains the offline backstop.
      */
     private fun submitBracketAttached(req: OrderRequest.Bracket): SubmitAck {
-        val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
         val now = clock.now()
         // Ship keyed under the ENTRY id so the venue attaches the SL/TP to the position AND the
         // fill — with its ticket — flows through the same entry.id paths the position tracking
@@ -1762,57 +1890,14 @@ class OrderManager(
         // attribution). A native bracket keyed under its own id would fill under the bracket id
         // and silently miss those registrations.
         val attached = req.copy(id = req.entry.id)
+        preFillBrackets[attached.id] = req
         if (req.takeProfitAst != null || req.stopLossAst != null) {
             fillAnchoredAttachedBrackets[attached.id] = req
         }
         // An armed trail is engine-managed on top of the venue's static pre-arm stop: dispatched
         // on the entry fill, it fires close-by-ticket at the tightened level. A fixed bracket has
         // no engine exit — the venue's attached SL/TP closes it outright.
-        val managedStop =
-            when (val spec = req.stopLoss) {
-                is StopLossSpec.Fixed -> null
-                is StopLossSpec.ArmedTrail ->
-                    OrderRequest.ArmedTrailingStop(
-                        id = "${req.id}-sl",
-                        symbol = req.symbol,
-                        side = exitSide,
-                        quantity = req.quantity,
-                        entryPrice = bracketEntryEstimate(req),
-                        trailDistance = spec.trailDistance,
-                        mfeThreshold = spec.mfeThreshold,
-                        timeInForce = req.timeInForce,
-                        timestamp = now,
-                        strategyId = req.strategyId,
-                    )
-                is StopLossSpec.SteppedStop ->
-                    OrderRequest.SteppedStop(
-                        id = "${req.id}-sl",
-                        symbol = req.symbol,
-                        side = exitSide,
-                        quantity = req.quantity,
-                        entryPrice = bracketEntryEstimate(req),
-                        initialDistance = spec.initialDistance,
-                        steps = spec.steps,
-                        timeInForce = req.timeInForce,
-                        timestamp = now,
-                        strategyId = req.strategyId,
-                    )
-                is StopLossSpec.TimeTighten ->
-                    OrderRequest.TimeTighteningStop(
-                        id = "${req.id}-sl",
-                        symbol = req.symbol,
-                        side = exitSide,
-                        quantity = req.quantity,
-                        entryPrice = bracketEntryEstimate(req),
-                        initialDistance = spec.initialDistance,
-                        tightenBy = spec.tightenBy,
-                        intervalMs = spec.intervalMs,
-                        floorDistance = spec.floorDistance,
-                        timeInForce = req.timeInForce,
-                        timestamp = now,
-                        strategyId = req.strategyId,
-                    )
-            }
+        val managedStop = buildAttachedManagedStop(req, now)
         update(req.id) {
             it.copy(
                 state = OrderState.WORKING,
@@ -1847,6 +1932,57 @@ class OrderManager(
         registerExposure(attached)
         val ack = submitToBroker(attached)
         return SubmitAck(req.id, req.id, accepted = ack.accepted, rejectReason = ack.rejectReason)
+    }
+
+    private fun buildAttachedManagedStop(
+        req: OrderRequest.Bracket,
+        now: Long,
+    ): OrderRequest? {
+        val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
+        return when (val spec = req.stopLoss) {
+            is StopLossSpec.Fixed -> null
+            is StopLossSpec.ArmedTrail ->
+                OrderRequest.ArmedTrailingStop(
+                    id = "${req.id}-sl",
+                    symbol = req.symbol,
+                    side = exitSide,
+                    quantity = req.quantity,
+                    entryPrice = bracketEntryEstimate(req),
+                    trailDistance = spec.trailDistance,
+                    mfeThreshold = spec.mfeThreshold,
+                    timeInForce = req.timeInForce,
+                    timestamp = now,
+                    strategyId = req.strategyId,
+                )
+            is StopLossSpec.SteppedStop ->
+                OrderRequest.SteppedStop(
+                    id = "${req.id}-sl",
+                    symbol = req.symbol,
+                    side = exitSide,
+                    quantity = req.quantity,
+                    entryPrice = bracketEntryEstimate(req),
+                    initialDistance = spec.initialDistance,
+                    steps = spec.steps,
+                    timeInForce = req.timeInForce,
+                    timestamp = now,
+                    strategyId = req.strategyId,
+                )
+            is StopLossSpec.TimeTighten ->
+                OrderRequest.TimeTighteningStop(
+                    id = "${req.id}-sl",
+                    symbol = req.symbol,
+                    side = exitSide,
+                    quantity = req.quantity,
+                    entryPrice = bracketEntryEstimate(req),
+                    initialDistance = spec.initialDistance,
+                    tightenBy = spec.tightenBy,
+                    intervalMs = spec.intervalMs,
+                    floorDistance = spec.floorDistance,
+                    timeInForce = req.timeInForce,
+                    timestamp = now,
+                    strategyId = req.strategyId,
+                )
+        }
     }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
@@ -2219,19 +2355,30 @@ class OrderManager(
             val pendingByStrategy: MutableMap<String, MutableMap<String, com.qkt.execution.OrderRequest>> =
                 mutableMapOf()
             val pairsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.BracketPair>> = mutableMapOf()
+            val unarmedChildren = unarmedChildIds()
 
             for ((id, managed) in orders) {
                 if (!managed.state.isTerminal) {
                     val sid = managed.request.strategyId
                     if (sid.isBlank()) continue
-                    // Composite shapes (OCO, OTO, Bracket, ScaleOut, TimeExit, Stack) are
-                    // engine-internal containers — the broker only ever sees their decomposed
-                    // leaf orders. Recovery flows through dedicated channels (oco-legs.json,
-                    // bracket pairs, stack tier state), so the composite parent itself is
-                    // never persisted via savePendingOrders.
+                    // Composite parents are handled below or by their dedicated recovery state.
                     if (managed.request.isCompositeShape()) continue
+                    if (id in unarmedChildren) continue
                     pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = managed.request
                 }
+            }
+            for ((entryId, bracket) in preFillBrackets) {
+                if (orders[entryId]?.state?.isTerminal == true) continue
+                val sid = bracket.strategyId
+                if (sid.isBlank()) continue
+                pendingByStrategy.getOrPut(sid) { mutableMapOf() }[entryId] = bracket
+            }
+            for ((id, managed) in orders) {
+                val bracket = managed.request as? OrderRequest.Bracket ?: continue
+                if (managed.state.isTerminal || id in preFillBrackets || bracket in preFillBrackets.values) continue
+                val sid = bracket.strategyId
+                if (sid.isBlank()) continue
+                pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = bracket
             }
             for ((entryId, siblingIds) in siblings) {
                 val entry = orders[entryId] ?: continue
@@ -2289,16 +2436,41 @@ class OrderManager(
     private fun persistSubmissionIntent(strategyId: String) {
         if (strategyId.isBlank()) return
         persistedStrategies.add(strategyId)
-        val active =
-            orders
-                .asSequence()
-                .filter { (_, managed) ->
-                    managed.request.strategyId == strategyId &&
-                        !managed.state.isTerminal &&
-                        !managed.request.isCompositeShape()
-                }.associate { (id, managed) -> id to managed.request }
+        val active = recoveryPendingOrders(strategyId)
         persistor.savePendingOrdersSync(strategyId, active)
     }
+
+    private fun recoveryPendingOrders(strategyId: String): Map<String, OrderRequest> {
+        val unarmedChildren = unarmedChildIds()
+        val result =
+            orders
+                .asSequence()
+                .filter { (id, managed) ->
+                    managed.request.strategyId == strategyId &&
+                        !managed.state.isTerminal &&
+                        !managed.request.isCompositeShape() &&
+                        id !in unarmedChildren
+                }.associateTo(linkedMapOf()) { (id, managed) -> id to managed.request }
+        for ((entryId, bracket) in preFillBrackets) {
+            if (bracket.strategyId == strategyId && orders[entryId]?.state?.isTerminal != true) {
+                result[entryId] = bracket
+            }
+        }
+        for ((id, managed) in orders) {
+            val bracket = managed.request as? OrderRequest.Bracket ?: continue
+            if (bracket.strategyId != strategyId || managed.state.isTerminal) continue
+            if (id in preFillBrackets || bracket in preFillBrackets.values) continue
+            result[id] = bracket
+        }
+        return result
+    }
+
+    private fun unarmedChildIds(): Set<String> =
+        pendingChildren.values
+            .asSequence()
+            .flatten()
+            .map { it.id }
+            .toSet()
 
     /** Flushes HWM-only armed-trail changes at the live heartbeat cadence. */
     fun persistTrailingStateIfDirty() {
@@ -2367,6 +2539,10 @@ class OrderManager(
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
         haltCancellations.remove(e.clientOrderId)
+        preFillBrackets.remove(e.clientOrderId)
+        fillAnchoredFallbackBrackets.remove(e.clientOrderId)
+        fillAnchoredAttachedBrackets.remove(e.clientOrderId)
+        val unarmedChildren = pendingChildren.remove(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
@@ -2381,6 +2557,7 @@ class OrderManager(
             protectionByClientOrderId.remove(bracket.id)
             protectionByClientOrderId.remove(bracket.entry.id)
         }
+        unarmedChildren.orEmpty().forEach { cancel(it.id) }
         failOcoOnReject(e.clientOrderId)
     }
 
@@ -2418,6 +2595,7 @@ class OrderManager(
             )
             return
         }
+        preFillBrackets.remove(e.clientOrderId)
         val existing = orders[e.clientOrderId]
         if (existing?.state?.isTerminal == true) {
             log.error(
@@ -2566,6 +2744,9 @@ class OrderManager(
 
     private fun onCancelled(e: BrokerEvent.OrderCancelled) {
         haltCancellations.remove(e.clientOrderId)
+        preFillBrackets.remove(e.clientOrderId)
+        fillAnchoredFallbackBrackets.remove(e.clientOrderId)
+        fillAnchoredAttachedBrackets.remove(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())

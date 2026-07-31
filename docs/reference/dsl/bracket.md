@@ -102,16 +102,12 @@ The fractions sum to ≤ 1.0 (a sum > 1.0 is a parse error; < 1.0 leaves a runne
 
 **When to use:** mean-reversion strategies, scaling out of trending moves to bank certainty.
 
-## Bare `STOP_LOSS` (no bracket)
+## Complete protection
 
-When the take-profit is rule-driven (e.g. exit on indicator cross), use a bare stop without a bracket wrapper:
-
-```qkt
-BUY btc SIZING 0.1
-    STOP_LOSS AT btc.close - atr(btc, 14) * 2
-```
-
-The engine attaches the stop atomically with the entry. No take-profit means the position runs until either the stop hits or another rule fires `CLOSE`.
+`STOP_LOSS` and `TAKE_PROFIT` are currently a complete bracket pair. A bare
+stop or take-profit, including one inherited from `DEFAULTS`, is rejected at
+compile time. Use a `BRACKET` with both legs and keep any additional
+rule-driven `CLOSE` condition alongside it.
 
 ## Trailing stop
 

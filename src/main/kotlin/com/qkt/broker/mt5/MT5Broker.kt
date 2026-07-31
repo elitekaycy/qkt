@@ -161,6 +161,9 @@ class MT5Broker(
      * (multiplied by attempt number). Tests shrink it; production keeps the default.
      */
     private val unknownResolveBackoffMs: Long = 500L,
+    /** Delay before retrying an unresolved outcome; production follows the poll cadence. */
+    private val unknownPeriodicResolveMs: Long =
+        maxOf(profile.pollIntervalMs, UNKNOWN_PERIODIC_RESOLVE_MIN_MS),
     /** Clean restart-recovery venue reads required before startup may continue. */
     private val recoveryReadAttempts: Int = 5,
     /** Base linear backoff between restart-recovery venue reads. */
@@ -299,8 +302,9 @@ class MT5Broker(
     private val recentlyClosedByTicket: MutableMap<Long, EngineCloseMarker> = ConcurrentHashMap()
 
     private data class EngineCloseMarker(
-        val startedAt: Long,
+        val startedAtMs: Long,
         val confirmed: Boolean = false,
+        val confirmedAtMs: Long? = null,
     )
 
     private data class PendingMeta(
@@ -618,9 +622,9 @@ class MT5Broker(
             val partiallyFilled = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
             val positionRemainsOpen = request.partialClose || partiallyFilled
             if (positionRemainsOpen) {
-                recentlyClosedByTicket.computeIfPresent(ticket) { _, marker -> marker.copy(confirmed = true) }
+                confirmEngineClose(ticket)
             } else {
-                recentlyClosedByTicket.computeIfPresent(ticket) { _, marker -> marker.copy(confirmed = true) }
+                confirmEngineClose(ticket)
                 positionMetaByTicket.remove(ticket)
                 positionSymbolByTicket.remove(ticket)
             }
@@ -720,7 +724,7 @@ class MT5Broker(
                 val fillPrice = weightedDealPrice(closingDeals)
                 if (filledQuantity.signum() > 0 && fillPrice != null) {
                     val positionRemainsOpen = position != null
-                    recentlyClosedByTicket.computeIfPresent(ticket) { _, marker -> marker.copy(confirmed = true) }
+                    confirmEngineClose(ticket)
                     if (!positionRemainsOpen) {
                         positionMetaByTicket.remove(ticket)
                         positionSymbolByTicket.remove(ticket)
@@ -811,6 +815,7 @@ class MT5Broker(
     private data class VenueRules(
         val volumeStep: BigDecimal,
         val volumeMin: BigDecimal,
+        val volumeMax: BigDecimal?,
         val digits: Int,
         val pointSize: BigDecimal,
         val tradeStopsLevelPoints: Int,
@@ -853,12 +858,16 @@ class MT5Broker(
             } else {
                 quantity
             }
-        return if (quantized < rules.volumeMin) {
-            VolumeResult.Reject(
-                "quantized volume below venue volumeMin for $brokerSymbol (input=${quantity.toPlainString()})",
-            )
-        } else {
-            VolumeResult.Ok(quantized)
+        return when {
+            quantized < rules.volumeMin ->
+                VolumeResult.Reject(
+                    "quantized volume below venue volumeMin for $brokerSymbol (input=${quantity.toPlainString()})",
+                )
+            rules.volumeMax != null && quantized > rules.volumeMax ->
+                VolumeResult.Reject(
+                    "quantized volume above venue volumeMax for $brokerSymbol (input=${quantity.toPlainString()})",
+                )
+            else -> VolumeResult.Ok(quantized)
         }
     }
 
@@ -876,6 +885,7 @@ class MT5Broker(
             return VenueRules(
                 volumeStep = spec.volumeStep,
                 volumeMin = spec.minVolume,
+                volumeMax = spec.maxVolume,
                 digits = spec.digits,
                 pointSize = spec.pointSize,
                 tradeStopsLevelPoints = spec.tradeStopsLevelPoints,
@@ -886,6 +896,7 @@ class MT5Broker(
             return VenueRules(
                 volumeStep = info.volumeStep,
                 volumeMin = info.volumeMin,
+                volumeMax = info.volumeMax,
                 digits = info.digits,
                 pointSize = info.point,
                 tradeStopsLevelPoints = info.tradeStopsLevel,
@@ -901,6 +912,7 @@ class MT5Broker(
         return VenueRules(
             volumeStep = fetched.volumeStep,
             volumeMin = fetched.volumeMin,
+            volumeMax = fetched.volumeMax,
             digits = fetched.digits,
             pointSize = fetched.point,
             tradeStopsLevelPoints = fetched.tradeStopsLevel,
@@ -936,6 +948,11 @@ class MT5Broker(
         if (quantizedVolume < rules.volumeMin) {
             return PrepareResult.Reject(
                 "quantized volume below venue volumeMin for ${wire.symbol} (input=${wire.volume.toPlainString()})",
+            )
+        }
+        if (rules.volumeMax != null && quantizedVolume > rules.volumeMax) {
+            return PrepareResult.Reject(
+                "quantized volume above venue volumeMax for ${wire.symbol} (input=${wire.volume.toPlainString()})",
             )
         }
         val digits = rules.digits.coerceAtLeast(0)
@@ -1385,7 +1402,7 @@ class MT5Broker(
         try {
             unknownResolveExecutor.schedule(
                 task,
-                maxOf(profile.pollIntervalMs, UNKNOWN_PERIODIC_RESOLVE_MIN_MS),
+                unknownPeriodicResolveMs,
                 TimeUnit.MILLISECONDS,
             )
         } catch (failure: RejectedExecutionException) {
@@ -2109,7 +2126,8 @@ class MT5Broker(
     /**
      * Returns the close request state for [ticket]. A pending marker is never consumed: if
      * the venue closes first and our request later rejects, the next poll must still publish
-     * that venue close. A confirmed marker is consumed because its callback published the fill.
+     * that venue close. A confirmed marker remains until its bounded TTL so a poll racing between
+     * confirmation and fill publication cannot consume the only duplicate-suppression record.
      */
     private fun engineCloseState(ticket: Long): EngineCloseState {
         val now = clock.now()
@@ -2119,12 +2137,18 @@ class MT5Broker(
                 profile.httpTimeoutMs + profile.pollIntervalMs,
             )
         recentlyClosedByTicket.entries.removeIf {
-            it.value.confirmed && now - it.value.startedAt >= ttlMs
+            val confirmedAtMs = it.value.confirmedAtMs
+            confirmedAtMs != null && now - confirmedAtMs >= ttlMs
         }
         val marker = recentlyClosedByTicket[ticket] ?: return EngineCloseState.NONE
         if (!marker.confirmed) return EngineCloseState.PENDING
-        recentlyClosedByTicket.remove(ticket, marker)
         return EngineCloseState.CONFIRMED
+    }
+
+    private fun confirmEngineClose(ticket: Long) {
+        recentlyClosedByTicket.computeIfPresent(ticket) { _, marker ->
+            marker.copy(confirmed = true, confirmedAtMs = clock.now())
+        }
     }
 
     /**
@@ -2212,7 +2236,7 @@ class MT5Broker(
             contractSize = info.contractSize,
             volumeStep = info.volumeStep,
             volumeMin = info.volumeMin,
-            volumeMax = null,
+            volumeMax = info.volumeMax,
             pointSize = info.point,
             digits = info.digits,
             tradeStopsLevelPoints = info.tradeStopsLevel,

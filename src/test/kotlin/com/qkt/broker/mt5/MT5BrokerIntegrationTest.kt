@@ -552,7 +552,7 @@ class MT5BrokerIntegrationTest {
         assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
     }
 
-    private fun newFastUnknownOutcomeBroker(): MT5Broker =
+    private fun newFastUnknownOutcomeBroker(periodicResolveMs: Long = 5_000L): MT5Broker =
         MT5Broker(
             profile =
                 MT5DefaultProfiles.exness.copy(
@@ -565,6 +565,7 @@ class MT5BrokerIntegrationTest {
             bus = bus,
             clock = FixedClock(time = 1_700_000_000_000L),
             unknownResolveBackoffMs = 1L,
+            unknownPeriodicResolveMs = periodicResolveMs,
         )
 
     private fun ambiguousMarket(id: String): OrderRequest.Market =
@@ -825,6 +826,166 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `ambiguous close resolution outlasting marker ttl publishes one close fill`() {
+        val localServer = MockWebServer().also { it.start() }
+        val closeSent = AtomicBoolean(false)
+        val nowMs = System.currentTimeMillis()
+        localServer.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") -> {
+                            closeSent.set(true)
+                            MockResponse().setResponseCode(500).setBody("gateway timed out")
+                        }
+                        path.startsWith("/get_positions") ->
+                            MockResponse().setBody(if (closeSent.get()) "[]" else openPosition999(nowMs))
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") ->
+                            MockResponse().setBody(closeDealHistory(nowMs))
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val localBus = EventBus(com.qkt.common.SystemClock(), MonotonicSequenceGenerator())
+        val fills = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent.OrderFilled>()
+        localBus.subscribe<BrokerEvent.OrderFilled>(fills::add)
+        val delayedBroker =
+            MT5Broker(
+                profile =
+                    MT5DefaultProfiles.exness.copy(
+                        gatewayUrl = localServer.url("/").toString().trimEnd('/'),
+                        httpTimeoutMs = 500,
+                        retryAttempts = 0,
+                        pollIntervalMs = 100,
+                        instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+                    ),
+                bus = localBus,
+                clock = com.qkt.common.SystemClock(),
+                unknownResolveBackoffMs = 700L,
+                recoveryReadBackoffMs = 1L,
+            )
+        try {
+            delayedBroker.submit(ambiguousClose("close-delayed"))
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (fills.isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(5)
+            Thread.sleep(150L)
+
+            assertThat(fills).hasSize(1)
+            assertThat(fills.single().clientOrderId).isEqualTo("close-delayed")
+            assertThat(fills.single().quantity).isEqualByComparingTo("0.10")
+        } finally {
+            delayedBroker.shutdown()
+            localServer.shutdown()
+        }
+    }
+
+    @Test
+    fun `unresolved close succeeds on the scheduled resolution pass`() {
+        val closeSent = AtomicBoolean(false)
+        val positionReads = AtomicInteger()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") -> {
+                            closeSent.set(true)
+                            MockResponse().setResponseCode(500).setBody("gateway timed out")
+                        }
+                        path.startsWith("/get_positions") -> {
+                            if (!closeSent.get()) return MockResponse().setBody("[]")
+                            if (positionReads.incrementAndGet() <= 4) {
+                                MockResponse().setResponseCode(500).setBody("gateway unavailable")
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") -> MockResponse().setBody(closeDealHistory())
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val retryingBroker = newFastUnknownOutcomeBroker(periodicResolveMs = 1L)
+        captured.clear()
+        try {
+            retryingBroker.submit(ambiguousClose("close-periodic"))
+            awaitCaptured(timeoutMs = 3_000L) {
+                captured.any { it is BrokerEvent.OrderFilled && it.clientOrderId == "close-periodic" }
+            }
+
+            assertThat(positionReads.get()).isGreaterThanOrEqualTo(5)
+            assertThat(
+                captured.filterIsInstance<BrokerEvent.OrderFilled>().filter {
+                    it.clientOrderId == "close-periodic"
+                },
+            ).hasSize(1)
+        } finally {
+            retryingBroker.shutdown()
+        }
+    }
+
+    @Test
+    fun `volume-less partial close removes the marker so the poller books the delta`() {
+        val localServer = MockWebServer().also { it.start() }
+        val closeSent = AtomicBoolean(false)
+        val nowMs = System.currentTimeMillis()
+        localServer.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/position_close_partial") -> {
+                            closeSent.set(true)
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10010,"order":0,"deal":55,"price":"1.1050","comment":"partial"}}""",
+                            )
+                        }
+                        path.startsWith("/get_positions") ->
+                            MockResponse().setBody(
+                                if (closeSent.get()) openPosition999(nowMs, "0.04") else openPosition999(nowMs),
+                            )
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") ->
+                            MockResponse().setBody(closeDealHistory(nowMs, "0.06"))
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val localBus = EventBus(com.qkt.common.SystemClock(), MonotonicSequenceGenerator())
+        val fills = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent.OrderFilled>()
+        localBus.subscribe<BrokerEvent.OrderFilled>(fills::add)
+        val partialBroker =
+            MT5Broker(
+                profile =
+                    MT5DefaultProfiles.exness.copy(
+                        gatewayUrl = localServer.url("/").toString().trimEnd('/'),
+                        httpTimeoutMs = 100,
+                        retryAttempts = 0,
+                        pollIntervalMs = 10,
+                        instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+                    ),
+                bus = localBus,
+                clock = com.qkt.common.SystemClock(),
+                recoveryReadBackoffMs = 1L,
+            )
+        try {
+            partialBroker.submit(ambiguousClose("close-partial-delta").copy(partialClose = true))
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (fills.isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(5)
+
+            assertThat(fills).hasSize(1)
+            assertThat(fills.single().quantity).isEqualByComparingTo("0.06")
+            assertThat(fills.single().updatesOrderExecution).isFalse()
+        } finally {
+            partialBroker.shutdown()
+            localServer.shutdown()
+        }
+    }
+
+    @Test
     fun `ambiguous close rejects only after repeated verified non-execution`() {
         val closeSent = AtomicBoolean(false)
         val historyReads = AtomicInteger()
@@ -893,10 +1054,25 @@ class MT5BrokerIntegrationTest {
         """[{"ticket":999,"symbol":"EURUSDm","type":0,"volume":"0.10","price_open":"1.1000",""" +
             """"sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":1700000000000}]"""
 
+    private fun openPosition999(
+        timeMs: Long,
+        volume: String = "0.10",
+    ): String =
+        """[{"ticket":999,"symbol":"EURUSDm","type":0,"volume":"$volume","price_open":"1.1000",""" +
+            """"sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$timeMs}]"""
+
     private fun closeDealHistory(): String =
         """[{"ticket":401,"order":301,"position_id":999,"symbol":"EURUSDm","type":1,"entry":1,""" +
             """"volume":"0.10","price":"1.1050","profit":"50","commission":"-0.1","swap":"0",""" +
             """"fee":"0","magic":10001,"comment":"close","time_msc":1700000000000}]"""
+
+    private fun closeDealHistory(
+        timeMs: Long,
+        volume: String = "0.10",
+    ): String =
+        """[{"ticket":401,"order":301,"position_id":999,"symbol":"EURUSDm","type":1,"entry":1,""" +
+            """"volume":"$volume","price":"1.1050","profit":"50","commission":"-0.1","swap":"0",""" +
+            """"fee":"0","magic":10001,"comment":"close","time_msc":$timeMs}]"""
 
     @Test
     fun `modifyPosition posts to modify_sl_tp and reports accepted`() {
@@ -1765,6 +1941,28 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `volume above volumeMax is rejected without HTTP placement`() {
+        val req =
+            OrderRequest.Market(
+                id = "ord-oversized",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("100.01"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+
+        val ack = broker.submit(req)
+
+        assertThat(ack.accepted).isFalse
+        assertThat(ack.rejectReason).contains("above venue volumeMax")
+        assertThat(
+            captured.filterIsInstance<BrokerEvent.OrderRejected>().any { it.clientOrderId == "ord-oversized" },
+        ).isTrue()
+    }
+
+    @Test
     fun `bracket with SL too close to entry is rejected pre-placement`() {
         // Configure an override with tradeStopsLevelPoints=100 and pointSize=0.001.
         // Min SL distance: 100 × 0.001 = 0.1.
@@ -2060,6 +2258,7 @@ class MT5BrokerIntegrationTest {
                 pointSize = BigDecimal("0.00001"),
                 digits = 5,
                 tradeStopsLevelPoints = 0,
+                maxVolume = BigDecimal("100"),
             )
 
         private val TEST_XAUUSD_SPEC =

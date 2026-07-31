@@ -12,7 +12,6 @@ import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.DslCompiledStrategy
-import com.qkt.dsl.compile.HubKey
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
 import com.qkt.events.RiskEvent
@@ -43,12 +42,10 @@ import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RiskState
 import com.qkt.strategy.Mode
-import com.qkt.strategy.PerStreamWarmable
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
-import com.qkt.strategy.WarmupStream
 import com.qkt.strategy.targetSymbol
 import com.qkt.strategy.windowMs
 import java.time.Duration
@@ -76,10 +73,14 @@ class LiveSession(
     private val haltRules: List<HaltRule> = emptyList(),
     private val source: MarketSource,
     private val symbols: List<String>,
+    /** Market-data subscriptions, including non-traded FX conversion symbols. */
+    private val feedSymbols: List<String> = symbols,
     private val candleWindow: TimeWindow? = null,
     private val clock: Clock = SystemClock(),
     private val calendar: TradingCalendar = TradingCalendar.fxDefault(),
     private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+    /** Equity source for standalone live sizing; portfolio children always use allocated model equity. */
+    private val equityBasis: LiveEquityBasis = LiveEquityBasis.VENUE,
     private val warmupOverride: WarmupSpec? = null,
     private val mdcStrategy: String? = null,
     private val candleHub: com.qkt.dsl.compile.CandleHub? = null,
@@ -241,55 +242,6 @@ class LiveSession(
 
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
-
-    /**
-     * Phase 25B: fetch historical bars per stream and seed the candle hub so
-     * lookback (`btc.close[N]`) and Phase 24's WarmupGate are satisfied the
-     * moment live ticks start. Throws [WarmupFailedException] on broker error
-     * so deploy aborts before any rule fires.
-     */
-    private fun seedHubFromHistory(
-        strategies: List<Pair<String, Strategy>>,
-        hub: com.qkt.dsl.compile.CandleHub,
-        perStreamSpecs: Map<WarmupStream, WarmupSpec>,
-        now: Instant,
-        history: WarmupHistoryLoader,
-    ) {
-        // Resolve each owning DSL alias by exact symbol + timeframe; same-symbol aliases on
-        // different windows must fetch and seed independently.
-        for ((sessionStrategyName, strategy) in strategies) {
-            if (strategy !is DslCompiledStrategy) continue
-            for ((alias, key) in strategy.declaredStreams) {
-                val symbol = key.qktSymbol
-                val spec = perStreamSpecs[warmupStream(key)] ?: continue
-                val barSpec =
-                    when (spec) {
-                        is WarmupSpec.Bars -> spec
-                        is WarmupSpec.None -> continue
-                        else -> continue // Duration / Ticks handled by IndicatorWarmer; skip seed
-                    }
-                val upperMs = barSpec.window.windowStartFor(now.toEpochMilli())
-                val candles =
-                    try {
-                        history.load(symbol, barSpec.window, barSpec.count, upperMs)
-                    } catch (e: WarmupUnderfilledException) {
-                        throw e
-                    } catch (e: Exception) {
-                        throw WarmupFailedException(alias, symbol, e)
-                    }
-                hub.seed(key, candles)
-                log.info(
-                    "warmup: seeded hub for strategy={} alias={} symbol={} bars={}",
-                    sessionStrategyName,
-                    alias,
-                    symbol,
-                    candles.size,
-                )
-            }
-        }
-    }
-
-    private fun warmupStream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
 
     private fun ticketPosition(ticket: BrokerPositionTicket): Position =
         Position(
@@ -603,15 +555,15 @@ class LiveSession(
      * paper-only strategies that don't need contract-size-aware math keep working.
      */
     private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
-        instrumentRegistry?.let { return it }
         val mt5Registries =
             builtBrokers
                 .filterIsInstance<com.qkt.broker.mt5.MT5Broker>()
                 .map { com.qkt.instrument.MT5InstrumentRegistry(it) }
-        return if (mt5Registries.isEmpty()) {
-            com.qkt.instrument.NoopInstrumentRegistry
-        } else {
-            com.qkt.instrument.MultiMT5InstrumentRegistry(mt5Registries)
+        val layers = mt5Registries + listOfNotNull(instrumentRegistry)
+        return when (layers.size) {
+            0 -> com.qkt.instrument.NoopInstrumentRegistry
+            1 -> layers.single()
+            else -> com.qkt.instrument.LayeredInstrumentRegistry(layers)
         }
     }
 
@@ -936,7 +888,19 @@ class LiveSession(
         val stopping = AtomicBoolean(false)
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
-        val paperBroker = PaperBroker(bus, clock, priceTracker)
+        val paperInstruments =
+            java.util.concurrent.atomic.AtomicReference<com.qkt.instrument.InstrumentRegistry>(
+                instrumentRegistry ?: com.qkt.instrument.NoopInstrumentRegistry,
+            )
+        val paperBroker =
+            PaperBroker(
+                bus,
+                clock,
+                priceTracker,
+                object : com.qkt.instrument.InstrumentRegistry {
+                    override fun lookup(qktSymbol: String) = paperInstruments.get().lookup(qktSymbol)
+                },
+            )
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()
         // Recovery seeding ran inside each MT5 broker's constructor; mirror the orphan
@@ -949,6 +913,7 @@ class LiveSession(
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
+        paperInstruments.set(instruments)
         val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
         // #352: live account equity, polled off the engine thread (a network call) into this holder
         // and read cheaply by StrategyPnL.equityFor. Allocated portfolio children keep this
@@ -964,7 +929,13 @@ class LiveSession(
                 persistor,
                 accounting = accounting,
                 markTimestamp = clock::now,
-                brokerEquity = { if (usesAllocatedStrategyCapital) null else brokerEquity.get() },
+                brokerEquity = {
+                    if (usesAllocatedStrategyCapital || equityBasis == LiveEquityBasis.MODELED) {
+                        null
+                    } else {
+                        brokerEquity.get()
+                    }
+                },
             )
         // Every deploy path needs a starting balance: portfolio deploys pass per-strategy
         // entries in [startingBalances]; standalone deploys fall back to the session-level
@@ -1197,7 +1168,8 @@ class LiveSession(
                 .CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
-        val warmupHistory = WarmupHistoryLoader(source)
+        val warmupCoordinator =
+            PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)
 
         // Phase 25B: per-stream pre-fetch + hub seeding for DSL strategies. Seeding
         // must happen BEFORE TradingPipeline binds strategies to the hub: bindToHub
@@ -1207,23 +1179,7 @@ class LiveSession(
         // registration extends these slots rather than replacing them. Retention is
         // widened to the warmup bar count so the seeded history survives the ring.
         // Fail-fast: any broker error here aborts deploy with a typed exception.
-        val perStreamSpecs: Map<WarmupStream, WarmupSpec> =
-            strategies
-                .map { it.second }
-                .filterIsInstance<PerStreamWarmable>()
-                .flatMap { it.perStreamWarmup.entries }
-                .groupBy(keySelector = { it.key }, valueTransform = { it.value })
-                .mapValues { (_, specs) -> specs.maxBy { it.windowMs(now) } }
-        if (perStreamSpecs.isNotEmpty()) {
-            for ((strategyId, strategy) in strategies) {
-                if (strategy !is DslCompiledStrategy) continue
-                for ((key, retention) in strategy.retentionByKey) {
-                    val warmupBars = (perStreamSpecs[warmupStream(key)] as? WarmupSpec.Bars)?.count ?: 0
-                    pipelineCandleHub.register(key, maxOf(retention, warmupBars), strategyId)
-                }
-            }
-            seedHubFromHistory(strategies, pipelineCandleHub, perStreamSpecs, now, warmupHistory)
-        }
+        warmupCoordinator.prepareHub()
 
         // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
         // session's route list and use its profile's DST-aware server clock.
@@ -1281,8 +1237,8 @@ class LiveSession(
                     dailyTracker.recordTrade(strategyId)
                     // Per-close net P&L for the insights analytics: the bus TradeEvent has
                     // no realized amount, so the close ships from the accounting hook.
-                    // Entries also land here with realized == 0 — only realizing fills
-                    // are closes, so only they ship (the source of "exits only" stats).
+                    // The shared callback keeps entry realized at gross zero and carries
+                    // net P&L for exposure-reducing fills, preserving exits-only analytics.
                     if (insightsSink != null &&
                         realized.signum() != 0 &&
                         com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents
@@ -1379,8 +1335,8 @@ class LiveSession(
                 .onFailure { e -> log.error("halt entry-cancel failed: {}", e.message) }
         }
 
-        if (perStreamSpecs.isNotEmpty()) {
-            IndicatorWarmer(source, pipeline, warmupHistory).warmup(perStreamSpecs, now)
+        if (warmupCoordinator.specs.isNotEmpty()) {
+            warmupCoordinator.warm(pipeline)
         } else {
             val effectiveWarmup =
                 warmupOverride
@@ -1390,11 +1346,11 @@ class LiveSession(
                         .maxByOrNull { it.warmup.windowMs(now) }
                         ?.warmup
                     ?: WarmupSpec.None
-            IndicatorWarmer(source, pipeline, warmupHistory).warmup(symbols, effectiveWarmup, now)
+            IndicatorWarmer(source, pipeline).warmup(symbols, effectiveWarmup, now)
         }
         riskState.warmupComplete = true
 
-        val feed = source.liveTicks(symbols)
+        val feed = source.liveTicks(feedSymbols)
         if (insightsSink != null &&
             com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
         ) {
@@ -1411,7 +1367,7 @@ class LiveSession(
             insightsSink.offer(
                 com.qkt.observe.insights.InsightsTranslate.marketDataConnected(
                     source = source.name,
-                    symbols = symbols,
+                    symbols = feedSymbols,
                     ts = nowTs,
                 ),
             )
@@ -1420,7 +1376,7 @@ class LiveSession(
                     insightsSink.offer(
                         com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
                             source = scope.source ?: source.name,
-                            symbols = scope.symbols ?: symbols,
+                            symbols = scope.symbols ?: feedSymbols,
                             ts = clock.now(),
                             reason = "source-disconnected",
                         ),
@@ -1430,7 +1386,7 @@ class LiveSession(
                     insightsSink.offer(
                         com.qkt.observe.insights.InsightsTranslate.marketDataReconnected(
                             source = scope.source ?: source.name,
-                            symbols = scope.symbols ?: symbols,
+                            symbols = scope.symbols ?: feedSymbols,
                             ts = clock.now(),
                         ),
                     )
@@ -1679,7 +1635,7 @@ class LiveSession(
                                 }
                             is Inbound.Heartbeat ->
                                 runCatching {
-                                    for (symbol in symbols) marketDataGate.isHealthy(symbol)
+                                    for (symbol in feedSymbols) marketDataGate.isHealthy(symbol)
                                     pipeline.scheduleHeartbeat(msg.nowMs)
                                 }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
                             Inbound.PersistenceHealthCheck -> checkPersistenceHealth()
@@ -1748,7 +1704,7 @@ class LiveSession(
                         insightsSink.offer(
                             com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
                                 source = source.name,
-                                symbols = symbols,
+                                symbols = feedSymbols,
                                 ts = clock.now(),
                                 reason = "feed-ended",
                             ),
@@ -1792,7 +1748,11 @@ class LiveSession(
         // transiently failed startup read must not disable polling for the entire session. Failed
         // reads retain the last-known value and alert once stale. The network call stays off the consumer.
         val equityPoller: java.util.concurrent.ScheduledExecutorService? =
-            if (!usesAllocatedStrategyCapital && strategies.size == 1 && broker.supportsAccountEquity) {
+            if (!usesAllocatedStrategyCapital &&
+                equityBasis == LiveEquityBasis.VENUE &&
+                strategies.size == 1 &&
+                broker.supportsAccountEquity
+            ) {
                 val monitor =
                     BrokerEquityMonitor(
                         broker = broker,
