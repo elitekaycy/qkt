@@ -223,7 +223,9 @@ No "Generated with Claude" footers. No `🤖`.
 
 ### PR review
 
-- At least one human reviewer (when there is a team). Solo for now: at least 24 hours between opening and merging unless trivial.
+- At least one human reviewer when there is a team. Solo-maintained PRs may merge
+  once required checks pass and review threads are resolved; there is no
+  time-based minimum before merge.
 - Reviewers verify spec compliance + code quality (the same two-stage review used internally during plan execution).
 - All review comments resolved before merge.
 
