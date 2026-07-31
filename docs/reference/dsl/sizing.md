@@ -186,7 +186,7 @@ See [STACK](stack.md).
 
 - **Sizing is required.** Either on the action or via `DEFAULTS.sizing`. Both missing = parse error.
 - **Percent-of-equity ignores stop distance.** A 5% position with a tight stop loses very little; with a wide stop loses a lot. Use the manual workaround above to factor in the stop.
-- **Broker minimum sizes.** MT5 brokers enforce a minimum lot (`volumeMin`) and step (`volumeStep`). If your computed size is below the minimum, the order rejects.
+- **Broker volume bounds.** MT5 brokers enforce minimum/maximum lots (`volumeMin`, `volumeMax`) and a step (`volumeStep`). A computed size outside the bounds rejects after downward step quantization.
 - **Whole-number lots on some venues.** Futures often require integer contracts. A computed size of `0.327` will round (typically down) or reject. Check your venue's specs.
 - **Sizing units are venue-side.** A "size of 0.1" means 0.1 of the venue's unit (lots, contracts, base currency) — not 0.1 USD or 0.1% of anything.
 - **Computed entry sizing is set once.** It does not track the expression after QKT emits the order. Use `RESIZE` for deliberate per-bar rebalancing.

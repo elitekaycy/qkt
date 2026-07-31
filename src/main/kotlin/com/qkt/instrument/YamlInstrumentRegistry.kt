@@ -38,6 +38,9 @@ class YamlInstrumentRegistry private constructor(
 ) : InstrumentRegistry {
     override fun lookup(qktSymbol: String): InstrumentMeta? = table[qktSymbol]
 
+    /** Immutable metadata snapshot in deterministic symbol order. */
+    fun all(): List<InstrumentMeta> = table.values.sortedBy { it.qktSymbol }
+
     companion object {
         fun load(path: Path): YamlInstrumentRegistry {
             check(Files.exists(path)) { "instruments.yaml not found at $path" }

@@ -48,6 +48,7 @@ Each row lists the symptom, the source file the live behavior lives in, and whet
 | 11 | **Latency** | instantaneous tick → fill | gateway HTTP round-trip + venue execution latency | divergent |
 | 12 | **Retcode handling** | no concept | MT5-specific retcodes (`10009`, `10015`, `10015` price, etc.) translated to `OrderRejected` reasons | divergent |
 | 13 | **Trading calendar / sessions** | runs through every tick the feed produces | respects venue session hours (gaps in `/tick` during weekends, holidays) | aligned in qkt by the `TradingCalendar` injection; divergent if backtest data covers a window live wouldn't trade |
+| 14 | **Above-`volume_max` orders** | MT5_SIM rejects from `InstrumentMeta.volumeMax` | rejects pre-flight from `/symbol_info.volume_max` or a profile override | **closed in MT5_SIM** (`MT5BrokerSimulatorTest`, `MT5BrokerIntegrationTest`) |
 
 ## Rows 1, 2, 3, 4-6 — closed in MT5_SIM
 
@@ -114,12 +115,12 @@ keep in mind when reading a backtest.
 | # | Divergence | Status |
 | --- | --- | --- |
 | A1 | Halt rules: backtest used to wire ZERO halt rules while live halts | FIXED (#362) — backtests build the same config-driven halt set and report halts |
-| A2 | Warmup: live waited a full live window post-deploy; backtest consumed the first N bars | FIXED (#383) — seeded history credits the gate in live |
+| A2 | Warmup: live waited a full live window post-deploy; CLI backtests consumed the first N in-window bars | FIXED (#383, #947) — one shared coordinator seeds closed pre-window history in live and backtest before DSL binding (`BacktestFromStoreTest`) |
 | A3 | GTD expiry: venue ignores expiration; engine sweep was disabled | FIXED (#368) — engine sweep owns GTD in live; backtest sweep identical |
 | A4 | Trigger side: everything triggered on mid; venue triggers on bid/ask | FIXED (#382) — side-aware in PaperBroker, MT5_SIM, and engine-held triggers; bar-sourced backtests have no quote depth, so they still effectively trigger on the synthesized price |
 | A5 | Costs: live PnL/halts were commission/swap-blind | FIXED (#392, #644) — venue costs net out of realized in live; backtest models per-lot commission and deterministic long/short swap points at configured UTC rollovers. Live uses venue-reported swap, while replay uses the point-in-time rates in `instruments.yaml`; rate-history drift remains an input-data divergence |
 | A6 | Bar synthesis order: `BarTickFeed` emits O→L→H→C — for SHORT positions the favorable extreme arrives before the adverse one (optimistic). One ordering cannot be worst-case for both sides | INHERENT for the plain `--bars` research tier — read short-side bar results conservatively. RESOLVED by `--bars --tick-fills`, which resolves fills on real ticks for every fill-possible bar and is byte-identical to a full-tick replay (`TickResolvedParityTest`) |
-| A7 | Tick sampling: backtest replays every stored tick; live MT5 polls at ~50ms with dedupe and burst shedding. Engine-held trails/latches/stacks walk different price paths | INHERENT — quantified in the data parity reports |
+| A7 | Tick sampling: backtest replays every stored tick; live MT5 polls at the profile's `tick_poll_interval_ms` (1000ms default) with dedupe and bounded-queue shedding. Engine-held trails/latches/stacks walk different price paths | INHERENT — quantify the configured/captured feed cadence in data parity evidence |
 | A8 | SCHEDULE timing: backtest fires on the next replayed tick after the trigger time; live fires from a 1Hz wall-clock heartbeat even with no ticks | INHERENT — sub-second placement differences |
 | A9 | Calendars: the backtest CLI uses fixed per-symbol calendar rules (crypto for `BTC*`/`*USDT`, FX default otherwise); live and portfolio book-risk annualization use the broker profile calendar. The FX weekend boundary is a FIXED UTC hour year-round and does not track New York DST (up to 1h off near the close/open in winter) | INHERENT — pinned by `FxCalendarTest`, `PortfolioRiskAggregatorTest` |
 | A10 | `x.bid` / `x.ask` / `x.spread` evaluate Undefined on bar-sourced backtest data — spread-aware rules silently never fire in bar backtests (tick-sourced backtests carry real quotes) | OPEN (#389) — prefer tick data for spread-aware strategies |
@@ -128,7 +129,7 @@ keep in mind when reading a backtest.
 | A13 | Week-close entries: an entry signalled on the final pre-weekend bar closes via the live heartbeat (A12) when the feed is already stale and the venue shut, so the market-data gate rejects it; backtest closes the same bar on the venue's reopen tick and fills at the reopen price | MITIGATED (#888/#890) — the rejected fire re-arms and, if the condition still holds on the first post-reopen bar close, enters one bar later than backtest. The one-bar entry lag is INHERENT |
 | A14 | Warmup seed grid: MT5 aggregates multi-hour history on the broker's day boundary, which put seeded H4/D1 bars on a shifted grid vs the epoch-aligned UTC bars live aggregation and backtest use | FIXED (#887) — multi-hour warmup history is fetched as H1 and rebuilt on the UTC grid; `CandleHub.seed` fail-closes on off-grid bars |
 | A15 | Margin floor is a live pre-trade rule because replay has no venue margin-level feed | INHERENT — repeated missing reads fail closed for new exposure; risk-reducing exits remain allowed (`MarginFloorTest`) |
-| A16 | Standalone live sessions substitute fresh venue equity into drawdown and percent-of-equity sizing; replay uses model equity | INHERENT — stale venue equity is discarded and falls back to engine-derived equity (`BrokerEquityMonitorTest`) |
+| A16 | Standalone live sessions default to fresh venue equity for drawdown and percent-of-equity sizing; replay uses model equity | DECLARED/CONFIGURABLE (#939) — `risk.live_equity_basis: modeled` pins live to `starting_balance + qkt realized + qkt unrealized`; `venue` remains the compatibility default (`LiveSessionBrokerEquityTest`) |
 | A17 | Measured-usage ramp caps live order quantity during a configured post-deploy window; replay does not model deployment age | INHERENT — pinned by `MeasuredUsageTest` |
 
 ## 2026-07-03 hardening pass — parity-audit rows resolved (#658)
@@ -151,7 +152,7 @@ test class that pins it.
 | #624 | The tick-fills classifier expands the mid bar range by the slice's max half-spread, so levels crossed only by the executable quote resolve on real (side-aware) ticks | `OrderManagerIntrabarFillTest`, `BarResolvedFeedTest` |
 | #625 | Backtest sims never fill an order cancelled earlier in the same tick | `PaperBrokerTest`, `MT5BrokerSimulatorTest` |
 | #626 | Backtest and live honor each halt event's `cancelWorkingOrders`; cancellation is strategy-scoped and retains protective exits | `OrderManagerTest`, `BacktestRiskParityTest` |
-| #627/#628 | Portfolio backtests refuse WHEN..RUN / CAPITAL topologies and `--bars`/`--bar-tf`/`--tick-fills` rather than produce a misleading result | `BacktestCommandPortfolioTest` |
+| #627/#628 | Portfolio backtests accept always-run `CAPITAL`/`WEIGHT` and `RISK OF BOOK` topologies. They refuse conditional `WHEN..RUN` gates and portfolio `--bars`/`--bar-tf`/`--tick-fills` rather than silently changing topology | `BacktestCommandPortfolioTest`, `PortfolioDeployerBacktestParityTest` |
 | #629 | `qkt sweep --tick-fills` errors instead of silently downgrading | `SweepCommandTest` |
 | #630/#641 | `--bars` validates bar-store coverage per trading day (fail-loud, `--allow-incomplete` escape); non-Dukascopy streams are completeness-validated; empty feeds error instead of replaying nothing | `BarCompletenessValidatorTest`, `BacktestFromStoreTest` |
 | #631 | MT5 warmup bars normalize bid OHLC to mid via half-spread, matching the backtest's mid bars | `Mt5BarFetcherTest` |
@@ -165,6 +166,29 @@ test class that pins it.
 | #643 | Plain `--bars` stops that gap through their level fill at the adverse opening print, not the level | `PaperBrokerTest` |
 | #390 | Bracket exits re-anchor on the actual fill price (fallback OCO and venue-attached modify both) | `OrderManagerAttachedBracketTest`, `OrderManagerTier2FallbackTest` |
 
+## 2026-07-31 parity verification (#948)
+
+Every open issue in the parity epic was rechecked against `dev`. Stale reports are resolved by
+existing shared-code evidence; confirmed residuals were fixed without introducing a second
+execution, risk, accounting, or warmup pipeline.
+
+| Issue | Verified result | Evidence |
+| --- | --- | --- |
+| #934 | Book-risk annualization uses the routed calendar. Conditional and always-run portfolios with book streams sample on portfolio candle close; streamless books use the documented heartbeat fallback | `PortfolioDeployerE2ETest`, `PortfolioRiskAggregatorTest` |
+| #935 | Net costs stay in cash P&L, while win rate, profit factor, streaks, and Monte Carlo use exposure-reducing fills only. `financing.csv` exports swap cost and its signed P&L impact for CSV reconciliation | `ReportBuilderTest`, `BacktestReportWriterTest` |
+| #936 | All five configured `MaxStrategy*` limits are built once by `StrategyRiskRuleFactory` and consumed by live and replay | `StrategyRiskRuleFactoryTest`, `BacktestRiskParityTest` |
+| #937 | `daily_dd_basis` is threaded through global and per-strategy replay risk state | `BacktestRiskParityTest` |
+| #938 | A portfolio-wide replay halt cancels entries and emits deterministic close orders for every child-owned leg on the breach tick, matching live flatten-before-halt | `BacktestRiskParityTest` |
+| #939 | Standalone live equity remains venue-based by default and can be pinned to modeled parity with `risk.live_equity_basis: modeled` | `ConfigTest`, `LiveSessionBrokerEquityTest` |
+| #940 | Margin floor and measured-usage ramp remain intentionally live-only and are declared in A15/A17; neither restriction is implied by a backtest | `MarginFloorTest`, `MeasuredUsageTest` |
+| #941 | Live child/standalone feeds subscribe configured FX conversion symbols in addition to traded streams; conversion symbols do not become tradable streams | `StrategyHandleTest`, `PortfolioDeployerE2ETest` |
+| #942 | Halt cancellation honors `cancelWorkingOrders`, scopes by strategy id, and retains protective exits | `OrderManagerTest`, `BacktestRiskParityTest` |
+| #943 | A live deploy with a drawdown limit refuses a non-positive `starting_balance` instead of silently making static drawdown inert | `StrategyHandleTest` |
+| #944 | MT5 `volume_max` is parsed and enforced in live preflight and MT5_SIM | `MT5ClientTest`, `MT5BrokerIntegrationTest`, `MT5BrokerSimulatorTest` |
+| #945 | `qkt instruments verify` compares YAML contract size, volume bounds/step, point size, digits, and stops level against `/symbol_info`, exiting non-zero on drift | `InstrumentsCommandTest` |
+| #946 | The catalog cadence/topology claims are corrected and a real `PortfolioDeployer` topology with `CAPITAL`, `WEIGHT`, `RISK OF BOOK`, and book allocation is compared with backtest output | `PortfolioDeployerBacktestParityTest` |
+| #947 | CLI/store replay derives the same exact-stream warmup plan as live and seeds pre-window closed bars before DSL binding | `BacktestFromStoreTest`, `CompiledStrategyAutoWarmupTest` |
+
 ### Residual divergences (known, accepted, tracked)
 
 | Residual | Behavior | Tracking |
@@ -174,6 +198,13 @@ test class that pins it.
 | Tick-fills synthetic marks | A symbol with an open position but no live orders resolves SYNTHETIC under `--tick-fills`, so its intrabar equity marks come from synthetic points (fills are exact; drawdown sampling is approximate) | #642 residual |
 | Venue partials on fallback exits | When a venue partial fills a fallback (non-attached) bracket, exits are sized to the first fill's volume; a later remainder fill has no engine exit | follow-up if partial-fill venues go live |
 | Already-crossed native stops | The fill decision is aligned: MT5 converts a STOP already through the latest ask/bid to MARKET (StopLimit to LIMIT), matching the engine-held path. Backtest fills on its crossing tick, while live fills after dispatch at the venue's later executable price, so latency/slippage can still change the fill price | #815; decision pinned by `AlreadyCrossedStopParityTest`, live wire/protection by `MT5BrokerIntegrationTest` |
+
+With the same input event stream, calendar, instrument metadata, cost and risk configuration,
+modeled live-equity basis, and venue-shaped broker model, the backtest is faithful for live
+dollar/trade replication within the declared bounds above. This is a shared-runtime claim, not a
+claim that `PaperBroker` or historical ticks predict venue latency, retcodes, partial fills, feed
+sampling, or other explicitly listed live-only effects. Use `mt5-sim` and retained venue evidence
+when the result will be cited as MT5-shaped rather than research-tier output.
 
 ## File pointers
 

@@ -86,6 +86,19 @@ class ConfigTest {
     }
 
     @Test
+    fun `live equity basis parses modeled and rejects unknown values`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(cfg, "risk:\n  live_equity_basis: modeled\n")
+        assertThat(Config.load(cfg).liveEquityBasis).isEqualTo(com.qkt.app.LiveEquityBasis.MODELED)
+
+        Files.writeString(cfg, "risk:\n  live_equity_basis: mixed\n")
+        val error = runCatching { Config.load(cfg).liveEquityBasis }.exceptionOrNull()
+        assertThat(error).hasMessageContaining("valid: venue, modeled")
+    }
+
+    @Test
     fun `runtime mode and waivers parse from config`(
         @TempDir tmp: Path,
     ) {

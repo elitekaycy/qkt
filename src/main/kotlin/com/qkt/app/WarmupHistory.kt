@@ -8,18 +8,51 @@ import java.time.Instant
 
 private const val MAX_WARMUP_RANGE_ATTEMPTS = 8
 
+private data class LoadedBars(
+    val candles: List<Candle>,
+    val searchedDurationMs: Long,
+)
+
 /** Reuses exact per-session warmup requests across hub seeding and synthetic tick replay. */
 internal class WarmupHistoryLoader(
     private val source: MarketSource,
 ) {
-    private val cache = mutableMapOf<Request, List<Candle>>()
+    private val cache = mutableMapOf<Request, LoadedBars>()
 
     fun load(
         symbol: String,
         window: TimeWindow,
         count: Int,
         upperMs: Long,
-    ): List<Candle> =
+    ): List<Candle> {
+        val loaded = cached(symbol, window, count, upperMs)
+        if (loaded.candles.size < count) {
+            throw WarmupUnderfilledException(
+                symbol = symbol,
+                window = window,
+                requested = count,
+                available = loaded.candles.size,
+                upperMs = upperMs,
+                searchedDurationMs = loaded.searchedDurationMs,
+            )
+        }
+        return loaded.candles
+    }
+
+    /** Returns all available closed history up to [count] without requiring a full window. */
+    fun loadAvailable(
+        symbol: String,
+        window: TimeWindow,
+        count: Int,
+        upperMs: Long,
+    ): List<Candle> = cached(symbol, window, count, upperMs).candles
+
+    private fun cached(
+        symbol: String,
+        window: TimeWindow,
+        count: Int,
+        upperMs: Long,
+    ): LoadedBars =
         cache.getOrPut(Request(symbol, window, count, upperMs)) {
             loadWarmupBars(source, symbol, window, count, upperMs)
         }
@@ -36,8 +69,8 @@ internal class WarmupHistoryLoader(
  * Loads the newest [count] closed bars, expanding across non-trading periods when needed.
  *
  * A wall-clock range of `count * window` is insufficient when it crosses a weekend,
- * holiday, or venue outage. The bounded expansion keeps startup deterministic while
- * refusing to leave indicators silently underfilled.
+ * holiday, or venue outage. The bounded expansion keeps startup deterministic; callers
+ * choose whether an underfilled result aborts deployment or seeds best-effort replay history.
  */
 private fun loadWarmupBars(
     source: MarketSource,
@@ -45,7 +78,7 @@ private fun loadWarmupBars(
     window: TimeWindow,
     count: Int,
     upperMs: Long,
-): List<Candle> {
+): LoadedBars {
     require(count > 0) { "warmup bar count must be > 0: $count" }
 
     val initialDurationMs = Math.multiplyExact(window.durationMs, count.toLong())
@@ -66,20 +99,15 @@ private fun loadWarmupBars(
                 .sortedBy { it.startTime }
                 .toList()
 
-        if (available.size >= count) return available.takeLast(count)
+        if (available.size >= count) {
+            return LoadedBars(available.takeLast(count), durationMs)
+        }
         if (attempt < MAX_WARMUP_RANGE_ATTEMPTS - 1) {
             durationMs = Math.multiplyExact(durationMs, 2L)
         }
     }
 
-    throw WarmupUnderfilledException(
-        symbol = symbol,
-        window = window,
-        requested = count,
-        available = available.size,
-        upperMs = upperMs,
-        searchedDurationMs = durationMs,
-    )
+    return LoadedBars(available, durationMs)
 }
 
 /** Indicates that a live strategy could not obtain enough closed bars to initialize its indicators. */

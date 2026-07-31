@@ -42,6 +42,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | Command | What it does |
 |---|---|
 | `qkt brokers list [--json]` | Resolved broker profiles (defaults + user config + env). |
+| `qkt instruments verify [--broker NAME] [--instruments PATH] [--json]` | Compare static instrument metadata with each matching MT5 profile's live `/symbol_info`; exits non-zero on any mismatch. |
 | `qkt audit-ticks --symbol X --duration N --mt5-profile P [--reference tradingview\|mt5-history]` | Compare TV with MT5, or reconcile live MT5 quotes against raw venue history. |
 
 ## Global flags

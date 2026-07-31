@@ -34,6 +34,7 @@ internal fun runMain(argv: Array<String>): Int =
             "reconcile" -> ReconcileCommand(args).run()
             "resume" -> ResumeCommand(args).run()
             "brokers" -> BrokersCommand(args).run()
+            "instruments" -> InstrumentsCommand(args).run()
             "editor" -> EditorCommand(args).run()
             "create" -> CreateCommand(args).run()
             "audit-ticks" -> AuditTicksCommand(args).run()
@@ -114,6 +115,7 @@ private fun printHelp() {
 
         VENUE / FEED
             brokers list            list configured broker profiles
+            instruments verify      compare instruments.yaml with MT5 /symbol_info
             audit-ticks ...         capture and audit live MT5 ticks
             fetch BROKER:SYMBOL --tf <tf> --from <date> --to <date>
                                     backfill historical bars into the local store

@@ -42,17 +42,20 @@ class IndicatorWarmer internal constructor(
      *
      * Symbols mapped to [WarmupSpec.None] are skipped silently. Failures from
      * `source.bars(...)` propagate (callers wrap them in `WarmupFailedException`).
+     * [requireFullHistory] is true for live fail-closed deployment and false for
+     * backtests, which seed all available pre-window bars before consuming the test window.
      */
     fun warmup(
         perStream: Map<WarmupStream, WarmupSpec>,
         now: Instant,
+        requireFullHistory: Boolean = true,
     ) {
         for ((stream, spec) in perStream) {
             val resolved = resolveBarSpec(spec) ?: continue
             require(resolved.window == stream.window) {
                 "warmup window mismatch: key=${stream.window} spec=${resolved.window} symbol=${stream.symbol}"
             }
-            warmupSymbol(stream.symbol, resolved, now)
+            warmupSymbol(stream.symbol, resolved, now, requireFullHistory)
         }
     }
 
@@ -60,9 +63,15 @@ class IndicatorWarmer internal constructor(
         symbol: String,
         bars: BarSpec,
         now: Instant,
+        requireFullHistory: Boolean = true,
     ) {
         val upperMs = bars.window.windowStartFor(now.toEpochMilli())
-        val candles = history.load(symbol, bars.window, bars.count, upperMs)
+        val candles =
+            if (requireFullHistory) {
+                history.load(symbol, bars.window, bars.count, upperMs)
+            } else {
+                history.loadAvailable(symbol, bars.window, bars.count, upperMs)
+            }
         for (candle in candles) {
             for (tick in candleToTicks(candle.copy(symbol = symbol))) {
                 require(tick.timestamp < now.toEpochMilli()) {

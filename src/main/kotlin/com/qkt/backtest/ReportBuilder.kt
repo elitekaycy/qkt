@@ -84,20 +84,20 @@ object ReportBuilder {
         dailyAdjustments: Map<java.time.LocalDate, BigDecimal>,
         tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
-        val realizeds = trades.map { it.realized }
-        val closing = realizeds.filter { it.signum() != 0 }
-        val wins = closing.count { it.signum() > 0 }
+        val closingRealizeds = trades.filter { it.reducedExposure }.map { it.realized }
+        val outcomes = closingRealizeds.filter { it.signum() != 0 }
+        val wins = outcomes.count { it.signum() > 0 }
         val winRate =
-            if (closing.isEmpty()) {
+            if (outcomes.isEmpty()) {
                 Money.ZERO
             } else {
                 BigDecimal(wins)
-                    .divide(BigDecimal(closing.size), Money.CONTEXT)
+                    .divide(BigDecimal(outcomes.size), Money.CONTEXT)
                     .setScale(Money.SCALE, Money.ROUNDING)
             }
 
-        val pf = profitFactor(realizeds)
-        val wl = winLossStats(realizeds)
+        val pf = profitFactor(closingRealizeds)
+        val wl = winLossStats(closingRealizeds)
         val drawdown = metrics?.maxDrawdown() ?: DrawdownTracker.fromCurve(equityCurve.map { it.equity })
         val sharpeR = metrics?.sharpe(annualizationFactor) ?: sharpe(equityCurve.map { it.equity }, annualizationFactor)
         val sortinoR =
@@ -123,9 +123,9 @@ object ReportBuilder {
             }
         val calmarR = totalReturnFraction?.let { calmar(it, drawdown) }
         val monteCarlo =
-            if (trades.size >= 30) {
+            if (closingRealizeds.size >= 30) {
                 MonteCarlo.run(
-                    tradeReturns = realizeds,
+                    tradeReturns = closingRealizeds,
                     startingEquity = startingEquity,
                     simulations = 1000,
                     seed = 42L,

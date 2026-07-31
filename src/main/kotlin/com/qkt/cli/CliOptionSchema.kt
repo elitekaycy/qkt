@@ -118,6 +118,11 @@ internal object CliOptionSchemas {
             "reconcile" to CliOptionSchema(values = setOf("state-dir"), flags = setOf("json")),
             "resume" to CliOptionSchema(values = setOf("state-dir"), flags = setOf("json")),
             "brokers" to CliOptionSchema(values = setOf("config"), flags = setOf("json")),
+            "instruments" to
+                CliOptionSchema(
+                    values = setOf("config", "instruments", "broker"),
+                    flags = setOf("json"),
+                ),
             "editor" to
                 CliOptionSchema(
                     flags = setOf("yes", "y"),

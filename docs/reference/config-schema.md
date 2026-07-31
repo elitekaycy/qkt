@@ -127,6 +127,7 @@ brokers:
     instrument_overrides:
       XAUUSD:
         min_volume: "0.01"
+        max_volume: "50"
         volume_step: "0.01"
         point_size: "0.001"
         digits: "3"
@@ -261,7 +262,7 @@ book_risk:
 |---|---|---|---|---|
 | `source` | string | `tv` when file exists, `local` from built-in defaults on missing file | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and Bybit routed symbols still use their own routes. |
 | `data_root` | path string | `./data` in config object, but backtest CLI defaults to `DataRoot.resolve()` unless `--data-root` is passed | historical data commands and examples | Prefer explicit `--data-root` for research runs that need reproducibility. |
-| `starting_balance` | decimal | `0` in config, `10000` for backtest CLI default | daemon risk, live PnL, reports | Set explicitly for production and portfolio work. |
+| `starting_balance` | decimal | `0` in config, `10000` for backtest CLI default | daemon risk, live PnL, reports | Must be greater than zero when a live drawdown limit is configured. Set explicitly for production and portfolio work. |
 | `log_level` | string | `info` | process logging setup where honored | Expected values are conventional log levels such as `debug`, `info`, `warn`, `error`. |
 
 ## `runtime`
@@ -301,6 +302,7 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `max_daily_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global daily-drawdown halt. |
 | `total_dd_basis` | `static` | halt rules | `static` uses initial balance. `trailing` uses high-water equity. |
 | `daily_dd_basis` | `balance` | halt rules | `balance` uses day-start closed balance. `equity` includes open float. |
+| `live_equity_basis` | `venue` | standalone live sizing and drawdown | `venue` consumes broker account equity. `modeled` pins live to `starting_balance + qkt realized + qkt unrealized`, matching backtest accounting. Portfolio children always use their allocated modeled capital. |
 
 `balance` is retained as the compatibility default, but it ignores intraday open
 loss. Accounts governed by equity-based daily-loss mandates (including many funded
@@ -399,7 +401,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `calendars` | map pattern to `fx`, `crypto`, or `nyse` | no | inherited or FX default | First matching pattern wins. |
 | `aliases` | map qkt symbol to broker symbol | no | inherited plus overrides | Example `NAS100: USTEC`. |
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |
-| `instrument_overrides.<symbol>` | map | no | inherited plus overrides | Requires `min_volume`, `volume_step`, `point_size`, `digits`, `trade_stops_level_points`. |
+| `instrument_overrides.<symbol>` | map | no | inherited plus overrides | Requires `min_volume`, `volume_step`, `point_size`, `digits`, `trade_stops_level_points`; optional `max_volume` is enforced when present. |
 
 Bybit credentials are not configured under `qkt.config.yaml`. Bybit live routes are enabled when `BYBIT_API_KEY` is non-empty. The client reads `BYBIT_API_KEY`, `BYBIT_API_SECRET`, `BYBIT_TESTNET`, `BYBIT_RECV_WINDOW_MS`, and `BYBIT_ACCOUNT_TYPE` from the environment.
 
@@ -501,7 +503,8 @@ Before production:
 
 1. Run `qkt preflight <strategy.qkt> --production --config qkt.config.yaml`.
 2. Run `qkt brokers list --config qkt.config.yaml` when using MT5 profiles.
-3. Run pinned backtests with `--dataset` and realistic execution.
-4. Record promotion evidence and approval.
-5. Run `qkt promotion status <name> --strategy <strategy.qkt> --config qkt.config.yaml`.
-6. Run `qkt status --deep` after daemon startup.
+3. Run `qkt instruments verify --config qkt.config.yaml` to detect YAML/venue metadata drift.
+4. Run pinned backtests with `--dataset` and realistic execution.
+5. Record promotion evidence and approval.
+6. Run `qkt promotion status <name> --strategy <strategy.qkt> --config qkt.config.yaml`.
+7. Run `qkt status --deep` after daemon startup.

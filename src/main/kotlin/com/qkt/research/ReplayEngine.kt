@@ -3,6 +3,7 @@ package com.qkt.research
 import com.qkt.accounting.AccountingConfig
 import com.qkt.accounting.AccountingEngine
 import com.qkt.app.IndicatorWarmer
+import com.qkt.app.PerStreamWarmupCoordinator
 import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BookReturnCollector
@@ -176,6 +177,18 @@ class ReplayEngine(
         val candleHub =
             com.qkt.dsl.compile
                 .CandleHub()
+        val perStreamWarmup =
+            if (source !== NullMarketSource) {
+                PerStreamWarmupCoordinator(
+                    strategies = strategies,
+                    source = source,
+                    hub = candleHub,
+                    now = Instant.ofEpochMilli(initialTimestamp),
+                    requireFullHistory = false,
+                ).also { it.prepareHub() }
+            } else {
+                null
+            }
 
         val dslStrategies =
             strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
@@ -394,14 +407,14 @@ class ReplayEngine(
                     tradeRecords.add(
                         TradeRecord(
                             trade = trade,
-                            realized = converted.account.amount,
+                            realized = fillState.netAccountRealized,
                             strategyId = strategyId,
                             riskUsd = entryRisk?.riskUsd,
                             stopLossPrice = entryRisk?.protection?.stopLoss,
                             takeProfitPrice = entryRisk?.protection?.takeProfit,
                             nativeRealized = converted.native.amount,
                             nativeCurrency = converted.native.normalizedCurrency,
-                            accountRealized = converted.account.amount,
+                            accountRealized = fillState.netAccountRealized,
                             accountCurrency = converted.account.normalizedCurrency,
                             fxRate = converted.conversion?.rate,
                             fxRateTimestamp = converted.conversion?.timestamp,
@@ -411,9 +424,10 @@ class ReplayEngine(
                             strategyPositionBefore = fillState.strategyPositionBefore,
                             strategyPositionAfter = fillState.strategyPositionAfter,
                             contractSize = fillState.contractSize,
+                            reducedExposure = fillState.reducedExposure,
                         ),
                     )
-                    tape.add(TapeEvent.Filled(currentTimestamp, trade, converted.account.amount, strategyId))
+                    tape.add(TapeEvent.Filled(currentTimestamp, trade, fillState.netAccountRealized, strategyId))
                 },
                 onRejected = { e ->
                     rejections.add(e)
@@ -442,6 +456,32 @@ class ReplayEngine(
             if (event.cancelWorkingOrders) {
                 pipeline.orderManager.cancelEntriesForHalt(event.strategyId)
             }
+            if (event.strategyId == null && bookCapital != null && strategies.size > 1) {
+                for ((strategyId, _) in strategies) {
+                    for (leg in strategyPositions.allLegsFor(strategyId)) {
+                        bus.publish(
+                            com.qkt.events.OrderEvent(
+                                com.qkt.execution.OrderRequest.Market(
+                                    id = ids.next(),
+                                    symbol = leg.symbol,
+                                    side =
+                                        if (leg.side == com.qkt.common.Side.BUY) {
+                                            com.qkt.common.Side.SELL
+                                        } else {
+                                            com.qkt.common.Side.BUY
+                                        },
+                                    quantity = leg.quantity,
+                                    timeInForce = com.qkt.execution.TimeInForce.GTC,
+                                    timestamp = clock.now(),
+                                    strategyId = strategyId,
+                                    closesTicket = leg.brokerTicket,
+                                    closesLegId = leg.legId,
+                                ),
+                            ),
+                        )
+                    }
+                }
+            }
         }
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
@@ -450,7 +490,9 @@ class ReplayEngine(
             feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill)
         }
 
-        if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && tradedSymbols.isNotEmpty()) {
+        if (perStreamWarmup?.specs?.isNotEmpty() == true) {
+            perStreamWarmup.warm(pipeline)
+        } else if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && tradedSymbols.isNotEmpty()) {
             IndicatorWarmer(source, pipeline).warmup(
                 symbols = tradedSymbols,
                 spec = warmupSpec,

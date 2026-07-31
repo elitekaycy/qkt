@@ -1941,6 +1941,28 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `volume above volumeMax is rejected without HTTP placement`() {
+        val req =
+            OrderRequest.Market(
+                id = "ord-oversized",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("100.01"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+
+        val ack = broker.submit(req)
+
+        assertThat(ack.accepted).isFalse
+        assertThat(ack.rejectReason).contains("above venue volumeMax")
+        assertThat(
+            captured.filterIsInstance<BrokerEvent.OrderRejected>().any { it.clientOrderId == "ord-oversized" },
+        ).isTrue()
+    }
+
+    @Test
     fun `bracket with SL too close to entry is rejected pre-placement`() {
         // Configure an override with tradeStopsLevelPoints=100 and pointSize=0.001.
         // Min SL distance: 100 × 0.001 = 0.1.
@@ -2236,6 +2258,7 @@ class MT5BrokerIntegrationTest {
                 pointSize = BigDecimal("0.00001"),
                 digits = 5,
                 tradeStopsLevelPoints = 0,
+                maxVolume = BigDecimal("100"),
             )
 
         private val TEST_XAUUSD_SPEC =
