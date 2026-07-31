@@ -336,6 +336,7 @@ class BacktestReportWriter(
                         .map { "equity_${fileId(it)}.csv" },
                 )
                 add("trades.csv")
+                add("financing.csv")
                 add("rejections.csv")
                 add("pnl_components.csv")
                 if (result.bookRisk != null) add("book_risk.csv")

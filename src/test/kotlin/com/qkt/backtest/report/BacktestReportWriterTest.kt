@@ -146,6 +146,7 @@ class BacktestReportWriterTest {
                 "equity_global.csv",
                 "equity_s1.csv",
                 "trades.csv",
+                "financing.csv",
                 "rejections.csv",
                 "pnl_components.csv",
                 "report.html",
