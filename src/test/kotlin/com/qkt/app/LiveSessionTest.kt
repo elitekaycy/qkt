@@ -546,6 +546,164 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `paper live session quantizes fills with the supplied instrument registry`() {
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    emit(Signal.Buy("X", Money.of("0.19")))
+                }
+            }
+        val instruments =
+            object : com.qkt.instrument.InstrumentRegistry {
+                override fun lookup(qktSymbol: String) =
+                    com.qkt.instrument.InstrumentMeta(
+                        qktSymbol = qktSymbol,
+                        contractSize = BigDecimal.ONE,
+                        volumeStep = BigDecimal("0.1"),
+                        volumeMin = BigDecimal("0.1"),
+                        volumeMax = null,
+                        pointSize = BigDecimal("0.01"),
+                        digits = 2,
+                        tradeStopsLevelPoints = 0,
+                    )
+            }
+
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                source = src,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                instrumentRegistry = instruments,
+            ).start()
+
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+        assertThat(handle.recentTrades().single().quantity).isEqualByComparingTo("0.1")
+    }
+
+    @Test
+    fun `graceful stop drains an in-flight broker fill before returning`() {
+        val feedClosed = java.util.concurrent.CountDownLatch(1)
+        val feed =
+            object : TickFeed {
+                private val ticks = java.util.concurrent.LinkedBlockingQueue<Tick>()
+
+                fun offer(tick: Tick) {
+                    ticks.put(tick)
+                }
+
+                override fun next(): Tick = ticks.take()
+
+                override fun close() {
+                    feedClosed.countDown()
+                }
+            }
+        val source =
+            object : MarketSource {
+                override val name = "Async"
+                override val capabilities = setOf(MarketSourceCapability.LIVE_TICKS)
+
+                override fun supports(symbol: String): Boolean = true
+
+                override fun liveTicks(symbols: List<String>): TickFeed = feed
+            }
+        val submitted = java.util.concurrent.CountDownLatch(1)
+        val publishFill =
+            java.util.concurrent.atomic
+                .AtomicReference<() -> Unit>()
+        val factory: BrokerFactory = { bus, clock, _, _, _ ->
+            object : com.qkt.broker.Broker {
+                override val name = "Async"
+                override val capabilities = setOf(com.qkt.broker.OrderTypeCapability.MARKET)
+
+                override fun submit(request: com.qkt.execution.OrderRequest): com.qkt.broker.SubmitAck {
+                    bus.publish(
+                        com.qkt.events.BrokerEvent.OrderAccepted(
+                            clientOrderId = request.id,
+                            brokerOrderId = "venue-1",
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                    publishFill.set {
+                        bus.publish(
+                            com.qkt.events.BrokerEvent.OrderFilled(
+                                clientOrderId = request.id,
+                                brokerOrderId = "venue-1",
+                                symbol = request.symbol,
+                                side = request.side,
+                                price = BigDecimal("100"),
+                                quantity = request.quantity,
+                                strategyId = request.strategyId,
+                                timestamp = clock.now(),
+                            ),
+                        )
+                    }
+                    submitted.countDown()
+                    return com.qkt.broker.SubmitAck(request.id, "venue-1", accepted = true)
+                }
+
+                override fun cancel(orderId: String) = Unit
+            }
+        }
+        val fired =
+            java.util.concurrent.atomic
+                .AtomicBoolean(false)
+        val strategy =
+            object : DslCompiledStrategy {
+                override val declaredStreams: Map<String, HubKey> =
+                    mapOf("x" to HubKey("ASYNC", "X", "1m"))
+                override val multiPositionPerSymbolSymbols: Set<String> = emptySet()
+                override val retentionByKey: Map<HubKey, Int> = emptyMap()
+                override val pendingStacks: PendingStacks = PendingStacks()
+
+                override fun bindToHub(
+                    hub: CandleHub,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {}
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    if (fired.compareAndSet(false, true)) emit(Signal.Buy("ASYNC:X", BigDecimal("0.5")))
+                }
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("test" to strategy),
+                source = source,
+                symbols = listOf("ASYNC:X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                brokerFactories = mapOf("async" to factory),
+            ).start()
+        feed.offer(Tick("ASYNC:X", BigDecimal("100"), now.toEpochMilli()))
+        feed.offer(Tick("ASYNC:X", BigDecimal("100"), now.plusSeconds(61).toEpochMilli()))
+        assertThat(submitted.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+
+        val stopper = Thread(handle::stop).also(Thread::start)
+        Thread.sleep(50L)
+        publishFill.get().invoke()
+        stopper.join(5_000L)
+
+        assertThat(stopper.isAlive).isFalse()
+        assertThat(feedClosed.count).isZero()
+        assertThat(handle.recentTrades()).hasSize(1)
+        assertThat(handle.recentTrades().single().quantity).isEqualByComparingTo("0.5")
+        assertThat(handle.positionsFor("test").single().quantity).isEqualByComparingTo("0.5")
+    }
+
+    @Test
     fun `reconcile attributes live fills when insights are disabled`() {
         val src = InMemoryMarketSource()
         src.seedLive("EXNESS:X", listOf(Tick("EXNESS:X", Money.of("100"), now.toEpochMilli())))

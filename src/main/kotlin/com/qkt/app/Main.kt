@@ -33,9 +33,10 @@ fun main() {
     val sequencer = MonotonicSequenceGenerator()
     val priceTracker = MarketPriceTracker()
     val positions = PositionTracker()
-    val pnl = PnLCalculator(positions, priceTracker)
+    val instruments = com.qkt.instrument.StandardInstrumentRegistry
+    val pnl = PnLCalculator(positions, priceTracker, instruments)
     val bus = EventBus(clock, sequencer)
-    val broker = PaperBroker(bus, clock, priceTracker)
+    val broker = PaperBroker(bus, clock, priceTracker, instruments)
     val engine = Engine(bus, priceTracker)
 
     val strategies: List<Pair<String, Strategy>> =
@@ -47,7 +48,7 @@ fun main() {
             MaxPositionSize(symbol = "XAUUSD", maxQty = Money.of("3")),
         )
     val strategyPositions = StrategyPositionTracker()
-    val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
+    val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
     val riskState = RiskState(pnl, strategyPnL, clock, bus)
     riskState.warmupComplete = true
     val riskEngine = RiskEngine(rules, emptyList(), positions, riskState)

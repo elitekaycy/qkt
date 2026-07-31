@@ -145,7 +145,7 @@ class FileStatePersistorPendingOrdersTest {
     }
 
     @Test
-    fun `Bracket variant is silently skipped`(
+    fun `Bracket variant round trips for pre-fill recovery`(
         @TempDir tmp: Path,
     ) {
         val persistor = FileStatePersistor(tmp)
@@ -172,12 +172,11 @@ class FileStatePersistorPendingOrdersTest {
                 timestamp = 1000L,
                 strategyId = "hedge",
             )
-        // Bracket is skipped; market (the entry) is kept as a flat Market.
         persistor.savePendingOrders("hedge", mapOf("b-1" to bracket, "entry" to market))
         val loaded = persistor.loadPendingOrders("hedge")
-        assertThat(loaded).hasSize(1)
+        assertThat(loaded).hasSize(2)
         assertThat(loaded["entry"]).isEqualTo(market)
-        assertThat(loaded).doesNotContainKey("b-1")
+        assertThat(loaded["b-1"]).isEqualTo(bracket)
     }
 
     @Test

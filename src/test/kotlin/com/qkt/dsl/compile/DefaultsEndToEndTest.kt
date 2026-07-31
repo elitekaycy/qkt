@@ -18,9 +18,41 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class DefaultsEndToEndTest {
+    @Test
+    fun `STOP LOSS only DEFAULTS fails at compile time before the first fire`() {
+        val src =
+            """
+            STRATEGY incomplete_defaults VERSION 1
+
+            DEFAULTS {
+                STOP_LOSS = BY 5
+            }
+
+            SYMBOLS
+                btc = BACKTEST:BTCUSDT EVERY 1m
+
+            RULES
+                WHEN btc.close > 0
+                THEN BUY btc SIZING 1
+            """.trimIndent()
+        val parsed =
+            com.qkt.dsl.parse
+                .Parser(
+                    com.qkt.dsl.parse
+                        .Lexer(src)
+                        .tokenize(),
+                ).parseStrategy() as com.qkt.dsl.parse.ParseResult.Success
+
+        assertThatThrownBy { AstCompiler().compile(parsed.value) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("BRACKET requires both STOP LOSS and TAKE PROFIT")
+            .hasMessageContaining("missing TAKE PROFIT")
+    }
+
     @Test
     fun `RISK 1 percent with DEFAULTS bracket and 10000 equity yields qty 20`() {
         val ast =

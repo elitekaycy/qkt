@@ -183,6 +183,28 @@ class DaemonCommand(
                 runCatching { insightsSink?.close() }
                 return ExitCodes.USER_ERROR
             }
+        val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar = { qktSymbol ->
+            liveCalendarFor(qktSymbol, mt5Profiles)
+        }
+        val daemonInstrumentRegistry =
+            try {
+                com.qkt.instrument.LayeredInstrumentRegistry(
+                    buildList {
+                        val configured = Path.of(cfg.dataRoot).resolve("instruments.yaml")
+                        if (Files.isRegularFile(configured)) {
+                            add(
+                                com.qkt.instrument.YamlInstrumentRegistry
+                                    .load(configured),
+                            )
+                        }
+                        add(com.qkt.instrument.StandardInstrumentRegistry)
+                    },
+                )
+            } catch (e: Exception) {
+                System.err.println("qkt: instrument registry load failed: ${e.message}")
+                runCatching { insightsSink?.close() }
+                return ExitCodes.USER_ERROR
+            }
         if (!cfg.runtimeMode.production && mt5Accounts.values.any { it.tradeMode == MT5TradeMode.REAL.wireValue }) {
             System.err.println(
                 "[WARN] REAL MT5 account detected while runtime.mode=${cfg.runtimeMode.name.lowercase()}; " +
@@ -280,6 +302,8 @@ class DaemonCommand(
                     stateDir = stateDir,
                     marketSourceProvider = effectiveSourceFactory,
                     brokerFactories = brokerFactories,
+                    instrumentRegistry = daemonInstrumentRegistry,
+                    calendarFor = daemonCalendarFor,
                     maxDailyLoss = cfg.maxDailyLoss,
                     perStrategyRisk = cfg.perStrategyRisk,
                     maxDrawdownPct = cfg.maxDrawdownPct,
@@ -325,6 +349,8 @@ class DaemonCommand(
                     stateDir = stateDir,
                     marketSourceProvider = effectiveSourceFactory,
                     brokerFactories = brokerFactories,
+                    instrumentRegistry = daemonInstrumentRegistry,
+                    calendarFor = daemonCalendarFor,
                     maxDailyLoss = cfg.maxDailyLoss,
                     maxDrawdownPct = cfg.maxDrawdownPct,
                     maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
@@ -569,4 +595,21 @@ class DaemonCommand(
         @Suppress("UNUSED_PARAMETER")
         fun defaultTradingViewSource(symbols: List<String>): MarketSource = TradingViewMarketSource.connect()
     }
+}
+
+internal fun liveCalendarFor(
+    qktSymbol: String,
+    mt5Profiles: List<com.qkt.broker.mt5.MT5BrokerProfile>,
+): com.qkt.common.TradingCalendar {
+    val broker = qktSymbol.substringBefore(':', missingDelimiterValue = "").lowercase()
+    val bare = qktSymbol.substringAfter(':')
+    if (broker == "bybit_spot" || broker == "bybit_linear") {
+        return com.qkt.common.TradingCalendar
+            .crypto()
+    }
+    return mt5Profiles
+        .firstOrNull { it.name.equals(broker, ignoreCase = true) }
+        ?.symbolCalendars
+        ?.calendarFor(bare)
+        ?: BacktestContext.defaultCalendars().calendarFor(bare)
 }
