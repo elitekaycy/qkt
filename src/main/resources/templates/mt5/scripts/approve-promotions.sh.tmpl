@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+strategy_dir=${QKT_STRATEGY_DIR:-/strategies}
+actor=${QKT_PROMOTION_ACTOR:-operator}
+reason=${QKT_PROMOTION_REASON:-approved for production deployment}
+found=0
+
+for file in "$strategy_dir"/*.qkt; do
+  [ -e "$file" ] || continue
+  found=1
+  name=${file##*/}
+  name=${name%.qkt}
+  qkt promotion approve "$file" \
+    --as "$name" \
+    --state production \
+    --reason "$reason" \
+    --actor "$actor"
+done
+
+if [ "$found" -eq 0 ]; then
+  printf 'approve-promotions: no .qkt files found in %s\n' "$strategy_dir"
+fi
