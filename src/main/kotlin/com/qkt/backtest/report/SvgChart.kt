@@ -4,6 +4,9 @@ import com.qkt.backtest.DrawdownPeriod
 import com.qkt.backtest.EquityFanPoint
 import com.qkt.backtest.EquitySample
 import java.math.BigDecimal
+import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Inline-SVG chart primitives used by [HtmlReportWriter]. Every function returns a
@@ -43,7 +46,7 @@ object SvgChart {
             }
         return buildString {
             append("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 $width $height\">")
-            append("<title>$title</title>")
+            append("<title>${svgText(title)}</title>")
             appendAxes(width, height, yMin, yMax)
             append("<polyline fill=\"none\" stroke=\"#1f77b4\" stroke-width=\"1.5\" points=\"$poly\"/>")
             append("</svg>")
@@ -74,11 +77,13 @@ object SvgChart {
             append("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 $width $height\">")
             append("<title>equity with drawdowns</title>")
             for (dd in drawdowns) {
-                val x0 = scaleX(dd.peakTimestamp.toDouble(), xMin, xMax, width)
+                val x0 = scaleX(dd.peakTimestamp.toDouble().coerceIn(xMin, xMax), xMin, xMax, width)
                 val recovery = dd.recoveryTimestamp?.toDouble() ?: xMax
-                val x1 = scaleX(recovery, xMin, xMax, width)
+                val x1 = scaleX(recovery.coerceIn(xMin, xMax), xMin, xMax, width)
+                val left = min(x0, x1)
+                val rectWidth = max(x0, x1) - left
                 append(
-                    "<rect x=\"$x0\" y=\"$PADDING_TOP\" width=\"${x1 - x0}\" " +
+                    "<rect x=\"$left\" y=\"$PADDING_TOP\" width=\"$rectWidth\" " +
                         "height=\"${height - PADDING_TOP - PADDING_BOTTOM}\" fill=\"#ff7f7f\" opacity=\"0.15\"/>",
                 )
             }
@@ -151,7 +156,7 @@ object SvgChart {
         title: String,
     ): String =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 $width $height\">" +
-            "<title>$title</title><text x=\"$PADDING_LEFT\" y=\"${height / 2}\">no data</text></svg>"
+            "<title>${svgText(title)}</title><text x=\"$PADDING_LEFT\" y=\"${height / 2}\">no data</text></svg>"
 
     private fun StringBuilder.appendAxes(
         width: Int,
@@ -168,10 +173,10 @@ object SvgChart {
                 "x2=\"$PADDING_LEFT\" y2=\"${height - PADDING_BOTTOM}\" stroke=\"#888\"/>",
         )
         append(
-            "<text x=\"5\" y=\"${PADDING_TOP + 5}\" font-size=\"10\">${"%.4g".format(yMax)}</text>",
+            "<text x=\"5\" y=\"${PADDING_TOP + 5}\" font-size=\"10\">${axisLabel(yMax)}</text>",
         )
         append(
-            "<text x=\"5\" y=\"${height - PADDING_BOTTOM}\" font-size=\"10\">${"%.4g".format(yMin)}</text>",
+            "<text x=\"5\" y=\"${height - PADDING_BOTTOM}\" font-size=\"10\">${axisLabel(yMin)}</text>",
         )
     }
 
@@ -192,8 +197,17 @@ object SvgChart {
         max: Double,
         height: Int,
     ): Double {
-        if (max == min) return (height - PADDING_BOTTOM).toDouble()
+        if (max == min) return PADDING_TOP + (height - PADDING_TOP - PADDING_BOTTOM) / 2.0
         val range = (height - PADDING_TOP - PADDING_BOTTOM)
         return PADDING_TOP + (max - v) / (max - min) * range
     }
+
+    private fun axisLabel(value: Double): String = String.format(Locale.US, "%.4g", value)
+
+    private fun svgText(value: String): String =
+        value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
 }

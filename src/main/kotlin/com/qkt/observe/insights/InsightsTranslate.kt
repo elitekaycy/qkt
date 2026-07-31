@@ -1,5 +1,6 @@
 package com.qkt.observe.insights
 
+import com.qkt.accounting.ConvertedMoney
 import com.qkt.broker.BrokerAccountState
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.OrderModification
@@ -204,14 +205,21 @@ object InsightsTranslate {
         )
 
     /**
-     * A realized close from the engine's fill accounting (not a bus event): the
-     * per-trade net P&L the exact analytics in qkt-insights are built on.
+     * A realized close from the engine's fill accounting (not a bus event).
+     *
+     * [netAccountRealized] is the canonical closed-trade PnL for dashboards: account-currency PnL
+     * after modeled commissions and venue-reported costs. The legacy `realized` payload field is
+     * retained as an alias of `netAccountRealized`. When [convertedRealized] is supplied, the
+     * payload also carries gross account PnL before those costs plus native-currency and FX
+     * conversion evidence, so consumers can reconcile net-vs-gross instead of guessing.
+     *
      * Deterministic id, so a re-sent batch dedupes at the collector.
      */
     fun tradeClosed(
         trade: com.qkt.execution.Trade,
-        realized: BigDecimal,
+        netAccountRealized: BigDecimal,
         strategyId: String,
+        convertedRealized: ConvertedMoney? = null,
     ): InsightsEnvelope =
         InsightsEnvelope(
             id = "tc-${trade.orderId}-${trade.timestamp}",
@@ -226,7 +234,21 @@ object InsightsTranslate {
                     "side" to trade.side.name,
                     "qty" to trade.quantity,
                     "price" to trade.price,
-                    "realized" to realized,
+                    "realized" to netAccountRealized,
+                    "netAccountRealized" to netAccountRealized,
+                    "grossAccountRealized" to convertedRealized?.account?.amount,
+                    "accountRealized" to convertedRealized?.account?.amount,
+                    "nativeRealized" to convertedRealized?.native?.amount,
+                    "nativeCurrency" to convertedRealized?.native?.normalizedCurrency,
+                    "accountCurrency" to convertedRealized?.account?.normalizedCurrency,
+                    "currency" to convertedRealized?.account?.normalizedCurrency,
+                    "fxRate" to convertedRealized?.conversion?.rate,
+                    "fxRateTimestamp" to convertedRealized?.conversion?.timestamp,
+                    "fxSource" to convertedRealized?.conversion?.source,
+                    "costsAccount" to convertedRealized?.account?.amount?.subtract(netAccountRealized),
+                    "pnlBasis" to "net_account_after_costs",
+                    "realizedAliasOf" to "netAccountRealized",
+                    "sideAttribution" to "fill_side",
                     "ts" to trade.timestamp,
                 ),
         )

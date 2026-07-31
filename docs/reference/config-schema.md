@@ -431,6 +431,13 @@ Unknown notify channel keys are passed through as provider settings.
 
 Optional egress to a qkt-insights collector. Disabled config wires no queue and no worker thread. Enable `journal_enabled` for production so collector outages leave unacked batches on disk for replay instead of dropping them after retry exhaustion. Daemon live sessions also write a full engine audit JSONL under `state/audit-journal/<strategy>/audit-YYYY-MM-DD.jsonl`; the audit writer uses a bounded queue and its own daemon thread so durable file I/O does not run on the event bus thread.
 
+For `trade.closed` envelopes, `realized` is retained only as a legacy alias of
+`netAccountRealized`. Dashboards should treat `netAccountRealized` as the
+canonical account-currency PnL after modeled commissions and venue-reported
+costs. When conversion evidence is available, the same payload includes
+`grossAccountRealized`, `nativeRealized`, currencies, FX rate/source fields, and
+`costsAccount` so live trade tables and graphs can reconcile net-vs-gross values.
+
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `insights.enabled` | boolean | `false` | Must be true and `url` non-blank to create a sink. |
