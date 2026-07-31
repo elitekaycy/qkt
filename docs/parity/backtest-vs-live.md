@@ -199,6 +199,13 @@ execution, risk, accounting, or warmup pipeline.
 | Venue partials on fallback exits | When a venue partial fills a fallback (non-attached) bracket, exits are sized to the first fill's volume; a later remainder fill has no engine exit | follow-up if partial-fill venues go live |
 | Already-crossed native stops | The fill decision is aligned: MT5 converts a STOP already through the latest ask/bid to MARKET (StopLimit to LIMIT), matching the engine-held path. Backtest fills on its crossing tick, while live fills after dispatch at the venue's later executable price, so latency/slippage can still change the fill price | #815; decision pinned by `AlreadyCrossedStopParityTest`, live wire/protection by `MT5BrokerIntegrationTest` |
 
+With the same input event stream, calendar, instrument metadata, cost and risk configuration,
+modeled live-equity basis, and venue-shaped broker model, the backtest is faithful for live
+dollar/trade replication within the declared bounds above. This is a shared-runtime claim, not a
+claim that `PaperBroker` or historical ticks predict venue latency, retcodes, partial fills, feed
+sampling, or other explicitly listed live-only effects. Use `mt5-sim` and retained venue evidence
+when the result will be cited as MT5-shaped rather than research-tier output.
+
 ## File pointers
 
 - Pipeline contract — `docs/phases/phase-4-backtest.md` (the "Same pipeline, live execution" section)
