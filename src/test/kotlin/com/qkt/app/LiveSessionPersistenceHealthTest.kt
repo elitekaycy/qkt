@@ -139,7 +139,7 @@ class LiveSessionPersistenceHealthTest {
         assertThat(halts.single().reason).contains("durable state is stale")
         assertThat(handle.persistenceHealth().failedWrites).isEqualTo(1L)
 
-        Thread.sleep(50L)
+        assertThat(awaitCondition { notifications.any { it is NotificationEvent.StrategyError } }).isTrue()
         val errors = notifications.filterIsInstance<NotificationEvent.StrategyError>()
         assertThat(errors).hasSize(1)
         assertThat(errors.single().severity).isEqualTo(NotificationEvent.Severity.CRITICAL)

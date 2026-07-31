@@ -7,6 +7,9 @@ import com.qkt.backtest.SampleCadence
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.math.BigDecimal
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -71,9 +74,18 @@ class ReportFormatPerStrategyTest {
     @Test
     fun `json output contains a perStrategy object keyed by id`() {
         val out = render(result(), ReportFormat.Json)
+        val root = Json.parseToJsonElement(out).jsonObject
+        val perStrategy = root.getValue("perStrategy").jsonObject
+        val alpha = perStrategy.getValue("alpha").jsonObject
+
         assertThat(out).contains("\"perStrategy\":{")
         assertThat(out).contains("\"alpha\":{")
         assertThat(out).contains("\"beta\":{")
+        assertThat(alpha.getValue("realizedTotal").jsonPrimitive.content).isEqualTo("70")
+        assertThat(alpha.getValue("unrealizedTotal").jsonPrimitive.content).isEqualTo("0")
+        assertThat(alpha.getValue("tradeCount").jsonPrimitive.content).isEqualTo("2")
+        assertThat(alpha.getValue("realized").jsonPrimitive.content).isEqualTo("70")
+        assertThat(alpha.getValue("trades").jsonPrimitive.content).isEqualTo("2")
         assertThat(out).contains("\"sortinoRatio\":1.4")
         assertThat(out).contains("\"turnover\":3.0")
     }

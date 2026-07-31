@@ -1,5 +1,8 @@
 package com.qkt.observe.insights
 
+import com.qkt.accounting.ConvertedMoney
+import com.qkt.accounting.FxConversion
+import com.qkt.accounting.MoneyAmount
 import com.qkt.broker.OrderModification
 import com.qkt.common.Side
 import com.qkt.dsl.ast.ChildArmedTrail
@@ -57,6 +60,66 @@ class InsightsTranslateTest {
         assertThat(env.id).isEqualTo("e42")
         assertThat(env.payload["orderId"]).isEqualTo("o1")
         assertThat(env.payload["side"]).isEqualTo("BUY")
+    }
+
+    @Test
+    fun `trade closed exposes net account pnl as canonical and gross reconciliation fields`() {
+        val trade =
+            Trade(
+                orderId = "o-close",
+                symbol = "EXNESS:USDJPY",
+                price = BigDecimal("155.25"),
+                quantity = BigDecimal("1000"),
+                side = Side.SELL,
+                timestamp = 1718000000000L,
+            )
+        val converted =
+            ConvertedMoney(
+                native = MoneyAmount(BigDecimal("1550.00"), "JPY"),
+                account = MoneyAmount(BigDecimal("10.00"), "USD"),
+                conversion =
+                    FxConversion(
+                        from = "JPY",
+                        to = "USD",
+                        rate = BigDecimal("0.0064516129"),
+                        timestamp = 1717999999000L,
+                        source = "market",
+                    ),
+            )
+
+        val env =
+            InsightsTranslate.tradeClosed(
+                trade = trade,
+                netAccountRealized = BigDecimal("9.25"),
+                strategyId = "alpha",
+                convertedRealized = converted,
+            )
+
+        assertThat(env.type).isEqualTo("trade.closed")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.payload).containsEntry("realized", BigDecimal("9.25"))
+        assertThat(env.payload).containsEntry("netAccountRealized", BigDecimal("9.25"))
+        assertThat(env.payload).containsEntry("grossAccountRealized", BigDecimal("10.00"))
+        assertThat(env.payload).containsEntry("accountRealized", BigDecimal("10.00"))
+        assertThat(env.payload).containsEntry("costsAccount", BigDecimal("0.75"))
+        assertThat(env.payload).containsEntry("nativeRealized", BigDecimal("1550.00"))
+        assertThat(env.payload).containsEntry("nativeCurrency", "JPY")
+        assertThat(env.payload).containsEntry("accountCurrency", "USD")
+        assertThat(env.payload).containsEntry("currency", "USD")
+        assertThat(env.payload).containsEntry("fxRate", BigDecimal("0.0064516129"))
+        assertThat(env.payload).containsEntry("fxRateTimestamp", 1717999999000L)
+        assertThat(env.payload).containsEntry("fxSource", "market")
+        assertThat(env.payload).containsEntry("pnlBasis", "net_account_after_costs")
+        assertThat(env.payload).containsEntry("realizedAliasOf", "netAccountRealized")
+        assertThat(env.payload).containsEntry("sideAttribution", "fill_side")
+
+        val json = env.toJson("qkt-prod")
+        assertThat(json).contains(""""realized":9.25""")
+        assertThat(json).contains(""""netAccountRealized":9.25""")
+        assertThat(json).contains(""""grossAccountRealized":10.00""")
+        assertThat(json).contains(""""costsAccount":0.75""")
+        assertThat(json).contains(""""accountCurrency":"USD"""")
+        assertThat(json).doesNotContain(""""realized":"9.25"""")
     }
 
     @Test
