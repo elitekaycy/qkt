@@ -5,9 +5,14 @@ import com.qkt.backtest.EquitySample
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.TradeRecord
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.evidence.EvidenceHasher
 import com.qkt.evidence.EvidenceJson
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 /**
  * Writes a single [com.qkt.backtest.BacktestResult] to a directory as a bundle of
@@ -43,8 +48,10 @@ class BacktestReportWriter(
         Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
         Files.writeString(dir.resolve("financing.csv"), renderFinancingCsv(result.global.swapPaid))
         Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
+        Files.writeString(dir.resolve("pnl_components.csv"), renderPnlComponentsCsv(result))
         result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), renderBookRiskCsv(it)) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
+        Files.writeString(dir.resolve("manifest.json"), renderManifest(result))
     }
 
     private fun fileId(strategyId: String): String = strategyId.replace(":", "%3A")
@@ -64,27 +71,28 @@ class BacktestReportWriter(
     private fun renderTradesCsv(trades: List<TradeRecord>): String {
         val sb =
             StringBuilder(
-                "timestamp,strategy,symbol,side,quantity,price,realized,nativeRealized,nativeCurrency," +
-                    "accountRealized,accountCurrency,fxRate,fxRateTimestamp,fxSource,riskUsd,brokerOrderId," +
+                "timestamp,strategy,symbol,side,positionEffect,orderType,quantity,price,realized,netAccountRealized," +
+                    "grossAccountRealized,nativeRealized,nativeCurrency,accountRealized,accountCurrency," +
+                    "fxRate,fxRateTimestamp,fxSource,riskUsd,brokerOrderId," +
                     "stopLossPrice,takeProfitPrice," +
                     "accountPositionQtyBefore,accountPositionAvgEntryBefore,accountPositionQtyAfter," +
                     "accountPositionAvgEntryAfter,strategyPositionQtyBefore,strategyPositionAvgEntryBefore," +
                     "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional,reducedExposure\n",
             )
         for (r in trades) {
-            val contractSize = r.contractSize ?: java.math.BigDecimal.ONE
-            val fillNotional =
-                r.trade.price
-                    .multiply(r.trade.quantity.abs())
-                    .multiply(contractSize)
+            val fillNotional = TradeAuditSummaries.fillNotional(r)
             sb
                 .append(r.trade.timestamp)
                 .append(',')
-                .append(r.strategyId)
+                .append(csv(r.strategyId))
                 .append(',')
-                .append(r.trade.symbol)
+                .append(csv(r.trade.symbol))
                 .append(',')
                 .append(r.trade.side)
+                .append(',')
+                .append(TradeAuditSummaries.positionEffect(r))
+                .append(',')
+                .append(csv(r.orderType ?: ""))
                 .append(',')
                 .append(r.trade.quantity.toPlainString())
                 .append(',')
@@ -92,23 +100,27 @@ class BacktestReportWriter(
                 .append(',')
                 .append(r.realized.toPlainString())
                 .append(',')
-                .append(r.nativeRealized?.toPlainString() ?: "")
-                .append(',')
-                .append(r.nativeCurrency ?: "")
+                .append(r.realized.toPlainString())
                 .append(',')
                 .append(r.accountRealized?.toPlainString() ?: "")
                 .append(',')
-                .append(r.accountCurrency ?: "")
+                .append(r.nativeRealized?.toPlainString() ?: "")
+                .append(',')
+                .append(csv(r.nativeCurrency ?: ""))
+                .append(',')
+                .append(r.accountRealized?.toPlainString() ?: "")
+                .append(',')
+                .append(csv(r.accountCurrency ?: ""))
                 .append(',')
                 .append(r.fxRate?.toPlainString() ?: "")
                 .append(',')
                 .append(r.fxRateTimestamp?.toString() ?: "")
                 .append(',')
-                .append(r.fxSource ?: "")
+                .append(csv(r.fxSource ?: ""))
                 .append(',')
                 .append(r.riskUsd?.toPlainString() ?: "")
                 .append(',')
-                .append(r.trade.orderId)
+                .append(csv(r.trade.orderId))
                 .append(',')
                 .append(r.stopLossPrice?.toPlainString() ?: "")
                 .append(',')
@@ -156,22 +168,87 @@ class BacktestReportWriter(
             sb
                 .append(e.timestamp)
                 .append(',')
-                .append(e.reason)
+                .append(csv(e.reason))
                 .append(',')
-                .append(e.request.strategyId)
+                .append(csv(e.request.strategyId))
                 .append(',')
-                .append(e.request.symbol)
+                .append(csv(e.request.symbol))
                 .append('\n')
         }
         return sb.toString()
     }
 
+    private fun renderPnlComponentsCsv(result: BacktestResult): String {
+        val sb = StringBuilder("scope,strategy,date,tradeRealized,adjustment,dailyPnL\n")
+        appendPnlComponents(sb, scope = "global", strategyId = "", report = result.global, trades = result.trades)
+        for ((strategyId, report) in result.perStrategy.entries.sortedBy { it.key }) {
+            appendPnlComponents(
+                sb,
+                scope = "strategy",
+                strategyId = strategyId,
+                report = report,
+                trades = result.trades.filter { it.strategyId == strategyId },
+            )
+        }
+        return sb.toString()
+    }
+
+    private fun appendPnlComponents(
+        sb: StringBuilder,
+        scope: String,
+        strategyId: String,
+        report: PerformanceReport,
+        trades: List<TradeRecord>,
+    ) {
+        val tradeDaily = trades.realizedByUtcDate()
+        val dates = (tradeDaily.keys + report.dailyPnL.keys).toSortedSet()
+        for (date in dates) {
+            val tradeRealized = tradeDaily[date] ?: BigDecimal.ZERO
+            val dailyPnl = report.dailyPnL[date] ?: BigDecimal.ZERO
+            val adjustment = dailyPnl.subtract(tradeRealized)
+            sb
+                .append(scope)
+                .append(',')
+                .append(csv(strategyId))
+                .append(',')
+                .append(date)
+                .append(',')
+                .append(tradeRealized.toPlainString())
+                .append(',')
+                .append(adjustment.toPlainString())
+                .append(',')
+                .append(dailyPnl.toPlainString())
+                .append('\n')
+        }
+    }
+
+    private fun List<TradeRecord>.realizedByUtcDate(): Map<LocalDate, BigDecimal> =
+        groupBy {
+            Instant
+                .ofEpochMilli(it.trade.timestamp)
+                .atZone(ZoneOffset.UTC)
+                .toLocalDate()
+        }.mapValues { (_, trades) ->
+            trades.fold(BigDecimal.ZERO) { acc, r -> acc.add(r.realized) }
+        }
+
+    private fun csv(value: String): String =
+        if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) {
+            "\"" + value.replace("\"", "\"\"") + "\""
+        } else {
+            value
+        }
+
     private fun renderJson(result: BacktestResult): String {
         val sb = StringBuilder()
         sb.append("{\n")
+        sb.append("  \"schema\": \"qkt-backtest-result-v1\",\n")
+        sb.append("  \"schemaVersion\": 1,\n")
         sb.append("  \"cadence\": ").append(ReportSerializer.jsonString(result.cadence.name)).append(",\n")
         sb.append("  \"evidence\": ").append(result.evidence?.let(EvidenceJson::render) ?: "null").append(",\n")
         sb.append("  \"accounting\": ").append(renderAccounting(result.accounting)).append(",\n")
+        sb.append("  \"artifacts\": ").append(renderArtifacts(result)).append(",\n")
+        sb.append("  \"tradeSummary\": ").append(renderTradeSummary(result)).append(",\n")
         sb.append("  \"global\": ").append(renderReport(result.global, indent = 2)).append(",\n")
         sb.append("  \"perStrategy\": {")
         if (result.perStrategy.isNotEmpty()) {
@@ -194,6 +271,111 @@ class BacktestReportWriter(
         sb.append(",\n  \"bookRisk\": ").append(renderBookRiskJson(result.bookRisk))
         sb.append("\n}")
         return sb.toString()
+    }
+
+    private fun renderArtifacts(result: BacktestResult): String =
+        buildString {
+            append("{\"resultJson\": \"result.json\"")
+            append(", \"tradesCsv\": \"trades.csv\"")
+            append(", \"rejectionsCsv\": \"rejections.csv\"")
+            append(", \"pnlComponentsCsv\": \"pnl_components.csv\"")
+            append(", \"manifestJson\": \"manifest.json\"")
+            append(", \"equityGlobalCsv\": \"equity_global.csv\"")
+            append(", \"equityStrategyCsv\": {")
+            append(
+                result.perStrategy.keys
+                    .sorted()
+                    .joinToString(",") {
+                        "${ReportSerializer.jsonString(it)}: ${ReportSerializer.jsonString("equity_${fileId(it)}.csv")}"
+                    },
+            )
+            append("}")
+            if (result.bookRisk != null) append(", \"bookRiskCsv\": \"book_risk.csv\"")
+            append(", \"html\": \"report.html\"")
+            append("}")
+        }
+
+    private fun renderTradeSummary(result: BacktestResult): String {
+        val summary = TradeAuditSummaries.from(result)
+
+        return buildString {
+            append("{\"fills\": ").append(summary.fills)
+            append(", \"buyFills\": ").append(summary.buyFills)
+            append(", \"sellFills\": ").append(summary.sellFills)
+            append(", \"sideAttribution\": ").append(ReportSerializer.jsonString(summary.sideAttribution))
+            append(", \"longEntryFills\": ").append(summary.longEntryFills)
+            append(", \"shortEntryFills\": ").append(summary.shortEntryFills)
+            append(", \"longExitFills\": ").append(summary.longExitFills)
+            append(", \"shortExitFills\": ").append(summary.shortExitFills)
+            append(", \"unknownPositionFills\": ").append(summary.unknownPositionFills)
+            append(", \"positionAttribution\": ").append(ReportSerializer.jsonString(summary.positionAttribution))
+            append(", \"buyRealized\": ").append(ReportSerializer.jsonBigDecimal(summary.buyRealized))
+            append(", \"sellRealized\": ").append(ReportSerializer.jsonBigDecimal(summary.sellRealized))
+            append(", \"grossProfit\": ").append(ReportSerializer.jsonBigDecimal(summary.grossProfit))
+            append(", \"grossLoss\": ").append(ReportSerializer.jsonBigDecimal(summary.grossLoss))
+            append(", \"rejections\": ").append(summary.rejections)
+            append(", \"rejectionRate\": ").append(ReportSerializer.jsonNullableBigDecimal(summary.rejectionRate))
+            append(", \"riskAuditedFills\": ").append(summary.riskAuditedFills)
+            append(", \"minRiskUsd\": ").append(ReportSerializer.jsonNullableBigDecimal(summary.minRiskUsd))
+            append(", \"avgRiskUsd\": ").append(ReportSerializer.jsonNullableBigDecimal(summary.avgRiskUsd))
+            append(", \"maxRiskUsd\": ").append(ReportSerializer.jsonNullableBigDecimal(summary.maxRiskUsd))
+            append(", \"tradedNotional\": ").append(ReportSerializer.jsonBigDecimal(summary.tradedNotional))
+            append(", \"maxFillNotional\": ").append(ReportSerializer.jsonNullableBigDecimal(summary.maxFillNotional))
+            append("}")
+        }
+    }
+
+    private fun renderManifest(result: BacktestResult): String {
+        val artifacts =
+            buildList {
+                add("result.json")
+                add("equity_global.csv")
+                addAll(
+                    result.perStrategy.keys
+                        .sorted()
+                        .map { "equity_${fileId(it)}.csv" },
+                )
+                add("trades.csv")
+                add("rejections.csv")
+                add("pnl_components.csv")
+                if (result.bookRisk != null) add("book_risk.csv")
+                add("report.html")
+            }
+        return buildString {
+            append("{\n")
+            append("  \"schema\": \"qkt-report-bundle-v1\",\n")
+            append("  \"schemaVersion\": 1,\n")
+            append("  \"selfHashIncluded\": false,\n")
+            append("  \"generatedAt\": ")
+                .append(result.evidence?.buildTimestamp?.let(ReportSerializer::jsonString) ?: "null")
+                .append(",\n")
+            append("  \"qktVersion\": ")
+                .append(result.evidence?.qktVersion?.let(ReportSerializer::jsonString) ?: "null")
+                .append(",\n")
+            append("  \"gitSha\": ")
+                .append(result.evidence?.gitSha?.let(ReportSerializer::jsonString) ?: "null")
+                .append(",\n")
+            append("  \"artifacts\": [")
+            if (artifacts.isNotEmpty()) {
+                append('\n')
+                for ((index, artifact) in artifacts.withIndex()) {
+                    val path = dir.resolve(artifact)
+                    append("    {\"path\": ")
+                        .append(ReportSerializer.jsonString(artifact))
+                        .append(", \"sha256\": ")
+                        .append(ReportSerializer.jsonString(EvidenceHasher.sha256(path)))
+                        .append(", \"bytes\": ")
+                        .append(Files.size(path))
+                        .append("}")
+                    if (index != artifacts.size - 1) append(',')
+                    append('\n')
+                }
+                append("  ]\n")
+            } else {
+                append("]\n")
+            }
+            append("}")
+        }
     }
 
     private fun renderBookAnalytics(ba: com.qkt.backtest.BookAnalytics?): String {
@@ -324,6 +506,10 @@ class BacktestReportWriter(
         field("calmarRatio", ReportSerializer.jsonNullableBigDecimal(r.calmarRatio))
         field("sortinoRatio", ReportSerializer.jsonNullableBigDecimal(r.sortinoRatio))
         field("turnover", ReportSerializer.jsonBigDecimal(r.turnover))
+        field("maxDailyDrawdown", ReportSerializer.jsonBigDecimal(r.maxDailyDrawdown))
+        field("dailyPnL", renderDailyPnl(r.dailyPnL))
+        field("drawdownPeriods", renderDrawdownPeriods(r.drawdownPeriods))
+        field("monteCarlo", renderMonteCarlo(r.monteCarlo))
         sb.append("\n").append(pad).append("  \"equityCurve\": [")
         if (r.equityCurve.isNotEmpty()) {
             sb.append('\n')
@@ -347,5 +533,58 @@ class BacktestReportWriter(
         }
         sb.append('\n').append(pad).append("}")
         return sb.toString()
+    }
+
+    private fun renderDailyPnl(dailyPnL: Map<java.time.LocalDate, BigDecimal>): String =
+        buildString {
+            append("{")
+            append(
+                dailyPnL.entries
+                    .sortedBy { it.key }
+                    .joinToString(",") {
+                        val key = ReportSerializer.jsonString(it.key.toString())
+                        val value = ReportSerializer.jsonBigDecimal(it.value)
+                        "$key: $value"
+                    },
+            )
+            append("}")
+        }
+
+    private fun renderDrawdownPeriods(periods: List<com.qkt.backtest.DrawdownPeriod>): String =
+        buildString {
+            append("[")
+            append(
+                periods.joinToString(",") {
+                    "{\"peakTimestamp\": ${it.peakTimestamp}, " +
+                        "\"peakIso\": ${ReportSerializer.jsonString(ReportSerializer.isoUtc(it.peakTimestamp))}, " +
+                        "\"troughTimestamp\": ${it.troughTimestamp}, " +
+                        "\"troughIso\": ${ReportSerializer.jsonString(ReportSerializer.isoUtc(it.troughTimestamp))}, " +
+                        "\"recoveryTimestamp\": ${it.recoveryTimestamp?.toString() ?: "null"}, " +
+                        "\"recoveryIso\": ${
+                            it.recoveryTimestamp
+                                ?.let { ts -> ReportSerializer.jsonString(ReportSerializer.isoUtc(ts)) }
+                                ?: "null"
+                        }, " +
+                        "\"depthPct\": ${ReportSerializer.jsonBigDecimal(it.depthPct)}, " +
+                        "\"durationMs\": ${it.durationMs}, " +
+                        "\"ongoing\": ${it.ongoing}}"
+                },
+            )
+            append("]")
+        }
+
+    private fun renderMonteCarlo(mc: com.qkt.backtest.MonteCarloSummary?): String {
+        if (mc == null) return "null"
+        return buildString {
+            append("{\"simulations\": ").append(mc.simulations)
+            append(", \"finalEquityP5\": ").append(ReportSerializer.jsonBigDecimal(mc.finalEquityP5))
+            append(", \"finalEquityP50\": ").append(ReportSerializer.jsonBigDecimal(mc.finalEquityP50))
+            append(", \"finalEquityP95\": ").append(ReportSerializer.jsonBigDecimal(mc.finalEquityP95))
+            append(", \"maxDrawdownP5\": ").append(ReportSerializer.jsonBigDecimal(mc.maxDrawdownP5))
+            append(", \"maxDrawdownP95\": ").append(ReportSerializer.jsonBigDecimal(mc.maxDrawdownP95))
+            append(", \"probabilityNegativeFinal\": ")
+                .append(ReportSerializer.jsonBigDecimal(mc.probabilityNegativeFinal))
+            append("}")
+        }
     }
 }

@@ -184,6 +184,9 @@ class BacktestCommandTest {
         val tradesCsv = Files.readString(reportDir.resolve("trades.csv"))
         assertThat(tradesCsv.lines().first()).contains("accountPositionQtyBefore")
         assertThat(tradesCsv.lines().first()).contains("fillNotional")
+        assertThat(tradesCsv.lines().first()).contains("positionEffect")
+        assertThat(tradesCsv.lines().first()).contains("orderType")
+        assertThat(tradesCsv.lines().drop(1)).anyMatch { it.contains(",OPEN_LONG,Market,") }
     }
 
     @Test

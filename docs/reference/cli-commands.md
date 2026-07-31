@@ -32,10 +32,66 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | Command | What it does |
 |---|---|
 | `qkt parse <file>` | Parse-and-validate a `.qkt` file; pretty-print errors. |
-| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--param fast=12` overrides a PARAM/LET for the run. |
+| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--param fast=12` overrides a PARAM/LET for the run. |
 | `qkt sweep <file> --from --to --param NAME=v1,v2 [--rank sharpe] [--parallelism N] [--json]` | Grid-search the cartesian product of `--param` axes; ranks runs by `--rank` (`sharpe`\|`calmar`\|`profitFactor`\|`totalPnL`\|`winRate`). |
 | `qkt walkforward <file> --from --to --param NAME=v1,v2 --train 90d --test 30d --step 30d [--rank]` | Rolling in-sample/out-of-sample validation; reports per-fold winners, winner stability, and mean IS-vs-OOS score. |
 | `qkt run <file>` | Foreground paper-trade run. |
+
+### Backtest Report Artifacts
+
+`qkt backtest --report <dir>` writes an audit bundle for downstream tooling:
+
+- `result.json` uses schema `qkt-backtest-result-v1` with `schemaVersion: 1`
+  and carries cadence, evidence, accounting, artifact paths, a normalized trade
+  summary, global metrics, per-strategy metrics, book analytics, and book-risk
+  summary.
+- `tradeSummary` is computed from the same `TradeRecord` list as `trades.csv`:
+  fill counts and realized PnL by executed side, long/short entry and exit counts
+  from strategy-position transitions, gross profit/loss, rejection rate,
+  risk-audited fills, risk min/avg/max, traded notional, and max fill notional.
+- `pnl_components.csv` decomposes each reported daily PnL value into
+  trade-realized PnL and non-trade adjustment PnL for global and per-strategy
+  scopes.
+- Each report metric includes daily PnL, max daily drawdown, drawdown periods,
+  Monte Carlo tail stats when available, and the retained equity curve used for
+  charts.
+- `report.html` shows the same trade audit summary before the trade tape, so the
+  human-readable report and machine-readable evidence expose the same numbers.
+- `manifest.json` records the schema version plus SHA-256 and byte size for every
+  generated artifact except itself, so downstream tools can detect stale,
+  missing, or edited report files.
+- `trades.csv`, `rejections.csv`, `pnl_components.csv`, and `equity_*.csv`
+  remain the full tapes for independent audit and graph reconstruction.
+- In `trades.csv`, `realized` and `netAccountRealized` are the canonical net
+  account-currency PnL used by summaries, risk, and daily PnL. `realized` is
+  retained as the legacy alias. `grossAccountRealized` and `accountRealized`
+  disclose gross converted PnL before modeled and venue-reported costs, with
+  `accountRealized` retained as the legacy gross alias. Dashboards should graph
+  and aggregate the net fields unless explicitly showing a gross-vs-cost
+  reconciliation.
+- `trades.csv` keeps `side` as the executed fill side and separately exports
+  `positionEffect` (`OPEN_*`, `INCREASE_*`, `REDUCE_*`, `CLOSE_*`, or
+  `REVERSE_TO_*`) plus the actual atomic `orderType`. Consumers must not rename
+  buy fills to long trades or sell fills to short trades: a buy may close a
+  short, and a sell may close a long.
+
+Before qkt-forge, dashboards, or promotion tooling trust a report directory, run:
+
+```bash
+scripts/audit_qkt_report_bundle.py <report-dir> --json
+```
+
+The verifier checks both schema versions, manifest hashes and byte sizes,
+recomputes `tradeSummary` from `trades.csv` and `rejections.csv`, verifies core
+PnL arithmetic, reconciles retained JSON equity curves against `equity_*.csv`,
+and verifies daily PnL components against `trades.csv` plus `result.json`. A
+non-zero exit means the bundle is stale, malformed, edited, or internally
+inconsistent.
+
+`qkt backtest --json` uses the same result schema and includes retained equity
+curves in `global.equityCurve` plus per-strategy canonical metrics. Prefer
+`--report` bundles for audit gates because the bundle includes full CSV tapes
+and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 
 ## Operations
 

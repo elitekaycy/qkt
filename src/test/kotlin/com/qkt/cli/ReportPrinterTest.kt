@@ -8,15 +8,25 @@ import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
 import com.qkt.backtest.SampleCadence
+import com.qkt.backtest.TradeRecord
+import com.qkt.common.Side
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.evidence.AccountingEvidence
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceEnvelope
 import com.qkt.evidence.ExecutionEvidence
 import com.qkt.evidence.ExperimentEvidence
 import com.qkt.evidence.PromotionEvidence
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
+import com.qkt.execution.Trade
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.math.BigDecimal
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -99,6 +109,14 @@ class ReportPrinterTest {
     @Test
     fun `json report carries commissionPaid and executionModel`() {
         val json = render(ReportFormat.Json, BrokerKind.PAPER, commissionPaid = "5.00")
+        val root = Json.parseToJsonElement(json).jsonObject
+        val global = root.getValue("global").jsonObject
+
+        assertThat(root.getValue("schema").jsonPrimitive.content).isEqualTo("qkt-backtest-result-v1")
+        assertThat(root.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("1")
+        assertThat(global.getValue("commissionPaid").jsonPrimitive.content).isEqualTo("5.00")
+        assertThat(global.getValue("tradeCount").jsonPrimitive.content).isEqualTo("50")
+        assertThat(global.getValue("equityCurve").jsonArray).hasSize(1)
         assertThat(json).contains("\"commissionPaid\":5.00")
         assertThat(json).contains("\"executionModel\":\"paper\"")
         assertThat(json).contains("\"evidence\":null")
@@ -196,6 +214,61 @@ class ReportPrinterTest {
         ReportPrinter.print(res, ReportFormat.Json, PrintStream(json), BrokerKind.PAPER)
         assertThat(json.toString()).contains("\"maxDailyDrawdown\":0.04")
         assertThat(json.toString()).contains("\"dailyPnL\":{\"2026-06-04\":12.50}")
+    }
+
+    @Test
+    fun `json report carries normalized trade summary and escapes object keys`() {
+        val trades =
+            listOf(
+                trade("order-1", Side.BUY, realized = "10.00", riskUsd = "5.00", price = "100", quantity = "2"),
+                trade("order-2", Side.SELL, realized = "-4.00", riskUsd = "7.00", price = "110", quantity = "1"),
+            )
+        val rejection =
+            RiskRejectedEvent(
+                request =
+                    OrderRequest.Market(
+                        id = "reject-1",
+                        symbol = "XAUUSD",
+                        side = Side.BUY,
+                        quantity = BigDecimal.ONE,
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 3L,
+                        strategyId = "strat",
+                    ),
+                reason = "max notional",
+                timestamp = 3L,
+            )
+        val res =
+            BacktestResult(
+                trades = trades,
+                rejections = listOf(rejection),
+                finalPositions = emptyMap(),
+                global = report("0").copy(tradeCount = trades.size, totalPnL = BigDecimal("6.00")),
+                perStrategy = mapOf("book:\"alpha\"" to report("0")),
+                cadence = SampleCadence.FILL,
+            )
+        val buf = ByteArrayOutputStream()
+
+        ReportPrinter.print(res, ReportFormat.Json, PrintStream(buf), BrokerKind.PAPER)
+
+        val root = Json.parseToJsonElement(buf.toString()).jsonObject
+        val summary = root.getValue("tradeSummary").jsonObject
+        assertThat(summary.getValue("fills").jsonPrimitive.content).isEqualTo("2")
+        assertThat(summary.getValue("buyFills").jsonPrimitive.content).isEqualTo("1")
+        assertThat(summary.getValue("sellFills").jsonPrimitive.content).isEqualTo("1")
+        assertThat(summary.getValue("unknownPositionFills").jsonPrimitive.content).isEqualTo("2")
+        assertThat(summary.getValue("positionAttribution").jsonPrimitive.content)
+            .isEqualTo("strategy_position_transition")
+        assertThat(summary.getValue("buyRealized").jsonPrimitive.content).isEqualTo("10.00000000")
+        assertThat(summary.getValue("sellRealized").jsonPrimitive.content).isEqualTo("-4.00000000")
+        assertThat(summary.getValue("grossProfit").jsonPrimitive.content).isEqualTo("10.00000000")
+        assertThat(summary.getValue("grossLoss").jsonPrimitive.content).isEqualTo("-4.00000000")
+        assertThat(summary.getValue("riskAuditedFills").jsonPrimitive.content).isEqualTo("2")
+        assertThat(summary.getValue("avgRiskUsd").jsonPrimitive.content).isEqualTo("6.00000000")
+        assertThat(summary.getValue("tradedNotional").jsonPrimitive.content).isEqualTo("31000.00000000")
+        assertThat(summary.getValue("maxFillNotional").jsonPrimitive.content).isEqualTo("20000.00000000")
+        assertThat(summary.getValue("rejectionRate").jsonPrimitive.content).isEqualTo("0.33333333")
+        assertThat(root.getValue("perStrategy").jsonObject).containsKey("book:\"alpha\"")
     }
 
     private fun autocorr(): ConditionalAutocorr =
@@ -299,5 +372,29 @@ class ReportPrinterTest {
                     warnings = listOf("large search"),
                 ),
             promotion = PromotionEvidence(state = "candidate", rationale = "ready for paper"),
+        )
+
+    private fun trade(
+        orderId: String,
+        side: Side,
+        realized: String,
+        riskUsd: String,
+        price: String,
+        quantity: String,
+    ): TradeRecord =
+        TradeRecord(
+            trade =
+                Trade(
+                    orderId = orderId,
+                    symbol = "XAUUSD",
+                    price = BigDecimal(price),
+                    quantity = BigDecimal(quantity),
+                    side = side,
+                    timestamp = 1L,
+                ),
+            realized = BigDecimal(realized),
+            strategyId = "strat",
+            riskUsd = BigDecimal(riskUsd),
+            contractSize = BigDecimal("100"),
         )
 }

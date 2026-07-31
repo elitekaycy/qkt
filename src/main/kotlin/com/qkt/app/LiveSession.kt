@@ -1235,20 +1235,28 @@ class LiveSession(
                 onFilled = { trade, realized, strategyId ->
                     trades.add(trade)
                     dailyTracker.recordTrade(strategyId)
-                    // Per-close net P&L for the insights analytics: the bus TradeEvent has
-                    // no realized amount, so the close ships from the accounting hook.
-                    // The shared callback keeps entry realized at gross zero and carries
-                    // net P&L for exposure-reducing fills, preserving exits-only analytics.
+                    onTrade(trade, realized, strategyId)
+                },
+                onAccountedFill = { trade, convertedRealized, strategyId, fillState ->
+                    // Per-close net P&L for insights analytics. Entry commissions are real
+                    // cash movements, but they are not closed trades; only exposure-reducing
+                    // fills ship through the legacy trade.closed stream.
+                    val netRealized = fillState.netAccountRealized
                     if (insightsSink != null &&
-                        realized.signum() != 0 &&
+                        fillState.reducedExposure &&
+                        netRealized.signum() != 0 &&
                         com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents
                     ) {
                         insightsSink.offer(
                             com.qkt.observe.insights.InsightsTranslate
-                                .tradeClosed(trade, realized, strategyId),
+                                .tradeClosed(
+                                    trade = trade,
+                                    netAccountRealized = netRealized,
+                                    strategyId = strategyId,
+                                    convertedRealized = convertedRealized,
+                                ),
                         )
                     }
-                    onTrade(trade, realized, strategyId)
                 },
                 gate = gate,
                 persistor = persistor,

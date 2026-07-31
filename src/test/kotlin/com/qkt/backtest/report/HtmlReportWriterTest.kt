@@ -37,9 +37,15 @@ class HtmlReportWriterTest {
         assertThat(html).contains("Drawdown periods")
         assertThat(html).contains("Monte Carlo")
         assertThat(html).contains("Trades")
+        assertThat(html).contains("Trade audit")
+        assertThat(html).contains("Buy realized</td><td>5.00000000")
+        assertThat(html).contains("Risk-audited fills</td><td>1")
+        assertThat(html).contains("Traded notional</td><td>100.00000000")
         assertThat(html).contains("riskUsd")
-        assertThat(html).contains("<th>Stop</th><th>Target</th>")
+        assertThat(html).contains("<th>Stop</th><th>Target</th><th>Net Account</th>")
+        assertThat(html).contains("<th>Gross Account</th><th>Native</th><th>FX</th>")
         assertThat(html).contains("<td>90</td><td>120</td>")
+        assertThat(html).contains("<td>5</td><td>5.50 USD</td>")
         assertThat(html).contains("Run evidence")
         assertThat(html).contains("sha256:strategy")
         assertThat(html).contains("paper-fast")
@@ -123,6 +129,10 @@ class HtmlReportWriterTest {
                         riskUsd = BigDecimal("10"),
                         stopLossPrice = BigDecimal("90"),
                         takeProfitPrice = BigDecimal("120"),
+                        nativeRealized = BigDecimal("5"),
+                        nativeCurrency = "USD",
+                        accountRealized = BigDecimal("5.50"),
+                        accountCurrency = "USD",
                     ),
                 ),
             rejections = emptyList(),
