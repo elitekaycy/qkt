@@ -52,10 +52,14 @@ These risk defaults are generated for you. They are intentionally conservative
 starting points, not a recommendation for every account size:
 
 ```dotenv
+QKT_STARTING_BALANCE=50000
 QKT_MAX_DAILY_LOSS=100
 QKT_MAX_ORDER_QTY=1
 QKT_MAX_ORDER_NOTIONAL=50000
 QKT_PRICE_COLLAR_PCT=5
+QKT_MAX_DRAWDOWN_PCT=10
+QKT_MAX_DAILY_DRAWDOWN_PCT=5
+QKT_MEASURED_USAGE_HOURS=24
 ```
 
 Keep these defaults unless you run more than one QKT deployment on the same VPS:
@@ -97,6 +101,7 @@ make status                     # deep daemon and loaded-strategy health
 make list                       # show deployed strategies
 make verify-live                # CI-safe live verification
 make preflight STRAT=ema_cross  # production preflight
+make approve-all                # approve all strategies before first startup
 make deploy STRAT=ema_cross     # deploy strategies/ema_cross.qkt
 make resync-dry-run STRAT=ema_cross
 make resync STRAT=ema_cross
@@ -125,7 +130,8 @@ ssh -L 8420:127.0.0.1:8420 <user>@<host>
 1. Backtest, review, and validate the strategy outside this deployment repo.
 2. Copy the live-ready `.qkt` file into `strategies/`.
 3. Run `make preflight STRAT=<name>`.
-4. Deploy with `make deploy STRAT=<name>`.
+4. Deploy with `make deploy STRAT=<name>`; this records the operator promotion
+   approval before deployment.
 5. Confirm `make verify-live`, ticks, logs, and reconcile output.
 6. For edits, run `make resync-dry-run`, then `make resync`, then `make reconcile`.
 

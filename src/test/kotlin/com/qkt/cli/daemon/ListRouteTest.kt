@@ -1,6 +1,11 @@
 package com.qkt.cli.daemon
 
 import com.qkt.app.LiveSessionHandle
+import com.qkt.cli.PromotionApproval
+import com.qkt.cli.PromotionGateConfig
+import com.qkt.cli.PromotionRecord
+import com.qkt.cli.PromotionState
+import com.qkt.cli.PromotionStore
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PositionDto
@@ -10,6 +15,7 @@ import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.WhenThen
 import com.qkt.execution.Trade
 import java.math.BigDecimal
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
@@ -30,7 +36,10 @@ class ListRouteTest {
         opened.clear()
     }
 
-    private fun stubFactory(stateDir: StateDir): StrategyHandle.Factory =
+    private fun stubFactory(
+        stateDir: StateDir,
+        childMeta: (String) -> StrategyHandle.ChildMeta? = { null },
+    ): StrategyHandle.Factory =
         StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 8)
             val running = AtomicBoolean(true)
@@ -94,6 +103,7 @@ class ListRouteTest {
                 ring = ring,
                 logFile = stateDir.logFile(name),
                 startedAt = Instant.now(),
+                childMeta = childMeta(name),
             )
         }
 
@@ -231,5 +241,66 @@ class ListRouteTest {
                 .execute()
         assertThat(resp.code).isEqualTo(200)
         assertThat(resp.body!!.string().trim()).isEqualTo("[]")
+    }
+
+    @Test
+    fun `portfolio child inherits parent promotion eligibility`(
+        @TempDir tmp: Path,
+    ) {
+        val stateDir = StateDir.resolve(tmp.toString())
+        val parent = "book"
+        val registry =
+            StrategyRegistry(
+                stubFactory(stateDir) { name ->
+                    if (name != "$parent/child") return@stubFactory null
+                    StrategyHandle.ChildMeta(
+                        parent = parent,
+                        alias = "child",
+                        hold = false,
+                        gateActive = AtomicBoolean(true),
+                        operatorStop = AtomicBoolean(false),
+                    )
+                },
+            )
+        val now = Instant.parse("2026-07-31T00:00:00Z")
+        PromotionStore(stateDir.stateRoot.resolve("promotion"))
+            .append(
+                PromotionRecord.create(
+                    strategy = parent,
+                    strategyHash = "parent-hash",
+                    state = PromotionState.PRODUCTION,
+                    rationale = "approved portfolio",
+                    now = now,
+                    approvals =
+                        listOf(
+                            PromotionApproval(
+                                state = PromotionState.PRODUCTION,
+                                actor = "operator",
+                                reason = "approved portfolio",
+                                approvedAt = now.toString(),
+                            ),
+                        ),
+                ),
+            )
+        val plane =
+            ControlPlane(
+                registry = registry,
+                port = 0,
+                stateDir = stateDir,
+                promotionGates = PromotionGateConfig(enforce = true),
+            )
+        plane.start()
+        opened.add(plane)
+        registry.deploy("$parent/child", tmp.resolve("child.qkt").also { Files.writeString(it, "child") })
+
+        val response =
+            OkHttpClient()
+                .newCall(Request.Builder().url("http://127.0.0.1:${plane.boundPort}/list").build())
+                .execute()
+        assertThat(response.code).isEqualTo(200)
+        val body = response.body!!.string()
+        assertThat(body).contains("\"name\":\"$parent/child\"")
+        assertThat(body).contains("\"promotionEligible\":true")
+        assertThat(body).contains("\"promotionMissingGates\":[]")
     }
 }
