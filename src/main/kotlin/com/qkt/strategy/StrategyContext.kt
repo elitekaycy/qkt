@@ -31,6 +31,22 @@ fun interface QuoteToAccountRateProvider {
 }
 
 /**
+ * Read-only view of active, risk-increasing entry orders owned by one strategy.
+ *
+ * Counts are symbol-scoped and exclude protective or otherwise risk-reducing exits.
+ * The order manager supplies the lifecycle semantics, including cancellation and expiry.
+ */
+fun interface OpenOrderView {
+    /** Returns the active entry-order count for [symbol]. */
+    fun entryCountFor(symbol: String): Int
+
+    companion object {
+        /** Empty view used by contexts that are not attached to a trading pipeline. */
+        val EMPTY: OpenOrderView = OpenOrderView { 0 }
+    }
+}
+
+/**
  * Read-only environment passed to every [Strategy] callback.
  *
  * Carries the injected [Clock] (so time access is deterministic), the trading
@@ -69,6 +85,8 @@ data class StrategyContext(
     val tradeHistory: TradeHistoryView = NoOpTradeHistoryView(),
     /** Per-strategy pacing state exposed to DSL via `TRADES.*` and `COOLDOWN.*`. */
     val pacer: PacerView = NoOpPacerView(),
+    /** Active entry-order state exposed to DSL via `OPEN_ORDERS.<stream>`. */
+    val openOrders: OpenOrderView = OpenOrderView.EMPTY,
     /**
      * Balance of the portfolio book this strategy trades inside (CAPITAL + realized PnL
      * of every child); null outside a portfolio deploy. Read by `SIZING … RISK OF BOOK`.

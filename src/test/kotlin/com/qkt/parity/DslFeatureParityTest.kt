@@ -51,6 +51,32 @@ class DslFeatureParityTest {
     }
 
     @Test
+    fun `OPEN_ORDERS blocks duplicate entries until GTD expiry in both modes`() {
+        val result =
+            assertParity(
+                "open_orders",
+                """
+                STRATEGY open_orders VERSION 1
+                DEFAULTS { SIZING = 1 TIF = GTC }
+                SYMBOLS btc = BACKTEST:BTCUSDT EVERY 1m
+                RULES
+                  WHEN btc.close >= 100
+                   AND POSITION.btc = 0
+                   AND OPEN_ORDERS.btc = 0
+                  THEN BUY btc ORDER_TYPE = LIMIT AT 90 TIF GTD NOW + 4m
+                """.trimIndent(),
+                listOf("100", "100", "99", "101", "99", "101", "89", "89"),
+            )
+
+        assertThat(result.backtest.trades).hasSize(1)
+        assertThat(
+            result.backtest.trades
+                .single()
+                .orderId,
+        ).endsWith("--1")
+    }
+
+    @Test
     fun `CLOSE rule has full-state parity`() {
         val result =
             assertParity(

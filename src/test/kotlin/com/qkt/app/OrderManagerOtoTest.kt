@@ -64,11 +64,18 @@ class OrderManagerOtoTest {
     }
 
     @Test
-    fun `parent fill activates children`() {
+    fun `OTO counts its active parent once and excludes its protective child`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
         val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
-        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                isRiskReducingForHalt = { request -> request.side == Side.SELL },
+            )
 
         val parent =
             OrderRequest.Limit(
@@ -79,6 +86,7 @@ class OrderManagerOtoTest {
                 limitPrice = Money.of("100"),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 0L,
+                strategyId = "alpha",
             )
         val child =
             OrderRequest.Limit(
@@ -89,6 +97,7 @@ class OrderManagerOtoTest {
                 limitPrice = Money.of("110"),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 0L,
+                strategyId = "alpha",
             )
         om.submit(
             OrderRequest.OTO(
@@ -100,11 +109,15 @@ class OrderManagerOtoTest {
                 children = listOf(child),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 0L,
+                strategyId = "alpha",
             ),
         )
+        assertThat(om.activeEntryOrderCount("alpha", "X")).isEqualTo(1)
+
         broker.emitFill(parent, price = Money.of("100"))
 
         assertThat(broker.submits.map { it.id }).containsExactlyInAnyOrder("p1", "c1")
+        assertThat(om.activeEntryOrderCount("alpha", "X")).isZero()
     }
 
     @Test
