@@ -69,6 +69,10 @@ class HtmlReportWriter(
         sb.append(tradeStatsTable(result.global))
         sb.append("</section>")
 
+        sb.append("<section class=\"trade-audit\"><h2>Trade audit</h2>")
+        sb.append(tradeAuditTable(TradeAuditSummaries.from(result)))
+        sb.append("</section>")
+
         sb.append("<section class=\"trades\"><h2>Trades</h2>")
         sb.append(tradesTable(result.trades))
         sb.append("</section>")
@@ -272,6 +276,34 @@ class HtmlReportWriter(
             append("</tbody></table>")
         }
 
+    private fun tradeAuditTable(summary: TradeAuditSummary): String =
+        buildString {
+            append("<table><tbody>")
+            append("<tr><td>Fills</td><td>${summary.fills}</td></tr>")
+            append("<tr><td>Buy fills</td><td>${summary.buyFills}</td></tr>")
+            append("<tr><td>Sell fills</td><td>${summary.sellFills}</td></tr>")
+            append("<tr><td>Side attribution</td><td>${html(summary.sideAttribution)}</td></tr>")
+            append("<tr><td>Long entry fills</td><td>${summary.longEntryFills}</td></tr>")
+            append("<tr><td>Short entry fills</td><td>${summary.shortEntryFills}</td></tr>")
+            append("<tr><td>Long exit fills</td><td>${summary.longExitFills}</td></tr>")
+            append("<tr><td>Short exit fills</td><td>${summary.shortExitFills}</td></tr>")
+            append("<tr><td>Unknown position effect</td><td>${summary.unknownPositionFills}</td></tr>")
+            append("<tr><td>Position attribution</td><td>${html(summary.positionAttribution)}</td></tr>")
+            append("<tr><td>Buy realized</td><td>${summary.buyRealized.toPlainString()}</td></tr>")
+            append("<tr><td>Sell realized</td><td>${summary.sellRealized.toPlainString()}</td></tr>")
+            append("<tr><td>Gross profit</td><td>${summary.grossProfit.toPlainString()}</td></tr>")
+            append("<tr><td>Gross loss</td><td>${summary.grossLoss.toPlainString()}</td></tr>")
+            append("<tr><td>Rejections</td><td>${summary.rejections}</td></tr>")
+            append("<tr><td>Rejection rate</td><td>${summary.rejectionRate?.toPlainString() ?: "n/a"}</td></tr>")
+            append("<tr><td>Risk-audited fills</td><td>${summary.riskAuditedFills}</td></tr>")
+            append("<tr><td>Min risk USD</td><td>${summary.minRiskUsd?.toPlainString() ?: "n/a"}</td></tr>")
+            append("<tr><td>Avg risk USD</td><td>${summary.avgRiskUsd?.toPlainString() ?: "n/a"}</td></tr>")
+            append("<tr><td>Max risk USD</td><td>${summary.maxRiskUsd?.toPlainString() ?: "n/a"}</td></tr>")
+            append("<tr><td>Traded notional</td><td>${summary.tradedNotional.toPlainString()}</td></tr>")
+            append("<tr><td>Max fill notional</td><td>${summary.maxFillNotional?.toPlainString() ?: "n/a"}</td></tr>")
+            append("</tbody></table>")
+        }
+
     private fun tradesTable(trades: List<TradeRecord>): String {
         val sample =
             if (trades.size <= config.tradeTableHead + config.tradeTableTail) {
@@ -281,22 +313,21 @@ class HtmlReportWriter(
             }
         return buildString {
             append("<table><thead><tr>")
-            append("<th>Timestamp</th><th>Strategy</th><th>Symbol</th><th>Side</th>")
-            append("<th>Qty</th><th>Price</th><th>riskUsd</th><th>Stop</th><th>Target</th><th>Realized</th>")
-            append("<th>Native</th><th>Account</th><th>FX</th><th>Pos Before</th><th>Pos After</th>")
+            append("<th>Timestamp</th><th>Strategy</th><th>Symbol</th><th>Fill side</th>")
+            append("<th>Position effect</th><th>Order type</th>")
+            append("<th>Qty</th><th>Price</th><th>riskUsd</th><th>Stop</th><th>Target</th><th>Net Account</th>")
+            append("<th>Gross Account</th><th>Native</th><th>FX</th><th>Pos Before</th><th>Pos After</th>")
             append("<th>Strat Before</th><th>Strat After</th><th>Contract</th><th>Notional</th>")
             append("</tr></thead><tbody>")
             for (r in sample) {
-                val contractSize = r.contractSize ?: java.math.BigDecimal.ONE
-                val fillNotional =
-                    r.trade.price
-                        .multiply(r.trade.quantity.abs())
-                        .multiply(contractSize)
+                val fillNotional = TradeAuditSummaries.fillNotional(r)
                 append("<tr>")
                 append("<td>${r.trade.timestamp}</td>")
-                append("<td>${r.strategyId}</td>")
-                append("<td>${r.trade.symbol}</td>")
-                append("<td>${r.trade.side}</td>")
+                append("<td>${html(r.strategyId)}</td>")
+                append("<td>${html(r.trade.symbol)}</td>")
+                append("<td>${html(r.trade.side.name)}</td>")
+                append("<td>${html(TradeAuditSummaries.positionEffect(r))}</td>")
+                append("<td>${html(r.orderType ?: "unknown")}</td>")
                 append("<td>${r.trade.quantity.toPlainString()}</td>")
                 append("<td>${r.trade.price.toPlainString()}</td>")
                 append("<td>${r.riskUsd?.toPlainString() ?: "n/a"}</td>")
@@ -304,14 +335,14 @@ class HtmlReportWriter(
                 append("<td>${r.takeProfitPrice?.toPlainString() ?: "n/a"}</td>")
                 append("<td>${r.realized.toPlainString()}</td>")
                 append(
-                    "<td>${r.nativeRealized?.toPlainString() ?: "n/a"}" +
-                        "${r.nativeCurrency?.let { " $it" } ?: ""}</td>",
+                    "<td>${r.accountRealized?.toPlainString() ?: "n/a"}" +
+                        "${r.accountCurrency?.let { " ${html(it)}" } ?: ""}</td>",
                 )
                 append(
-                    "<td>${r.accountRealized?.toPlainString() ?: "n/a"}" +
-                        "${r.accountCurrency?.let { " $it" } ?: ""}</td>",
+                    "<td>${r.nativeRealized?.toPlainString() ?: "n/a"}" +
+                        "${r.nativeCurrency?.let { " ${html(it)}" } ?: ""}</td>",
                 )
-                append("<td>${r.fxRate?.toPlainString() ?: "identity"}</td>")
+                append("<td>${r.fxRate?.toPlainString() ?: html("identity")}</td>")
                 append(
                     "<td>${r.accountPositionBefore?.quantity?.toPlainString() ?: "n/a"} " +
                         "@${r.accountPositionBefore?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",

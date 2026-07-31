@@ -266,6 +266,18 @@ The qkt-forge gates cover the institutional pieces that are expensive or statist
 | Walk-forward | rolling train/test consistency |
 | Significance | deflated Sharpe, PBO, and Monte Carlo floors |
 | Robustness | cost stress and prop-style risk-fit sizing |
+| Portfolio admission | whether a strategy improves the promoted book after correlation and allocation checks |
+| Verify | final tick/realistic-execution validation for the selected sleeve |
+| Portfolio construction | proposed post-promotion book selection, weight search, and qkt `PORTFOLIO` artifact generation |
+| Portfolio verify | proposed final whole-book backtest before production readiness |
+
+The strategy detail dashboard should expose the same core trading facts for each
+gate run: PnL, drawdown, Sharpe/Calmar/profit factor, buy/sell fill counts and PnL,
+separate long/short entry and exit counts, risk used, amount/notional traded,
+execution tier, and report-backed fills. Fill side must not be presented as
+position direction: a buy can cover a short and a sell can close a long. See
+`docs/superpowers/specs/2026-07-26-forge-gate-metrics-and-portfolio-finalization-design.md`
+for the proposed normalized card schema and post-promotion portfolio gate design.
 
 Keep qkt-forge pointed at the same qkt binary, data root, dataset policies, and config conventions you use manually. That is what lets a promoted qkt-forge candidate reproduce as a normal qkt experiment or promotion record.
 

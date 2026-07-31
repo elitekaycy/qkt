@@ -4,6 +4,7 @@ import com.qkt.backtest.DrawdownPeriod
 import com.qkt.backtest.EquityFanPoint
 import com.qkt.backtest.EquitySample
 import java.math.BigDecimal
+import java.util.Locale
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -22,6 +23,38 @@ class SvgChartTest {
         val svg = SvgChart.lineChart(emptyList(), width = 400, height = 200, title = "empty")
         assertThat(svg).startsWith("<svg")
         assertThat(svg).endsWith("</svg>")
+    }
+
+    @Test
+    fun `flat line chart renders the series in the middle of the plot area`() {
+        val pts = listOf(0L to BigDecimal("100"), 1L to BigDecimal("100"), 2L to BigDecimal("100"))
+        val svg = SvgChart.lineChart(pts, width = 400, height = 200, title = "flat")
+
+        assertThat(svg).contains("60.0,95.0 220.0,95.0 380.0,95.0")
+    }
+
+    @Test
+    fun `axis labels use decimal dots regardless of default locale`() {
+        val original = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.FRANCE)
+            val pts = listOf(0L to BigDecimal("1.25"), 1L to BigDecimal("1.50"))
+
+            val svg = SvgChart.lineChart(pts, width = 400, height = 200, title = "locale")
+
+            assertThat(svg).contains(">1.500<")
+            assertThat(svg).contains(">1.250<")
+            assertThat(svg).doesNotContain(">1,500<")
+        } finally {
+            Locale.setDefault(original)
+        }
+    }
+
+    @Test
+    fun `chart title is escaped as svg text`() {
+        val svg = SvgChart.lineChart(emptyList(), width = 400, height = 200, title = "pnl <risk> & \"audit\"")
+
+        assertThat(svg).contains("<title>pnl &lt;risk&gt; &amp; &quot;audit&quot;</title>")
     }
 
     @Test
