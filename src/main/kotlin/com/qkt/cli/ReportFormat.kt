@@ -7,6 +7,7 @@ import com.qkt.backtest.ConditionalAutocorr
 import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
+import com.qkt.backtest.report.TradeAuditSummaries
 import com.qkt.evidence.EvidenceJson
 import java.io.PrintStream
 
@@ -21,6 +22,9 @@ sealed interface ReportFormat {
 
 /** Renders a [BacktestResult] in [ReportFormat.Text] or [ReportFormat.Json] form. */
 object ReportPrinter {
+    private const val RESULT_SCHEMA = "qkt-backtest-result-v1"
+    private const val RESULT_SCHEMA_VERSION = 1
+
     /**
      * Writes [result] in [fmt] form to [out]. [brokerKind] drives the execution-assumptions
      * disclosure — what the fills did and didn't model — so the report never reads as more
@@ -265,6 +269,8 @@ object ReportPrinter {
         val g = r.global
         val sb = StringBuilder()
         sb.append('{')
+        sb.append("\"schema\":\"").append(RESULT_SCHEMA).append("\",")
+        sb.append("\"schemaVersion\":").append(RESULT_SCHEMA_VERSION).append(',')
         sb.append("\"trades\":").append(g.tradeCount).append(',')
         sb.append("\"finalRealized\":").append(g.realizedTotal.toPlainString()).append(',')
         sb.append("\"finalUnrealized\":").append(g.unrealizedTotal.toPlainString()).append(',')
@@ -295,11 +301,13 @@ object ReportPrinter {
         sb.append("\"halts\":").append(r.halts.size).append(',')
         sb.append("\"cadence\":\"").append(r.cadence.name).append("\",")
         sb.append("\"conditionalAutocorr\":").append(conditionalAutocorrJson(r.conditionalAutocorr)).append(',')
+        sb.append("\"tradeSummary\":").append(tradeSummaryJson(r)).append(',')
+        sb.append("\"global\":").append(reportJson(g)).append(',')
         sb.append("\"perStrategy\":{")
         sb.append(
             r.perStrategy.entries
                 .sortedBy { it.key }
-                .joinToString(",") { (id, s) -> "\"$id\":${strategyJson(s)}" },
+                .joinToString(",") { (id, s) -> "${jsonString(id)}:${strategyJson(s)}" },
         )
         sb.append("},")
         sb.append("\"bookAnalytics\":").append(bookAnalyticsJson(r.bookAnalytics)).append(',')
@@ -308,6 +316,36 @@ object ReportPrinter {
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
+    }
+
+    private fun tradeSummaryJson(result: BacktestResult): String {
+        val summary = TradeAuditSummaries.from(result)
+
+        return buildString {
+            append("{\"fills\":").append(summary.fills)
+            append(",\"buyFills\":").append(summary.buyFills)
+            append(",\"sellFills\":").append(summary.sellFills)
+            append(",\"sideAttribution\":").append(jsonString(summary.sideAttribution))
+            append(",\"longEntryFills\":").append(summary.longEntryFills)
+            append(",\"shortEntryFills\":").append(summary.shortEntryFills)
+            append(",\"longExitFills\":").append(summary.longExitFills)
+            append(",\"shortExitFills\":").append(summary.shortExitFills)
+            append(",\"unknownPositionFills\":").append(summary.unknownPositionFills)
+            append(",\"positionAttribution\":").append(jsonString(summary.positionAttribution))
+            append(",\"buyRealized\":").append(summary.buyRealized.toPlainString())
+            append(",\"sellRealized\":").append(summary.sellRealized.toPlainString())
+            append(",\"grossProfit\":").append(summary.grossProfit.toPlainString())
+            append(",\"grossLoss\":").append(summary.grossLoss.toPlainString())
+            append(",\"rejections\":").append(summary.rejections)
+            append(",\"rejectionRate\":").append(summary.rejectionRate?.toPlainString() ?: "null")
+            append(",\"riskAuditedFills\":").append(summary.riskAuditedFills)
+            append(",\"minRiskUsd\":").append(summary.minRiskUsd?.toPlainString() ?: "null")
+            append(",\"avgRiskUsd\":").append(summary.avgRiskUsd?.toPlainString() ?: "null")
+            append(",\"maxRiskUsd\":").append(summary.maxRiskUsd?.toPlainString() ?: "null")
+            append(",\"tradedNotional\":").append(summary.tradedNotional.toPlainString())
+            append(",\"maxFillNotional\":").append(summary.maxFillNotional?.toPlainString() ?: "null")
+            append("}")
+        }
     }
 
     /**
@@ -345,22 +383,103 @@ object ReportPrinter {
 
     /** Compact per-strategy attribution object for `--json` — the full report is in `--report`. */
     private fun strategyJson(s: PerformanceReport): String =
+        reportJson(
+            s,
+            aliases =
+                mapOf(
+                    "realized" to s.realizedTotal.toPlainString(),
+                    "unrealized" to s.unrealizedTotal.toPlainString(),
+                    "trades" to s.tradeCount.toString(),
+                ),
+        )
+
+    private fun reportJson(
+        r: PerformanceReport,
+        aliases: Map<String, String> = emptyMap(),
+    ): String =
         buildString {
-            append("{\"totalPnL\":").append(s.totalPnL.toPlainString())
-            append(",\"realized\":").append(s.realizedTotal.toPlainString())
-            append(",\"unrealized\":").append(s.unrealizedTotal.toPlainString())
-            append(",\"trades\":").append(s.tradeCount)
-            append(",\"winRate\":").append(s.winRate.toPlainString())
-            append(",\"sharpeRatio\":").append(s.sharpeRatio?.toPlainString() ?: "null")
-            append(",\"sortinoRatio\":").append(s.sortinoRatio?.toPlainString() ?: "null")
-            append(",\"calmarRatio\":").append(s.calmarRatio?.toPlainString() ?: "null")
-            append(",\"maxDrawdown\":").append(s.maxDrawdown.toPlainString())
-            append(",\"maxDailyDrawdown\":").append(s.maxDailyDrawdown.toPlainString())
-            append(",\"turnover\":").append(s.turnover.toPlainString())
-            append(",\"commissionPaid\":").append(s.commissionPaid.toPlainString())
-            append(",\"swapPaid\":").append(s.swapPaid.toPlainString())
+            append("{\"realizedTotal\":").append(r.realizedTotal.toPlainString())
+            append(",\"unrealizedTotal\":").append(r.unrealizedTotal.toPlainString())
+            append(",\"totalPnL\":").append(r.totalPnL.toPlainString())
+            append(",\"commissionPaid\":").append(r.commissionPaid.toPlainString())
+            append(",\"swapPaid\":").append(r.swapPaid.toPlainString())
+            append(",\"tradeCount\":").append(r.tradeCount)
+            append(",\"winRate\":").append(r.winRate.toPlainString())
+            append(",\"maxDrawdown\":").append(r.maxDrawdown.toPlainString())
+            append(",\"profitFactor\":").append(r.profitFactor?.toPlainString() ?: "null")
+            append(",\"avgWin\":").append(r.avgWin.toPlainString())
+            append(",\"avgLoss\":").append(r.avgLoss.toPlainString())
+            append(",\"largestWin\":").append(r.largestWin.toPlainString())
+            append(",\"largestLoss\":").append(r.largestLoss.toPlainString())
+            append(",\"maxConsecutiveLosses\":").append(r.maxConsecutiveLosses)
+            append(",\"sharpeRatio\":").append(r.sharpeRatio?.toPlainString() ?: "null")
+            append(",\"calmarRatio\":").append(r.calmarRatio?.toPlainString() ?: "null")
+            append(",\"sortinoRatio\":").append(r.sortinoRatio?.toPlainString() ?: "null")
+            append(",\"turnover\":").append(r.turnover.toPlainString())
+            append(",\"maxDailyDrawdown\":").append(r.maxDailyDrawdown.toPlainString())
+            append(",\"dailyPnL\":").append(dailyPnlJson(r.dailyPnL))
+            append(",\"drawdownPeriods\":").append(drawdownPeriodsJson(r.drawdownPeriods))
+            append(",\"monteCarlo\":").append(monteCarloJson(r.monteCarlo))
+            append(",\"equityCurve\":").append(equityCurveJson(r.equityCurve))
+            for ((name, value) in aliases.entries.sortedBy { it.key }) {
+                append(',').append(jsonString(name)).append(':').append(value)
+            }
             append("}")
         }
+
+    private fun dailyPnlJson(dailyPnL: Map<java.time.LocalDate, java.math.BigDecimal>): String =
+        buildString {
+            append("{")
+            append(
+                dailyPnL.entries
+                    .sortedBy { it.key }
+                    .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" },
+            )
+            append("}")
+        }
+
+    private fun drawdownPeriodsJson(periods: List<com.qkt.backtest.DrawdownPeriod>): String =
+        buildString {
+            append("[")
+            append(
+                periods.joinToString(",") {
+                    "{\"peakTimestamp\":${it.peakTimestamp}," +
+                        "\"peakIso\":${isoJson(it.peakTimestamp)}," +
+                        "\"troughTimestamp\":${it.troughTimestamp}," +
+                        "\"troughIso\":${isoJson(it.troughTimestamp)}," +
+                        "\"recoveryTimestamp\":${it.recoveryTimestamp?.toString() ?: "null"}," +
+                        "\"recoveryIso\":${
+                            it.recoveryTimestamp
+                                ?.let(::isoJson)
+                                ?: "null"
+                        }," +
+                        "\"depthPct\":${it.depthPct.toPlainString()}," +
+                        "\"durationMs\":${it.durationMs}," +
+                        "\"ongoing\":${it.ongoing}}"
+                },
+            )
+            append("]")
+        }
+
+    private fun equityCurveJson(curve: List<com.qkt.backtest.EquitySample>): String =
+        buildString {
+            append("[")
+            append(
+                curve.joinToString(",") {
+                    "{\"timestamp\":${it.timestamp}," +
+                        "\"iso\":${isoJson(it.timestamp)}," +
+                        "\"equity\":${it.equity.toPlainString()}}"
+                },
+            )
+            append("]")
+        }
+
+    private fun isoJson(epochMs: Long): String =
+        jsonString(
+            java.time.Instant
+                .ofEpochMilli(epochMs)
+                .toString(),
+        )
 
     /** Cross-strategy book analytics as a JSON object, or null on a single-strategy run. */
     private fun bookAnalyticsJson(ba: BookAnalytics?): String {
@@ -372,7 +491,8 @@ object ReportPrinter {
             append(",\"returnCorrelation\":[")
             append(
                 ba.returnCorrelation.joinToString(",") {
-                    "{\"a\":\"${it.a}\",\"b\":\"${it.b}\",\"correlation\":${it.correlation.toPlainString()}}"
+                    "{\"a\":${jsonString(it.a)},\"b\":${jsonString(it.b)}," +
+                        "\"correlation\":${it.correlation.toPlainString()}}"
                 },
             )
             append("]}")
@@ -385,7 +505,7 @@ object ReportPrinter {
             append(
                 m.entries
                     .sortedBy { it.key }
-                    .joinToString(",") { "\"${it.key}\":${it.value.toPlainString()}" },
+                    .joinToString(",") { "${jsonString(it.key)}:${it.value.toPlainString()}" },
             )
             append("}")
         }
@@ -402,7 +522,7 @@ object ReportPrinter {
             append(
                 bySymbol.entries
                     .sortedBy { it.key }
-                    .joinToString(",") { (symbol, ac) -> "\"$symbol\":${autocorrObject(ac)}" },
+                    .joinToString(",") { (symbol, ac) -> "${jsonString(symbol)}:${autocorrObject(ac)}" },
             )
             append('}')
         }
@@ -435,4 +555,25 @@ object ReportPrinter {
             )
             append("}}")
         }
+
+    private fun jsonString(s: String): String {
+        val sb = StringBuilder("\"")
+        for (c in s) {
+            when (c) {
+                '"' -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else ->
+                    if (c < ' ') {
+                        sb.append("\\u%04x".format(c.code))
+                    } else {
+                        sb.append(c)
+                    }
+            }
+        }
+        sb.append("\"")
+        return sb.toString()
+    }
 }

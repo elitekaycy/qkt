@@ -397,8 +397,9 @@ class ReplayEngine(
                 candleWindow = candleWindow,
                 candleHub = candleHub,
                 onAccountedFill = { trade, converted, strategyId, fillState ->
+                    val orderManager = holder[0]?.orderManager
                     val entryRisk =
-                        holder[0]?.orderManager?.entryRiskForFill(
+                        orderManager?.entryRiskForFill(
                             clientOrderId = trade.orderId,
                             quantity = trade.quantity,
                             fillPrice = trade.price,
@@ -409,6 +410,12 @@ class ReplayEngine(
                             trade = trade,
                             realized = fillState.netAccountRealized,
                             strategyId = strategyId,
+                            orderType =
+                                orderManager
+                                    ?.getOrder(trade.orderId)
+                                    ?.request
+                                    ?.javaClass
+                                    ?.simpleName,
                             riskUsd = entryRisk?.riskUsd,
                             stopLossPrice = entryRisk?.protection?.stopLoss,
                             takeProfitPrice = entryRisk?.protection?.takeProfit,

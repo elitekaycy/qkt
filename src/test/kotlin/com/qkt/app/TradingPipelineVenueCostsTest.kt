@@ -37,6 +37,8 @@ class TradingPipelineVenueCostsTest {
         val strategyPnL = com.qkt.pnl.StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val riskState = com.qkt.risk.RiskState(pnl, strategyPnL, clock, bus)
+        val callbackRealized = mutableListOf<BigDecimal>()
+        val accountedFills = mutableListOf<com.qkt.backtest.FillState>()
         TradingPipeline(
             clock = clock,
             ids = SequentialIdGenerator(),
@@ -56,6 +58,8 @@ class TradingPipelineVenueCostsTest {
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
+            onFilled = { _, realized, _ -> callbackRealized.add(realized) },
+            onAccountedFill = { _, _, _, fillState -> accountedFills.add(fillState) },
         )
 
         fun fill(
@@ -81,6 +85,13 @@ class TradingPipelineVenueCostsTest {
         assertThat(pnl.realizedTotal()).isEqualByComparingTo("7.5")
         assertThat(strategyPnL.realizedFor("A")).isEqualByComparingTo("7.5")
         assertThat(riskState.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("7.5")
+        assertThat(callbackRealized.map { it.stripTrailingZeros().toPlainString() })
+            .containsExactly("0", "8")
+        assertThat(accountedFills[0].reducedExposure).isFalse()
+        assertThat(accountedFills[0].netAccountRealized).isEqualByComparingTo("-0.5")
+        assertThat(accountedFills[1].reducedExposure).isTrue()
+        assertThat(accountedFills[1].netAccountRealized).isEqualByComparingTo("8")
+        assertThat(accountedFills[1].accountPositionBefore?.quantity).isEqualByComparingTo("1")
 
         // Halt timing is therefore cost-aware: a losing round trip plus costs trips
         // MaxDailyLoss at the NET number, not the healthier-looking gross one.

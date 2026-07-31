@@ -7,7 +7,9 @@ import java.math.BigDecimal
  * Position snapshot captured around a single fill.
  *
  * The report bundle can use this to show the fill's entry/exit context without asking Forge
- * to reconstruct state from the tape alone.
+ * to reconstruct state from the tape alone. [netAccountRealized] is the per-strategy
+ * account-currency PnL after modeled and venue-reported costs; [reducedExposure] marks fills
+ * that closed or reduced an existing strategy position.
  */
 data class FillState(
     val accountPositionBefore: Position?,

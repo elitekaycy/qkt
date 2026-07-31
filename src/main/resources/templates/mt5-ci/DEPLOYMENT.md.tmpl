@@ -40,10 +40,14 @@ Optional environment variables have safe defaults:
 - `QKT_BROKER_SYMBOL_SUFFIX=` (set when the venue appends a symbol suffix)
 - `TELEGRAM_ENABLED=false`
 - `QKT_ALERTS_WAIVER_REASON=` (set only if you intentionally run without alerts)
+- `QKT_STARTING_BALANCE=50000` (must match broker account balance at deploy)
 - `QKT_MAX_DAILY_LOSS=100`
 - `QKT_MAX_ORDER_QTY=1`
 - `QKT_MAX_ORDER_NOTIONAL=50000`
 - `QKT_PRICE_COLLAR_PCT=5`
+- `QKT_MAX_DRAWDOWN_PCT=10`
+- `QKT_MAX_DAILY_DRAWDOWN_PCT=5`
+- `QKT_MEASURED_USAGE_HOURS=24`
 - `QKT_INSIGHTS_ENABLED=false`
 - `COMPOSE_PROFILES=insights` when `QKT_INSIGHTS_ENABLED=true`
 - `QKT_INSIGHTS_HOST_PORT=8420`
@@ -72,9 +76,12 @@ The workflow does the following:
 5. Parses and compiles every `strategies/*.qkt` file, then runs production preflight.
 6. Syncs this repo to `DEPLOY_PATH`, excluding `.git/`, `state/`, and `data/`.
 7. Runs `docker compose pull`.
-8. Runs `docker compose up -d --remove-orphans`.
-9. Runs `verify-live` inside the QKT container until every `strategies/*.qkt`
-   file is visible in `qkt status --deep` as a running strategy.
+8. Records production approval for every `strategies/*.qkt` file under the
+   protected GitHub production deployment actor and commit.
+9. Runs `docker compose up -d --remove-orphans`.
+10. Runs `verify-live` inside the QKT container for up to ten minutes, until
+    every `strategies/*.qkt` file is visible in `qkt status --deep` as a running
+    strategy.
 
 Before deploying a strategy, run:
 
@@ -85,6 +92,11 @@ make deploy STRAT=<strategy>
 make verify-live
 make reconcile STRAT=<strategy>
 ```
+
+`make deploy` records an operator promotion approval before deploying. For a
+fresh state volume with strategies already in place, run `make approve-all`
+before `make up`. Override `PROMOTION_ACTOR` and `PROMOTION_REASON` when a more
+specific audit identity or rationale is required.
 
 After the stack is running, use resync for strategy edits:
 

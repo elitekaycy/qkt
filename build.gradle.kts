@@ -371,8 +371,22 @@ val checkTestLogBudget by tasks.registering {
     }
 }
 
+val auditReportBundleScriptTest by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verify the qkt report-bundle audit script against a tamper fixture."
+    onlyIf {
+        !System.getProperty("os.name").lowercase().contains("win")
+    }
+    commandLine("bash", "tests/scripts/audit-qkt-report-bundle-test.sh")
+    inputs.files(
+        "scripts/audit_qkt_report_bundle.py",
+        "tests/scripts/audit-qkt-report-bundle-test.sh",
+    )
+}
+
 tasks.named("check") {
     dependsOn(checkTestLogBudget)
+    dependsOn(auditReportBundleScriptTest)
 }
 
 fun org.w3c.dom.Document.textFor(tag: String): String {

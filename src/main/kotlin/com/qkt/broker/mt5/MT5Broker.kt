@@ -620,6 +620,29 @@ class MT5Broker(
                 return@closePositionAsync
             }
             val partiallyFilled = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
+            val reportedVolume = resp.result.volume?.takeIf { it.signum() > 0 }
+            if (partiallyFilled && reportedVolume == null) {
+                // The venue changed state, so a rejection would invite a duplicate close.
+                // Keep the order accepted-but-unresolved and let the position poller
+                // reconcile the remaining venue quantity without sending a second close.
+                // Remove the pending marker before it can be confirmed: a poll that sees a
+                // confirmed marker adopts the reduced snapshot without publishing its delta.
+                recentlyClosedByTicket.remove(ticket)
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        clientOrderId = request.id,
+                        brokerOrderId = ticket.toString(),
+                        strategyId = request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+                log.error(
+                    "MT5Broker {} partial close {} omitted actual filled volume",
+                    profile.name,
+                    request.id,
+                )
+                return@closePositionAsync
+            }
             val positionRemainsOpen = request.partialClose || partiallyFilled
             if (positionRemainsOpen) {
                 confirmEngineClose(ticket)
@@ -628,32 +651,7 @@ class MT5Broker(
                 positionMetaByTicket.remove(ticket)
                 positionSymbolByTicket.remove(ticket)
             }
-            val reportedVolume = resp.result.volume?.takeIf { it.signum() > 0 }
-            val filledQuantity =
-                if (reportedVolume != null) {
-                    reportedVolume
-                } else if (!partiallyFilled) {
-                    closeQuantity
-                } else {
-                    // The venue changed state, so a rejection would invite a duplicate close.
-                    // Keep the order accepted-but-unresolved and alert; the position poller will
-                    // reconcile the remaining venue quantity without sending a second close.
-                    recentlyClosedByTicket.remove(ticket)
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = request.id,
-                            brokerOrderId = ticket.toString(),
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                    log.error(
-                        "MT5Broker {} partial close {} omitted actual filled volume",
-                        profile.name,
-                        request.id,
-                    )
-                    return@closePositionAsync
-                }
+            val filledQuantity = reportedVolume ?: closeQuantity
             val venueCosts =
                 venueCostsForPositionClose(
                     positionTicket = ticket,
