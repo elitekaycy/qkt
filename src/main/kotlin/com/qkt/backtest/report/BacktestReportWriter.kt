@@ -41,6 +41,7 @@ class BacktestReportWriter(
             Files.writeString(dir.resolve("equity_${fileId(id)}.csv"), renderEquityCsv(report.equityCurve))
         }
         Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
+        Files.writeString(dir.resolve("financing.csv"), renderFinancingCsv(result.global.swapPaid))
         Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
         result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), renderBookRiskCsv(it)) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
@@ -68,7 +69,7 @@ class BacktestReportWriter(
                     "stopLossPrice,takeProfitPrice," +
                     "accountPositionQtyBefore,accountPositionAvgEntryBefore,accountPositionQtyAfter," +
                     "accountPositionAvgEntryAfter,strategyPositionQtyBefore,strategyPositionAvgEntryBefore," +
-                    "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional\n",
+                    "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional,reducedExposure\n",
             )
         for (r in trades) {
             val contractSize = r.contractSize ?: java.math.BigDecimal.ONE
@@ -132,10 +133,22 @@ class BacktestReportWriter(
                 .append(r.contractSize?.toPlainString() ?: "")
                 .append(',')
                 .append(fillNotional.toPlainString())
+                .append(',')
+                .append(r.reducedExposure)
                 .append('\n')
         }
         return sb.toString()
     }
+
+    private fun renderFinancingCsv(swapPaid: java.math.BigDecimal): String =
+        buildString {
+            append("component,paid,netPnlImpact\n")
+            append("swap,")
+            append(swapPaid.toPlainString())
+            append(',')
+            append(swapPaid.negate().toPlainString())
+            append('\n')
+        }
 
     private fun renderRejectionsCsv(rejections: List<RiskRejectedEvent>): String {
         val sb = StringBuilder("timestamp,reason,strategy,symbol\n")

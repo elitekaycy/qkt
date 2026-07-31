@@ -221,6 +221,7 @@ class MT5BrokerProfileLoader {
             pointSize = BigDecimal(req("point_size")),
             digits = req("digits").toInt(),
             tradeStopsLevelPoints = req("trade_stops_level_points").toInt(),
+            maxVolume = spec["max_volume"]?.let(::BigDecimal),
         )
     }
 }

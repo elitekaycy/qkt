@@ -132,6 +132,7 @@ class StrategyHandle(
         private val priceCollarFrac: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
         private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+        private val liveEquityBasis: com.qkt.app.LiveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE,
         private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
         /**
          * Measured-usage window hours. Factory default 0 (off) so embedded/test
@@ -222,6 +223,7 @@ class StrategyHandle(
                         "maxDailyDrawdownPct" to maxDailyDrawdownPct,
                         "totalDdBasis" to totalDdBasis.name,
                         "dailyDdBasis" to dailyDdBasis.name,
+                        "liveEquityBasis" to liveEquityBasis.name,
                         "maxOrderQty" to maxOrderQty,
                         "maxOrderNotional" to maxOrderNotional,
                         "priceCollarFrac" to priceCollarFrac,
@@ -247,6 +249,11 @@ class StrategyHandle(
             file: Path,
             ignoreMismatches: Boolean,
         ): StrategyHandle {
+            require(
+                (maxDrawdownPct == null && maxDailyDrawdownPct == null) || startingBalance.signum() > 0,
+            ) {
+                "starting_balance must be > 0 when max_drawdown_pct or max_daily_drawdown_pct is configured"
+            }
             val ast =
                 when (val parsed = Dsl.parseFile(file)) {
                     is ParseResult.Success -> parsed.value
@@ -267,7 +274,8 @@ class StrategyHandle(
                     ?: com.qkt.common.TradingCalendar
                         .fxDefault()
 
-            val source = marketSourceProvider(symbols)
+            val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
+            val source = marketSourceProvider(feedSymbols)
             val ring = EventRing(capacity = ringSize)
             val fillCount = AtomicLong(0)
             val startMs = System.currentTimeMillis()
@@ -289,9 +297,11 @@ class StrategyHandle(
                     haltRules = haltRules,
                     source = source,
                     symbols = symbols,
+                    feedSymbols = feedSymbols,
                     candleWindow = candleWindow,
                     calendar = calendar,
                     accountingConfig = accountingConfig,
+                    equityBasis = liveEquityBasis,
                     // The MDC carries the DSL strategy id, not the deploy name: log
                     // attribution downstream (per-strategy files, insights) must match
                     // the id every trading event uses, or consumers see two strategies

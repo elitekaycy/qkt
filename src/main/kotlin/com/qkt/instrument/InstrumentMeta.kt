@@ -49,6 +49,9 @@ data class InstrumentMeta(
         require(contractSize.signum() > 0) { "InstrumentMeta.contractSize must be > 0: $contractSize" }
         require(volumeStep.signum() > 0) { "InstrumentMeta.volumeStep must be > 0: $volumeStep" }
         require(volumeMin.signum() > 0) { "InstrumentMeta.volumeMin must be > 0: $volumeMin" }
+        require(volumeMax == null || volumeMax >= volumeMin) {
+            "InstrumentMeta.volumeMax must be >= volumeMin: $volumeMax < $volumeMin"
+        }
         require(pointSize.signum() > 0) { "InstrumentMeta.pointSize must be > 0: $pointSize" }
         require(digits >= 0) { "InstrumentMeta.digits must be >= 0: $digits" }
         require(tradeStopsLevelPoints >= 0) {

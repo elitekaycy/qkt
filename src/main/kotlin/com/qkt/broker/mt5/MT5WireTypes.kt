@@ -204,6 +204,7 @@ data class MT5SymbolInfo(
     val volumeMin: BigDecimal,
     val volumeStep: BigDecimal,
     val contractSize: BigDecimal,
+    val volumeMax: BigDecimal? = null,
     val tradeFreezeLevel: Int = 0,
 )
 

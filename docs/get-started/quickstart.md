@@ -49,7 +49,8 @@ qkt backtest momentum.qkt \
 Outputs:
 
 - `out/result.json` — machine-readable metrics
-- `out/equity_global.csv`, `out/trades.csv` — raw data
+- `out/equity_global.csv`, `out/trades.csv` — raw market/trade data
+- `out/financing.csv` — swap paid and its signed P&L impact; add `netPnlImpact` to trade realized values when reconciling CSV totals
 - `out/report.html` — single self-contained HTML with equity curve, drawdown table, Monte Carlo fan, per-trade risk
 
 Open `out/report.html` in a browser.

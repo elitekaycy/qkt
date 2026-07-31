@@ -382,13 +382,15 @@ class MT5ClientTest {
         server.enqueue(
             MockResponse().setBody(
                 """{"ask":4561.818,"bid":4561.51,"digits":3,"point":0.001,""" +
-                    """"trade_stops_level":0,"trade_freeze_level":25,"volume_min":0.01,"volume_step":0.01,""" +
+                    """"trade_stops_level":0,"trade_freeze_level":25,"volume_min":0.01,""" +
+                    """"volume_step":0.01,"volume_max":50,""" +
                     """"trade_contract_size":100.0}""",
             ),
         )
         val info = client.getSymbolInfo("XAUUSDm")!!
         assertThat(info.volumeStep).isEqualByComparingTo("0.01")
         assertThat(info.volumeMin).isEqualByComparingTo("0.01")
+        assertThat(info.volumeMax).isEqualByComparingTo("50")
         assertThat(info.point).isEqualByComparingTo("0.001")
         assertThat(info.digits).isEqualTo(3)
         assertThat(info.tradeFreezeLevel).isEqualTo(25)
