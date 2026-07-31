@@ -178,6 +178,6 @@ jobs:
             -e "ssh -p $DEPLOY_PORT" \
             ./ "$remote:$DEPLOY_PATH/"
           ssh -p "$DEPLOY_PORT" "$remote" \
-            "cd '$DEPLOY_PATH' && chmod 600 .env && docker compose pull && docker compose up -d --remove-orphans && docker compose ps"
+            "cd '$DEPLOY_PATH' && chmod 600 .env && docker compose pull && docker compose run --rm init-perms && docker compose run --rm --no-deps -e QKT_PROMOTION_ACTOR='github-actions:$GITHUB_ACTOR' -e QKT_PROMOTION_REASON='protected GitHub production deployment $GITHUB_SHA' --entrypoint /bin/sh qkt /deploy-scripts/approve-promotions.sh && docker compose up -d --remove-orphans && docker compose ps"
           ssh -p "$DEPLOY_PORT" "$remote" \
-            "cd '$DEPLOY_PATH' && for attempt in \$(seq 1 30); do docker compose exec -T qkt /bin/sh /deploy-scripts/verify-live.sh && exit 0; sleep 10; done; docker compose logs --tail 200 qkt; exit 1"
+            "cd '$DEPLOY_PATH' && for attempt in \$(seq 1 60); do docker compose exec -T qkt /bin/sh /deploy-scripts/verify-live.sh && exit 0; sleep 10; done; docker compose logs --tail 200 qkt; exit 1"

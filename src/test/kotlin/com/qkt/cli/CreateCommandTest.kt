@@ -46,6 +46,8 @@ class CreateCommandTest {
         assertThat(target.resolve("strategies/full_strategy.qkt")).doesNotExist()
         val makefile = Files.readString(target.resolve("Makefile"))
         assertThat(makefile).contains("preflight")
+        assertThat(makefile).contains("approve-all")
+        assertThat(makefile).contains("deploy: approve")
         assertThat(makefile).contains("resync-dry-run")
         assertThat(makefile).contains("verify-live")
         assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
@@ -77,6 +79,10 @@ class CreateCommandTest {
         assertThat(Files.readString(target.resolve("scripts/verify-live.sh")))
             .contains("qkt status --deep")
             .contains("expected strategy")
+        assertThat(Files.readString(target.resolve("scripts/approve-promotions.sh")))
+            .contains("qkt promotion approve")
+            .contains("QKT_PROMOTION_ACTOR")
+            .contains("QKT_PROMOTION_REASON")
     }
 
     @Test
@@ -314,6 +320,9 @@ class CreateCommandTest {
         assertThat(workflow).contains("qkt parse \"\$target\"")
         assertThat(workflow).contains("qkt preflight \"\$target\"")
         assertThat(workflow).contains("--state-dir /tmp/qkt-preflight-state")
+        assertThat(workflow).contains("/deploy-scripts/approve-promotions.sh")
+        assertThat(workflow).contains("protected GitHub production deployment \$GITHUB_SHA")
+        assertThat(workflow).contains("seq 1 60")
         assertThat(workflow).contains("/deploy-scripts/verify-live.sh")
         assertThat(workflow).doesNotContain("replace-with-a-long-random-value")
         assertThat(target.resolve("DEPLOYMENT.md")).exists()
@@ -396,6 +405,7 @@ class CreateCommandTest {
                 "Makefile",
                 "docker-compose.yml",
                 "qkt.config.yaml",
+                "scripts/approve-promotions.sh",
                 "scripts/verify-live.sh",
                 "examples/strategies/README.md",
                 "examples/strategies/ema_cross.qkt",
