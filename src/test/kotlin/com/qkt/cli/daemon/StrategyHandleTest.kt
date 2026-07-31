@@ -1,5 +1,7 @@
 package com.qkt.cli.daemon
 
+import com.qkt.accounting.AccountCurrency
+import com.qkt.accounting.AccountingConfig
 import com.qkt.app.LiveSessionHandle
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
@@ -106,6 +108,36 @@ class StrategyHandleTest {
         }
     }
 
+    @Test
+    fun `RealFactory subscribes configured FX conversion symbols without treating them as traded streams`(
+        @TempDir tmp: Path,
+    ) {
+        val requested = mutableListOf<List<String>>()
+        val factory =
+            StrategyHandle.RealFactory(
+                stateDir = StateDir.resolve(tmp.toString()),
+                marketSourceProvider = { symbols ->
+                    requested.add(symbols)
+                    FakeSource(emptyList())
+                },
+                accountingConfig =
+                    AccountingConfig(
+                        accountCurrency = AccountCurrency("USD"),
+                        symbols = mapOf("JPYUSD" to "EXNESS:USDJPY"),
+                    ),
+            )
+
+        val handle = factory.create("alpha", Path.of("src/test/resources/cli/valid_strategy.qkt"), false)
+        try {
+            assertThat(requested.single())
+                .containsExactly("BACKTEST:BTCUSDT", "EXNESS:USDJPY")
+            assertThat(handle.ast.streams.map { it.qktSymbol })
+                .containsExactly("BACKTEST:BTCUSDT")
+        } finally {
+            handle.close()
+        }
+    }
+
     private class CapturingNotifier : Notifier {
         val events = java.util.concurrent.CopyOnWriteArrayList<NotificationEvent>()
 
@@ -152,6 +184,26 @@ class StrategyHandleTest {
         val err = runCatching { factory.create("bad", broken, false) }.exceptionOrNull()
         assertThat(err).isNotNull
         assertThat(err!!.message).contains("parse failure")
+    }
+
+    @Test
+    fun `RealFactory rejects drawdown limits without a positive starting balance`(
+        @TempDir tmp: Path,
+    ) {
+        val factory =
+            StrategyHandle.RealFactory(
+                stateDir = StateDir.resolve(tmp.toString()),
+                marketSourceProvider = { FakeSource(emptyList()) },
+                maxDrawdownPct = BigDecimal("0.10"),
+                startingBalance = BigDecimal.ZERO,
+            )
+
+        val error =
+            runCatching {
+                factory.create("alpha", Path.of("src/test/resources/cli/valid_strategy.qkt"), false)
+            }.exceptionOrNull()
+
+        assertThat(error).hasMessageContaining("starting_balance must be > 0")
     }
 
     @Test

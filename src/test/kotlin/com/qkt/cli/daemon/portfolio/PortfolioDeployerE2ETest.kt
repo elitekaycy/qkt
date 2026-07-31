@@ -1,5 +1,7 @@
 package com.qkt.cli.daemon.portfolio
 
+import com.qkt.accounting.AccountCurrency
+import com.qkt.accounting.AccountingConfig
 import com.qkt.app.BrokerFactory
 import com.qkt.broker.Broker
 import com.qkt.broker.PaperBroker
@@ -39,6 +41,65 @@ import org.junit.jupiter.api.io.TempDir
  * stop tears the whole thing down cleanly.
  */
 class PortfolioDeployerE2ETest {
+    @Test
+    fun `always-run book risk samples portfolio candles and children subscribe FX conversion symbols`(
+        @TempDir tmp: Path,
+    ) {
+        val child = tmp.resolve("child.qkt")
+        Files.writeString(
+            child,
+            """
+            STRATEGY parity_child VERSION 1
+            SYMBOLS
+                x = BACKTEST:X EVERY 1m
+            RULES
+                WHEN x.close > 0 THEN BUY x SIZING 1
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO parity_book VERSION 1 CAPITAL 10000
+            SYMBOLS
+                x = BACKTEST:X EVERY 1m
+            IMPORT 'child.qkt' AS child
+            RULES
+                RUN child WEIGHT 1
+            """.trimIndent(),
+        )
+        val requested = java.util.concurrent.CopyOnWriteArrayList<List<String>>()
+        val deployer =
+            PortfolioDeployer(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = { symbols ->
+                    requested.add(symbols)
+                    FakeSource(emptyList())
+                },
+                bookRiskConfig =
+                    com.qkt.risk.book.BookRiskConfig(
+                        allocation =
+                            com.qkt.risk.book
+                                .Allocation(),
+                    ),
+                accountingConfig =
+                    AccountingConfig(
+                        accountCurrency = AccountCurrency("USD"),
+                        symbols = mapOf("JPYUSD" to "EXNESS:USDJPY"),
+                    ),
+            )
+
+        val record = deployer.deploy("parity_book", PortfolioLoader.load(portfolio))
+        try {
+            assertThat(requested)
+                .contains(listOf("BACKTEST:X", "EXNESS:USDJPY"))
+                .contains(listOf("BACKTEST:X"))
+        } finally {
+            record.supervisor.stop()
+            for (deployedChild in record.children) runCatching { deployedChild.close() }
+        }
+    }
+
     @Test
     fun `book annualization uses the configured symbol calendar`(
         @TempDir tmp: Path,

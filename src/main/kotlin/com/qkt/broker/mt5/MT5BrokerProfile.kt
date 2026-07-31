@@ -77,4 +77,5 @@ data class InstrumentSpec(
     val pointSize: BigDecimal,
     val digits: Int,
     val tradeStopsLevelPoints: Int,
+    val maxVolume: BigDecimal? = null,
 )

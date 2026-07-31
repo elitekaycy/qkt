@@ -815,6 +815,7 @@ class MT5Broker(
     private data class VenueRules(
         val volumeStep: BigDecimal,
         val volumeMin: BigDecimal,
+        val volumeMax: BigDecimal?,
         val digits: Int,
         val pointSize: BigDecimal,
         val tradeStopsLevelPoints: Int,
@@ -857,12 +858,16 @@ class MT5Broker(
             } else {
                 quantity
             }
-        return if (quantized < rules.volumeMin) {
-            VolumeResult.Reject(
-                "quantized volume below venue volumeMin for $brokerSymbol (input=${quantity.toPlainString()})",
-            )
-        } else {
-            VolumeResult.Ok(quantized)
+        return when {
+            quantized < rules.volumeMin ->
+                VolumeResult.Reject(
+                    "quantized volume below venue volumeMin for $brokerSymbol (input=${quantity.toPlainString()})",
+                )
+            rules.volumeMax != null && quantized > rules.volumeMax ->
+                VolumeResult.Reject(
+                    "quantized volume above venue volumeMax for $brokerSymbol (input=${quantity.toPlainString()})",
+                )
+            else -> VolumeResult.Ok(quantized)
         }
     }
 
@@ -880,6 +885,7 @@ class MT5Broker(
             return VenueRules(
                 volumeStep = spec.volumeStep,
                 volumeMin = spec.minVolume,
+                volumeMax = spec.maxVolume,
                 digits = spec.digits,
                 pointSize = spec.pointSize,
                 tradeStopsLevelPoints = spec.tradeStopsLevelPoints,
@@ -890,6 +896,7 @@ class MT5Broker(
             return VenueRules(
                 volumeStep = info.volumeStep,
                 volumeMin = info.volumeMin,
+                volumeMax = info.volumeMax,
                 digits = info.digits,
                 pointSize = info.point,
                 tradeStopsLevelPoints = info.tradeStopsLevel,
@@ -905,6 +912,7 @@ class MT5Broker(
         return VenueRules(
             volumeStep = fetched.volumeStep,
             volumeMin = fetched.volumeMin,
+            volumeMax = fetched.volumeMax,
             digits = fetched.digits,
             pointSize = fetched.point,
             tradeStopsLevelPoints = fetched.tradeStopsLevel,
@@ -940,6 +948,11 @@ class MT5Broker(
         if (quantizedVolume < rules.volumeMin) {
             return PrepareResult.Reject(
                 "quantized volume below venue volumeMin for ${wire.symbol} (input=${wire.volume.toPlainString()})",
+            )
+        }
+        if (rules.volumeMax != null && quantizedVolume > rules.volumeMax) {
+            return PrepareResult.Reject(
+                "quantized volume above venue volumeMax for ${wire.symbol} (input=${wire.volume.toPlainString()})",
             )
         }
         val digits = rules.digits.coerceAtLeast(0)
@@ -2223,7 +2236,7 @@ class MT5Broker(
             contractSize = info.contractSize,
             volumeStep = info.volumeStep,
             volumeMin = info.volumeMin,
-            volumeMax = null,
+            volumeMax = info.volumeMax,
             pointSize = info.point,
             digits = info.digits,
             tradeStopsLevelPoints = info.tradeStopsLevel,
