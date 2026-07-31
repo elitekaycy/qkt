@@ -134,8 +134,10 @@ class OrderManagerRestoreTest {
 
         assertThat(broker.recovered.map { it.id }).containsExactly("entry-stop")
         assertThat(om.getOrder("entry-stop")?.state).isEqualTo(OrderState.WORKING)
+        assertThat(om.activeEntryOrderCount("alpha", "XAUUSD")).isEqualTo(1)
         bus.publish(TickEvent(Tick("XAUUSD", BigDecimal("1990"), clock.now())))
         assertThat(om.getOrder("entry-stop")).isNull()
+        assertThat(om.activeEntryOrderCount("alpha", "XAUUSD")).isZero()
         assertThat(persistor.loadPendingOrders("alpha")).isEmpty()
     }
 

@@ -180,6 +180,7 @@ POSITION.<stream>.unrealized_pnl            -- open P&L on this position
 POSITION.<stream>.holding_duration          -- seconds since the position was opened
 POSITION.<stream>.mfe                       -- max favorable excursion of the PRIMARY leg (price units)
 POSITION.<stream>.mae                       -- max adverse excursion of the PRIMARY leg (price units)
+OPEN_ORDERS.<stream>                        -- active risk-increasing entry-order count
 ```
 
 ```qkt
@@ -193,6 +194,15 @@ THEN CLOSE btc
 `POSITION.<stream>.mae` reads the high-water mark of `entry_price - current_price` (for BUY) or `current_price - entry_price` (for SELL) on the PRIMARY leg since it opened. Returns `0` if no primary exists. Same value the stack engine uses for `STACK_AT MAE >= ... RECOVER ...` arming checks.
 
 `POSITION.<stream>` returns a signed quantity. `POSITION.btc > 0` means long; `POSITION.btc < 0` means short; `POSITION.btc = 0` means flat. Most entry rules guard with `POSITION.btc = 0`.
+
+`OPEN_ORDERS.<stream>` is scoped to the current strategy and resolved stream symbol. It counts active risk-increasing entries in pending, submitted, working, or partially-filled states. It excludes dormant composite children and protective or otherwise risk-reducing exits. Terminal fills, cancellations, rejections, and GTD expiry remove the entry from the count through the same order lifecycle used in replay and live execution.
+
+```qkt
+WHEN setup
+ AND POSITION.gold = 0
+ AND OPEN_ORDERS.gold = 0
+THEN SELL gold ORDER_TYPE = LIMIT AT gold.close + 2 SIZING 1
+```
 
 !!! note "realized_pnl is currently strategy-level"
     `POSITION.<stream>.realized_pnl` returns the strategy's total realized P&L, not the per-symbol slice. True per-symbol realized requires lot-level accounting — tracked on the [backlog](../../planned.md#phase-28-exploratory).

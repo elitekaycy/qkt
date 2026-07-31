@@ -12,6 +12,7 @@ import com.qkt.pnl.StrategyPnLView
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
 import com.qkt.risk.PacerView
+import com.qkt.strategy.OpenOrderView
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -543,13 +544,20 @@ class ExprCompilerStateTest {
     }
 
     @Test
-    fun `OPEN_ORDERS state is rejected in 11c1`() {
-        assertThatThrownBy {
-            ExprCompiler()
-                .compile(
-                    com.qkt.dsl.ast
-                        .StateAccessor(com.qkt.dsl.ast.StateSource.OPEN_ORDERS, "btc"),
-                )
-        }.isInstanceOf(IllegalArgumentException::class.java)
+    fun `OPEN_ORDERS returns the strategy entry count for the stream symbol`() {
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
+                lets = emptyMap(),
+                strategyContext =
+                    testStrategyContext(
+                        openOrders = OpenOrderView { symbol -> if (symbol == "BACKTEST:BTCUSDT") 2 else 0 },
+                    ),
+            )
+
+        val value = ExprCompiler().compile(StateAccessor(StateSource.OPEN_ORDERS, "btc")).evaluate(ec) as Value.Num
+
+        assertThat(value.v).isEqualByComparingTo("2")
     }
 }
