@@ -42,10 +42,12 @@ class OrderManagerTier2FallbackTest {
                 stopPrice = Money.of("1.09"),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 0L,
+                strategyId = "alpha",
             ),
         )
 
         assertThat(om.getOrder("c1")?.state).isEqualTo(OrderState.PENDING)
+        assertThat(om.activeEntryOrderCount("alpha", "EURUSD")).isEqualTo(1)
         assertThat(broker.submits).isEmpty()
     }
 

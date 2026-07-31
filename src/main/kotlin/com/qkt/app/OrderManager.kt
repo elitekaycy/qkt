@@ -801,6 +801,38 @@ class OrderManager(
     fun activeOrders(): List<ManagedOrder> = orders.values.filter { !it.state.isTerminal }
 
     /**
+     * Count active, risk-increasing entry orders for [strategyId] on [symbol].
+     *
+     * The count uses the existing per-symbol live index and exposure registry, so its hot-path
+     * cost is O(active orders for this symbol), not O(all orders). Dormant composite children and
+     * protective or otherwise risk-reducing exits are excluded. Submitted and partially-filled
+     * entries count as active to cover the acknowledgement and residual-fill lifecycle windows.
+     */
+    fun activeEntryOrderCount(
+        strategyId: String,
+        symbol: String,
+    ): Int {
+        val ids = liveBySymbol[symbol] ?: return 0
+        var count = 0
+        for (id in ids) {
+            if (id !in exposureEntries) continue
+            val managed = orders[id] ?: error("live order index desync: $id")
+            if (managed.request.strategyId != strategyId) continue
+            val activeEntry =
+                when (managed.state) {
+                    OrderState.PENDING,
+                    OrderState.SUBMITTED,
+                    OrderState.WORKING,
+                    OrderState.PARTIALLY_FILLED,
+                    -> true
+                    else -> false
+                }
+            if (activeEntry && !mustSurviveHalt(managed)) count++
+        }
+        return count
+    }
+
+    /**
      * Read-only: true iff a live order on [symbol] could fill within the bar range `[low, high]`.
      * Direction-aware, so a gap-open through a level still counts (a buy stop at 100 fires on a bar
      * that opens at 102). A live trailing stop always returns true — its level moves with the
