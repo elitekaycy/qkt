@@ -97,7 +97,10 @@ class ParseCommandTest {
             RULES
                 WHEN gold.close > 0
                 THEN BUY gold
-                    BRACKET { STOP LOSS BY slpct PCT }
+                    BRACKET {
+                        STOP LOSS BY slpct PCT,
+                        TAKE PROFIT BY 1 PCT
+                    }
             """.trimIndent(),
         )
         val out = ByteArrayOutputStream()
@@ -182,7 +185,10 @@ class ParseCommandTest {
             RULES
                 WHEN gold.close > 0
                 THEN BUY gold
-                    BRACKET { STOP LOSS BY slpct PCT }
+                    BRACKET {
+                        STOP LOSS BY slpct PCT,
+                        TAKE PROFIT BY 1 PCT
+                    }
             """.trimIndent(),
         )
         val portfolio = tmp.resolve("book.qkt")
