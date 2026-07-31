@@ -46,6 +46,8 @@ class CreateCommandTest {
         assertThat(target.resolve("strategies/full_strategy.qkt")).doesNotExist()
         val makefile = Files.readString(target.resolve("Makefile"))
         assertThat(makefile).contains("preflight")
+        assertThat(makefile).contains("approve-all")
+        assertThat(makefile).contains("deploy: approve")
         assertThat(makefile).contains("resync-dry-run")
         assertThat(makefile).contains("verify-live")
         assertThat(makefile).contains("qkt resync /strategies/$(STRAT).qkt --as $(STRAT)")
@@ -77,6 +79,10 @@ class CreateCommandTest {
         assertThat(Files.readString(target.resolve("scripts/verify-live.sh")))
             .contains("qkt status --deep")
             .contains("expected strategy")
+        assertThat(Files.readString(target.resolve("scripts/approve-promotions.sh")))
+            .contains("qkt promotion approve")
+            .contains("QKT_PROMOTION_ACTOR")
+            .contains("QKT_PROMOTION_REASON")
     }
 
     @Test
@@ -93,8 +99,12 @@ class CreateCommandTest {
         assertThat(envContent).contains("Diagnostic fallback only")
         assertThat(envContent).contains("MT5_ENABLE_ALGO_TRADING=1")
         assertThat(envContent).contains("MT5_API_KEY=replace-with-a-long-random-value")
+        assertThat(envContent).contains("QKT_STARTING_BALANCE=50000")
         assertThat(envContent).contains("QKT_MAX_DAILY_LOSS=100")
         assertThat(envContent).contains("QKT_MAX_ORDER_NOTIONAL=50000")
+        assertThat(envContent).contains("QKT_MAX_DRAWDOWN_PCT=10")
+        assertThat(envContent).contains("QKT_MAX_DAILY_DRAWDOWN_PCT=5")
+        assertThat(envContent).contains("QKT_MEASURED_USAGE_HOURS=24")
         assertThat(envContent).contains("COMPOSE_PROJECT_NAME=qkt-mt5")
         assertThat(envContent).contains("MT5_API_HOST_PORT=5020")
         assertThat(envContent).contains("MT5_VNC_HOST_PORT=3020")
@@ -116,8 +126,12 @@ class CreateCommandTest {
         assertThat(config).contains("mode: production")
         assertThat(config).contains("source: local")
         assertThat(config).contains("QKT_ALERTS_WAIVER_REASON")
+        assertThat(config).contains("starting_balance: \${QKT_STARTING_BALANCE:-50000}")
         assertThat(config).contains("max_daily_loss: \${QKT_MAX_DAILY_LOSS}")
         assertThat(config).contains("max_order_notional: \${QKT_MAX_ORDER_NOTIONAL}")
+        assertThat(config).contains("max_drawdown_pct: \${QKT_MAX_DRAWDOWN_PCT:-10}")
+        assertThat(config).contains("max_daily_drawdown_pct: \${QKT_MAX_DAILY_DRAWDOWN_PCT:-5}")
+        assertThat(config).contains("measured_usage_hours: \${QKT_MEASURED_USAGE_HOURS:-24}")
         assertThat(config).contains("type: mt5")
         assertThat(config).contains(
             "gateway_url: \${QKT_BROKER_GATEWAY_URL:-http://mt5-gateway:5001}",
@@ -135,10 +149,14 @@ class CreateCommandTest {
         assertThat(config).doesNotContain("botToken:")
 
         val compose = Files.readString(target.resolve("docker-compose.yml"))
+        assertThat(compose).contains("QKT_STARTING_BALANCE: \${QKT_STARTING_BALANCE")
         assertThat(compose).contains("QKT_MAX_DAILY_LOSS: \${QKT_MAX_DAILY_LOSS")
         assertThat(compose).contains("QKT_MAX_ORDER_QTY: \${QKT_MAX_ORDER_QTY")
         assertThat(compose).contains("QKT_MAX_ORDER_NOTIONAL: \${QKT_MAX_ORDER_NOTIONAL")
         assertThat(compose).contains("QKT_PRICE_COLLAR_PCT: \${QKT_PRICE_COLLAR_PCT")
+        assertThat(compose).contains("QKT_MAX_DRAWDOWN_PCT: \${QKT_MAX_DRAWDOWN_PCT")
+        assertThat(compose).contains("QKT_MAX_DAILY_DRAWDOWN_PCT: \${QKT_MAX_DAILY_DRAWDOWN_PCT")
+        assertThat(compose).contains("QKT_MEASURED_USAGE_HOURS: \${QKT_MEASURED_USAGE_HOURS")
         assertThat(compose).contains("QKT_DATA_HOME: /var/lib/qkt/data")
         assertThat(compose).contains("QKT_BROKER_GATEWAY_URL: http://mt5-gateway:5001")
         assertThat(compose).contains("QKT_BROKER_API_KEY: \${MT5_API_KEY}")
@@ -281,8 +299,12 @@ class CreateCommandTest {
                 "MT5_VNC_PASSWORD: \${{ secrets.MT5_VNC_PASSWORD || vars.MT5_VNC_PASSWORD || 'changeme' }}",
             )
         assertThat(workflow).doesNotContain("MT5_API_KEY MT5_VNC_PASSWORD")
+        assertThat(workflow).contains("QKT_STARTING_BALANCE")
         assertThat(workflow).contains("QKT_MAX_DAILY_LOSS")
         assertThat(workflow).contains("QKT_MAX_ORDER_NOTIONAL")
+        assertThat(workflow).contains("QKT_MAX_DRAWDOWN_PCT")
+        assertThat(workflow).contains("QKT_MAX_DAILY_DRAWDOWN_PCT")
+        assertThat(workflow).contains("QKT_MEASURED_USAGE_HOURS")
         assertThat(workflow).contains("COMPOSE_PROJECT_NAME")
         assertThat(workflow).contains("MT5_API_HOST_PORT")
         assertThat(workflow).contains("QKT_INSIGHTS_HOST_PORT")
@@ -298,11 +320,18 @@ class CreateCommandTest {
         assertThat(workflow).contains("qkt parse \"\$target\"")
         assertThat(workflow).contains("qkt preflight \"\$target\"")
         assertThat(workflow).contains("--state-dir /tmp/qkt-preflight-state")
+        assertThat(workflow).contains("/deploy-scripts/approve-promotions.sh")
+        assertThat(workflow).contains("protected GitHub production deployment \$GITHUB_SHA")
+        assertThat(workflow).contains("seq 1 60")
         assertThat(workflow).contains("/deploy-scripts/verify-live.sh")
         assertThat(workflow).doesNotContain("replace-with-a-long-random-value")
         assertThat(target.resolve("DEPLOYMENT.md")).exists()
         val deployment = Files.readString(target.resolve("DEPLOYMENT.md"))
+        assertThat(deployment).contains("QKT_STARTING_BALANCE")
         assertThat(deployment).contains("QKT_MAX_DAILY_LOSS")
+        assertThat(deployment).contains("QKT_MAX_DRAWDOWN_PCT")
+        assertThat(deployment).contains("QKT_MAX_DAILY_DRAWDOWN_PCT")
+        assertThat(deployment).contains("QKT_MEASURED_USAGE_HOURS")
         assertThat(deployment).contains("MT5_API_HOST_PORT")
         assertThat(deployment).contains("COMPOSE_PROJECT_NAME")
         assertThat(deployment).contains("QKT_ALERTS_WAIVER_REASON")
@@ -376,6 +405,7 @@ class CreateCommandTest {
                 "Makefile",
                 "docker-compose.yml",
                 "qkt.config.yaml",
+                "scripts/approve-promotions.sh",
                 "scripts/verify-live.sh",
                 "examples/strategies/README.md",
                 "examples/strategies/ema_cross.qkt",
