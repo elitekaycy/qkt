@@ -40,7 +40,17 @@ class BacktestReportWriterTest {
                 candleWindow = TimeWindow.ONE_MINUTE,
                 cadence = SampleCadence.CANDLE_CLOSE,
             )
-        val result = backtest.run().copy(evidence = evidence())
+        val baseResult = backtest.run()
+        val result =
+            baseResult.copy(
+                global =
+                    baseResult.global.copy(
+                        realizedTotal = Money.of("-2.5"),
+                        totalPnL = Money.of("-2.5"),
+                        swapPaid = Money.of("2.5"),
+                    ),
+                evidence = evidence(),
+            )
 
         BacktestReportWriter(dir).write(result)
 
@@ -48,6 +58,7 @@ class BacktestReportWriterTest {
         assertThat(dir.resolve("equity_global.csv")).exists()
         assertThat(dir.resolve("equity_s1.csv")).exists()
         assertThat(dir.resolve("trades.csv")).exists()
+        assertThat(dir.resolve("financing.csv")).exists()
         assertThat(dir.resolve("rejections.csv")).exists()
 
         val json = Files.readString(dir.resolve("result.json"))
@@ -57,7 +68,7 @@ class BacktestReportWriterTest {
         assertThat(json).contains("\"mutableStore\":true")
         assertThat(json).contains("\"accounting\": {\"accountCurrency\": \"USD\"")
         assertThat(json).contains("\"global\":")
-        assertThat(json).contains("\"swapPaid\": \"0.00000000\"")
+        assertThat(json).contains("\"swapPaid\": \"2.50000000\"")
         assertThat(json).contains("\"perStrategy\":")
         Json.parseToJsonElement(json)
 
@@ -67,6 +78,9 @@ class BacktestReportWriterTest {
         assertThat(tradesCsv.lines().first())
             .contains("nativeRealized,nativeCurrency,accountRealized,accountCurrency,fxRate")
         assertThat(tradesCsv.lines().first()).contains("riskUsd,brokerOrderId,stopLossPrice,takeProfitPrice")
+        assertThat(tradesCsv.lines().first()).contains("fillNotional,reducedExposure")
+        val financingCsv = Files.readString(dir.resolve("financing.csv"))
+        assertThat(financingCsv).isEqualTo("component,paid,netPnlImpact\nswap,2.50000000,-2.50000000\n")
     }
 
     @Test

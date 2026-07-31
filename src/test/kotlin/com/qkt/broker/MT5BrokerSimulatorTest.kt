@@ -29,6 +29,7 @@ class MT5BrokerSimulatorTest {
     private fun xauusd(
         volumeStep: String = "0.01",
         volumeMin: String = "0.01",
+        volumeMax: String? = null,
         digits: Int = 3,
         tradeStopsLevelPoints: Int = 0,
     ) = InstrumentMeta(
@@ -36,7 +37,7 @@ class MT5BrokerSimulatorTest {
         contractSize = BigDecimal("100"),
         volumeStep = BigDecimal(volumeStep),
         volumeMin = BigDecimal(volumeMin),
-        volumeMax = null,
+        volumeMax = volumeMax?.let(::BigDecimal),
         pointSize = BigDecimal("0.001"),
         digits = digits,
         tradeStopsLevelPoints = tradeStopsLevelPoints,
@@ -93,6 +94,23 @@ class MT5BrokerSimulatorTest {
         assertThat(fills).isEmpty()
         assertThat(rejects).hasSize(1)
         assertThat(rejects.single().reason).contains("below venue volumeMin")
+    }
+
+    @Test
+    fun `order above volumeMax is rejected and not filled`() {
+        val bus = newBus()
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val rejects = mutableListOf<BrokerEvent.OrderRejected>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        bus.subscribe<BrokerEvent.OrderRejected> { rejects.add(it) }
+        val tracker = MarketPriceTracker()
+        tracker.update("EXNESS:XAUUSD", Money.of("2000.000"))
+        val sim = MT5BrokerSimulator(bus, FixedClock(0L), tracker, registry(xauusd(volumeMax = "2.00")))
+
+        sim.submit(marketBuy("EXNESS:XAUUSD", "2.01"))
+
+        assertThat(fills).isEmpty()
+        assertThat(rejects.single().reason).contains("above venue volumeMax 2.00")
     }
 
     @Test

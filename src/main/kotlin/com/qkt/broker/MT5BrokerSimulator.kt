@@ -127,6 +127,12 @@ class MT5BrokerSimulator(
             )
             return SubmitAck(request.id, request.id, accepted = false)
         }
+        if (meta.volumeMax != null && quantized > meta.volumeMax) {
+            val reason =
+                "quantized volume $quantized above venue volumeMax ${meta.volumeMax} for ${request.symbol}"
+            reject(request, reason)
+            return SubmitAck(request.id, request.id, accepted = false, rejectReason = reason)
+        }
         val sized = request.withQuantity(quantized)
         validateStopsLevel(sized, meta)?.let {
             reject(sized, it)

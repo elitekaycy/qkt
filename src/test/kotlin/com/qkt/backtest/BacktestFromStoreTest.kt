@@ -1,7 +1,11 @@
 package com.qkt.backtest
 
 import com.qkt.common.Money
+import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.source.MarketRequest
+import com.qkt.marketdata.store.DataStore
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.strategy.EveryNthTickBuyStrategy
 import java.nio.file.Path
@@ -34,6 +38,62 @@ class BacktestFromStoreTest {
                     request = request,
                 ).run()
         assertThat(result.global.tradeCount).isGreaterThan(0)
+    }
+
+    @Test
+    fun `fromStore seeds derived DSL warmup before the requested window`() {
+        val delegate = DefaultDataStore(root = sample)
+        val store =
+            object : DataStore {
+                override val root: Path = sample
+
+                override fun manifest(symbol: String) = delegate.manifest(symbol.substringAfter(':'))
+
+                override fun dayFile(
+                    symbol: String,
+                    day: java.time.LocalDate,
+                ) = delegate.dayFile(symbol.substringAfter(':'), day)
+
+                override fun openFeed(request: MarketRequest) =
+                    delegate.openFeed(request.copy(symbols = request.symbols.map { it.substringAfter(':') }))
+
+                override fun resolveRange(request: MarketRequest) =
+                    delegate.resolveRange(request.copy(symbols = request.symbols.map { it.substringAfter(':') }))
+
+                override fun prefetch(request: MarketRequest) =
+                    delegate.prefetch(request.copy(symbols = request.symbols.map { it.substringAfter(':') }))
+
+                override fun rebuildManifests() = delegate.rebuildManifests()
+            }
+        val parsed =
+            Dsl.parse(
+                """
+                STRATEGY warm_cli VERSION 1
+                SYMBOLS
+                    eur = BACKTEST:EURUSD EVERY 1m WARMUP 2 BARS
+                RULES
+                    WHEN eur.close > 0 AND POSITION.eur = 0 THEN BUY eur SIZING 1
+                """.trimIndent(),
+            ) as ParseResult.Success
+        val strategy = AstCompiler().compile(parsed.value)
+        val from = Instant.parse("2024-01-15T00:03:00Z")
+        val to = Instant.parse("2024-01-15T00:05:00Z")
+
+        val result =
+            Backtest
+                .fromStore(
+                    strategies = listOf("warm_cli" to strategy),
+                    store = store,
+                    request = MarketRequest(listOf("BACKTEST:EURUSD"), from, to),
+                    candleWindow = com.qkt.candles.TimeWindow.ONE_MINUTE,
+                ).run()
+
+        assertThat(result.trades).hasSize(1)
+        assertThat(
+            result.trades
+                .single()
+                .trade.timestamp,
+        ).isEqualTo(from.toEpochMilli() + 60_000L)
     }
 
     @Test

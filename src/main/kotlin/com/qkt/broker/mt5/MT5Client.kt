@@ -194,6 +194,12 @@ class MT5Client(
             tradeFreezeLevel = obj["trade_freeze_level"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             volumeMin = obj["volume_min"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             volumeStep = obj["volume_step"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            volumeMax =
+                obj["volume_max"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.toBigDecimalOrNull()
+                    ?.takeIf { it.signum() > 0 },
             // Default 1 keeps callers safe if the gateway version doesn't return the field;
             // for known instruments the venue always populates it (XAUUSD=100, EURUSD=100000).
             contractSize =

@@ -178,6 +178,12 @@ data class Config(
             com.qkt.risk.DailyDrawdownBasis
                 .fromConfig(risk["daily_dd_basis"])
 
+    /** Standalone live equity source (`risk.live_equity_basis`); defaults to venue truth. */
+    val liveEquityBasis: com.qkt.app.LiveEquityBasis
+        get() =
+            com.qkt.app.LiveEquityBasis
+                .fromConfig(risk["live_equity_basis"])
+
     /** Effective `state.enabled` from config; defaults to `true`. */
     val stateEnabled: Boolean
         get() = state["enabled"]?.lowercase()?.let { it != "false" } ?: true
@@ -367,6 +373,7 @@ data class Config(
                 "max_daily_drawdown_pct",
                 "total_dd_basis",
                 "daily_dd_basis",
+                "live_equity_basis",
                 "per_strategy",
             )
 

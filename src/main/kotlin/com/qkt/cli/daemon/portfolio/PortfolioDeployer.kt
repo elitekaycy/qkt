@@ -58,6 +58,7 @@ class PortfolioDeployer(
     private val bookRiskConfig: com.qkt.risk.book.BookRiskConfig? = null,
     private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
     private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+    private val liveEquityBasis: com.qkt.app.LiveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE,
     private val maxOrderQty: java.math.BigDecimal =
         com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
     private val maxOrderNotional: java.math.BigDecimal =
@@ -179,8 +180,8 @@ class PortfolioDeployer(
                     ast = compiled.ast,
                     children = childWrappers,
                     marketSource =
-                        if (!hasConditionalRules ||
-                            symbols.isEmpty()
+                        if (symbols.isEmpty() ||
+                            (!hasConditionalRules && bookController == null)
                         ) {
                             null
                         } else {
@@ -407,7 +408,8 @@ class PortfolioDeployer(
             compiledChild.ast.streams
                 .map { it.qktSymbol }
                 .distinct()
-        val source = marketSourceProvider(symbols)
+        val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
+        val source = marketSourceProvider(feedSymbols)
         val ring = EventRing(capacity = ringSize)
         val startMs = System.currentTimeMillis()
         val startedAt = Instant.ofEpochMilli(startMs)
@@ -429,10 +431,12 @@ class PortfolioDeployer(
                 haltRules = haltRules,
                 source = source,
                 symbols = compiledChild.symbols,
+                feedSymbols = feedSymbols,
                 candleWindow = candleWindow,
                 clock = clock,
                 calendar = childCalendar,
                 accountingConfig = accountingConfig,
+                equityBasis = liveEquityBasis,
                 // Insights and trading events must use the same canonical child id.
                 // The filename discriminator still maps ':' to '__' for local logs.
                 mdcStrategy = compiledChild.strategyId,

@@ -30,6 +30,40 @@ import org.junit.jupiter.api.Test
 
 class LiveSessionBrokerEquityTest {
     @Test
+    fun `modeled equity basis does not poll or consume venue account equity`() {
+        val closeFeed = CountDownLatch(1)
+        val accountReads = AtomicInteger()
+        val factory: BrokerFactory = { bus, clock, prices, _, _ ->
+            object : Broker by PaperBroker(bus, clock, prices) {
+                override val supportsAccountEquity = true
+
+                override fun accountEquity(): BigDecimal? {
+                    accountReads.incrementAndGet()
+                    return BigDecimal("99999")
+                }
+            }
+        }
+        val handle =
+            LiveSession(
+                strategies = listOf("alpha" to testStrategy()),
+                source = heldOpenSource(closeFeed),
+                symbols = listOf("EXNESS:X"),
+                clock = FixedClock(0L),
+                calendar = TradingCalendar.crypto(),
+                brokerFactories = mapOf("exness" to factory),
+                initialBalance = BigDecimal("10000"),
+                equityBasis = LiveEquityBasis.MODELED,
+                brokerEquityPollMs = 10L,
+            ).start()
+
+        Thread.sleep(50L)
+        assertThat(accountReads.get()).isZero()
+        assertThat(handle.pnlSnapshot("alpha").equity).isEqualByComparingTo("10000")
+        closeFeed.countDown()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+    }
+
+    @Test
     fun `startup equity failures retry alert and recover without changing basis to derived`() {
         val closeFeed = CountDownLatch(1)
         val source = heldOpenSource(closeFeed)

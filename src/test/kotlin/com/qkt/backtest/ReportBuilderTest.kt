@@ -12,6 +12,7 @@ class ReportBuilderTest {
         realized: String,
         strategyId: String = "s1",
         ts: Long = 0L,
+        reducedExposure: Boolean = true,
     ): TradeRecord =
         TradeRecord(
             trade =
@@ -25,6 +26,7 @@ class ReportBuilderTest {
                 ),
             realized = BigDecimal(realized),
             strategyId = strategyId,
+            reducedExposure = reducedExposure,
         )
 
     @Test
@@ -106,6 +108,28 @@ class ReportBuilderTest {
         assertThat(report.winRate).isEqualByComparingTo(Money.ZERO)
         assertThat(report.profitFactor).isNull()
         assertThat(report.sharpeRatio).isNull()
+    }
+
+    @Test
+    fun `entry costs do not become losing outcomes or Monte Carlo samples`() {
+        val entries =
+            (0 until 30).map { index ->
+                tradeRecord("-1", ts = index.toLong(), reducedExposure = false)
+            }
+        val report =
+            ReportBuilder.buildGlobal(
+                trades = entries + tradeRecord("10", ts = 31L),
+                equityCurve = listOf(EquitySample(0L, BigDecimal("100"))),
+                finalRealized = BigDecimal("-20"),
+                finalUnrealized = Money.ZERO,
+                annualizationFactor = BigDecimal("525960"),
+            )
+
+        assertThat(report.winRate).isEqualByComparingTo(BigDecimal.ONE)
+        assertThat(report.profitFactor).isNull()
+        assertThat(report.avgLoss).isEqualByComparingTo(Money.ZERO)
+        assertThat(report.maxConsecutiveLosses).isZero()
+        assertThat(report.monteCarlo).isNull()
     }
 
     @Test
