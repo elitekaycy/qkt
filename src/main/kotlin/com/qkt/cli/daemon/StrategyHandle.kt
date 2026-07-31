@@ -96,6 +96,11 @@ class StrategyHandle(
         private val ringSize: Int = 1000,
         private val bind: String = "127.0.0.1",
         private val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = emptyMap(),
+        private val instrumentRegistry: com.qkt.instrument.InstrumentRegistry? = null,
+        private val calendarFor: (String) -> com.qkt.common.TradingCalendar = {
+            com.qkt.common.TradingCalendar
+                .fxDefault()
+        },
         /**
          * Daemon-level daily-loss cap. When realized P&L for the day breaches the
          * negation of this value, [com.qkt.risk.rules.MaxDailyLoss] halts and the risk
@@ -257,6 +262,10 @@ class StrategyHandle(
                     .firstOrNull()
                     ?.timeframe
                     ?.let { TimeWindow.parse(it) }
+            val calendar =
+                symbols.firstOrNull()?.let(calendarFor)
+                    ?: com.qkt.common.TradingCalendar
+                        .fxDefault()
 
             val source = marketSourceProvider(symbols)
             val ring = EventRing(capacity = ringSize)
@@ -281,6 +290,7 @@ class StrategyHandle(
                     source = source,
                     symbols = symbols,
                     candleWindow = candleWindow,
+                    calendar = calendar,
                     accountingConfig = accountingConfig,
                     // The MDC carries the DSL strategy id, not the deploy name: log
                     // attribution downstream (per-strategy files, insights) must match
@@ -300,6 +310,7 @@ class StrategyHandle(
                         }
                     },
                     brokerFactories = brokerFactories,
+                    instrumentRegistry = instrumentRegistry,
                     persistor = persistor,
                     ignoreMismatches = ignoreMismatches,
                     notifier = notifier,

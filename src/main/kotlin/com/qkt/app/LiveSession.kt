@@ -603,15 +603,15 @@ class LiveSession(
      * paper-only strategies that don't need contract-size-aware math keep working.
      */
     private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
-        instrumentRegistry?.let { return it }
         val mt5Registries =
             builtBrokers
                 .filterIsInstance<com.qkt.broker.mt5.MT5Broker>()
                 .map { com.qkt.instrument.MT5InstrumentRegistry(it) }
-        return if (mt5Registries.isEmpty()) {
-            com.qkt.instrument.NoopInstrumentRegistry
-        } else {
-            com.qkt.instrument.MultiMT5InstrumentRegistry(mt5Registries)
+        val layers = mt5Registries + listOfNotNull(instrumentRegistry)
+        return when (layers.size) {
+            0 -> com.qkt.instrument.NoopInstrumentRegistry
+            1 -> layers.single()
+            else -> com.qkt.instrument.LayeredInstrumentRegistry(layers)
         }
     }
 
@@ -936,7 +936,19 @@ class LiveSession(
         val stopping = AtomicBoolean(false)
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
-        val paperBroker = PaperBroker(bus, clock, priceTracker)
+        val paperInstruments =
+            java.util.concurrent.atomic.AtomicReference<com.qkt.instrument.InstrumentRegistry>(
+                instrumentRegistry ?: com.qkt.instrument.NoopInstrumentRegistry,
+            )
+        val paperBroker =
+            PaperBroker(
+                bus,
+                clock,
+                priceTracker,
+                object : com.qkt.instrument.InstrumentRegistry {
+                    override fun lookup(qktSymbol: String) = paperInstruments.get().lookup(qktSymbol)
+                },
+            )
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()
         // Recovery seeding ran inside each MT5 broker's constructor; mirror the orphan
@@ -949,6 +961,7 @@ class LiveSession(
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
         // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
+        paperInstruments.set(instruments)
         val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
         // #352: live account equity, polled off the engine thread (a network call) into this holder
         // and read cheaply by StrategyPnL.equityFor. Allocated portfolio children keep this
