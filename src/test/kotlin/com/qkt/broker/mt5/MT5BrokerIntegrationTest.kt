@@ -954,7 +954,8 @@ class MT5BrokerIntegrationTest {
                     }
                 }
             }
-        val localBus = EventBus(com.qkt.common.SystemClock(), MonotonicSequenceGenerator())
+        val localClock = FixedClock(time = 1_700_000_000_000L)
+        val localBus = EventBus(localClock, MonotonicSequenceGenerator())
         val fills = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent.OrderFilled>()
         localBus.subscribe<BrokerEvent.OrderFilled>(fills::add)
         val partialBroker =
@@ -968,7 +969,7 @@ class MT5BrokerIntegrationTest {
                         instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
                     ),
                 bus = localBus,
-                clock = com.qkt.common.SystemClock(),
+                clock = localClock,
                 recoveryReadBackoffMs = 1L,
             )
         try {
