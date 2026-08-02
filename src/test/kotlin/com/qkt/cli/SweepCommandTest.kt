@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
@@ -207,6 +208,7 @@ class SweepCommandTest {
         assertThat(json).contains("\"trialCount\":1")
         assertThat(json).contains("\"metricProvenance\":{\"selectedMetric\":\"sharpe\",\"source\":\"sweep\"")
         assertThat(json).contains("\"selectionWarnings\":")
+        assertThat(json).contains("\"commissionPaid\":")
         assertThat(json).contains("\"dailyPnL\":")
         assertThat(json).contains("\"maxDailyDrawdown\":")
         val row =
@@ -216,6 +218,12 @@ class SweepCommandTest {
                 .single()
                 .jsonObject
         val summaries = row.getValue("fillCostSummary").jsonArray
+        assertThat(
+            row
+                .getValue("commissionPaid")
+                .jsonPrimitive.content
+                .toBigDecimal(),
+        ).isGreaterThanOrEqualTo(BigDecimal.ZERO)
         assertThat(summaries).isNotEmpty
         assertThat(
             summaries.sumOf {
