@@ -183,6 +183,7 @@ class SweepCommand(
                     """"trialCount":${ranked.size},"metricProvenance":$provenanceJson,""" +
                     """"selectionWarnings":$warningsJson,""" +
                     """"trades":${r.tradeCount},"totalPnL":${r.totalPnL.toPlainString()},""" +
+                    """"commissionPaid":${r.commissionPaid.toPlainString()},""" +
                     """"sharpe":${r.sharpeRatio?.toPlainString() ?: "null"},""" +
                     """"calmar":${r.calmarRatio?.toPlainString() ?: "null"},""" +
                     """"maxDrawdown":${r.maxDrawdown.toPlainString()},"winRate":${r.winRate.toPlainString()},""" +
@@ -204,9 +205,10 @@ class SweepCommand(
     )
 
     /**
-     * Aggregate the linear inputs needed to restore paper-fill spread, commission, and slippage
-     * without emitting an unbounded fill tape. Grouping by UTC day preserves daily Sharpe and
-     * drawdown reconstruction; grouping by symbol preserves each instrument's cost model.
+     * Aggregate the linear inputs needed to estimate paper-fill spread and slippage and reconcile
+     * the separately emitted commission without an unbounded fill tape. Grouping by UTC day
+     * preserves daily Sharpe and drawdown reconstruction; grouping by symbol preserves each
+     * instrument's cost model.
      */
     private fun fillCostSummaryJson(trades: List<TradeRecord>): String {
         val totals = mutableMapOf<FillCostKey, FillCostTotal>()
