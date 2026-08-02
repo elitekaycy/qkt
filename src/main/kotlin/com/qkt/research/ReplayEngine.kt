@@ -421,7 +421,7 @@ class ReplayEngine(
                             takeProfitPrice = entryRisk?.protection?.takeProfit,
                             nativeRealized = converted.native.amount,
                             nativeCurrency = converted.native.normalizedCurrency,
-                            accountRealized = fillState.netAccountRealized,
+                            accountRealized = converted.account.amount,
                             accountCurrency = converted.account.normalizedCurrency,
                             fxRate = converted.conversion?.rate,
                             fxRateTimestamp = converted.conversion?.timestamp,

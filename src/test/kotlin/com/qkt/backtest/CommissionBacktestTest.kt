@@ -78,6 +78,14 @@ class CommissionBacktestTest {
         // gross = net + commission.
         assertThat(result.global.realizedTotal.add(result.global.commissionPaid))
             .isEqualByComparingTo("10.00")
+        assertThat(result.trades[0].realized).isEqualByComparingTo("-2.00")
+        assertThat(result.trades[1].realized).isEqualByComparingTo("8.00")
+        assertThat(result.trades[0].accountRealized ?: error("gross entry PnL missing"))
+            .isEqualByComparingTo("0")
+        assertThat(result.trades[1].accountRealized ?: error("gross exit PnL missing"))
+            .isEqualByComparingTo("10.00")
+        assertThat(result.trades.sumOf { it.accountRealized ?: BigDecimal.ZERO })
+            .isEqualByComparingTo("10.00")
     }
 
     @Test
