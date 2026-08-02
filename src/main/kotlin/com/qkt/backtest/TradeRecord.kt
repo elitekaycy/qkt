@@ -14,6 +14,7 @@ data class TradeRecord(
     val takeProfitPrice: BigDecimal? = null,
     val nativeRealized: BigDecimal? = null,
     val nativeCurrency: String? = null,
+    /** Gross converted account-currency PnL before modeled and venue-reported fill costs. */
     val accountRealized: BigDecimal? = null,
     val accountCurrency: String? = null,
     val fxRate: BigDecimal? = null,

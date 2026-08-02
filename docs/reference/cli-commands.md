@@ -69,6 +69,10 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   `accountRealized` retained as the legacy gross alias. Dashboards should graph
   and aggregate the net fields unless explicitly showing a gross-vs-cost
   reconciliation.
+- Commission-bearing reports satisfy `sum(grossAccountRealized) -
+  sum(netAccountRealized) = commissionPaid + venue fill costs` when every fill has conversion
+  evidence. Entry commissions therefore appear as zero gross PnL and negative net PnL; the gross
+  field must not be populated with the already-net amount.
 - `trades.csv` keeps `side` as the executed fill side and separately exports
   `positionEffect` (`OPEN_*`, `INCREASE_*`, `REDUCE_*`, `CLOSE_*`, or
   `REVERSE_TO_*`) plus the actual atomic `orderType`. Consumers must not rename
