@@ -12,10 +12,12 @@ import com.qkt.backtest.ProvisionStream
 import com.qkt.backtest.SlippageSpec
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.candles.TimeWindow
+import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.portfolio.PortfolioGate
 import com.qkt.dsl.portfolio.capitalAllocations
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceHasher
@@ -93,6 +95,8 @@ class BacktestContext private constructor(
     private val barWindows: Map<String, TimeWindow> = emptyMap(),
     private val binaryBarStore: BinaryBarStore? = null,
     private val tickFills: Boolean = false,
+    private val gateFor: (String) -> Boolean = { true },
+    private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -177,6 +181,8 @@ class BacktestContext private constructor(
             barWindows = barWindows,
             binaryBarStore = binaryBarStore,
             tickFills = tickFills,
+            gateFor = gateFor,
+            preCandle = preCandle,
         )
     }
 
@@ -527,21 +533,14 @@ class BacktestContext private constructor(
         /**
          * Backtest a PORTFOLIO file: its children run as N attributed strategies on one engine
          * (strategyId `<portfolio>:<alias>`) sharing one account, with the book-risk layer from
-         * config. Regime WHEN..RUN gates are not yet applied in backtest — children run always-on.
+         * config. WHEN..RUN portfolio rules are evaluated by a shared [PortfolioGate] and applied
+         * as per-strategy signal gating, matching the live per-child topology.
          */
         fun buildPortfolio(
             args: Args,
             compiled: com.qkt.dsl.portfolio.PortfolioCompiled,
             fetcherOverride: DataFetcher? = null,
         ): BacktestContext {
-            val hasRegimeGates =
-                compiled.ast.rules.any { it is com.qkt.dsl.ast.WhenRun }
-            if (hasRegimeGates) {
-                throw SetupError(
-                    "portfolio backtest cannot truthfully model WHEN..RUN gates " +
-                        "with the live per-child topology; refusing a misleading result",
-                )
-            }
             val unsupportedBarsFlag =
                 when {
                     args.flag("bars") -> "--bars"
@@ -575,6 +574,29 @@ class BacktestContext private constructor(
 
             val streams = compiled.children.flatMap { it.ast.streams }
             val symbols = streams.map { it.qktSymbol }.distinct()
+
+            // Build the shared portfolio gate so WHEN..RUN rules suppress child signals in backtest
+            // exactly as PortfolioSupervisor does in live. The gate is fed closed candles before
+            // strategies evaluate them, so the gate state is current for each bar.
+            val portfolioCalendar =
+                symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
+                    ?: TradingCalendar.crypto()
+            val portfolioGate =
+                PortfolioGate(
+                    ast = compiled.ast,
+                    clock = FixedClock(time = from.toEpochMilli()),
+                    calendar = portfolioCalendar,
+                ).also {
+                    it.prepare()
+                    it.initialState()
+                }
+            val gateFor: (String) -> Boolean = { strategyId ->
+                portfolioGate.currentState().activeByAlias[strategyId.substringAfter(":")] == true
+            }
+            val preCandle: (com.qkt.marketdata.Candle) -> Unit = { candle ->
+                portfolioGate.onCandle(candle)
+            }
+
             val datasetContext =
                 datasetContext(
                     args,
@@ -709,6 +731,8 @@ class BacktestContext private constructor(
                 provisioner = provisioner,
                 replaySymbols = replaySymbols,
                 strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
+                gateFor = gateFor,
+                preCandle = preCandle,
                 bookRiskConfig = cfg.bookRisk,
                 perStrategyRisk = cfg.perStrategyRisk,
                 maxOrderQty = cfg.maxOrderQty,
