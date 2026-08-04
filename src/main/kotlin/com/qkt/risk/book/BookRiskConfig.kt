@@ -15,14 +15,18 @@ data class BookRiskConfig(
 )
 
 /** How the book splits risk across strategies. */
-enum class AllocationMethod { FIXED, INVERSE_VOL, ERC }
+enum class AllocationMethod { FIXED, INVERSE_VOL, ERC, REGIME_WEIGHTED }
 
 /**
- * Dynamic capital allocation across strategies, recomputed every [rebalanceEveryBars] samples from
- * the rolling cross-strategy covariance. [method] picks the weighting; weights are expressed as a
- * tilt around 1.0 (FIXED = all 1.0, leaving today's static CAPITAL x WEIGHT untouched). When
- * [targetVol] is set, the whole weight vector is scaled to hit that annualized vol, capped at
- * [maxLeverage] gross.
+ * Dynamic capital allocation across strategies.
+ *
+ * [FIXED], [INVERSE_VOL], and [ERC] are recomputed every [rebalanceEveryBars] samples from the
+ * rolling cross-strategy covariance; weights are expressed as a tilt around 1.0 (FIXED = all 1.0,
+ * leaving today's static CAPITAL x WEIGHT untouched). When [targetVol] is set, the whole weight
+ * vector is scaled to hit that annualized vol, capped at [maxLeverage] gross.
+ *
+ * [REGIME_WEIGHTED] reads target fractions supplied by the portfolio's [com.qkt.dsl.portfolio.PortfolioGate];
+ * it ignores [targetVol] and [rebalanceEveryBars] because regime changes drive rebalancing.
  */
 data class Allocation(
     val method: AllocationMethod = AllocationMethod.FIXED,

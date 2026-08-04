@@ -15,6 +15,7 @@ import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.portfolio.CompiledChild
 import com.qkt.dsl.portfolio.PortfolioCompiled
+import com.qkt.dsl.portfolio.PortfolioGate
 import com.qkt.dsl.portfolio.capitalAllocations
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
@@ -122,10 +123,32 @@ class PortfolioDeployer(
                     ?.timeframe
                     ?.let(TimeWindow::parse)
             val bookAnnualization = bookAnnualization(compiled)
+            val effectiveBookRiskConfig =
+                if (compiled.ast.allocate != null && bookCapital != null) {
+                    val base = bookRiskConfig ?: com.qkt.risk.book.BookRiskConfig()
+                    val rebalanceBars =
+                        compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
+                            bookWindow?.let { window ->
+                                java.math.BigDecimal(durationMs)
+                                    .divide(java.math.BigDecimal(window.durationMs), 0, java.math.RoundingMode.CEILING)
+                                    .toInt()
+                            } ?: 0
+                        } ?: 0
+                    base.copy(
+                        capital = base.capital ?: bookCapital,
+                        allocation =
+                            com.qkt.risk.book.Allocation(
+                                method = com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED,
+                                rebalanceEveryBars = rebalanceBars,
+                            ),
+                    )
+                } else {
+                    bookRiskConfig
+                }
             val bookController =
-                if (bookRiskConfig != null && bookCapital != null) {
+                if (effectiveBookRiskConfig != null && bookCapital != null) {
                     com.qkt.risk.book
-                        .BookRiskController(bookRiskConfig, bookCapital, bookAnnualization)
+                        .BookRiskController(effectiveBookRiskConfig, bookCapital, bookAnnualization)
                 } else {
                     null
                 }
@@ -165,13 +188,21 @@ class PortfolioDeployer(
                 compiled.ast.streams
                     .map { it.qktSymbol }
                     .distinct()
-            val hasConditionalRules = compiled.ast.rules.any { it is WhenRun }
+            val hasConditionalRules =
+                compiled.ast.rules.any { it is WhenRun } || compiled.ast.regimes != null
+            val portfolioGate =
+                PortfolioGate(
+                    ast = compiled.ast,
+                    clock = clock,
+                    calendar = calendarFor?.invoke(symbols.firstOrNull() ?: "") ?: calendar,
+                ).also { it.prepare() }
             val riskAggregator =
                 buildRiskAggregator(
                     portfolioName,
                     compiled,
                     childWrappers,
                     bookController,
+                    portfolioGate,
                     sampleOnEvaluate = bookWindow == null,
                 )
             if (riskAggregator != null) bookFillBuffer?.bind(riskAggregator)
@@ -189,6 +220,7 @@ class PortfolioDeployer(
                         },
                     riskAggregator = riskAggregator,
                     riskIntervalMs = riskIntervalMs,
+                    gate = portfolioGate,
                 )
             supervisor.start()
 
@@ -221,6 +253,7 @@ class PortfolioDeployer(
         compiled: PortfolioCompiled,
         wrappers: List<ChildHandle>,
         bookController: com.qkt.risk.book.BookRiskController?,
+        portfolioGate: PortfolioGate,
         sampleOnEvaluate: Boolean,
     ): PortfolioRiskAggregator? {
         val capital = compiled.ast.capital
@@ -293,6 +326,7 @@ class PortfolioDeployer(
                 }
             }
         val childPairs = compiled.children.zip(wrappers)
+        val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
         return PortfolioRiskAggregator(
             children = targets,
             bookRiskState = bookRiskState,
@@ -313,6 +347,11 @@ class PortfolioDeployer(
                     riskCapital.add(
                         perStrategyPnl.values.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add),
                     )
+                val regimeWeights =
+                    portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
+                        aliasToStrategyId[alias] ?: alias
+                    }
+                controller.setRegimeWeights(regimeWeights)
                 controller.onSample(
                     com.qkt.risk.book.BookSnapshot(
                         timestamp,

@@ -108,6 +108,12 @@ class ReplayEngine(
      */
     private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
     /**
+     * Current regime-weight vector for [com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED].
+     * Updated once per closed candle before strategy handlers run, so order scaling uses the
+     * current bar's allocation.
+     */
+    private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+    /**
      * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
      * rather than the synthetic bar extreme the triggering tick carries. See
      * [com.qkt.broker.PaperBroker.fillAtTriggerPrice]. Off (and unused) on the tick path.
@@ -451,7 +457,10 @@ class ReplayEngine(
                     tape.add(TapeEvent.Rejected(currentTimestamp, e.request.symbol, e.reason))
                 },
                 onCandle = { barsClosed++ },
-                preCandle = preCandle,
+                preCandle = { candle ->
+                    this.preCandle(candle)
+                    bookRiskController?.setRegimeWeights(regimeWeights())
+                },
                 gateFor = gateFor,
                 instruments = instruments,
                 commissionBook = commissionBook,
