@@ -161,7 +161,8 @@ class BookRiskController(
 
     private fun computeRegimeWeights(): Map<String, BigDecimal> {
         if (regimeWeights.isEmpty()) return emptyMap()
-        return ids.associateWith { regimeWeights[it] ?: Money.ZERO }
+        return ids
+            .associateWith { regimeWeights[it] ?: Money.ZERO }
             .mapValues { it.value.setScale(Money.SCALE, Money.ROUNDING) }
     }
 }

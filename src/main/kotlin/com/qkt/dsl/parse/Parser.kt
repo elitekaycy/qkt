@@ -381,8 +381,12 @@ class Parser(
                         }
                         else -> error("expected alias or CASH in allocate entry")
                     }
-                val weight = expect(TokenKind.NUMBER, "expected weight for alias '${aliasTok.lexeme}'").lexeme.toBigDecimalOrNull()
-                    ?: error("weight must be a number, got '${peek().lexeme}'")
+                val weight =
+                    expect(
+                        TokenKind.NUMBER,
+                        "expected weight for alias '${aliasTok.lexeme}'",
+                    ).lexeme.toBigDecimalOrNull()
+                        ?: error("weight must be a number, got '${peek().lexeme}'")
                 entries[aliasTok.lexeme] = weight
             } while (match(TokenKind.COMMA))
             out[regimeName] = entries

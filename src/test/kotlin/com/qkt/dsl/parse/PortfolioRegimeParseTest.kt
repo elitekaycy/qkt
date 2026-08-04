@@ -1,6 +1,5 @@
 package com.qkt.dsl.parse
 
-import com.qkt.dsl.ast.AllocateBlock
 import com.qkt.dsl.ast.PortfolioAllocationMethod
 import com.qkt.dsl.ast.PortfolioAst
 import com.qkt.dsl.ast.RegimeConditionalState

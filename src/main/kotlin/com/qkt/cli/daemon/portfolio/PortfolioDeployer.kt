@@ -125,11 +125,14 @@ class PortfolioDeployer(
             val bookAnnualization = bookAnnualization(compiled)
             val effectiveBookRiskConfig =
                 if (compiled.ast.allocate != null && bookCapital != null) {
-                    val base = bookRiskConfig ?: com.qkt.risk.book.BookRiskConfig()
+                    val base =
+                        bookRiskConfig ?: com.qkt.risk.book
+                            .BookRiskConfig()
                     val rebalanceBars =
                         compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
                             bookWindow?.let { window ->
-                                java.math.BigDecimal(durationMs)
+                                java.math
+                                    .BigDecimal(durationMs)
                                     .divide(java.math.BigDecimal(window.durationMs), 0, java.math.RoundingMode.CEILING)
                                     .toInt()
                             } ?: 0

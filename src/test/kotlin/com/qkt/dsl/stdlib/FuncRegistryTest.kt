@@ -225,9 +225,27 @@ class FuncRegistryTest {
 
     @Test
     fun `SOFTMAX is numerically stable for large inputs`() {
-        val a = FuncRegistry.invoke("SOFTMAX", listOf(BigDecimal("1000"), BigDecimal("1001"), BigDecimal("1002")))!!.toDouble()
-        val b = FuncRegistry.invoke("SOFTMAX", listOf(BigDecimal("1001"), BigDecimal("1000"), BigDecimal("1002")))!!.toDouble()
-        val c = FuncRegistry.invoke("SOFTMAX", listOf(BigDecimal("1002"), BigDecimal("1000"), BigDecimal("1001")))!!.toDouble()
+        val a =
+            FuncRegistry
+                .invoke(
+                    "SOFTMAX",
+                    listOf(BigDecimal("1000"), BigDecimal("1001"), BigDecimal("1002")),
+                )!!
+                .toDouble()
+        val b =
+            FuncRegistry
+                .invoke(
+                    "SOFTMAX",
+                    listOf(BigDecimal("1001"), BigDecimal("1000"), BigDecimal("1002")),
+                )!!
+                .toDouble()
+        val c =
+            FuncRegistry
+                .invoke(
+                    "SOFTMAX",
+                    listOf(BigDecimal("1002"), BigDecimal("1000"), BigDecimal("1001")),
+                )!!
+                .toDouble()
         assertThat(a).isCloseTo(0.0900306, within(1e-6))
         assertThat(b).isCloseTo(0.2447285, within(1e-6))
         assertThat(c).isCloseTo(0.6652409, within(1e-6))

@@ -1,8 +1,6 @@
 package com.qkt.dsl.portfolio
 
-import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
-import com.qkt.dsl.ast.AllocateBlock
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.PortfolioAllocationMethod
 import com.qkt.dsl.ast.PortfolioAst
@@ -66,7 +64,11 @@ class PortfolioGate(
 
         val conditions =
             ast.rules.filterIsInstance<WhenRun>().map { it.cond } +
-                ast.regimes?.states.orEmpty().filterIsInstance<RegimeConditionalState>().map { it.cond }
+                ast.regimes
+                    ?.states
+                    .orEmpty()
+                    .filterIsInstance<RegimeConditionalState>()
+                    .map { it.cond }
         val plan = SnapshotPlan.scan(conditions)
         require(plan.rollingMaxN.isEmpty()) {
             "Portfolio WHEN / regime rules with history snapshots (e.g. btc.close[5]) are not yet supported"
@@ -166,19 +168,29 @@ class PortfolioGate(
 
         val previous = lastState
         val (regimeName, weightByAlias) = evaluateRegimes(ctx)
-        val changed = previous.activeByAlias != desired || previous.regimeName != regimeName || previous.weightByAlias != weightByAlias
-        lastState = GateState(activeByAlias = desired, weightByAlias = weightByAlias, regimeName = regimeName, changed = changed)
+        val changed =
+            previous.activeByAlias != desired ||
+                previous.regimeName != regimeName ||
+                previous.weightByAlias != weightByAlias
+        lastState =
+            GateState(
+                activeByAlias = desired,
+                weightByAlias = weightByAlias,
+                regimeName = regimeName,
+                changed = changed,
+            )
     }
 
     private fun evaluateRegimes(ctx: EvalContext): Pair<String?, Map<String, BigDecimal>> {
         val allocate = ast.allocate ?: return null to emptyMap()
         val selected =
-            regimeStates.firstOrNull { (state, compiled) ->
-                when (state) {
-                    is RegimeDefaultState -> false
-                    is RegimeConditionalState -> (compiled?.evaluate(ctx) as? Value.Bool)?.v == true
-                }
-            }?.first ?: regimeStates.firstOrNull { it.first is RegimeDefaultState }?.first
+            regimeStates
+                .firstOrNull { (state, compiled) ->
+                    when (state) {
+                        is RegimeDefaultState -> false
+                        is RegimeConditionalState -> (compiled?.evaluate(ctx) as? Value.Bool)?.v == true
+                    }
+                }?.first ?: regimeStates.firstOrNull { it.first is RegimeDefaultState }?.first
         val name = selected?.name
         val entries = name?.let { allocate.entries[it] } ?: emptyMap()
         val weights =
@@ -200,21 +212,29 @@ class PortfolioGate(
     private object EmptySource : com.qkt.marketdata.source.MarketSource {
         override val name: String = "PortfolioGate"
         override val capabilities: Set<com.qkt.marketdata.source.MarketSourceCapability> = emptySet()
+
         override fun supports(symbol: String): Boolean = false
     }
 
     private object EmptyPositions : com.qkt.positions.StrategyPositionView {
         override fun positionFor(symbol: String): com.qkt.positions.Position? = null
+
         override fun allPositions(): Map<String, com.qkt.positions.Position> = emptyMap()
+
         override fun maeFor(symbol: String): BigDecimal? = null
     }
 
     private object EmptyPnL : com.qkt.pnl.StrategyPnLView {
         override fun realized(): BigDecimal = BigDecimal.ZERO
+
         override fun unrealizedFor(symbol: String): BigDecimal = BigDecimal.ZERO
+
         override fun unrealizedTotal(): BigDecimal = BigDecimal.ZERO
+
         override fun total(): BigDecimal = BigDecimal.ZERO
+
         override fun equity(): BigDecimal = BigDecimal.ZERO
+
         override fun balance(): BigDecimal = BigDecimal.ZERO
     }
 

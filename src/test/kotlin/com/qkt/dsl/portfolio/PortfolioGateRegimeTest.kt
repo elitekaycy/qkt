@@ -5,8 +5,8 @@ import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.ParseResult
-import com.qkt.dsl.parse.Parser
 import com.qkt.dsl.parse.ParsedFile
+import com.qkt.dsl.parse.Parser
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -33,7 +33,9 @@ class PortfolioGateRegimeTest {
     private fun buildGate(src: String): PortfolioGate {
         val tokens = Lexer(src).tokenize()
         val result = Parser(tokens).parseFile()
-        require(result is ParseResult.Success<*>) { "parse failed: ${(result as ParseResult.Failure).errors.joinToString { it.message }}" }
+        require(result is ParseResult.Success<*>) {
+            "parse failed: ${(result as ParseResult.Failure).errors.joinToString { it.message }}"
+        }
         val ast = (result.value as ParsedFile.PortfolioFile).ast
         return PortfolioGate(ast, clock, calendar).also {
             it.prepare()
