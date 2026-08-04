@@ -720,7 +720,9 @@ class BacktestContext private constructor(
                 )
             val effectiveBookRiskConfig =
                 if (compiled.ast.allocate != null && declaredCapital != null) {
-                    val base = cfg.bookRisk ?: com.qkt.risk.book.BookRiskConfig()
+                    val base =
+                        cfg.bookRisk ?: com.qkt.risk.book
+                            .BookRiskConfig()
                     val rebalanceBars =
                         compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
                             candleWindow?.let { window ->

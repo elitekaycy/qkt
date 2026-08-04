@@ -127,7 +127,7 @@ data class AlwaysRun(
 ) : PortfolioRule
 
 /** Allocation method declared in a portfolio `ALLOCATE` block. */
-enum class PortfolioAllocationMethod { REGIME_WEIGHTED }
+enum class PortfolioAllocationMethod { REGIME_WEIGHTED, }
 
 /** A named regime detector: a list of mutually-exclusive states, one of which is the fallback. */
 data class RegimeBlock(
@@ -136,7 +136,7 @@ data class RegimeBlock(
 ) {
     init {
         require(name.isNotBlank()) { "RegimeBlock.name must not be blank" }
-        require(states.isNotEmpty()) { "RegimeBlock '${name}' must declare at least one STATE" }
+        require(states.isNotEmpty()) { "RegimeBlock '$name' must declare at least one STATE" }
     }
 }
 

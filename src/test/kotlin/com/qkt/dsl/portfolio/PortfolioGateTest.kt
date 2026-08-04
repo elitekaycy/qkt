@@ -4,8 +4,8 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.ast.AlwaysRun
-import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BinOp
+import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
@@ -147,7 +147,12 @@ class PortfolioGateTest {
             buildGate(
                 listOf(
                     WhenRun(
-                        cond = CmpOp(Cmp.GT, BinaryOp(BinOp.SUB, StreamFieldRef("btc", "close"), NumLit(BigDecimal("5"))), NumLit(BigDecimal.ZERO)),
+                        cond =
+                            CmpOp(
+                                Cmp.GT,
+                                BinaryOp(BinOp.SUB, StreamFieldRef("btc", "close"), NumLit(BigDecimal("5"))),
+                                NumLit(BigDecimal.ZERO),
+                            ),
                         alias = "noop",
                     ),
                 ),
