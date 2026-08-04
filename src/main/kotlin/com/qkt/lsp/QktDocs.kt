@@ -368,6 +368,20 @@ object QktDocs {
             "FLOOR" to doc("floor(x)", "Largest integer not greater than x."),
             "CEIL" to doc("ceil(x)", "Smallest integer not less than x."),
             "ROUND" to doc("round(x)", "Nearest integer, halves rounded away from zero."),
+            "NORMALIZE" to
+                doc(
+                    "normalize(self, other, ...)",
+                    "Min-max scaled score of the first value among all the values, in [0, 1]. " +
+                        "e.g. normalize(3, 1, 5) = 0.5. Returns 0 when all values are equal. " +
+                        "Use softmax for probability weights that sum to 1.",
+                ),
+            "SOFTMAX" to
+                doc(
+                    "softmax(self, other, ...)",
+                    "Softmax probability weight of the first value among all the values, in (0, 1). " +
+                        "Symmetric calls across streams sum to 1, making it useful for regime " +
+                        "probability weighting. Numerically stable for large inputs.",
+                ),
             "CALENDAR_WINDOW" to
                 doc(
                     "calendar_window(startMonth, startDay, endMonth, endDay)",
