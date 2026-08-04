@@ -51,6 +51,17 @@ enum class TokenKind {
     WEIGHT,
     OVERRIDE,
 
+    NAME,
+    REGIMES,
+    STATE,
+    DEFAULT,
+    ALLOCATE,
+    METHOD,
+    REBALANCE,
+    CASH,
+
+    ARROW,
+
     MARKET,
     LIMIT,
     STOP,
