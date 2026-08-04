@@ -32,8 +32,27 @@ class BookRiskController(
     private var barCount = 0
     private var weights: Map<String, BigDecimal> = emptyMap()
 
+    /** Target fractions supplied by a [com.qkt.dsl.portfolio.PortfolioGate] for [AllocationMethod.REGIME_WEIGHTED]. */
+    private var regimeWeights: Map<String, BigDecimal> = emptyMap()
+
     @Volatile
     private var current: BookRiskState = BookRiskState(capital, Money.ZERO, emptyMap(), config.limits)
+
+    /**
+     * Set the current regime-weight vector. Keys must match the strategy ids the controller sees in
+     * [BookSnapshot.perStrategyPnl]. Empty weights leave allocation unchanged (scale = 1.0).
+     *
+     * The allocation weights are recomputed immediately so that the current bar's orders are scaled
+     * by the regime that is active right now, not the regime from the previous sample.
+     */
+    fun setRegimeWeights(weights: Map<String, BigDecimal>) {
+        regimeWeights = weights
+        if (ids.isEmpty() && weights.isNotEmpty()) {
+            ids = weights.keys.sorted()
+        }
+        this.weights = computeRegimeWeights()
+        current = current.copy(allocationWeights = this.weights)
+    }
 
     fun onSample(snapshot: BookSnapshot) {
         if (snapshot.bookEquity > peakEquity) peakEquity = snapshot.bookEquity
@@ -46,10 +65,15 @@ class BookRiskController(
         val factor = ladder?.factorFor(drawdown) ?: BigDecimal.ONE
 
         if (allocation != null && capital.signum() > 0) {
-            foldReturns(snapshot.perStrategyPnl)
-            barCount += 1
-            val every = maxOf(1, allocation.rebalanceEveryBars)
-            if (count >= 2 && barCount % every == 0) weights = computeWeights()
+            if (allocation.method == AllocationMethod.REGIME_WEIGHTED) {
+                ids = snapshot.perStrategyPnl.keys.sorted()
+                weights = computeWeights()
+            } else {
+                foldReturns(snapshot.perStrategyPnl)
+                barCount += 1
+                val every = maxOf(1, allocation.rebalanceEveryBars)
+                if (count >= 2 && barCount % every == 0) weights = computeWeights()
+            }
         }
 
         current =
@@ -112,12 +136,15 @@ class BookRiskController(
 
     private fun computeWeights(): Map<String, BigDecimal> {
         val a = allocation ?: return emptyMap()
-        val variances = ids.associateWith { cov(it, it) }
         val raw =
             when (a.method) {
                 AllocationMethod.FIXED -> equalWeights(ids)
-                AllocationMethod.INVERSE_VOL -> inverseVol(variances)
+                AllocationMethod.INVERSE_VOL -> {
+                    val variances = ids.associateWith { cov(it, it) }
+                    inverseVol(variances)
+                }
                 AllocationMethod.ERC -> erc(ids, ::cov)
+                AllocationMethod.REGIME_WEIGHTED -> return computeRegimeWeights()
             }
         // Express weights as a tilt around 1.0 (FIXED -> all 1.0) so they overlay the static
         // CAPITAL x WEIGHT rather than replace it.
@@ -130,5 +157,11 @@ class BookRiskController(
                 tilt
             }
         return targeted.mapValues { it.value.setScale(Money.SCALE, Money.ROUNDING) }
+    }
+
+    private fun computeRegimeWeights(): Map<String, BigDecimal> {
+        if (regimeWeights.isEmpty()) return emptyMap()
+        return ids.associateWith { regimeWeights[it] ?: Money.ZERO }
+            .mapValues { it.value.setScale(Money.SCALE, Money.ROUNDING) }
     }
 }

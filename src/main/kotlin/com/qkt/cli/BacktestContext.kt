@@ -97,6 +97,7 @@ class BacktestContext private constructor(
     private val tickFills: Boolean = false,
     private val gateFor: (String) -> Boolean = { true },
     private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
+    private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -183,6 +184,7 @@ class BacktestContext private constructor(
             tickFills = tickFills,
             gateFor = gateFor,
             preCandle = preCandle,
+            regimeWeights = regimeWeights,
         )
     }
 
@@ -596,6 +598,12 @@ class BacktestContext private constructor(
             val preCandle: (com.qkt.marketdata.Candle) -> Unit = { candle ->
                 portfolioGate.onCandle(candle)
             }
+            val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
+            val regimeWeights: () -> Map<String, BigDecimal> = {
+                portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
+                    aliasToStrategyId[alias] ?: alias
+                }
+            }
 
             val datasetContext =
                 datasetContext(
@@ -710,6 +718,28 @@ class BacktestContext private constructor(
                     totalDdBasis = cfg.totalDdBasis,
                     dailyDdBasis = cfg.dailyDdBasis,
                 )
+            val effectiveBookRiskConfig =
+                if (compiled.ast.allocate != null && declaredCapital != null) {
+                    val base = cfg.bookRisk ?: com.qkt.risk.book.BookRiskConfig()
+                    val rebalanceBars =
+                        compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
+                            candleWindow?.let { window ->
+                                BigDecimal(durationMs)
+                                    .divide(BigDecimal(window.durationMs), 0, java.math.RoundingMode.CEILING)
+                                    .toInt()
+                            } ?: 0
+                        } ?: 0
+                    base.copy(
+                        capital = base.capital ?: declaredCapital,
+                        allocation =
+                            com.qkt.risk.book.Allocation(
+                                method = com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED,
+                                rebalanceEveryBars = rebalanceBars,
+                            ),
+                    )
+                } else {
+                    cfg.bookRisk
+                }
 
             return BacktestContext(
                 ast = compiled.children.first().ast,
@@ -733,7 +763,8 @@ class BacktestContext private constructor(
                 strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
                 gateFor = gateFor,
                 preCandle = preCandle,
-                bookRiskConfig = cfg.bookRisk,
+                regimeWeights = regimeWeights,
+                bookRiskConfig = effectiveBookRiskConfig,
                 perStrategyRisk = cfg.perStrategyRisk,
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,

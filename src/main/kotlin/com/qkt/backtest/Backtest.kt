@@ -73,6 +73,11 @@ class Backtest(
      */
     private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
     /**
+     * Current regime-weight vector for [com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED].
+     * Updated once per closed candle before strategy handlers run.
+     */
+    private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+    /**
      * `--bars` research tier: fill triggered Stop/Limit exits at their trigger level, not
      * the synthetic bar extreme. See [com.qkt.broker.PaperBroker.fillAtTriggerPrice].
      */
@@ -127,6 +132,7 @@ class Backtest(
         latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
         gateFor: (String) -> Boolean = { true },
         preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
+        regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
     ) : this(
         strategies = strategies,
         rules = rules,
@@ -158,6 +164,7 @@ class Backtest(
         latencyEnabled = latencyEnabled,
         gateFor = gateFor,
         preCandle = preCandle,
+        regimeWeights = regimeWeights,
     )
 
     /**
@@ -202,6 +209,7 @@ class Backtest(
             latencyEnabled = latencyEnabled,
             gateFor = gateFor,
             preCandle = preCandle,
+            regimeWeights = regimeWeights,
             barFills = barFills,
             tickResolvedBars = tickResolvedBars,
             tickSlicer = tickSlicer,
@@ -255,6 +263,7 @@ class Backtest(
             tickFills: Boolean = false,
             gateFor: (String) -> Boolean = { true },
             preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
+            regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -315,6 +324,7 @@ class Backtest(
                 tickFills = tickFills,
                 gateFor = gateFor,
                 preCandle = preCandle,
+                regimeWeights = regimeWeights,
             )
         }
 
@@ -354,6 +364,7 @@ class Backtest(
             tickFills: Boolean = false,
             gateFor: (String) -> Boolean = { true },
             preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
+            regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -425,6 +436,7 @@ class Backtest(
                 priceCollarFrac = priceCollarFrac,
                 gateFor = gateFor,
                 preCandle = preCandle,
+                regimeWeights = regimeWeights,
                 // Tick-resolved fills use the full-tick fill model (fill at the real tick price, not
                 // the trigger level): fills only ever occur on bars fed real ticks, so the bar-tier
                 // fill-at-trigger-price guard is both unnecessary and wrong here.

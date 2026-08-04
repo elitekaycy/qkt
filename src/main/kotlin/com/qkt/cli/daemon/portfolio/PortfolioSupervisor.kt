@@ -185,8 +185,10 @@ class PortfolioSupervisor(
         val bus = EventBus(SystemClock(), MonotonicSequenceGenerator())
         CandleAggregator(bus, window)
         bus.subscribe<CandleEvent> { e ->
-            riskAggregator?.sample(e.candle.endTime)
+            // Update the gate and child activation first so the risk aggregator sees the
+            // current bar's regime when it feeds the book controller.
             onCandle(e.candle)
+            riskAggregator?.sample(e.candle.endTime)
         }
 
         val feed = source.liveTicks(symbols)
