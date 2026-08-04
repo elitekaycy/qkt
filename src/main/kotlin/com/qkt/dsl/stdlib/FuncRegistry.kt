@@ -90,6 +90,44 @@ object FuncRegistry {
                     val self = args[0]
                     BigDecimal(1 + args.count { it > self })
                 },
+            // Cross-sectional min-max scale of the FIRST value among all the values, in [0, 1].
+            // e.g. normalize(3, 1, 5) = (3 - 1) / (5 - 1) = 0.5. When all values are equal the
+            // denominator is zero and the scaled signal is 0 (no preference). Useful as a raw
+            // score; for weights that sum to 1 across symmetric calls use softmax.
+            "NORMALIZE" to
+                FuncSpec("NORMALIZE", Arity.VARIADIC2) { args ->
+                    var min = args[0]
+                    var max = args[0]
+                    for (i in 1 until args.size) {
+                        val v = args[i]
+                        if (v < min) min = v
+                        if (v > max) max = v
+                    }
+                    if (max == min) {
+                        BigDecimal.ZERO
+                    } else {
+                        args[0].subtract(min).divide(max.subtract(min), Money.CONTEXT)
+                    }
+                },
+            // Cross-sectional softmax weight of the FIRST value among all the values.
+            // Returns a value in (0, 1) and the weights across symmetric calls (each stream
+            // computes softmax(self, peers...)) sum to 1. Numerically stable via max subtraction.
+            "SOFTMAX" to
+                FuncSpec("SOFTMAX", Arity.VARIADIC2) { args ->
+                    var max = args[0]
+                    for (i in 1 until args.size) {
+                        val v = args[i]
+                        if (v > max) max = v
+                    }
+                    var sum = 0.0
+                    var first = 0.0
+                    for (i in args.indices) {
+                        val e = kotlin.math.exp(args[i].subtract(max).toDouble())
+                        if (i == 0) first = e
+                        sum += e
+                    }
+                    BigDecimal(first / sum).round(Money.CONTEXT)
+                },
         )
 
     fun has(name: String): Boolean = table.containsKey(name)
