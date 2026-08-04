@@ -269,6 +269,17 @@ LET names make portfolio rules read like English.
 - **Cascade stop.** `qkt stop <portfolio>` cascades to every child. Use `qkt stop <portfolio>/<child>` to stop a specific child.
 - **Portfolio file is itself a strategy.** It has `VERSION`, `RULES`, can have `LET`. It just uses `RUN` actions instead of `BUY`/`SELL`.
 
+## Backtesting portfolios
+
+`qkt backtest <portfolio.qkt>` runs the children as N attributed strategies on one engine, sharing one account and the book-risk layer. The same backtest tiers that work for single strategies also work for portfolios:
+
+- `--bars` replays built bars instead of ticks.
+- `--bar-tf <tf>` pins the bar feed to a specific built timeframe (must divide every child's declared timeframe).
+- `--tick-fills` drives signals from bars but resolves fills on real ticks.
+- `--report-dir <dir>` writes the standard report bundle (`result.json`, `trades.csv`, per-strategy equity curves, etc.) in the same format as a single-strategy backtest.
+
+Regime-weighted allocation and `WHEN..RUN` gating use the same `PortfolioGate` + `BookRiskController` code in backtest and live, so results are directly comparable.
+
 ## What this composes with
 
 - [STRATEGY block](strategy-block.md) — child files are regular strategies

@@ -1,6 +1,9 @@
 package com.qkt.cli
 
+import com.qkt.common.Money
+import com.qkt.marketdata.BinaryTickWriter
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.Tick
 import com.qkt.marketdata.store.LocalBarStore
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -9,6 +12,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
+import kotlin.math.sin
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -31,6 +36,103 @@ class BacktestCommandPortfolioTest {
         RULES
           WHEN $alias.close > 0 THEN BUY $alias SIZING 0.01
         """.trimIndent()
+
+    private fun ticksFor(days: Int): List<Tick> {
+        val start =
+            LocalDate
+                .parse("2024-01-02")
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli()
+        return (0 until days * 1440).map { m ->
+            val mid = 1850.0 + 8.0 * sin(m / 40.0)
+            Tick("XAUUSD", Money.of("%.3f".format(mid)), start + m * 60_000L)
+        }
+    }
+
+    private fun seedTicks(
+        dataRoot: Path,
+        days: Int,
+    ) {
+        ticksFor(days)
+            .groupBy { LocalDate.ofInstant(Instant.ofEpochMilli(it.timestamp), ZoneOffset.UTC) }
+            .forEach { (day, dayTicks) ->
+                val f = dataRoot.resolve("symbols").resolve("XAUUSD").resolve("$day.bin")
+                Files.createDirectories(f.parent)
+                BinaryTickWriter().write(f, "XAUUSD", dayTicks)
+            }
+    }
+
+    private fun buildBars(
+        dataRoot: Path,
+        tf: String,
+    ) {
+        val code =
+            DataCommand(
+                Args(
+                    arrayOf(
+                        "data",
+                        "build-bars",
+                        "XAUUSD",
+                        "--tf",
+                        tf,
+                        "--from",
+                        "2024-01-02",
+                        "--to",
+                        "2024-01-05",
+                        "--data-root",
+                        dataRoot.toString(),
+                    ),
+                ),
+            ).run()
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+    }
+
+    private fun backtestChild(
+        name: String,
+        symbol: String = "XAUUSD",
+        timeframe: String = "15m",
+    ) = """
+        STRATEGY $name VERSION 1
+        SYMBOLS
+          gold = BACKTEST:$symbol EVERY $timeframe
+        RULES
+          WHEN gold.close > 0 THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
+        """.trimIndent()
+
+    private fun runPortfolioBacktest(
+        portfolio: Path,
+        dataRoot: Path,
+        extra: Array<String> = emptyArray(),
+    ): Pair<Int, String> {
+        val out = ByteArrayOutputStream()
+        val orig = System.out
+        val code =
+            try {
+                System.setOut(PrintStream(out))
+                BacktestCommand(
+                    Args(
+                        arrayOf(
+                            "backtest",
+                            portfolio.toString(),
+                            "--from",
+                            "2024-01-02",
+                            "--to",
+                            "2024-01-05",
+                            "--data-root",
+                            dataRoot.toString(),
+                            "--no-fetch",
+                            "--allow-incomplete",
+                            "--bars",
+                            "--json",
+                        ) + extra,
+                    ),
+                ).run()
+            } finally {
+                System.setOut(orig)
+            }
+        return code to out.toString()
+    }
 
     @Test
     fun `portfolio backtest on sample data emits per-strategy + book data`(
@@ -105,10 +207,14 @@ class BacktestCommandPortfolioTest {
     }
 
     @Test
-    fun `portfolio backtest rejects unsupported bar replay flags`(
+    fun `portfolio backtest supports --bars`(
         @TempDir tmp: Path,
     ) {
-        Files.writeString(tmp.resolve("child.qkt"), child("child", "gold", "XAUUSD"))
+        val dataRoot = tmp.resolve("data")
+        seedTicks(dataRoot, days = 3)
+        buildBars(dataRoot, "15m")
+
+        Files.writeString(tmp.resolve("child.qkt"), backtestChild("child"))
         val portfolio = tmp.resolve("book.qkt")
         Files.writeString(
             portfolio,
@@ -120,25 +226,100 @@ class BacktestCommandPortfolioTest {
             """.trimIndent(),
         )
 
-        for (flag in listOf(listOf("--bars"), listOf("--bar-tf", "1m"), listOf("--tick-fills"))) {
-            val args =
-                Args(
-                    (
-                        listOf(
-                            "backtest",
-                            portfolio.toString(),
-                            "--from",
-                            "2024-01-15",
-                            "--to",
-                            "2024-01-17",
-                        ) + flag
-                    ).toTypedArray(),
-                )
+        val (code, out) = runPortfolioBacktest(portfolio, dataRoot)
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out).contains("\"perStrategy\":{")
+        assertThat(out).contains("book:child")
+    }
 
-            assertThat(BacktestCommand(args).run())
-                .describedAs("flag %s", flag.joinToString(" "))
-                .isEqualTo(ExitCodes.USER_ERROR)
-        }
+    @Test
+    fun `portfolio backtest supports --bars --tick-fills`(
+        @TempDir tmp: Path,
+    ) {
+        val dataRoot = tmp.resolve("data")
+        seedTicks(dataRoot, days = 3)
+        buildBars(dataRoot, "15m")
+
+        Files.writeString(tmp.resolve("child.qkt"), backtestChild("child"))
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'child.qkt' AS child
+            RULES
+              RUN child
+            """.trimIndent(),
+        )
+
+        val (code, out) = runPortfolioBacktest(portfolio, dataRoot, extra = arrayOf("--tick-fills"))
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out).contains("\"perStrategy\":{")
+        assertThat(out).contains("book:child")
+    }
+
+    @Test
+    fun `portfolio backtest --bar-tf rejects a tf that does not divide the child timeframe`(
+        @TempDir tmp: Path,
+    ) {
+        val dataRoot = tmp.resolve("data")
+        seedTicks(dataRoot, days = 3)
+        buildBars(dataRoot, "15m")
+
+        Files.writeString(tmp.resolve("child.qkt"), backtestChild("child"))
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'child.qkt' AS child
+            RULES
+              RUN child
+            """.trimIndent(),
+        )
+
+        val (code, _) = runPortfolioBacktest(portfolio, dataRoot, extra = arrayOf("--bar-tf", "2m"))
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
+    fun `regime portfolio backtest supports --bars`(
+        @TempDir tmp: Path,
+    ) {
+        val dataRoot = tmp.resolve("data")
+        seedTicks(dataRoot, days = 3)
+        buildBars(dataRoot, "15m")
+
+        Files.writeString(tmp.resolve("trend.qkt"), backtestChild("trend"))
+        Files.writeString(tmp.resolve("meanrev.qkt"), backtestChild("meanrev"))
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1 CAPITAL 10000
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 15m
+            IMPORT 'trend.qkt'   AS trend
+            IMPORT 'meanrev.qkt' AS meanrev
+            REGIMES
+              NAME regime
+              STATE up   WHEN gold.close > gold.open
+              STATE down DEFAULT
+            ALLOCATE
+              METHOD regime_weighted
+              up   -> trend 0.8, meanrev 0.2
+              down -> trend 0.2, meanrev 0.8
+            RULES
+              RUN trend
+              RUN meanrev
+            """.trimIndent(),
+        )
+
+        val (code, out) = runPortfolioBacktest(portfolio, dataRoot)
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out).contains("\"perStrategy\":{")
+        assertThat(out).contains("book:trend")
+        assertThat(out).contains("book:meanrev")
     }
 
     @Test
