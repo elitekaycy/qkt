@@ -2,8 +2,12 @@ package com.qkt.dsl.portfolio
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
+import com.qkt.dsl.ast.AllocateBlock
 import com.qkt.dsl.ast.AlwaysRun
+import com.qkt.dsl.ast.PortfolioAllocationMethod
 import com.qkt.dsl.ast.PortfolioAst
+import com.qkt.dsl.ast.RegimeConditionalState
+import com.qkt.dsl.ast.RegimeDefaultState
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.CompiledExpr
@@ -43,6 +47,7 @@ class PortfolioGate(
     private val bindingBag = IndicatorBinding.Bag()
     private lateinit var snapshotStore: SnapshotStore
     private lateinit var whenRules: List<Pair<WhenRun, CompiledExpr>>
+    private lateinit var regimeStates: List<Pair<com.qkt.dsl.ast.RegimeState, CompiledExpr?>>
     private lateinit var streamMap: Map<String, HubKey>
     private lateinit var aliasBySymbol: Map<String, String>
     private lateinit var strategyContext: StrategyContext
@@ -59,10 +64,12 @@ class PortfolioGate(
         streamMap = ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) }
         aliasBySymbol = streamMap.entries.associate { it.value.qktSymbol to it.key }
 
-        val conditions = ast.rules.filterIsInstance<WhenRun>().map { it.cond }
+        val conditions =
+            ast.rules.filterIsInstance<WhenRun>().map { it.cond } +
+                ast.regimes?.states.orEmpty().filterIsInstance<RegimeConditionalState>().map { it.cond }
         val plan = SnapshotPlan.scan(conditions)
         require(plan.rollingMaxN.isEmpty()) {
-            "Portfolio WHEN rules with history snapshots (e.g. btc.close[5]) are not yet supported"
+            "Portfolio WHEN / regime rules with history snapshots (e.g. btc.close[5]) are not yet supported"
         }
         snapshotStore = SnapshotStore(emptyMap())
 
@@ -85,6 +92,15 @@ class PortfolioGate(
             ast.rules.filterIsInstance<WhenRun>().map { rule ->
                 rule to compiler.compile(rule.cond, ruleAlias = null)
             }
+        regimeStates =
+            ast.regimes?.states.orEmpty().map { state ->
+                val compiled =
+                    when (state) {
+                        is RegimeConditionalState -> compiler.compile(state.cond, ruleAlias = null)
+                        is RegimeDefaultState -> null
+                    }
+                state to compiled
+            } ?: emptyList()
 
         // Register streams with retention large enough for indicator warmup and any hub lookups.
         // The hub is only used for cross-stream reads; indicators maintain their own internal state.
@@ -149,8 +165,30 @@ class PortfolioGate(
         }
 
         val previous = lastState
-        val changed = previous.activeByAlias != desired
-        lastState = GateState(activeByAlias = desired, weightByAlias = emptyMap(), regimeName = null, changed = changed)
+        val (regimeName, weightByAlias) = evaluateRegimes(ctx)
+        val changed = previous.activeByAlias != desired || previous.regimeName != regimeName || previous.weightByAlias != weightByAlias
+        lastState = GateState(activeByAlias = desired, weightByAlias = weightByAlias, regimeName = regimeName, changed = changed)
+    }
+
+    private fun evaluateRegimes(ctx: EvalContext): Pair<String?, Map<String, BigDecimal>> {
+        val allocate = ast.allocate ?: return null to emptyMap()
+        val selected =
+            regimeStates.firstOrNull { (state, compiled) ->
+                when (state) {
+                    is RegimeDefaultState -> false
+                    is RegimeConditionalState -> (compiled?.evaluate(ctx) as? Value.Bool)?.v == true
+                }
+            }?.first ?: regimeStates.firstOrNull { it.first is RegimeDefaultState }?.first
+        val name = selected?.name
+        val entries = name?.let { allocate.entries[it] } ?: emptyMap()
+        val weights =
+            if (allocate.method == PortfolioAllocationMethod.REGIME_WEIGHTED) {
+                val nonCash = entries.filterKeys { !it.equals("cash", ignoreCase = true) }
+                ast.imports.associate { it.alias to (nonCash[it.alias] ?: BigDecimal.ZERO) }
+            } else {
+                emptyMap()
+            }
+        return name to weights
     }
 
     /** Tick-fed indicators are not yet supported inside portfolio WHEN rules. */

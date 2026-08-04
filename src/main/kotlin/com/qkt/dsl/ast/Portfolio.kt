@@ -63,7 +63,7 @@ data class PortfolioAst(
                 "PORTFOLIO: total WEIGHT must sum to <= 1.0 (no implicit leverage), got $sum"
             }
         } else {
-            require(capital == null) {
+            require(capital == null || regimes != null) {
                 "PORTFOLIO: CAPITAL declared but no RUN carries WEIGHT and no ALLOCATE block — nothing to allocate"
             }
         }
