@@ -240,182 +240,29 @@ class BacktestContext private constructor(
             return true
         }
 
-        fun build(
+        private data class BarReplayConfig(
+            val forceBars: Boolean,
+            val tickFills: Boolean,
+            val binaryBarStore: BinaryBarStore,
+            val finestDeclared: Map<String, TimeWindow>,
+            val barWindows: Map<String, TimeWindow>,
+        )
+
+        /**
+         * Resolve bar-replay parameters for a backtest. Validates --bars/--tick-fills constraints,
+         * chooses the coarsest built timeframe that divides each declared timeframe, and checks
+         * bar coverage so portfolio and single-strategy backtests fail identically.
+         */
+        private fun resolveBarReplay(
             args: Args,
-            ast: StrategyAst,
-            fetcherOverride: DataFetcher? = null,
-        ): BacktestContext {
-            val from = parseInstant(args.requireOption("from"))
-            val to = parseInstant(args.requireOption("to"))
-            val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
-
-            val declaredSymbols = ast.streams.map { it.qktSymbol }.distinct()
-            val symbolsOverride =
-                args
-                    .option("symbols")
-                    ?.split(",")
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotEmpty() }
-            val symbols =
-                if (symbolsOverride != null) {
-                    val unknown = symbolsOverride.filter { it !in declaredSymbols }
-                    if (unknown.isNotEmpty()) {
-                        throw SetupError(
-                            "--symbols contains unknown symbols $unknown; strategy declares $declaredSymbols",
-                        )
-                    }
-                    symbolsOverride
-                } else {
-                    declaredSymbols
-                }
-            val datasetContext = datasetContext(args, listOf(ast), symbols, from, to)
-            // Default to the shared store (~/.qkt/data) so `qkt backtest` reads the same place
-            // `qkt fetch` / `qkt data convert` write. A pinned dataset carries its own root unless
-            // the caller explicitly overrides it with --data-root for relocated snapshots.
-            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: DataRoot.resolve().toString()
-
-            // Legacy `--fetcher dukascopy --fetcher-script <path>` still wins when set.
-            val legacyFetcher: DataFetcher? =
-                when (val name = args.option("fetcher")) {
-                    null -> null
-                    "dukascopy" -> ScriptDataFetcher.dukascopy(Paths.get(args.requireOption("fetcher-script")))
-                    else -> throw SetupError("unsupported --fetcher '$name' (supported: dukascopy)")
-                }
-            val noFetch = args.flag("no-fetch")
-            val fetcher: DataFetcher? =
-                when {
-                    noFetch -> null
-                    fetcherOverride != null -> fetcherOverride
-                    legacyFetcher != null -> legacyFetcher
-                    else -> DukascopyTickFetcher()
-                }
-            val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
-            val barStore = LocalBarStore(root = Paths.get(dataRoot))
-
-            val candleWindow =
-                ast.streams
-                    .firstOrNull()
-                    ?.timeframe
-                    ?.let { TimeWindow.parse(it) }
-            val finestDeclared: Map<String, TimeWindow> =
-                ast.streams
-                    .filter { it.qktSymbol in symbols }
-                    .groupBy { it.qktSymbol }
-                    .mapNotNull { (symbol, streams) ->
-                        streams
-                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
-                            .minByOrNull { it.durationMs }
-                            ?.let { symbol to it }
-                    }.toMap()
-
-            val instrumentsPath: Path =
-                args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
-            val instruments: InstrumentRegistry =
-                if (Files.exists(instrumentsPath)) {
-                    LayeredInstrumentRegistry(
-                        listOf(YamlInstrumentRegistry.load(instrumentsPath), StandardInstrumentRegistry),
-                    )
-                } else {
-                    if (args.option("instruments") != null) {
-                        throw SetupError("--instruments file not found: $instrumentsPath")
-                    }
-                    StandardInstrumentRegistry
-                }
-
-            val brokerKind =
-                when (val raw = args.option("broker")) {
-                    null, "paper" -> BrokerKind.PAPER
-                    "mt5-sim" -> BrokerKind.MT5_SIM
-                    else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
-                }
-            // Same config-driven halt/accounting construction the live daemon uses, so a strategy
-            // that would halt live halts at the same point in its backtest. The basis balance is
-            // the backtest's own starting balance.
-            val cfg = Config.load(Config.resolvePath(args.option("config")))
-            val executionConfig = executionConfig(args, cfg, brokerKind)
-            val accountingConfig = accountingConfig(args, cfg)
-            val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
-
-            val provisioner: () -> Unit = {
-                val allProvisionStreams =
-                    replaySymbols
-                        .map { brokerAndBare(it) }
-                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
-                        .distinct()
-                        .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
-                val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
-                val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                val tickProvisionStreams =
-                    allProvisionStreams.filterNot { stream ->
-                        val window = finestDeclared["${stream.broker}:${stream.bareSymbol}"]
-                        window != null &&
-                            hasCompleteFetchedBars(
-                                barStore,
-                                stream,
-                                window,
-                                provisionFrom,
-                                provisionTo,
-                            )
-                    }
-                val (fetchableStreams, validateOnlyStreams) =
-                    tickProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
-                // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
-                // completeness validation: it would otherwise scan the tick store and warn on holiday
-                // holes the bar run doesn't care about (pure waste + log noise every gate run).
-                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
-                    BacktestDataProvisioner(store).ensure(
-                        streams = fetchableStreams,
-                        from = provisionFrom,
-                        to = provisionTo,
-                        fetchEnabled = !noFetch,
-                        allowIncomplete = args.flag("allow-incomplete"),
-                        calendarFor = { defaultCalendars().calendarFor(it) },
-                    )
-                    BacktestDataProvisioner(store).ensure(
-                        streams = validateOnlyStreams,
-                        from = provisionFrom,
-                        to = provisionTo,
-                        fetchEnabled = false,
-                        allowIncomplete = args.flag("allow-incomplete"),
-                        calendarFor = { defaultCalendars().calendarFor(it) },
-                    )
-                }
-                // Macro series (MACRO:) provisioning from FRED. Fetch enough history before the
-                // window for the strategy's warmup (90 calendar days ~ 60 business days). Skipped on
-                // --no-fetch; hasRange avoids re-fetching a window the store already brackets.
-                val macroStreams = ast.streams.filter { it.qktSymbol in symbols && it.broker == "MACRO" }
-                if (macroStreams.isNotEmpty() && !noFetch && !provisionTo.isBefore(provisionFrom)) {
-                    val macroStore = MacroSeriesStore(Paths.get(dataRoot))
-                    val fredFetcher = FredSeriesFetcher(macroStore)
-                    val policyRateFetcher = PolicyRateSeriesFetcher(macroStore)
-                    val macroFrom = provisionFrom.minusDays(90)
-                    for (s in macroStreams) {
-                        if (!macroStore.hasRange(s.symbol, macroFrom, provisionTo)) {
-                            val policySeries = PolicyRateSeries.fromId(s.symbol)
-                            if (policySeries == null) {
-                                fredFetcher.fetch(s.symbol, macroFrom, provisionTo)
-                            } else {
-                                policyRateFetcher.fetch(policySeries, macroFrom, provisionTo)
-                            }
-                        }
-                    }
-                }
-            }
-
-            val haltConfig =
-                HaltConfig(
-                    maxDailyLoss = cfg.maxDailyLoss,
-                    maxDrawdownPct = cfg.maxDrawdownPct,
-                    maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
-                    totalDdBasis = cfg.totalDdBasis,
-                    dailyDdBasis = cfg.dailyDdBasis,
-                )
-
-            // --bars research tier: feed each symbol at the COARSEST built tf that divides its finest
-            // declared tf, and let CandleHub aggregate up to every declared tf (rollup is exact). So a
-            // 30m strategy can replay off 1m bars and a 1h strategy off 30m bars — building 1m + 30m
-            // covers the whole standard ladder, no need to pre-build every tf. Fail loud if nothing
-            // usable is built, naming the build-bars command — never silently fall back to slow ticks.
+            dataRoot: String,
+            from: Instant,
+            to: Instant,
+            symbols: List<String>,
+            streams: List<com.qkt.dsl.ast.StreamDecl>,
+            candleWindow: TimeWindow?,
+            executionConfig: ExecutionSimulationConfig,
+        ): BarReplayConfig {
             val forceBars = args.flag("bars")
             val tickFills = args.flag("tick-fills")
             require(!tickFills || forceBars) {
@@ -431,7 +278,7 @@ class BacktestContext private constructor(
             }
             require(
                 !tickFills ||
-                    ast.streams
+                    streams
                         .map { it.timeframe }
                         .distinct()
                         .size <= 1,
@@ -440,10 +287,17 @@ class BacktestContext private constructor(
                     "a cross-symbol order after the other symbol's bar was already resolved"
             }
             val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
-            // --bar-tf pins the fill-resolution feed to a specific built tf (e.g. 1m) instead of the
-            // coarsest divisor: finer intrabar fills (fewer bars span both SL and TP) for more cost than
-            // coarse bars, less than ticks. Must divide each strategy's declared tf so rollup stays exact.
             val barTfOverride = args.option("bar-tf")?.let { TimeWindow.parse(it) }
+            val finestDeclared: Map<String, TimeWindow> =
+                streams
+                    .filter { it.qktSymbol in symbols }
+                    .groupBy { it.qktSymbol }
+                    .mapNotNull { (symbol, symbolStreams) ->
+                        symbolStreams
+                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
+                            .minByOrNull { it.durationMs }
+                            ?.let { symbol to it }
+                    }.toMap()
             val barWindows: Map<String, TimeWindow> =
                 if (!forceBars) {
                     finestDeclared
@@ -502,6 +356,190 @@ class BacktestContext private constructor(
                 }
                 System.err.println("qkt: --bars research tier — bar-approximated intrabar fills; not for grading")
             }
+            return BarReplayConfig(
+                forceBars = forceBars,
+                tickFills = tickFills,
+                binaryBarStore = binaryBarStore,
+                finestDeclared = finestDeclared,
+                barWindows = barWindows,
+            )
+        }
+
+        fun build(
+            args: Args,
+            ast: StrategyAst,
+            fetcherOverride: DataFetcher? = null,
+        ): BacktestContext {
+            val from = parseInstant(args.requireOption("from"))
+            val to = parseInstant(args.requireOption("to"))
+            val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
+
+            val declaredSymbols = ast.streams.map { it.qktSymbol }.distinct()
+            val symbolsOverride =
+                args
+                    .option("symbols")
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+            val symbols =
+                if (symbolsOverride != null) {
+                    val unknown = symbolsOverride.filter { it !in declaredSymbols }
+                    if (unknown.isNotEmpty()) {
+                        throw SetupError(
+                            "--symbols contains unknown symbols $unknown; strategy declares $declaredSymbols",
+                        )
+                    }
+                    symbolsOverride
+                } else {
+                    declaredSymbols
+                }
+            val datasetContext = datasetContext(args, listOf(ast), symbols, from, to)
+            // Default to the shared store (~/.qkt/data) so `qkt backtest` reads the same place
+            // `qkt fetch` / `qkt data convert` write. A pinned dataset carries its own root unless
+            // the caller explicitly overrides it with --data-root for relocated snapshots.
+            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: DataRoot.resolve().toString()
+
+            // Legacy `--fetcher dukascopy --fetcher-script <path>` still wins when set.
+            val legacyFetcher: DataFetcher? =
+                when (val name = args.option("fetcher")) {
+                    null -> null
+                    "dukascopy" -> ScriptDataFetcher.dukascopy(Paths.get(args.requireOption("fetcher-script")))
+                    else -> throw SetupError("unsupported --fetcher '$name' (supported: dukascopy)")
+                }
+            val noFetch = args.flag("no-fetch")
+            val fetcher: DataFetcher? =
+                when {
+                    noFetch -> null
+                    fetcherOverride != null -> fetcherOverride
+                    legacyFetcher != null -> legacyFetcher
+                    else -> DukascopyTickFetcher()
+                }
+            val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
+            val barStore = LocalBarStore(root = Paths.get(dataRoot))
+
+            val candleWindow =
+                ast.streams
+                    .firstOrNull()
+                    ?.timeframe
+                    ?.let { TimeWindow.parse(it) }
+
+            val instrumentsPath: Path =
+                args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
+            val instruments: InstrumentRegistry =
+                if (Files.exists(instrumentsPath)) {
+                    LayeredInstrumentRegistry(
+                        listOf(YamlInstrumentRegistry.load(instrumentsPath), StandardInstrumentRegistry),
+                    )
+                } else {
+                    if (args.option("instruments") != null) {
+                        throw SetupError("--instruments file not found: $instrumentsPath")
+                    }
+                    StandardInstrumentRegistry
+                }
+
+            val brokerKind =
+                when (val raw = args.option("broker")) {
+                    null, "paper" -> BrokerKind.PAPER
+                    "mt5-sim" -> BrokerKind.MT5_SIM
+                    else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
+                }
+            // Same config-driven halt/accounting construction the live daemon uses, so a strategy
+            // that would halt live halts at the same point in its backtest. The basis balance is
+            // the backtest's own starting balance.
+            val cfg = Config.load(Config.resolvePath(args.option("config")))
+            val executionConfig = executionConfig(args, cfg, brokerKind)
+            val accountingConfig = accountingConfig(args, cfg)
+            val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
+            val barReplay =
+                resolveBarReplay(
+                    args = args,
+                    dataRoot = dataRoot,
+                    from = from,
+                    to = to,
+                    symbols = symbols,
+                    streams = ast.streams,
+                    candleWindow = candleWindow,
+                    executionConfig = executionConfig,
+                )
+            val forceBars = barReplay.forceBars
+            val tickFills = barReplay.tickFills
+            val binaryBarStore = barReplay.binaryBarStore
+            val barWindows = barReplay.barWindows
+
+            val provisioner: () -> Unit = {
+                val allProvisionStreams =
+                    replaySymbols
+                        .map { brokerAndBare(it) }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
+                        .distinct()
+                        .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
+                val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
+                val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
+                val tickProvisionStreams =
+                    allProvisionStreams.filterNot { stream ->
+                        val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
+                        window != null &&
+                            hasCompleteFetchedBars(
+                                barStore,
+                                stream,
+                                window,
+                                provisionFrom,
+                                provisionTo,
+                            )
+                    }
+                val (fetchableStreams, validateOnlyStreams) =
+                    tickProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
+                // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
+                // completeness validation: it would otherwise scan the tick store and warn on holiday
+                // holes the bar run doesn't care about (pure waste + log noise every gate run).
+                if (!barReplay.forceBars && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
+                    BacktestDataProvisioner(store).ensure(
+                        streams = fetchableStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = !noFetch,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { defaultCalendars().calendarFor(it) },
+                    )
+                    BacktestDataProvisioner(store).ensure(
+                        streams = validateOnlyStreams,
+                        from = provisionFrom,
+                        to = provisionTo,
+                        fetchEnabled = false,
+                        allowIncomplete = args.flag("allow-incomplete"),
+                        calendarFor = { defaultCalendars().calendarFor(it) },
+                    )
+                }
+                // Macro series (MACRO:) provisioning from FRED. Fetch enough history before the
+                // window for the strategy's warmup (90 calendar days ~ 60 business days). Skipped on
+                // --no-fetch; hasRange avoids re-fetching a window the store already brackets.
+                val macroStreams = ast.streams.filter { it.qktSymbol in symbols && it.broker == "MACRO" }
+                if (macroStreams.isNotEmpty() && !noFetch && !provisionTo.isBefore(provisionFrom)) {
+                    val macroStore = MacroSeriesStore(Paths.get(dataRoot))
+                    val fredFetcher = FredSeriesFetcher(macroStore)
+                    val policyRateFetcher = PolicyRateSeriesFetcher(macroStore)
+                    val macroFrom = provisionFrom.minusDays(90)
+                    for (s in macroStreams) {
+                        if (!macroStore.hasRange(s.symbol, macroFrom, provisionTo)) {
+                            val policySeries = PolicyRateSeries.fromId(s.symbol)
+                            if (policySeries == null) {
+                                fredFetcher.fetch(s.symbol, macroFrom, provisionTo)
+                            } else {
+                                policyRateFetcher.fetch(policySeries, macroFrom, provisionTo)
+                            }
+                        }
+                    }
+                }
+            }
+
+            val haltConfig =
+                HaltConfig(
+                    maxDailyLoss = cfg.maxDailyLoss,
+                    maxDrawdownPct = cfg.maxDrawdownPct,
+                    maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
+                    totalDdBasis = cfg.totalDdBasis,
+                    dailyDdBasis = cfg.dailyDdBasis,
+                )
 
             return BacktestContext(
                 ast = ast,
@@ -543,19 +581,6 @@ class BacktestContext private constructor(
             compiled: com.qkt.dsl.portfolio.PortfolioCompiled,
             fetcherOverride: DataFetcher? = null,
         ): BacktestContext {
-            val unsupportedBarsFlag =
-                when {
-                    args.flag("bars") -> "--bars"
-                    args.option("bar-tf") != null -> "--bar-tf"
-                    args.flag("tick-fills") -> "--tick-fills"
-                    else -> null
-                }
-            if (unsupportedBarsFlag != null) {
-                throw SetupError(
-                    "$unsupportedBarsFlag is not supported for portfolio backtests; " +
-                        "run the validated full-tick tier until portfolio bar replay is wired",
-                )
-            }
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
             val declaredCapital = compiled.ast.capital
@@ -632,15 +657,6 @@ class BacktestContext private constructor(
             val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
             val barStore = LocalBarStore(root = Paths.get(dataRoot))
             val candleWindow = streams.firstOrNull()?.timeframe?.let { TimeWindow.parse(it) }
-            val barWindows: Map<String, TimeWindow> =
-                streams
-                    .groupBy { it.qktSymbol }
-                    .mapNotNull { (symbol, symbolStreams) ->
-                        symbolStreams
-                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
-                            .minByOrNull { it.durationMs }
-                            ?.let { symbol to it }
-                    }.toMap()
 
             val instrumentsPath: Path =
                 args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
@@ -664,6 +680,21 @@ class BacktestContext private constructor(
                 }
             val cfg = Config.load(Config.resolvePath(args.option("config")))
             val executionConfig = executionConfig(args, cfg, brokerKind)
+            val barReplay =
+                resolveBarReplay(
+                    args = args,
+                    dataRoot = dataRoot,
+                    from = from,
+                    to = to,
+                    symbols = symbols,
+                    streams = streams,
+                    candleWindow = candleWindow,
+                    executionConfig = executionConfig,
+                )
+            val forceBars = barReplay.forceBars
+            val tickFills = barReplay.tickFills
+            val binaryBarStore = barReplay.binaryBarStore
+            val barWindows = barReplay.barWindows
             val accountingConfig = accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
@@ -678,7 +709,7 @@ class BacktestContext private constructor(
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 val tickProvisionStreams =
                     allProvisionStreams.filterNot { stream ->
-                        val window = barWindows["${stream.broker}:${stream.bareSymbol}"]
+                        val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
                         window != null &&
                             hasCompleteFetchedBars(
                                 barStore,
@@ -690,7 +721,7 @@ class BacktestContext private constructor(
                     }
                 val (fetchableStreams, validateOnlyStreams) =
                     tickProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
-                if (!provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
+                if (!barReplay.forceBars && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
                         streams = fetchableStreams,
                         from = provisionFrom,
@@ -771,7 +802,10 @@ class BacktestContext private constructor(
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,
                 priceCollarFrac = cfg.priceCollarFrac,
+                forceBars = forceBars,
                 barWindows = barWindows,
+                binaryBarStore = binaryBarStore,
+                tickFills = tickFills,
             )
         }
 
