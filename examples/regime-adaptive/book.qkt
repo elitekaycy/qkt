@@ -1,0 +1,26 @@
+PORTFOLIO regime_adaptive VERSION 1 CAPITAL 10000
+
+# Example regime-adaptive portfolio. ADX(14) on hourly BTC selects between a
+# trend-following child and a mean-reversion child. The ALLOCATE block assigns
+# regime-weighted capital fractions, so both children can be active while the
+# dominant regime receives the larger share of risk.
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1h
+
+IMPORT 'trend.qkt'   AS trend
+IMPORT 'meanrev.qkt' AS meanrev
+
+REGIMES
+    NAME market_regime
+    STATE trend WHEN adx(btc, 14) > 25
+    STATE range DEFAULT
+
+ALLOCATE
+    METHOD regime_weighted
+    trend -> trend 0.8, meanrev 0.2
+    range -> trend 0.2, meanrev 0.8
+
+RULES
+    RUN trend
+    RUN meanrev
