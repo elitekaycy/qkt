@@ -323,6 +323,52 @@ class BacktestCommandPortfolioTest {
     }
 
     @Test
+    fun `regime portfolio with HOLD child flattens non-HOLD child on regime switch`(
+        @TempDir tmp: Path,
+    ) {
+        val dataRoot = tmp.resolve("data")
+        seedTicks(dataRoot, days = 3)
+        buildBars(dataRoot, "15m")
+
+        Files.writeString(
+            tmp.resolve("trend.qkt"),
+            backtestChild("trend"),
+        )
+        Files.writeString(
+            tmp.resolve("meanrev.qkt"),
+            backtestChild("meanrev"),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1 CAPITAL 10000
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 15m
+            IMPORT 'trend.qkt'   AS trend HOLD
+            IMPORT 'meanrev.qkt' AS meanrev
+            REGIMES
+              NAME regime
+              STATE up   WHEN gold.close > gold.open
+              STATE down DEFAULT
+            ALLOCATE
+              METHOD regime_weighted
+              up   -> trend 0.8, meanrev 0.2
+              down -> trend 0.2, meanrev 0.8
+            RULES
+              WHEN gold.close > gold.open RUN trend
+              WHEN gold.close <= gold.open RUN meanrev
+            """.trimIndent(),
+        )
+
+        val (code, out) = runPortfolioBacktest(portfolio, dataRoot)
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out).contains("\"perStrategy\":{")
+        assertThat(out).contains("book:trend")
+        assertThat(out).contains("book:meanrev")
+    }
+
+    @Test
     fun `portfolio backtest replays each symbol at its finest declared timeframe`(
         @TempDir tmp: Path,
     ) {

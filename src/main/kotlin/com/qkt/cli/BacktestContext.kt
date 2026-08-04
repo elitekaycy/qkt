@@ -8,6 +8,7 @@ import com.qkt.backtest.BacktestDataProvisioner
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ExecutionPreset
 import com.qkt.backtest.ExecutionSimulationConfig
+import com.qkt.backtest.GatedChild
 import com.qkt.backtest.ProvisionStream
 import com.qkt.backtest.SlippageSpec
 import com.qkt.broker.mt5.SymbolCalendars
@@ -793,7 +794,18 @@ class BacktestContext private constructor(
                 haltConfig = haltConfig,
                 provisioner = provisioner,
                 replaySymbols = replaySymbols,
-                strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
+                strategiesOverride = {
+                    compiled.children.map { child ->
+                        child.strategyId to
+                            GatedChild(
+                                strategyId = child.strategyId,
+                                inner = child.compiled,
+                                hold = child.hold,
+                                gateFor = gateFor,
+                                flattenSymbols = child.symbols,
+                            )
+                    }
+                },
                 gateFor = gateFor,
                 preCandle = preCandle,
                 regimeWeights = regimeWeights,

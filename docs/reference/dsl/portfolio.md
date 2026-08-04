@@ -278,7 +278,7 @@ LET names make portfolio rules read like English.
 - `--tick-fills` drives signals from bars but resolves fills on real ticks.
 - `--report-dir <dir>` writes the standard report bundle (`result.json`, `trades.csv`, per-strategy equity curves, etc.) in the same format as a single-strategy backtest.
 
-Regime-weighted allocation and `WHEN..RUN` gating use the same `PortfolioGate` + `BookRiskController` code in backtest and live, so results are directly comparable.
+Regime-weighted allocation and `WHEN..RUN` gating use the same `PortfolioGate` + `BookRiskController` code in backtest and live, so results are directly comparable. A child imported without `HOLD` is flattened on deactivation in backtest exactly as the live supervisor would, while a `HOLD` child keeps its positions and continues to manage exits.
 
 ## What this composes with
 

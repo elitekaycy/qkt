@@ -16,6 +16,11 @@ sealed class Signal {
         val symbol: String,
         val size: BigDecimal,
         val exitHook: com.qkt.dsl.compile.ExitHookRef? = null,
+        /**
+         * When true the pipeline submits the order even if the portfolio gate is inactive.
+         * Used by regime-aware backtests to flatten a child when its gate closes.
+         */
+        val force: Boolean = false,
     ) : Signal()
 
     /** Open a short position at market (or close a long, depending on current state). */
@@ -23,6 +28,11 @@ sealed class Signal {
         val symbol: String,
         val size: BigDecimal,
         val exitHook: com.qkt.dsl.compile.ExitHookRef? = null,
+        /**
+         * When true the pipeline submits the order even if the portfolio gate is inactive.
+         * Used by regime-aware backtests to flatten a child when its gate closes.
+         */
+        val force: Boolean = false,
     ) : Signal()
 
     /** Submit a fully-constructed [OrderRequest] — limit, stop, bracket, scale-out, etc. */

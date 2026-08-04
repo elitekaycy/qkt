@@ -371,7 +371,10 @@ class TradingPipeline(
                 }
             }
             emit = { sig ->
-                if (gate() && gateFor(strategyId)) {
+                val force =
+                    (sig is com.qkt.strategy.Signal.Buy && sig.force) ||
+                        (sig is com.qkt.strategy.Signal.Sell && sig.force)
+                if (force || (gate() && gateFor(strategyId))) {
                     rawEmit(sig)
                 } else {
                     ctx.submissions.recordSuppressed()
