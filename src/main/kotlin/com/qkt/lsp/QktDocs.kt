@@ -368,6 +368,20 @@ object QktDocs {
             "FLOOR" to doc("floor(x)", "Largest integer not greater than x."),
             "CEIL" to doc("ceil(x)", "Smallest integer not less than x."),
             "ROUND" to doc("round(x)", "Nearest integer, halves rounded away from zero."),
+            "NORMALIZE" to
+                doc(
+                    "normalize(self, other, ...)",
+                    "Min-max scaled score of the first value among all the values, in [0, 1]. " +
+                        "e.g. normalize(3, 1, 5) = 0.5. Returns 0 when all values are equal. " +
+                        "Use softmax for probability weights that sum to 1.",
+                ),
+            "SOFTMAX" to
+                doc(
+                    "softmax(self, other, ...)",
+                    "Softmax probability weight of the first value among all the values, in (0, 1). " +
+                        "Symmetric calls across streams sum to 1, making it useful for regime " +
+                        "probability weighting. Numerically stable for large inputs.",
+                ),
             "CALENDAR_WINDOW" to
                 doc(
                     "calendar_window(startMonth, startDay, endMonth, endDay)",
@@ -404,7 +418,15 @@ object QktDocs {
             "SCHEDULE" to "Time-triggered action block: `SCHEDULE AT 09:00 UTC THEN ...`.",
             "WHEN" to "Condition of a rule: `WHEN <condition> THEN <action>`.",
             "THEN" to "Separates a rule's condition from the action it fires.",
+            "RUN" to "Portfolio action: activate a child strategy, optionally with `WHEN` gating: `RUN <alias>`.",
             "EVERY" to "Stream bar interval in `SYMBOLS`, e.g. `EVERY 1m`, `EVERY 5m`, `EVERY 1h`.",
+            "IMPORT" to "Portfolio: import a child strategy file: `IMPORT '<path>' AS <alias> [HOLD]`.",
+            "HOLD" to "Portfolio import modifier: keep the child active for position management when its gate closes.",
+            "CAPITAL" to "Portfolio book capital: `CAPITAL <amount>` used for `RISK OF BOOK` and book-risk sizing.",
+            "REGIMES" to "Portfolio regime block defining states and conditional allocations.",
+            "STATE" to "Portfolio regime state: `STATE <name> WHEN <condition>` or `STATE <name> DEFAULT`.",
+            "ALLOCATE" to "Portfolio allocation block: `ALLOCATE METHOD <method> <regime> -> <alias> <weight>, ...`.",
+            "METHOD" to "Portfolio allocation method, e.g. `regime_weighted` or `inverse_vol`.",
             "BUY" to "Action: open or add to a long position. `BUY <alias> SIZING <expr>`.",
             "SELL" to "Action: open or add to a short position. `SELL <alias> SIZING <expr>`.",
             "CLOSE" to "Action: close the position on a stream. `CLOSE <alias>`.",

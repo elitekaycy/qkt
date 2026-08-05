@@ -1,0 +1,13 @@
+STRATEGY meanrev VERSION 1
+
+# Mean-reversion child. Buys short-term dips when price falls below the
+# longer-term SMA and RSI is oversold.
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1h
+
+RULES
+    WHEN btc.close < sma(btc.close, 20)
+     AND rsi(btc.close, 14) < 30
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 1 PCT RISK BRACKET { STOP LOSS PCT 3, TAKE PROFIT AT 100 }
