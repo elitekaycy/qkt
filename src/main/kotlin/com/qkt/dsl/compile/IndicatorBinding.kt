@@ -205,6 +205,10 @@ class IndicatorBinding private constructor(
         /** Stream aliases that a volume-weighted indicator (VWAP/OBV) binds to — the feed must supply volume. */
         val volumeRequiringAliases: Set<String> get() = volumeAliases
 
+        /** Largest [IndicatorOutput.warmupBars] across all bound indicators; 0 if none. */
+        val maxWarmupBars: Int
+            get() = bindings.maxOfOrNull { it.indicator.warmupBars } ?: 0
+
         fun bind(call: IndicatorCall): IndicatorBinding {
             val spec = IndicatorRegistry.spec(call.name) ?: error("Unknown indicator: ${call.name}")
             require(call.args.size == spec.arity) {

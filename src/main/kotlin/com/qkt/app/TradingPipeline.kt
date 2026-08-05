@@ -79,7 +79,9 @@ class TradingPipeline(
     val onAccountedFill: (Trade, ConvertedMoney, String, com.qkt.backtest.FillState) -> Unit = { _, _, _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
+    val preCandle: (Candle) -> Unit = {},
     val gate: () -> Boolean = { true },
+    val gateFor: (String) -> Boolean = { true },
     val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /**
      * Per-instrument venue metadata (Phase 30). Default [NoopInstrumentRegistry] preserves
@@ -265,6 +267,8 @@ class TradingPipeline(
 
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick) }
 
+        bus.subscribe<CandleEvent> { e -> preCandle(e.candle) }
+
         strategies.forEach { (strategyId, strategy) ->
             tradeHistory.restore(strategyId)
             val ctx =
@@ -367,7 +371,10 @@ class TradingPipeline(
                 }
             }
             emit = { sig ->
-                if (gate()) {
+                val force =
+                    (sig is com.qkt.strategy.Signal.Buy && sig.force) ||
+                        (sig is com.qkt.strategy.Signal.Sell && sig.force)
+                if (force || (gate() && gateFor(strategyId))) {
                     rawEmit(sig)
                 } else {
                     ctx.submissions.recordSuppressed()

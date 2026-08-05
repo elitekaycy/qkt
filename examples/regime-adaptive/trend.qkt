@@ -1,0 +1,12 @@
+STRATEGY trend VERSION 1
+
+# Trend-following child. Buys pullbacks to a rising SMA when the portfolio
+# has selected the trend regime. The exact entry rule is intentionally simple
+# so the example stays readable.
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1h
+
+RULES
+    WHEN btc.close > sma(btc.close, 20) AND POSITION.btc = 0
+    THEN BUY btc SIZING 1 PCT RISK BRACKET { STOP LOSS PCT 5, TAKE PROFIT AT 200 }

@@ -33,7 +33,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 |---|---|
 | `qkt parse <file>` | Parse-and-validate a `.qkt` file; pretty-print errors. |
 | `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--param fast=12` overrides a PARAM/LET for the run. |
-| `qkt sweep <file> --from --to --param NAME=v1,v2 [--rank sharpe] [--parallelism N] [--json]` | Grid-search the cartesian product of `--param` axes; ranks runs by `--rank` (`sharpe`\|`calmar`\|`profitFactor`\|`totalPnL`\|`winRate`). |
+| `qkt sweep <file> --from --to --param NAME=v1,v2 [--rank sharpe] [--parallelism N] [--json]` | Grid-search the cartesian product of `--param` axes; ranks runs by `--rank` (`sharpe`\|`calmar`\|`profitFactor`\|`totalPnL`\|`winRate`). JSON rows expose commission-net `totalPnL`, `commissionPaid`, daily P&L, and fill-cost inputs for downstream cost reconciliation. |
 | `qkt walkforward <file> --from --to --param NAME=v1,v2 --train 90d --test 30d --step 30d [--rank]` | Rolling in-sample/out-of-sample validation; reports per-fold winners, winner stability, and mean IS-vs-OOS score. |
 | `qkt run <file>` | Foreground paper-trade run. |
 
@@ -69,6 +69,10 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   `accountRealized` retained as the legacy gross alias. Dashboards should graph
   and aggregate the net fields unless explicitly showing a gross-vs-cost
   reconciliation.
+- Commission-bearing reports satisfy `sum(grossAccountRealized) -
+  sum(netAccountRealized) = commissionPaid + venue fill costs` when every fill has conversion
+  evidence. Entry commissions therefore appear as zero gross PnL and negative net PnL; the gross
+  field must not be populated with the already-net amount.
 - `trades.csv` keeps `side` as the executed fill side and separately exports
   `positionEffect` (`OPEN_*`, `INCREASE_*`, `REDUCE_*`, `CLOSE_*`, or
   `REVERSE_TO_*`) plus the actual atomic `orderType`. Consumers must not rename

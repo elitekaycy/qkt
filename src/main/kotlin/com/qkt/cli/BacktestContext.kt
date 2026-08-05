@@ -8,14 +8,17 @@ import com.qkt.backtest.BacktestDataProvisioner
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ExecutionPreset
 import com.qkt.backtest.ExecutionSimulationConfig
+import com.qkt.backtest.GatedChild
 import com.qkt.backtest.ProvisionStream
 import com.qkt.backtest.SlippageSpec
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.candles.TimeWindow
+import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.portfolio.PortfolioGate
 import com.qkt.dsl.portfolio.capitalAllocations
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceHasher
@@ -93,6 +96,9 @@ class BacktestContext private constructor(
     private val barWindows: Map<String, TimeWindow> = emptyMap(),
     private val binaryBarStore: BinaryBarStore? = null,
     private val tickFills: Boolean = false,
+    private val gateFor: (String) -> Boolean = { true },
+    private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
+    private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -177,6 +183,9 @@ class BacktestContext private constructor(
             barWindows = barWindows,
             binaryBarStore = binaryBarStore,
             tickFills = tickFills,
+            gateFor = gateFor,
+            preCandle = preCandle,
+            regimeWeights = regimeWeights,
         )
     }
 
@@ -230,6 +239,131 @@ class BacktestContext private constructor(
                 day = day.plusDays(1)
             }
             return true
+        }
+
+        private data class BarReplayConfig(
+            val forceBars: Boolean,
+            val tickFills: Boolean,
+            val binaryBarStore: BinaryBarStore,
+            val finestDeclared: Map<String, TimeWindow>,
+            val barWindows: Map<String, TimeWindow>,
+        )
+
+        /**
+         * Resolve bar-replay parameters for a backtest. Validates --bars/--tick-fills constraints,
+         * chooses the coarsest built timeframe that divides each declared timeframe, and checks
+         * bar coverage so portfolio and single-strategy backtests fail identically.
+         */
+        private fun resolveBarReplay(
+            args: Args,
+            dataRoot: String,
+            from: Instant,
+            to: Instant,
+            symbols: List<String>,
+            streams: List<com.qkt.dsl.ast.StreamDecl>,
+            candleWindow: TimeWindow?,
+            executionConfig: ExecutionSimulationConfig,
+        ): BarReplayConfig {
+            val forceBars = args.flag("bars")
+            val tickFills = args.flag("tick-fills")
+            require(!tickFills || forceBars) {
+                "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
+            }
+            require(!forceBars || tickFills || executionConfig.brokerKind != BrokerKind.MT5_SIM) {
+                "--bars with --broker mt5-sim is unsafe: synthetic bar extremes do not preserve " +
+                    "MT5 trigger prices or market spread. Use --bars --tick-fills or full tick replay"
+            }
+            require(!tickFills || executionConfig.latencyMs == 0L) {
+                "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
+                    "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
+            }
+            require(
+                !tickFills ||
+                    streams
+                        .map { it.timeframe }
+                        .distinct()
+                        .size <= 1,
+            ) {
+                "--tick-fills is not valid for mixed-timeframe strategies: a finer-stream close can place " +
+                    "a cross-symbol order after the other symbol's bar was already resolved"
+            }
+            val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
+            val barTfOverride = args.option("bar-tf")?.let { TimeWindow.parse(it) }
+            val finestDeclared: Map<String, TimeWindow> =
+                streams
+                    .filter { it.qktSymbol in symbols }
+                    .groupBy { it.qktSymbol }
+                    .mapNotNull { (symbol, symbolStreams) ->
+                        symbolStreams
+                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
+                            .minByOrNull { it.durationMs }
+                            ?.let { symbol to it }
+                    }.toMap()
+            val barWindows: Map<String, TimeWindow> =
+                if (!forceBars) {
+                    finestDeclared
+                } else {
+                    finestDeclared.mapValues { (sym, declared) ->
+                        val (broker, bare) = brokerAndBare(sym)
+                        if (barTfOverride != null) {
+                            require(declared.durationMs % barTfOverride.durationMs == 0L) {
+                                "--bar-tf ${barTfOverride.canonicalSpec()} must divide $sym's " +
+                                    "declared ${declared.canonicalSpec()}"
+                            }
+                            barTfOverride
+                        } else {
+                            binaryBarStore
+                                .builtTimeframes(broker, bare)
+                                .filter { declared.durationMs % it.durationMs == 0L }
+                                .maxByOrNull { it.durationMs }
+                                ?: declared // no usable built tf — let the guardrail below report it
+                        }
+                    }
+                }
+            if (forceBars) {
+                val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
+                val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
+                for (sym in symbols) {
+                    val tf = barWindows[sym] ?: candleWindow ?: continue
+                    val (broker, bare) = brokerAndBare(sym)
+                    val coverage =
+                        com.qkt.marketdata.store.BarCompletenessValidator.validate(
+                            binaryBarStore,
+                            broker,
+                            bare,
+                            tf,
+                            fromDay,
+                            toDay,
+                            defaultCalendars().calendarFor(bare),
+                        )
+                    System.err.println(
+                        "qkt: bar coverage $sym ${coverage.coveredTradingDays}/${coverage.requestedTradingDays} " +
+                            "trading days (${tf.canonicalSpec()})",
+                    )
+                    if (coverage.missingDays.isNotEmpty()) {
+                        val message =
+                            "--bars: incomplete built bars for $sym: ${coverage.coveredTradingDays}/" +
+                                "${coverage.requestedTradingDays} trading days; missing " +
+                                coverage.missingDays.joinToString(",") +
+                                ". Run: qkt data build-bars $bare --tf ${tf.canonicalSpec()} " +
+                                "--from $fromDay --to ${toDay.plusDays(1)}"
+                        if (!args.flag("allow-incomplete")) {
+                            throw com.qkt.backtest.IncompleteDataException(
+                                "$message\n  re-run with --allow-incomplete to proceed anyway",
+                            )
+                        }
+                        System.err.println("qkt: WARNING — $message")
+                    }
+                }
+                System.err.println("qkt: --bars research tier — bar-approximated intrabar fills; not for grading")
+            }
+            return BarReplayConfig(
+                forceBars = forceBars,
+                tickFills = tickFills,
+                binaryBarStore = binaryBarStore,
+                finestDeclared = finestDeclared,
+                barWindows = barWindows,
+            )
         }
 
         fun build(
@@ -289,16 +423,6 @@ class BacktestContext private constructor(
                     .firstOrNull()
                     ?.timeframe
                     ?.let { TimeWindow.parse(it) }
-            val finestDeclared: Map<String, TimeWindow> =
-                ast.streams
-                    .filter { it.qktSymbol in symbols }
-                    .groupBy { it.qktSymbol }
-                    .mapNotNull { (symbol, streams) ->
-                        streams
-                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
-                            .minByOrNull { it.durationMs }
-                            ?.let { symbol to it }
-                    }.toMap()
 
             val instrumentsPath: Path =
                 args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
@@ -327,6 +451,21 @@ class BacktestContext private constructor(
             val executionConfig = executionConfig(args, cfg, brokerKind)
             val accountingConfig = accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
+            val barReplay =
+                resolveBarReplay(
+                    args = args,
+                    dataRoot = dataRoot,
+                    from = from,
+                    to = to,
+                    symbols = symbols,
+                    streams = ast.streams,
+                    candleWindow = candleWindow,
+                    executionConfig = executionConfig,
+                )
+            val forceBars = barReplay.forceBars
+            val tickFills = barReplay.tickFills
+            val binaryBarStore = barReplay.binaryBarStore
+            val barWindows = barReplay.barWindows
 
             val provisioner: () -> Unit = {
                 val allProvisionStreams =
@@ -339,7 +478,7 @@ class BacktestContext private constructor(
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 val tickProvisionStreams =
                     allProvisionStreams.filterNot { stream ->
-                        val window = finestDeclared["${stream.broker}:${stream.bareSymbol}"]
+                        val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
                         window != null &&
                             hasCompleteFetchedBars(
                                 barStore,
@@ -354,7 +493,7 @@ class BacktestContext private constructor(
                 // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
                 // completeness validation: it would otherwise scan the tick store and warn on holiday
                 // holes the bar run doesn't care about (pure waste + log noise every gate run).
-                if (!args.flag("bars") && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
+                if (!barReplay.forceBars && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
                         streams = fetchableStreams,
                         from = provisionFrom,
@@ -403,98 +542,6 @@ class BacktestContext private constructor(
                     dailyDdBasis = cfg.dailyDdBasis,
                 )
 
-            // --bars research tier: feed each symbol at the COARSEST built tf that divides its finest
-            // declared tf, and let CandleHub aggregate up to every declared tf (rollup is exact). So a
-            // 30m strategy can replay off 1m bars and a 1h strategy off 30m bars — building 1m + 30m
-            // covers the whole standard ladder, no need to pre-build every tf. Fail loud if nothing
-            // usable is built, naming the build-bars command — never silently fall back to slow ticks.
-            val forceBars = args.flag("bars")
-            val tickFills = args.flag("tick-fills")
-            require(!tickFills || forceBars) {
-                "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
-            }
-            require(!forceBars || tickFills || executionConfig.brokerKind != BrokerKind.MT5_SIM) {
-                "--bars with --broker mt5-sim is unsafe: synthetic bar extremes do not preserve " +
-                    "MT5 trigger prices or market spread. Use --bars --tick-fills or full tick replay"
-            }
-            require(!tickFills || executionConfig.latencyMs == 0L) {
-                "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
-                    "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
-            }
-            require(
-                !tickFills ||
-                    ast.streams
-                        .map { it.timeframe }
-                        .distinct()
-                        .size <= 1,
-            ) {
-                "--tick-fills is not valid for mixed-timeframe strategies: a finer-stream close can place " +
-                    "a cross-symbol order after the other symbol's bar was already resolved"
-            }
-            val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
-            // --bar-tf pins the fill-resolution feed to a specific built tf (e.g. 1m) instead of the
-            // coarsest divisor: finer intrabar fills (fewer bars span both SL and TP) for more cost than
-            // coarse bars, less than ticks. Must divide each strategy's declared tf so rollup stays exact.
-            val barTfOverride = args.option("bar-tf")?.let { TimeWindow.parse(it) }
-            val barWindows: Map<String, TimeWindow> =
-                if (!forceBars) {
-                    finestDeclared
-                } else {
-                    finestDeclared.mapValues { (sym, declared) ->
-                        val (broker, bare) = brokerAndBare(sym)
-                        if (barTfOverride != null) {
-                            require(declared.durationMs % barTfOverride.durationMs == 0L) {
-                                "--bar-tf ${barTfOverride.canonicalSpec()} must divide $sym's " +
-                                    "declared ${declared.canonicalSpec()}"
-                            }
-                            barTfOverride
-                        } else {
-                            binaryBarStore
-                                .builtTimeframes(broker, bare)
-                                .filter { declared.durationMs % it.durationMs == 0L }
-                                .maxByOrNull { it.durationMs }
-                                ?: declared // no usable built tf — let the guardrail below report it
-                        }
-                    }
-                }
-            if (forceBars) {
-                val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
-                val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                for (sym in symbols) {
-                    val tf = barWindows[sym] ?: candleWindow ?: continue
-                    val (broker, bare) = brokerAndBare(sym)
-                    val coverage =
-                        com.qkt.marketdata.store.BarCompletenessValidator.validate(
-                            binaryBarStore,
-                            broker,
-                            bare,
-                            tf,
-                            fromDay,
-                            toDay,
-                            defaultCalendars().calendarFor(bare),
-                        )
-                    System.err.println(
-                        "qkt: bar coverage $sym ${coverage.coveredTradingDays}/${coverage.requestedTradingDays} " +
-                            "trading days (${tf.canonicalSpec()})",
-                    )
-                    if (coverage.missingDays.isNotEmpty()) {
-                        val message =
-                            "--bars: incomplete built bars for $sym: ${coverage.coveredTradingDays}/" +
-                                "${coverage.requestedTradingDays} trading days; missing " +
-                                coverage.missingDays.joinToString(",") +
-                                ". Run: qkt data build-bars $bare --tf ${tf.canonicalSpec()} " +
-                                "--from $fromDay --to ${toDay.plusDays(1)}"
-                        if (!args.flag("allow-incomplete")) {
-                            throw com.qkt.backtest.IncompleteDataException(
-                                "$message\n  re-run with --allow-incomplete to proceed anyway",
-                            )
-                        }
-                        System.err.println("qkt: WARNING — $message")
-                    }
-                }
-                System.err.println("qkt: --bars research tier — bar-approximated intrabar fills; not for grading")
-            }
-
             return BacktestContext(
                 ast = ast,
                 from = from,
@@ -527,34 +574,14 @@ class BacktestContext private constructor(
         /**
          * Backtest a PORTFOLIO file: its children run as N attributed strategies on one engine
          * (strategyId `<portfolio>:<alias>`) sharing one account, with the book-risk layer from
-         * config. Regime WHEN..RUN gates are not yet applied in backtest — children run always-on.
+         * config. WHEN..RUN portfolio rules are evaluated by a shared [PortfolioGate] and applied
+         * as per-strategy signal gating, matching the live per-child topology.
          */
         fun buildPortfolio(
             args: Args,
             compiled: com.qkt.dsl.portfolio.PortfolioCompiled,
             fetcherOverride: DataFetcher? = null,
         ): BacktestContext {
-            val hasRegimeGates =
-                compiled.ast.rules.any { it is com.qkt.dsl.ast.WhenRun }
-            if (hasRegimeGates) {
-                throw SetupError(
-                    "portfolio backtest cannot truthfully model WHEN..RUN gates " +
-                        "with the live per-child topology; refusing a misleading result",
-                )
-            }
-            val unsupportedBarsFlag =
-                when {
-                    args.flag("bars") -> "--bars"
-                    args.option("bar-tf") != null -> "--bar-tf"
-                    args.flag("tick-fills") -> "--tick-fills"
-                    else -> null
-                }
-            if (unsupportedBarsFlag != null) {
-                throw SetupError(
-                    "$unsupportedBarsFlag is not supported for portfolio backtests; " +
-                        "run the validated full-tick tier until portfolio bar replay is wired",
-                )
-            }
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
             val declaredCapital = compiled.ast.capital
@@ -575,6 +602,35 @@ class BacktestContext private constructor(
 
             val streams = compiled.children.flatMap { it.ast.streams }
             val symbols = streams.map { it.qktSymbol }.distinct()
+
+            // Build the shared portfolio gate so WHEN..RUN rules suppress child signals in backtest
+            // exactly as PortfolioSupervisor does in live. The gate is fed closed candles before
+            // strategies evaluate them, so the gate state is current for each bar.
+            val portfolioCalendar =
+                symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
+                    ?: TradingCalendar.crypto()
+            val portfolioGate =
+                PortfolioGate(
+                    ast = compiled.ast,
+                    clock = FixedClock(time = from.toEpochMilli()),
+                    calendar = portfolioCalendar,
+                ).also {
+                    it.prepare()
+                    it.initialState()
+                }
+            val gateFor: (String) -> Boolean = { strategyId ->
+                portfolioGate.currentState().activeByAlias[strategyId.substringAfter(":")] == true
+            }
+            val preCandle: (com.qkt.marketdata.Candle) -> Unit = { candle ->
+                portfolioGate.onCandle(candle)
+            }
+            val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
+            val regimeWeights: () -> Map<String, BigDecimal> = {
+                portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
+                    aliasToStrategyId[alias] ?: alias
+                }
+            }
+
             val datasetContext =
                 datasetContext(
                     args,
@@ -602,15 +658,6 @@ class BacktestContext private constructor(
             val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
             val barStore = LocalBarStore(root = Paths.get(dataRoot))
             val candleWindow = streams.firstOrNull()?.timeframe?.let { TimeWindow.parse(it) }
-            val barWindows: Map<String, TimeWindow> =
-                streams
-                    .groupBy { it.qktSymbol }
-                    .mapNotNull { (symbol, symbolStreams) ->
-                        symbolStreams
-                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
-                            .minByOrNull { it.durationMs }
-                            ?.let { symbol to it }
-                    }.toMap()
 
             val instrumentsPath: Path =
                 args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
@@ -634,6 +681,21 @@ class BacktestContext private constructor(
                 }
             val cfg = Config.load(Config.resolvePath(args.option("config")))
             val executionConfig = executionConfig(args, cfg, brokerKind)
+            val barReplay =
+                resolveBarReplay(
+                    args = args,
+                    dataRoot = dataRoot,
+                    from = from,
+                    to = to,
+                    symbols = symbols,
+                    streams = streams,
+                    candleWindow = candleWindow,
+                    executionConfig = executionConfig,
+                )
+            val forceBars = barReplay.forceBars
+            val tickFills = barReplay.tickFills
+            val binaryBarStore = barReplay.binaryBarStore
+            val barWindows = barReplay.barWindows
             val accountingConfig = accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
@@ -648,7 +710,7 @@ class BacktestContext private constructor(
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
                 val tickProvisionStreams =
                     allProvisionStreams.filterNot { stream ->
-                        val window = barWindows["${stream.broker}:${stream.bareSymbol}"]
+                        val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
                         window != null &&
                             hasCompleteFetchedBars(
                                 barStore,
@@ -660,7 +722,7 @@ class BacktestContext private constructor(
                     }
                 val (fetchableStreams, validateOnlyStreams) =
                     tickProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
-                if (!provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
+                if (!barReplay.forceBars && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
                     BacktestDataProvisioner(store).ensure(
                         streams = fetchableStreams,
                         from = provisionFrom,
@@ -688,6 +750,30 @@ class BacktestContext private constructor(
                     totalDdBasis = cfg.totalDdBasis,
                     dailyDdBasis = cfg.dailyDdBasis,
                 )
+            val effectiveBookRiskConfig =
+                if (compiled.ast.allocate != null && declaredCapital != null) {
+                    val base =
+                        cfg.bookRisk ?: com.qkt.risk.book
+                            .BookRiskConfig()
+                    val rebalanceBars =
+                        compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
+                            candleWindow?.let { window ->
+                                BigDecimal(durationMs)
+                                    .divide(BigDecimal(window.durationMs), 0, java.math.RoundingMode.CEILING)
+                                    .toInt()
+                            } ?: 0
+                        } ?: 0
+                    base.copy(
+                        capital = base.capital ?: declaredCapital,
+                        allocation =
+                            com.qkt.risk.book.Allocation(
+                                method = com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED,
+                                rebalanceEveryBars = rebalanceBars,
+                            ),
+                    )
+                } else {
+                    cfg.bookRisk
+                }
 
             return BacktestContext(
                 ast = compiled.children.first().ast,
@@ -708,13 +794,30 @@ class BacktestContext private constructor(
                 haltConfig = haltConfig,
                 provisioner = provisioner,
                 replaySymbols = replaySymbols,
-                strategiesOverride = { compiled.children.map { it.strategyId to it.compiled } },
-                bookRiskConfig = cfg.bookRisk,
+                strategiesOverride = {
+                    compiled.children.map { child ->
+                        child.strategyId to
+                            GatedChild(
+                                strategyId = child.strategyId,
+                                inner = child.compiled,
+                                hold = child.hold,
+                                gateFor = gateFor,
+                                flattenSymbols = child.symbols,
+                            )
+                    }
+                },
+                gateFor = gateFor,
+                preCandle = preCandle,
+                regimeWeights = regimeWeights,
+                bookRiskConfig = effectiveBookRiskConfig,
                 perStrategyRisk = cfg.perStrategyRisk,
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,
                 priceCollarFrac = cfg.priceCollarFrac,
+                forceBars = forceBars,
                 barWindows = barWindows,
+                binaryBarStore = binaryBarStore,
+                tickFills = tickFills,
             )
         }
 
