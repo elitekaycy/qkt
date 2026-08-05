@@ -98,6 +98,22 @@ class ReplayEngine(
     private val priceCollarFrac: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
+     * Per-strategy gate for portfolio regime rules. Default always-true keeps single-strategy
+     * backtests unchanged; portfolio backtests supply a gate driven by [PortfolioGate].
+     */
+    private val gateFor: (String) -> Boolean = { true },
+    /**
+     * Hook called before strategies process a closed candle. Portfolio backtests use this to
+     * advance [com.qkt.dsl.portfolio.PortfolioGate] state so the gate is current for the bar being evaluated.
+     */
+    private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
+    /**
+     * Current regime-weight vector for [com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED].
+     * Updated once per closed candle before strategy handlers run, so order scaling uses the
+     * current bar's allocation.
+     */
+    private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+    /**
      * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
      * rather than the synthetic bar extreme the triggering tick carries. See
      * [com.qkt.broker.PaperBroker.fillAtTriggerPrice]. Off (and unused) on the tick path.
@@ -441,6 +457,11 @@ class ReplayEngine(
                     tape.add(TapeEvent.Rejected(currentTimestamp, e.request.symbol, e.reason))
                 },
                 onCandle = { barsClosed++ },
+                preCandle = { candle ->
+                    this.preCandle(candle)
+                    bookRiskController?.setRegimeWeights(regimeWeights())
+                },
+                gateFor = gateFor,
                 instruments = instruments,
                 commissionBook = commissionBook,
                 accounting = accounting,

@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.AggFn
 import com.qkt.dsl.ast.Aggregate
+import com.qkt.dsl.ast.AllocateBlock
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
@@ -75,8 +76,13 @@ import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.ParamDecl
+import com.qkt.dsl.ast.PortfolioAllocationMethod
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.RegimeBlock
+import com.qkt.dsl.ast.RegimeConditionalState
+import com.qkt.dsl.ast.RegimeDefaultState
+import com.qkt.dsl.ast.RegimeState
 import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
@@ -203,6 +209,20 @@ class Parser(
             tryParse { parseImport() }?.let { imports.add(it) }
         }
 
+        val regimes =
+            if (peek().kind == TokenKind.REGIMES) {
+                tryParse { parseRegimes() }
+            } else {
+                null
+            }
+
+        val allocate =
+            if (peek().kind == TokenKind.ALLOCATE) {
+                tryParse { parseAllocate() }
+            } else {
+                null
+            }
+
         val rules = mutableListOf<com.qkt.dsl.ast.PortfolioRule>()
         if (peek().kind == TokenKind.RULES) {
             advance()
@@ -216,7 +236,7 @@ class Parser(
         return try {
             ParseResult.Success(
                 com.qkt.dsl.ast
-                    .PortfolioAst(name, version, streams, imports, rules, capital),
+                    .PortfolioAst(name, version, streams, imports, rules, capital, regimes, allocate),
             )
         } catch (e: IllegalArgumentException) {
             ParseResult.Failure(
@@ -291,6 +311,86 @@ class Parser(
             } while (match(TokenKind.COMMA))
         }
         expect(TokenKind.RBRACE, "expected '}' to close OVERRIDE")
+        return out
+    }
+
+    internal fun parseRegimes(): RegimeBlock {
+        expect(TokenKind.REGIMES, "expected REGIMES")
+        expect(TokenKind.NAME, "expected NAME after REGIMES")
+        val blockName = expect(TokenKind.IDENT, "expected regime block name").lexeme
+        val states = mutableListOf<RegimeState>()
+        while (peek().kind == TokenKind.STATE) {
+            states.add(parseRegimeState())
+        }
+        return RegimeBlock(blockName, states)
+    }
+
+    internal fun parseRegimeState(): RegimeState {
+        expect(TokenKind.STATE, "expected STATE")
+        val name = expect(TokenKind.IDENT, "expected state name").lexeme
+        return when (peek().kind) {
+            TokenKind.WHEN -> {
+                advance()
+                RegimeConditionalState(name, parseExpr())
+            }
+            TokenKind.DEFAULT -> {
+                advance()
+                RegimeDefaultState(name)
+            }
+            else -> error("expected WHEN or DEFAULT after STATE '$name'")
+        }
+    }
+
+    internal fun parseAllocate(): AllocateBlock {
+        expect(TokenKind.ALLOCATE, "expected ALLOCATE")
+        expect(TokenKind.METHOD, "expected METHOD after ALLOCATE")
+        val method = parseAllocationMethod()
+        val rebalance =
+            if (peek().kind == TokenKind.REBALANCE) {
+                advance()
+                expect(TokenKind.EVERY, "expected EVERY after REBALANCE")
+                parseDuration()
+            } else {
+                null
+            }
+        val entries = parseAllocateEntries()
+        return AllocateBlock(method, rebalance?.millis, entries)
+    }
+
+    private fun parseAllocationMethod(): PortfolioAllocationMethod {
+        val tok = expect(TokenKind.IDENT, "expected allocation method")
+        return when (tok.lexeme.uppercase()) {
+            "REGIME_WEIGHTED" -> PortfolioAllocationMethod.REGIME_WEIGHTED
+            else -> error("unknown allocation method '${tok.lexeme}'")
+        }
+    }
+
+    private fun parseAllocateEntries(): Map<String, Map<String, BigDecimal>> {
+        val out = LinkedHashMap<String, Map<String, BigDecimal>>()
+        while (peek().kind == TokenKind.IDENT) {
+            val regimeName = expect(TokenKind.IDENT, "expected regime name").lexeme
+            expect(TokenKind.ARROW, "expected '->' after regime name")
+            val entries = LinkedHashMap<String, BigDecimal>()
+            do {
+                val aliasTok =
+                    when (peek().kind) {
+                        TokenKind.IDENT -> expect(TokenKind.IDENT, "expected alias")
+                        TokenKind.CASH -> {
+                            advance()
+                            Token(TokenKind.IDENT, "cash", -1, -1)
+                        }
+                        else -> error("expected alias or CASH in allocate entry")
+                    }
+                val weight =
+                    expect(
+                        TokenKind.NUMBER,
+                        "expected weight for alias '${aliasTok.lexeme}'",
+                    ).lexeme.toBigDecimalOrNull()
+                        ?: error("weight must be a number, got '${peek().lexeme}'")
+                entries[aliasTok.lexeme] = weight
+            } while (match(TokenKind.COMMA))
+            out[regimeName] = entries
+        }
         return out
     }
 

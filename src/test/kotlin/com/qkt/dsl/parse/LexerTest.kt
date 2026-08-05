@@ -59,6 +59,20 @@ class LexerTest {
     }
 
     @Test
+    fun `tokenizes arrow operator`() {
+        val tokens = Lexer("a -> b").tokenize()
+        assertThat(tokens.map { it.kind })
+            .containsExactly(TokenKind.IDENT, TokenKind.ARROW, TokenKind.IDENT, TokenKind.EOF)
+    }
+
+    @Test
+    fun `tokenizes REGIMES keyword case-insensitively`() {
+        val tokens = Lexer("REGIMES regimes Regimes").tokenize()
+        assertThat(tokens.map { it.kind })
+            .containsExactly(TokenKind.REGIMES, TokenKind.REGIMES, TokenKind.REGIMES, TokenKind.EOF)
+    }
+
+    @Test
     fun `tokenizes integers and decimals`() {
         val tokens = Lexer("100 100.5 0.001").tokenize()
         assertThat(tokens.dropLast(1).map { it.lexeme }).containsExactly("100", "100.5", "0.001")

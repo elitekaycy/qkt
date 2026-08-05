@@ -23,12 +23,25 @@ IMPORT '<path>' AS <alias> [ HOLD ]
 
 [ LET <name> = <expression> ]
 
+[ REGIMES
+    NAME <regime-set-name>
+    STATE <name> WHEN <condition>
+    [ ... more states ... ]
+    STATE <name> DEFAULT
+]
+
+[ ALLOCATE
+    METHOD regime_weighted
+    <state-name> -> <alias> <weight>[, <alias> <weight> ...]
+    [ ... more states ... ]
+]
+
 RULES
     [ WHEN <condition> ] RUN <alias>
     [ ... more RUN rules ... ]
 ```
 
-The shape is similar to `STRATEGY`, but with `IMPORT` declaring child strategies and `RUN <alias>` actions.
+The shape is similar to `STRATEGY`, but with `IMPORT` declaring child strategies and `RUN <alias>` actions. `REGIMES` + `ALLOCATE` add adaptive capital allocation on top of the on/off gating.
 
 ## Basic — regime-gated switching
 
@@ -51,6 +64,41 @@ RULES
 ```
 
 Only one child runs at a time. When ADX moves from ≥30 to <20, `trend` deactivates (positions closed unless `HOLD`) and `meanrev` activates.
+
+## Regime-weighted allocation
+
+Instead of fully switching children on or off, you can assign each active child a regime-dependent weight. The weights scale the child's new risk-increasing orders, so the portfolio tilts capital toward the child that fits the current regime while keeping others alive at a smaller size.
+
+```qkt title="strategies/btc_regime_weighted.qkt"
+PORTFOLIO btc_regime_weighted VERSION 1 CAPITAL 10000
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1h
+
+IMPORT 'trend.qkt'   AS trend
+IMPORT 'meanrev.qkt' AS meanrev
+
+REGIMES
+    NAME market_regime
+    STATE trend WHEN adx(btc, 14) > 25
+    STATE range DEFAULT
+
+ALLOCATE
+    METHOD regime_weighted
+    trend -> trend 0.8, meanrev 0.2
+    range -> trend 0.2, meanrev 0.8
+
+RULES
+    RUN trend
+    RUN meanrev
+```
+
+- `REGIMES` defines named states. The first `WHEN` state that matches wins; `DEFAULT` catches everything else.
+- `ALLOCATE METHOD regime_weighted` maps each state to per-alias weights. Weights are fractions of normal risk (1.0 = full size, 0.0 = suppressed).
+- `cash` is reserved and ignored as an alias; use it to park risk-off capital.
+- All imported aliases receive a weight in every state. Missing aliases default to `0.0`.
+
+The weights are evaluated on every closed candle and applied to new orders through the same book-risk seam used by drawdown de-risking, so backtest and live use identical scaling.
 
 ## `IMPORT` syntax
 
@@ -221,10 +269,22 @@ LET names make portfolio rules read like English.
 - **Cascade stop.** `qkt stop <portfolio>` cascades to every child. Use `qkt stop <portfolio>/<child>` to stop a specific child.
 - **Portfolio file is itself a strategy.** It has `VERSION`, `RULES`, can have `LET`. It just uses `RUN` actions instead of `BUY`/`SELL`.
 
+## Backtesting portfolios
+
+`qkt backtest <portfolio.qkt>` runs the children as N attributed strategies on one engine, sharing one account and the book-risk layer. The same backtest tiers that work for single strategies also work for portfolios:
+
+- `--bars` replays built bars instead of ticks.
+- `--bar-tf <tf>` pins the bar feed to a specific built timeframe (must divide every child's declared timeframe).
+- `--tick-fills` drives signals from bars but resolves fills on real ticks.
+- `--report-dir <dir>` writes the standard report bundle (`result.json`, `trades.csv`, per-strategy equity curves, etc.) in the same format as a single-strategy backtest.
+
+Regime-weighted allocation and `WHEN..RUN` gating use the same `PortfolioGate` + `BookRiskController` code in backtest and live, so results are directly comparable. A child imported without `HOLD` is flattened on deactivation in backtest exactly as the live supervisor would, while a `HOLD` child keeps its positions and continues to manage exits.
+
 ## What this composes with
 
 - [STRATEGY block](strategy-block.md) — child files are regular strategies
 - [Conditions](conditions.md) — `RUN` rules use the same condition grammar
 - [Indicators](indicators.md) — regime detectors are usually indicator-based
 - [Portfolio example](../../examples/portfolio.md) — full deployment with three regimes
+- [Regime-adaptive portfolio](../../examples/regime-adaptive/) — `REGIMES` + `ALLOCATE METHOD regime_weighted`
 - [Phase 13b](../../phases/phase-13b.md), [Phase 14](../../phases/phase-14.md) — design notes on portfolio fan-out
