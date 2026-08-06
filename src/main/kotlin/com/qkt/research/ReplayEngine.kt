@@ -595,6 +595,13 @@ class ReplayEngine(
     /** Currently open (non-flat) positions keyed by symbol. */
     fun openPositions(): Map<String, Position> = positions.allPositions().filterValues { it.quantity.signum() != 0 }
 
+    /**
+     * Sign of the net position on [symbol]: -1 short, 1 long, 0 flat/unknown. Cheap (one map
+     * lookup) — [com.qkt.marketdata.source.BarTickFeed] consults it once per synthesized bar to
+     * emit the open position's adverse extreme first.
+     */
+    fun positionSign(symbol: String): Int = positions.positionFor(symbol)?.quantity?.signum() ?: 0
+
     /** Build a [BacktestResult] from current state — valid mid-replay or at end. */
     fun snapshot(): BacktestResult {
         val annualizationFactor = annualizationFactorFor(collector.globalMetrics())
