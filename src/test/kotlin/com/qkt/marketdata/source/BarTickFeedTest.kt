@@ -77,10 +77,11 @@ class BarTickFeedTest {
 
     @Test
     fun `a net-short symbol sees High before Low so the adverse extreme arrives first`() {
-        val feed = BarTickFeed(
-            sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
-            positionSign = { -1 },
-        )
+        val feed =
+            BarTickFeed(
+                sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
+                positionSign = { -1 },
+            )
         val out = generateSequence { feed.next() }.toList()
         assertThat(out.map { it.price }).containsExactly(
             BigDecimal("100"),
@@ -95,10 +96,11 @@ class BarTickFeedTest {
     @Test
     fun `flat and long symbols keep the Low-first default`() {
         for (sign in intArrayOf(0, 1)) {
-            val feed = BarTickFeed(
-                sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
-                positionSign = { sign },
-            )
+            val feed =
+                BarTickFeed(
+                    sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
+                    positionSign = { sign },
+                )
             val out = generateSequence { feed.next() }.toList()
             assertThat(out.map { it.price }).containsExactly(
                 BigDecimal("100"),
@@ -114,13 +116,14 @@ class BarTickFeedTest {
         // Sign flips to short only once the first bar's Open has been seen — modeling a short
         // entry filled on this bar's open steering its own extremes.
         var sign = 0
-        val feed = BarTickFeed(
-            sequenceOf(
-                candle("100", "110", "90", "105", 0L, 300_000L),
-                candle("105", "108", "104", "107", 300_000L, 600_000L),
-            ),
-            positionSign = { sign },
-        )
+        val feed =
+            BarTickFeed(
+                sequenceOf(
+                    candle("100", "110", "90", "105", 0L, 300_000L),
+                    candle("105", "108", "104", "107", 300_000L, 600_000L),
+                ),
+                positionSign = { sign },
+            )
         val first = feed.next()!!
         assertThat(first.price).isEqualByComparingTo("100")
         sign = -1
@@ -145,10 +148,11 @@ class BarTickFeedTest {
         // Short when the ordering is decided; the first extreme (High) fills the stop and the
         // position goes flat — the second extreme must still be the Low, not a repeated High.
         var sign = -1
-        val feed = BarTickFeed(
-            sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
-            positionSign = { sign },
-        )
+        val feed =
+            BarTickFeed(
+                sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
+                positionSign = { sign },
+            )
         val open = feed.next()!!
         assertThat(open.price).isEqualByComparingTo("100")
         val ext1 = feed.next()!!
@@ -160,10 +164,11 @@ class BarTickFeedTest {
 
     @Test
     fun `short-ordered ticks still re-aggregate to the original candle`() {
-        val feed = BarTickFeed(
-            sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
-            positionSign = { -1 },
-        )
+        val feed =
+            BarTickFeed(
+                sequenceOf(candle("100", "110", "90", "105", 0L, 300_000L)),
+                positionSign = { -1 },
+            )
         val emitted = mutableListOf<Candle>()
         val agg = CandleAggregator.standalone(TimeWindow.FIVE_MINUTES) { emitted.add(it) }
         generateSequence { feed.next() }.forEach { agg.onTick(it) }
