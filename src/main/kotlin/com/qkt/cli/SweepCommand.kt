@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.backtest.TradeRecord
 import com.qkt.backtest.report.ReportSerializer
+import com.qkt.backtest.sweep.BacktestSweep
 import com.qkt.backtest.sweep.SweepReplay
 import com.qkt.backtest.sweep.SweepRun
 import com.qkt.dsl.parse.Dsl
@@ -82,12 +83,23 @@ class SweepCommand(
 
         val ranked: List<SweepRun<ScenarioSpec>> =
             try {
-                SweepReplay(
-                    configs = scenarios.map { it.label to it },
-                    sharedFeed = sharedFeed,
-                    engineFor = { _, s -> engineFor(s) },
-                    parallelism = parallelism,
-                ).run().rankedBy { rank.score(it) }
+                // Plain-bars fills synthesize each bar's extremes adverse-first for the open
+                // position, which differs per combo — a shared tick stream cannot serve all
+                // engines, so bars sweeps run per-combo (bar decode is cheap and page-cached).
+                if (ctx.barFills) {
+                    BacktestSweep(
+                        configs = scenarios.map { it.label to it },
+                        backtestFactory = { _, s -> ctx.scenarioBacktest(s) },
+                        parallelism = parallelism,
+                    ).run().rankedBy { rank.score(it) }
+                } else {
+                    SweepReplay(
+                        configs = scenarios.map { it.label to it },
+                        sharedFeed = sharedFeed,
+                        engineFor = { _, s -> engineFor(s) },
+                        parallelism = parallelism,
+                    ).run().rankedBy { rank.score(it) }
+                }
             } catch (e: IllegalArgumentException) {
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR
