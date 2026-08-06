@@ -65,20 +65,21 @@ class BarTickFeed(
             emitted = 0
         }
         val step = ((bar.endTime - bar.startTime) / 4).coerceAtLeast(1)
-        val tick = when (emitted) {
-            0 -> Tick(bar.symbol, bar.open, bar.startTime)
-            1 -> {
-                // Decided once per bar, here rather than at bar start: the Open tick above has
-                // already been processed, so an entry filled on this bar's open steers its own
-                // extremes toward the adverse-first order. Cached so the first extreme filling the
-                // stop (and flattening the position) cannot flip the order mid-bar and emit one
-                // extreme twice.
-                highFirst = positionSign(bar.symbol) < 0
-                Tick(bar.symbol, if (highFirst) bar.high else bar.low, bar.startTime + step)
+        val tick =
+            when (emitted) {
+                0 -> Tick(bar.symbol, bar.open, bar.startTime)
+                1 -> {
+                    // Decided once per bar, here rather than at bar start: the Open tick above has
+                    // already been processed, so an entry filled on this bar's open steers its own
+                    // extremes toward the adverse-first order. Cached so the first extreme filling the
+                    // stop (and flattening the position) cannot flip the order mid-bar and emit one
+                    // extreme twice.
+                    highFirst = positionSign(bar.symbol) < 0
+                    Tick(bar.symbol, if (highFirst) bar.high else bar.low, bar.startTime + step)
+                }
+                2 -> Tick(bar.symbol, if (highFirst) bar.low else bar.high, bar.startTime + 2 * step)
+                else -> Tick(bar.symbol, bar.close, bar.endTime - 1, volume = bar.volume)
             }
-            2 -> Tick(bar.symbol, if (highFirst) bar.low else bar.high, bar.startTime + 2 * step)
-            else -> Tick(bar.symbol, bar.close, bar.endTime - 1, volume = bar.volume)
-        }
         emitted += 1
         return tick
     }
