@@ -97,14 +97,16 @@ class OrderTypeCompiler(
 
     /**
      * The latest close of [targetAlias]'s stream — the evaluating candle when it IS the
-     * target, the hub's latest closed bar otherwise. Errors when the target has no bar
-     * yet: sizing a cross-stream market order off the wrong instrument's price is the
-     * silent alternative.
+     * target, the hub's latest closed bar otherwise. Null when the target has no closed
+     * bar yet: a transient warm-up state (portfolio members' data can start at different
+     * times), so the caller skips the order for this evaluation — the same treatment as
+     * every other undefined-during-warm-up price — instead of killing the whole run.
+     * An unknown alias is still an error: that is a wiring bug, not a timing state.
      */
     private fun targetClose(
         ec: EvalContext,
         targetAlias: String?,
-    ): BigDecimal {
+    ): BigDecimal? {
         if (targetAlias == null) return ec.candle.close
         val key = ec.streams[targetAlias] ?: error("Unknown stream alias: $targetAlias")
         if (ec.currentAlias == targetAlias ||
@@ -113,7 +115,6 @@ class OrderTypeCompiler(
             return ec.candle.close
         }
         return ec.hub.latest(key)?.close
-            ?: error("No closed bar yet for stream '$targetAlias' — cannot price its order")
     }
 
     private fun compileMarket(targetAlias: String?): CompiledOrderType {
