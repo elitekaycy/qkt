@@ -53,19 +53,22 @@ class BacktestCommandPortfolioTest {
     private fun seedTicks(
         dataRoot: Path,
         days: Int,
+        symbol: String = "XAUUSD",
     ) {
         ticksFor(days)
+            .map { it.copy(symbol = symbol) }
             .groupBy { LocalDate.ofInstant(Instant.ofEpochMilli(it.timestamp), ZoneOffset.UTC) }
             .forEach { (day, dayTicks) ->
-                val f = dataRoot.resolve("symbols").resolve("XAUUSD").resolve("$day.bin")
+                val f = dataRoot.resolve("symbols").resolve(symbol).resolve("$day.bin")
                 Files.createDirectories(f.parent)
-                BinaryTickWriter().write(f, "XAUUSD", dayTicks)
+                BinaryTickWriter().write(f, symbol, dayTicks)
             }
     }
 
     private fun buildBars(
         dataRoot: Path,
         tf: String,
+        symbol: String = "XAUUSD",
     ) {
         val code =
             DataCommand(
@@ -73,7 +76,7 @@ class BacktestCommandPortfolioTest {
                     arrayOf(
                         "data",
                         "build-bars",
-                        "XAUUSD",
+                        symbol,
                         "--tf",
                         tf,
                         "--from",
@@ -230,6 +233,73 @@ class BacktestCommandPortfolioTest {
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
         assertThat(out).contains("\"perStrategy\":{")
         assertThat(out).contains("book:child")
+    }
+
+    @Test
+    fun `portfolio child with a two-stream condition still trades`(
+        @TempDir tmp: Path,
+    ) {
+        // Regression: a child whose WHEN references TWO streams (a sync-group condition) placed
+        // zero trades when run as a portfolio member, while the identical strategy traded fine
+        // standalone and a single-stream-condition sibling traded fine in the book. The condition
+        // here is trivially true on every aligned close, so any zero-trade result means the
+        // synced rule never evaluated at all inside the portfolio.
+        val dataRoot = tmp.resolve("data")
+        seedTicks(dataRoot, days = 3)
+        seedTicks(dataRoot, days = 3, symbol = "XAGUSD")
+        buildBars(dataRoot, "15m")
+        buildBars(dataRoot, "15m", symbol = "XAGUSD")
+
+        Files.writeString(
+            tmp.resolve("dual.qkt"),
+            """
+            STRATEGY dual VERSION 1
+            SYMBOLS
+              gold = BACKTEST:XAUUSD EVERY 15m,
+              silver = BACKTEST:XAGUSD EVERY 15m
+            RULES
+              WHEN gold.close > 0 AND silver.close > 0 AND POSITION.gold = 0
+              THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 1, TAKE PROFIT RR 2 }
+            """.trimIndent(),
+        )
+        val portfolio = tmp.resolve("book.qkt")
+        Files.writeString(
+            portfolio,
+            """
+            PORTFOLIO book VERSION 1
+            IMPORT 'dual.qkt' AS dual
+            RULES
+              RUN dual
+            """.trimIndent(),
+        )
+
+        // Control: the identical strategy standalone MUST trade — pins that any book-side zero
+        // is portfolio wiring, not the strategy/data.
+        val (soloCode, soloOut) = runPortfolioBacktest(tmp.resolve("dual.qkt"), dataRoot)
+        assertThat(soloCode).isEqualTo(ExitCodes.SUCCESS)
+        val soloTrades =
+            Regex("\"trades\":(\\d+)")
+                .find(soloOut)
+                ?.groupValues
+                ?.get(1)
+                ?.toInt()
+        assertThat(soloTrades)
+            .withFailMessage("standalone control did not trade; out tail: %s", soloOut.takeLast(300))
+            .isNotNull()
+            .isGreaterThan(0)
+
+        val (code, out) = runPortfolioBacktest(portfolio, dataRoot)
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        val tradeCount =
+            Regex("\"book:dual\":\\{[^}]*\"tradeCount\":(\\d+)")
+                .find(out)
+                ?.groupValues
+                ?.get(1)
+                ?.toInt()
+        assertThat(tradeCount)
+            .withFailMessage("two-stream-condition child placed no trades in the book")
+            .isNotNull()
+            .isGreaterThan(0)
     }
 
     @Test

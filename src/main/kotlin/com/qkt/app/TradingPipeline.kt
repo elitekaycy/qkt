@@ -405,6 +405,10 @@ class TradingPipeline(
                 exitHookManager.bind(strategyId, strategy, emit)
                 strategy.bindSchedules(scheduleRunner, ctx, clock.now(), emit)
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
+                // Candles still flow to the strategy object: a hub-bound DSL strategy's onCandle
+                // returns immediately, but a wrapper (GatedChild) relies on this hook for its
+                // flatten-on-gate-deactivate transition — hub binding carries only the inner rules.
+                bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
                 wireStackOrchestrator(strategy, strategyId, emit)
             } else {
                 bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }

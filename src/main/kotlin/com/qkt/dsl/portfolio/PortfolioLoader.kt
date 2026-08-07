@@ -4,6 +4,7 @@ import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -104,7 +105,12 @@ object PortfolioLoader {
                                     },
                             )
                         }
-                    val compiled = AstCompiler().compile(effectiveAst)
+                    // Strategy ASTs always compile to the DSL runtime interface; the concrete type
+                    // matters because the engine binds children to the CandleHub through it — a
+                    // plain-Strategy child would silently fall back to the legacy no-hub onCandle
+                    // path, where cross-stream reads evaluate Undefined and multi-stream rules
+                    // never fire.
+                    val compiled = AstCompiler().compile(effectiveAst) as DslCompiledStrategy
                     val childStrategyId = "${ast.name}:${imp.alias}"
                     CompiledChild(
                         alias = imp.alias,
