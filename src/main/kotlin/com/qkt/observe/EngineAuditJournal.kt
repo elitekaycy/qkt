@@ -7,6 +7,7 @@ import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -14,10 +15,12 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -43,6 +46,8 @@ class EngineAuditJournal(
 
     private val queue = ArrayBlockingQueue<Line>(queueCapacity)
     private val running = AtomicBoolean(true)
+    private val droppedByDay = ConcurrentHashMap<LocalDate, AtomicLong>()
+    private val persistedDroppedByDay = HashMap<LocalDate, Long>()
 
     /** Events rejected because the bounded audit queue was full. */
     val dropped: AtomicLong = AtomicLong(0L)
@@ -57,8 +62,9 @@ class EngineAuditJournal(
                         queue.poll(100, TimeUnit.MILLISECONDS)
                     } catch (_: InterruptedException) {
                         if (!running.get()) null else continue
-                    } ?: continue
-                writeLine(line)
+                    }
+                if (line != null) writeLine(line)
+                persistDropMarkers()
             }
             runCatching { channel?.close() }
             channel = null
@@ -84,13 +90,16 @@ class EngineAuditJournal(
                 strategyId(event)?.let { append(",\"strategyId\":").append(jsonString(it)) }
                 orderId(event)?.let { append(",\"orderId\":").append(jsonString(it)) }
                 symbol(event)?.let { append(",\"symbol\":").append(jsonString(it)) }
+                if (event is TickEvent) appendTick(event)
+                if (event is BrokerEvent.OrderFilled) appendFill(event)
+                if (event is BrokerEvent.OrderPartiallyFilled) appendPartialFill(event)
                 append(",\"payload\":").append(jsonString(event.toString()))
                 append("}\n")
             }
         val bytes = line.toByteArray(StandardCharsets.UTF_8)
         if (!running.get()) return
         if (!queue.offer(Line(eventDay, bytes))) {
-            val n = dropped.incrementAndGet()
+            val n = markDropped(eventDay)
             if (n == 1L || n % 1_000L == 0L) {
                 log.error("engine audit journal queue full for {}; dropped {} event(s)", owner, n)
             }
@@ -109,12 +118,44 @@ class EngineAuditJournal(
     private fun writeLine(line: Line) {
         synchronized(this) {
             try {
-                channelFor(line.day).write(ByteBuffer.wrap(line.bytes))
+                val buffer = ByteBuffer.wrap(line.bytes)
+                val output = channelFor(line.day)
+                while (buffer.hasRemaining()) output.write(buffer)
             } catch (e: Exception) {
+                markDropped(line.day)
                 log.error("engine audit journal append FAILED for {}: {}", owner, e.message)
                 runCatching { channel?.close() }
                 channel = null
                 day = null
+            }
+        }
+    }
+
+    private fun markDropped(eventDay: LocalDate): Long {
+        droppedByDay.computeIfAbsent(eventDay) { AtomicLong(0L) }.incrementAndGet()
+        return dropped.incrementAndGet()
+    }
+
+    private fun persistDropMarkers() {
+        for ((eventDay, countRef) in droppedByDay) {
+            val count = countRef.get()
+            if (persistedDroppedByDay[eventDay] == count) continue
+            try {
+                val dir = ownerDir()
+                createPrivateDirectory(dir)
+                val marker = dir.resolve("audit-$eventDay.dropped")
+                Files.writeString(
+                    marker,
+                    "$count\n",
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.DSYNC,
+                )
+                makeOwnerOnly(marker)
+                persistedDroppedByDay[eventDay] = count
+            } catch (error: Exception) {
+                log.error("engine audit journal could not persist drop marker for {}: {}", owner, error.message)
             }
         }
     }
@@ -134,19 +175,32 @@ class EngineAuditJournal(
         val open = channel
         if (open != null && day == eventDay) return open
         runCatching { open?.close() }
-        val dir = rootDir.resolve(owner.ifBlank { "_session" }.replace(Regex("[^A-Za-z0-9._-]"), "_"))
-        Files.createDirectories(dir)
+        val dir = ownerDir()
+        createPrivateDirectory(dir)
+        val path = dir.resolve("audit-$eventDay.jsonl")
         val next =
             FileChannel.open(
-                dir.resolve("audit-$eventDay.jsonl"),
+                path,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.WRITE,
                 StandardOpenOption.APPEND,
                 StandardOpenOption.DSYNC,
             )
+        makeOwnerOnly(path)
         channel = next
         day = eventDay
         return next
+    }
+
+    private fun ownerDir(): Path = rootDir.resolve(owner.ifBlank { "_session" }.replace(Regex("[^A-Za-z0-9._-]"), "_"))
+
+    private fun createPrivateDirectory(path: Path) {
+        Files.createDirectories(path)
+        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------")) }
+    }
+
+    private fun makeOwnerOnly(path: Path) {
+        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
     }
 
     private fun eventType(event: Event): String =
@@ -179,8 +233,41 @@ class EngineAuditJournal(
             is BrokerEvent.OrderPartiallyFilled -> event.symbol
             is BrokerEvent.PositionReconciled -> event.symbol
             is TradeEvent -> event.trade.symbol
+            is TickEvent -> event.tick.symbol
             else -> null
         }
+
+    private fun StringBuilder.appendTick(event: TickEvent) {
+        val tick = event.tick
+        append(",\"tick\":{")
+        append("\"timestampMs\":").append(tick.timestamp)
+        append(",\"price\":").append(jsonString(tick.price.toPlainString()))
+        tick.volume?.let { append(",\"volume\":").append(jsonString(it.toPlainString())) }
+        tick.bid?.let { append(",\"bid\":").append(jsonString(it.toPlainString())) }
+        tick.ask?.let { append(",\"ask\":").append(jsonString(it.toPlainString())) }
+        tick.bidVolume?.let { append(",\"bidVolume\":").append(jsonString(it.toPlainString())) }
+        tick.askVolume?.let { append(",\"askVolume\":").append(jsonString(it.toPlainString())) }
+        append('}')
+    }
+
+    private fun StringBuilder.appendFill(event: BrokerEvent.OrderFilled) {
+        append(",\"fill\":{")
+        append("\"side\":").append(jsonString(event.side.name))
+        append(",\"price\":").append(jsonString(event.price.toPlainString()))
+        append(",\"quantity\":").append(jsonString(event.quantity.toPlainString()))
+        append(",\"brokerOrderId\":").append(jsonString(event.brokerOrderId.orEmpty()))
+        append(",\"partial\":false}")
+    }
+
+    private fun StringBuilder.appendPartialFill(event: BrokerEvent.OrderPartiallyFilled) {
+        append(",\"fill\":{")
+        append("\"side\":").append(jsonString(event.side.name))
+        append(",\"price\":").append(jsonString(event.price.toPlainString()))
+        append(",\"quantity\":").append(jsonString(event.quantity.toPlainString()))
+        append(",\"cumulativeFilled\":").append(jsonString(event.cumulativeFilled.toPlainString()))
+        append(",\"brokerOrderId\":").append(jsonString(event.brokerOrderId.orEmpty()))
+        append(",\"partial\":true}")
+    }
 
     private fun com.qkt.strategy.Signal.symbolOrNull(): String? =
         when (this) {

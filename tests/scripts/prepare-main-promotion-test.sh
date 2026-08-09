@@ -18,10 +18,13 @@ printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 
 case "$*" in
     "api repos/test/repo/branches/testing --jq .commit.sha")
-        printf '%s\n' "testing-sha"
+        printf '%s\n' "0123456789abcdef0123456789abcdef01234567"
         ;;
     "run list --repo test/repo --workflow integration.yml --branch testing --limit 1 --json conclusion,headSha,url --jq .[0] | [.conclusion, .headSha, .url] | join(\"|\")")
-        printf '%s|%s|%s\n' "${FAKE_INTEGRATION_CONCLUSION:-success}" "${FAKE_INTEGRATION_SHA:-testing-sha}" "https://example.test/integration"
+        printf '%s|%s|%s\n' \
+            "${FAKE_INTEGRATION_CONCLUSION:-success}" \
+            "${FAKE_INTEGRATION_SHA:-0123456789abcdef0123456789abcdef01234567}" \
+            "https://example.test/integration"
         ;;
     "api repos/test/repo/compare/main...testing --jq .ahead_by")
         printf '%s\n' "${FAKE_AHEAD_BY:-1}"
@@ -37,6 +40,53 @@ case "$*" in
                 "${FAKE_WINDOWS_STATUS:-completed}" \
                 "https://example.test/windows"
         fi
+        ;;
+    "run list --repo test/repo --workflow paper-soak.yml --branch testing --limit 20 --json conclusion,databaseId,headSha,url --jq .[] | select(.conclusion == \"success\") | [.databaseId, .headSha, .url] | join(\"|\")")
+        if [ "${FAKE_SOAK_MISSING:-false}" != "true" ]; then
+            printf '%s|%s|%s\n' \
+                "77" \
+                "${FAKE_SOAK_SHA:-0123456789abcdef0123456789abcdef01234567}" \
+                "https://example.test/soak"
+        fi
+        ;;
+    run\ download\ 77\ --repo\ test/repo\ --name\ paper-soak-attestation\ --dir\ *)
+        out_dir="${@: -1}"
+        mkdir -p "$out_dir"
+        printf '%s\n' '{"status":"ok"}' > "$out_dir/health.jsonl"
+        printf '%s\n' 'journal evidence' > "$out_dir/golden.zip"
+        printf '%s\n' '{"clean":true}' > "$out_dir/reconcile.json"
+        health_sha="$(sha256sum "$out_dir/health.jsonl" | cut -d' ' -f1)"
+        journal_sha="$(sha256sum "$out_dir/golden.zip" | cut -d' ' -f1)"
+        reconcile_sha="$(sha256sum "$out_dir/reconcile.json" | cut -d' ' -f1)"
+        cat > "$out_dir/paper-soak-attestation.json" <<JSON
+{
+  "schemaVersion": 1,
+  "testingSha": "0123456789abcdef0123456789abcdef01234567",
+  "image": "ghcr.io/test/qkt@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "accountMode": "demo",
+  "canaryStrategy": "ema-canary",
+  "startedAtUtc": "2026-08-03T00:00:00Z",
+  "completedAtUtc": "2026-08-05T00:00:00Z",
+  "tradingDays": 2,
+  "status": "pass",
+  "metrics": {
+    "unreconciledPositions": 0,
+    "unknownOutcomePlacements": 0,
+    "droppedTicks": 0,
+    "healthSamples": 5760
+  },
+  "artifacts": {
+    "health": "health.jsonl",
+    "journal": "golden.zip",
+    "reconciliation": "reconcile.json"
+  },
+  "artifactSha256": {
+    "health": "$health_sha",
+    "journal": "$journal_sha",
+    "reconciliation": "$reconcile_sha"
+  }
+}
+JSON
         ;;
     pr\ create*)
         printf '%s\n' "https://example.test/pull/1"
@@ -62,6 +112,7 @@ run_subject() {
 
 output="$(run_subject)"
 grep -q 'promotion PR: https://example.test/pull/1' <<< "$output"
+grep -q 'paper-soak attestation valid' <<< "$output"
 grep -q '^pr create ' "$log_file"
 grep -q '^workflow run windows-ci.yml ' "$log_file"
 
@@ -76,7 +127,7 @@ fi
 : > "$log_file"
 output="$(run_subject \
     FAKE_PR_URL=https://example.test/pull/7 \
-    FAKE_WINDOWS_SHA=testing-sha \
+    FAKE_WINDOWS_SHA=0123456789abcdef0123456789abcdef01234567 \
     FAKE_WINDOWS_CONCLUSION=success)"
 grep -q 'Windows validation already current' <<< "$output"
 if grep -q '^workflow run windows-ci.yml ' "$log_file"; then
@@ -105,6 +156,20 @@ if run_subject FAKE_INTEGRATION_CONCLUSION=failure > "$tmp_dir/failed.out" 2>&1;
     exit 1
 fi
 grep -q "is 'failure', not 'success'" "$tmp_dir/failed.out"
+
+: > "$log_file"
+if run_subject FAKE_SOAK_SHA=ffffffffffffffffffffffffffffffffffffffff > "$tmp_dir/stale-soak.out" 2>&1; then
+    echo "stale paper soak must fail closed" >&2
+    exit 1
+fi
+grep -q 'no successful paper-soak run exists for current testing' "$tmp_dir/stale-soak.out"
+
+: > "$log_file"
+if run_subject FAKE_SOAK_MISSING=true > "$tmp_dir/missing-soak.out" 2>&1; then
+    echo "missing paper soak must fail closed" >&2
+    exit 1
+fi
+grep -q 'no successful paper-soak run exists for current testing' "$tmp_dir/missing-soak.out"
 
 if ! grep -q '^          ref: testing$' "$workflow"; then
     echo "promotion workflow must checkout the integration-tested testing ref" >&2

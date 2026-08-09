@@ -33,7 +33,8 @@ internal object CliOptionSchemas {
             "partial-fill",
             "dataset",
         )
-    private val backtestFlags = setOf("no-fetch", "bars", "allow-incomplete", "tick-fills")
+    private val backtestFlags =
+        setOf("no-fetch", "bars", "allow-incomplete", "tick-fills", "enforce-live-breakers", "chaos")
 
     private val schemas: Map<String, CliOptionSchema> =
         mapOf(
@@ -215,6 +216,25 @@ internal object CliOptionSchemas {
                             "config",
                             "strategy-file",
                             "state-dir",
+                        ),
+                ),
+            "golden" to
+                CliOptionSchema(
+                    values = setOf("session", "state-dir", "out"),
+                ),
+            "soak" to
+                CliOptionSchema(
+                    values =
+                        setOf(
+                            "testing-sha",
+                            "image",
+                            "started-at",
+                            "completed-at",
+                            "trading-days",
+                            "health",
+                            "reconciliation",
+                            "golden",
+                            "out",
                         ),
                 ),
             "bot" to

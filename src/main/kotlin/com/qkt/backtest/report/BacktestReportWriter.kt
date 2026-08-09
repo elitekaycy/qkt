@@ -269,8 +269,31 @@ class BacktestReportWriter(
         }
         sb.append(",\n  \"bookAnalytics\": ").append(renderBookAnalytics(result.bookAnalytics))
         sb.append(",\n  \"bookRisk\": ").append(renderBookRiskJson(result.bookRisk))
+        sb.append(",\n  \"runawayBreaker\": ").append(renderRunawayBreaker(result.runawayBreaker))
         sb.append("\n}")
         return sb.toString()
+    }
+
+    private fun renderRunawayBreaker(report: com.qkt.backtest.RunawayBreakerReport?): String {
+        if (report == null) return "null"
+        return buildString {
+            append("{\"enforceLiveBreakers\": ").append(report.enforceLiveBreakers)
+            append(", \"maxRoundTrips\": ").append(report.maxRoundTrips)
+            append(", \"roundTripWindowMs\": ").append(report.roundTripWindowMs)
+            append(", \"maxRejections\": ").append(report.maxRejections)
+            append(", \"rejectionWindowMs\": ").append(report.rejectionWindowMs)
+            append(", \"trips\": [")
+            append(
+                report.trips.joinToString(",") { trip ->
+                    "{\"timestampMs\": ${trip.timestampMs}, " +
+                        "\"strategyId\": ${ReportSerializer.jsonString(trip.strategyId)}, " +
+                        "\"rule\": ${ReportSerializer.jsonString(trip.rule.name.lowercase())}, " +
+                        "\"count\": ${trip.count}, \"threshold\": ${trip.threshold}, " +
+                        "\"windowMs\": ${trip.windowMs}}"
+                },
+            )
+            append("]}")
+        }
     }
 
     private fun renderArtifacts(result: BacktestResult): String =

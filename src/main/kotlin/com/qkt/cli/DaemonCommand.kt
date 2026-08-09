@@ -7,6 +7,7 @@ import com.qkt.broker.mt5.MT5TradeMode
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
+import com.qkt.cli.daemon.ControlToken
 import com.qkt.cli.daemon.DaemonInstanceLock
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
@@ -108,6 +109,13 @@ class DaemonCommand(
                 return ExitCodes.USER_ERROR
             }
         }
+        val controlToken =
+            try {
+                ControlToken.forDaemon(stateDir)
+            } catch (e: Exception) {
+                System.err.println("qkt: control token initialization failed: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
         val channelRegistry = ChannelRegistry.DEFAULT
         val channelNotifiers: List<Pair<ChannelConfig, Notifier>> =
             cfg.notify.enabledChannels().mapNotNull { ch ->
@@ -215,6 +223,15 @@ class DaemonCommand(
         // constructed below. Recovery runs strictly after the broker is built, so by
         // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
         val registryRef = AtomicReference<StrategyRegistry?>(null)
+        val mt5TransportJournals =
+            mt5Profiles.associate { profile ->
+                profile.name.lowercase() to
+                    com.qkt.broker.mt5.MT5TransportJournal(
+                        stateDir.stateRoot.resolve("mt5-transport-journal"),
+                        profile.name,
+                        com.qkt.common.SystemClock(),
+                    )
+            }
         val mt5Factories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
@@ -227,6 +244,7 @@ class DaemonCommand(
                         retryAttempts = profile.retryAttempts,
                         apiKey = profile.apiKey,
                         readCache = MT5ReadCache(SHARED_MT5_READ_TTL_MS),
+                        transportJournal = mt5TransportJournals.getValue(key),
                     )
                 key to
                     { bus, clock, priceTracker, _, strategyName ->
@@ -314,6 +332,8 @@ class DaemonCommand(
                     maxOrderQty = cfg.maxOrderQty,
                     maxOrderNotional = cfg.maxOrderNotional,
                     priceCollarFrac = cfg.priceCollarFrac,
+                    runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
+                    runawayMaxRejections = cfg.runawayMaxRejections,
                     accountingConfig = cfg.accountingConfig,
                     liveEquityBasis = cfg.liveEquityBasis,
                     marginFloorPct = cfg.marginFloorPct,
@@ -364,6 +384,8 @@ class DaemonCommand(
                     maxOrderQty = cfg.maxOrderQty,
                     maxOrderNotional = cfg.maxOrderNotional,
                     priceCollarFrac = cfg.priceCollarFrac,
+                    runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
+                    runawayMaxRejections = cfg.runawayMaxRejections,
                     marginFloorPct = cfg.marginFloorPct,
                     measuredUsageHours = cfg.measuredUsageHours,
                     measuredUsageMaxQty = cfg.measuredUsageMaxQty,
@@ -388,6 +410,7 @@ class DaemonCommand(
                 portfolioDeployer = portfolioDeployer,
                 notifierMetrics = notifier.metrics,
                 promotionGates = cfg.promotionGateConfig,
+                controlToken = controlToken.value,
             )
         plane.start()
         instanceLock.writeControlPort(plane.boundPort)
@@ -398,6 +421,7 @@ class DaemonCommand(
         println("[INFO] strategy state: ${stateDir.stateRoot}")
         println(
             "[INFO] control plane: http://127.0.0.1:${plane.boundPort} " +
+                "auth=ENABLED token from ${controlToken.source} " +
                 "(state file: ${stateDir.controlPortFile})",
         )
 
@@ -465,6 +489,7 @@ class DaemonCommand(
             runCatching { dailySummarySchedulers.forEach { it.close() } }
             runCatching { registry.stopAll() }
             runCatching { statePersistor.close() }
+            mt5TransportJournals.values.forEach { runCatching { it.close() } }
             runCatching { bybitClient?.close() }
             runCatching { notifier.close() }
             runCatching { insightsSink?.close() }

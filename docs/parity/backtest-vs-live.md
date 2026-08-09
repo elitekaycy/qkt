@@ -101,10 +101,13 @@ Historical note kept for context: before Phase 30, backtest PnL was off by a fac
 
 `MT5BrokerSimulator` now models deterministic volume and price quantization, bid/ask fills,
 contract-size PnL, stop-distance rejection, and configurable latency/rejection stress. The
-authentic golden replay covers one market order. Broader venue claims still require
-additional captures for pending/OCO orders, partial fills, rejected requests, and volatile-period
-latency. Those residuals must not be inferred from the single exact fill. Operational proof for a
-second MT5 profile remains tracked by #44.
+authentic golden replay covers one market order. `qkt golden capture` now turns retained
+demo sessions into checksummed tick/fill/order/gateway bundles, but a captured bundle is evidence,
+not automatically a new verifier assertion. Promote representative captures into regression tests
+for pending/OCO orders, partial fills, rejected requests, and volatile-period latency. Those
+residuals must not be inferred from the single exact fill. `qkt backtest --chaos` applies the
+seeded stress preset; it does not claim to reproduce every gateway HTTP or venue-retcode sequence.
+Operational proof for a second MT5 profile remains tracked by #44.
 
 ## 2026-06-10 audit addendum — divergences this catalog was missing
 
@@ -125,7 +128,7 @@ keep in mind when reading a backtest.
 | A9 | Calendars: the backtest CLI uses fixed per-symbol calendar rules (crypto for `BTC*`/`*USDT`, FX default otherwise); live and portfolio book-risk annualization use the broker profile calendar. The FX weekend boundary is a FIXED UTC hour year-round and does not track New York DST (up to 1h off near the close/open in winter) | INHERENT — pinned by `FxCalendarTest`, `PortfolioRiskAggregatorTest` |
 | A10 | `x.bid` / `x.ask` / `x.spread` evaluate Undefined on bar-sourced backtest data — spread-aware rules silently never fire in bar backtests (tick-sourced backtests carry real quotes) | OPEN (#389) — prefer tick data for spread-aware strategies |
 | A12 | Quiet-symbol candle close: live closes an ended bar from the 1Hz heartbeat even with no next tick; backtest closes only on the next replayed tick (event time is its only clock) | INHERENT — affects the last bar before a session gap |
-| A11 | Live-only operational effects: restart reconcile, OCO restore, poller-synthesized closes, gateway-outage suspensions, the runaway breaker and market-data gate including its broker-clock-skew check (#395/#396/#810 are live-only by design) | INHERENT — none have a backtest equivalent. The expired-before-submit GTD reject (#811) is wired in both modes but cannot fire under event time, where a fresh deadline is always in the future |
+| A11 | Live-only operational effects: restart reconcile, OCO restore, poller-synthesized closes, gateway-outage suspensions, and the market-data gate including its broker-clock-skew check (#395/#396/#810 are live-only by design) | PARTIAL — replay now evaluates the runaway breaker with the configured live thresholds, reports every would-be trip, and can enforce them with `--enforce-live-breakers`. The remaining operational effects have no replay equivalent. The expired-before-submit GTD reject (#811) is wired in both modes but cannot fire under event time, where a fresh deadline is always in the future |
 | A13 | Week-close entries: an entry signalled on the final pre-weekend bar closes via the live heartbeat (A12) when the feed is already stale and the venue shut, so the market-data gate rejects it; backtest closes the same bar on the venue's reopen tick and fills at the reopen price | MITIGATED (#888/#890) — the rejected fire re-arms and, if the condition still holds on the first post-reopen bar close, enters one bar later than backtest. The one-bar entry lag is INHERENT |
 | A14 | Warmup seed grid: MT5 aggregates multi-hour history on the broker's day boundary, which put seeded H4/D1 bars on a shifted grid vs the epoch-aligned UTC bars live aggregation and backtest use | FIXED (#887) — multi-hour warmup history is fetched as H1 and rebuilt on the UTC grid; `CandleHub.seed` fail-closes on off-grid bars |
 | A15 | Margin floor is a live pre-trade rule because replay has no venue margin-level feed | INHERENT — repeated missing reads fail closed for new exposure; risk-reducing exits remain allowed (`MarginFloorTest`) |

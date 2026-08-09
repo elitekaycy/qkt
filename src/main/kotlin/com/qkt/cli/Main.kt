@@ -43,6 +43,8 @@ internal fun runMain(argv: Array<String>): Int =
             "preflight" -> PreflightCommand(args).run()
             "promotion" -> PromotionCommand(args).run()
             "incident" -> IncidentCommand(args).run()
+            "golden" -> GoldenCommand(args).run()
+            "soak" -> SoakCommand(args).run()
             "bot" ->
                 com.qkt.cli.bot
                     .BotCommand(args)
@@ -84,7 +86,7 @@ private fun printHelp() {
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
             lsp                     run the language server over stdio (for editors)
-            backtest <file> ...     run a one-shot backtest (--param fast=12 overrides a value)
+            backtest <file> ...     run a backtest (--enforce-live-breakers; --chaos for seeded stress)
             sweep <file> ...        grid-search params (--param fast=5,10,15 --rank sharpe)
             walkforward <file> ...  rolling in-sample/out-of-sample validation
             experiment run --plan <yaml>
@@ -125,6 +127,8 @@ private fun printHelp() {
             preflight <file>        validate production readiness (--production to fail closed)
             promotion ...           record/query promotion states, approvals, waivers, gates
             incident collect        build an incident zip with journal/log/state evidence
+            golden capture          export replayable MT5 ticks, fills, and gateway exchanges
+            soak report             derive exact-image paper-soak promotion evidence
 
         EDITOR INTEGRATIONS
             editor list             show supported editors + what's detected on this machine
