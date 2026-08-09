@@ -1175,7 +1175,8 @@ class MT5Broker(
     private fun isAmbiguousSendFailure(errorMessage: String): Boolean =
         errorMessage.startsWith("IO error") ||
             errorMessage.startsWith("HTTP 409") ||
-            errorMessage.startsWith("HTTP 5")
+            errorMessage.startsWith("HTTP 5") ||
+            errorMessage.startsWith("invalid gateway response after send")
 
     /**
      * Resolve an UNKNOWN send outcome by querying the venue for an order carrying this

@@ -99,6 +99,9 @@ class BacktestContext private constructor(
     private val gateFor: (String) -> Boolean = { true },
     private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+    private val enforceLiveBreakers: Boolean = false,
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -194,6 +197,9 @@ class BacktestContext private constructor(
             gateFor = gateFor,
             preCandle = preCandle,
             regimeWeights = regimeWeights,
+            enforceLiveBreakers = enforceLiveBreakers,
+            runawayMaxRoundTrips = runawayMaxRoundTrips,
+            runawayMaxRejections = runawayMaxRejections,
         )
     }
 
@@ -576,6 +582,9 @@ class BacktestContext private constructor(
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,
                 priceCollarFrac = cfg.priceCollarFrac,
+                enforceLiveBreakers = args.flag("enforce-live-breakers"),
+                runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
+                runawayMaxRejections = cfg.runawayMaxRejections,
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
@@ -826,6 +835,9 @@ class BacktestContext private constructor(
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,
                 priceCollarFrac = cfg.priceCollarFrac,
+                enforceLiveBreakers = args.flag("enforce-live-breakers"),
+                runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
+                runawayMaxRejections = cfg.runawayMaxRejections,
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
@@ -870,9 +882,16 @@ class BacktestContext private constructor(
             brokerKind: BrokerKind,
         ): ExecutionSimulationConfig {
             val seed = args.option("seed")?.toLongOrNull() ?: cfg.execution["seed"]?.toLongOrNull()
+            if (args.flag("chaos") && args.option("execution") != null) {
+                throw SetupError("--chaos cannot be combined with --execution")
+            }
             val preset =
-                (args.option("execution") ?: cfg.execution["preset"])
-                    ?.let(ExecutionPreset::fromConfig)
+                if (args.flag("chaos")) {
+                    ExecutionPreset.STRESS
+                } else {
+                    (args.option("execution") ?: cfg.execution["preset"])
+                        ?.let(ExecutionPreset::fromConfig)
+                }
             var result =
                 if (preset != null) {
                     ExecutionSimulationConfig.defaultsFor(preset, seed)

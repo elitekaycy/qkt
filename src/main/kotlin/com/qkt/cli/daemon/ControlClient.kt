@@ -33,6 +33,11 @@ open class ControlClient(
         return "http://127.0.0.1:$port"
     }
 
+    private fun authenticatedRequest(url: String): Request.Builder =
+        Request.Builder().url(url).also { builder ->
+            ControlToken.forClient(stateDir)?.let { builder.header("Authorization", "Bearer ${it.value}") }
+        }
+
     open fun metrics(): String {
         val resp =
             http.newCall(Request.Builder().url("${baseUrl()}/metrics").build()).execute()
@@ -84,9 +89,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url("${baseUrl()}/shutdown")
+                    authenticatedRequest("${baseUrl()}/shutdown")
                         .post("".toRequestBody(JSON_MEDIA))
                         .build(),
                 ).execute()
@@ -106,9 +109,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url("${baseUrl()}/stop/$name$q")
+                    authenticatedRequest("${baseUrl()}/stop/$name$q")
                         .post("".toRequestBody(JSON_MEDIA))
                         .build(),
                 ).execute()
@@ -119,9 +120,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url("${baseUrl()}/start/$name")
+                    authenticatedRequest("${baseUrl()}/start/$name")
                         .post("".toRequestBody(JSON_MEDIA))
                         .build(),
                 ).execute()
@@ -133,9 +132,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url(url)
+                    authenticatedRequest(url)
                         .post("".toRequestBody(JSON_MEDIA))
                         .build(),
                 ).execute()
@@ -151,9 +148,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url(url)
+                    authenticatedRequest(url)
                         .post("".toRequestBody(JSON_MEDIA))
                         .build(),
                 ).execute()
@@ -178,9 +173,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url(url)
+                    authenticatedRequest(url)
                         .post("".toRequestBody(JSON_MEDIA))
                         .build(),
                 ).execute()
@@ -207,9 +200,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url("${baseUrl()}/deploy$q")
+                    authenticatedRequest("${baseUrl()}/deploy$q")
                         .post(body)
                         .build(),
                 ).execute()
@@ -240,9 +231,7 @@ open class ControlClient(
         val resp =
             http
                 .newCall(
-                    Request
-                        .Builder()
-                        .url("${baseUrl()}/resync$q")
+                    authenticatedRequest("${baseUrl()}/resync$q")
                         .post(body)
                         .build(),
                 ).execute()

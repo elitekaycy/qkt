@@ -87,6 +87,7 @@ class DaemonStopStatusTest {
         try {
             waitForFile(stateDir.controlPortFile)
             val port = stateDir.readControlPort()!!
+            val token = requireNotNull(stateDir.readControlToken())
             val client = OkHttpClient()
             val resp =
                 client
@@ -94,6 +95,7 @@ class DaemonStopStatusTest {
                         Request
                             .Builder()
                             .url("http://127.0.0.1:$port/shutdown")
+                            .header("Authorization", "Bearer $token")
                             .post("".toRequestBody("application/json".toMediaType()))
                             .build(),
                     ).execute()

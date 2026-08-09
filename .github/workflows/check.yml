@@ -5,7 +5,7 @@ name: check
 # black-box suite is integration.yml, which gates testing and main.
 #
 # On a push to dev (i.e. a merged PR), a green build auto-promotes dev to
-# testing via a fast-forward push. The push authenticates with PROMOTE_SSH_KEY
+# testing via a merge commit that preserves prior testing promotion history. The push authenticates with PROMOTE_SSH_KEY
 # (a repo-scoped deploy key) rather than GITHUB_TOKEN, because a GITHUB_TOKEN
 # push does not trigger downstream workflows — integration.yml must fire on
 # testing.
@@ -36,6 +36,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Test promotion workflow
         run: bash tests/scripts/prepare-main-promotion-test.sh
+      - name: Test dev-to-testing promotion workflow
+        run: bash tests/scripts/promote-dev-to-testing-test.sh
+      - name: Test paper-soak attestation verifier
+        run: bash tests/scripts/verify-paper-soak-attestation-test.sh
       - name: Test release tag gate
         run: bash tests/scripts/verify-version-tag-test.sh
       - name: Build + test + ktlint
@@ -59,5 +63,5 @@ jobs:
         with:
           fetch-depth: 0
           ssh-key: ${{ secrets.PROMOTE_SSH_KEY }}
-      - name: Fast-forward testing to dev
-        run: git push origin "$GITHUB_SHA:refs/heads/testing"
+      - name: Merge dev into testing
+        run: bash scripts/promote-dev-to-testing.sh "$GITHUB_SHA"

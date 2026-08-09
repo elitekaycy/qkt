@@ -7,6 +7,7 @@ import com.qkt.backtest.EquitySample
 import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
+import com.qkt.backtest.RunawayBreakerReport
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
 import com.qkt.common.Side
@@ -20,6 +21,8 @@ import com.qkt.evidence.PromotionEvidence
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
+import com.qkt.risk.RunawayBreakerRule
+import com.qkt.risk.RunawayBreakerTrip
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.math.BigDecimal
@@ -90,6 +93,41 @@ class ReportPrinterTest {
         assertThat(out).doesNotContain("Sharpe (daily)")
         assertThat(out).contains("break-even trades excluded")
         assertThat(out).contains("NOT annualized")
+    }
+
+    @Test
+    fun `reports runaway breaker thresholds and live divergence`() {
+        val breaker =
+            RunawayBreakerReport(
+                enforceLiveBreakers = false,
+                maxRoundTrips = 10,
+                roundTripWindowMs = 600_000L,
+                maxRejections = 5,
+                rejectionWindowMs = 60_000L,
+                trips =
+                    listOf(
+                        RunawayBreakerTrip(
+                            1_700_000_000_000L,
+                            "fast",
+                            RunawayBreakerRule.ROUND_TRIPS,
+                            11,
+                            10,
+                            600_000L,
+                        ),
+                    ),
+            )
+        val result = result().copy(runawayBreaker = breaker)
+
+        val text = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER)
+        assertThat(text.toString()).contains("Runaway breaker:  observe-only")
+        assertThat(text.toString()).contains("LIVE BEHAVIOR WARNING")
+        assertThat(text.toString()).contains("2023-11-14T22:13:20Z")
+
+        val json = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Json, PrintStream(json), BrokerKind.PAPER)
+        assertThat(json.toString()).contains("\"runawayBreaker\":{\"enforceLiveBreakers\":false")
+        assertThat(json.toString()).contains("\"rule\":\"round_trips\"")
     }
 
     @Test

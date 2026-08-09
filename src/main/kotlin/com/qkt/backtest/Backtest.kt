@@ -98,6 +98,12 @@ class Backtest(
      * shared feed stays on the flat-default ordering.
      */
     private val engineHolder: Array<com.qkt.research.ReplayEngine?>? = null,
+    /** When true, replay halts on the same runaway-breaker trip as live execution. */
+    private val enforceLiveBreakers: Boolean = false,
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+    private val runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -142,6 +148,11 @@ class Backtest(
         gateFor: (String) -> Boolean = { true },
         preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
         regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+        enforceLiveBreakers: Boolean = false,
+        runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+        runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+        runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+        runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
     ) : this(
         strategies = strategies,
         rules = rules,
@@ -174,6 +185,11 @@ class Backtest(
         gateFor = gateFor,
         preCandle = preCandle,
         regimeWeights = regimeWeights,
+        enforceLiveBreakers = enforceLiveBreakers,
+        runawayMaxRoundTrips = runawayMaxRoundTrips,
+        runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+        runawayMaxRejections = runawayMaxRejections,
+        runawayRejectionWindowMs = runawayRejectionWindowMs,
     )
 
     /**
@@ -220,6 +236,11 @@ class Backtest(
                 gateFor = gateFor,
                 preCandle = preCandle,
                 regimeWeights = regimeWeights,
+                enforceLiveBreakers = enforceLiveBreakers,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+                runawayMaxRejections = runawayMaxRejections,
+                runawayRejectionWindowMs = runawayRejectionWindowMs,
                 barFills = barFills,
                 tickResolvedBars = tickResolvedBars,
                 tickSlicer = tickSlicer,
@@ -279,6 +300,11 @@ class Backtest(
             gateFor: (String) -> Boolean = { true },
             preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
             regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+            enforceLiveBreakers: Boolean = false,
+            runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+            runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+            runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+            runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -340,6 +366,11 @@ class Backtest(
                 gateFor = gateFor,
                 preCandle = preCandle,
                 regimeWeights = regimeWeights,
+                enforceLiveBreakers = enforceLiveBreakers,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+                runawayMaxRejections = runawayMaxRejections,
+                runawayRejectionWindowMs = runawayRejectionWindowMs,
             )
         }
 
@@ -380,6 +411,11 @@ class Backtest(
             gateFor: (String) -> Boolean = { true },
             preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
             regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+            enforceLiveBreakers: Boolean = false,
+            runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+            runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+            runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+            runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -458,6 +494,11 @@ class Backtest(
                 gateFor = gateFor,
                 preCandle = preCandle,
                 regimeWeights = regimeWeights,
+                enforceLiveBreakers = enforceLiveBreakers,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+                runawayMaxRejections = runawayMaxRejections,
+                runawayRejectionWindowMs = runawayRejectionWindowMs,
                 // Tick-resolved fills use the full-tick fill model (fill at the real tick price, not
                 // the trigger level): fills only ever occur on bars fed real ticks, so the bar-tier
                 // fill-at-trigger-price guard is both unnecessary and wrong here.

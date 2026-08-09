@@ -16,7 +16,7 @@ account:
 
 fx_conversion:
   source: market
-  missing_policy: warn
+  missing_policy: fail
 
 execution:
   preset: mt5-realistic
@@ -30,6 +30,8 @@ risk:
   margin_floor_pct: "200"
   measured_usage_hours: "24"
   measured_usage_max_qty: "0.01"
+  max_round_trips_10m: 10
+  max_broker_rejections_1m: 5
   max_drawdown_pct: "10"
   max_daily_drawdown_pct: "4"
   total_dd_basis: static

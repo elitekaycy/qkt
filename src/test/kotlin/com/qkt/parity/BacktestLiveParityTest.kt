@@ -10,6 +10,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.risk.RunawayBreakerRule
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
@@ -18,6 +19,7 @@ import java.time.Duration
 import java.util.concurrent.atomic.AtomicInteger
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 
 /**
  * Asserts that `Backtest` and `LiveSession` produce identical trade lists, final positions,
@@ -56,6 +58,83 @@ class BacktestLiveParityTest {
                 }
             }
         }
+
+    private fun rapidRoundTripStrategy(): Strategy =
+        object : Strategy {
+            private var buy = true
+
+            override fun onTick(
+                tick: Tick,
+                ctx: StrategyContext,
+                emit: (Signal) -> Unit,
+            ) {
+                if (buy) {
+                    emit(Signal.Buy(symbol, Money.of("1")))
+                } else {
+                    emit(Signal.Sell(symbol, Money.of("1")))
+                }
+                buy = !buy
+            }
+        }
+
+    private fun generatedStrategy(actions: IntArray): Strategy =
+        object : Strategy {
+            private var index = 0
+
+            override fun onTick(
+                tick: Tick,
+                ctx: StrategyContext,
+                emit: (Signal) -> Unit,
+            ) {
+                when (actions[index++]) {
+                    1 -> emit(Signal.Buy(symbol, Money.of("1")))
+                    2 -> emit(Signal.Sell(symbol, Money.of("1")))
+                }
+            }
+        }
+
+    private fun generatedCase(seed: Long): Pair<List<Tick>, IntArray> {
+        var state = seed.takeIf { it != 0L } ?: -7046029254386353131L
+
+        fun next(): Long {
+            state = state xor (state shl 13)
+            state = state xor (state ushr 7)
+            state = state xor (state shl 17)
+            return state
+        }
+
+        val actions = IntArray(16)
+        actions[0] = 1
+        actions[1] = 2
+        for (index in 2 until actions.size) actions[index] = Math.floorMod(next(), 5L).toInt().coerceAtMost(2)
+        val generatedTicks =
+            actions.indices.map { index ->
+                val cents = 10_000L + Math.floorMod(next(), 2_000L)
+                Tick(
+                    symbol,
+                    BigDecimal.valueOf(cents, 2),
+                    initialTs + index * 1_000L,
+                )
+            }
+        return generatedTicks to actions
+    }
+
+    private fun <T> withQuietParityLogs(block: () -> T): T {
+        val loggers =
+            listOf(
+                "com.qkt.app.LiveSession",
+                "com.qkt.app.OrderManager",
+                "com.qkt.app.TradingPipeline",
+                "com.qkt.risk.RiskEngine",
+            ).map { LoggerFactory.getLogger(it) as ch.qos.logback.classic.Logger }
+        val previous = loggers.map { it.level }
+        loggers.forEach { it.level = ch.qos.logback.classic.Level.ERROR }
+        return try {
+            block()
+        } finally {
+            loggers.zip(previous).forEach { (logger, level) -> logger.level = level }
+        }
+    }
 
     // The engine clock is driven by the tick being PROCESSED (LiveSession advances a MutableClock in
     // its consumer loop), so the feed just returns ticks — it no longer touches the clock.
@@ -121,6 +200,94 @@ class BacktestLiveParityTest {
             assertThat(l.price).isEqualByComparingTo(b.price)
             assertThat(l.timestamp).isEqualTo(b.timestamp)
             assertThat(l.orderId).isEqualTo(b.orderId)
+        }
+    }
+
+    @Test
+    fun `replay reports live breaker divergence and strict mode matches live`() {
+        val tickSeq =
+            (0 until 10).map { i ->
+                Tick(symbol, Money.of((100 + i).toString()), initialTs + i * 1_000L)
+            }
+        val observed =
+            Backtest(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                ticks = tickSeq,
+                initialTimestamp = initialTs,
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+            ).run()
+
+        assertThat(observed.trades).hasSize(10)
+        assertThat(observed.halts).isEmpty()
+        val observedBreaker = requireNotNull(observed.runawayBreaker)
+        assertThat(observedBreaker.enforceLiveBreakers).isFalse()
+        assertThat(observedBreaker.trips).hasSize(1)
+        assertThat(observedBreaker.trips.single().rule).isEqualTo(RunawayBreakerRule.ROUND_TRIPS)
+        assertThat(observedBreaker.trips.single().count).isEqualTo(3)
+
+        val strict =
+            Backtest(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                ticks = tickSeq,
+                initialTimestamp = initialTs,
+                enforceLiveBreakers = true,
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+            ).run()
+        val liveTrades = mutableListOf<Trade>()
+        val live =
+            LiveSession(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                source = FakeSource(tickSeq),
+                symbols = listOf(symbol),
+                clock = FixedClock(initialTs),
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+                onTrade = { trade, _, _ -> liveTrades.add(trade) },
+            ).start()
+        check(live.awaitTermination(Duration.ofSeconds(10))) { "live session did not terminate" }
+
+        assertThat(strict.runawayBreaker!!.enforceLiveBreakers).isTrue()
+        assertThat(strict.halts).hasSize(1)
+        assertThat(strict.trades.map { it.trade }).containsExactlyElementsOf(liveTrades)
+        assertThat(strict.trades).hasSizeLessThan(observed.trades.size)
+    }
+
+    @Test
+    fun `strict replay matches live across 500 generated tick and signal cases`() {
+        withQuietParityLogs {
+            for (seed in 1L..500L) {
+                val (tickSeq, actions) = generatedCase(seed)
+                val threshold = 1 + (seed % 4).toInt()
+                val backtestTrades =
+                    Backtest(
+                        strategies = listOf("generated" to generatedStrategy(actions.copyOf())),
+                        ticks = tickSeq,
+                        initialTimestamp = initialTs,
+                        enforceLiveBreakers = true,
+                        runawayMaxRoundTrips = threshold,
+                        runawayMaxRejections = 0,
+                    ).run()
+                        .trades
+                        .map { it.trade }
+                val liveTrades = mutableListOf<Trade>()
+                val live =
+                    LiveSession(
+                        strategies = listOf("generated" to generatedStrategy(actions.copyOf())),
+                        source = FakeSource(tickSeq),
+                        symbols = listOf(symbol),
+                        clock = FixedClock(initialTs),
+                        runawayMaxRoundTrips = threshold,
+                        runawayMaxRejections = 0,
+                        onTrade = { trade, _, _ -> liveTrades.add(trade) },
+                    ).start()
+                check(live.awaitTermination(Duration.ofSeconds(2))) { "live session did not terminate for seed $seed" }
+
+                assertThat(liveTrades)
+                    .`as`("strict breaker parity for generated seed %s", seed)
+                    .containsExactlyElementsOf(backtestTrades)
+            }
         }
     }
 

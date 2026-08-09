@@ -5,6 +5,7 @@ set -euo pipefail
 
 repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 gh_bin="${GH_BIN:-gh}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 testing_sha="$($gh_bin api "repos/$repo/branches/testing" --jq '.commit.sha')"
 integration="$($gh_bin run list \
@@ -36,6 +37,39 @@ if [ "$ahead_by" = "0" ]; then
     exit 0
 fi
 
+soak_runs="$($gh_bin run list \
+    --repo "$repo" \
+    --workflow paper-soak.yml \
+    --branch testing \
+    --limit 20 \
+    --json conclusion,databaseId,headSha,url \
+    --jq '.[] | select(.conclusion == "success") | [.databaseId, .headSha, .url] | join("|")')"
+soak_id=""
+soak_url=""
+while IFS='|' read -r candidate_id candidate_sha candidate_url; do
+    if [ -n "$candidate_id" ] && [ "$candidate_sha" = "$testing_sha" ]; then
+        soak_id="$candidate_id"
+        soak_url="$candidate_url"
+        break
+    fi
+done <<< "$soak_runs"
+if [ -z "$soak_id" ]; then
+    echo "::error::no successful paper-soak run exists for current testing $testing_sha"
+    exit 1
+fi
+
+soak_dir="$(mktemp -d)"
+trap 'rm -rf "$soak_dir"' EXIT
+$gh_bin run download "$soak_id" \
+    --repo "$repo" \
+    --name paper-soak-attestation \
+    --dir "$soak_dir"
+soak_attestation="$soak_dir/paper-soak-attestation.json"
+python3 "$script_dir/verify-paper-soak-attestation.py" "$soak_attestation" \
+    --expected-git-sha "$testing_sha" \
+    --expected-image-repository "ghcr.io/${repo%%/*}/qkt"
+soak_image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["image"])' "$soak_attestation")"
+
 pr_url="$($gh_bin pr list \
     --repo "$repo" \
     --base main \
@@ -60,6 +94,8 @@ if [ -z "$pr_url" ]; then
         '' \
         "- testing integration: $integration_url" \
         '- Windows packaging and installer validation is dispatched for the testing head' \
+        "- exact-image paper soak: $soak_url" \
+        "- soaked image: \`$soak_image\`" \
         '' \
         '## Documentation' \
         '' \
@@ -75,7 +111,7 @@ if [ -z "$pr_url" ]; then
         '' \
         '## Risk Notes' \
         '' \
-        '- release risk is defined by the underlying testing commits and their PRs')"
+        '- release risk is defined by the underlying testing commits, exact-image paper soak, and their PRs')"
     pr_url="$($gh_bin pr create \
         --repo "$repo" \
         --base main \
