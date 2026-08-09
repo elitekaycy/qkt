@@ -9,7 +9,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 
 | Command | What it does |
 |---|---|
-| `qkt daemon` | Start the daemon. Binds the control plane on an ephemeral 127.0.0.1 port. |
+| `qkt daemon` | Start the daemon. Binds the control plane on an ephemeral 127.0.0.1 port and requires bearer authentication for mutations. |
 | `qkt daemon stop` | Stop a running daemon. |
 | `qkt daemon status` | Health + uptime of a running daemon. |
 | `qkt deploy <file> [--as <name>]` | Deploy a strategy or portfolio. |
@@ -32,7 +32,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | Command | What it does |
 |---|---|
 | `qkt parse <file>` | Parse-and-validate a `.qkt` file; pretty-print errors. |
-| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--param fast=12` overrides a PARAM/LET for the run. |
+| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V] [--enforce-live-breakers]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--enforce-live-breakers` halts replay at the same runaway threshold as live; the default observe-only mode reports would-be trips while preserving the full research run. |
 | `qkt sweep <file> --from --to --param NAME=v1,v2 [--rank sharpe] [--parallelism N] [--json]` | Grid-search the cartesian product of `--param` axes; ranks runs by `--rank` (`sharpe`\|`calmar`\|`profitFactor`\|`totalPnL`\|`winRate`). JSON rows expose commission-net `totalPnL`, `commissionPaid`, daily P&L, and fill-cost inputs for downstream cost reconciliation. |
 | `qkt walkforward <file> --from --to --param NAME=v1,v2 --train 90d --test 30d --step 30d [--rank]` | Rolling in-sample/out-of-sample validation; reports per-fold winners, winner stability, and mean IS-vs-OOS score. |
 | `qkt run <file>` | Foreground paper-trade run. |
@@ -112,6 +112,11 @@ Most commands accept:
 - `--state-dir <path>` — override `~/.local/state/qkt/`
 - `--config <path>` — override `./qkt.config.yaml`
 - `--json` — emit machine-readable JSON instead of human-readable text
+
+Daemon clients automatically read the mutation bearer token from
+`<state-dir>/control.token`. Set `QKT_CONTROL_TOKEN` for secret-managed deployments;
+the daemon and CLI both prefer it over the state file. Read-only health, list, status,
+logs, latency, reconcile, and metrics routes remain unauthenticated on loopback.
 
 `qkt resync` also accepts `--dry-run`, `--reconcile=ignore-mismatches`, and the
 same production-gate waiver form as deploy: `--waive <gate> --reason <text>`.

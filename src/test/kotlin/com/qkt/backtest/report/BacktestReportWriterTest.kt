@@ -89,6 +89,7 @@ class BacktestReportWriterTest {
         assertThat(json).contains("\"global\":")
         assertThat(json).contains("\"swapPaid\": \"2.50000000\"")
         assertThat(json).contains("\"perStrategy\":")
+        assertThat(json).contains("\"runawayBreaker\": {\"enforceLiveBreakers\": false")
         Json.parseToJsonElement(json)
 
         val eqCsv = Files.readString(dir.resolve("equity_global.csv"))

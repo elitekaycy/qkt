@@ -43,13 +43,21 @@ class AccountingEngineTest {
     @Test
     fun `quote rate refuses missing conversion under warning policy`() {
         assertThatThrownBy {
-            AccountingEngine().quoteToAccountRate(
+            AccountingEngine(
+                config = AccountingConfig(missingPolicy = FxMissingPolicy.WARN),
+            ).quoteToAccountRate(
                 symbol = "BACKTEST:EURJPY",
                 timestamp = 2_000L,
                 referencePrice = BigDecimal("160"),
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("refusing to size order")
+    }
+
+    @Test
+    fun `missing conversion policy defaults to fail closed`() {
+        assertThat(AccountingConfig().missingPolicy).isEqualTo(FxMissingPolicy.FAIL)
+        assertThat(FxMissingPolicy.fromConfig(null)).isEqualTo(FxMissingPolicy.FAIL)
     }
 
     @Test

@@ -120,6 +120,12 @@ Pipe that into `node_exporter`'s textfile collector and Prometheus will pick it 
 
 ## Daemon control plane
 
+The control plane binds to loopback. Read-only endpoints remain unauthenticated for
+local monitoring. Every `POST` mutation requires `Authorization: Bearer <token>`.
+The daemon reads `QKT_CONTROL_TOKEN` when set; otherwise it creates
+`<state-dir>/control.token` with owner-only permissions. Ordinary `qkt` mutation
+commands load the same credential automatically.
+
 Beyond per-strategy ports, the daemon itself exposes:
 
 - `/daemon/health` — daemon process health

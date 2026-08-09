@@ -6,6 +6,7 @@ import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.TradeRecord
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 
 /**
  * Renders a [com.qkt.backtest.BacktestResult] as a self-contained HTML report —
@@ -47,6 +48,11 @@ class HtmlReportWriter(
         result.accounting?.let {
             sb.append("<section class=\"accounting\"><h2>Accounting</h2>")
             sb.append(accountingSection(it))
+            sb.append("</section>")
+        }
+        result.runawayBreaker?.let {
+            sb.append("<section class=\"runaway-breaker\"><h2>Runaway breaker</h2>")
+            sb.append(runawayBreakerSection(it))
             sb.append("</section>")
         }
 
@@ -237,6 +243,30 @@ class HtmlReportWriter(
             }
             append("<tr><td>cost kinds</td><td>${html(snapshot.supportedCostKinds.joinToString(", "))}</td></tr>")
             append("</tbody></table>")
+        }
+
+    private fun runawayBreakerSection(report: com.qkt.backtest.RunawayBreakerReport): String =
+        buildString {
+            append("<table><tbody>")
+            append(
+                "<tr><td>mode</td><td>${if (report.enforceLiveBreakers) "enforced" else "observe-only"}</td></tr>",
+            )
+            append(
+                "<tr><td>round trips</td><td>${report.maxRoundTrips} per " +
+                    "${report.roundTripWindowMs / 1000}s</td></tr>",
+            )
+            append(
+                "<tr><td>broker rejections</td><td>${report.maxRejections} per " +
+                    "${report.rejectionWindowMs / 1000}s</td></tr>",
+            )
+            append("</tbody></table>")
+            if (!report.enforceLiveBreakers && report.trips.isNotEmpty()) {
+                val first = report.trips.first()
+                append("<p class=\"warning\"><strong>LIVE BEHAVIOR WARNING:</strong> ")
+                append("the runaway breaker would have halted this strategy ${report.trips.size} time(s); first at ")
+                append(html(Instant.ofEpochMilli(first.timestampMs).toString()))
+                append(" [${html(first.strategyId)}]: ${html(first.reason())}</p>")
+            }
         }
 
     private fun html(s: String): String =

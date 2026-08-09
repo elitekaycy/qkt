@@ -298,6 +298,8 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when reported margin level is below this floor. `0` disables. |
 | `measured_usage_hours` | `24` | daemon pre-trade controls | New deployments can only trade up to `measured_usage_max_qty` during this window. `0` disables. |
 | `measured_usage_max_qty` | `0.01` | daemon pre-trade controls | Max entry quantity during measured usage. |
+| `max_round_trips_10m` | `10` | daemon, foreground run, and backtest disclosure | Per-strategy closing-fill threshold in 10 minutes. `0` disables. Live halts persistently on a breach; replay records the breach unless strict mode is enabled. |
+| `max_broker_rejections_1m` | `5` | daemon, foreground run, and backtest disclosure | Per-strategy broker-rejection threshold in one minute. `0` disables. Live halts persistently on a breach; replay records the breach unless strict mode is enabled. |
 | `max_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global total-drawdown halt. |
 | `max_daily_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global daily-drawdown halt. |
 | `total_dd_basis` | `static` | halt rules | `static` uses initial balance. `trailing` uses high-water equity. |
@@ -326,7 +328,7 @@ Per-strategy rules layer on top of global rules. A global breach halts the whole
 |---|---|---|---|---|
 | `account.currency` | ISO currency string | `USD` | accounting engine, reports, risk notional | Normalized to uppercase. |
 | `fx_conversion.source` | string | `market` | accounting evidence | Descriptive source label for FX conversion. |
-| `fx_conversion.missing_policy` | `warn` or `fail` | `warn` outside production, `fail` in production | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. |
+| `fx_conversion.missing_policy` | `warn` or `fail` | `fail` | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. `warn` is an explicit unsafe compatibility override. |
 | `fx_conversion.symbols.<PAIR>` | qkt symbol | empty | backtest/accounting | Maps an FX pair such as `USDJPY` to a qkt symbol used to source conversion marks. |
 
 CLI overrides are available for backtests: `--account-currency`, `--fx-source`, `--fx-missing-policy`, and repeated `--fx-symbol PAIR=QKT_SYMBOL`.

@@ -19,6 +19,7 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -40,11 +41,17 @@ object ControlRoutes {
         notifierMetrics: com.qkt.notify.NotifierMetrics? = null,
         prometheusMetricsEnabled: Boolean = true,
         promotionGates: PromotionGateConfig = PromotionGateConfig.DISABLED,
+        controlToken: String? = null,
     ): HttpHandler =
         HttpHandler { ex ->
             val path = ex.requestURI.path
             val method = ex.requestMethod
             try {
+                if (method == "POST" && controlToken != null && !isAuthorized(ex, controlToken)) {
+                    ex.responseHeaders.add("WWW-Authenticate", "Bearer")
+                    respond(ex, 401, """{"error":"unauthorized"}""")
+                    return@HttpHandler
+                }
                 when {
                     method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
                     method == "POST" && path == "/deploy" ->
@@ -80,6 +87,20 @@ object ControlRoutes {
                 respond(ex, 500, """{"error":"$msg"}""")
             }
         }
+
+    private fun isAuthorized(
+        ex: HttpExchange,
+        expectedToken: String,
+    ): Boolean {
+        val header = ex.requestHeaders.getFirst("Authorization") ?: return false
+        val prefix = "Bearer "
+        if (!header.regionMatches(0, prefix, 0, prefix.length, ignoreCase = true)) return false
+        val supplied = header.substring(prefix.length)
+        return MessageDigest.isEqual(
+            supplied.toByteArray(StandardCharsets.UTF_8),
+            expectedToken.toByteArray(StandardCharsets.UTF_8),
+        )
+    }
 
     /**
      * `GET /metrics` — Prometheus text exposition format. Currently covers:

@@ -60,7 +60,7 @@ class MT5BrokerOcoAtomicityTest {
     }
 
     @Test
-    fun `OCO rejects atomically when second leg fails — first leg cancelled, no OrderAccepted`() {
+    fun `OCO rejects atomically when second leg fails - first leg cancelled, no OrderAccepted`() {
         val firstTicket = 8001L
         val orderCalls = AtomicInteger(0)
         server.dispatcher =
@@ -106,7 +106,7 @@ class MT5BrokerOcoAtomicityTest {
     }
 
     @Test
-    fun `OCO rejects atomically when first leg fails — second leg never placed`() {
+    fun `OCO rejects atomically when first leg fails - second leg never placed`() {
         val orderCalls = AtomicInteger(0)
         server.dispatcher =
             object : Dispatcher() {
