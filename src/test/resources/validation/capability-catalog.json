@@ -1,0 +1,108 @@
+{
+  "schema": "qkt-validation-capability-catalog-v1",
+  "evidenceStatus": "inventory-only",
+  "axes": [
+    "oracle",
+    "dsl",
+    "ticks",
+    "bars",
+    "tickResolvedBars",
+    "livePaper",
+    "mt5Demo",
+    "reports",
+    "journal",
+    "insights",
+    "portfolio"
+  ],
+  "categories": {
+    "indicators": {
+      "source": "IndicatorRegistry.names",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "ADX", "ANCHORED_RETURN", "ATR", "BETA", "BOLLINGER_LOWER", "BOLLINGER_MIDDLE",
+        "BOLLINGER_UPPER", "CCI", "CORRELATION", "DEMA", "EMA", "ER", "FAILED_BREAK_HIGH",
+        "FAILED_BREAK_LOW", "GAP_FILL_FRACTION", "HIGHEST", "HMA", "IB_DEFENDED_HIGH",
+        "IB_DEFENDED_LOW", "KELTNER_LOWER", "KELTNER_MIDDLE", "KELTNER_UPPER", "LAG",
+        "LOWEST", "MACD", "MACD_HIST", "MACD_SIGNAL", "MINUS_DI", "OBV", "PERCENTILE_RANK",
+        "PIVOT_P", "PIVOT_R1", "PIVOT_S1", "PLUS_DI", "REGRESSION_SLOPE", "REOPEN_GAP",
+        "REOPEN_GAP_ORIGIN", "RSI", "RUNLENGTH", "RUNLENGTH_WHERE", "SEASONAL_RANGE",
+        "SEASONAL_RANGE_STDEV", "SESSION_MOMENTUM", "SESSION_RANGE_HIGH", "SESSION_RANGE_LOW",
+        "SKEW", "SMA", "STDDEV", "STOCH_D", "STOCH_K", "TEMA", "VARIANCE", "VARIANCE_RATIO",
+        "VWAP", "VWAP_SESSION", "VWAP_SESSION_STDEV", "WILLIAMS_R", "WMA", "ZSCORE"
+      ]
+    },
+    "numericFunctions": {
+      "source": "FuncRegistry.names",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "ABS", "CEIL", "EXP", "FLOOR", "LOG", "MAX", "MIN", "MOD", "NORMALIZE", "POW",
+        "RANK_OF", "ROUND", "ROUND_TO", "SOFTMAX", "SQRT"
+      ]
+    },
+    "expressions": {
+      "source": "ExprAst.permittedSubclasses",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "AccountRef", "Aggregate", "Between", "BinaryOp", "BoolLit", "CalendarWindow", "CaseWhen",
+        "CmpOp", "CooldownRef", "Crosses", "EntryQty", "ExitRef", "FuncCall", "InList",
+        "IndicatorCall", "IsNull", "LastTradingDayOfMonth", "NowAccessor", "NumLit", "PositionRef",
+        "Ref", "SequenceAccessor", "SessionWindow", "StackEntryRef", "StateAccessor", "StreakRef",
+        "StreamFieldRef", "StringLit", "TradesRef", "UnaryOp"
+      ]
+    },
+    "actions": {
+      "source": "ActionAst.permittedSubclasses",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "Block", "Buy", "Cancel", "CancelAll", "Close", "CloseAll", "Latch", "Log", "OcoEntry",
+        "Resize", "Sell"
+      ]
+    },
+    "sizing": {
+      "source": "SizingAst.permittedSubclasses",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "SizeNotional", "SizePctBalance", "SizePctEquity", "SizePositionFull", "SizeQty",
+        "SizeRiskAbs", "SizeRiskFrac", "SizeRiskFracOfBook"
+      ]
+    },
+    "dslOrderTypes": {
+      "source": "OrderTypeAst.permittedSubclasses",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "ExitRelativeLimit", "ExitRelativeStop", "Limit", "Market", "Stop", "StopLimit", "TrailingBy",
+        "TrailingPct"
+      ]
+    },
+    "normalizedOrders": {
+      "source": "OrderRequest.permittedSubclasses",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "ArmedTrailingStop", "Bracket", "IfTouched", "Limit", "Market", "OTO", "ScaleOut",
+        "StandaloneOCO", "Stack", "SteppedStop", "Stop", "StopLimit", "TimeExit",
+        "TimeTighteningStop", "TrailingStop", "TrailingStopLimit"
+      ]
+    },
+    "timeInForce": {
+      "source": "TimeInForce.entries",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": ["DAY", "FOK", "GTC", "GTD", "IOC"]
+    },
+    "timeframes": {
+      "source": "TimeWindow.parse equivalence partitions",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": ["1s", "5s", "1m", "2m", "5m", "15m", "1h", "1d", "invalid-5ms"]
+    },
+    "runtimeScenarios": {
+      "source": "validation design",
+      "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "capabilities": [
+        "already-deployed", "candle-boundary", "config-file", "configless", "disconnect-reconnect",
+        "duplicate-tick", "gateway-restart", "gap", "missing-bar", "multi-container", "multi-symbol",
+        "multi-timeframe", "out-of-order-tick", "partial-fill", "process-restart", "rapid-orders",
+        "rejection", "session-rollover", "simultaneous-timestamp", "state-resync", "venue-reconcile",
+        "warmup"
+      ]
+    }
+  }
+}
