@@ -882,9 +882,16 @@ class BacktestContext private constructor(
             brokerKind: BrokerKind,
         ): ExecutionSimulationConfig {
             val seed = args.option("seed")?.toLongOrNull() ?: cfg.execution["seed"]?.toLongOrNull()
+            if (args.flag("chaos") && args.option("execution") != null) {
+                throw SetupError("--chaos cannot be combined with --execution")
+            }
             val preset =
-                (args.option("execution") ?: cfg.execution["preset"])
-                    ?.let(ExecutionPreset::fromConfig)
+                if (args.flag("chaos")) {
+                    ExecutionPreset.STRESS
+                } else {
+                    (args.option("execution") ?: cfg.execution["preset"])
+                        ?.let(ExecutionPreset::fromConfig)
+                }
             var result =
                 if (preset != null) {
                     ExecutionSimulationConfig.defaultsFor(preset, seed)

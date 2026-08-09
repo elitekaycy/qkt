@@ -223,6 +223,15 @@ class DaemonCommand(
         // constructed below. Recovery runs strictly after the broker is built, so by
         // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
         val registryRef = AtomicReference<StrategyRegistry?>(null)
+        val mt5TransportJournals =
+            mt5Profiles.associate { profile ->
+                profile.name.lowercase() to
+                    com.qkt.broker.mt5.MT5TransportJournal(
+                        stateDir.stateRoot.resolve("mt5-transport-journal"),
+                        profile.name,
+                        com.qkt.common.SystemClock(),
+                    )
+            }
         val mt5Factories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
@@ -235,6 +244,7 @@ class DaemonCommand(
                         retryAttempts = profile.retryAttempts,
                         apiKey = profile.apiKey,
                         readCache = MT5ReadCache(SHARED_MT5_READ_TTL_MS),
+                        transportJournal = mt5TransportJournals.getValue(key),
                     )
                 key to
                     { bus, clock, priceTracker, _, strategyName ->
@@ -479,6 +489,7 @@ class DaemonCommand(
             runCatching { dailySummarySchedulers.forEach { it.close() } }
             runCatching { registry.stopAll() }
             runCatching { statePersistor.close() }
+            mt5TransportJournals.values.forEach { runCatching { it.close() } }
             runCatching { bybitClient?.close() }
             runCatching { notifier.close() }
             runCatching { insightsSink?.close() }

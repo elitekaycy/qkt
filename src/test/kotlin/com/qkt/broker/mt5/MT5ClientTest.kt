@@ -136,6 +136,32 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `placeOrderAsync reports malformed success as an ambiguous send failure`() {
+        server.enqueue(MockResponse().setBody("not-json"))
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+
+        client.placeOrderAsync(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY",
+                magic = 10001,
+                comment = "ord-malformed",
+            ),
+        ) { response ->
+            result.set(response)
+            latch.countDown()
+        }
+
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(-1)
+        assertThat(result.get().errorMessage).startsWith("invalid gateway response after send")
+    }
+
+    @Test
     fun `failed GET retains gateway detail for the broker error`() {
         server.enqueue(MockResponse().setResponseCode(503).setBody("""{"error":"terminal unavailable"}"""))
 

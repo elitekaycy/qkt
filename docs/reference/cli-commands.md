@@ -32,7 +32,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | Command | What it does |
 |---|---|
 | `qkt parse <file>` | Parse-and-validate a `.qkt` file; pretty-print errors. |
-| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V] [--enforce-live-breakers]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--enforce-live-breakers` halts replay at the same runaway threshold as live; the default observe-only mode reports would-be trips while preserving the full research run. |
+| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V] [--enforce-live-breakers] [--chaos]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--enforce-live-breakers` halts replay at the same runaway threshold as live; the default observe-only mode reports would-be trips while preserving the full research run. `--chaos` selects the seeded stress preset and cannot be combined with `--execution`. |
 | `qkt sweep <file> --from --to --param NAME=v1,v2 [--rank sharpe] [--parallelism N] [--json]` | Grid-search the cartesian product of `--param` axes; ranks runs by `--rank` (`sharpe`\|`calmar`\|`profitFactor`\|`totalPnL`\|`winRate`). JSON rows expose commission-net `totalPnL`, `commissionPaid`, daily P&L, and fill-cost inputs for downstream cost reconciliation. |
 | `qkt walkforward <file> --from --to --param NAME=v1,v2 --train 90d --test 30d --step 30d [--rank]` | Rolling in-sample/out-of-sample validation; reports per-fold winners, winner stability, and mean IS-vs-OOS score. |
 | `qkt run <file>` | Foreground paper-trade run. |
@@ -104,6 +104,8 @@ and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 | `qkt brokers list [--json]` | Resolved broker profiles (defaults + user config + env). |
 | `qkt instruments verify [--broker NAME] [--instruments PATH] [--json]` | Compare static instrument metadata with each matching MT5 profile's live `/symbol_info`; exits non-zero on any mismatch. |
 | `qkt audit-ticks --symbol X --duration N --mt5-profile P [--reference tradingview\|mt5-history]` | Compare TV with MT5, or reconcile live MT5 quotes against raw venue history. |
+| `qkt golden capture --session <strategy> [--state-dir DIR] [--out ZIP]` | Export retained engine ticks/fills, orders, and raw MT5 exchanges as a checksummed ZIP. Requires a filled order ID linked to an MT5 `/order` idempotency key and fails if evidence is missing or a journal reports dropped records. |
+| `qkt soak report <strategy> --testing-sha SHA --image REPO@sha256:DIGEST --started-at UTC --completed-at UTC --trading-days N --health JSONL --reconciliation JSON --golden ZIP --out JSON` | Derive fail-closed paper-soak promotion evidence from health samples, final reconciliation, and a golden bundle. The promotion verifier separately enforces 48 hours or five trading days. |
 
 ## Global flags
 

@@ -101,10 +101,13 @@ Historical note kept for context: before Phase 30, backtest PnL was off by a fac
 
 `MT5BrokerSimulator` now models deterministic volume and price quantization, bid/ask fills,
 contract-size PnL, stop-distance rejection, and configurable latency/rejection stress. The
-authentic golden replay covers one market order. Broader venue claims still require
-additional captures for pending/OCO orders, partial fills, rejected requests, and volatile-period
-latency. Those residuals must not be inferred from the single exact fill. Operational proof for a
-second MT5 profile remains tracked by #44.
+authentic golden replay covers one market order. `qkt golden capture` now turns retained
+demo sessions into checksummed tick/fill/order/gateway bundles, but a captured bundle is evidence,
+not automatically a new verifier assertion. Promote representative captures into regression tests
+for pending/OCO orders, partial fills, rejected requests, and volatile-period latency. Those
+residuals must not be inferred from the single exact fill. `qkt backtest --chaos` applies the
+seeded stress preset; it does not claim to reproduce every gateway HTTP or venue-retcode sequence.
+Operational proof for a second MT5 profile remains tracked by #44.
 
 ## 2026-06-10 audit addendum — divergences this catalog was missing
 
