@@ -101,8 +101,8 @@ xorshift-generated tick and signal cases.
 
 ## Test Environment Hardening
 
-The Gradle and Kotlin daemon JVMs pin UTF-8 and use 1.5 GB/1 GB heap ceilings so
-they can coexist with a forked test worker on a 4 GB host. The two OCO test names
+The Gradle and Kotlin daemon JVMs pin UTF-8 while retaining the repository's
+established heap sizing. The two OCO test names
 implicated by the report use ASCII punctuation as an additional defense. The
 wrapper is already tracked as executable (`100755`), so no mode change is needed.
 
