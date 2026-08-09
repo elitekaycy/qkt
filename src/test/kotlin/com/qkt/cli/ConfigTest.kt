@@ -24,6 +24,7 @@ class ConfigTest {
         assertThat(c.source).isEqualTo("local")
         assertThat(c.dataRoot).isEqualTo("./data")
         assertThat(c.startingBalance).isEqualByComparingTo("0")
+        assertThat(c.accountingConfig.missingPolicy).isEqualTo(com.qkt.accounting.FxMissingPolicy.FAIL)
     }
 
     @Test
@@ -96,6 +97,26 @@ class ConfigTest {
         Files.writeString(cfg, "risk:\n  live_equity_basis: mixed\n")
         val error = runCatching { Config.load(cfg).liveEquityBasis }.exceptionOrNull()
         assertThat(error).hasMessageContaining("valid: venue, modeled")
+    }
+
+    @Test
+    fun `runaway breaker thresholds read from risk config`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            risk:
+              max_round_trips_10m: 24
+              max_broker_rejections_1m: 8
+            """.trimIndent(),
+        )
+
+        val c = Config.load(cfg)
+
+        assertThat(c.runawayMaxRoundTrips).isEqualTo(24)
+        assertThat(c.runawayMaxRejections).isEqualTo(8)
     }
 
     @Test

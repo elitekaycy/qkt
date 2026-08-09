@@ -84,7 +84,7 @@ private fun printHelp() {
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
             lsp                     run the language server over stdio (for editors)
-            backtest <file> ...     run a one-shot backtest (--param fast=12 overrides a value)
+            backtest <file> ...     run a one-shot backtest (--enforce-live-breakers for strict parity)
             sweep <file> ...        grid-search params (--param fast=5,10,15 --rank sharpe)
             walkforward <file> ...  rolling in-sample/out-of-sample validation
             experiment run --plan <yaml>

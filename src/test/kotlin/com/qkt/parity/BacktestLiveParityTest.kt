@@ -10,6 +10,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.risk.RunawayBreakerRule
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
@@ -54,6 +55,24 @@ class BacktestLiveParityTest {
                     s % 12 == 0 -> emit(Signal.Buy(symbol, Money.of("0.1")))
                     s % 12 == 6 -> emit(Signal.Sell(symbol, Money.of("0.1")))
                 }
+            }
+        }
+
+    private fun rapidRoundTripStrategy(): Strategy =
+        object : Strategy {
+            private var buy = true
+
+            override fun onTick(
+                tick: Tick,
+                ctx: StrategyContext,
+                emit: (Signal) -> Unit,
+            ) {
+                if (buy) {
+                    emit(Signal.Buy(symbol, Money.of("1")))
+                } else {
+                    emit(Signal.Sell(symbol, Money.of("1")))
+                }
+                buy = !buy
             }
         }
 
@@ -122,6 +141,57 @@ class BacktestLiveParityTest {
             assertThat(l.timestamp).isEqualTo(b.timestamp)
             assertThat(l.orderId).isEqualTo(b.orderId)
         }
+    }
+
+    @Test
+    fun `replay reports live breaker divergence and strict mode matches live`() {
+        val tickSeq =
+            (0 until 10).map { i ->
+                Tick(symbol, Money.of((100 + i).toString()), initialTs + i * 1_000L)
+            }
+        val observed =
+            Backtest(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                ticks = tickSeq,
+                initialTimestamp = initialTs,
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+            ).run()
+
+        assertThat(observed.trades).hasSize(10)
+        assertThat(observed.halts).isEmpty()
+        val observedBreaker = requireNotNull(observed.runawayBreaker)
+        assertThat(observedBreaker.enforceLiveBreakers).isFalse()
+        assertThat(observedBreaker.trips).hasSize(1)
+        assertThat(observedBreaker.trips.single().rule).isEqualTo(RunawayBreakerRule.ROUND_TRIPS)
+        assertThat(observedBreaker.trips.single().count).isEqualTo(3)
+
+        val strict =
+            Backtest(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                ticks = tickSeq,
+                initialTimestamp = initialTs,
+                enforceLiveBreakers = true,
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+            ).run()
+        val liveTrades = mutableListOf<Trade>()
+        val live =
+            LiveSession(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                source = FakeSource(tickSeq),
+                symbols = listOf(symbol),
+                clock = FixedClock(initialTs),
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+                onTrade = { trade, _, _ -> liveTrades.add(trade) },
+            ).start()
+        check(live.awaitTermination(Duration.ofSeconds(10))) { "live session did not terminate" }
+
+        assertThat(strict.runawayBreaker!!.enforceLiveBreakers).isTrue()
+        assertThat(strict.halts).hasSize(1)
+        assertThat(strict.trades.map { it.trade }).containsExactlyElementsOf(liveTrades)
+        assertThat(strict.trades).hasSizeLessThan(observed.trades.size)
     }
 
     @Test

@@ -103,12 +103,16 @@ class RunCommand(
 
         var accountingConfig = com.qkt.accounting.AccountingConfig()
         var liveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE
+        var runawayMaxRoundTrips = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS
+        var runawayMaxRejections = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: run {
                 val configPath = Config.resolvePath(args.option("config"))
                 val cfg = Config.load(configPath)
                 accountingConfig = cfg.accountingConfig
                 liveEquityBasis = cfg.liveEquityBasis
+                runawayMaxRoundTrips = cfg.runawayMaxRoundTrips
+                runawayMaxRejections = cfg.runawayMaxRejections
                 val mt5Profiles =
                     try {
                         com.qkt.broker.mt5
@@ -147,6 +151,8 @@ class RunCommand(
                 candleWindow = candleWindow,
                 accountingConfig = accountingConfig,
                 equityBasis = liveEquityBasis,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayMaxRejections = runawayMaxRejections,
                 onTrade = { trade, realized, _ ->
                     val ts = Instant.ofEpochMilli(trade.timestamp)
                     println(
