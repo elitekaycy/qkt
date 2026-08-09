@@ -2,6 +2,33 @@ package com.qkt.risk
 
 import com.qkt.common.Clock
 
+/** The safety rule that caused a [RunawayBreakerTrip]. */
+enum class RunawayBreakerRule {
+    ROUND_TRIPS,
+    BROKER_REJECTIONS,
+}
+
+/** Structured evidence that a strategy crossed one live runaway-breaker threshold. */
+data class RunawayBreakerTrip(
+    val timestampMs: Long,
+    val strategyId: String,
+    val rule: RunawayBreakerRule,
+    val count: Int,
+    val threshold: Int,
+    val windowMs: Long,
+) {
+    /** Operator-facing halt/warning text shared by live enforcement and replay disclosure. */
+    fun reason(): String =
+        when (rule) {
+            RunawayBreakerRule.ROUND_TRIPS ->
+                "runaway breaker: $count round trips in ${windowMs / 1000}s " +
+                    "(max $threshold) - fill/re-enter loop suspected"
+            RunawayBreakerRule.BROKER_REJECTIONS ->
+                "runaway breaker: $count broker rejections in ${windowMs / 1000}s " +
+                    "(max $threshold) - strategy is hammering the venue"
+        }
+}
+
 /**
  * Circuit breaker for a strategy that is wrong at machine speed (FIA §1.5; Knight ran
  * 45 minutes with alerts firing and nothing blocking). Counts per-strategy closing
@@ -18,33 +45,69 @@ class RunawayBreaker(
     private val roundTripWindowMs: Long = DEFAULT_ROUND_TRIP_WINDOW_MS,
     private val maxRejections: Int = DEFAULT_MAX_REJECTIONS,
     private val rejectionWindowMs: Long = DEFAULT_REJECTION_WINDOW_MS,
+    private val enforce: Boolean = true,
+    private val onTrip: (RunawayBreakerTrip) -> Unit = {},
 ) {
     private val closesByStrategy = mutableMapOf<String, ArrayDeque<Long>>()
     private val rejectionsByStrategy = mutableMapOf<String, ArrayDeque<Long>>()
+    private val activeRoundTripStrategies = mutableSetOf<String>()
+    private val activeRejectionStrategies = mutableSetOf<String>()
 
     /** Record a closing fill (realized PnL != 0) for [strategyId]. */
     fun recordClose(strategyId: String) {
         if (maxRoundTrips <= 0 || strategyId.isBlank()) return
-        val count = record(closesByStrategy, strategyId, roundTripWindowMs)
-        if (count > maxRoundTrips) {
-            riskState.haltStrategy(
-                strategyId,
-                "runaway breaker: $count round trips in ${roundTripWindowMs / 1000}s " +
-                    "(max $maxRoundTrips) — fill/re-enter loop suspected",
-                scope = HaltScope.PERSISTENT,
-            )
-        }
+        evaluate(
+            strategyId = strategyId,
+            rule = RunawayBreakerRule.ROUND_TRIPS,
+            map = closesByStrategy,
+            threshold = maxRoundTrips,
+            windowMs = roundTripWindowMs,
+            activeStrategies = activeRoundTripStrategies,
+        )
     }
 
     /** Record a broker rejection for [strategyId]. */
     fun recordRejection(strategyId: String) {
         if (maxRejections <= 0 || strategyId.isBlank()) return
-        val count = record(rejectionsByStrategy, strategyId, rejectionWindowMs)
-        if (count > maxRejections) {
+        evaluate(
+            strategyId = strategyId,
+            rule = RunawayBreakerRule.BROKER_REJECTIONS,
+            map = rejectionsByStrategy,
+            threshold = maxRejections,
+            windowMs = rejectionWindowMs,
+            activeStrategies = activeRejectionStrategies,
+        )
+    }
+
+    private fun evaluate(
+        strategyId: String,
+        rule: RunawayBreakerRule,
+        map: MutableMap<String, ArrayDeque<Long>>,
+        threshold: Int,
+        windowMs: Long,
+        activeStrategies: MutableSet<String>,
+    ) {
+        val now = clock.now()
+        val count = record(map, strategyId, windowMs, now)
+        if (count <= threshold) {
+            activeStrategies.remove(strategyId)
+            return
+        }
+        if (!activeStrategies.add(strategyId)) return
+        val trip =
+            RunawayBreakerTrip(
+                timestampMs = now,
+                strategyId = strategyId,
+                rule = rule,
+                count = count,
+                threshold = threshold,
+                windowMs = windowMs,
+            )
+        onTrip(trip)
+        if (enforce) {
             riskState.haltStrategy(
                 strategyId,
-                "runaway breaker: $count broker rejections in ${rejectionWindowMs / 1000}s " +
-                    "(max $maxRejections) — strategy is hammering the venue",
+                trip.reason(),
                 scope = HaltScope.PERSISTENT,
             )
         }
@@ -54,8 +117,8 @@ class RunawayBreaker(
         map: MutableMap<String, ArrayDeque<Long>>,
         strategyId: String,
         windowMs: Long,
+        now: Long,
     ): Int {
-        val now = clock.now()
         val stamps = map.getOrPut(strategyId) { ArrayDeque() }
         stamps.addLast(now)
         while (stamps.isNotEmpty() && now - stamps.first() > windowMs) stamps.removeFirst()

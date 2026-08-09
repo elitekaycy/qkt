@@ -127,6 +127,11 @@ class ReplayEngine(
      */
     tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
+    private val enforceLiveBreakers: Boolean = false,
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+    private val runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
 ) : AutoCloseable {
     private val log = org.slf4j.LoggerFactory.getLogger(ReplayEngine::class.java)
 
@@ -166,6 +171,7 @@ class ReplayEngine(
     private val tradeRecords = mutableListOf<TradeRecord>()
     private val rejections = mutableListOf<RiskRejectedEvent>()
     private val halts = mutableListOf<com.qkt.events.RiskEvent.Halted>()
+    private val breakerTrips = mutableListOf<com.qkt.risk.RunawayBreakerTrip>()
     private val tape = mutableListOf<TapeEvent>()
 
     init {
@@ -392,6 +398,17 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                runawayBreaker =
+                    com.qkt.risk.RunawayBreaker(
+                        clock = clock,
+                        riskState = riskState,
+                        maxRoundTrips = runawayMaxRoundTrips,
+                        roundTripWindowMs = runawayRoundTripWindowMs,
+                        maxRejections = runawayMaxRejections,
+                        rejectionWindowMs = runawayRejectionWindowMs,
+                        enforce = enforceLiveBreakers,
+                        onTrip = breakerTrips::add,
+                    ),
                 pacerLedger = pacerLedger,
                 pacerCooldownDurationMs = pacerCooldownDurationMs,
                 pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
@@ -649,6 +666,15 @@ class ReplayEngine(
             bookRisk = bookRiskMonitor.result(annualizationFactor),
             accounting = accounting.snapshot(),
             finalPositionsByStrategy = strategyPositions.allByStrategy(),
+            runawayBreaker =
+                com.qkt.backtest.RunawayBreakerReport(
+                    enforceLiveBreakers = enforceLiveBreakers,
+                    maxRoundTrips = runawayMaxRoundTrips,
+                    roundTripWindowMs = runawayRoundTripWindowMs,
+                    maxRejections = runawayMaxRejections,
+                    rejectionWindowMs = runawayRejectionWindowMs,
+                    trips = breakerTrips.toList(),
+                ),
         )
     }
 
