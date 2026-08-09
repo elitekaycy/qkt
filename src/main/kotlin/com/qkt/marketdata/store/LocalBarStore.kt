@@ -93,7 +93,7 @@ class LocalBarStore(
                 .durationMs
         val out = mutableListOf<Candle>()
         Files.newBufferedReader(path).use { reader ->
-            var line = reader.readLine() ?: return emptyList()
+            var line: String? = reader.readLine() ?: return emptyList()
             // Skip header
             line = reader.readLine()
             while (line != null) {

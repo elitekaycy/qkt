@@ -15,6 +15,9 @@ class StateDir private constructor(
 ) {
     val logsDir: Path = root.resolve("logs")
     val controlPortFile: Path = root.resolve("control.port")
+
+    /** Owner-only bearer token shared by the daemon and local CLI commands. */
+    val controlTokenFile: Path = root.resolve("control.token")
     val pidFile: Path = root.resolve("daemon.pid")
 
     init {
@@ -29,6 +32,12 @@ class StateDir private constructor(
 
     fun deleteControlPort() {
         Files.deleteIfExists(controlPortFile)
+    }
+
+    /** Read the daemon bearer token, or null before the daemon has created one. */
+    fun readControlToken(): String? {
+        if (!Files.isRegularFile(controlTokenFile)) return null
+        return Files.readString(controlTokenFile).trim().takeIf { it.isNotEmpty() }
     }
 
     fun logFile(name: String): Path = logsDir.resolve("${name.replace("/", "__")}.log")

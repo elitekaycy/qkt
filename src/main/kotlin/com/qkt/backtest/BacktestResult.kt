@@ -4,6 +4,17 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.evidence.EvidenceEnvelope
 import com.qkt.observability.LatencyRegistry
 import com.qkt.positions.Position
+import com.qkt.risk.RunawayBreakerTrip
+
+/** Runaway-breaker thresholds and trip evidence attached to a replay result. */
+data class RunawayBreakerReport(
+    val enforceLiveBreakers: Boolean,
+    val maxRoundTrips: Int,
+    val roundTripWindowMs: Long,
+    val maxRejections: Int,
+    val rejectionWindowMs: Long,
+    val trips: List<RunawayBreakerTrip>,
+)
 
 data class BacktestResult(
     val trades: List<TradeRecord>,
@@ -55,4 +66,6 @@ data class BacktestResult(
      * this preserves independent-leg ownership and the remaining entry basis after partial closes.
      */
     val finalPositionsByStrategy: Map<String, Map<String, Position>> = emptyMap(),
+    /** Live safety-breaker assumptions and any point where an unconstrained replay diverged. */
+    val runawayBreaker: RunawayBreakerReport? = null,
 )

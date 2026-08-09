@@ -6,6 +6,7 @@ import com.qkt.backtest.EquityFanPoint
 import com.qkt.backtest.EquitySample
 import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
+import com.qkt.backtest.RunawayBreakerReport
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
 import com.qkt.common.Side
@@ -15,6 +16,8 @@ import com.qkt.evidence.ExecutionEvidence
 import com.qkt.evidence.ExperimentEvidence
 import com.qkt.evidence.PromotionEvidence
 import com.qkt.execution.Trade
+import com.qkt.risk.RunawayBreakerRule
+import com.qkt.risk.RunawayBreakerTrip
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -53,6 +56,8 @@ class HtmlReportWriterTest {
         assertThat(html).contains("split.train")
         assertThat(html).contains("2026-06-04T00:00:00Z/2026-06-04T04:00:00Z")
         assertThat(html).contains("promotion rationale")
+        assertThat(html).contains("Runaway breaker")
+        assertThat(html).contains("LIVE BEHAVIOR WARNING")
         assertThat(html).doesNotContain("<script")
     }
 
@@ -164,6 +169,25 @@ class HtmlReportWriterTest {
                             selectedParams = mapOf("fast" to "3"),
                         ),
                     promotion = PromotionEvidence(state = "candidate", rationale = "ready for paper"),
+                ),
+            runawayBreaker =
+                RunawayBreakerReport(
+                    enforceLiveBreakers = false,
+                    maxRoundTrips = 10,
+                    roundTripWindowMs = 600_000L,
+                    maxRejections = 5,
+                    rejectionWindowMs = 60_000L,
+                    trips =
+                        listOf(
+                            RunawayBreakerTrip(
+                                1_700_000_000_000L,
+                                "test",
+                                RunawayBreakerRule.ROUND_TRIPS,
+                                11,
+                                10,
+                                600_000L,
+                            ),
+                        ),
                 ),
         )
 }

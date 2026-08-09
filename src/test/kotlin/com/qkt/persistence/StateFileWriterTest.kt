@@ -76,7 +76,10 @@ class StateFileWriterTest {
                 stop.set(true)
             }
             pool.shutdown()
-            assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue
+            // DSYNC can take 100-250ms per write on throttled overlay filesystems. This
+            // watchdog detects a deadlock without turning storage latency into a false
+            // atomicity failure (200 writes can legitimately take close to a minute).
+            assertThat(pool.awaitTermination(60, TimeUnit.SECONDS)).isTrue
             assertThat(tornReads.get()).isZero
         } finally {
             pool.shutdownNow()

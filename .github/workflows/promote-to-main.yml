@@ -2,8 +2,9 @@ name: promote-to-main
 
 # Manual promotion: testing -> main. A maintainer triggers this from the
 # Actions tab (or `gh workflow run promote-to-main.yml`) after inspecting
-# testing. It verifies integration for the current testing SHA, then creates or
-# reuses a promotion PR. Merging remains subject to review and branch protection.
+# testing. It verifies integration and exact-image paper-soak evidence for the
+# current testing SHA, then creates or reuses a promotion PR. Merging remains
+# subject to review and branch protection.
 
 on:
   workflow_dispatch:
