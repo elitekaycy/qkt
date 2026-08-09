@@ -19,6 +19,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okio.Buffer
 import org.slf4j.LoggerFactory
 
 /**
@@ -37,6 +38,8 @@ class MT5Client(
     private val retryAttempts: Int = 3,
     private val apiKey: String? = null,
     private val readCache: MT5ReadCache? = null,
+    private val transportJournal: MT5TransportJournal? = null,
+    private val monotonicNanos: () -> Long = System::nanoTime,
 ) {
     private val log = LoggerFactory.getLogger(MT5Client::class.java)
     private val json = Json { ignoreUnknownKeys = true }
@@ -52,7 +55,79 @@ class MT5Client(
             .dispatcher(dispatcher)
             .callTimeout(Duration.ofMillis(httpTimeoutMs))
             .connectTimeout(Duration.ofMillis(httpTimeoutMs))
-            .build()
+            .apply {
+                if (transportJournal != null) {
+                    addInterceptor { chain ->
+                        val request = chain.request()
+                        val startedNs = monotonicNanos()
+                        val response =
+                            try {
+                                chain.proceed(request)
+                            } catch (error: java.io.IOException) {
+                                recordTransportExchange(
+                                    request = request,
+                                    responseCode = null,
+                                    responseBody = null,
+                                    error = error.message ?: error.javaClass.simpleName,
+                                    startedNs = startedNs,
+                                )
+                                throw error
+                            }
+                        recordTransportExchange(
+                            request = request,
+                            responseCode = response.code,
+                            responseBody =
+                                runCatching {
+                                    response
+                                        .peekBody(
+                                            MAX_CAPTURE_BODY_BYTES,
+                                        ).string()
+                                }.getOrNull(),
+                            error = null,
+                            startedNs = startedNs,
+                        )
+                        response
+                    }
+                }
+            }.build()
+
+    private fun recordTransportExchange(
+        request: okhttp3.Request,
+        responseCode: Int?,
+        responseBody: String?,
+        error: String?,
+        startedNs: Long,
+    ) {
+        runCatching {
+            transportJournal?.record(
+                method = request.method,
+                path =
+                    request.url.encodedPath +
+                        request.url.encodedQuery
+                            ?.let { "?$it" }
+                            .orEmpty(),
+                requestBody = captureRequestBody(request),
+                responseCode = responseCode,
+                responseBody = responseBody,
+                error = error,
+                durationMs = (monotonicNanos() - startedNs) / 1_000_000L,
+                idempotencyKey = request.header("Idempotency-Key"),
+            )
+        }.onFailure { captureError ->
+            log.error("MT5 transport capture failed without affecting request: {}", captureError.message)
+        }
+    }
+
+    private fun captureRequestBody(request: okhttp3.Request): String? {
+        val body = request.body ?: return null
+        if (body.isOneShot()) return "<one-shot body omitted>"
+        return runCatching {
+            val buffer = Buffer()
+            body.writeTo(buffer)
+            val size = buffer.size.coerceAtMost(MAX_CAPTURE_BODY_BYTES)
+            buffer.readUtf8(size)
+        }.getOrNull()
+    }
 
     fun isReady(): Boolean =
         runCatching {
@@ -128,10 +203,7 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     response.use {
-                        val raw = it.body?.string().orEmpty()
-                        val result =
-                            if (it.isSuccessful) parseOrderResponse(raw) else errorResponse("HTTP ${it.code}: $raw")
-                        onResult(result)
+                        onResult(parseAsyncMutationResponse(it))
                     }
                 }
             },
@@ -317,10 +389,7 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     response.use {
-                        val raw = it.body?.string().orEmpty()
-                        val result =
-                            if (it.isSuccessful) parseOrderResponse(raw) else errorResponse("HTTP ${it.code}: $raw")
-                        onResult(result)
+                        onResult(parseAsyncMutationResponse(it))
                     }
                 }
             },
@@ -411,10 +480,7 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     response.use {
-                        val raw = it.body?.string().orEmpty()
-                        val result =
-                            if (it.isSuccessful) parseOrderResponse(raw) else errorResponse("HTTP ${it.code}: $raw")
-                        onResult(result)
+                        onResult(parseAsyncMutationResponse(it))
                     }
                 }
             },
@@ -430,6 +496,15 @@ class MT5Client(
         if (sl != null) fields += "\"sl\":${sl.toPlainString()}"
         if (tp != null) fields += "\"tp\":${tp.toPlainString()}"
         return "{" + fields.joinToString(",") + "}"
+    }
+
+    private fun parseAsyncMutationResponse(response: Response): MT5OrderResponse {
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) return errorResponse("HTTP ${response.code}: $raw")
+        return runCatching { parseOrderResponse(raw) }
+            .getOrElse { error ->
+                errorResponse("invalid gateway response after send: ${error.message ?: error.javaClass.simpleName}")
+            }
     }
 
     /**
@@ -878,6 +953,7 @@ class MT5Client(
     }
 
     companion object {
+        private const val MAX_CAPTURE_BODY_BYTES = 64L * 1024L
         private val JSON_MEDIA = "application/json".toMediaType()
 
         /** Padding either side of the deal search window — venue clock skew is hours, not days. */

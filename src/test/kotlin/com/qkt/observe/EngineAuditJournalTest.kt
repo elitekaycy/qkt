@@ -5,7 +5,9 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.BrokerEvent
 import com.qkt.events.OrderEvent
+import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import java.nio.file.Files
@@ -15,6 +17,46 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
 class EngineAuditJournalTest {
+    @Test
+    fun `audit journal records structured ticks and fills for golden capture`(
+        @TempDir tmp: Path,
+    ) {
+        val clock = FixedClock(time = 1_700_000_000_000L)
+        val journal = EngineAuditJournal(tmp, "alpha", clock)
+        journal.append(
+            TickEvent(
+                com.qkt.marketdata.Tick(
+                    symbol = "XAUUSD",
+                    price = Money.of("2000"),
+                    timestamp = clock.now(),
+                    bid = Money.of("1999"),
+                    ask = Money.of("2001"),
+                ),
+                timestamp = clock.now(),
+            ),
+        )
+        journal.append(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "o-1",
+                brokerOrderId = "b-1",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                price = Money.of("2001"),
+                quantity = Money.of("0.1"),
+                strategyId = "alpha",
+                timestamp = clock.now(),
+            ),
+        )
+        journal.close()
+
+        val text = Files.readString(tmp.resolve("alpha/audit-2023-11-14.jsonl"))
+        assertThat(text)
+            .contains("\"tick\":{\"timestampMs\":1700000000000")
+            .contains("\"bid\":\"1999.00000000\"")
+            .contains("\"fill\":{\"side\":\"BUY\"")
+            .contains("\"brokerOrderId\":\"b-1\"")
+    }
+
     @Test
     fun `audit journal records stamped bus events as jsonl`(
         @TempDir tmp: Path,

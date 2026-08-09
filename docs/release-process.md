@@ -30,13 +30,41 @@ Changes reach a release through the protected branch flow:
 
 1. Merge reviewed feature branches into `dev`.
 2. Let the green `check.yml` run fast-forward `dev` to `testing`.
-3. Wait for `integration.yml` on the exact `testing` SHA.
-4. Run the `promote-to-main` workflow. It verifies that integration evidence and
-   creates or reuses a `testing -> main` PR.
-5. Merge the promotion PR after its required checks.
-6. Wait for `integration.yml` and `docker.yml` on the promoted `main` SHA.
+3. Wait for `integration.yml` and the `:edge` image on the exact `testing` SHA.
+4. Resolve the edge image to its immutable `ghcr.io/.../qkt@sha256:...` digest and
+   run that digest against the demo MT5 canary for at least 48 continuous hours or
+   five trading days. Retain periodic `/health`, final `qkt reconcile --json`, and
+   `qkt golden capture` output with zero dropped records.
+5. On the trusted soak host, derive the attestation:
+
+   ```bash
+   qkt soak report ema-canary \
+     --testing-sha "$testing_sha" --image "$image_digest" \
+     --started-at "$started_at" --completed-at "$completed_at" \
+     --trading-days "$trading_days" --health health.jsonl \
+     --reconciliation reconciliation.json --golden golden.zip \
+     --out /var/lib/qkt/soak/attestation.json
+   ```
+
+6. Dispatch `paper-soak.yml` on the `testing` ref. It runs on the trusted
+   `qkt-paper-soak` self-hosted runner, validates hashes and image revision, and
+   publishes immutable promotion evidence:
+
+   ```bash
+   gh workflow run paper-soak.yml --ref testing \
+     -f attestation_path=/var/lib/qkt/soak/attestation.json
+   ```
+
+7. Run `promote-to-main.yml`. It requires successful integration and paper-soak
+   runs for the exact current `testing` SHA, revalidates the downloaded evidence,
+   and creates or reuses a `testing -> main` PR naming the soaked digest.
+8. Merge the promotion PR after its required checks.
+9. Wait for `integration.yml` and `docker.yml` on the promoted `main` SHA.
 
 Do not push directly to `dev`, `testing`, or `main`.
+
+Research and deployment consumers must pin the digest recorded in the promotion
+PR. The moving `:edge` tag is a discovery channel, not promotion evidence.
 
 ## Tag And Publish
 

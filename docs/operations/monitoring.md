@@ -126,6 +126,13 @@ The daemon reads `QKT_CONTROL_TOKEN` when set; otherwise it creates
 `<state-dir>/control.token` with owner-only permissions. Ordinary `qkt` mutation
 commands load the same credential automatically.
 
+The daemon also keeps bounded asynchronous evidence journals under
+`<state-dir>/state/audit-journal/` and `<state-dir>/state/mt5-transport-journal/`.
+The transport journal omits authentication headers but contains raw order and
+venue data, so retain and transfer golden bundles as sensitive operational
+artifacts. Disk writes do not run on the engine thread. Queue or write loss is
+recorded in day-scoped `.dropped` markers and makes `qkt golden capture` fail.
+
 Beyond per-strategy ports, the daemon itself exposes:
 
 - `/daemon/health` — daemon process health

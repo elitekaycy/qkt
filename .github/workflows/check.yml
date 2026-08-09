@@ -36,6 +36,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Test promotion workflow
         run: bash tests/scripts/prepare-main-promotion-test.sh
+      - name: Test paper-soak attestation verifier
+        run: bash tests/scripts/verify-paper-soak-attestation-test.sh
       - name: Test release tag gate
         run: bash tests/scripts/verify-version-tag-test.sh
       - name: Build + test + ktlint

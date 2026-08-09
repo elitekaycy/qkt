@@ -14,7 +14,12 @@
    documentation.
 6. Pin compiler encoding, remove the `LocalBarStore` warning, and give the DSYNC
    concurrency watchdog enough headroom without weakening its atomicity assertion.
-7. Document the verified disposition of the external soak and authentic venue
-   evidence gaps without claiming them closed.
-8. Run focused tests, formatting checks, the full build and test suite, then
+7. Add asynchronous raw MT5 transport evidence and structured tick/fill capture,
+   then export checksummed session bundles with `qkt golden capture`.
+8. Add a seeded `--chaos` backtest mode and strict replay/live parity coverage
+   across 500 generated cases.
+9. Derive exact-image soak attestations from health, reconcile, and golden
+   evidence; require a valid attestation for `testing -> main` promotion.
+10. Document the external evidence boundary without claiming an unrun soak.
+11. Run focused tests, formatting checks, the full build and test suite, then
    inspect branch status and commits relative to `dev`.
