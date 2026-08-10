@@ -7,7 +7,7 @@ usage() {
     cat <<'EOF'
 Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
-  --expected-leverage N --magic N
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
 be an explicit 127.0.0.1 HTTP endpoint. Credentials are never accepted as arguments;
@@ -28,6 +28,7 @@ expected_server=""
 expected_balance=""
 expected_leverage=""
 magic=""
+symbol="EURUSD"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -39,6 +40,7 @@ while [ "$#" -gt 0 ]; do
         --expected-balance) expected_balance="${2:-}"; shift 2 ;;
         --expected-leverage) expected_leverage="${2:-}"; shift 2 ;;
         --magic) magic="${2:-}"; shift 2 ;;
+        --symbol) symbol="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -62,6 +64,10 @@ gateway_port="${gateway_url##*:}"
 [[ "$expected_leverage" =~ ^[1-9][0-9]*$ ]] || fail "--expected-leverage must be a positive integer"
 [[ "$magic" =~ ^[1-9][0-9]*$ ]] || fail "--magic must be a positive integer"
 [ "$magic" -le 2147483647 ] || fail "--magic must fit a signed 32-bit integer"
+case "$symbol" in
+    EURUSD|GBPUSD) ;;
+    *) fail "--symbol must be one of: EURUSD, GBPUSD" ;;
+esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 if [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]; then
@@ -178,21 +184,47 @@ cat > "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<EOF
 STRATEGY ${scenario_id}_market_bracket VERSION 1
 
 SYMBOLS
-    eur = EXNESS:EURUSD EVERY 1m WARMUP 5 BARS
+    asset1 = EXNESS:$symbol EVERY 1m WARMUP 10 BARS,
+    asset5 = EXNESS:$symbol EVERY 5m WARMUP 10 BARS
+
+LET m1_fast = ema(asset1.close, 3),
+    m1_slow = ema(asset1.close, 5),
+    m5_fast = ema(asset5.close, 3),
+    m5_slow = ema(asset5.close, 5),
+    score = (m1_fast - m1_slow) + (m5_fast - m5_slow)
 
 RULES
-    WHEN eur.close > 0
-     AND POSITION.eur = 0
-     AND OPEN_ORDERS.eur = 0
+    WHEN score IS NOT NULL
+     AND score >= 0
+     AND POSITION.asset1 = 0
+     AND OPEN_ORDERS.asset1 = 0
      AND TRADES.today = 0
-    THEN BUY eur SIZING 0.01
+    THEN BUY asset1 SIZING 0.01
          BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 }
-         ; LOG "bounded demo entry" bar_close=eur.close
+         ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} m5_fast={m5_fast} m5_slow={m5_slow} close={bar_close}"
+             side="BUY" score=score m1_fast=m1_fast m1_slow=m1_slow m5_fast=m5_fast m5_slow=m5_slow bar_close=asset1.close
+
+    WHEN score IS NOT NULL
+     AND score < 0
+     AND POSITION.asset1 = 0
+     AND OPEN_ORDERS.asset1 = 0
+     AND TRADES.today = 0
+    THEN SELL asset1 SIZING 0.01
+         BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 }
+         ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} m5_fast={m5_fast} m5_slow={m5_slow} close={bar_close}"
+             side="SELL" score=score m1_fast=m1_fast m1_slow=m1_slow m5_fast=m5_fast m5_slow=m5_slow bar_close=asset1.close
+
+    WHEN POSITION.asset1 != 0
+     AND TRADES.today = 1
+     AND POSITION.asset1.holding_duration >= 1
+    THEN CLOSE asset1
+         ; LOG "bounded indicator exit signed_qty={signed_qty} holding_seconds={holding_seconds} close={bar_close}"
+             signed_qty=POSITION.asset1 holding_seconds=POSITION.asset1.holding_duration bar_close=asset1.close
 EOF
 
 cat > "$output/expected.json" <<EOF
 {
-  "schema": "qkt-live-validation-expected-v1",
+  "schema": "qkt-live-validation-expected-v2",
   "scenarioId": "$scenario_id",
   "account": {
     "login": $expected_login,
@@ -213,10 +245,29 @@ cat > "$output/expected.json" <<EOF
     "requiredFinalPositions": 0,
     "requiredFinalOrders": 0
   },
-  "streams": [
+  "readOnlyStreams": [
     {"symbol": "EXNESS:EURUSD", "timeframe": "1m", "warmupBars": 20},
     {"symbol": "EXNESS:EURUSD", "timeframe": "5m", "warmupBars": 20}
-  ]
+  ],
+  "armedScenario": {
+    "strategy": "${scenario_id}_market_bracket",
+    "symbol": "EXNESS:$symbol",
+    "streams": [
+      {"symbol": "EXNESS:$symbol", "timeframe": "1m", "warmupBars": 10},
+      {"symbol": "EXNESS:$symbol", "timeframe": "5m", "warmupBars": 10}
+    ],
+    "indicators": ["ema(1m,3)", "ema(1m,5)", "ema(5m,3)", "ema(5m,5)"],
+    "score": "(m1_fast-m1_slow)+(m5_fast-m5_slow)",
+    "buyWhen": "score>=0",
+    "sellWhen": "score<0",
+    "quantityLots": "0.01",
+    "maximumEntries": 1,
+    "maximumExits": 1,
+    "exitTimeframe": "1m",
+    "minimumHoldingSeconds": 1,
+    "stopDistance": "0.0030",
+    "takeProfitDistance": "0.0060"
+  }
 }
 EOF
 

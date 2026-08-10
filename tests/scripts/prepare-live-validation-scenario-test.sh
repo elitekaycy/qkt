@@ -37,12 +37,79 @@ grep -F 'max_trades_per_day: 1' "$out/qkt.config.yaml" >/dev/null
 grep -F 'book_risk:' "$out/qkt.config.yaml" >/dev/null
 grep -F 'EVERY 1m' "$out/strategies/readonly/validation_a01_bars_readonly.qkt" >/dev/null
 grep -F 'EVERY 5m' "$out/strategies/readonly/validation_a01_bars_readonly.qkt" >/dev/null
-grep -F 'TRADES.today = 0' "$out/strategies/armed/validation_a01_market_bracket.qkt" >/dev/null
-grep -F 'STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060' "$out/strategies/armed/validation_a01_market_bracket.qkt" >/dev/null
+armed="$out/strategies/armed/validation_a01_market_bracket.qkt"
+grep -F 'asset1 = EXNESS:EURUSD EVERY 1m WARMUP 10 BARS' "$armed" >/dev/null
+grep -F 'asset5 = EXNESS:EURUSD EVERY 5m WARMUP 10 BARS' "$armed" >/dev/null
+grep -F 'm1_fast = ema(asset1.close, 3)' "$armed" >/dev/null
+grep -F 'm1_slow = ema(asset1.close, 5)' "$armed" >/dev/null
+grep -F 'm5_fast = ema(asset5.close, 3)' "$armed" >/dev/null
+grep -F 'm5_slow = ema(asset5.close, 5)' "$armed" >/dev/null
+grep -F 'score = (m1_fast - m1_slow) + (m5_fast - m5_slow)' "$armed" >/dev/null
+grep -F 'AND score >= 0' "$armed" >/dev/null
+grep -F 'AND score < 0' "$armed" >/dev/null
+grep -F 'THEN BUY asset1 SIZING 0.01' "$armed" >/dev/null
+grep -F 'THEN SELL asset1 SIZING 0.01' "$armed" >/dev/null
+grep -F 'AND POSITION.asset1.holding_duration >= 1' "$armed" >/dev/null
+grep -F 'THEN CLOSE asset1' "$armed" >/dev/null
+[ "$(grep -Fc 'TRADES.today = 0' "$armed")" -eq 2 ]
+[ "$(grep -Fc 'STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060' "$armed")" -eq 2 ]
+[ "$(grep -Fc 'SIZING 0.01' "$armed")" -eq 2 ]
+if grep -F 'close > 0' "$armed" >/dev/null; then
+    echo 'armed strategy uses a tautological positive-price trigger' >&2
+    exit 1
+fi
 
-jq -e '.account.tradeMode == "demo" and .safety.maximumLots == "0.01"' "$out/expected.json" >/dev/null
+jq -e '
+    .schema == "qkt-live-validation-expected-v2" and
+    .account.tradeMode == "demo" and .safety.maximumLots == "0.01" and
+    (.readOnlyStreams | length) == 2 and
+    .armedScenario.symbol == "EXNESS:EURUSD" and
+    (.armedScenario.streams | map(.timeframe) == ["1m", "5m"]) and
+    all(.armedScenario.streams[]; .symbol == "EXNESS:EURUSD") and
+    all(.armedScenario.streams[]; .warmupBars == 10) and
+    .armedScenario.quantityLots == "0.01" and
+    .armedScenario.maximumEntries == 1 and .armedScenario.maximumExits == 1 and
+    .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
+    .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1
+' "$out/expected.json" >/dev/null
 jq -e '.credentialsStored == false and .executionState == "prepared" and (.qktDirty | type) == "boolean"' "$out/scenario.json" >/dev/null
 (cd "$out" && sha256sum --check SHA256SUMS >/dev/null)
+
+gbp_out="$tmp/gbp-scenario"
+bash "$script" \
+    --output "$gbp_out" \
+    --id validation_gbp \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917005 \
+    --symbol GBPUSD >/dev/null
+gbp_armed="$gbp_out/strategies/armed/validation_gbp_market_bracket.qkt"
+grep -F 'asset1 = EXNESS:GBPUSD EVERY 1m WARMUP 10 BARS' "$gbp_armed" >/dev/null
+grep -F 'asset5 = EXNESS:GBPUSD EVERY 5m WARMUP 10 BARS' "$gbp_armed" >/dev/null
+jq -e '
+    .armedScenario.symbol == "EXNESS:GBPUSD" and
+    (.armedScenario.streams | all(.symbol == "EXNESS:GBPUSD")) and
+    (.readOnlyStreams | all(.symbol == "EXNESS:EURUSD"))
+' "$gbp_out/expected.json" >/dev/null
+(cd "$gbp_out" && sha256sum --check SHA256SUMS >/dev/null)
+
+if bash "$script" \
+    --output "$tmp/unsupported-symbol" \
+    --id validation_jpy \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 1 \
+    --expected-server Demo \
+    --expected-balance 10000 \
+    --expected-leverage 500 \
+    --magic 917006 \
+    --symbol USDJPY >"$tmp/unsupported-symbol.out" 2>&1; then
+    echo 'expected unsupported armed symbol rejection' >&2
+    exit 1
+fi
+grep -F -- '--symbol must be one of: EURUSD, GBPUSD' "$tmp/unsupported-symbol.out" >/dev/null
 
 if bash "$script" \
     --output "$tmp/remote" \
@@ -90,6 +157,7 @@ cli="$repo_root/build/install/qkt/bin/qkt"
 test -x "$cli"
 "$cli" parse "$out/strategies/readonly/validation_a01_bars_readonly.qkt" >/dev/null
 "$cli" parse "$out/strategies/armed/validation_a01_market_bracket.qkt" >/dev/null
+"$cli" parse "$gbp_armed" >/dev/null
 bash "$repo_root/scripts/live-validation/run-readonly.sh" \
     --scenario "$out" \
     --cli "$cli" \
