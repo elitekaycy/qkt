@@ -397,6 +397,7 @@ val prepareLiveValidationScenarioScriptTest by tasks.registering(Exec::class) {
         "scripts/live-validation/run-readonly.sh",
         "scripts/live-validation/run-market-bracket.sh",
         "scripts/live-validation/compare-golden-replay.sh",
+        "scripts/live-validation/run-container-load.sh",
         "tests/scripts/prepare-live-validation-scenario-test.sh",
     )
 }

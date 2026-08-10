@@ -66,8 +66,41 @@ The observation takes at least 310 seconds so one M5 boundary must close. It:
   SHA-256 manifests for every retained non-secret artifact.
 
 This is read-only feed, candle, indicator, daemon, journal, and resource evidence.
-It is not evidence for order/fill/accounting parity, sustained stress, multiple
-containers, QKT Insights, or production readiness; those remain later gates.
+It is not evidence for order/fill/accounting parity, sustained stress, QKT Insights,
+or production readiness; those remain later gates.
+
+## Isolated Container Load And Restart
+
+Build an image whose embedded revision matches the clean checkout, then run two
+isolated strategy/state/data mounts against the same local demo gateway:
+
+```bash
+docker build --build-arg QKT_GIT_SHA="$(git rev-parse --short=8 HEAD)" \
+  -t qkt:live-validation .
+export QKT_BROKER_API_KEY="$LOCAL_GATEWAY_KEY"
+scripts/live-validation/run-container-load.sh \
+  --output /var/tmp/qkt-validation/container-load-001 \
+  --image qkt:live-validation \
+  --gateway-url http://127.0.0.1:5001 \
+  --expected-login "$DEMO_LOGIN" \
+  --expected-server "$DEMO_SERVER" \
+  --expected-balance "$CURRENT_BALANCE" \
+  --expected-leverage "$CURRENT_LEVERAGE"
+```
+
+The minimum seven-minute observation runs eight M1/M5 streams over four symbols.
+Each temporary strategy exercises EMA, RSI, SMA, and ATR mappings with global,
+per-strategy, and book-risk configuration. The runner samples queue depth, dropped
+ticks, tick-processing latency, CPU, memory, and process count; restarts one daemon
+mid-run; proves the peer remains healthy; and verifies automatic redeployment from
+the persisted state directory. It retains valid audit journals and requires all
+streams to emit after warmup.
+
+This scenario intentionally emits no orders. Concurrent read-only containers isolate
+load and restart failures without allowing separate daemons to contend for positions
+on one account. The bounded demo scenarios own distinct magic numbers and test order,
+fill, protection, rejection, reconciliation, and accounting behavior separately.
+The runner records resource use but sets no JVM heap or container memory limit.
 
 ## Bounded Demo Bracket
 

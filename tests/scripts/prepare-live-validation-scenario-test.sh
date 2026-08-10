@@ -115,6 +115,24 @@ grep -F 'maxDroppedTicks' "$repo_root/scripts/live-validation/run-readonly.sh" >
 grep -F 'dropped live tick(s)' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 grep -F 'TICK_PROCESSING.count > 0' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 
+container_script="$repo_root/scripts/live-validation/run-container-load.sh"
+bash -n "$container_script"
+bash "$container_script" --help | grep -F 'two isolated, read-only QKT containers' >/dev/null
+grep -F -- '--network host' "$container_script" >/dev/null
+grep -F 'QKT_LATENCY_TRACKING=1' "$container_script" >/dev/null
+grep -F 'printf '\''%s\n'\'' "$QKT_BROKER_API_KEY" |' "$container_script" >/dev/null
+if rg --quiet 'THEN LOG .* value=.* close=' "$container_script"; then
+    echo 'container runner emits unsupported multiple LOG value fields' >&2
+    exit 1
+fi
+grep -F 'repository must be clean' "$container_script" >/dev/null
+grep -F 'Docker image is not built from' "$container_script" >/dev/null
+grep -F 'broker credential was persisted in retained artifacts' "$container_script" >/dev/null
+if rg --quiet -- '-Xmx|-Xms|MaxRAMPercentage|--memory(=|[[:space:]])' "$container_script"; then
+    echo 'container runner adds a JVM or container memory restriction' >&2
+    exit 1
+fi
+
 comparison_script="$repo_root/scripts/live-validation/compare-golden-replay.sh"
 bash -n "$comparison_script"
 bash "$comparison_script" --help | grep -F 'full-tick, bar, and tick-resolved replay evidence' >/dev/null
