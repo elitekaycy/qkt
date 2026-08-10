@@ -79,6 +79,7 @@ for required in \
     'emergency-close-$ticket.json' \
     'emergency-cancel-$ticket.json' \
     'qkt_write_safe_account_snapshot' \
+    'qkt_write_safe_live_state_snapshot' \
     'qkt_sanitize_account_transport_journals' \
     'qkt_assert_no_retained_account_identity' \
     'qkt_count_cross_owner_causal_events' \
@@ -103,12 +104,17 @@ source "$identity_lib"
     [ "$QKT_EXPECTED_ACCOUNT_SERVER" = Demo-Server ]
 )
 qkt_write_safe_account_snapshot "$fixture/account.json" <<< "$raw_account"
+raw_live_state='{"account":{"login":123456,"server":"Demo-Server","name":"Account Owner"},"positions":[{"accountLogin":123456,"list":[{"ticket":"position-1","strategyId":"armed","state":"OPEN","symbol":"EXNESS:EURUSD","accountName":"Account Owner"}]}]}'
+qkt_write_safe_live_state_snapshot "$fixture/live-state.json" <<< "$raw_live_state"
 printf '%s\n' '{"path":"/account","responseBody":"{\"login\":123456,\"server\":\"Demo-Server\",\"name\":\"Account Owner\",\"balance\":10000,\"equity\":10000,\"margin\":0,\"currency\":\"USD\",\"leverage\":200,\"trade_mode\":0}"}' > "$fixture/state/transport.jsonl"
 printf '%s\n' '[INFO] mt5 account: exness: login=123456 server=Demo-Server mode=demo' > "$fixture/logs/daemon.log"
 qkt_sanitize_account_transport_journals "$fixture/state"
 qkt_redact_account_identity_log "$fixture/logs/daemon.log" 123456 Demo-Server
 qkt_assert_no_retained_account_identity "$fixture" 123456 Demo-Server || fail "identity sanitizer left fixture data"
 jq -e 'has("login") == false and has("server") == false and has("name") == false and .balance == 10000' "$fixture/account.json" >/dev/null
+jq -e '.schema == "qkt-live-state-attribution-evidence-v1" and
+    .positions == [{list:[{ticket:"position-1",strategyId:"armed",state:"OPEN"}]}]' \
+    "$fixture/live-state.json" >/dev/null
 jq -e '(.responseBody | fromjson | has("login")) == false and (.responseBody | fromjson | has("server")) == false' "$fixture/state/transport.jsonl" >/dev/null
 
 attribution_lib="$repo_root/scripts/live-validation/lib/insights-attribution.sh"

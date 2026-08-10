@@ -364,7 +364,9 @@ $replayed || fail "durable Insights replay did not drain"
 open_state_seen=false
 for sample in $(seq 1 30); do
     path="$evidence/live-state-samples/$sample.json"
-    curl -fsS -b "$cookie" "http://127.0.0.1:$port/live/state" > "$path"
+    live_state="$(curl -fsS -b "$cookie" "http://127.0.0.1:$port/live/state")"
+    qkt_write_safe_live_state_snapshot "$path" <<< "$live_state"
+    unset live_state
     if jq -e --arg ticket "$owned_ticket" --arg strategy "$armed_name" '
         ([.positions[].list[] | select(.ticket == $ticket)] | length) == 1 and
         ([.positions[].list[] | select(.ticket == $ticket)][0].strategyId == $strategy)

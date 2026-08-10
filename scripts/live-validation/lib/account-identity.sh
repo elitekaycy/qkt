@@ -19,6 +19,14 @@ qkt_write_safe_account_snapshot() {
          margin_mode,trade_mode,trade_allowed,trade_expert}' > "$output"
 }
 
+qkt_write_safe_live_state_snapshot() {
+    local output="$1"
+    jq '{
+        schema:"qkt-live-state-attribution-evidence-v1",
+        positions:[.positions[]? | {list:[.list[]? | {ticket,strategyId,state}]}]
+    }' > "$output"
+}
+
 qkt_sanitize_account_transport_journals() {
     local root="$1"
     local journal temporary

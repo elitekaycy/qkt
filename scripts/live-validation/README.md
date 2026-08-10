@@ -233,7 +233,8 @@ attributed only to the armed owner, then flattens through QKT and checks durable
 and deal attribution. Prepare this scenario with `--runtime-account-identity`; login
 and server are required only in the runtime environment. Raw account responses are
 reduced to non-identifying financial/status evidence, account transport records and
-startup logs are sanitized, and a final scan fails closed if identity remains.
+startup logs are sanitized, live-state samples retain only ticket/strategy/state
+attribution fields, and a final scan fails closed if identity remains.
 Runtime credentials are generated in memory and scanned against the retained
 artifacts. The runner sets no JVM or container memory limit.
 
