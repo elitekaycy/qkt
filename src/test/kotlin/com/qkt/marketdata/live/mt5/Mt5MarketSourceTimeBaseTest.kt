@@ -48,7 +48,35 @@ class Mt5MarketSourceTimeBaseTest {
         }
     }
 
-    private fun source(server: MockWebServer): Mt5MarketSource {
+    @Test
+    fun `recent closed bar passes when its end remains inside the freshness allowance`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val range =
+                TimeRange(
+                    Instant.parse("2026-07-15T08:39:00Z"),
+                    Instant.parse("2026-07-15T08:44:01.531Z"),
+                )
+            enqueueTimeResponses(
+                server,
+                barTime = "2026-07-15T11:39:00Z",
+                tickTime = "2026-07-15T11:44:01.531Z",
+            )
+            val source = source(server, range)
+
+            val bars = source.bars("TEST:EURUSD", TimeWindow.parse("1m"), range).toList()
+
+            assertThat(bars.single().endTime)
+                .isEqualTo(Instant.parse("2026-07-15T08:40:00Z").toEpochMilli())
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    private fun source(
+        server: MockWebServer,
+        range: TimeRange = RANGE,
+    ): Mt5MarketSource {
         val cryptoCalendars = SymbolCalendars(emptyList(), TradingCalendar.crypto())
         val profile =
             MT5BrokerProfile(
@@ -61,7 +89,7 @@ class Mt5MarketSourceTimeBaseTest {
             )
         return Mt5MarketSource(
             profile = profile,
-            clock = FixedClock(RANGE.to.toEpochMilli()),
+            clock = FixedClock(range.to.toEpochMilli()),
             symbolCalendars = cryptoCalendars,
         )
     }
@@ -69,8 +97,9 @@ class Mt5MarketSourceTimeBaseTest {
     private fun enqueueTimeResponses(
         server: MockWebServer,
         barTime: String,
+        tickTime: String = "2026-07-15T11:05:00Z",
     ) {
-        val serverWallTickMs = Instant.parse("2026-07-15T11:05:00Z").toEpochMilli()
+        val serverWallTickMs = Instant.parse(tickTime).toEpochMilli()
         server.enqueue(MockResponse().setBody("""{"point":"0.00001"}"""))
         server.enqueue(
             MockResponse().setBody(

@@ -113,11 +113,12 @@ class Mt5MarketSource(
                 wireSymbol,
                 nowMs,
             )
-        val newestBarMs = candles.maxOf { it.startTime }
-        val barAgeMs = tick.brokerTimeMs - newestBarMs
+        val newestClosedBarEndMs = candles.maxOf { it.endTime }
+        val barAgeMs = tick.brokerTimeMs - newestClosedBarEndMs
         val maxAgeMs = maxOf(window.durationMs * 3L, MIN_RECENT_BAR_AGE_MS)
         require(barAgeMs in 0L..maxAgeMs) {
-            "MT5 time-base mismatch for $bareSymbol: newest bar=${Instant.ofEpochMilli(newestBarMs)}, " +
+            "MT5 time-base mismatch for $bareSymbol: " +
+                "newest closed bar end=${Instant.ofEpochMilli(newestClosedBarEndMs)}, " +
                 "tick=${Instant.ofEpochMilli(tick.brokerTimeMs)}, deltaMs=$barAgeMs; " +
                 "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify server_time_zone=${profile.serverTimeZone.id}"
         }
