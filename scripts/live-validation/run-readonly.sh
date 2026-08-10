@@ -203,6 +203,7 @@ done
 $ready || fail "daemon did not become ready within 60 seconds"
 
 printf 'elapsed_seconds,cpu_percent,rss_kb,threads\n' > "$evidence/resources.csv"
+: > "$evidence/health.jsonl"
 clock_ticks="$(getconf CLK_TCK)"
 previous_ticks="$(awk '{print $14 + $15}' "/proc/$daemon_pid/stat")"
 sample_interval=10
@@ -218,6 +219,7 @@ for second in $(seq 1 "$duration_seconds"); do
         rss_kb="$(awk '/^VmRSS:/ {print $2}' "/proc/$daemon_pid/status")"
         threads="$(awk '/^Threads:/ {print $2}' "/proc/$daemon_pid/status")"
         printf '%s,%s,%s,%s\n' "$second" "$cpu_percent" "$rss_kb" "$threads" >> "$evidence/resources.csv"
+        "$cli" daemon status --state-dir "$scenario/state" --json | jq -c . >> "$evidence/health.jsonl"
         previous_ticks="$current_ticks"
     fi
 done
@@ -264,6 +266,11 @@ candle_events="$(jq -r 'select(.eventType == "com.qkt.events.CandleEvent") | 1' 
 
 resource_samples="$(($(wc -l < "$evidence/resources.csv") - 1))"
 [ "$resource_samples" -gt 0 ] || fail "daemon resource sampling produced no observations"
+health_samples="$(awk 'END {print NR + 0}' "$evidence/health.jsonl")"
+[ "$health_samples" -eq "$resource_samples" ] || fail "daemon health and resource sample counts differ"
+max_inbound_queue="$(jq -s '[.[].perStrategy[].inboundQueueDepth] | max // 0' "$evidence/health.jsonl")"
+max_dropped_ticks="$(jq -s '[.[].perStrategy[].droppedTicks] | max // 0' "$evidence/health.jsonl")"
+[ "$max_dropped_ticks" -eq 0 ] || fail "daemon reported $max_dropped_ticks dropped live tick(s)"
 max_cpu_percent="$(awk -F, 'NR > 1 && $2 > max {max=$2} END {printf "%.2f", max + 0}' "$evidence/resources.csv")"
 max_rss_kb="$(awk -F, 'NR > 1 && $3 > max {max=$3} END {print max + 0}' "$evidence/resources.csv")"
 max_threads="$(awk -F, 'NR > 1 && $4 > max {max=$4} END {print max + 0}' "$evidence/resources.csv")"
@@ -287,6 +294,9 @@ jq -n \
     --arg candleEvents "$candle_events" \
     --arg transportEvents "$transport_events" \
     --arg resourceSamples "$resource_samples" \
+    --arg healthSamples "$health_samples" \
+    --arg maxInboundQueue "$max_inbound_queue" \
+    --arg maxDroppedTicks "$max_dropped_ticks" \
     --arg maxCpuPercent "$max_cpu_percent" \
     --arg maxRssKb "$max_rss_kb" \
     --arg maxThreads "$max_threads" \
@@ -315,6 +325,7 @@ jq -n \
           candleEvents:($candleEvents|tonumber),
           transportEvents:($transportEvents|tonumber),
           resources:{samples:($resourceSamples|tonumber),maxCpuPercent:($maxCpuPercent|tonumber),maxRssKb:($maxRssKb|tonumber),maxThreads:($maxThreads|tonumber)},
+          health:{samples:($healthSamples|tonumber),maxInboundQueue:($maxInboundQueue|tonumber),maxDroppedTicks:($maxDroppedTicks|tonumber)},
           initialPositions:0,
           initialOrders:0,
           finalPositions:0,
