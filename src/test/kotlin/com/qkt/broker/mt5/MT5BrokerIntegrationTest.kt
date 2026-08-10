@@ -84,6 +84,7 @@ class MT5BrokerIntegrationTest {
         prices = MarketPriceTracker()
         bus = EventBus(clock, MonotonicSequenceGenerator())
         bus.subscribe<BrokerEvent.OrderFilled> { e -> captured.add(e) }
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> captured.add(e) }
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> captured.add(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> captured.add(e) }
         bus.subscribe<BrokerEvent.OrderCancelled> { e -> captured.add(e) }
@@ -197,6 +198,128 @@ class MT5BrokerIntegrationTest {
         assertThat(recordedOrder.getHeader("Idempotency-Key"))
             .isEqualTo("mt5-10001-session-1700000000000-0")
     }
+
+    @Test
+    fun `partial market entry stays working through later fill slices`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10010,"order":7001,"deal":8001,"price":"1.1000","volume":"0.04","comment":"partial"}}""",
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":8001,"order":7001,"position_id":9001,"symbol":"EURUSDm","type":0,"entry":0,"volume":"0.04","price":"1.1000","profit":"0","commission":"0","swap":"0","fee":"0","magic":10001,"comment":"ord-partial","time_msc":"1700000000000"}]""",
+            ),
+        )
+        val request =
+            OrderRequest.Market(
+                id = "ord-partial",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+
+        assertThat(broker.submit(request).accepted).isTrue
+        awaitCaptured { captured.filterIsInstance<BrokerEvent.OrderPartiallyFilled>().size == 1 }
+
+        val initial = captured.filterIsInstance<BrokerEvent.OrderPartiallyFilled>().single()
+        assertThat(initial.clientOrderId).isEqualTo("ord-partial")
+        assertThat(initial.brokerOrderId).isEqualTo("9001")
+        assertThat(initial.quantity).isEqualByComparingTo("0.04")
+        assertThat(initial.cumulativeFilled).isEqualByComparingTo("0.04")
+        assertThat(initial.strategyId).isEqualTo("s1")
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
+
+        server.enqueue(MockResponse().setBody(entryPositionJson("0.04")))
+        broker.poller.tick()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderPartiallyFilled>()).hasSize(1)
+
+        server.enqueue(MockResponse().setBody(entryPositionJson("0.07")))
+        broker.poller.tick()
+        val partials = captured.filterIsInstance<BrokerEvent.OrderPartiallyFilled>()
+        assertThat(partials).hasSize(2)
+        assertThat(partials.last().quantity).isEqualByComparingTo("0.03")
+        assertThat(partials.last().cumulativeFilled).isEqualByComparingTo("0.07")
+
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":7001,"deal":0,"price":"1.1000","comment":"modified"}}""",
+            ),
+        )
+        val modifyAck =
+            broker.modify(
+                "ord-partial",
+                com.qkt.broker.OrderModification(newStopPrice = BigDecimal("1.1010")),
+            )
+        assertThat(modifyAck.accepted).isTrue()
+        assertThat(modifyAck.brokerOrderId).isEqualTo("7001")
+
+        server.enqueue(MockResponse().setBody(entryPositionJson("0.10")))
+        broker.poller.tick()
+        val finalFill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(finalFill.clientOrderId).isEqualTo("ord-partial")
+        assertThat(finalFill.brokerOrderId).isEqualTo("9001")
+        assertThat(finalFill.quantity).isEqualByComparingTo("0.03")
+        assertThat(finalFill.strategyId).isEqualTo("s1")
+
+        server.enqueue(MockResponse().setBody("[]"))
+        broker.pendingPoller.tickForTesting()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderCancelled>()).isEmpty()
+    }
+
+    @Test
+    fun `restart reconstructs distinct residual and position tickets for partial entry`() {
+        val request =
+            OrderRequest.Market(
+                id = "ord-restart-partial",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            )
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":7101,"symbol":"EURUSDm","type":"BUY","volume":"0.06","price_open":"1.1000","sl":"0","tp":"0","magic":10001,"time_setup":"1700000000000","comment":"ord-restart-partial"}]""",
+            ),
+        )
+        server.enqueue(MockResponse().setBody(restartPositionJson("0.04")))
+        captured.clear()
+
+        broker.recoverPendingOrders(
+            listOf(
+                ManagedOrder(
+                    id = request.id,
+                    request = request,
+                    state = OrderState.WORKING,
+                    createdAt = 1L,
+                    lastUpdatedAt = 1L,
+                ),
+            ),
+        )
+
+        val recoveredPartial = captured.filterIsInstance<BrokerEvent.OrderPartiallyFilled>().single()
+        assertThat(recoveredPartial.brokerOrderId).isEqualTo("9101")
+        assertThat(recoveredPartial.cumulativeFilled).isEqualByComparingTo("0.04")
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderAccepted>().single().brokerOrderId)
+            .isEqualTo("7101")
+
+        server.enqueue(MockResponse().setBody(restartPositionJson("0.10")))
+        broker.poller.tick()
+        val finalFill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(finalFill.brokerOrderId).isEqualTo("9101")
+        assertThat(finalFill.quantity).isEqualByComparingTo("0.06")
+    }
+
+    private fun entryPositionJson(volume: String): String =
+        """[{"ticket":"9001","symbol":"EURUSDm","type":"0","volume":"$volume","price_open":"1.1000","sl":"0","tp":"0","profit":"0","magic":"10001","time_msc":"1700000000000"}]"""
+
+    private fun restartPositionJson(volume: String): String =
+        """[{"ticket":"9101","symbol":"EURUSDm","type":"0","volume":"$volume","price_open":"1.1000","sl":"0","tp":"0","profit":"0","magic":"10001","time_msc":"1700000000000","comment":"ord-restart-partial"}]"""
 
     @Test
     fun `each placement gets a fresh gateway id even when the engine id repeats`() {

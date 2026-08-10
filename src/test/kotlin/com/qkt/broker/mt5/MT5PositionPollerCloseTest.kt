@@ -109,6 +109,30 @@ class MT5PositionPollerCloseTest {
     }
 
     @Test
+    fun `same-ticket volume increase invokes entry reconciliation without a close fill`() {
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.04", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.07", "90", "110")))
+        val increases = mutableListOf<Pair<MT5Position, MT5Position>>()
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionIncreased = { previous, latest -> increases += previous to latest },
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(increases).hasSize(1)
+        assertThat(increases.single().first.volume).isEqualByComparingTo("0.04")
+        assertThat(increases.single().second.volume).isEqualByComparingTo("0.07")
+        assertThat(fills).isEmpty()
+    }
+
+    @Test
     fun `repeated partial closes use only each newly observed closing deal for price`() {
         server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
         server.enqueue(MockResponse().setBody(positionJson(7001L, "0.07", "90", "110")))

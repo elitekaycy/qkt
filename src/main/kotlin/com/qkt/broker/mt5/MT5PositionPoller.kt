@@ -33,6 +33,12 @@ class MT5PositionPoller(
      */
     private val onPositionOpened: ((MT5Position) -> Boolean)? = null,
     /**
+     * Invoked when an existing position's venue volume increases. Entry orders can fill in
+     * multiple slices while retaining one ticket; the broker uses this hook to advance the
+     * order's cumulative fill without waiting for a new position ticket.
+     */
+    private val onPositionIncreased: ((MT5Position, MT5Position) -> Unit)? = null,
+    /**
      * Resolves a closed position ticket to the qkt-side (clientOrderId, strategyId)
      * pair so the synthesized [BrokerEvent.OrderFilled] flows through the per-strategy
      * filters in [com.qkt.app.TradingPipeline]. Returns null for positions opened
@@ -226,6 +232,8 @@ class MT5PositionPoller(
                             positionClosed = false,
                         )
                 }
+            } else if (latest.volume > previous.volume) {
+                onPositionIncreased?.invoke(previous, latest)
             }
         }
         val closed = lastSnapshot.keys - current.keys
