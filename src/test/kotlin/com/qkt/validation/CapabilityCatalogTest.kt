@@ -8,6 +8,8 @@ import com.qkt.dsl.stdlib.FuncRegistry
 import com.qkt.dsl.stdlib.IndicatorRegistry
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -24,10 +26,10 @@ class CapabilityCatalogTest {
         }.bufferedReader().use { Json.parseToJsonElement(it.readText()).jsonObject }
 
     @Test
-    fun `catalog is an inventory and every category declares valid evidence axes`() {
+    fun `catalog classifies every required evidence axis`() {
         assertThat(catalog.getValue("schema").jsonPrimitive.content)
-            .isEqualTo("qkt-validation-capability-catalog-v1")
-        assertThat(catalog.getValue("evidenceStatus").jsonPrimitive.content).isEqualTo("inventory-only")
+            .isEqualTo("qkt-validation-capability-catalog-v2")
+        assertThat(catalog.getValue("evidenceStatus").jsonPrimitive.content).isEqualTo("classified-inventory")
 
         val axes = strings(catalog.getValue("axes").jsonArray)
         assertThat(axes).containsExactly(
@@ -44,14 +46,40 @@ class CapabilityCatalogTest {
             "portfolio",
         )
 
+        val profiles = catalog.getValue("evidenceProfiles").jsonObject
         for ((name, value) in catalog.getValue("categories").jsonObject) {
             val category = value.jsonObject
             val capabilities = strings(category.getValue("capabilities").jsonArray)
             val requiredAxes = strings(category.getValue("requiredAxes").jsonArray)
+            val profileName = category.getValue("evidenceProfile").jsonPrimitive.content
+            val profile = profiles.getValue(profileName).jsonObject
+            val passed = profile.getValue("passed").jsonObject
+            val gaps = profile.getValue("gaps").jsonObject
+            val notApplicable = profile.getValue("notApplicable").jsonObject
+            val classifiedAxes = passed.keys.toList() + gaps.keys + notApplicable.keys
+
             assertThat(category.getValue("source").jsonPrimitive.content).`as`("%s source", name).isNotBlank()
             assertThat(capabilities).`as`("%s capabilities", name).isNotEmpty.doesNotHaveDuplicates()
             assertThat(requiredAxes).`as`("%s required axes", name).isNotEmpty.doesNotHaveDuplicates()
             assertThat(requiredAxes).`as`("%s unknown axes", name).isSubsetOf(axes)
+            assertThat(classifiedAxes).`as`("%s classified axes", name).doesNotHaveDuplicates()
+            assertThat(classifiedAxes.toSet()).`as`("%s evidence coverage", name).isEqualTo(requiredAxes.toSet())
+
+            for ((axis, evidenceValue) in passed) {
+                val evidence = strings(evidenceValue.jsonArray)
+                assertThat(evidence).`as`("%s %s pass evidence", name, axis).isNotEmpty.doesNotHaveDuplicates()
+                evidence.forEach { path ->
+                    assertThat(Files.isRegularFile(Path.of(path)))
+                        .`as`("%s %s evidence %s", name, axis, path)
+                        .isTrue()
+                }
+            }
+            for ((axis, reason) in gaps) {
+                assertThat(reason.jsonPrimitive.content).`as`("%s %s gap reason", name, axis).isNotBlank()
+            }
+            for ((axis, reason) in notApplicable) {
+                assertThat(reason.jsonPrimitive.content).`as`("%s %s not-applicable reason", name, axis).isNotBlank()
+            }
         }
     }
 

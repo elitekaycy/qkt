@@ -1,6 +1,6 @@
 {
-  "schema": "qkt-validation-capability-catalog-v1",
-  "evidenceStatus": "inventory-only",
+  "schema": "qkt-validation-capability-catalog-v2",
+  "evidenceStatus": "classified-inventory",
   "axes": [
     "oracle",
     "dsl",
@@ -14,10 +14,120 @@
     "insights",
     "portfolio"
   ],
+  "evidenceProfiles": {
+    "generated-indicators": {
+      "passed": {
+        "oracle": ["src/test/resources/validation/oracle-evidence.json", "src/test/kotlin/com/qkt/validation/OracleEvidenceInventoryTest.kt"],
+        "dsl": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedIndicatorStrategyTest.kt"],
+        "ticks": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedIndicatorStrategyTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "bars": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedIndicatorStrategyTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "tickResolvedBars": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedIndicatorStrategyTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "livePaper": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedIndicatorStrategyTest.kt", "src/test/kotlin/com/qkt/parity/DslParityHarness.kt"]
+      },
+      "gaps": {
+        "mt5Demo": "No bounded demo-gateway scenario covers every registered indicator.",
+        "reports": "Generated runs do not yet retain and reconcile complete report bundles and manifests.",
+        "journal": "Generated runs do not yet assert the complete causal event and transport journal chain.",
+        "insights": "Generated runs do not yet assert exact Insights delivery and attribution.",
+        "portfolio": "Every indicator has not yet been exercised across isolated multi-strategy books."
+      },
+      "notApplicable": {}
+    },
+    "generated-numeric-functions": {
+      "passed": {
+        "oracle": ["src/test/resources/validation/oracle-evidence.json", "src/test/kotlin/com/qkt/validation/OracleEvidenceInventoryTest.kt"],
+        "dsl": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedNumericFunctionStrategyTest.kt"],
+        "ticks": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedNumericFunctionStrategyTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "bars": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedNumericFunctionStrategyTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "tickResolvedBars": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedNumericFunctionStrategyTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "livePaper": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedNumericFunctionStrategyTest.kt", "src/test/kotlin/com/qkt/parity/DslParityHarness.kt"]
+      },
+      "gaps": {
+        "mt5Demo": "No bounded demo-gateway scenario covers every registered numeric function.",
+        "reports": "Generated runs do not yet retain and reconcile complete report bundles and manifests.",
+        "journal": "Generated runs do not yet assert the complete causal event and transport journal chain.",
+        "insights": "Generated runs do not yet assert exact Insights delivery and attribution.",
+        "portfolio": "Every numeric function has not yet been exercised across isolated multi-strategy books."
+      },
+      "notApplicable": {}
+    },
+    "generated-sizing": {
+      "passed": {
+        "oracle": ["src/test/kotlin/com/qkt/parity/GeneratedSizingRiskParityTest.kt"],
+        "dsl": ["src/test/kotlin/com/qkt/parity/GeneratedSizingRiskParityTest.kt"],
+        "ticks": ["src/test/kotlin/com/qkt/parity/GeneratedSizingRiskParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "bars": ["src/test/kotlin/com/qkt/parity/GeneratedSizingRiskParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "tickResolvedBars": ["src/test/kotlin/com/qkt/parity/GeneratedSizingRiskParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "livePaper": ["src/test/kotlin/com/qkt/parity/GeneratedSizingRiskParityTest.kt", "src/test/kotlin/com/qkt/parity/DslParityHarness.kt"]
+      },
+      "gaps": {
+        "mt5Demo": "No bounded demo-gateway scenario covers every sizing form and normalization boundary.",
+        "reports": "Generated runs do not yet retain and reconcile complete report bundles and manifests.",
+        "journal": "Generated runs do not yet assert the complete causal event and transport journal chain.",
+        "insights": "Generated runs do not yet assert exact Insights delivery and attribution.",
+        "portfolio": "Every sizing form has not yet been reconciled across isolated books and account totals."
+      },
+      "notApplicable": {}
+    },
+    "generated-dsl-orders": {
+      "passed": {
+        "oracle": ["src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"],
+        "dsl": ["src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"],
+        "ticks": ["src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "bars": ["src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "tickResolvedBars": ["src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "livePaper": ["src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt", "src/test/kotlin/com/qkt/parity/DslParityHarness.kt"]
+      },
+      "gaps": {
+        "mt5Demo": "No bounded demo-gateway scenario covers every DSL order type and translation boundary.",
+        "reports": "Generated runs do not yet retain and reconcile complete report bundles and manifests.",
+        "journal": "Generated runs do not yet assert the complete causal event and transport journal chain.",
+        "insights": "Generated runs do not yet assert exact Insights delivery and attribution.",
+        "portfolio": "Every DSL order type has not yet been reconciled across isolated books."
+      },
+      "notApplicable": {}
+    },
+    "generated-time-in-force": {
+      "passed": {
+        "oracle": ["src/test/kotlin/com/qkt/parity/GeneratedTimeInForceParityTest.kt"],
+        "dsl": ["src/test/kotlin/com/qkt/parity/GeneratedTimeInForceParityTest.kt"],
+        "ticks": ["src/test/kotlin/com/qkt/parity/GeneratedTimeInForceParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "bars": ["src/test/kotlin/com/qkt/parity/GeneratedTimeInForceParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "tickResolvedBars": ["src/test/kotlin/com/qkt/parity/GeneratedTimeInForceParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "livePaper": ["src/test/kotlin/com/qkt/parity/GeneratedTimeInForceParityTest.kt", "src/test/kotlin/com/qkt/parity/DslParityHarness.kt"]
+      },
+      "gaps": {
+        "mt5Demo": "No bounded demo-gateway scenario covers every time-in-force translation and lifecycle.",
+        "reports": "Generated runs do not yet retain and reconcile complete report bundles and manifests.",
+        "journal": "Generated runs do not yet assert the complete causal event and transport journal chain.",
+        "insights": "Generated runs do not yet assert exact Insights delivery and attribution.",
+        "portfolio": "Every time-in-force value has not yet been reconciled across isolated books."
+      },
+      "notApplicable": {}
+    },
+    "unproven": {
+      "passed": {},
+      "gaps": {
+        "oracle": "No exhaustive independent behavioral oracle covers every capability in this category.",
+        "dsl": "No exhaustive non-vacuous DSL trace covers every capability in this category.",
+        "ticks": "No exhaustive raw-tick trace covers every capability in this category.",
+        "bars": "No exhaustive ordinary-bar trace covers every capability in this category.",
+        "tickResolvedBars": "No exhaustive tick-resolved-bar trace covers every capability in this category.",
+        "livePaper": "No exhaustive live-paper trace covers every capability in this category.",
+        "mt5Demo": "No exhaustive bounded demo-gateway trace covers every capability in this category.",
+        "reports": "No exhaustive retained report and manifest reconciliation covers every capability in this category.",
+        "journal": "No exhaustive causal journal trace covers every capability in this category.",
+        "insights": "No exhaustive Insights delivery and attribution trace covers every capability in this category.",
+        "portfolio": "No exhaustive isolated-book and account reconciliation covers every capability in this category."
+      },
+      "notApplicable": {}
+    }
+  },
   "categories": {
     "indicators": {
       "source": "IndicatorRegistry.names",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "generated-indicators",
       "capabilities": [
         "ADX", "ANCHORED_RETURN", "ATR", "BETA", "BOLLINGER_LOWER", "BOLLINGER_MIDDLE",
         "BOLLINGER_UPPER", "CCI", "CORRELATION", "DEMA", "EMA", "ER", "FAILED_BREAK_HIGH",
@@ -34,6 +144,7 @@
     "numericFunctions": {
       "source": "FuncRegistry.names",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "generated-numeric-functions",
       "capabilities": [
         "ABS", "CEIL", "EXP", "FLOOR", "LOG", "MAX", "MIN", "MOD", "NORMALIZE", "POW",
         "RANK_OF", "ROUND", "ROUND_TO", "SOFTMAX", "SQRT"
@@ -42,6 +153,7 @@
     "expressions": {
       "source": "ExprAst.permittedSubclasses",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "unproven",
       "capabilities": [
         "AccountRef", "Aggregate", "Between", "BinaryOp", "BoolLit", "CalendarWindow", "CaseWhen",
         "CmpOp", "CooldownRef", "Crosses", "EntryQty", "ExitRef", "FuncCall", "InList",
@@ -53,6 +165,7 @@
     "actions": {
       "source": "ActionAst.permittedSubclasses",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "unproven",
       "capabilities": [
         "Block", "Buy", "Cancel", "CancelAll", "Close", "CloseAll", "Latch", "Log", "OcoEntry",
         "Resize", "Sell"
@@ -61,6 +174,7 @@
     "sizing": {
       "source": "SizingAst.permittedSubclasses",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "generated-sizing",
       "capabilities": [
         "SizeNotional", "SizePctBalance", "SizePctEquity", "SizePositionFull", "SizeQty",
         "SizeRiskAbs", "SizeRiskFrac", "SizeRiskFracOfBook"
@@ -69,6 +183,7 @@
     "dslOrderTypes": {
       "source": "OrderTypeAst.permittedSubclasses",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "generated-dsl-orders",
       "capabilities": [
         "ExitRelativeLimit", "ExitRelativeStop", "Limit", "Market", "Stop", "StopLimit", "TrailingBy",
         "TrailingPct"
@@ -77,6 +192,7 @@
     "normalizedOrders": {
       "source": "OrderRequest.permittedSubclasses",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "unproven",
       "capabilities": [
         "ArmedTrailingStop", "Bracket", "IfTouched", "Limit", "Market", "OTO", "ScaleOut",
         "StandaloneOCO", "Stack", "SteppedStop", "Stop", "StopLimit", "TimeExit",
@@ -86,16 +202,19 @@
     "timeInForce": {
       "source": "TimeInForce.entries",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "generated-time-in-force",
       "capabilities": ["DAY", "FOK", "GTC", "GTD", "IOC"]
     },
     "timeframes": {
       "source": "TimeWindow.parse equivalence partitions",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "unproven",
       "capabilities": ["1s", "5s", "1m", "2m", "5m", "15m", "1h", "1d", "invalid-5ms"]
     },
     "runtimeScenarios": {
       "source": "validation design",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
+      "evidenceProfile": "unproven",
       "capabilities": [
         "already-deployed", "candle-boundary", "config-file", "configless", "disconnect-reconnect",
         "duplicate-tick", "gateway-restart", "gap", "missing-bar", "multi-container", "multi-symbol",

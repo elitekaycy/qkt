@@ -7,7 +7,7 @@ journals, portfolios, and QKT Insights before any external strategy is promoted.
 **Spec:** `docs/superpowers/specs/2026-08-09-exhaustive-live-parity-validation-design.md`
 
 - [x] Add a machine-readable capability catalog and a CI test that detects registry/runtime drift.
-- [ ] Inventory existing evidence without upgrading parser, construction, or vacuous tests to
+- [x] Inventory existing evidence without upgrading parser, construction, or vacuous tests to
       behavioral proof.
 - [x] Add independent numeric/readiness oracles for every indicator output and DSL numeric function.
 - [ ] Add non-vacuous DSL trace scenarios for every expression, state reference, action, schedule,
