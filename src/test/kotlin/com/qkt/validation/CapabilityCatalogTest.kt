@@ -3,6 +3,7 @@ package com.qkt.validation
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.OrderTypeAst
+import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.stdlib.FuncRegistry
 import com.qkt.dsl.stdlib.IndicatorRegistry
@@ -91,6 +92,10 @@ class CapabilityCatalogTest {
         assertCategory("actions", permittedNames(ActionAst::class.java))
         assertCategory("sizing", permittedNames(SizingAst::class.java))
         assertCategory("dslOrderTypes", permittedNames(OrderTypeAst::class.java))
+        assertCategory(
+            "dslStructures",
+            permittedNames(ScheduleTrigger::class.java) + setOf("Basket", "ForEach", "Sequence"),
+        )
         assertCategory("normalizedOrders", permittedNames(OrderRequest::class.java))
         assertCategory("timeInForce", TimeInForce.entries.map { it.name }.toSet())
     }
