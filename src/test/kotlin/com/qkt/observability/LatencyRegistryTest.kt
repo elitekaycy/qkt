@@ -35,6 +35,17 @@ class LatencyRegistryTest {
     }
 
     @Test
+    fun `session-wide observations are retained for every hosted strategy`() {
+        val registry = LatencyRegistry(enabled = true, strategyIds = listOf("alpha", "beta"))
+
+        registry.observeAll(LatencyStage.TICK_PROCESSING, 750L)
+
+        val snapshot = registry.snapshot()
+        assertThat(snapshot.strategies["alpha"]!![LatencyStage.TICK_PROCESSING]!!.maxNanos).isEqualTo(750L)
+        assertThat(snapshot.strategies["beta"]!![LatencyStage.TICK_PROCESSING]!!.maxNanos).isEqualTo(750L)
+    }
+
+    @Test
     fun `recordSubmit then observeFill produces a SUBMISSION_TO_FILL observation`() {
         val r = LatencyRegistry(enabled = true, strategyIds = listOf("s1"))
         r.recordSubmit("ord-1")

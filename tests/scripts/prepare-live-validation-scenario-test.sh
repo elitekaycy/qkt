@@ -113,6 +113,7 @@ grep -F 'golden capture' "$repo_root/scripts/live-validation/run-market-bracket.
 grep -F '.captureGitSha as $capture' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'maxDroppedTicks' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 grep -F 'dropped live tick(s)' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
+grep -F 'TICK_PROCESSING.count > 0' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 
 comparison_script="$repo_root/scripts/live-validation/compare-golden-replay.sh"
 bash -n "$comparison_script"

@@ -182,7 +182,7 @@ stop_daemon() {
 }
 trap stop_daemon EXIT
 
-QKT_STATE_DIR="$scenario/state" "$cli" daemon start \
+QKT_LATENCY_TRACKING=1 QKT_STATE_DIR="$scenario/state" "$cli" daemon start \
     --config "$config" \
     --state-dir "$scenario/state" \
     --load-dir "$scenario/strategies/readonly" \
@@ -225,6 +225,14 @@ for second in $(seq 1 "$duration_seconds"); do
 done
 
 "$cli" daemon status --state-dir "$scenario/state" --json > "$evidence/daemon-status-final.json"
+control_port="$(<"$scenario/state/control.port")"
+curl --silent --show-error --fail "http://127.0.0.1:$control_port/latency" > "$evidence/latency.json"
+strategy_name="$(jq -r '.perStrategy[0].name' "$evidence/daemon-status-final.json")"
+jq -e \
+    --arg strategy "$strategy_name" '
+        .[$strategy].enabled == true and
+        .[$strategy].strategies[$strategy].TICK_PROCESSING.count > 0
+    ' "$evidence/latency.json" >/dev/null || fail "daemon did not retain tick-processing latency samples"
 grep -F 'closed bar trace timeframe=1m' "$scenario/logs/daemon.log" >/dev/null || fail "daemon did not retain an M1 trace"
 grep -F 'closed bar trace timeframe=5m' "$scenario/logs/daemon.log" >/dev/null || fail "daemon did not retain an M5 trace"
 
@@ -271,6 +279,7 @@ health_samples="$(awk 'END {print NR + 0}' "$evidence/health.jsonl")"
 max_inbound_queue="$(jq -s '[.[].perStrategy[].inboundQueueDepth] | max // 0' "$evidence/health.jsonl")"
 max_dropped_ticks="$(jq -s '[.[].perStrategy[].droppedTicks] | max // 0' "$evidence/health.jsonl")"
 [ "$max_dropped_ticks" -eq 0 ] || fail "daemon reported $max_dropped_ticks dropped live tick(s)"
+tick_latency="$(jq -c --arg strategy "$strategy_name" '.[$strategy].strategies[$strategy].TICK_PROCESSING' "$evidence/latency.json")"
 max_cpu_percent="$(awk -F, 'NR > 1 && $2 > max {max=$2} END {printf "%.2f", max + 0}' "$evidence/resources.csv")"
 max_rss_kb="$(awk -F, 'NR > 1 && $3 > max {max=$3} END {print max + 0}' "$evidence/resources.csv")"
 max_threads="$(awk -F, 'NR > 1 && $4 > max {max=$4} END {print max + 0}' "$evidence/resources.csv")"
@@ -297,6 +306,7 @@ jq -n \
     --arg healthSamples "$health_samples" \
     --arg maxInboundQueue "$max_inbound_queue" \
     --arg maxDroppedTicks "$max_dropped_ticks" \
+    --argjson tickLatency "$tick_latency" \
     --arg maxCpuPercent "$max_cpu_percent" \
     --arg maxRssKb "$max_rss_kb" \
     --arg maxThreads "$max_threads" \
@@ -326,6 +336,7 @@ jq -n \
           transportEvents:($transportEvents|tonumber),
           resources:{samples:($resourceSamples|tonumber),maxCpuPercent:($maxCpuPercent|tonumber),maxRssKb:($maxRssKb|tonumber),maxThreads:($maxThreads|tonumber)},
           health:{samples:($healthSamples|tonumber),maxInboundQueue:($maxInboundQueue|tonumber),maxDroppedTicks:($maxDroppedTicks|tonumber)},
+          latency:{tickProcessing:$tickLatency},
           initialPositions:0,
           initialOrders:0,
           finalPositions:0,
