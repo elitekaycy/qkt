@@ -11,7 +11,10 @@ import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.events.RiskEvent
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.execution.Trade
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
@@ -19,6 +22,7 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.candleToTicks
 import com.qkt.risk.HaltRule
+import com.qkt.risk.StrategyRiskLimits
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 import java.time.Duration
@@ -54,10 +58,20 @@ internal object DslParityHarness {
         val timestamp: Long,
     )
 
+    data class RejectionState(
+        val strategyId: String,
+        val symbol: String,
+        val side: String,
+        val quantity: String,
+        val reason: String,
+        val timestamp: Long,
+    )
+
     data class Snapshot(
         val trades: List<TradeState>,
         val positions: List<PositionState>,
         val pnl: PnlState,
+        val rejections: List<RejectionState>,
         val halts: List<HaltState>,
     )
 
@@ -73,6 +87,11 @@ internal object DslParityHarness {
         warmupCandles: List<Candle> = emptyList(),
         candleWindow: TimeWindow = TimeWindow.ONE_MINUTE,
         startingBalance: BigDecimal = BigDecimal("10000"),
+        instruments: InstrumentRegistry = NoopInstrumentRegistry,
+        strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
+        bookCapital: BigDecimal? = null,
+        maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+        maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
         haltRules: () -> List<HaltRule> = { emptyList() },
     ): Result {
         require(ticks.isNotEmpty()) { "parity tape must not be empty" }
@@ -86,6 +105,12 @@ internal object DslParityHarness {
                 candleWindow = candleWindow,
                 initialTimestamp = backtestTicks.first().timestamp,
                 startingBalance = startingBalance,
+                startingBalances = mapOf(strategyId to startingBalance),
+                strategyRiskLimits = mapOf(strategyId to strategyRiskLimits),
+                bookCapital = bookCapital,
+                instruments = instruments,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
             ).run()
         val backtest =
             Snapshot(
@@ -105,6 +130,7 @@ internal object DslParityHarness {
                         unrealized = number(backtestResult.perStrategy.getValue(strategyId).unrealizedTotal),
                         total = number(backtestResult.perStrategy.getValue(strategyId).totalPnL),
                     ),
+                rejections = backtestResult.rejections.map(::rejectionState),
                 halts =
                     backtestResult.halts.map {
                         HaltState(it.reason, it.strategyId, it.timestamp)
@@ -115,6 +141,8 @@ internal object DslParityHarness {
         val liveBus = EventBus(liveClock, MonotonicSequenceGenerator())
         val liveHalts = mutableListOf<RiskEvent.Halted>()
         liveBus.subscribe<RiskEvent.Halted> { liveHalts.add(it) }
+        val liveRejections = mutableListOf<RiskRejectedEvent>()
+        liveBus.subscribe<RiskRejectedEvent> { liveRejections.add(it) }
         val liveTrades = mutableListOf<TradeState>()
         val handle =
             LiveSession(
@@ -128,6 +156,21 @@ internal object DslParityHarness {
                 onTrade = { trade, realized, owner -> liveTrades.add(tradeState(owner, trade, realized)) },
                 initialBalance = startingBalance,
                 startingBalances = mapOf(strategyId to startingBalance),
+                instrumentRegistry = instruments,
+                perStrategyMaxDailyLoss = strategyRiskLimits.maxDailyLoss,
+                perStrategyMaxPositionSize = strategyRiskLimits.maxPositionSize,
+                perStrategyMaxOpenPositions = strategyRiskLimits.maxOpenPositions,
+                perStrategyMaxDrawdownPct = strategyRiskLimits.maxDrawdownPct,
+                perStrategyMaxDailyDrawdownPct = strategyRiskLimits.maxDailyDrawdownPct,
+                perStrategyMaxTradesPerDay = strategyRiskLimits.maxTradesPerDay,
+                perStrategyCooldownAfterLossMs = strategyRiskLimits.cooldownAfterLossMs,
+                perStrategyCooldownAfterLossAfterConsecutive =
+                    strategyRiskLimits.cooldownAfterLossAfterConsecutive,
+                perStrategyLossStreakHalt = strategyRiskLimits.lossStreakHalt,
+                perStrategyLossStreakHaltScope = strategyRiskLimits.lossStreakHaltScope,
+                bookBalance = bookCapital?.let { capital -> com.qkt.pnl.BookBalanceView { capital } },
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
                 busOverride = liveBus,
             ).start()
         check(handle.awaitTermination(Duration.ofSeconds(10))) { "live parity session did not terminate" }
@@ -142,6 +185,7 @@ internal object DslParityHarness {
                         unrealized = number(livePnl.unrealized),
                         total = number(livePnl.realized.add(livePnl.unrealized)),
                     ),
+                rejections = liveRejections.map(::rejectionState),
                 halts = liveHalts.map { HaltState(it.reason, it.strategyId, it.timestamp) },
             )
         return Result(backtest, live)
@@ -180,6 +224,16 @@ internal object DslParityHarness {
             quantity = number(position.quantity),
             avgEntryPrice = number(position.avgEntryPrice),
             openedAt = position.openedAt,
+        )
+
+    private fun rejectionState(event: RiskRejectedEvent): RejectionState =
+        RejectionState(
+            strategyId = event.request.strategyId,
+            symbol = event.request.symbol,
+            side = event.request.side.name,
+            quantity = number(event.request.quantity),
+            reason = event.reason,
+            timestamp = event.timestamp,
         )
 
     private fun number(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()

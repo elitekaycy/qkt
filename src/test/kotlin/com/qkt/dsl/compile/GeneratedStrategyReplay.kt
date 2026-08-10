@@ -5,11 +5,15 @@ import com.qkt.backtest.TradeRecord
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.events.RiskRejectedEvent
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.risk.StrategyRiskLimits
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 import java.nio.file.Path
@@ -32,6 +36,13 @@ internal object GeneratedStrategyReplay {
         path: Path,
         closes: List<String>,
         expectedTradeCount: Int = 1,
+        expectedRejectionCount: Int = 0,
+        startingBalance: BigDecimal = BigDecimal.ZERO,
+        bookCapital: BigDecimal? = null,
+        instruments: InstrumentRegistry = NoopInstrumentRegistry,
+        strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
+        maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+        maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
     ) {
         val candles =
             (closes + closes.last()).mapIndexed { index, close -> candle(close, index) }
@@ -41,6 +52,13 @@ internal object GeneratedStrategyReplay {
             window = TimeWindow.ONE_MINUTE,
             closeOnlyTicks = true,
             expectedTradeCount = expectedTradeCount,
+            expectedRejectionCount = expectedRejectionCount,
+            startingBalance = startingBalance,
+            bookCapital = bookCapital,
+            instruments = instruments,
+            strategyRiskLimits = strategyRiskLimits,
+            maxOrderQty = maxOrderQty,
+            maxOrderNotional = maxOrderNotional,
         )
     }
 
@@ -50,6 +68,13 @@ internal object GeneratedStrategyReplay {
         window: TimeWindow,
         closeOnlyTicks: Boolean = false,
         expectedTradeCount: Int = 1,
+        expectedRejectionCount: Int = 0,
+        startingBalance: BigDecimal = BigDecimal.ZERO,
+        bookCapital: BigDecimal? = null,
+        instruments: InstrumentRegistry = NoopInstrumentRegistry,
+        strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
+        maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
+        maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
     ) {
         val symbols = candlesBySymbol.keys.toList()
         val allCandles = candlesBySymbol.values.flatten()
@@ -63,6 +88,13 @@ internal object GeneratedStrategyReplay {
                 strategies = listOf(namedStrategy(path)),
                 ticks = ticks,
                 candleWindow = window,
+                startingBalance = startingBalance,
+                startingBalances = mapOf(namedStrategy(path).first to startingBalance),
+                bookCapital = bookCapital,
+                instruments = instruments,
+                strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
             ).run()
 
         val barSource =
@@ -83,10 +115,19 @@ internal object GeneratedStrategyReplay {
                             to = Instant.ofEpochMilli(allCandles.maxOf { it.endTime }),
                         ),
                     candleWindow = window,
+                    startingBalance = startingBalance,
+                    startingBalances = mapOf(namedStrategy(path).first to startingBalance),
+                    bookCapital = bookCapital,
+                    instruments = instruments,
+                    strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
+                    maxOrderQty = maxOrderQty,
+                    maxOrderNotional = maxOrderNotional,
                 ).run()
 
-        assertThat(tickResult.rejections).isEmpty()
-        assertThat(barResult.rejections).isEmpty()
+        assertThat(tickResult.rejections).hasSize(expectedRejectionCount)
+        assertThat(barResult.rejections).hasSize(expectedRejectionCount)
+        assertThat(barResult.rejections.map(::canonical))
+            .isEqualTo(tickResult.rejections.map(::canonical))
         assertThat(tickResult.trades).hasSize(expectedTradeCount)
         assertThat(barResult.trades).hasSize(expectedTradeCount)
         assertThat(barResult.trades.map(::canonical))
@@ -96,6 +137,11 @@ internal object GeneratedStrategyReplay {
     private fun canonical(record: TradeRecord): List<Any> =
         with(record.trade) {
             listOf(record.strategyId, symbol, side, quantity, price, timestamp)
+        }
+
+    private fun canonical(event: RiskRejectedEvent): List<Any> =
+        with(event.request) {
+            listOf(strategyId, symbol, side, quantity, event.reason, event.timestamp)
         }
 
     private fun closeOnlyTicks(candle: Candle): List<Tick> =
