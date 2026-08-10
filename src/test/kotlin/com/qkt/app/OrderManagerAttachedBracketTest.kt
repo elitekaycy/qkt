@@ -204,6 +204,63 @@ class OrderManagerAttachedBracketTest {
     }
 
     @Test
+    fun `relative attached bracket modifies protection from the exact fill`() {
+        data class Case(
+            val side: Side,
+            val fill: String,
+            val expectedSl: String,
+            val expectedTp: String,
+        )
+
+        listOf(
+            Case(Side.BUY, fill = "105", expectedSl = "95", expectedTp = "125"),
+            Case(Side.SELL, fill = "95", expectedSl = "105", expectedTp = "75"),
+        ).forEach { case ->
+            val clock = FixedClock(0L)
+            val bus = newBus(clock)
+            val broker = FakeBroker(bus, clock, attachCaps)
+            val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+            val entryId = "${case.side.name.lowercase()}-entry"
+            val entry =
+                OrderRequest.Market(
+                    id = entryId,
+                    symbol = "X",
+                    side = case.side,
+                    quantity = Money.of("1"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                )
+            val bracket =
+                OrderRequest.Bracket(
+                    id = "${case.side.name.lowercase()}-bracket",
+                    symbol = "X",
+                    side = case.side,
+                    quantity = Money.of("1"),
+                    entry = entry,
+                    takeProfit = Money.of(if (case.side == Side.BUY) "120" else "80"),
+                    stopLoss = StopLossSpec.Fixed(Money.of(if (case.side == Side.BUY) "90" else "110")),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                    takeProfitAst = ChildBy(NumLit(Money.of("20"))),
+                    stopLossAst = ChildBy(NumLit(Money.of("10"))),
+                )
+
+            om.submit(bracket)
+            val shipped = broker.submits.single() as OrderRequest.Bracket
+            assertThat(shipped.takeProfit).isEqualByComparingTo(bracket.takeProfit)
+            assertThat((shipped.stopLoss as StopLossSpec.Fixed).price)
+                .isEqualByComparingTo((bracket.stopLoss as StopLossSpec.Fixed).price)
+
+            broker.emitFill(shipped, price = Money.of(case.fill))
+
+            val modification = broker.modifyPositions.single()
+            assertThat(modification.ticket).isEqualTo(entryId)
+            assertThat(modification.sl).isEqualByComparingTo(case.expectedSl)
+            assertThat(modification.tp).isEqualByComparingTo(case.expectedTp)
+        }
+    }
+
+    @Test
     fun `rejected fill anchored fixed stop modify arms an engine held ticket close`() {
         val clock = FixedClock(0L)
         val bus = newBus(clock)
