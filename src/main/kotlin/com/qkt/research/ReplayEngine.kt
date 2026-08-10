@@ -69,6 +69,7 @@ class ReplayEngine(
     private var feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
+    private val replayEndTimestamp: Long? = null,
     source: MarketSource = NullMarketSource,
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
     warmupSpec: WarmupSpec = WarmupSpec.None,
@@ -532,7 +533,7 @@ class ReplayEngine(
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
         // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
         if (tickResolvedBars != null && tickSlicer != null) {
-            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill)
+            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill, replayEndTimestamp)
         }
 
         if (perStreamWarmup?.specs?.isNotEmpty() == true) {
@@ -600,7 +601,19 @@ class ReplayEngine(
     /** Advance to the end and return the result — the batch-backtest convenience path. */
     fun runToEnd(): BacktestResult {
         advanceToEnd()
+        flushCompletedReplayBoundary()
         return snapshot()
+    }
+
+    private fun flushCompletedReplayBoundary() {
+        val window = candleWindow ?: return
+        val replayEnd = replayEndTimestamp ?: return
+        if (ticksIngested == 0L) return
+        val boundary = window.windowEndFor(currentTimestamp)
+        if (boundary > replayEnd) return
+        currentTimestamp = boundary
+        clock.time = boundary
+        pipeline.flushReplayCandles(boundary)
     }
 
     /** Trades filled so far. */

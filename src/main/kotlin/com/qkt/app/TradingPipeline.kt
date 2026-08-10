@@ -747,6 +747,12 @@ class TradingPipeline(
         candleHub.flushClosed(nowMs)
     }
 
+    /** Close completed replay candles without running live-only schedule and broker maintenance. */
+    internal fun flushReplayCandles(nowMs: Long) {
+        windowAggregator?.flushClosed(nowMs)
+        candleHub.flushClosed(nowMs)
+    }
+
     /** Late ticks rejected after their candle was finalized. */
     fun droppedLateTicks(): Long = windowAggregator?.droppedLateTicks ?: 0L
 
