@@ -2011,7 +2011,7 @@ class MT5Broker(
      * trade or another qkt instance with the same magic) — ignore it; reconciliation
      * is a separate concern.
      */
-    private fun onPendingPositionOpened(position: MT5Position) {
+    private fun onPendingPositionOpened(position: MT5Position): Boolean {
         val meta =
             synchronized(pendingTransitionLock) {
                 pendingByTicket.remove(position.ticket)
@@ -2026,7 +2026,7 @@ class MT5Broker(
             // Already tracked? The Fix A cross-check in onPendingDisappeared may have
             // synthesized this fill on a prior pending-poller tick; the position-poller
             // is now seeing the same ticket in its opened-delta. Silent — already done.
-            if (positionMetaByTicket.containsKey(position.ticket)) return
+            if (positionMetaByTicket.containsKey(position.ticket)) return true
             log.warn(
                 "MT5Broker {} saw new position ticket={} symbol={} side={} magic={} with no qkt-side " +
                     "pending meta yet; deferring attribution while awaiting a possible asynchronous " +
@@ -2037,9 +2037,10 @@ class MT5Broker(
                 if (position.type == 0) "BUY" else "SELL",
                 profile.magic,
             )
-            return
+            return false
         }
         publishPendingPositionOpened(position, meta)
+        return true
     }
 
     private fun registerPendingTicket(

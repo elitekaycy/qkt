@@ -405,6 +405,54 @@ class MT5PositionPollerCloseTest {
     }
 
     @Test
+    fun `runtime position rejected by local correlation does not emit a sibling close`() {
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(8888L, 0, "2050.00")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionOpened = { false },
+                closedTicketMeta = { null },
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).isEmpty()
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `runtime position publishes when placement metadata arrives after the open poll`() {
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(8888L, 0, "2050.00")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        server.enqueue(MockResponse().setBody("[]"))
+        var meta: ClosedPositionMeta? = null
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionOpened = { false },
+                closedTicketMeta = { meta },
+            )
+
+        poller.tick()
+        meta = ClosedPositionMeta("dsl-owner--1", "owner")
+        poller.tick()
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().clientOrderId).isEqualTo("dsl-owner--1")
+        assertThat(fills.single().strategyId).isEqualTo("owner")
+    }
+
+    @Test
     fun `re-observed close after a snapshot flicker emits one attributed close, not a blank-strategy duplicate`() {
         // Prod 2026-06-05 (v0.29.14): ticket 2814861313 (dsl-hedge_straddle--10) closed,
         // then a later /positions snapshot briefly re-surfaced it before it vanished again.
