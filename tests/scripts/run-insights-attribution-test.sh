@@ -29,8 +29,7 @@ bash "$prepare" \
     --output "$scenario" \
     --id insights_gbp_fixture \
     --gateway-url http://127.0.0.1:18080 \
-    --expected-login 123456 \
-    --expected-server Demo-Server \
+    --runtime-account-identity \
     --expected-balance 10000 \
     --expected-leverage 200 \
     --magic 876543 \
@@ -40,6 +39,13 @@ verify_output="$(bash "$runner" --scenario "$scenario" --insights-image unavaila
     --cli "$fake_cli" --verify-only)"
 [[ "$verify_output" == *"on EXNESS:GBPUSD"* ]] || fail "verify-only did not derive the prepared armed symbol"
 [[ "$verify_output" == *"insights_gbp_fixture_bars_readonly"* ]] || fail "verify-only did not retain the read-only sibling"
+if rg --text --fixed-strings --quiet -e 123456 -e Demo-Server "$scenario"; then
+    fail "runtime account identity reached the prepared scenario"
+fi
+grep -F 'expected_account_login: ${QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN}' "$scenario/qkt.config.yaml" >/dev/null
+grep -F 'expected_account_server: ${QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER}' "$scenario/qkt.config.yaml" >/dev/null
+jq -e '.account.identitySource == "runtimeEnvironment" and
+    (.account | has("login") == false and has("server") == false)' "$scenario/expected.json" >/dev/null
 
 bash -n "$runner"
 if rg --quiet 'kill .*--flatten|bot close EXNESS:|(-Xmx|--memory|--cpus|--cpu-quota)' "$runner"; then
@@ -71,12 +77,37 @@ for required in \
     'second DSL decision did not close the owned ticket' \
     'live-state-open-attributed.json' \
     'emergency-close-$ticket.json' \
-    'emergency-cancel-$ticket.json'; do
+    'emergency-cancel-$ticket.json' \
+    'qkt_write_safe_account_snapshot' \
+    'qkt_sanitize_account_transport_journals' \
+    'qkt_assert_no_retained_account_identity'; do
     rg --fixed-strings --quiet "$required" "$runner" || fail "missing hardening contract: $required"
 done
 
+identity_lib="$repo_root/scripts/live-validation/lib/account-identity.sh"
+rg --fixed-strings --quiet 'QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN' "$identity_lib"
+fixture="$work/identity-fixture"
+mkdir -p "$fixture/state" "$fixture/logs"
+raw_account='{"login":123456,"server":"Demo-Server","name":"Account Owner","balance":10000,"equity":10000,"margin":0,"profit":0,"margin_free":10000,"margin_level":null,"currency":"USD","leverage":200,"margin_mode":2,"trade_mode":0,"trade_allowed":true,"trade_expert":true}'
+source "$identity_lib"
+(
+    export QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN=123456
+    export QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER=Demo-Server
+    qkt_require_runtime_account_identity
+    [ "$QKT_EXPECTED_ACCOUNT_LOGIN" = 123456 ]
+    [ "$QKT_EXPECTED_ACCOUNT_SERVER" = Demo-Server ]
+)
+qkt_write_safe_account_snapshot "$fixture/account.json" <<< "$raw_account"
+printf '%s\n' '{"path":"/account","responseBody":"{\"login\":123456,\"server\":\"Demo-Server\",\"name\":\"Account Owner\",\"balance\":10000,\"equity\":10000,\"margin\":0,\"currency\":\"USD\",\"leverage\":200,\"trade_mode\":0}"}' > "$fixture/state/transport.jsonl"
+printf '%s\n' '[INFO] mt5 account: exness: login=123456 server=Demo-Server mode=demo' > "$fixture/logs/daemon.log"
+qkt_sanitize_account_transport_journals "$fixture/state"
+qkt_redact_account_identity_log "$fixture/logs/daemon.log" 123456 Demo-Server
+qkt_assert_no_retained_account_identity "$fixture" 123456 Demo-Server || fail "identity sanitizer left fixture data"
+jq -e 'has("login") == false and has("server") == false and has("name") == false and .balance == 10000' "$fixture/account.json" >/dev/null
+jq -e '(.responseBody | fromjson | has("login")) == false and (.responseBody | fromjson | has("server")) == false' "$fixture/state/transport.jsonl" >/dev/null
+
 probe_line="$(rg -n 'Reject an image that predates' "$runner" | cut -d: -f1)"
-broker_line="$(rg -n '^gateway_get /account' "$runner" | cut -d: -f1 | head -1)"
+broker_line="$(rg -n 'account_initial=.*gateway_get /account' "$runner" | cut -d: -f1 | head -1)"
 [ "$probe_line" -lt "$broker_line" ] || fail "stale collector probe does not precede broker access"
 
 printf 'run-insights-attribution-test: passed\n'

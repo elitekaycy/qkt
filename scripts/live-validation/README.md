@@ -205,7 +205,18 @@ gap by adding an order action.
 Use an exact local QKT Insights image and a fresh prepared scenario:
 
 ```bash
+scripts/live-validation/prepare-scenario.sh \
+  --output /var/tmp/qkt-validation/run-001 \
+  --id insights_e97e95a9 \
+  --gateway-url http://127.0.0.1:5001 \
+  --runtime-account-identity \
+  --expected-balance "$DEMO_BALANCE" \
+  --expected-leverage "$DEMO_LEVERAGE" \
+  --magic "$ISOLATED_MAGIC"
+
 export QKT_BROKER_API_KEY="$LOCAL_GATEWAY_KEY"
+export QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN="$DEMO_LOGIN"
+export QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER="$DEMO_SERVER"
 export QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY
 scripts/live-validation/run-insights-attribution.sh \
   --scenario /var/tmp/qkt-validation/run-001 \
@@ -219,8 +230,12 @@ deploys the separately armed `0.01`-lot bracket, and requires unacknowledged Ins
 envelopes in QKT's durable spool. It restarts the same collector and database,
 requires replay to drain, repeatedly verifies that the open venue ticket remains
 attributed only to the armed owner, then flattens through QKT and checks durable order
-and deal attribution. Runtime credentials are generated in memory and scanned against
-the retained artifacts. The runner sets no JVM or container memory limit.
+and deal attribution. Prepare this scenario with `--runtime-account-identity`; login
+and server are required only in the runtime environment. Raw account responses are
+reduced to non-identifying financial/status evidence, account transport records and
+startup logs are sanitized, and a final scan fails closed if identity remains.
+Runtime credentials are generated in memory and scanned against the retained
+artifacts. The runner sets no JVM or container memory limit.
 
 ## Bounded Demo Bracket
 

@@ -8,10 +8,16 @@ usage() {
 Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD]
+       prepare-scenario.sh --output DIR --id ID --gateway-url URL \
+  --runtime-account-identity --expected-balance DECIMAL \
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
 be an explicit 127.0.0.1 HTTP endpoint. Credentials are never accepted as arguments;
-the generated config resolves QKT_BROKER_API_KEY only at execution time.
+the generated config resolves QKT_BROKER_API_KEY only at execution time. The
+runtime-account-identity mode also resolves the account login and server from
+QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN and
+QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER without retaining either value.
 EOF
 }
 
@@ -29,6 +35,7 @@ expected_balance=""
 expected_leverage=""
 magic=""
 symbol="EURUSD"
+runtime_account_identity=false
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -41,6 +48,7 @@ while [ "$#" -gt 0 ]; do
         --expected-leverage) expected_leverage="${2:-}"; shift 2 ;;
         --magic) magic="${2:-}"; shift 2 ;;
         --symbol) symbol="${2:-}"; shift 2 ;;
+        --runtime-account-identity) runtime_account_identity=true; shift ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -57,8 +65,13 @@ output="$(realpath -m "$output")"
 gateway_url="${gateway_url%/}"
 gateway_port="${gateway_url##*:}"
 [ "$gateway_port" -ge 1 ] && [ "$gateway_port" -le 65535 ] || fail "gateway port must be in 1..65535"
-[[ "$expected_login" =~ ^[1-9][0-9]*$ ]] || fail "--expected-login must be a positive integer"
-[[ "$expected_server" =~ ^[A-Za-z0-9._-]+$ ]] || fail "--expected-server contains unsupported characters"
+if $runtime_account_identity; then
+    [ -z "$expected_login" ] && [ -z "$expected_server" ] ||
+        fail "--runtime-account-identity cannot be combined with identity values"
+else
+    [[ "$expected_login" =~ ^[1-9][0-9]*$ ]] || fail "--expected-login must be a positive integer"
+    [[ "$expected_server" =~ ^[A-Za-z0-9._-]+$ ]] || fail "--expected-server contains unsupported characters"
+fi
 [[ "$expected_balance" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--expected-balance must be a non-negative decimal"
 [[ ! "$expected_balance" =~ ^0+([.]0+)?$ ]] || fail "--expected-balance must be greater than zero"
 [[ "$expected_leverage" =~ ^[1-9][0-9]*$ ]] || fail "--expected-leverage must be a positive integer"
@@ -89,6 +102,17 @@ mkdir -p \
     "$output/journal" \
     "$output/evidence"
 
+if $runtime_account_identity; then
+    account_config='    expected_account_login: ${QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN}
+    expected_account_server: ${QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER}'
+    account_identity_metadata='    "identitySource": "runtimeEnvironment",'
+else
+    account_config="    expected_account_login: $expected_login
+    expected_account_server: $expected_server"
+    account_identity_metadata="    \"login\": $expected_login,
+    \"server\": \"$expected_server\","
+fi
+
 cat > "$output/qkt.config.yaml" <<EOF
 source: local
 data_root: "$output/data"
@@ -109,8 +133,7 @@ brokers:
     api_key: \${QKT_BROKER_API_KEY}
     magic: $magic
     server_time_zone: Etc/UTC
-    expected_account_login: $expected_login
-    expected_account_server: $expected_server
+$account_config
     expected_trade_mode: demo
     expected_account_currency: USD
     tick_poll_interval_ms: 100
@@ -227,8 +250,7 @@ cat > "$output/expected.json" <<EOF
   "schema": "qkt-live-validation-expected-v2",
   "scenarioId": "$scenario_id",
   "account": {
-    "login": $expected_login,
-    "server": "$expected_server",
+$account_identity_metadata
     "tradeMode": "demo",
     "currency": "USD",
     "leverage": $expected_leverage,

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$repo_root/scripts/live-validation/lib/account-identity.sh"
 
 fail() {
     printf 'run-insights-attribution: %s\n' "$1" >&2
@@ -15,10 +16,12 @@ Usage: run-insights-attribution.sh --scenario DIR --insights-image IMAGE
        [--arm I_UNDERSTAND_DEMO_ORDER_0.01]
        run-insights-attribution.sh --scenario DIR --insights-image IMAGE --verify-only
 
-Live execution also requires QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY and
-QKT_BROKER_API_KEY. It runs a read-only M1/M5 sibling and one bounded 0.01-lot
-strategy, interrupts the isolated Insights collector, verifies durable replay and
-ticket attribution, and waits for the strategy's own second DSL decision to close it.
+Live execution also requires QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY,
+QKT_BROKER_API_KEY, QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN, and
+QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER. It runs a read-only M1/M5 sibling and one
+bounded 0.01-lot strategy, interrupts the isolated Insights collector, verifies
+durable replay and ticket attribution, and waits for the strategy's own second DSL
+decision to close it.
 EOF
 }
 
@@ -77,6 +80,8 @@ grep -F 'POSITION.asset1.holding_duration >= 1' "${armed_sources[0]}" >/dev/null
 grep -F 'THEN CLOSE asset1' "${armed_sources[0]}" >/dev/null || fail "armed strategy has no strategy-owned close"
 jq -e --arg strategy "$armed_name" --arg symbol "$armed_symbol" '
     .schema == "qkt-live-validation-expected-v2" and
+    .account.identitySource == "runtimeEnvironment" and
+    (.account | has("login") or has("server") | not) and
     .account.tradeMode == "demo" and .account.currency == "USD" and
     .safety.maximumLots == "0.01" and .safety.maximumOpenPositions == 1 and
     .safety.maximumTradesPerDay == 1 and
@@ -102,6 +107,9 @@ docker image inspect "$insights_image" >/dev/null 2>&1 || fail "Insights image d
 [ "${QKT_LIVE_DEMO_ORDER_APPROVAL:-}" = "LOCALHOST_DEMO_ONLY" ] ||
     fail "QKT_LIVE_DEMO_ORDER_APPROVAL must equal LOCALHOST_DEMO_ONLY"
 [ -n "${QKT_BROKER_API_KEY:-}" ] || fail "QKT_BROKER_API_KEY is required"
+qkt_require_runtime_account_identity || fail "runtime account identity is required"
+expected_login="$QKT_EXPECTED_ACCOUNT_LOGIN"
+expected_server="$QKT_EXPECTED_ACCOUNT_SERVER"
 for jvm_env in JAVA_OPTS JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS; do
     [ -z "${!jvm_env:-}" ] || fail "$jvm_env must be unset; this run does not restrict the JVM"
 done
@@ -185,6 +193,9 @@ cleanup() {
     fi
     docker container rm --force "$container" >/dev/null 2>&1
     [ ! -e "$cookie" ] || unlink "$cookie"
+    qkt_sanitize_account_transport_journals "$scenario/state/state/mt5-transport-journal" 2>/dev/null || true
+    qkt_redact_account_identity_log "$scenario/logs/daemon.log" "$expected_login" "$expected_server" || true
+    qkt_assert_no_retained_account_identity "$scenario" "$expected_login" "$expected_server" || true
 }
 trap cleanup EXIT
 
@@ -248,11 +259,9 @@ jq -e '.accepted == 7 and .ack.received == 7 and (.ack.acknowledgedIds | length)
     fail "Insights treats producer-local sequences as global delivery continuity"
 unlink "$evidence/collector-contract-probe-request.json"
 
-gateway_get /account > "$evidence/gateway-account-initial.json"
+account_initial="$(gateway_get /account)"
 gateway_get /get_positions > "$evidence/positions-account-initial.json"
 gateway_get /orders > "$evidence/orders-account-initial.json"
-expected_login="$(jq -r '.account.login' "$scenario/expected.json")"
-expected_server="$(jq -r '.account.server' "$scenario/expected.json")"
 expected_leverage="$(jq -r '.account.leverage' "$scenario/expected.json")"
 expected_balance="$(jq -r '.account.startingBalance' "$scenario/expected.json")"
 jq -e --argjson login "$expected_login" --arg server "$expected_server" \
@@ -260,7 +269,9 @@ jq -e --argjson login "$expected_login" --arg server "$expected_server" \
     .login == $login and .server == $server and .leverage == $leverage and
     .balance == ($balance | tonumber) and .equity == .balance and .margin == 0 and
     .trade_mode == 0 and .currency == "USD" and .trade_allowed == true and .trade_expert == true
-' "$evidence/gateway-account-initial.json" >/dev/null || fail "account does not match the prepared demo allowlist"
+' <<< "$account_initial" >/dev/null || fail "account does not match the prepared demo allowlist"
+qkt_write_safe_account_snapshot "$evidence/gateway-account-initial.json" <<< "$account_initial"
+unset account_initial
 jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-account-initial.json" >/dev/null || fail "account has an open position"
 jq -e '.ok == true and (.orders | length) == 0' "$evidence/orders-account-initial.json" >/dev/null || fail "account has a pending order"
 
@@ -420,12 +431,17 @@ wait "$daemon_pid"
 daemon_pid=""
 sleep 2
 
-gateway_get /account > "$evidence/gateway-account-final.json"
+account_final="$(gateway_get /account)"
 gateway_get /get_positions > "$evidence/positions-account-final.json"
 gateway_get /orders > "$evidence/orders-account-final.json"
 jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-account-final.json" >/dev/null || fail "account is not flat"
 jq -e '.ok == true and (.orders | length) == 0' "$evidence/orders-account-final.json" >/dev/null || fail "account has pending orders"
-jq -e '.trade_mode == 0 and .margin == 0 and .equity == .balance' "$evidence/gateway-account-final.json" >/dev/null || fail "final account snapshot is inconsistent"
+jq -e --argjson login "$expected_login" --arg server "$expected_server" '
+    .login == $login and .server == $server and .trade_mode == 0 and
+    .margin == 0 and .equity == .balance
+' <<< "$account_final" >/dev/null || fail "final account snapshot is inconsistent"
+qkt_write_safe_account_snapshot "$evidence/gateway-account-final.json" <<< "$account_final"
+unset account_final
 
 db="$evidence/insights-data/insights.db"
 sqlite3 -json "$db" "select type,strategy_id,count(*) count from events where instance_id='$instance' group by type,strategy_id order by type,strategy_id;" > "$evidence/insights-events.json"
@@ -572,6 +588,11 @@ final_balance="$(jq -er '.balance' "$evidence/gateway-account-final.json")"
 balance_delta="$(awk -v initial="$initial_balance" -v final="$final_balance" 'BEGIN {printf "%.2f", final - initial}')"
 deal_net="$(sqlite3 "$db" "select printf('%.2f',sum(profit+coalesce(commission,0)+coalesce(swap,0)+coalesce(fee,0))) from deals where instance_id='$instance' and position_ticket='$owned_ticket';")"
 [ "$balance_delta" = "$deal_net" ] || fail "account balance delta $balance_delta differs from attributed deal net $deal_net"
+
+qkt_sanitize_account_transport_journals "$scenario/state/state/mt5-transport-journal"
+qkt_redact_account_identity_log "$scenario/logs/daemon.log" "$expected_login" "$expected_server"
+qkt_assert_no_retained_account_identity "$scenario" "$expected_login" "$expected_server" ||
+    fail "account identity reached retained artifacts"
 
 image_id="$(docker image inspect "$insights_image" --format '{{.Id}}')"
 qkt_version="$("$cli" --version)"
