@@ -63,7 +63,8 @@ jq -e '
     .credentialsStored == false and
     .contract == {
       containers:4,parallel:true,financiallyReadOnly:true,requiredGatewayMutations:0,
-      requiredOrderEvents:0,requiredFills:0,barsFirstClass:true
+      requiredOrderEvents:0,requiredFills:0,barsFirstClass:true,
+      polling:{tickPollIntervalMs:500,brokerPollIntervalMs:5000,parallelTickSymbols:5}
     } and
     ([.cases[].id] == ["numeric-candle","cross-multi-tf","session-history","volume-negative"]) and
     ([.cases[].magic] | unique | length) == 4 and
@@ -93,6 +94,10 @@ for index in 0 1 2 3; do
         fail "${case_ids[$index]} config differs from the reviewed localhost gateway"
     rg --fixed-strings 'api_key: ${QKT_BROKER_API_KEY}' "$case_dir/qkt.config.yaml" >/dev/null ||
         fail "${case_ids[$index]} config does not resolve the key at runtime"
+    rg --fixed-strings 'tick_poll_interval_ms: 500' "$case_dir/qkt.config.yaml" >/dev/null ||
+        fail "${case_ids[$index]} config does not use the reviewed tick polling interval"
+    rg --fixed-strings 'poll_interval_ms: 5000' "$case_dir/qkt.config.yaml" >/dev/null ||
+        fail "${case_ids[$index]} config does not use the reviewed broker polling interval"
     rg --fixed-strings "magic: ${magics[$index]}" "$case_dir/qkt.config.yaml" >/dev/null ||
         fail "${case_ids[$index]} config magic differs from its contract"
     if [ "${case_ids[$index]}" = volume-negative ]; then
@@ -450,6 +455,7 @@ jq -n \
     --arg qktCommit "$qkt_commit" --arg hostVersion "$host_version" \
     --arg image "$image" --arg imageVersion "$image_version" \
     --argjson durationSeconds "$duration_seconds" \
+    --slurpfile suite "$suite/suite.json" \
     --slurpfile numeric "$output/cases/numeric-candle/evidence/result.json" \
     --slurpfile cross "$output/cases/cross-multi-tf/evidence/result.json" \
     --slurpfile session "$output/cases/session-history/evidence/result.json" \
@@ -459,6 +465,7 @@ jq -n \
       durationSeconds:$durationSeconds,containers:4,parallelLaunch:true,
       financiallyReadOnly:true,accountUnchanged:true,venueDealsDuringRun:0,
       gatewayMutations:0,orderEvents:0,fills:0,volumeCapabilityRejected:true,
+      polling:$suite[0].contract.polling,
       bars:{warmupBars:true,readinessVectors:true,liveTicks:true,constructedBars:true,evaluationsJoined:true},
       dockerResourceRestrictionsVerifiedAbsent:true,jvmOverridesVerifiedAbsent:true,
       publicationSafe:false,containsPrivateAccountMetadata:true,

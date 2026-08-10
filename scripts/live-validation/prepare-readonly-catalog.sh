@@ -87,8 +87,8 @@ brokers:
     expected_account_server: $expected_server
     expected_trade_mode: demo
     expected_account_currency: USD
-    tick_poll_interval_ms: 100
-    poll_interval_ms: 1000
+    tick_poll_interval_ms: 500
+    poll_interval_ms: 5000
     http_timeout_ms: 5000
     retry_attempts: 3
 risk:
@@ -278,7 +278,8 @@ jq -n \
       qktCommit:$qktCommit,gatewayUrl:$gatewayUrl,credentialsStored:false,
       account:{login:$login,server:$server,tradeMode:"demo",currency:"USD",balance:$balance,leverage:$leverage},
       contract:{containers:4,parallel:true,financiallyReadOnly:true,requiredGatewayMutations:0,
-        requiredOrderEvents:0,requiredFills:0,barsFirstClass:true},
+        requiredOrderEvents:0,requiredFills:0,barsFirstClass:true,
+        polling:{tickPollIntervalMs:500,brokerPollIntervalMs:5000,parallelTickSymbols:5}},
       cases:[
         {id:"numeric-candle",strategy:($suiteId+"_numeric_candle"),magic:918101,
           symbols:["EXNESS:EURUSD"],streams:[{alias:"eur1",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:40},{alias:"eur5",symbol:"EXNESS:EURUSD",timeframe:"5m",warmupBars:40}],

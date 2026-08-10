@@ -33,6 +33,7 @@ jq -e '
     .contract.financiallyReadOnly == true and .contract.requiredGatewayMutations == 0 and
     .contract.requiredOrderEvents == 0 and .contract.requiredFills == 0 and
     .contract.barsFirstClass == true and
+    .contract.polling == {tickPollIntervalMs:500,brokerPollIntervalMs:5000,parallelTickSymbols:5} and
     [.cases[].id] == ["numeric-candle","cross-multi-tf","session-history","volume-negative"] and
     ([.cases[].magic] | unique | length) == 4 and
     all(.cases[]; (.streams | length) > 0 and (.vectors | length) > 0) and
@@ -44,6 +45,8 @@ test "$(find "$suite/cases" -type f -name '*.qkt' | wc -l)" -eq 5
 for config in "$suite"/cases/*/qkt.config.yaml; do
     grep -F 'gateway_url: http://127.0.0.1:5001' "$config" >/dev/null
     grep -F 'api_key: ${QKT_BROKER_API_KEY}' "$config" >/dev/null
+    grep -F 'tick_poll_interval_ms: 500' "$config" >/dev/null
+    grep -F 'poll_interval_ms: 5000' "$config" >/dev/null
 done
 
 numeric="$suite/cases/numeric-candle/strategies/control/wave1_fixture_numeric_candle.qkt"

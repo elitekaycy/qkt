@@ -75,8 +75,24 @@ if bash "$runner" --suite "$financial" --verify-only --cli "$verify_cli" > "$tmp
 fi
 grep -F 'contains a financial DSL action' "$tmp/financial.out" >/dev/null
 
+fast_poll="$tmp/fast-poll"
+cp -a "$suite" "$fast_poll"
+sed -i 's/tick_poll_interval_ms: 500/tick_poll_interval_ms: 100/' \
+    "$fast_poll/cases/cross-multi-tf/qkt.config.yaml"
+(
+    cd "$fast_poll"
+    find . -type f ! -path './SHA256SUMS' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+)
+if bash "$runner" --suite "$fast_poll" --verify-only --cli "$verify_cli" > "$tmp/fast-poll.out" 2>&1; then
+    echo 'expected high-pressure tick polling rejection' >&2
+    exit 1
+fi
+grep -F 'does not use the reviewed tick polling interval' "$tmp/fast-poll.out" >/dev/null
+
 grep -F 'QKT_BROKER_API_KEY through process stdin' "$runner" >/dev/null
 grep -F 'contains a financial DSL action' "$runner" >/dev/null
+grep -F 'tick polling interval' "$runner" >/dev/null
+grep -F 'broker polling interval' "$runner" >/dev/null
 grep -F -- '--network host' "$runner" >/dev/null
 grep -F 'QKT_LATENCY_TRACKING=1' "$runner" >/dev/null
 grep -F 'parallel daemon launch skew exceeded 1500 ms' "$runner" >/dev/null
@@ -99,6 +115,7 @@ grep -F 'emitted an order, fill, accounting, or rejection event' "$runner" >/dev
 grep -F 'issued a mutating gateway request' "$runner" >/dev/null
 grep -F 'venue deals occurred during read-only catalog run' "$runner" >/dev/null
 grep -F 'gatewayMutations:0,orderEvents:0,fills:0' "$runner" >/dev/null
+grep -F 'polling:$suite[0].contract.polling' "$runner" >/dev/null
 grep -F 'accountUnchanged:true,venueDealsDuringRun:0' "$runner" >/dev/null
 grep -F 'bars:{warmupBars:true,readinessVectors:true,liveTicks:true,constructedBars:true,evaluationsJoined:true}' "$runner" >/dev/null
 grep -F 'publicationSafe:false,containsPrivateAccountMetadata:true' "$runner" >/dev/null

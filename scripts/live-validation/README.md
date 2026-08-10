@@ -152,6 +152,13 @@ gate requires zero mutating transport calls, order events, fills, venue deals, a
 account changes. It records runtime resource use without imposing JVM, CPU, memory,
 PID, or CPU-set limits.
 
+The four-container suite deliberately polls more slowly than a single production
+daemon: each symbol is sampled every `500 ms`, and flat-account reconciliation runs
+every `5 s`. Across the suite's five symbol streams and four broker cycles, this
+reduces the configured gateway cadence from roughly 62 to 12.4 requests per second
+while retaining two quote polls per second for live M1/M5 bar construction. The
+sealed suite contract and final result both record these polling values.
+
 Market-contingent stateful values such as failed breaks, gap fills, and defended
 initial-balance levels may be undefined when the observed history does not contain
 that market pattern. Their retained vector proves that the mapped expression was
