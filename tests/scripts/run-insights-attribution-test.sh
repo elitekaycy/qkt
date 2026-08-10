@@ -81,7 +81,9 @@ for required in \
     'qkt_write_safe_account_snapshot' \
     'qkt_sanitize_account_transport_journals' \
     'qkt_assert_no_retained_account_identity' \
-    'qkt_count_cross_owner_causal_events'; do
+    'qkt_count_cross_owner_causal_events' \
+    'qkt_export_armed_rule_decisions' \
+    'qkt_validate_bounded_rule_decisions'; do
     rg --fixed-strings --quiet "$required" "$runner" || fail "missing hardening contract: $required"
 done
 
@@ -134,6 +136,26 @@ sqlite3 "$audit_db" "delete from events where type='order.submit' and strategy_i
 sqlite3 "$audit_db" "delete from events where type='fill.accounted' and strategy_id is null; insert into events values ('live','decision.rule_evaluated','readonly','{\"signalCount\":1}');"
 [ "$(qkt_count_cross_owner_causal_events "$audit_db" live armed)" -eq 1 ] ||
     fail "cross-owner signal-producing rule decision was not rejected"
+
+decision_db="$work/decisions.db"
+sqlite3 "$decision_db" <<'SQL'
+create table events(instance_id text, type text, strategy_id text, payload text, ts integer, seq integer);
+insert into events values
+  ('live','decision.rule_evaluated','readonly','{"signalCount":0}',1,1),
+  ('live','decision.rule_evaluated','armed','{"decisionId":"entry","ruleId":"asset1#0","strategyFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ruleFingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","conditionFingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","conditionResult":true,"alias":"asset1","broker":"EXNESS","timeframe":"1m","signalCount":1,"candle":{"symbol":"EXNESS:EURUSD","startTimeMs":1,"endTimeMs":2,"open":1,"high":1,"low":1,"close":1,"volume":1}}',2,2),
+  ('live','decision.rule_evaluated','armed','{"decisionId":"exit","ruleId":"asset1#2","strategyFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ruleFingerprint":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","conditionFingerprint":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","conditionResult":true,"alias":"asset1","broker":"EXNESS","timeframe":"1m","signalCount":2,"candle":{"symbol":"EXNESS:EURUSD","startTimeMs":2,"endTimeMs":3,"open":1,"high":1,"low":1,"close":1,"volume":1}}',3,3);
+SQL
+decisions="$work/armed-decisions.json"
+qkt_export_armed_rule_decisions "$decision_db" live armed "$decisions"
+[ "$(jq 'length' "$decisions")" -eq 2 ] || fail "rule decision export retained the read-only sibling"
+qkt_validate_bounded_rule_decisions "$decisions" EXNESS:EURUSD ||
+    fail "reviewed entry/exit signal counts were rejected"
+jq 'map(if (.payload | fromjson | .ruleId) == "asset1#2" then
+    .payload = ((.payload | fromjson | .signalCount = 1) | tojson) else . end)' \
+    "$decisions" > "$work/wrong-exit-count.json"
+if qkt_validate_bounded_rule_decisions "$work/wrong-exit-count.json" EXNESS:EURUSD; then
+    fail "exit decision accepted one signal instead of cancel-pending plus exact-ticket close"
+fi
 
 probe_line="$(rg -n 'Reject an image that predates' "$runner" | cut -d: -f1)"
 broker_line="$(rg -n 'account_initial=.*gateway_get /account' "$runner" | cut -d: -f1 | head -1)"

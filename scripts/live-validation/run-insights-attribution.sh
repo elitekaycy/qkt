@@ -450,7 +450,7 @@ sqlite3 -json "$db" "select order_id,strategy_id,state,broker_order_id from orde
 sqlite3 -json "$db" "select strategy_id,entry,count(*) count,printf('%.2f',sum(profit+coalesce(commission,0)+coalesce(swap,0)+coalesce(fee,0))) net from deals where instance_id='$instance' and position_ticket='$owned_ticket' group by strategy_id,entry order by entry;" > "$evidence/insights-deals-by-strategy.json"
 sqlite3 -json "$db" "select kind,count(*) count from ingest_observations where instance_id='$instance' group by kind order by kind;" > "$evidence/ingest-observations.json"
 sqlite3 -json "$db" "select event_id,count(*) count from ingest_observations where instance_id='$instance' and kind='duplicate' group by event_id order by count desc,event_id limit 20;" > "$evidence/duplicate-event-ids.json"
-sqlite3 -json "$db" "select payload from events where instance_id='$instance' and type='decision.rule_evaluated' order by ts,seq;" > "$evidence/insights-rule-decisions.json"
+qkt_export_armed_rule_decisions "$db" "$instance" "$armed_name" "$evidence/insights-rule-decisions.json"
 
 for type_and_count in \
     decision.rule_evaluated:2 decision.order_linked:2 order.submit:2 order.accepted:2 \
@@ -466,20 +466,8 @@ done
 [ "$(qkt_count_cross_owner_causal_events "$db" "$instance" "$armed_name")" -eq 0 ] ||
     fail "causal execution events leaked to the read-only sibling or null owner"
 
-jq -e --arg symbol "$armed_symbol" '
-    length == 2 and all(.[];
-      (.payload | fromjson) as $p |
-      ($p.decisionId | type == "string" and length > 0) and
-      ($p.ruleId | type == "string" and length > 0) and
-      ($p.strategyFingerprint | test("^[0-9a-f]{64}$")) and
-      ($p.ruleFingerprint | test("^[0-9a-f]{64}$")) and
-      ($p.conditionFingerprint | test("^[0-9a-f]{64}$")) and
-      $p.conditionResult == true and ($p.alias == "asset1" or $p.alias == "asset5") and
-      $p.broker == "EXNESS" and ($p.timeframe == "1m" or $p.timeframe == "5m") and
-      $p.signalCount == 1 and $p.candle.startTimeMs < $p.candle.endTimeMs and
-      (["open","high","low","close","volume"] | all(. as $field; $p.candle[$field] != null)) and
-      $p.candle.symbol == $symbol)
-' "$evidence/insights-rule-decisions.json" >/dev/null || fail "collector rule decisions lack canonical fingerprints, result, stream, signal, or candle evidence"
+qkt_validate_bounded_rule_decisions "$evidence/insights-rule-decisions.json" "$armed_symbol" ||
+    fail "collector rule decisions lack the reviewed entry/exit signals or canonical decision evidence"
 
 # Every collector rule decision must equal its engine-audit source on the causal fields.
 mapfile -t audit_journals < <(find "$scenario/state/state/audit-journal" -type f -name '*.jsonl' | sort)
