@@ -70,7 +70,7 @@ class Mt5MarketSourceTimeBaseTest {
         server: MockWebServer,
         barTime: String,
     ) {
-        val serverWallTickMs = Instant.parse("2026-07-15T11:04:00Z").toEpochMilli()
+        val serverWallTickMs = Instant.parse("2026-07-15T11:05:00Z").toEpochMilli()
         server.enqueue(MockResponse().setBody("""{"point":"0.00001"}"""))
         server.enqueue(
             MockResponse().setBody(
@@ -89,7 +89,7 @@ class Mt5MarketSourceTimeBaseTest {
         private val RANGE =
             TimeRange(
                 Instant.parse("2026-07-15T08:00:00Z"),
-                Instant.parse("2026-07-15T08:04:00Z"),
+                Instant.parse("2026-07-15T08:05:00Z"),
             )
     }
 }
