@@ -164,16 +164,31 @@ run_replay() {
         >"$output/logs/$name.stdout.log" 2>"$output/logs/$name.stderr.log"
     require_file "$output/reports/$name/result.json"
     require_file "$output/reports/$name/trades.csv"
+    require_file "$output/reports/$name/rejections.csv"
+    tail -n 1 "$output/logs/$name.stdout.log" | jq -e . >"$output/reports/$name/cli-result.json" ||
+        fail "$name did not end with structured CLI JSON"
     jq -e --arg balance "$starting_balance" '
-        .global.tradeCount == 0 and .trades == 0 and .halts == 0 and
+        .global.tradeCount == 0 and
+        .tradeSummary.fills == 0 and .tradeSummary.rejections == 0 and
+        (.global.realizedTotal | tonumber) == 0 and
+        (.global.unrealizedTotal | tonumber) == 0 and
+        (.global.totalPnL | tonumber) == 0 and
+        (.global.commissionPaid | tonumber) == 0 and
+        (.global.swapPaid | tonumber) == 0 and
+        (.global.turnover | tonumber) == 0 and
+        (.runawayBreaker.trips | length) == 0 and
+        (.accounting.warnings | length) == 0 and
+        all(.global.equityCurve[]; (.equity | tonumber) == ($balance | tonumber))
+    ' "$output/reports/$name/result.json" >/dev/null || fail "$name produced non-flat trading or accounting output"
+    jq -e '
+        .trades == 0 and .halts == 0 and
         .tradeSummary.fills == 0 and .tradeSummary.rejections == 0 and
         .finalRealized == 0 and .finalUnrealized == 0 and .totalPnL == 0 and
         .commissionPaid == 0 and .swapPaid == 0 and .turnover == 0 and
-        (.runawayBreaker.trips | length) == 0 and
-        (.accounting.warnings | length) == 0 and
-        all(.global.equityCurve[]; .equity == ($balance | tonumber))
-    ' "$output/reports/$name/result.json" >/dev/null || fail "$name produced non-flat trading or accounting output"
+        (.runawayBreaker.trips | length) == 0
+    ' "$output/reports/$name/cli-result.json" >/dev/null || fail "$name CLI summary is not flat"
     [ "$(awk 'END {print NR}' "$output/reports/$name/trades.csv")" -eq 1 ] || fail "$name produced a trade row"
+    [ "$(awk 'END {print NR}' "$output/reports/$name/rejections.csv")" -eq 1 ] || fail "$name produced a rejection row"
 }
 
 run_replay full-ticks-paper paper
@@ -204,16 +219,16 @@ extract_warmup() {
 extract_traces() {
     awk '
         /closed bar trace timeframe=/ {
-            tf = ema = kind = value = close = ""
+            tf = ema = kind = value = closing = ""
             for (i = 1; i <= NF; i++) {
                 split($i, pair, "=")
                 if (pair[1] == "timeframe") tf = pair[2]
                 if (pair[1] == "ema") ema = pair[2]
                 if (pair[1] == "rsi" || pair[1] == "atr") { kind = pair[1]; value = pair[2] }
-                if (pair[1] == "close") close = pair[2]
+                if (pair[1] == "close") closing = pair[2]
             }
-            if (tf != "" && ema != "" && kind != "" && value != "" && close != "") {
-                printf "%s\t%.8f\t%s\t%.8f\t%.8f\n", tf, ema, kind, value, close
+            if (tf != "" && ema != "" && kind != "" && value != "" && closing != "") {
+                printf "%s\t%.8f\t%s\t%.8f\t%.8f\n", tf, ema, kind, value, closing
             }
         }
     ' "$1" | sort -u
