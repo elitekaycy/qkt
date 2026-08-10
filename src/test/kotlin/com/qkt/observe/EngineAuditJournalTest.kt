@@ -10,6 +10,7 @@ import com.qkt.events.CandleEvent
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
@@ -258,10 +259,26 @@ class EngineAuditJournalTest {
                 ),
             ),
         )
+        bus.publish(
+            RiskRejectedEvent(
+                request =
+                    OrderRequest.Stop(
+                        id = "o-2",
+                        symbol = "XAUUSD",
+                        side = Side.SELL,
+                        quantity = Money.of("0.10"),
+                        stopPrice = Money.of("1990"),
+                        timeInForce = TimeInForce.GTC,
+                        strategyId = "alpha",
+                        timestamp = 0L,
+                    ),
+                reason = "risk limit",
+            ),
+        )
         journal.close()
 
         val lines = Files.readAllLines(tmp.resolve("alpha/audit-2023-11-14.jsonl"))
-        assertThat(lines).hasSize(1)
+        assertThat(lines).hasSize(2)
         assertThat(lines[0])
             .contains(""""v":1""")
             .contains(""""seq":0""")
@@ -269,6 +286,14 @@ class EngineAuditJournalTest {
             .contains(""""orderId":"o-1"""")
             .contains(""""symbol":"XAUUSD"""")
             .contains(""""eventType":"com.qkt.events.OrderEvent"""")
+            .contains(""""orderSchemaVersion":1""")
+            .contains(""""order":{"orderId":"o-1","orderType":"Market"""")
+        assertThat(lines[1])
+            .contains(""""eventType":"com.qkt.events.RiskRejectedEvent"""")
+            .contains(""""orderId":"o-2"""")
+            .contains(""""symbol":"XAUUSD"""")
+            .contains(""""reason":"risk limit"""")
+            .contains(""""order":{"orderId":"o-2","orderType":"Stop"""")
     }
 
     @Test

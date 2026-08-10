@@ -17,9 +17,12 @@ import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.OrderRequestEvidence
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.positions.Position
+import com.qkt.strategy.Signal
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
@@ -150,6 +153,14 @@ class EngineAuditJournal(
                     append(",\"decisionId\":").append(jsonString(event.decisionId))
                     append(",\"ruleId\":").append(jsonString(event.ruleId))
                     append(",\"signalIndex\":").append(event.signalIndex)
+                }
+                if (event is OrderEvent) appendOrder(event.request)
+                if (event is RiskRejectedEvent) {
+                    append(",\"reason\":").append(jsonString(event.reason))
+                    appendOrder(event.request)
+                }
+                if (event is SignalEvent && event.signal is Signal.Submit) {
+                    appendOrder(event.signal.request)
                 }
                 if (event is FillAccountedEvent) appendAccountedFill(event)
                 if (event is BrokerEvent.OrderFilled) appendFill(event)
@@ -310,8 +321,14 @@ class EngineAuditJournal(
             is StrategyCandleEvaluatedEvent -> event.candle.symbol
             is RuleDecisionEvent -> event.candle.symbol
             is FillAccountedEvent -> event.symbol
+            is RiskRejectedEvent -> event.request.symbol
             else -> null
         }
+
+    private fun StringBuilder.appendOrder(request: OrderRequest) {
+        append(",\"orderSchemaVersion\":").append(OrderRequestEvidence.SCHEMA_VERSION)
+        append(",\"order\":").append(OrderRequestEvidence.toJson(request))
+    }
 
     private fun StringBuilder.appendAccountedFill(event: FillAccountedEvent) {
         append(",\"accountedFill\":{")
