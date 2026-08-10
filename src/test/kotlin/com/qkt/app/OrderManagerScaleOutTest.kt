@@ -155,11 +155,11 @@ class OrderManagerScaleOutTest {
             ),
         )
 
-        assertThat(broker.submits.filterIsInstance<OrderRequest.IfTouched>()).isEmpty()
+        assertThat(om.getOrder("s1-leg-0")).isNull()
 
         broker.emitFill(basis, price = Money.of("100"), quantity = Money.of("0.6"))
 
-        assertThat(broker.submits.filterIsInstance<OrderRequest.IfTouched>()).hasSize(1)
+        assertThat(om.getOrder("s1-leg-0")?.state).isEqualTo(OrderState.PENDING)
     }
 
     @Test
