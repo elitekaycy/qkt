@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
+import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -152,6 +153,8 @@ class GoldenCommand(
         var first = Long.MAX_VALUE
         var last = Long.MIN_VALUE
         var ticks = 0L
+        var warmupTicks = 0L
+        var candles = 0L
         var fills = 0L
         val filledOrderIds = mutableSetOf<String>()
         val filledBrokerOrderIds = mutableSetOf<String>()
@@ -167,7 +170,18 @@ class GoldenCommand(
                     first = minOf(first, timestamp)
                     last = maxOf(last, timestamp)
                     when (record["eventType"]?.jsonPrimitive?.contentOrNull) {
-                        "com.qkt.events.TickEvent" -> ticks += 1L
+                        "com.qkt.events.TickEvent" -> {
+                            requireStructuredTick(record, file, lineNumber)
+                            ticks += 1L
+                        }
+                        "com.qkt.events.WarmupTickEvent" -> {
+                            requireStructuredTick(record, file, lineNumber)
+                            warmupTicks += 1L
+                        }
+                        "com.qkt.events.CandleEvent" -> {
+                            requireStructuredCandle(record, file, lineNumber)
+                            candles += 1L
+                        }
                         "com.qkt.events.BrokerEvent.OrderFilled",
                         "com.qkt.events.BrokerEvent.OrderPartiallyFilled",
                         -> {
@@ -189,8 +203,73 @@ class GoldenCommand(
             }
         }
         require(first != Long.MAX_VALUE) { "engine audit journal is empty" }
-        return AuditSummary(first, last, ticks, fills, filledOrderIds, filledBrokerOrderIds)
+        return AuditSummary(first, last, ticks, warmupTicks, candles, fills, filledOrderIds, filledBrokerOrderIds)
     }
+
+    private fun requireStructuredTick(
+        record: JsonObject,
+        file: Path,
+        lineNumber: Long,
+    ) {
+        requireText(record, "symbol", file, lineNumber)
+        val tick =
+            record["tick"] as? JsonObject
+                ?: throw IllegalArgumentException("missing structured tick at $file:$lineNumber")
+        requireLong(tick, "timestampMs", file, lineNumber)
+        requireDecimal(tick, "price", file, lineNumber)
+    }
+
+    private fun requireStructuredCandle(
+        record: JsonObject,
+        file: Path,
+        lineNumber: Long,
+    ) {
+        requireText(record, "symbol", file, lineNumber)
+        val candle =
+            record["candle"] as? JsonObject
+                ?: throw IllegalArgumentException("missing structured candle at $file:$lineNumber")
+        requireLong(candle, "startTimeMs", file, lineNumber)
+        requireLong(candle, "endTimeMs", file, lineNumber)
+        for (field in listOf("open", "high", "low", "close", "volume")) {
+            requireDecimal(candle, field, file, lineNumber)
+        }
+    }
+
+    private fun requireText(
+        record: JsonObject,
+        field: String,
+        file: Path,
+        lineNumber: Long,
+    ): String =
+        record[field]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.takeIf(String::isNotBlank)
+            ?: throw IllegalArgumentException("missing $field at $file:$lineNumber")
+
+    private fun requireLong(
+        record: JsonObject,
+        field: String,
+        file: Path,
+        lineNumber: Long,
+    ): Long =
+        record[field]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.toLongOrNull()
+            ?: throw IllegalArgumentException("missing numeric $field at $file:$lineNumber")
+
+    private fun requireDecimal(
+        record: JsonObject,
+        field: String,
+        file: Path,
+        lineNumber: Long,
+    ): BigDecimal =
+        record[field]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.let { runCatching { BigDecimal(it) }.getOrNull() }
+            ?: throw IllegalArgumentException("missing decimal $field at $file:$lineNumber")
 
     private fun scanTransport(
         files: List<Path>,
@@ -287,6 +366,8 @@ class GoldenCommand(
             append("  \"window\": {\"fromMs\": ").append(audit.firstTimestampMs)
             append(", \"toMs\": ").append(audit.lastTimestampMs).append("},\n")
             append("  \"counts\": {\"ticks\": ").append(audit.tickCount)
+            append(", \"warmupTicks\": ").append(audit.warmupTickCount)
+            append(", \"candles\": ").append(audit.candleCount)
             append(", \"fills\": ").append(audit.fillCount)
             append(", \"gatewayExchanges\": ").append(transport.exchangeCount)
             append(", \"linkedPlacements\": ").append(transport.linkedPlacements).append("},\n")
@@ -409,6 +490,8 @@ class GoldenCommand(
         val firstTimestampMs: Long,
         val lastTimestampMs: Long,
         val tickCount: Long,
+        val warmupTickCount: Long,
+        val candleCount: Long,
         val fillCount: Long,
         val filledOrderIds: Set<String>,
         val filledBrokerOrderIds: Set<String>,

@@ -27,7 +27,9 @@ class GoldenCommandTest {
             audit,
             """
             {"v":1,"ts":1000,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:XAUUSD","tick":{"timestampMs":1000,"price":"2000","bid":"1999","ask":"2001"}}
-            {"v":1,"ts":2000,"seq":2,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","symbol":"EXNESS:XAUUSD","fill":{"side":"BUY","price":"2001","quantity":"0.1","brokerOrderId":"42","partial":false}}
+            {"v":1,"ts":1100,"seq":2,"eventType":"com.qkt.events.WarmupTickEvent","symbol":"EXNESS:XAUUSD","tick":{"timestampMs":900,"price":"1998","bid":"1997","ask":"1999"}}
+            {"v":1,"ts":1200,"seq":3,"eventType":"com.qkt.events.CandleEvent","symbol":"EXNESS:XAUUSD","candle":{"startTimeMs":0,"endTimeMs":1000,"open":"1990","high":"2005","low":"1985","close":"2000","volume":"10","bid":"1999","ask":"2001"}}
+            {"v":1,"ts":2000,"seq":4,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","symbol":"EXNESS:XAUUSD","fill":{"side":"BUY","price":"2001","quantity":"0.1","brokerOrderId":"42","partial":false}}
             """.trimIndent() + "\n",
         )
         Files.writeString(orders, """{"ts":1500,"kind":"submitted","id":"o-1"}""" + "\n")
@@ -75,6 +77,8 @@ class GoldenCommandTest {
             assertThat(root).doesNotContainKeys("gitSha", "qktVersion")
             assertThat(root["counts"].toString())
                 .contains("\"ticks\":1")
+                .contains("\"warmupTicks\":1")
+                .contains("\"candles\":1")
                 .contains("\"fills\":1")
                 .contains("\"gatewayExchanges\":1")
                 .contains("\"linkedPlacements\":1")
@@ -93,7 +97,7 @@ class GoldenCommandTest {
         Files.writeString(
             audit,
             """
-            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","tick":{}}
+            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","symbol":"X","tick":{"timestampMs":1000,"price":"1"}}
             {"v":1,"ts":2000,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","fill":{"brokerOrderId":"42"}}
             """.trimIndent() + "\n",
         )
@@ -134,7 +138,7 @@ class GoldenCommandTest {
         Files.writeString(
             audit,
             """
-            {"v":1,"ts":1000,"seq":1,"eventType":"com.qkt.events.TickEvent","tick":{}}
+            {"v":1,"ts":1000,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"X","tick":{"timestampMs":1000,"price":"1"}}
             {"v":1,"ts":2000,"seq":2,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","fill":{}}
             """.trimIndent() + "\n",
         )
@@ -158,7 +162,7 @@ class GoldenCommandTest {
         Files.writeString(
             audit,
             """
-            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","tick":{}}
+            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","symbol":"X","tick":{"timestampMs":1000,"price":"1"}}
             {"v":1,"ts":2000,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"alpha-order","fill":{}}
             """.trimIndent() + "\n",
         )
@@ -190,7 +194,7 @@ class GoldenCommandTest {
         Files.writeString(
             audit,
             """
-            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","tick":{}}
+            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","symbol":"X","tick":{"timestampMs":1000,"price":"1"}}
             {"v":1,"ts":2000,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","fill":{}}
             """.trimIndent() + "\n",
         )
@@ -209,5 +213,44 @@ class GoldenCommandTest {
             ).run()
 
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
+    fun `capture rejects warmup ticks and candles without structured market data`(
+        @TempDir tmp: Path,
+    ) {
+        val audit = tmp.resolve("state/audit-journal/alpha/audit-2026-08-09.jsonl")
+        audit.parent.let(Files::createDirectories)
+        Files.writeString(
+            audit,
+            """
+            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","symbol":"X","tick":{"timestampMs":1000,"price":"1"}}
+            {"v":1,"ts":1100,"eventType":"com.qkt.events.WarmupTickEvent","symbol":"X","payload":"WarmupTickEvent(...)"}
+            {"v":1,"ts":2000,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","fill":{}}
+            """.trimIndent() + "\n",
+        )
+
+        val unstructuredWarmup =
+            GoldenCommand(
+                Args(arrayOf("golden", "capture", "--session", "alpha", "--state-dir", tmp.toString())),
+            ).run()
+
+        assertThat(unstructuredWarmup).isEqualTo(ExitCodes.USER_ERROR)
+
+        Files.writeString(
+            audit,
+            """
+            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","symbol":"X","tick":{"timestampMs":1000,"price":"1"}}
+            {"v":1,"ts":1100,"eventType":"com.qkt.events.CandleEvent","symbol":"X","payload":"CandleEvent(...)"}
+            {"v":1,"ts":2000,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","fill":{}}
+            """.trimIndent() + "\n",
+        )
+
+        val unstructuredCandle =
+            GoldenCommand(
+                Args(arrayOf("golden", "capture", "--session", "alpha", "--state-dir", tmp.toString())),
+            ).run()
+
+        assertThat(unstructuredCandle).isEqualTo(ExitCodes.USER_ERROR)
     }
 }

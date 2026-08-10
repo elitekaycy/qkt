@@ -2,6 +2,7 @@ package com.qkt.observe
 
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
+import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
@@ -9,6 +10,9 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
+import com.qkt.events.WarmupTickEvent
+import com.qkt.marketdata.Candle
+import com.qkt.marketdata.Tick
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
@@ -90,7 +94,9 @@ class EngineAuditJournal(
                 strategyId(event)?.let { append(",\"strategyId\":").append(jsonString(it)) }
                 orderId(event)?.let { append(",\"orderId\":").append(jsonString(it)) }
                 symbol(event)?.let { append(",\"symbol\":").append(jsonString(it)) }
-                if (event is TickEvent) appendTick(event)
+                if (event is TickEvent) appendTick(event.tick)
+                if (event is WarmupTickEvent) appendTick(event.tick)
+                if (event is CandleEvent) appendCandle(event.candle)
                 if (event is BrokerEvent.OrderFilled) appendFill(event)
                 if (event is BrokerEvent.OrderPartiallyFilled) appendPartialFill(event)
                 append(",\"payload\":").append(jsonString(event.toString()))
@@ -234,11 +240,12 @@ class EngineAuditJournal(
             is BrokerEvent.PositionReconciled -> event.symbol
             is TradeEvent -> event.trade.symbol
             is TickEvent -> event.tick.symbol
+            is WarmupTickEvent -> event.tick.symbol
+            is CandleEvent -> event.candle.symbol
             else -> null
         }
 
-    private fun StringBuilder.appendTick(event: TickEvent) {
-        val tick = event.tick
+    private fun StringBuilder.appendTick(tick: Tick) {
         append(",\"tick\":{")
         append("\"timestampMs\":").append(tick.timestamp)
         append(",\"price\":").append(jsonString(tick.price.toPlainString()))
@@ -247,6 +254,20 @@ class EngineAuditJournal(
         tick.ask?.let { append(",\"ask\":").append(jsonString(it.toPlainString())) }
         tick.bidVolume?.let { append(",\"bidVolume\":").append(jsonString(it.toPlainString())) }
         tick.askVolume?.let { append(",\"askVolume\":").append(jsonString(it.toPlainString())) }
+        append('}')
+    }
+
+    private fun StringBuilder.appendCandle(candle: Candle) {
+        append(",\"candle\":{")
+        append("\"startTimeMs\":").append(candle.startTime)
+        append(",\"endTimeMs\":").append(candle.endTime)
+        append(",\"open\":").append(jsonString(candle.open.toPlainString()))
+        append(",\"high\":").append(jsonString(candle.high.toPlainString()))
+        append(",\"low\":").append(jsonString(candle.low.toPlainString()))
+        append(",\"close\":").append(jsonString(candle.close.toPlainString()))
+        append(",\"volume\":").append(jsonString(candle.volume.toPlainString()))
+        candle.bid?.let { append(",\"bid\":").append(jsonString(it.toPlainString())) }
+        candle.ask?.let { append(",\"ask\":").append(jsonString(it.toPlainString())) }
         append('}')
     }
 

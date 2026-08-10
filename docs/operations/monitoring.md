@@ -130,8 +130,10 @@ The daemon also keeps bounded asynchronous evidence journals under
 `<state-dir>/state/audit-journal/` and `<state-dir>/state/mt5-transport-journal/`.
 The transport journal omits authentication headers but contains raw order and
 venue data, so retain and transfer golden bundles as sensitive operational
-artifacts. Disk writes do not run on the engine thread. Queue or write loss is
-recorded in day-scoped `.dropped` markers and makes `qkt golden capture` fail.
+artifacts. Engine audit records contain structured live ticks, warmup ticks,
+completed candles, and fills for replay. Disk writes do not run on the engine
+thread. Queue or write loss is recorded in day-scoped `.dropped` markers and
+makes `qkt golden capture` fail.
 
 Beyond per-strategy ports, the daemon itself exposes:
 

@@ -321,6 +321,8 @@ jq -e \
         .session == $strategy and
         (.captureGitSha as $capture | ($qktCommit | startswith($capture))) and
         .counts.ticks > 0 and
+        .counts.warmupTicks > 0 and
+        .counts.candles > 0 and
         .counts.fills >= 2 and
         .counts.gatewayExchanges > 0 and
         .counts.linkedPlacements >= 1
@@ -330,6 +332,8 @@ while IFS=$'\t' read -r path expected_sha; do
     [ "$actual_sha" = "$expected_sha" ] || fail "golden capture entry hash mismatch: $path"
 done < <(jq -r '.entries[] | [.path,.sha256] | @tsv' "$golden_manifest")
 golden_ticks="$(jq -r '.counts.ticks' "$golden_manifest")"
+golden_warmup_ticks="$(jq -r '.counts.warmupTicks' "$golden_manifest")"
+golden_candles="$(jq -r '.counts.candles' "$golden_manifest")"
 golden_fills="$(jq -r '.counts.fills' "$golden_manifest")"
 golden_exchanges="$(jq -r '.counts.gatewayExchanges' "$golden_manifest")"
 golden_placements="$(jq -r '.counts.linkedPlacements' "$golden_manifest")"
@@ -367,6 +371,8 @@ jq -n \
     --arg orderPosts "$order_posts" \
     --arg closePosts "$close_posts" \
     --arg goldenTicks "$golden_ticks" \
+    --arg goldenWarmupTicks "$golden_warmup_ticks" \
+    --arg goldenCandles "$golden_candles" \
     --arg goldenFills "$golden_fills" \
     --arg goldenExchanges "$golden_exchanges" \
     --arg goldenPlacements "$golden_placements" \
@@ -400,6 +406,8 @@ jq -n \
           transport:{orderPosts:($orderPosts|tonumber),closePosts:($closePosts|tonumber)},
           golden:{
             ticks:($goldenTicks|tonumber),
+            warmupTicks:($goldenWarmupTicks|tonumber),
+            candles:($goldenCandles|tonumber),
             fills:($goldenFills|tonumber),
             gatewayExchanges:($goldenExchanges|tonumber),
             linkedPlacements:($goldenPlacements|tonumber),
