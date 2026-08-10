@@ -13,6 +13,7 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.MarketRequest
+import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.parity.DslParityHarness
 import com.qkt.risk.DailyDrawdownBasis
@@ -157,6 +158,58 @@ internal object GeneratedStrategyReplay {
                     totalDdBasis = totalDdBasis,
                 ).run()
 
+        val tickResolvedSource =
+            TickResolvedSource(
+                candlesBySymbol.mapValues { (_, candles) -> candles.dropLast(1) },
+                ticks,
+            )
+        val tickResolvedRequest =
+            MarketRequest(
+                symbols = symbols,
+                from = Instant.ofEpochMilli(ticks.first().timestamp),
+                to = Instant.ofEpochMilli(Math.addExact(ticks.last().timestamp, 1L)),
+            )
+        val sourceTickResult =
+            Backtest
+                .fromSource(
+                    strategies = listOf(namedStrategy(path)),
+                    haltRules = haltRules(),
+                    source = tickResolvedSource,
+                    request = tickResolvedRequest,
+                    candleWindow = window,
+                    startingBalance = startingBalance,
+                    startingBalances = mapOf(namedStrategy(path).first to startingBalance),
+                    bookCapital = bookCapital,
+                    bookRiskConfig = bookRiskConfig,
+                    instruments = instruments,
+                    strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
+                    maxOrderQty = maxOrderQty,
+                    maxOrderNotional = maxOrderNotional,
+                    dailyDdBasis = dailyDdBasis,
+                    totalDdBasis = totalDdBasis,
+                ).run()
+        val tickResolvedResult =
+            Backtest
+                .fromSource(
+                    strategies = listOf(namedStrategy(path)),
+                    haltRules = haltRules(),
+                    source = tickResolvedSource,
+                    request = tickResolvedRequest,
+                    candleWindow = window,
+                    startingBalance = startingBalance,
+                    startingBalances = mapOf(namedStrategy(path).first to startingBalance),
+                    bookCapital = bookCapital,
+                    bookRiskConfig = bookRiskConfig,
+                    instruments = instruments,
+                    strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
+                    maxOrderQty = maxOrderQty,
+                    maxOrderNotional = maxOrderNotional,
+                    dailyDdBasis = dailyDdBasis,
+                    totalDdBasis = totalDdBasis,
+                    forceBars = true,
+                    tickFills = true,
+                ).run()
+
         assertThat(tickResult.rejections).hasSize(expectedRejectionCount)
         assertThat(barResult.rejections).hasSize(expectedRejectionCount)
         assertThat(barResult.rejections.map(::canonical))
@@ -169,6 +222,28 @@ internal object GeneratedStrategyReplay {
         assertThat(barResult.trades).hasSize(expectedTradeCount)
         assertThat(barResult.trades.map(::canonical))
             .isEqualTo(tickResult.trades.map(::canonical))
+        assertThat(sourceTickResult.trades.map(::canonical))
+            .isEqualTo(tickResult.trades.map(::canonical))
+        assertThat(sourceTickResult.rejections.map(::canonical))
+            .isEqualTo(tickResult.rejections.map(::canonical))
+        assertThat(sourceTickResult.halts.map(::canonical))
+            .isEqualTo(tickResult.halts.map(::canonical))
+        assertThat(sourceTickResult.finalPositionsByStrategy)
+            .isEqualTo(tickResult.finalPositionsByStrategy)
+        assertThat(sourceTickResult.accounting).isEqualTo(tickResult.accounting)
+        assertThat(sourceTickResult.bookRisk).isEqualTo(tickResult.bookRisk)
+        assertThat(tickResolvedResult.trades.map(::canonical))
+            .isEqualTo(sourceTickResult.trades.map(::canonical))
+        assertThat(tickResolvedResult.rejections.map(::canonical))
+            .isEqualTo(sourceTickResult.rejections.map(::canonical))
+        assertThat(tickResolvedResult.halts.map(::canonical))
+            .isEqualTo(sourceTickResult.halts.map(::canonical))
+        assertThat(tickResolvedResult.finalPositionsByStrategy)
+            .isEqualTo(sourceTickResult.finalPositionsByStrategy)
+        assertThat(tickResolvedResult.global).isEqualTo(sourceTickResult.global)
+        assertThat(tickResolvedResult.perStrategy).isEqualTo(sourceTickResult.perStrategy)
+        assertThat(tickResolvedResult.accounting).isEqualTo(sourceTickResult.accounting)
+        assertThat(tickResolvedResult.bookRisk).isEqualTo(sourceTickResult.bookRisk)
 
         val strategyId = namedStrategy(path).first
         val liveParity =
@@ -244,6 +319,41 @@ internal object GeneratedStrategyReplay {
 
     private fun canonical(event: RiskEvent.Halted): List<Any?> =
         listOf(event.reason, event.strategyId, event.cancelWorkingOrders, event.timestamp)
+
+    private class TickResolvedSource(
+        private val candlesBySymbol: Map<String, List<Candle>>,
+        private val ticks: List<Tick>,
+    ) : MarketSource {
+        override val name: String = "GeneratedTickResolved"
+        override val capabilities: Set<MarketSourceCapability> =
+            setOf(
+                MarketSourceCapability.TICKS,
+                MarketSourceCapability.BARS,
+                MarketSourceCapability.VOLUME,
+            )
+
+        override fun supports(symbol: String): Boolean = symbol in candlesBySymbol
+
+        override fun bars(
+            symbol: String,
+            window: TimeWindow,
+            range: com.qkt.common.TimeRange,
+        ): Sequence<Candle> =
+            candlesBySymbol
+                .getValue(symbol)
+                .asSequence()
+                .filter { it.startTime >= range.from.toEpochMilli() && it.endTime <= range.to.toEpochMilli() }
+
+        override fun ticks(
+            symbol: String,
+            range: com.qkt.common.TimeRange,
+        ): Sequence<Tick> =
+            ticks.asSequence().filter {
+                it.symbol == symbol &&
+                    it.timestamp >= range.from.toEpochMilli() &&
+                    it.timestamp < range.to.toEpochMilli()
+            }
+    }
 
     private fun closeOnlyTicks(candle: Candle): List<Tick> =
         listOf(Tick(candle.symbol, candle.close, candle.startTime, volume = candle.volume))

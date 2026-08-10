@@ -161,6 +161,7 @@ class Backtest(
         feed = HistoricalTickFeed(ticks),
         candleWindow = candleWindow,
         initialTimestamp = initialTimestamp,
+        symbols = tradedSymbols.ifEmpty { ticks.map { it.symbol }.distinct() },
         cadence = cadence,
         startingBalance = startingBalance,
         startingBalances = startingBalances,
