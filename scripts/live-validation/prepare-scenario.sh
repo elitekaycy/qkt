@@ -107,7 +107,6 @@ brokers:
     expected_account_server: $expected_server
     expected_trade_mode: demo
     expected_account_currency: USD
-    expected_leverage: $expected_leverage
     tick_poll_interval_ms: 100
     poll_interval_ms: 1000
     http_timeout_ms: 5000

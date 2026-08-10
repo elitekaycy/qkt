@@ -54,7 +54,7 @@ The observation takes at least 310 seconds so one M5 boundary must close. It:
 
 - verifies source hashes and parses every generated strategy;
 - checks gateway health, kill-switch state, account identity, demo mode, trading
-  permissions, balance, leverage, and an initially flat account;
+  permissions, starting balance and leverage, and an initially flat account;
 - proves M1 and M5 history contains only closed, aligned, unique bars;
 - compares QKT EMA output with an independent calculation over the captured closes;
 - starts the real daemon with only `strategies/readonly/` and retains M1/M5 traces;
@@ -102,6 +102,12 @@ QKT's broker-verified kill/flatten path, stops the strategy and daemon, and requ
 - accepted and filled engine-audit lifecycle events;
 - successful MT5 `/order` and `/close_position` transport records; and
 - a final flat, tradeable demo-account snapshot.
+
+The generated broker profile does not set `expected_leverage`: Exness can change demo
+account leverage while login, server, mode, and currency remain the same. Each run still
+requires the prepared leverage at startup and records both initial and final leverage,
+including whether it changed. Production operators may use exact `expected_leverage`
+only for accounts whose venue contract makes leverage immutable.
 
 On failure, the exit trap queries only the scenario magic and attempts to close or
 cancel only its owned tickets. This single bracket is the first execution proof, not

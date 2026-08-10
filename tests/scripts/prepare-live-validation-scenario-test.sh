@@ -28,6 +28,10 @@ test -f "$out/SHA256SUMS"
 
 grep -F 'gateway_url: http://127.0.0.1:5001' "$out/qkt.config.yaml" >/dev/null
 grep -F 'api_key: ${QKT_BROKER_API_KEY}' "$out/qkt.config.yaml" >/dev/null
+if grep -F 'expected_leverage:' "$out/qkt.config.yaml" >/dev/null; then
+    echo 'generated config treats dynamic venue leverage as immutable identity' >&2
+    exit 1
+fi
 grep -F 'max_order_qty: "0.01"' "$out/qkt.config.yaml" >/dev/null
 grep -F 'max_trades_per_day: 1' "$out/qkt.config.yaml" >/dev/null
 grep -F 'book_risk:' "$out/qkt.config.yaml" >/dev/null

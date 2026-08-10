@@ -246,8 +246,8 @@ jq -e --slurpfile initial "$evidence/gateway-account-initial.json" '
     .trade_expert == true
 ' "$evidence/gateway-account-final.json" >/dev/null || fail "read-only run changed the venue account snapshot"
 
-stale_events="$(rg -c 'market data .* STALE:' "$scenario/logs/daemon.log" || true)"
-recovery_events="$(rg -c 'market data .* healthy again' "$scenario/logs/daemon.log" || true)"
+stale_events="$(rg -c 'market data .* STALE:' "$scenario/logs/daemon.log" || printf '0\n')"
+recovery_events="$(rg -c 'market data .* healthy again' "$scenario/logs/daemon.log" || printf '0\n')"
 [ "$recovery_events" -ge "$stale_events" ] || fail "market-data stale episode did not recover before shutdown"
 
 mapfile -t audit_journals < <(find "$scenario/state/state/audit-journal" -type f -name '*.jsonl' | sort)
@@ -271,6 +271,10 @@ qkt_version="$("$cli" --version)"
 gateway_version="$(jq -r '.version' "$evidence/gateway-health.json")"
 qkt_commit="$(jq -r '.qktCommit' "$scenario/scenario.json")"
 qkt_dirty="$(jq -r '.qktDirty' "$scenario/scenario.json")"
+initial_leverage="$(jq -r '.leverage' "$evidence/gateway-account-initial.json")"
+final_leverage="$(jq -r '.leverage' "$evidence/gateway-account-final.json")"
+leverage_changed=false
+[ "$initial_leverage" = "$final_leverage" ] || leverage_changed=true
 
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 jq -n \
@@ -289,7 +293,10 @@ jq -n \
     --arg qktVersion "$qkt_version" \
     --arg gatewayVersion "$gateway_version" \
     --arg qktCommit "$qkt_commit" \
-    --argjson qktDirty "$qkt_dirty" '
+    --argjson qktDirty "$qkt_dirty" \
+    --arg initialLeverage "$initial_leverage" \
+    --arg finalLeverage "$final_leverage" \
+    --argjson leverageChanged "$leverage_changed" '
         {
           schema:"qkt-live-validation-readonly-v1",
           status:"passed",
@@ -313,7 +320,14 @@ jq -n \
           finalPositions:0,
           finalOrders:0,
           venueDealsDuringRun:0,
-          accountUnchanged:true
+          accountIdentityUnchanged:true,
+          financialStateUnchanged:true,
+          accountUnchanged:($leverageChanged|not),
+          leverage:{
+            initial:($initialLeverage|tonumber),
+            final:($finalLeverage|tonumber),
+            changed:$leverageChanged
+          }
         }
     ' \
     > "$evidence/result.json"

@@ -275,6 +275,10 @@ jq -e --argjson ticket "$owned_ticket" '
 gateway_get /account > "$evidence/gateway-account-final.json"
 initial_balance="$(jq -r '.balance' "$evidence/gateway-account-initial.json")"
 final_balance="$(jq -r '.balance' "$evidence/gateway-account-final.json")"
+initial_leverage="$(jq -r '.leverage' "$evidence/gateway-account-initial.json")"
+final_leverage="$(jq -r '.leverage' "$evidence/gateway-account-final.json")"
+leverage_changed=false
+[ "$initial_leverage" = "$final_leverage" ] || leverage_changed=true
 balance_delta="$(awk -v initial="$initial_balance" -v final="$final_balance" 'BEGIN {printf "%.2f", final - initial}')"
 deal_net="$(
     jq -r --argjson ticket "$owned_ticket" '
@@ -283,7 +287,7 @@ deal_net="$(
         awk '{printf "%.2f", $1}'
 )"
 [ "$balance_delta" = "$deal_net" ] || fail "venue balance delta $balance_delta does not reconcile to deal net $deal_net"
-jq -e '.trade_mode == 0 and .trade_allowed == true and .trade_expert == true and .margin == 0 and .equity == .balance' \
+jq -e '.trade_mode == 0 and .trade_allowed == true and .trade_expert == true and .leverage > 0 and .margin == 0 and .equity == .balance' \
     "$evidence/gateway-account-final.json" >/dev/null || fail "final demo account snapshot is not flat and tradeable"
 
 mapfile -t audit_journals < <(find "$scenario/state/state/audit-journal" -type f -name '*.jsonl' | sort)
@@ -355,6 +359,9 @@ jq -n \
     --argjson ticket "$owned_ticket" \
     --arg balanceDelta "$balance_delta" \
     --arg dealNet "$deal_net" \
+    --arg initialLeverage "$initial_leverage" \
+    --arg finalLeverage "$final_leverage" \
+    --argjson leverageChanged "$leverage_changed" \
     --arg acceptedEvents "$accepted_events" \
     --arg filledEvents "$filled_events" \
     --arg orderPosts "$order_posts" \
@@ -384,6 +391,11 @@ jq -n \
           finalOrders:0,
           balanceDelta:$balanceDelta,
           dealNet:$dealNet,
+          leverage:{
+            initial:($initialLeverage|tonumber),
+            final:($finalLeverage|tonumber),
+            changed:$leverageChanged
+          },
           audit:{acceptedEvents:($acceptedEvents|tonumber),filledEvents:($filledEvents|tonumber)},
           transport:{orderPosts:($orderPosts|tonumber),closePosts:($closePosts|tonumber)},
           golden:{
