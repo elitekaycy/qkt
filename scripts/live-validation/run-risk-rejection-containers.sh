@@ -516,7 +516,7 @@ done
 jq -n \
     --slurpfile suite "$output/source/suite.json" \
     --slurpfile deferred "$output/source/stateful-deferred.json" \
-    --slurpfile cases "$output"/cases/*/evidence/result.json '
+    --argjson cases "$(jq -s . "$output"/cases/*/evidence/result.json)" '
     {
       schema:"qkt-live-risk-rejection-matrix-result-v1",status:"passed",qktCommit:$suite[0].qktCommit,
       cases:$cases,

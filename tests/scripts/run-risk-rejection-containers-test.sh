@@ -100,6 +100,13 @@ grep -F 'account identity or financial state changed' "$runner" >/dev/null
 grep -F 'riskRejections:5' "$runner" >/dev/null
 grep -F 'gatewayMutations:0' "$runner" >/dev/null
 grep -F 'publicationSafe:false,containsPrivateAccountMetadata:true' "$runner" >/dev/null
+grep -F -- '--argjson cases "$(jq -s . "$output"/cases/*/evidence/result.json)"' "$runner" >/dev/null
+
+mkdir -p "$tmp/case-results"
+for case_id in max-quantity max-notional far-price-collar measured-usage operator-halt; do
+    jq -n --arg caseId "$case_id" '{caseId:$caseId,status:"passed"}' > "$tmp/case-results/$case_id.json"
+done
+jq -s -e 'length == 5 and all(.[]; .status == "passed")' "$tmp"/case-results/*.json >/dev/null
 
 final_capture_line="$(grep -n -m1 'gateway-health-final.json' "$runner" | cut -d: -f1)"
 token_scrub_line="$(grep -n -m1 'unlink "$case_dir/state/control.token"' "$runner" | cut -d: -f1)"
