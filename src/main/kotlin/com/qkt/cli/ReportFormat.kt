@@ -104,6 +104,9 @@ object ReportPrinter {
             for ((stream, count) in inputs.streamCandles.toSortedMap()) {
                 out.println("  stream $stream: $count candles")
             }
+            for ((stream, count) in inputs.strategyCandleEvaluations.toSortedMap()) {
+                out.println("  strategy evaluation $stream: $count candles")
+            }
         }
         out.println()
         out.println("Assumptions & conventions")
@@ -362,6 +365,12 @@ object ReportPrinter {
             append(",\"droppedLateTicks\":").append(report.droppedLateTicks)
             append(",\"streamCandles\":{")
             report.streamCandles.entries.sortedBy { it.key }.forEachIndexed { index, (key, count) ->
+                if (index > 0) append(',')
+                append(jsonString(key)).append(':').append(count)
+            }
+            append('}')
+            append(",\"strategyCandleEvaluations\":{")
+            report.strategyCandleEvaluations.entries.sortedBy { it.key }.forEachIndexed { index, (key, count) ->
                 if (index > 0) append(',')
                 append(jsonString(key)).append(':').append(count)
             }

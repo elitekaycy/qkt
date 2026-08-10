@@ -8,6 +8,7 @@ import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
@@ -104,6 +105,13 @@ class EngineAuditJournal(
                 if (event is StreamCandleEvent) {
                     append(",\"broker\":").append(jsonString(event.broker))
                     append(",\"timeframe\":").append(jsonString(event.timeframe))
+                    appendCandle(event.candle)
+                }
+                if (event is StrategyCandleEvaluatedEvent) {
+                    append(",\"alias\":").append(jsonString(event.alias))
+                    append(",\"broker\":").append(jsonString(event.broker))
+                    append(",\"timeframe\":").append(jsonString(event.timeframe))
+                    append(",\"rulesEvaluated\":").append(event.rulesEvaluated)
                     appendCandle(event.candle)
                 }
                 if (event is BrokerEvent.OrderFilled) appendFill(event)
@@ -229,6 +237,7 @@ class EngineAuditJournal(
             is RiskRejectedEvent -> event.request.strategyId.takeIf { it.isNotBlank() }
             is RiskEvent.Halted -> event.strategyId?.takeIf { it.isNotBlank() }
             is RiskEvent.Resumed -> event.strategyId?.takeIf { it.isNotBlank() }
+            is StrategyCandleEvaluatedEvent -> event.strategyId.takeIf { it.isNotBlank() }
             else -> null
         }
 
@@ -252,6 +261,7 @@ class EngineAuditJournal(
             is WarmupTickEvent -> event.tick.symbol
             is CandleEvent -> event.candle.symbol
             is StreamCandleEvent -> event.candle.symbol
+            is StrategyCandleEvaluatedEvent -> event.candle.symbol
             else -> null
         }
 

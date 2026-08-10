@@ -87,6 +87,7 @@ class BacktestReportWriterTest {
         assertThat(json).contains("\"warmupTicks\": 0")
         assertThat(json).contains("\"liveCandles\": 4")
         assertThat(json).contains("\"streamCandles\": {}")
+        assertThat(json).contains("\"strategyCandleEvaluations\": {}")
         assertThat(json).contains("\"evidence\": {\"qktVersion\":\"test\"")
         assertThat(json).contains("\"strategyHash\":\"sha256:strategy\"")
         assertThat(json).contains("\"mutableStore\":true")

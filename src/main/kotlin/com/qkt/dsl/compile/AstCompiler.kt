@@ -136,8 +136,10 @@ class AstCompiler {
                         is CloseAll, is CancelAll, is Log -> null
                         else -> null
                     }
+                val referencedAliases = collectStreamAliases(rule.copy(cond = cond))
                 val ruleAlias =
                     streamAlias
+                        ?: referencedAliases.singleOrNull()
                         ?: streams.keys.firstOrNull()
                         ?: error("Strategy must declare at least one stream")
                 val ruleSymbol =
@@ -148,7 +150,6 @@ class AstCompiler {
                 val action = actionCompiler.compile(mergedAction)
                 val isBuy = primary is Buy
                 val isSell = primary is Sell
-                val referencedAliases = collectStreamAliases(rule)
                 CompiledRule(
                     condition = compiledCond,
                     action = action,
@@ -722,10 +723,18 @@ private class CompiledStrategy(
     private var hubBound: Boolean = false
     private var boundHub: CandleHub? = null
     private var boundContext: StrategyContext? = null
+    private var evaluationObserver: (String, HubKey, Candle, Int) -> Unit = { _, _, _, _ -> }
     private val ruleByOrderId: MutableMap<String, CompiledRule> = mutableMapOf()
     private val ruleBySignal: java.util.IdentityHashMap<Signal, CompiledRule> = java.util.IdentityHashMap()
 
     override val declaredStreams: Map<String, HubKey> get() = streams
+
+    override fun observeCandleEvaluations(
+        observer: (alias: String, key: HubKey, candle: Candle, rulesEvaluated: Int) -> Unit,
+    ) {
+        check(!hubBound) { "Candle evaluation observer must be bound before the strategy hub" }
+        evaluationObserver = observer
+    }
 
     override fun exitHookReferences(): Map<String, ExitHookRef> = exitHookCatalog.references()
 
@@ -923,6 +932,16 @@ private class CompiledStrategy(
                         deferSequenceCompletion
                 }
                 sequenceRuntime.afterRulePass(deferSequenceCompletion)
+                for (alias in group.aliases) {
+                    if (alias !in basketAliases) {
+                        evaluationObserver(
+                            alias,
+                            streams.getValue(alias),
+                            bars.getValue(alias),
+                            rulesByAlias[alias]?.size ?: 0,
+                        )
+                    }
+                }
             }
         }
 
@@ -955,6 +974,7 @@ private class CompiledStrategy(
                 runSequencesForAlias(basket.alias, composite, hub, ctx)
                 val deferSequenceCompletion = fireRulesForAlias(basket.alias, composite, hub, ctx, emit)
                 sequenceRuntime.afterRulePass(deferSequenceCompletion)
+                evaluationObserver(basket.alias, basketKey, composite, rulesByAlias[basket.alias]?.size ?: 0)
             }
         }
     }
@@ -983,6 +1003,7 @@ private class CompiledStrategy(
         runSequencesForAlias(alias, candle, hub, ctx)
         val deferSequenceCompletion = fireRulesForAlias(alias, candle, hub, ctx, emit)
         sequenceRuntime.afterRulePass(deferSequenceCompletion)
+        evaluationObserver(alias, streams.getValue(alias), candle, rulesByAlias[alias]?.size ?: 0)
     }
 
     /**

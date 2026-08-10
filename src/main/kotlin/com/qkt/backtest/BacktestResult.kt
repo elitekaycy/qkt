@@ -26,6 +26,7 @@ data class ReplayInputReport(
     val malformedTicks: Long,
     val droppedLateTicks: Long,
     val streamCandles: Map<String, Long> = emptyMap(),
+    val strategyCandleEvaluations: Map<String, Long> = emptyMap(),
 )
 
 data class BacktestResult(

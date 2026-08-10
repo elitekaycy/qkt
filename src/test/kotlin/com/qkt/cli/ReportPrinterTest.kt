@@ -95,6 +95,7 @@ class ReportPrinterTest {
                 malformedTicks = 2,
                 droppedLateTicks = 1,
                 streamCandles = mapOf("EXNESS:EURUSD:5m" to 2L),
+                strategyCandleEvaluations = mapOf("alpha:eur5:EXNESS:EURUSD:5m" to 2L),
             )
         val result = result().copy(inputSummary = inputs)
 
@@ -117,6 +118,14 @@ class ReportPrinterTest {
                 .jsonPrimitive
                 .content,
         ).isEqualTo("2")
+        assertThat(
+            summary
+                .getValue("strategyCandleEvaluations")
+                .jsonObject
+                .getValue("alpha:eur5:EXNESS:EURUSD:5m")
+                .jsonPrimitive
+                .content,
+        ).isEqualTo("2")
 
         val textOut = ByteArrayOutputStream()
         ReportPrinter.print(result, ReportFormat.Text, PrintStream(textOut), BrokerKind.PAPER)
@@ -126,6 +135,7 @@ class ReportPrinterTest {
                 "warmup ticks:    8",
                 "late ticks:      1",
                 "stream EXNESS:EURUSD:5m: 2 candles",
+                "strategy evaluation alpha:eur5:EXNESS:EURUSD:5m: 2 candles",
             )
     }
 

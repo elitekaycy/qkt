@@ -8,6 +8,7 @@ import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
+import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.WarmupTickEvent
@@ -92,6 +93,27 @@ class EngineAuditJournalTest {
             ),
         )
         journal.append(
+            StrategyCandleEvaluatedEvent(
+                strategyId = "alpha",
+                alias = "gold5",
+                broker = "EXNESS",
+                timeframe = "5m",
+                rulesEvaluated = 1,
+                candle =
+                    Candle(
+                        symbol = "EXNESS:XAUUSD",
+                        open = Money.of("1990"),
+                        high = Money.of("2005"),
+                        low = Money.of("1985"),
+                        close = Money.of("2000"),
+                        volume = Money.of("10"),
+                        startTime = clock.now() - 300_000L,
+                        endTime = clock.now(),
+                    ),
+                timestamp = clock.now(),
+            ),
+        )
+        journal.append(
             BrokerEvent.OrderFilled(
                 clientOrderId = "o-1",
                 brokerOrderId = "b-1",
@@ -119,6 +141,9 @@ class EngineAuditJournalTest {
             .contains("\"volume\":\"10.00000000\"")
             .contains("\"eventType\":\"com.qkt.events.StreamCandleEvent\"")
             .contains("\"broker\":\"EXNESS\",\"timeframe\":\"5m\"")
+            .contains("\"eventType\":\"com.qkt.events.StrategyCandleEvaluatedEvent\"")
+            .contains("\"strategyId\":\"alpha\"")
+            .contains("\"alias\":\"gold5\",\"broker\":\"EXNESS\",\"timeframe\":\"5m\",\"rulesEvaluated\":1")
             .contains("\"fill\":{\"side\":\"BUY\"")
             .contains("\"brokerOrderId\":\"b-1\"")
     }

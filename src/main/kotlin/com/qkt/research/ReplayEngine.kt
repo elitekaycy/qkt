@@ -29,6 +29,7 @@ import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
 import com.qkt.events.CandleEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.WarmupTickEvent
@@ -184,6 +185,7 @@ class ReplayEngine(
     private var warmupCandlesEmitted = 0L
     private var liveCandlesEmitted = 0L
     private val streamCandlesEmitted = mutableMapOf<String, Long>()
+    private val strategyCandleEvaluations = mutableMapOf<String, Long>()
 
     init {
         require(this.cadence != SampleCadence.CANDLE_CLOSE || candleWindow != null) {
@@ -218,6 +220,11 @@ class ReplayEngine(
         bus.subscribe<StreamCandleEvent> { event ->
             val key = "${event.broker}:${event.candle.symbol.substringAfter(':')}:${event.timeframe}"
             streamCandlesEmitted[key] = (streamCandlesEmitted[key] ?: 0L) + 1L
+        }
+        bus.subscribe<StrategyCandleEvaluatedEvent> { event ->
+            val symbol = event.candle.symbol.substringAfter(':')
+            val key = "${event.strategyId}:${event.alias}:${event.broker}:$symbol:${event.timeframe}"
+            strategyCandleEvaluations[key] = (strategyCandleEvaluations[key] ?: 0L) + 1L
         }
         val engine = Engine(bus, priceTracker)
         val candleHub =
@@ -713,6 +720,7 @@ class ReplayEngine(
                     malformedTicks = pipeline.malformedTickCount.get(),
                     droppedLateTicks = pipeline.droppedLateTicks(),
                     streamCandles = streamCandlesEmitted.toSortedMap(),
+                    strategyCandleEvaluations = strategyCandleEvaluations.toSortedMap(),
                 ),
             runawayBreaker =
                 com.qkt.backtest.RunawayBreakerReport(

@@ -96,6 +96,8 @@ class BacktestFromStoreTest {
         ).isEqualTo(from.toEpochMilli() + 60_000L)
         assertThat(result.inputSummary?.streamCandles)
             .containsEntry("BACKTEST:EURUSD:1m", 2L)
+        assertThat(result.inputSummary?.strategyCandleEvaluations)
+            .containsEntry("warm_cli:eur:BACKTEST:EURUSD:1m", 2L)
     }
 
     @Test

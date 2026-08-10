@@ -18,6 +18,7 @@ import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
@@ -409,6 +410,18 @@ class TradingPipeline(
                 }
                 for (key in strategy.declaredStreams.values) {
                     candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
+                }
+                strategy.observeCandleEvaluations { alias, key, candle, rulesEvaluated ->
+                    bus.publish(
+                        StrategyCandleEvaluatedEvent(
+                            strategyId = strategyId,
+                            alias = alias,
+                            broker = key.broker,
+                            timeframe = key.timeframe,
+                            rulesEvaluated = rulesEvaluated,
+                            candle = candle,
+                        ),
+                    )
                 }
                 strategy.bindToHub(candleHub, ctx, emit)
                 exitHookManager.bind(strategyId, strategy, emit)

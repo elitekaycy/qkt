@@ -129,6 +129,7 @@ internal class GoldenReplayDataMaterializer(
         val ticks = mutableListOf<RecordedTick>()
         val candles = mutableListOf<RecordedCandle>()
         val streamCandles = mutableListOf<RecordedCandle>()
+        var strategyCandleEvaluations = 0L
         val sequences = mutableSetOf<Long>()
         for (name in engineNames) {
             zip.getInputStream(zip.getEntry(name)).bufferedReader(StandardCharsets.UTF_8).use { reader ->
@@ -146,6 +147,7 @@ internal class GoldenReplayDataMaterializer(
                         CANDLE_EVENT -> candles.add(readCandle(record, sequence, name, lineNumber))
                         STREAM_CANDLE_EVENT ->
                             streamCandles.add(readStreamCandle(record, sequence, name, lineNumber))
+                        STRATEGY_CANDLE_EVALUATED_EVENT -> strategyCandleEvaluations += 1L
                     }
                 }
             }
@@ -166,12 +168,18 @@ internal class GoldenReplayDataMaterializer(
         require(streamCandles.size.toLong() == expectedStreamCandles) {
             "golden stream candle count does not match manifest"
         }
+        val expectedStrategyEvaluations =
+            optionalLong(counts, "strategyCandleEvaluations", "manifest.json", 1L) ?: 0L
+        require(strategyCandleEvaluations == expectedStrategyEvaluations) {
+            "golden strategy candle evaluation count does not match manifest"
+        }
         require(ticks.any { !it.warmup }) { "golden bundle has no live ticks" }
         return Capture(
             manifest,
             ticks.sortedWith(compareBy({ it.tick.timestamp }, { it.sequence })),
             candles,
             streamCandles,
+            strategyCandleEvaluations,
         )
     }
 
@@ -460,6 +468,7 @@ internal class GoldenReplayDataMaterializer(
                 append(", \"warmupTicks\": ").append(capture.ticks.size - liveTicks.size)
                 append(", \"candles\": ").append(capture.candles.size)
                 append(", \"streamCandles\": ").append(capture.streamCandles.size)
+                append(", \"strategyCandleEvaluations\": ").append(capture.strategyCandleEvaluations)
                 append(", \"materializedCandles\": ").append(replayCandles.size).append("},\n")
                 append("  \"symbols\": [").append(symbols.joinToString(",") { jsonString(it) }).append("],\n")
                 append("  \"timeframes\": [").append(timeframes.joinToString(",") { jsonString(it) }).append("],\n")
@@ -640,6 +649,7 @@ internal class GoldenReplayDataMaterializer(
         val ticks: List<RecordedTick>,
         val candles: List<RecordedCandle>,
         val streamCandles: List<RecordedCandle>,
+        val strategyCandleEvaluations: Long,
     )
 
     private data class BarIdentity(
@@ -659,6 +669,7 @@ internal class GoldenReplayDataMaterializer(
         const val WARMUP_TICK_EVENT = "com.qkt.events.WarmupTickEvent"
         const val CANDLE_EVENT = "com.qkt.events.CandleEvent"
         const val STREAM_CANDLE_EVENT = "com.qkt.events.StreamCandleEvent"
+        const val STRATEGY_CANDLE_EVALUATED_EVENT = "com.qkt.events.StrategyCandleEvaluatedEvent"
         const val CAPTURED_CANDLE_EVENT = "CAPTURED_CANDLE_EVENT"
         const val CAPTURED_STREAM_CANDLE_EVENT = "CAPTURED_STREAM_CANDLE_EVENT"
         const val REHYDRATED_WARMUP_TICKS = "REHYDRATED_WARMUP_TICKS"

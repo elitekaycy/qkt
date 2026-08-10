@@ -291,6 +291,12 @@ class BacktestReportWriter(
                 append(ReportSerializer.jsonString(key)).append(':').append(count)
             }
             append('}')
+            append(", \"strategyCandleEvaluations\": {")
+            report.strategyCandleEvaluations.entries.sortedBy { it.key }.forEachIndexed { index, (key, count) ->
+                if (index > 0) append(',')
+                append(ReportSerializer.jsonString(key)).append(':').append(count)
+            }
+            append('}')
             append("}")
         }
     }

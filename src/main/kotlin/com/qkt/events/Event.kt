@@ -56,6 +56,18 @@ data class StreamCandleEvent(
     override val sequenceId: Long = 0L,
 ) : Event
 
+/** A DSL stream candle after the owning strategy alias has completed evaluation. */
+data class StrategyCandleEvaluatedEvent(
+    val strategyId: String,
+    val alias: String,
+    val broker: String,
+    val timeframe: String,
+    val rulesEvaluated: Int,
+    val candle: Candle,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event
+
 /** A strategy-produced trading intent. The risk engine and order manager react to these. */
 data class SignalEvent(
     val signal: Signal,

@@ -10,6 +10,7 @@ import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
+import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
@@ -170,6 +171,7 @@ class EventBus(
             is WarmupTickEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is CandleEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is StreamCandleEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is StrategyCandleEvaluatedEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is SignalEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is OrderEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is RiskRejectedEvent -> event.copy(timestamp = ts, sequenceId = seq)

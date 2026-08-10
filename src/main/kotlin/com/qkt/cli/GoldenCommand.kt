@@ -186,6 +186,7 @@ class GoldenCommand(
         var warmupTicks = 0L
         var candles = 0L
         var streamCandles = 0L
+        var strategyCandleEvaluations = 0L
         var fills = 0L
         val filledOrderIds = mutableSetOf<String>()
         val filledBrokerOrderIds = mutableSetOf<String>()
@@ -219,6 +220,14 @@ class GoldenCommand(
                             requireStructuredCandle(record, file, lineNumber)
                             streamCandles += 1L
                         }
+                        "com.qkt.events.StrategyCandleEvaluatedEvent" -> {
+                            requireText(record, "strategyId", file, lineNumber)
+                            requireText(record, "alias", file, lineNumber)
+                            requireText(record, "broker", file, lineNumber)
+                            requireText(record, "timeframe", file, lineNumber)
+                            requireStructuredCandle(record, file, lineNumber)
+                            strategyCandleEvaluations += 1L
+                        }
                         "com.qkt.events.BrokerEvent.OrderFilled",
                         "com.qkt.events.BrokerEvent.OrderPartiallyFilled",
                         -> {
@@ -247,6 +256,7 @@ class GoldenCommand(
             warmupTicks,
             candles,
             streamCandles,
+            strategyCandleEvaluations,
             fills,
             filledOrderIds,
             filledBrokerOrderIds,
@@ -420,6 +430,7 @@ class GoldenCommand(
             append(", \"warmupTicks\": ").append(audit.warmupTickCount)
             append(", \"candles\": ").append(audit.candleCount)
             append(", \"streamCandles\": ").append(audit.streamCandleCount)
+            append(", \"strategyCandleEvaluations\": ").append(audit.strategyCandleEvaluationCount)
             append(", \"fills\": ").append(audit.fillCount)
             append(", \"gatewayExchanges\": ").append(transport.exchangeCount)
             append(", \"linkedPlacements\": ").append(transport.linkedPlacements)
@@ -549,6 +560,7 @@ class GoldenCommand(
         val warmupTickCount: Long,
         val candleCount: Long,
         val streamCandleCount: Long,
+        val strategyCandleEvaluationCount: Long,
         val fillCount: Long,
         val filledOrderIds: Set<String>,
         val filledBrokerOrderIds: Set<String>,

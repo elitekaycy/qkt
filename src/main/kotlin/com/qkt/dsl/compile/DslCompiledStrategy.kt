@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.marketdata.Candle
 import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
@@ -79,6 +80,11 @@ interface DslCompiledStrategy : Strategy {
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     )
+
+    /** Observe each live closed candle after its alias has completed rule evaluation. */
+    fun observeCandleEvaluations(observer: (alias: String, key: HubKey, candle: Candle, rulesEvaluated: Int) -> Unit) {
+        // default no-op for custom DSL strategy implementations
+    }
 
     /** Bind optional durable state for DSL runtime features that need restart recovery. */
     fun bindStatePersistor(

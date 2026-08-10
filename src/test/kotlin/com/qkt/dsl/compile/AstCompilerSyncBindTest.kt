@@ -54,6 +54,8 @@ class AstCompilerSyncBindTest {
             hub.register(key, retention = 10, strategyId = "test")
         }
         val signals = mutableListOf<Signal>()
+        val evaluations = mutableListOf<String>()
+        s.observeCandleEvaluations { alias, _, _, rules -> evaluations.add("$alias:$rules") }
         s.bindToHub(hub, testStrategyContext()) { sig -> signals.add(sig) }
 
         // Gold alternates above/below 500 per window so each true window is a fresh
@@ -64,11 +66,13 @@ class AstCompilerSyncBindTest {
             hub.feed(tick("EXNESS:XAUUSD", t, goldPrices[i]))
         }
         assertThat(signals).isEmpty()
+        assertThat(evaluations).isEmpty()
 
         // Drive silver across the same windows. Each window completes and evaluates:
         // w0 true (edge, fires), w1 false (re-arms), w2 true (edge, fires).
         for (t in 0L..180_000L step 60_000L) hub.feed(tick("EXNESS:XAGUSD", t, "25"))
         assertThat(signals).hasSize(2)
+        assertThat(evaluations).containsOnly("gold:1", "silver:0").hasSize(6)
     }
 
     @Test
@@ -96,6 +100,32 @@ class AstCompilerSyncBindTest {
             hub.feed(tick("EXNESS:XAUUSD", t, prices[i]))
         }
         assertThat(signals).hasSize(2)
+    }
+
+    @Test
+    fun `log rule with a resolved let binds to its unique stream alias`() {
+        val s =
+            compile(
+                """
+                STRATEGY log_alias VERSION 1
+                SYMBOLS
+                  fast = EXNESS:EURUSD EVERY 1m,
+                  slow = EXNESS:EURUSD EVERY 5m
+                LET slow_ema = ema(slow.close, 2)
+                RULES
+                  WHEN slow_ema IS NOT NULL THEN LOG "slow ready"
+                """.trimIndent(),
+            )
+        val hub = CandleHub()
+        s.declaredStreams.values.forEach { hub.register(it, retention = 10, strategyId = "test") }
+        val evaluations = mutableListOf<Pair<String, Int>>()
+        s.observeCandleEvaluations { alias, _, _, rules -> evaluations.add(alias to rules) }
+        s.bindToHub(hub, testStrategyContext()) { _: Signal -> }
+
+        for (t in 0L..600_000L step 60_000L) hub.feed(tick("EXNESS:EURUSD", t))
+
+        assertThat(evaluations.filter { it.first == "fast" }).allMatch { it.second == 0 }
+        assertThat(evaluations.filter { it.first == "slow" }).isNotEmpty.allMatch { it.second == 1 }
     }
 
     @Test
