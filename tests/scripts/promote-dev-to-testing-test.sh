@@ -2,8 +2,13 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+workflow="$repo_root/.github/workflows/check.yml"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+
+test "$(grep -Fc '    branches: [dev, testing]' "$workflow")" -eq 1
+test "$(grep -Fc '    branches: [dev]' "$workflow")" -eq 1
+test "$(grep -Fc "    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'" "$workflow")" -eq 1
 
 git init --bare --initial-branch=dev "$tmp/remote.git" >/dev/null
 git clone "$tmp/remote.git" "$tmp/work" >/dev/null 2>&1
