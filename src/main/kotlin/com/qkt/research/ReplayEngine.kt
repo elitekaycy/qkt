@@ -12,6 +12,7 @@ import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
 import com.qkt.backtest.ExecutionSimulationConfig
+import com.qkt.backtest.ReplayCausalityReport
 import com.qkt.backtest.ReplayInputReport
 import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.ReturnAutocorrCollector
@@ -28,7 +29,11 @@ import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
 import com.qkt.events.CandleEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
+import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
@@ -177,6 +182,10 @@ class ReplayEngine(
     private val swapBook: SwapFinancingBook
     private val tradeRecords = mutableListOf<TradeRecord>()
     private val rejections = mutableListOf<RiskRejectedEvent>()
+    private val approvedOrders = mutableListOf<OrderEvent>()
+    private val ruleDecisions = mutableListOf<RuleDecisionEvent>()
+    private val decisionOrderLinks = mutableListOf<DecisionOrderLinkedEvent>()
+    private val accountedFills = mutableListOf<FillAccountedEvent>()
     private val halts = mutableListOf<com.qkt.events.RiskEvent.Halted>()
     private val breakerTrips = mutableListOf<com.qkt.risk.RunawayBreakerTrip>()
     private val tape = mutableListOf<TapeEvent>()
@@ -208,6 +217,10 @@ class ReplayEngine(
             strategyPnL.setStartingBalance(id, startingBalances[id] ?: startingBalance)
         }
         val bus = EventBus(clock, sequencer)
+        bus.subscribe<OrderEvent>(approvedOrders::add)
+        bus.subscribe<RuleDecisionEvent>(ruleDecisions::add)
+        bus.subscribe<DecisionOrderLinkedEvent>(decisionOrderLinks::add)
+        bus.subscribe<FillAccountedEvent>(accountedFills::add)
         bus.subscribe<TickEvent> { liveTicksProcessed++ }
         bus.subscribe<WarmupTickEvent> { warmupTicksProcessed++ }
         bus.subscribe<CandleEvent> { event ->
@@ -730,6 +743,13 @@ class ReplayEngine(
                     maxRejections = runawayMaxRejections,
                     rejectionWindowMs = runawayRejectionWindowMs,
                     trips = breakerTrips.toList(),
+                ),
+            causality =
+                ReplayCausalityReport(
+                    approvedOrders = approvedOrders.toList(),
+                    ruleDecisions = ruleDecisions.toList(),
+                    decisionOrderLinks = decisionOrderLinks.toList(),
+                    accountedFills = accountedFills.toList(),
                 ),
         )
     }
