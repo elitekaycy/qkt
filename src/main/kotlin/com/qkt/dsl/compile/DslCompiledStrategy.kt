@@ -6,6 +6,28 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 
+/** Deterministic provenance for a DSL rule edge, including signal-less actions such as LOG. */
+data class RuleDecisionAudit(
+    val decisionId: String,
+    val ruleId: String,
+    val strategyFingerprint: String,
+    val ruleFingerprint: String,
+    val conditionFingerprint: String,
+    val conditionResult: Boolean,
+    val alias: String,
+    val key: HubKey,
+    val candle: Candle,
+    val signalCount: Int,
+)
+
+/** Correlation between one signal from a DSL rule decision and its normalized order. */
+data class DecisionOrderLink(
+    val decisionId: String,
+    val ruleId: String,
+    val signalIndex: Int,
+    val orderId: String,
+)
+
 /**
  * Marker for strategies produced by the qkt DSL parser/compiler.
  *
@@ -86,6 +108,11 @@ interface DslCompiledStrategy : Strategy {
         // default no-op for custom DSL strategy implementations
     }
 
+    /** Observe rule edges before their produced signals enter the trading pipeline. */
+    fun observeRuleDecisions(observer: (RuleDecisionAudit) -> Unit) {
+        // default no-op for custom DSL strategy implementations
+    }
+
     /** Bind optional durable state for DSL runtime features that need restart recovery. */
     fun bindStatePersistor(
         strategyId: String,
@@ -103,9 +130,7 @@ interface DslCompiledStrategy : Strategy {
     fun onOrderSubmitted(
         signal: Signal,
         clientOrderId: String,
-    ) {
-        // default no-op
-    }
+    ): DecisionOrderLink? = null
 
     /** Forget rule ownership after an order reaches a non-rejected terminal state. */
     fun onOrderTerminal(clientOrderId: String) {

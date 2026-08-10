@@ -4,7 +4,9 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.Trade
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import com.qkt.positions.Position
 import com.qkt.strategy.Signal
+import java.math.BigDecimal
 
 /**
  * The root type for everything that flows through [com.qkt.bus.EventBus].
@@ -64,6 +66,68 @@ data class StrategyCandleEvaluatedEvent(
     val timeframe: String,
     val rulesEvaluated: Int,
     val candle: Candle,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event
+
+/** A deterministic DSL rule edge, including signal-less actions such as LOG. */
+data class RuleDecisionEvent(
+    val strategyId: String,
+    val decisionId: String,
+    val ruleId: String,
+    val strategyFingerprint: String,
+    val ruleFingerprint: String,
+    val conditionFingerprint: String,
+    val conditionResult: Boolean,
+    val alias: String,
+    val broker: String,
+    val timeframe: String,
+    val signalCount: Int,
+    val candle: Candle,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event
+
+/** Links a deterministic DSL rule decision to the normalized order id it created. */
+data class DecisionOrderLinkedEvent(
+    val strategyId: String,
+    val decisionId: String,
+    val ruleId: String,
+    val signalIndex: Int,
+    val orderId: String,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event
+
+/** Post-accounting evidence for one complete or partial broker fill slice. */
+data class FillAccountedEvent(
+    val orderId: String,
+    val strategyId: String,
+    val symbol: String,
+    val fillSliceId: String,
+    val sourceFillSequenceId: Long,
+    val cumulativeFilled: BigDecimal?,
+    val modeledCommissionAccount: BigDecimal,
+    val venueCostsAccount: BigDecimal,
+    val totalCostsAccount: BigDecimal,
+    val accountNativeRealized: BigDecimal,
+    val strategyNativeRealized: BigDecimal,
+    val nativeCurrency: String,
+    val grossAccountRealized: BigDecimal,
+    val grossStrategyAccountRealized: BigDecimal,
+    val accountCurrency: String,
+    val netAccountRealized: BigDecimal,
+    val netStrategyAccountRealized: BigDecimal,
+    val conversionRate: BigDecimal?,
+    val conversionTimestampMs: Long?,
+    val conversionSource: String?,
+    val contractSize: BigDecimal?,
+    val accountPositionBefore: Position?,
+    val accountPositionAfter: Position?,
+    val strategyPositionBefore: Position?,
+    val strategyPositionAfter: Position?,
+    val reducedExposure: Boolean,
+    val partial: Boolean,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,
 ) : Event

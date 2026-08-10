@@ -7,7 +7,10 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
@@ -16,6 +19,7 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import com.qkt.positions.Position
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -113,6 +117,76 @@ class EngineAuditJournalTest {
                 timestamp = clock.now(),
             ),
         )
+        val decisionCandle =
+            Candle(
+                symbol = "EXNESS:XAUUSD",
+                open = Money.of("1990"),
+                high = Money.of("2005"),
+                low = Money.of("1985"),
+                close = Money.of("2000"),
+                volume = Money.of("10"),
+                startTime = clock.now() - 300_000L,
+                endTime = clock.now(),
+            )
+        journal.append(
+            RuleDecisionEvent(
+                strategyId = "alpha",
+                decisionId = "alpha:gold5:1700000000000:abc",
+                ruleId = "gold5#0",
+                strategyFingerprint = "b".repeat(64),
+                ruleFingerprint = "c".repeat(64),
+                conditionFingerprint = "a".repeat(64),
+                conditionResult = true,
+                alias = "gold5",
+                broker = "EXNESS",
+                timeframe = "5m",
+                signalCount = 1,
+                candle = decisionCandle,
+                timestamp = clock.now(),
+            ),
+        )
+        journal.append(
+            DecisionOrderLinkedEvent(
+                strategyId = "alpha",
+                decisionId = "alpha:gold5:1700000000000:abc",
+                ruleId = "gold5#0",
+                signalIndex = 0,
+                orderId = "o-1",
+                timestamp = clock.now(),
+            ),
+        )
+        journal.append(
+            FillAccountedEvent(
+                orderId = "o-1",
+                strategyId = "alpha",
+                symbol = "EXNESS:XAUUSD",
+                fillSliceId = "o-1:41",
+                sourceFillSequenceId = 41L,
+                cumulativeFilled = null,
+                modeledCommissionAccount = Money.of("0.10"),
+                venueCostsAccount = Money.of("0.20"),
+                totalCostsAccount = Money.of("0.30"),
+                accountNativeRealized = Money.of("2.00"),
+                strategyNativeRealized = Money.of("2.00"),
+                nativeCurrency = "USD",
+                grossAccountRealized = Money.of("2.00"),
+                grossStrategyAccountRealized = Money.of("2.00"),
+                accountCurrency = "USD",
+                netAccountRealized = Money.of("1.70"),
+                netStrategyAccountRealized = Money.of("1.70"),
+                conversionRate = null,
+                conversionTimestampMs = null,
+                conversionSource = null,
+                contractSize = Money.of("100"),
+                accountPositionBefore = Position("EXNESS:XAUUSD", Money.of("0.1"), Money.of("1990")),
+                accountPositionAfter = null,
+                strategyPositionBefore = Position("EXNESS:XAUUSD", Money.of("0.1"), Money.of("1990")),
+                strategyPositionAfter = null,
+                reducedExposure = true,
+                partial = false,
+                timestamp = clock.now(),
+            ),
+        )
         journal.append(
             BrokerEvent.OrderFilled(
                 clientOrderId = "o-1",
@@ -144,6 +218,20 @@ class EngineAuditJournalTest {
             .contains("\"eventType\":\"com.qkt.events.StrategyCandleEvaluatedEvent\"")
             .contains("\"strategyId\":\"alpha\"")
             .contains("\"alias\":\"gold5\",\"broker\":\"EXNESS\",\"timeframe\":\"5m\",\"rulesEvaluated\":1")
+            .contains("\"eventType\":\"com.qkt.events.RuleDecisionEvent\"")
+            .contains("\"decisionId\":\"alpha:gold5:1700000000000:abc\"")
+            .contains("\"ruleId\":\"gold5#0\"")
+            .contains("\"strategyFingerprint\":\"${"b".repeat(64)}\"")
+            .contains("\"conditionResult\":true")
+            .contains("\"signalCount\":1")
+            .contains("\"eventType\":\"com.qkt.events.DecisionOrderLinkedEvent\"")
+            .contains("\"orderId\":\"o-1\"")
+            .contains("\"eventType\":\"com.qkt.events.FillAccountedEvent\"")
+            .contains("\"fillSliceId\":\"o-1:41\"")
+            .contains("\"totalCostsAccount\":\"0.30000000\"")
+            .contains("\"netAccountRealized\":\"1.70000000\"")
+            .contains("\"netStrategyAccountRealized\":\"1.70000000\"")
+            .contains("\"strategyPositionBefore\":{\"symbol\":\"EXNESS:XAUUSD\",\"quantity\":\"0.10000000\"")
             .contains("\"fill\":{\"side\":\"BUY\"")
             .contains("\"brokerOrderId\":\"b-1\"")
     }
@@ -155,7 +243,7 @@ class EngineAuditJournalTest {
         val clock = FixedClock(time = 1_700_000_000_000L)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val journal = EngineAuditJournal(tmp, "alpha", clock)
-        bus.subscribeAll(journal::append)
+        bus.subscribeAllFirst(journal::append)
 
         bus.publish(
             OrderEvent(

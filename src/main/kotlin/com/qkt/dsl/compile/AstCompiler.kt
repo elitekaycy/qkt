@@ -29,6 +29,7 @@ import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.WarmupStream
 import java.math.BigDecimal
+import java.security.MessageDigest
 
 class AstCompiler {
     fun compile(
@@ -161,6 +162,8 @@ class AstCompiler {
                     onSellCaptures = plan.captureOnSell.map { it to letCompiledRhs.getValue(it) },
                     onOpenCaptures = plan.captureOnOpen.map { it to letCompiledRhs.getValue(it) },
                     referencedAliases = referencedAliases,
+                    conditionFingerprint = sha256(cond.toString()),
+                    ruleFingerprint = sha256("$cond\n$mergedAction"),
                     consumesSequenceCompletion = readsSequenceCompletion(cond),
                     edgeStateKey = "$ruleAlias#$ruleIndex",
                 )
@@ -214,6 +217,7 @@ class AstCompiler {
             }
 
         return CompiledStrategy(
+            strategyFingerprint = sha256(ast.toString()),
             streams = streams,
             retentionByKey = retentionByKey,
             bindings = bindings,
@@ -695,6 +699,7 @@ class AstCompiler {
 }
 
 private class CompiledStrategy(
+    private val strategyFingerprint: String,
     private val streams: Map<String, HubKey>,
     override val retentionByKey: Map<HubKey, Int>,
     private val bindings: IndicatorBinding.Bag,
@@ -725,7 +730,15 @@ private class CompiledStrategy(
     private var boundContext: StrategyContext? = null
     private var evaluationObserver: (String, HubKey, Candle, Int) -> Unit = { _, _, _, _ -> }
     private val ruleByOrderId: MutableMap<String, CompiledRule> = mutableMapOf()
-    private val ruleBySignal: java.util.IdentityHashMap<Signal, CompiledRule> = java.util.IdentityHashMap()
+
+    private data class RuleSignalCause(
+        val rule: CompiledRule,
+        val decisionId: String,
+        val signalIndex: Int,
+    )
+
+    private val ruleBySignal: java.util.IdentityHashMap<Signal, RuleSignalCause> = java.util.IdentityHashMap()
+    private var ruleDecisionObserver: (RuleDecisionAudit) -> Unit = {}
 
     override val declaredStreams: Map<String, HubKey> get() = streams
 
@@ -734,6 +747,11 @@ private class CompiledStrategy(
     ) {
         check(!hubBound) { "Candle evaluation observer must be bound before the strategy hub" }
         evaluationObserver = observer
+    }
+
+    override fun observeRuleDecisions(observer: (RuleDecisionAudit) -> Unit) {
+        check(!hubBound) { "Rule decision observer must be bound before the strategy hub" }
+        ruleDecisionObserver = observer
     }
 
     override fun exitHookReferences(): Map<String, ExitHookRef> = exitHookCatalog.references()
@@ -794,12 +812,18 @@ private class CompiledStrategy(
     override fun onOrderSubmitted(
         signal: Signal,
         clientOrderId: String,
-    ) {
-        val rule = ruleBySignal.remove(signal) ?: return
-        ruleByOrderId[clientOrderId] = rule
+    ): DecisionOrderLink? {
+        val cause = ruleBySignal.remove(signal) ?: return null
+        ruleByOrderId[clientOrderId] = cause.rule
         if (signal is Signal.Submit) {
-            correlationIds(signal.request).forEach { ruleByOrderId[it] = rule }
+            correlationIds(signal.request).forEach { ruleByOrderId[it] = cause.rule }
         }
+        return DecisionOrderLink(
+            decisionId = cause.decisionId,
+            ruleId = cause.rule.ruleId,
+            signalIndex = cause.signalIndex,
+            orderId = clientOrderId,
+        )
     }
 
     override fun onOrderTerminal(clientOrderId: String) {
@@ -1149,7 +1173,9 @@ private class CompiledStrategy(
     ): SequenceFireOutcome {
         val fired = rule.fire(ec, ctx)
         if (fired.isEmpty()) {
-            return when (rule.commitFire(true)) {
+            val committed = rule.commitFire(true)
+            if (committed != null) ruleDecisionObserver(ruleDecision(rule, ec, ctx, signalCount = 0))
+            return when (committed) {
                 RuleCommitOutcome.ACCEPTED ->
                     if (rule.consumesSequenceCompletion) {
                         SequenceFireOutcome.ACCEPTED
@@ -1169,11 +1195,18 @@ private class CompiledStrategy(
             fired
                 .filterIsInstance<Signal.Submit>()
                 .flatMap { correlationIds(it.request) }
-        fired.forEach { ruleBySignal[it] = rule }
+        val decision = ruleDecision(rule, ec, ctx, fired.size)
+        ruleDecisionObserver(decision)
+        fired.forEachIndexed { index, signal ->
+            ruleBySignal[signal] = RuleSignalCause(rule, decision.decisionId, index)
+        }
         orderIds.forEach { ruleByOrderId[it] = rule }
         val acceptedBefore = ctx.submissions.accepted
         val suppressedBefore = ctx.submissions.suppressed
-        for (sig in fired) emit(sig)
+        for (sig in fired) {
+            emit(sig)
+            ruleBySignal.remove(sig)
+        }
         val anyAccepted = ctx.submissions.accepted > acceptedBefore
         val anySuppressed = ctx.submissions.suppressed > suppressedBefore
         val accepted = anyAccepted || !anySuppressed
@@ -1187,6 +1220,28 @@ private class CompiledStrategy(
             committed == RuleCommitOutcome.ACCEPTED -> SequenceFireOutcome.ACCEPTED
             else -> SequenceFireOutcome.SUPPRESSED
         }
+    }
+
+    private fun ruleDecision(
+        rule: CompiledRule,
+        ec: EvalContext,
+        ctx: StrategyContext,
+        signalCount: Int,
+    ): RuleDecisionAudit {
+        val key = streams.getValue(rule.ruleAlias)
+        val decisionId = "${ctx.strategyId}:$strategyFingerprint:${rule.ruleFingerprint}:${ec.candle.endTime}"
+        return RuleDecisionAudit(
+            decisionId = decisionId,
+            ruleId = rule.ruleId,
+            strategyFingerprint = strategyFingerprint,
+            ruleFingerprint = rule.ruleFingerprint,
+            conditionFingerprint = rule.conditionFingerprint,
+            conditionResult = true,
+            alias = rule.ruleAlias,
+            key = key,
+            candle = ec.candle,
+            signalCount = signalCount,
+        )
     }
 
     // Symbol-keyed view of tick-fed indicator bindings, built on first tick — most strategies
@@ -1319,6 +1374,12 @@ private fun correlationIds(request: com.qkt.execution.OrderRequest): List<String
             listOf(request.id) + correlationIds(request.parent)
         else -> listOf(request.id)
     }
+
+private fun sha256(value: String): String =
+    MessageDigest
+        .getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
 private fun readsSequenceCompletion(expr: ExprAst): Boolean =
     when (expr) {

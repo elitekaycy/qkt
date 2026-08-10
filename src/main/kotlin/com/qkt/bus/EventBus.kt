@@ -4,10 +4,13 @@ import com.qkt.common.Clock
 import com.qkt.common.SequenceGenerator
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.Event
+import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
@@ -38,6 +41,7 @@ class EventBus(
 
     @PublishedApi
     internal val subscribers = mutableMapOf<Class<out Event>, MutableList<(Event) -> Unit>>()
+    private val preDispatchTaps = mutableListOf<(Event) -> Unit>()
     private val taps = mutableListOf<(Event) -> Unit>()
 
     /**
@@ -114,6 +118,15 @@ class EventBus(
     }
 
     /**
+     * Registers an audit handler that sees every stamped event before exact-type subscribers.
+     * This preserves publication order when a subscriber synchronously publishes nested events.
+     * Handlers must be bounded and non-blocking.
+     */
+    fun subscribeAllFirst(handler: (Event) -> Unit) {
+        preDispatchTaps.add(handler)
+    }
+
+    /**
      * Stamps [event] with the current clock time + next sequence id, then dispatches it
      * to every subscriber registered for the event's concrete class.
      *
@@ -135,6 +148,13 @@ class EventBus(
         // that. Output is unchanged when trace is enabled.
         if (log.isTraceEnabled) {
             log.trace("publish {} seq={} ts={}", stamped::class.simpleName, stamped.sequenceId, stamped.timestamp)
+        }
+        for (i in preDispatchTaps.indices) {
+            try {
+                preDispatchTaps[i](stamped)
+            } catch (e: Exception) {
+                log.error("pre-dispatch tap {} for {} failed", i, stamped::class.simpleName, e)
+            }
         }
         // Index loop over the handler list (the single most-traversed line in the engine) avoids
         // allocating an Iterator per published event.
@@ -172,6 +192,9 @@ class EventBus(
             is CandleEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is StreamCandleEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is StrategyCandleEvaluatedEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is RuleDecisionEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is DecisionOrderLinkedEvent -> event.copy(timestamp = ts, sequenceId = seq)
+            is FillAccountedEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is SignalEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is OrderEvent -> event.copy(timestamp = ts, sequenceId = seq)
             is RiskRejectedEvent -> event.copy(timestamp = ts, sequenceId = seq)

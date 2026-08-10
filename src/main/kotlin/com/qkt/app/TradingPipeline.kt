@@ -15,8 +15,11 @@ import com.qkt.dsl.ast.SeriesSymbols
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
@@ -331,8 +334,20 @@ class TradingPipeline(
                 } else {
                     val built = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
                     if (built != null) {
-                        (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)
-                            ?.onOrderSubmitted(sig, built.id)
+                        val decisionLink =
+                            (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)
+                                ?.onOrderSubmitted(sig, built.id)
+                        decisionLink?.let { link ->
+                            bus.publish(
+                                DecisionOrderLinkedEvent(
+                                    strategyId = strategyId,
+                                    decisionId = link.decisionId,
+                                    ruleId = link.ruleId,
+                                    signalIndex = link.signalIndex,
+                                    orderId = link.orderId,
+                                ),
+                            )
+                        }
                         val request = applyBookScale(built)
                         if (request == null) {
                             ctx.submissions.recordSuppressed()
@@ -420,6 +435,24 @@ class TradingPipeline(
                             timeframe = key.timeframe,
                             rulesEvaluated = rulesEvaluated,
                             candle = candle,
+                        ),
+                    )
+                }
+                strategy.observeRuleDecisions { decision ->
+                    bus.publish(
+                        RuleDecisionEvent(
+                            strategyId = strategyId,
+                            decisionId = decision.decisionId,
+                            ruleId = decision.ruleId,
+                            strategyFingerprint = decision.strategyFingerprint,
+                            ruleFingerprint = decision.ruleFingerprint,
+                            conditionFingerprint = decision.conditionFingerprint,
+                            conditionResult = decision.conditionResult,
+                            alias = decision.alias,
+                            broker = decision.key.broker,
+                            timeframe = decision.key.timeframe,
+                            signalCount = decision.signalCount,
+                            candle = decision.candle,
                         ),
                     )
                 }
@@ -534,6 +567,38 @@ class TradingPipeline(
                     side = e.side,
                     timestamp = e.timestamp,
                 )
+            val accountAfter = positions.positionFor(e.symbol)
+            bus.publish(
+                FillAccountedEvent(
+                    orderId = e.clientOrderId,
+                    strategyId = e.strategyId,
+                    symbol = e.symbol,
+                    fillSliceId = "${e.clientOrderId}:${e.sequenceId}",
+                    sourceFillSequenceId = e.sequenceId,
+                    cumulativeFilled = null,
+                    modeledCommissionAccount = commission,
+                    venueCostsAccount = costs.subtract(commission),
+                    totalCostsAccount = costs,
+                    accountNativeRealized = realized,
+                    strategyNativeRealized = stratRealized,
+                    nativeCurrency = convertedRealized.native.normalizedCurrency,
+                    grossAccountRealized = accountRealized,
+                    grossStrategyAccountRealized = accountStratRealized,
+                    accountCurrency = convertedRealized.account.normalizedCurrency,
+                    netAccountRealized = accountRealized.subtract(costs),
+                    netStrategyAccountRealized = netAccountStratRealized,
+                    conversionRate = convertedRealized.conversion?.rate,
+                    conversionTimestampMs = convertedRealized.conversion?.timestamp,
+                    conversionSource = convertedRealized.conversion?.source,
+                    contractSize = contractSize,
+                    accountPositionBefore = accountBefore,
+                    accountPositionAfter = accountAfter,
+                    strategyPositionBefore = strategyBefore,
+                    strategyPositionAfter = strategyAfter,
+                    reducedExposure = reducedExposure,
+                    partial = false,
+                ),
+            )
             bus.publish(TradeEvent(trade, strategyId = e.strategyId))
             onFilled(
                 trade,
@@ -546,7 +611,7 @@ class TradingPipeline(
                 e.strategyId,
                 com.qkt.backtest.FillState(
                     accountPositionBefore = accountBefore,
-                    accountPositionAfter = positions.positionFor(e.symbol),
+                    accountPositionAfter = accountAfter,
                     strategyPositionBefore = strategyBefore,
                     strategyPositionAfter = strategyPositions.positionFor(e.strategyId, e.symbol),
                     contractSize = contractSize,
@@ -630,6 +695,38 @@ class TradingPipeline(
             )
             val trade =
                 Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
+            val accountAfter = positions.positionFor(e.symbol)
+            bus.publish(
+                FillAccountedEvent(
+                    orderId = e.clientOrderId,
+                    strategyId = e.strategyId,
+                    symbol = e.symbol,
+                    fillSliceId = "${e.clientOrderId}:${e.sequenceId}",
+                    sourceFillSequenceId = e.sequenceId,
+                    cumulativeFilled = e.cumulativeFilled,
+                    modeledCommissionAccount = commission,
+                    venueCostsAccount = venueCosts,
+                    totalCostsAccount = costs,
+                    accountNativeRealized = realized,
+                    strategyNativeRealized = stratRealized,
+                    nativeCurrency = convertedRealized.native.normalizedCurrency,
+                    grossAccountRealized = accountRealized,
+                    grossStrategyAccountRealized = accountStratRealized,
+                    accountCurrency = convertedRealized.account.normalizedCurrency,
+                    netAccountRealized = accountRealized.subtract(costs),
+                    netStrategyAccountRealized = netAccountStratRealized,
+                    conversionRate = convertedRealized.conversion?.rate,
+                    conversionTimestampMs = convertedRealized.conversion?.timestamp,
+                    conversionSource = convertedRealized.conversion?.source,
+                    contractSize = contractSize,
+                    accountPositionBefore = accountBefore,
+                    accountPositionAfter = accountAfter,
+                    strategyPositionBefore = strategyBefore,
+                    strategyPositionAfter = strategyAfter,
+                    reducedExposure = reducedExposure,
+                    partial = true,
+                ),
+            )
             bus.publish(TradeEvent(trade, strategyId = e.strategyId))
             onFilled(
                 trade,
@@ -642,7 +739,7 @@ class TradingPipeline(
                 e.strategyId,
                 com.qkt.backtest.FillState(
                     accountPositionBefore = accountBefore,
-                    accountPositionAfter = positions.positionFor(e.symbol),
+                    accountPositionAfter = accountAfter,
                     strategyPositionBefore = strategyBefore,
                     strategyPositionAfter = strategyPositions.positionFor(e.strategyId, e.symbol),
                     contractSize = contractSize,

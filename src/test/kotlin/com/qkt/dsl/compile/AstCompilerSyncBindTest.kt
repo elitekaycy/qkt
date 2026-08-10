@@ -91,7 +91,13 @@ class AstCompilerSyncBindTest {
         val key = s.declaredStreams.values.single()
         hub.register(key, retention = 10, strategyId = "test")
         val signals = mutableListOf<Signal>()
-        s.bindToHub(hub, testStrategyContext()) { sig -> signals.add(sig) }
+        val decisions = mutableListOf<RuleDecisionAudit>()
+        val links = mutableListOf<DecisionOrderLink?>()
+        s.observeRuleDecisions(decisions::add)
+        s.bindToHub(hub, testStrategyContext()) { sig ->
+            signals.add(sig)
+            links.add(s.onOrderSubmitted(sig, "ORD-${links.size}"))
+        }
 
         // Three closes at endTime 60_000, 120_000, 180_000 with closes 1000, 100, 1000:
         // two rising edges → two fires (the middle close re-arms the rule).
@@ -100,6 +106,16 @@ class AstCompilerSyncBindTest {
             hub.feed(tick("EXNESS:XAUUSD", t, prices[i]))
         }
         assertThat(signals).hasSize(2)
+        assertThat(decisions).hasSize(2)
+        assertThat(decisions.map { it.ruleId }).containsOnly("gold#0")
+        assertThat(decisions.map { it.candle.endTime }).containsExactly(60_000L, 180_000L)
+        assertThat(decisions.map { it.decisionId }).doesNotHaveDuplicates()
+        assertThat(decisions.map { it.strategyFingerprint }).allMatch { it.length == 64 }
+        assertThat(decisions.map { it.ruleFingerprint }).allMatch { it.length == 64 }
+        assertThat(decisions.map { it.conditionFingerprint }).allMatch { it.length == 64 }
+        assertThat(decisions.map { it.conditionResult }).containsOnly(true)
+        assertThat(links.map { it?.decisionId }).containsExactlyElementsOf(decisions.map { it.decisionId })
+        assertThat(links.map { it?.orderId }).containsExactly("ORD-0", "ORD-1")
     }
 
     @Test

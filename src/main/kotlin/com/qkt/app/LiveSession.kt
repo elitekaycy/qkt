@@ -1309,7 +1309,7 @@ class LiveSession(
             )
         }
         journal?.let { wireJournal(bus, it) }
-        auditJournal?.let { audit -> bus.subscribeAll { e -> audit.append(e) } }
+        auditJournal?.let { audit -> bus.subscribeAllFirst { e -> audit.append(e) } }
 
         // Register notifier handlers before the warmup phase so a warmup-time risk halt
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
