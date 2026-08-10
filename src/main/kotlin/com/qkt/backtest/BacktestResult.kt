@@ -16,6 +16,18 @@ data class RunawayBreakerReport(
     val trips: List<RunawayBreakerTrip>,
 )
 
+/** Market inputs actually attempted, accepted, and emitted by one replay. */
+data class ReplayInputReport(
+    val attemptedFeedTicks: Long,
+    val liveTicks: Long,
+    val warmupTicks: Long,
+    val warmupCandles: Long,
+    val liveCandles: Long,
+    val malformedTicks: Long,
+    val droppedLateTicks: Long,
+    val streamCandles: Map<String, Long> = emptyMap(),
+)
+
 data class BacktestResult(
     val trades: List<TradeRecord>,
     val rejections: List<RiskRejectedEvent>,
@@ -68,4 +80,6 @@ data class BacktestResult(
     val finalPositionsByStrategy: Map<String, Map<String, Position>> = emptyMap(),
     /** Live safety-breaker assumptions and any point where an unconstrained replay diverged. */
     val runawayBreaker: RunawayBreakerReport? = null,
+    /** Replay input accounting. Null only for manually constructed or legacy results. */
+    val inputSummary: ReplayInputReport? = null,
 )

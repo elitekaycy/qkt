@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
 import com.qkt.marketdata.Candle
@@ -54,9 +55,10 @@ internal class GoldenReplayDataMaterializer(
         makePrivateDirectory(temp)
         try {
             val capture = readAndVerifyBundle()
+            val replayCandles = replayCandles(capture)
             writeTickStore(temp, capture.ticks)
-            writeBarStores(temp, capture.candles)
-            writeReplayManifest(temp, capture)
+            writeBarStores(temp, replayCandles)
+            writeReplayManifest(temp, capture, replayCandles)
             try {
                 Files.move(temp, absolute, StandardCopyOption.ATOMIC_MOVE)
             } catch (_: AtomicMoveNotSupportedException) {
@@ -126,6 +128,7 @@ internal class GoldenReplayDataMaterializer(
     ): Capture {
         val ticks = mutableListOf<RecordedTick>()
         val candles = mutableListOf<RecordedCandle>()
+        val streamCandles = mutableListOf<RecordedCandle>()
         val sequences = mutableSetOf<Long>()
         for (name in engineNames) {
             zip.getInputStream(zip.getEntry(name)).bufferedReader(StandardCharsets.UTF_8).use { reader ->
@@ -141,6 +144,8 @@ internal class GoldenReplayDataMaterializer(
                         TICK_EVENT -> ticks.add(readTick(record, sequence, warmup = false, name, lineNumber))
                         WARMUP_TICK_EVENT -> ticks.add(readTick(record, sequence, warmup = true, name, lineNumber))
                         CANDLE_EVENT -> candles.add(readCandle(record, sequence, name, lineNumber))
+                        STREAM_CANDLE_EVENT ->
+                            streamCandles.add(readStreamCandle(record, sequence, name, lineNumber))
                     }
                 }
             }
@@ -157,8 +162,17 @@ internal class GoldenReplayDataMaterializer(
         require(candles.size.toLong() == requireLong(counts, "candles", "manifest.json", 1L)) {
             "golden candle count does not match manifest"
         }
+        val expectedStreamCandles = optionalLong(counts, "streamCandles", "manifest.json", 1L) ?: 0L
+        require(streamCandles.size.toLong() == expectedStreamCandles) {
+            "golden stream candle count does not match manifest"
+        }
         require(ticks.any { !it.warmup }) { "golden bundle has no live ticks" }
-        return Capture(manifest, ticks.sortedWith(compareBy({ it.tick.timestamp }, { it.sequence })), candles)
+        return Capture(
+            manifest,
+            ticks.sortedWith(compareBy({ it.tick.timestamp }, { it.sequence })),
+            candles,
+            streamCandles,
+        )
     }
 
     private fun readTick(
@@ -187,7 +201,37 @@ internal class GoldenReplayDataMaterializer(
         require(value.bid == null || value.ask == null || value.bid <= value.ask) {
             "crossed tick quote at $source:$lineNumber"
         }
-        return RecordedTick(sequence, warmup, value)
+        val sourceTimeframeMs =
+            if (warmup) optionalLong(record, "sourceTimeframeMs", source, lineNumber) else null
+        require(sourceTimeframeMs == null || sourceTimeframeMs > 0L) {
+            "invalid warmup sourceTimeframeMs at $source:$lineNumber"
+        }
+        return RecordedTick(sequence, warmup, sourceTimeframeMs, value)
+    }
+
+    private fun readStreamCandle(
+        record: JsonObject,
+        sequence: Long,
+        source: String,
+        lineNumber: Long,
+    ): RecordedCandle {
+        val broker = requireText(record, "broker", source, lineNumber)
+        val timeframe = requireText(record, "timeframe", source, lineNumber)
+        val recorded =
+            readCandle(
+                record,
+                sequence,
+                source,
+                lineNumber,
+                provenance = CAPTURED_STREAM_CANDLE_EVENT,
+            )
+        val symbolBroker = splitSymbol(recorded.candle.symbol).first
+        require(symbolBroker == broker) { "stream candle broker mismatch at $source:$lineNumber" }
+        val window = TimeWindow.parse(timeframe)
+        require(recorded.candle.endTime - recorded.candle.startTime == window.durationMs) {
+            "stream candle timeframe mismatch at $source:$lineNumber"
+        }
+        return recorded
     }
 
     private fun readCandle(
@@ -195,6 +239,7 @@ internal class GoldenReplayDataMaterializer(
         sequence: Long,
         source: String,
         lineNumber: Long,
+        provenance: String = CAPTURED_CANDLE_EVENT,
     ): RecordedCandle {
         val symbol = requireQktSymbol(record, source, lineNumber)
         val value =
@@ -225,8 +270,76 @@ internal class GoldenReplayDataMaterializer(
             "invalid candle OHLC at $source:$lineNumber"
         }
         require(candle.volume.signum() >= 0) { "negative candle volume at $source:$lineNumber" }
-        return RecordedCandle(sequence, candle)
+        return RecordedCandle(sequence, candle, provenance)
     }
+
+    private fun replayCandles(capture: Capture): List<RecordedCandle> {
+        val merged = linkedMapOf<BarIdentity, RecordedCandle>()
+        for (record in capture.candles + capture.streamCandles + rehydrateWarmupCandles(capture.ticks)) {
+            val candle = record.candle
+            val identity = BarIdentity(candle.symbol, candle.startTime, candle.endTime)
+            val existing = merged[identity]
+            if (existing == null) {
+                merged[identity] = record
+                continue
+            }
+            require(sameCandle(existing.candle, candle)) {
+                "conflicting golden candles for $identity"
+            }
+            if (provenancePriority(record.provenance) > provenancePriority(existing.provenance)) {
+                merged[identity] = record
+            }
+        }
+        return merged.values.sortedWith(compareBy({ it.candle.startTime }, { it.sequence }))
+    }
+
+    private fun rehydrateWarmupCandles(records: List<RecordedTick>): List<RecordedCandle> =
+        records
+            .filter { it.warmup && it.sourceTimeframeMs != null }
+            .groupBy { it.tick.symbol to checkNotNull(it.sourceTimeframeMs) }
+            .flatMap { (_, streamRecords) ->
+                val timeframeMs = checkNotNull(streamRecords.first().sourceTimeframeMs)
+                require(timeframeMs % 1_000L == 0L) { "unsupported sub-second warmup timeframe: ${timeframeMs}ms" }
+                val emitted = mutableListOf<RecordedCandle>()
+                val sequence = streamRecords.minOf { it.sequence }
+                val aggregator =
+                    CandleAggregator.standalone(TimeWindow(timeframeMs)) { candle ->
+                        emitted.add(RecordedCandle(sequence, candle, REHYDRATED_WARMUP_TICKS))
+                    }
+                val sorted = streamRecords.sortedWith(compareBy({ it.tick.timestamp }, { it.sequence }))
+                for (record in sorted) aggregator.onTick(record.tick)
+                val lastTick = sorted.last().tick.timestamp
+                aggregator.flushClosed(lastTick + timeframeMs)
+                emitted
+            }
+
+    private fun sameCandle(
+        left: Candle,
+        right: Candle,
+    ): Boolean =
+        left.symbol == right.symbol &&
+            left.startTime == right.startTime &&
+            left.endTime == right.endTime &&
+            left.open.compareTo(right.open) == 0 &&
+            left.high.compareTo(right.high) == 0 &&
+            left.low.compareTo(right.low) == 0 &&
+            left.close.compareTo(right.close) == 0 &&
+            left.volume.compareTo(right.volume) == 0 &&
+            nullableDecimalEquals(left.bid, right.bid) &&
+            nullableDecimalEquals(left.ask, right.ask)
+
+    private fun nullableDecimalEquals(
+        left: BigDecimal?,
+        right: BigDecimal?,
+    ): Boolean = left == null && right == null || left != null && right != null && left.compareTo(right) == 0
+
+    private fun provenancePriority(provenance: String): Int =
+        when (provenance) {
+            CAPTURED_STREAM_CANDLE_EVENT -> 3
+            CAPTURED_CANDLE_EVENT -> 2
+            REHYDRATED_WARMUP_TICKS -> 1
+            else -> 0
+        }
 
     private fun writeTickStore(
         root: Path,
@@ -293,20 +406,21 @@ internal class GoldenReplayDataMaterializer(
     private fun writeReplayManifest(
         root: Path,
         capture: Capture,
+        replayCandles: List<RecordedCandle>,
     ) {
         val liveTicks = capture.ticks.filterNot { it.warmup }
         val firstLiveMs = liveTicks.minOf { it.tick.timestamp }
         val lastLiveMs = liveTicks.maxOf { it.tick.timestamp }
         val containingStarts =
-            capture.candles
+            replayCandles
                 .map { it.candle }
                 .filter { firstLiveMs >= it.startTime && firstLiveMs < it.endTime }
                 .map { it.startTime }
-        val fromMs = containingStarts.minOrNull() ?: firstLiveMs
+        val fromMs = containingStarts.maxOrNull() ?: firstLiveMs
         val toMs =
             maxOf(
                 lastLiveMs + 1L,
-                capture.candles.maxOfOrNull { it.candle.endTime } ?: lastLiveMs + 1L,
+                replayCandles.maxOfOrNull { it.candle.endTime } ?: lastLiveMs + 1L,
             )
         val symbols =
             capture.ticks
@@ -314,10 +428,16 @@ internal class GoldenReplayDataMaterializer(
                 .toSet()
                 .sorted()
         val timeframes =
-            capture.candles
+            replayCandles
                 .map { TimeWindow(it.candle.endTime - it.candle.startTime).canonicalSpec() }
                 .toSet()
                 .sorted()
+        val materializedBars =
+            replayCandles
+                .groupBy {
+                    TimeWindow(it.candle.endTime - it.candle.startTime).canonicalSpec() to it.provenance
+                }.entries
+                .sortedWith(compareBy({ it.key.first }, { it.key.second }))
         val sourceManifest = capture.manifest
         val sourceSession = requireText(sourceManifest, "session", "manifest.json", 1L)
         val sourceCaptureGitSha = requireText(sourceManifest, "captureGitSha", "manifest.json", 1L)
@@ -338,9 +458,20 @@ internal class GoldenReplayDataMaterializer(
                 append(", \"toUtc\": ").append(jsonString(Instant.ofEpochMilli(toMs).toString())).append("},\n")
                 append("  \"counts\": {\"ticks\": ").append(liveTicks.size)
                 append(", \"warmupTicks\": ").append(capture.ticks.size - liveTicks.size)
-                append(", \"candles\": ").append(capture.candles.size).append("},\n")
+                append(", \"candles\": ").append(capture.candles.size)
+                append(", \"streamCandles\": ").append(capture.streamCandles.size)
+                append(", \"materializedCandles\": ").append(replayCandles.size).append("},\n")
                 append("  \"symbols\": [").append(symbols.joinToString(",") { jsonString(it) }).append("],\n")
-                append("  \"timeframes\": [").append(timeframes.joinToString(",") { jsonString(it) }).append("]\n")
+                append("  \"timeframes\": [").append(timeframes.joinToString(",") { jsonString(it) }).append("],\n")
+                append("  \"materializedBars\": [\n")
+                materializedBars.forEachIndexed { index, (key, records) ->
+                    append("    {\"timeframe\": ").append(jsonString(key.first))
+                    append(", \"provenance\": ").append(jsonString(key.second))
+                    append(", \"count\": ").append(records.size).append('}')
+                    if (index != materializedBars.lastIndex) append(',')
+                    append('\n')
+                }
+                append("  ]\n")
                 append("}\n")
             }
         val file = root.resolve("golden-replay-manifest.json")
@@ -393,11 +524,19 @@ internal class GoldenReplayDataMaterializer(
         source: String,
         lineNumber: Long,
     ): Long =
-        record[field]
-            ?.jsonPrimitive
-            ?.contentOrNull
-            ?.toLongOrNull()
+        optionalLong(record, field, source, lineNumber)
             ?: throw IllegalArgumentException("missing numeric $field at $source:$lineNumber")
+
+    private fun optionalLong(
+        record: JsonObject,
+        field: String,
+        source: String,
+        lineNumber: Long,
+    ): Long? {
+        val raw = record[field]?.jsonPrimitive?.contentOrNull ?: return null
+        return raw.toLongOrNull()
+            ?: throw IllegalArgumentException("invalid numeric $field at $source:$lineNumber")
+    }
 
     private fun requireDecimal(
         record: JsonObject,
@@ -486,18 +625,27 @@ internal class GoldenReplayDataMaterializer(
     private data class RecordedTick(
         val sequence: Long,
         val warmup: Boolean,
+        val sourceTimeframeMs: Long?,
         val tick: Tick,
     )
 
     private data class RecordedCandle(
         val sequence: Long,
         val candle: Candle,
+        val provenance: String,
     )
 
     private data class Capture(
         val manifest: JsonObject,
         val ticks: List<RecordedTick>,
         val candles: List<RecordedCandle>,
+        val streamCandles: List<RecordedCandle>,
+    )
+
+    private data class BarIdentity(
+        val symbol: String,
+        val startTimeMs: Long,
+        val endTimeMs: Long,
     )
 
     private data class BarKey(
@@ -510,5 +658,9 @@ internal class GoldenReplayDataMaterializer(
         const val TICK_EVENT = "com.qkt.events.TickEvent"
         const val WARMUP_TICK_EVENT = "com.qkt.events.WarmupTickEvent"
         const val CANDLE_EVENT = "com.qkt.events.CandleEvent"
+        const val STREAM_CANDLE_EVENT = "com.qkt.events.StreamCandleEvent"
+        const val CAPTURED_CANDLE_EVENT = "CAPTURED_CANDLE_EVENT"
+        const val CAPTURED_STREAM_CANDLE_EVENT = "CAPTURED_STREAM_CANDLE_EVENT"
+        const val REHYDRATED_WARMUP_TICKS = "REHYDRATED_WARMUP_TICKS"
     }
 }

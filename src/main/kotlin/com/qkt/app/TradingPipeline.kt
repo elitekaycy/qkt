@@ -18,6 +18,7 @@ import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
@@ -269,6 +270,7 @@ class TradingPipeline(
 
         bus.subscribe<CandleEvent> { e -> preCandle(e.candle) }
 
+        val auditedHubKeys = mutableSetOf<com.qkt.dsl.compile.HubKey>()
         strategies.forEach { (strategyId, strategy) ->
             tradeHistory.restore(strategyId)
             val ctx =
@@ -397,6 +399,13 @@ class TradingPipeline(
                 val hubKeys = strategy.declaredStreams.values.toSet() + strategy.retentionByKey.keys
                 for (key in hubKeys) {
                     candleHub.register(key, strategy.retentionByKey[key] ?: 1, strategyId)
+                }
+                for (key in strategy.declaredStreams.values) {
+                    if (auditedHubKeys.add(key)) {
+                        candleHub.onClosed(key, STREAM_AUDIT_OWNER) { candle ->
+                            bus.publish(StreamCandleEvent(key.broker, key.timeframe, candle))
+                        }
+                    }
                 }
                 for (key in strategy.declaredStreams.values) {
                     candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
@@ -712,6 +721,8 @@ class TradingPipeline(
     private companion object {
         /** Log cadence for malformed-tick drops — first occurrence, then every Nth. */
         const val MALFORMED_TICK_LOG_EVERY: Long = 1000L
+
+        const val STREAM_AUDIT_OWNER: String = "_qkt_stream_audit"
     }
 
     /** Count of ticks dropped by [ingest]'s validation floor. */
@@ -756,8 +767,13 @@ class TradingPipeline(
     /** Late ticks rejected after their candle was finalized. */
     fun droppedLateTicks(): Long = windowAggregator?.droppedLateTicks ?: 0L
 
-    fun ingestForWarmup(tick: Tick) {
-        bus.publish(WarmupTickEvent(tick))
+    fun ingestForWarmup(tick: Tick) = ingestForWarmup(tick, sourceTimeframeMs = null)
+
+    internal fun ingestForWarmup(
+        tick: Tick,
+        sourceTimeframeMs: Long?,
+    ) {
+        bus.publish(WarmupTickEvent(tick, sourceTimeframeMs = sourceTimeframeMs))
     }
 
     private fun typedVenueCostAmount(

@@ -185,6 +185,7 @@ class GoldenCommand(
         var ticks = 0L
         var warmupTicks = 0L
         var candles = 0L
+        var streamCandles = 0L
         var fills = 0L
         val filledOrderIds = mutableSetOf<String>()
         val filledBrokerOrderIds = mutableSetOf<String>()
@@ -212,6 +213,12 @@ class GoldenCommand(
                             requireStructuredCandle(record, file, lineNumber)
                             candles += 1L
                         }
+                        "com.qkt.events.StreamCandleEvent" -> {
+                            requireText(record, "broker", file, lineNumber)
+                            requireText(record, "timeframe", file, lineNumber)
+                            requireStructuredCandle(record, file, lineNumber)
+                            streamCandles += 1L
+                        }
                         "com.qkt.events.BrokerEvent.OrderFilled",
                         "com.qkt.events.BrokerEvent.OrderPartiallyFilled",
                         -> {
@@ -233,7 +240,17 @@ class GoldenCommand(
             }
         }
         require(first != Long.MAX_VALUE) { "engine audit journal is empty" }
-        return AuditSummary(first, last, ticks, warmupTicks, candles, fills, filledOrderIds, filledBrokerOrderIds)
+        return AuditSummary(
+            first,
+            last,
+            ticks,
+            warmupTicks,
+            candles,
+            streamCandles,
+            fills,
+            filledOrderIds,
+            filledBrokerOrderIds,
+        )
     }
 
     private fun requireStructuredTick(
@@ -402,6 +419,7 @@ class GoldenCommand(
             append("  \"counts\": {\"ticks\": ").append(audit.tickCount)
             append(", \"warmupTicks\": ").append(audit.warmupTickCount)
             append(", \"candles\": ").append(audit.candleCount)
+            append(", \"streamCandles\": ").append(audit.streamCandleCount)
             append(", \"fills\": ").append(audit.fillCount)
             append(", \"gatewayExchanges\": ").append(transport.exchangeCount)
             append(", \"linkedPlacements\": ").append(transport.linkedPlacements)
@@ -530,6 +548,7 @@ class GoldenCommand(
         val tickCount: Long,
         val warmupTickCount: Long,
         val candleCount: Long,
+        val streamCandleCount: Long,
         val fillCount: Long,
         val filledOrderIds: Set<String>,
         val filledBrokerOrderIds: Set<String>,

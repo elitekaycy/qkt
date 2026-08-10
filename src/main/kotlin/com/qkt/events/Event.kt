@@ -34,12 +34,23 @@ data class TickEvent(
  */
 data class WarmupTickEvent(
     val tick: Tick,
+    /** Source candle window used to synthesize this tick, when warmup came from bars. */
+    val sourceTimeframeMs: Long? = null,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,
 ) : Event
 
 /** A completed candle published by the aggregator after its window closes. */
 data class CandleEvent(
+    val candle: Candle,
+    override val timestamp: Long = 0L,
+    override val sequenceId: Long = 0L,
+) : Event
+
+/** A completed candle from one exact broker/symbol/timeframe DSL stream. */
+data class StreamCandleEvent(
+    val broker: String,
+    val timeframe: String,
     val candle: Candle,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,

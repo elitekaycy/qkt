@@ -8,6 +8,7 @@ import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
 import com.qkt.events.OrderEvent
+import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.OrderRequest
@@ -51,6 +52,7 @@ class EngineAuditJournalTest {
                     bidVolume = Money.of("3"),
                     askVolume = Money.of("4"),
                 ),
+                sourceTimeframeMs = 300_000L,
                 timestamp = clock.now(),
             ),
         )
@@ -68,6 +70,24 @@ class EngineAuditJournalTest {
                     bid = Money.of("1999"),
                     ask = Money.of("2001"),
                 ),
+                timestamp = clock.now(),
+            ),
+        )
+        journal.append(
+            StreamCandleEvent(
+                broker = "EXNESS",
+                timeframe = "5m",
+                candle =
+                    Candle(
+                        symbol = "EXNESS:XAUUSD",
+                        open = Money.of("1990"),
+                        high = Money.of("2005"),
+                        low = Money.of("1985"),
+                        close = Money.of("2000"),
+                        volume = Money.of("10"),
+                        startTime = clock.now() - 300_000L,
+                        endTime = clock.now(),
+                    ),
                 timestamp = clock.now(),
             ),
         )
@@ -90,12 +110,15 @@ class EngineAuditJournalTest {
             .contains("\"tick\":{\"timestampMs\":1700000000000")
             .contains("\"bid\":\"1999.00000000\"")
             .contains("\"eventType\":\"com.qkt.events.WarmupTickEvent\"")
+            .contains("\"sourceTimeframeMs\":300000")
             .contains("\"timestampMs\":1699999940000")
             .contains("\"bidVolume\":\"3.00000000\"")
             .contains("\"eventType\":\"com.qkt.events.CandleEvent\"")
             .contains("\"candle\":{\"startTimeMs\":1699999940000,\"endTimeMs\":1700000000000")
             .contains("\"open\":\"1990.00000000\"")
             .contains("\"volume\":\"10.00000000\"")
+            .contains("\"eventType\":\"com.qkt.events.StreamCandleEvent\"")
+            .contains("\"broker\":\"EXNESS\",\"timeframe\":\"5m\"")
             .contains("\"fill\":{\"side\":\"BUY\"")
             .contains("\"brokerOrderId\":\"b-1\"")
     }

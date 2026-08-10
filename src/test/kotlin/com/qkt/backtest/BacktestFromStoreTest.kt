@@ -94,6 +94,8 @@ class BacktestFromStoreTest {
                 .single()
                 .trade.timestamp,
         ).isEqualTo(from.toEpochMilli() + 60_000L)
+        assertThat(result.inputSummary?.streamCandles)
+            .containsEntry("BACKTEST:EURUSD:1m", 2L)
     }
 
     @Test

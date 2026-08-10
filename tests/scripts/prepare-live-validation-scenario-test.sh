@@ -114,6 +114,9 @@ grep -F '.captureGitSha as $capture' "$repo_root/scripts/live-validation/run-mar
 grep -F 'maxDroppedTicks' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 grep -F 'dropped live tick(s)' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 grep -F 'TICK_PROCESSING.count > 0' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
+grep -F -- '--read-only' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
+grep -F 'com.qkt.events.StreamCandleEvent' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
+grep -F '.counts.mutations == 0' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 
 container_script="$repo_root/scripts/live-validation/run-container-load.sh"
 bash -n "$container_script"
@@ -128,8 +131,15 @@ fi
 grep -F 'repository must be clean' "$container_script" >/dev/null
 grep -F 'Docker image is not built from' "$container_script" >/dev/null
 grep -F 'broker credential was persisted in retained artifacts' "$container_script" >/dev/null
-if rg --quiet -- '-Xmx|-Xms|MaxRAMPercentage|--memory(=|[[:space:]])' "$container_script"; then
-    echo 'container runner adds a JVM or container memory restriction' >&2
+grep -F 'health-during-peer-restart.jsonl' "$container_script" >/dev/null
+grep -F 'com.qkt.events.StreamCandleEvent' "$container_script" >/dev/null
+grep -F 'sourceTimeframeMs' "$container_script" >/dev/null
+grep -F 'transport journal reported dropped records' "$container_script" >/dev/null
+grep -F 'transport crossed magic ownership' "$container_script" >/dev/null
+grep -F 'daemon control token was persisted' "$container_script" >/dev/null
+grep -F 'maxAggregateMemoryKiB' "$container_script" >/dev/null
+if rg --quiet -- '-Xmx|-Xms|MaxRAMPercentage|MaxRAM=|JAVA_TOOL_OPTIONS=|JDK_JAVA_OPTIONS=|--memory(=|[[:space:]])|--cpus(=|[[:space:]])|--pids-limit|--cpuset-cpus' "$container_script"; then
+    echo 'container runner adds a JVM or container resource restriction' >&2
     exit 1
 fi
 
@@ -145,6 +155,13 @@ if bash "$comparison_script" \
     exit 1
 fi
 grep -F 'required file not found:' "$tmp/no-golden.out" >/dev/null
+
+readonly_comparison_script="$repo_root/scripts/live-validation/compare-readonly-replay.sh"
+bash -n "$readonly_comparison_script"
+bash "$readonly_comparison_script" --help | grep -F 'plain-bar paper modes' >/dev/null
+grep -F 'capture and replay builds differ' "$readonly_comparison_script" >/dev/null
+grep -F '.inputSummary.liveTicks == $ticks' "$readonly_comparison_script" >/dev/null
+grep -F 'M1/M5 traces differ from live' "$readonly_comparison_script" >/dev/null
 
 if bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \

@@ -271,6 +271,53 @@ audit_events="$(awk 'END {print NR}' "${audit_journals[@]}")"
 transport_events="$(awk 'END {print NR}' "${transport_journals[@]}")"
 candle_events="$(jq -r 'select(.eventType == "com.qkt.events.CandleEvent") | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
 [ "$candle_events" -ge 2 ] || fail "audit journal did not retain closed candle events"
+warmup_tick_events="$(jq -r 'select(.eventType == "com.qkt.events.WarmupTickEvent") | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
+live_tick_events="$(jq -r 'select(.eventType == "com.qkt.events.TickEvent") | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
+stream_candle_events="$(jq -r 'select(.eventType == "com.qkt.events.StreamCandleEvent") | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
+[ "$warmup_tick_events" -gt 0 ] || fail "audit journal did not retain warmup tick events"
+[ "$live_tick_events" -gt 0 ] || fail "audit journal did not retain live tick events"
+for timeframe in 1m 5m; do
+    jq -e --arg timeframe "$timeframe" '
+        select(
+            .eventType == "com.qkt.events.StreamCandleEvent" and
+            .timeframe == $timeframe and
+            .symbol == "EXNESS:EURUSD"
+        )
+    ' "${audit_journals[@]}" >/dev/null || fail "audit journal did not retain an EXNESS:EURUSD $timeframe stream candle"
+done
+
+qkt_commit="$(jq -r '.qktCommit' "$scenario/scenario.json")"
+golden_zip="$evidence/golden.zip"
+golden_manifest="$evidence/golden-manifest.json"
+"$cli" golden capture \
+    --session "$strategy_name" \
+    --state-dir "$scenario/state" \
+    --out "$golden_zip" \
+    --read-only > "$evidence/golden-capture.log"
+unzip -p "$golden_zip" manifest.json > "$golden_manifest"
+jq -e \
+    --arg strategy "$strategy_name" \
+    --arg qktCommit "$qkt_commit" '
+        .schemaVersion == 2 and
+        .kind == "MT5_GOLDEN_CAPTURE" and
+        .captureMode == "READ_ONLY" and
+        .session == $strategy and
+        (.captureGitSha as $capture | ($qktCommit | startswith($capture))) and
+        .counts.ticks > 0 and
+        .counts.warmupTicks > 0 and
+        .counts.candles > 0 and
+        .counts.streamCandles > 0 and
+        .counts.fills == 0 and
+        .counts.gatewayExchanges > 0 and
+        .counts.linkedPlacements == 0 and
+        .counts.mutations == 0
+    ' "$golden_manifest" >/dev/null || fail "golden capture does not match the completed read-only session"
+while IFS=$'\t' read -r path expected_sha; do
+    actual_sha="$(unzip -p "$golden_zip" "$path" | sha256sum | awk '{print $1}')"
+    [ "$actual_sha" = "$expected_sha" ] || fail "golden capture entry hash mismatch: $path"
+done < <(jq -r '.entries[] | [.path,.sha256] | @tsv' "$golden_manifest")
+golden_counts="$(jq -c '.counts' "$golden_manifest")"
+golden_sha="$(sha256sum "$golden_zip" | awk '{print $1}')"
 
 resource_samples="$(($(wc -l < "$evidence/resources.csv") - 1))"
 [ "$resource_samples" -gt 0 ] || fail "daemon resource sampling produced no observations"
@@ -285,7 +332,6 @@ max_rss_kb="$(awk -F, 'NR > 1 && $3 > max {max=$3} END {print max + 0}' "$eviden
 max_threads="$(awk -F, 'NR > 1 && $4 > max {max=$4} END {print max + 0}' "$evidence/resources.csv")"
 qkt_version="$("$cli" --version)"
 gateway_version="$(jq -r '.version' "$evidence/gateway-health.json")"
-qkt_commit="$(jq -r '.qktCommit' "$scenario/scenario.json")"
 qkt_dirty="$(jq -r '.qktDirty' "$scenario/scenario.json")"
 initial_leverage="$(jq -r '.leverage' "$evidence/gateway-account-initial.json")"
 final_leverage="$(jq -r '.leverage' "$evidence/gateway-account-final.json")"
@@ -300,8 +346,13 @@ jq -n \
     --arg staleEvents "$stale_events" \
     --arg recoveryEvents "$recovery_events" \
     --arg auditEvents "$audit_events" \
+    --arg warmupTickEvents "$warmup_tick_events" \
+    --arg liveTickEvents "$live_tick_events" \
     --arg candleEvents "$candle_events" \
+    --arg streamCandleEvents "$stream_candle_events" \
     --arg transportEvents "$transport_events" \
+    --argjson goldenCounts "$golden_counts" \
+    --arg goldenSha "$golden_sha" \
     --arg resourceSamples "$resource_samples" \
     --arg healthSamples "$health_samples" \
     --arg maxInboundQueue "$max_inbound_queue" \
@@ -332,8 +383,12 @@ jq -n \
           staleEvents:($staleEvents|tonumber),
           recoveredStaleEvents:($recoveryEvents|tonumber),
           auditEvents:($auditEvents|tonumber),
+          warmupTickEvents:($warmupTickEvents|tonumber),
+          liveTickEvents:($liveTickEvents|tonumber),
           candleEvents:($candleEvents|tonumber),
+          streamCandleEvents:($streamCandleEvents|tonumber),
           transportEvents:($transportEvents|tonumber),
+          golden:($goldenCounts + {sha256:$goldenSha}),
           resources:{samples:($resourceSamples|tonumber),maxCpuPercent:($maxCpuPercent|tonumber),maxRssKb:($maxRssKb|tonumber),maxThreads:($maxThreads|tonumber)},
           health:{samples:($healthSamples|tonumber),maxInboundQueue:($maxInboundQueue|tonumber),maxDroppedTicks:($maxDroppedTicks|tonumber)},
           latency:{tickProcessing:$tickLatency},

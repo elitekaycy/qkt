@@ -12,6 +12,7 @@ import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
 import com.qkt.backtest.ExecutionSimulationConfig
+import com.qkt.backtest.ReplayInputReport
 import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.ReturnAutocorrCollector
 import com.qkt.backtest.SampleCadence
@@ -26,7 +27,11 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
+import com.qkt.events.CandleEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.StreamCandleEvent
+import com.qkt.events.TickEvent
+import com.qkt.events.WarmupTickEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
@@ -174,6 +179,11 @@ class ReplayEngine(
     private val halts = mutableListOf<com.qkt.events.RiskEvent.Halted>()
     private val breakerTrips = mutableListOf<com.qkt.risk.RunawayBreakerTrip>()
     private val tape = mutableListOf<TapeEvent>()
+    private var liveTicksProcessed = 0L
+    private var warmupTicksProcessed = 0L
+    private var warmupCandlesEmitted = 0L
+    private var liveCandlesEmitted = 0L
+    private val streamCandlesEmitted = mutableMapOf<String, Long>()
 
     init {
         require(this.cadence != SampleCadence.CANDLE_CLOSE || candleWindow != null) {
@@ -196,6 +206,19 @@ class ReplayEngine(
             strategyPnL.setStartingBalance(id, startingBalances[id] ?: startingBalance)
         }
         val bus = EventBus(clock, sequencer)
+        bus.subscribe<TickEvent> { liveTicksProcessed++ }
+        bus.subscribe<WarmupTickEvent> { warmupTicksProcessed++ }
+        bus.subscribe<CandleEvent> { event ->
+            if (event.candle.endTime <= initialTimestamp) {
+                warmupCandlesEmitted++
+            } else {
+                liveCandlesEmitted++
+            }
+        }
+        bus.subscribe<StreamCandleEvent> { event ->
+            val key = "${event.broker}:${event.candle.symbol.substringAfter(':')}:${event.timeframe}"
+            streamCandlesEmitted[key] = (streamCandlesEmitted[key] ?: 0L) + 1L
+        }
         val engine = Engine(bus, priceTracker)
         val candleHub =
             com.qkt.dsl.compile
@@ -680,6 +703,17 @@ class ReplayEngine(
             bookRisk = bookRiskMonitor.result(annualizationFactor),
             accounting = accounting.snapshot(),
             finalPositionsByStrategy = strategyPositions.allByStrategy(),
+            inputSummary =
+                ReplayInputReport(
+                    attemptedFeedTicks = ticksIngested,
+                    liveTicks = liveTicksProcessed,
+                    warmupTicks = warmupTicksProcessed,
+                    warmupCandles = warmupCandlesEmitted,
+                    liveCandles = liveCandlesEmitted,
+                    malformedTicks = pipeline.malformedTickCount.get(),
+                    droppedLateTicks = pipeline.droppedLateTicks(),
+                    streamCandles = streamCandlesEmitted.toSortedMap(),
+                ),
             runawayBreaker =
                 com.qkt.backtest.RunawayBreakerReport(
                     enforceLiveBreakers = enforceLiveBreakers,

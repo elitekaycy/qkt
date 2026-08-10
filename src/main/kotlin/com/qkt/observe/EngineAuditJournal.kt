@@ -8,6 +8,7 @@ import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
@@ -95,8 +96,16 @@ class EngineAuditJournal(
                 orderId(event)?.let { append(",\"orderId\":").append(jsonString(it)) }
                 symbol(event)?.let { append(",\"symbol\":").append(jsonString(it)) }
                 if (event is TickEvent) appendTick(event.tick)
-                if (event is WarmupTickEvent) appendTick(event.tick)
+                if (event is WarmupTickEvent) {
+                    event.sourceTimeframeMs?.let { append(",\"sourceTimeframeMs\":").append(it) }
+                    appendTick(event.tick)
+                }
                 if (event is CandleEvent) appendCandle(event.candle)
+                if (event is StreamCandleEvent) {
+                    append(",\"broker\":").append(jsonString(event.broker))
+                    append(",\"timeframe\":").append(jsonString(event.timeframe))
+                    appendCandle(event.candle)
+                }
                 if (event is BrokerEvent.OrderFilled) appendFill(event)
                 if (event is BrokerEvent.OrderPartiallyFilled) appendPartialFill(event)
                 append(",\"payload\":").append(jsonString(event.toString()))
@@ -242,6 +251,7 @@ class EngineAuditJournal(
             is TickEvent -> event.tick.symbol
             is WarmupTickEvent -> event.tick.symbol
             is CandleEvent -> event.candle.symbol
+            is StreamCandleEvent -> event.candle.symbol
             else -> null
         }
 

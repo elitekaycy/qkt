@@ -95,6 +95,12 @@ require_file "$live_result"
 require_file "$bundle"
 require_file "$external_manifest"
 
+if [ "$(jq -r '.captureMode // "TRADING"' "$external_manifest")" = "READ_ONLY" ]; then
+    readonly_args=(--scenario "$scenario" --out "$output" --cli "$cli")
+    $verify_only && readonly_args+=(--verify-only)
+    exec "$repo_root/scripts/live-validation/compare-readonly-replay.sh" "${readonly_args[@]}"
+fi
+
 mapfile -d '' strategies < <(find "$scenario/strategies/armed" -maxdepth 1 -type f -name '*.qkt' -print0 | sort -z)
 [ "${#strategies[@]}" -eq 1 ] || fail "expected exactly one armed strategy, found ${#strategies[@]}"
 strategy_file="${strategies[0]}"

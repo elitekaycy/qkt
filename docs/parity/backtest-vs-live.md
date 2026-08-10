@@ -113,6 +113,12 @@ residuals must not be inferred from the single exact fill. `qkt backtest --chaos
 seeded stress preset; it does not claim to reproduce every gateway HTTP or venue-retcode sequence.
 Operational proof for a second MT5 profile remains tracked by #44.
 
+Strict read-only captures use the same comparator in a separate mode. Their engine
+journal records source-timeframe warmup ticks and exact DSL stream candles, allowing
+the materializer to retain M1 and M5 bar stores without mixing synthetic warmup
+streams. The comparator requires exact live/full-tick/plain-bar warmup and indicator
+traces plus flat accounting; it makes no order/fill claim.
+
 ## 2026-06-10 audit addendum — divergences this catalog was missing
 
 Rows surfaced by the full engine audit (#142, issues #356-#401). Items marked

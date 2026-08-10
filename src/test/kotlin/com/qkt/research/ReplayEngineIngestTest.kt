@@ -35,5 +35,25 @@ class ReplayEngineIngestTest {
         (1..5).forEach { i -> engine.ingest(Tick("X", Money.of((100 + i).toString()), i * 60_000L)) }
         assertThat(engine.ticksIngested).isEqualTo(5L)
         assertThat(engine.snapshot().global.tradeCount).isEqualTo(0)
+        assertThat(engine.snapshot().inputSummary?.liveTicks).isEqualTo(5L)
+    }
+
+    @Test
+    fun `input summary separates attempted ticks from ticks rejected by validation`() {
+        val engine =
+            ReplayEngine(
+                strategies = listOf("s" to noopStrategy),
+                feed = SequenceTickFeed(emptySequence()),
+                candleWindow = TimeWindow.ONE_MINUTE,
+            )
+
+        engine.ingest(Tick("X", Money.ZERO, 1_000L))
+        engine.ingest(Tick("X", Money.of("101"), 2_000L))
+
+        val inputs = engine.snapshot().inputSummary
+        assertThat(inputs?.attemptedFeedTicks).isEqualTo(2L)
+        assertThat(inputs?.liveTicks).isEqualTo(1L)
+        assertThat(inputs?.malformedTicks).isEqualTo(1L)
+        assertThat(inputs?.warmupTicks).isEqualTo(0L)
     }
 }

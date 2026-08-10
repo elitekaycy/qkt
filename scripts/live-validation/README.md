@@ -60,14 +60,26 @@ The observation takes at least 310 seconds so one M5 boundary must close. It:
 - starts the real daemon with only `strategies/readonly/` and retains M1/M5 traces;
 - samples process CPU, RSS, and thread count without adding JVM limits;
 - validates engine-audit and MT5-transport JSONL;
+- records exact DSL stream candles for both M1 and M5;
 - requires every stale-market-data episode to recover before shutdown;
 - proves no position, order, deal, balance, or equity change occurred; and
+- creates a strict read-only golden bundle with zero fills and zero mutating gateway calls;
 - removes the control token, scans for credential persistence, and writes size and
   SHA-256 manifests for every retained non-secret artifact.
 
-This is read-only feed, candle, indicator, daemon, journal, and resource evidence.
-It is not evidence for order/fill/accounting parity, sustained stress, QKT Insights,
-or production readiness; those remain later gates.
+Replay the sealed bundle offline through full-tick paper, full-tick MT5 simulation,
+and plain-bar paper modes:
+
+```bash
+scripts/live-validation/compare-golden-replay.sh \
+  --scenario /var/tmp/qkt-validation/run-001 \
+  --out /var/tmp/qkt-validation/run-001-replay
+```
+
+The comparison requires exact warmup and M1/M5 indicator traces, captured input
+counts in full-tick modes, timeframe-complete bar materialization, and zero trading
+or accounting output. This remains read-only evidence; order/fill parity, sustained
+stress, QKT Insights, and production readiness are later gates.
 
 ## Isolated Container Load And Restart
 

@@ -91,6 +91,20 @@ object ReportPrinter {
                 )
             }
         }
+        r.inputSummary?.let { inputs ->
+            out.println()
+            out.println("Replay inputs")
+            out.println("  feed ticks:      ${inputs.attemptedFeedTicks}")
+            out.println("  live ticks:      ${inputs.liveTicks}")
+            out.println("  warmup ticks:    ${inputs.warmupTicks}")
+            out.println("  warmup candles:  ${inputs.warmupCandles}")
+            out.println("  live candles:    ${inputs.liveCandles}")
+            out.println("  malformed ticks: ${inputs.malformedTicks}")
+            out.println("  late ticks:      ${inputs.droppedLateTicks}")
+            for ((stream, count) in inputs.streamCandles.toSortedMap()) {
+                out.println("  stream $stream: $count candles")
+            }
+        }
         out.println()
         out.println("Assumptions & conventions")
         out.println("  Execution:  ${executionModel(brokerKind)}")
@@ -316,6 +330,7 @@ object ReportPrinter {
         sb.append("},")
         sb.append("\"halts\":").append(r.halts.size).append(',')
         sb.append("\"runawayBreaker\":").append(runawayBreakerJson(r.runawayBreaker)).append(',')
+        sb.append("\"inputSummary\":").append(inputSummaryJson(r.inputSummary)).append(',')
         sb.append("\"cadence\":\"").append(r.cadence.name).append("\",")
         sb.append("\"conditionalAutocorr\":").append(conditionalAutocorrJson(r.conditionalAutocorr)).append(',')
         sb.append("\"tradeSummary\":").append(tradeSummaryJson(r)).append(',')
@@ -333,6 +348,26 @@ object ReportPrinter {
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
+    }
+
+    private fun inputSummaryJson(report: com.qkt.backtest.ReplayInputReport?): String {
+        if (report == null) return "null"
+        return buildString {
+            append("{\"attemptedFeedTicks\":").append(report.attemptedFeedTicks)
+            append(",\"liveTicks\":").append(report.liveTicks)
+            append(",\"warmupTicks\":").append(report.warmupTicks)
+            append(",\"warmupCandles\":").append(report.warmupCandles)
+            append(",\"liveCandles\":").append(report.liveCandles)
+            append(",\"malformedTicks\":").append(report.malformedTicks)
+            append(",\"droppedLateTicks\":").append(report.droppedLateTicks)
+            append(",\"streamCandles\":{")
+            report.streamCandles.entries.sortedBy { it.key }.forEachIndexed { index, (key, count) ->
+                if (index > 0) append(',')
+                append(jsonString(key)).append(':').append(count)
+            }
+            append('}')
+            append("}")
+        }
     }
 
     private fun runawayBreakerJson(report: com.qkt.backtest.RunawayBreakerReport?): String {

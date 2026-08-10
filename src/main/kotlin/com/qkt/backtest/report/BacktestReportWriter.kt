@@ -245,6 +245,7 @@ class BacktestReportWriter(
         sb.append("  \"schema\": \"qkt-backtest-result-v1\",\n")
         sb.append("  \"schemaVersion\": 1,\n")
         sb.append("  \"cadence\": ").append(ReportSerializer.jsonString(result.cadence.name)).append(",\n")
+        sb.append("  \"inputSummary\": ").append(renderInputSummary(result.inputSummary)).append(",\n")
         sb.append("  \"evidence\": ").append(result.evidence?.let(EvidenceJson::render) ?: "null").append(",\n")
         sb.append("  \"accounting\": ").append(renderAccounting(result.accounting)).append(",\n")
         sb.append("  \"artifacts\": ").append(renderArtifacts(result)).append(",\n")
@@ -272,6 +273,26 @@ class BacktestReportWriter(
         sb.append(",\n  \"runawayBreaker\": ").append(renderRunawayBreaker(result.runawayBreaker))
         sb.append("\n}")
         return sb.toString()
+    }
+
+    private fun renderInputSummary(report: com.qkt.backtest.ReplayInputReport?): String {
+        if (report == null) return "null"
+        return buildString {
+            append("{\"attemptedFeedTicks\": ").append(report.attemptedFeedTicks)
+            append(", \"liveTicks\": ").append(report.liveTicks)
+            append(", \"warmupTicks\": ").append(report.warmupTicks)
+            append(", \"warmupCandles\": ").append(report.warmupCandles)
+            append(", \"liveCandles\": ").append(report.liveCandles)
+            append(", \"malformedTicks\": ").append(report.malformedTicks)
+            append(", \"droppedLateTicks\": ").append(report.droppedLateTicks)
+            append(", \"streamCandles\": {")
+            report.streamCandles.entries.sortedBy { it.key }.forEachIndexed { index, (key, count) ->
+                if (index > 0) append(',')
+                append(ReportSerializer.jsonString(key)).append(':').append(count)
+            }
+            append('}')
+            append("}")
+        }
     }
 
     private fun renderRunawayBreaker(report: com.qkt.backtest.RunawayBreakerReport?): String {

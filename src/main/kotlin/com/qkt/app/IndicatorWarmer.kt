@@ -79,7 +79,7 @@ class IndicatorWarmer internal constructor(
                         tick.timestamp,
                     )}; symbol=$symbol"
                 }
-                pipeline.ingestForWarmup(tick)
+                pipeline.ingestForWarmup(tick, bars.window.durationMs)
             }
         }
     }
