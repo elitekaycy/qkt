@@ -31,6 +31,7 @@ internal object GeneratedStrategyReplay {
     fun assertTickAndBarParity(
         path: Path,
         closes: List<String>,
+        expectedTradeCount: Int = 1,
     ) {
         val candles =
             (closes + closes.last()).mapIndexed { index, close -> candle(close, index) }
@@ -39,6 +40,7 @@ internal object GeneratedStrategyReplay {
             mapOf(SYMBOL to candles),
             window = TimeWindow.ONE_MINUTE,
             closeOnlyTicks = true,
+            expectedTradeCount = expectedTradeCount,
         )
     }
 
@@ -47,6 +49,7 @@ internal object GeneratedStrategyReplay {
         candlesBySymbol: Map<String, List<Candle>>,
         window: TimeWindow,
         closeOnlyTicks: Boolean = false,
+        expectedTradeCount: Int = 1,
     ) {
         val symbols = candlesBySymbol.keys.toList()
         val allCandles = candlesBySymbol.values.flatten()
@@ -84,10 +87,10 @@ internal object GeneratedStrategyReplay {
 
         assertThat(tickResult.rejections).isEmpty()
         assertThat(barResult.rejections).isEmpty()
-        assertThat(tickResult.trades).hasSize(1)
-        assertThat(barResult.trades).hasSize(1)
-        assertThat(canonical(barResult.trades.single()))
-            .isEqualTo(canonical(tickResult.trades.single()))
+        assertThat(tickResult.trades).hasSize(expectedTradeCount)
+        assertThat(barResult.trades).hasSize(expectedTradeCount)
+        assertThat(barResult.trades.map(::canonical))
+            .isEqualTo(tickResult.trades.map(::canonical))
     }
 
     private fun canonical(record: TradeRecord): List<Any> =

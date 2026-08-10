@@ -95,7 +95,7 @@ internal object DslParityHarness {
                     },
                 positions =
                     backtestResult.finalPositionsByStrategy
-                        .getValue(strategyId)
+                        .getOrDefault(strategyId, emptyMap())
                         .values
                         .map(::positionState)
                         .sortedBy { it.symbol },
