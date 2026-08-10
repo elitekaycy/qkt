@@ -118,11 +118,10 @@ grep -F 'Docker image is not built from' "$runner" >/dev/null
 grep -F -- '--network host' "$runner" >/dev/null
 grep -F 'QKT_LATENCY_TRACKING=1' "$runner" >/dev/null
 grep -F 'QKT_STATE_DIR="$2"' "$runner" >/dev/null
-grep -F 'HostConfig.Memory == 0' "$runner" >/dev/null
-grep -F 'HostConfig.NanoCpus == 0' "$runner" >/dev/null
-grep -F 'HostConfig.CpuQuota == 0' "$runner" >/dev/null
-grep -F 'HostConfig.PidsLimit == null' "$runner" >/dev/null
-grep -F 'HostConfig.CpusetCpus == ""' "$runner" >/dev/null
+grep -F '.memoryBytes == 0 and .nanoCpus == 0 and .cpuQuota == 0' "$runner" >/dev/null
+grep -F '(.pidsLimit == null or .pidsLimit == 0) and .cpusetCpus == ""' "$runner" >/dev/null
+grep -F 'qkt-live-container-resources-v1' "$runner" >/dev/null
+grep -F 'credentialStoredInConfig:false,jvmOverrideEnvironmentPresent:false' "$runner" >/dev/null
 grep -F 'must be unset; this run does not restrict the JVM' "$runner" >/dev/null
 grep -F 'image config restricts or overrides the JVM' "$runner" >/dev/null
 grep -F 'trap cleanup EXIT' "$runner" >/dev/null
@@ -173,6 +172,8 @@ grep -F 'indicator trace side differs from the venue position' "$runner" >/dev/n
 grep -F 'symbolPointToleranceVerified:true' "$runner" >/dev/null
 grep -F 'm5StreamAndEvaluation:true' "$runner" >/dev/null
 grep -F 'indicatorTracesVerified:true' "$runner" >/dev/null
+grep -F 'unexpected runtime error' "$runner" >/dev/null
+grep -F 'operationalWarnings:{staleMarketDataGates:' "$runner" >/dev/null
 grep -F '[ "$latest_entry_ms" -lt "$earliest_exit_ms" ]' "$runner" >/dev/null
 grep -F '[ "$balance_delta" = "$deal_net" ]' "$runner" >/dev/null
 grep -F '.counts.fills == 2' "$runner" >/dev/null
@@ -181,6 +182,9 @@ grep -F '.counts.mutations == 3' "$runner" >/dev/null
 grep -F 'strategyOwnedClose:true' "$runner" >/dev/null
 grep -F 'schema:"qkt-live-multi-container-round-trip-v1"' "$runner" >/dev/null
 grep -F 'dockerResourceRestrictionsVerifiedAbsent:true' "$runner" >/dev/null
+grep -F 'caseArtifactManifests:[' "$runner" >/dev/null
+grep -F 'sha256sum --check SHA256SUMS' "$runner" >/dev/null
+grep -F 'publicationSafe:false,containsPrivateAccountMetadata:true' "$runner" >/dev/null
 grep -F 'broker credential was persisted in retained artifacts' "$runner" >/dev/null
 grep -F 'daemon control token was persisted in retained artifacts' "$runner" >/dev/null
 

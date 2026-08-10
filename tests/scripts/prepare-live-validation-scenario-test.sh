@@ -72,9 +72,14 @@ jq -e '
     .armedScenario.maximumEntries == 1 and .armedScenario.maximumExits == 1 and
     .armedScenario.closeWhen == "position!=0 and tradesToday>=1 and holdingDurationSeconds>=1" and
     .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
-    .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1
+    .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1 and
+    .armedScenario.maximumEntryAnchorDriftPoints == 20
 ' "$out/expected.json" >/dev/null
 jq -e '.credentialsStored == false and .executionState == "prepared" and (.qktDirty | type) == "boolean"' "$out/scenario.json" >/dev/null
+if grep -F './cleanup.json' "$out/SHA256SUMS" >/dev/null; then
+    echo 'prepared checksum manifest includes the mutable cleanup ledger' >&2
+    exit 1
+fi
 (cd "$out" && sha256sum --check SHA256SUMS >/dev/null)
 
 gbp_out="$tmp/gbp-scenario"

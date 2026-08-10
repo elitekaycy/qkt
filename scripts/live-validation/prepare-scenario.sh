@@ -301,7 +301,7 @@ EOF
 
 (
     cd "$output"
-    find . -type f ! -path './SHA256SUMS' -print0 |
+    find . -type f ! -path './SHA256SUMS' ! -path './cleanup.json' -print0 |
         sort -z |
         xargs -0 sha256sum > SHA256SUMS
 )

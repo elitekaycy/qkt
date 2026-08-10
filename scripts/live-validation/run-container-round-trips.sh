@@ -397,13 +397,24 @@ for index in 0 1; do
         rg --quiet '^(JAVA_OPTS|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS)='; then
         fail "container $index image config restricts or overrides the JVM"
     fi
-    docker inspect "${containers[$index]}" | jq -e '
-        .[0].HostConfig.Memory == 0 and
-        .[0].HostConfig.NanoCpus == 0 and
-        .[0].HostConfig.CpuQuota == 0 and
-        (.[0].HostConfig.PidsLimit == null or .[0].HostConfig.PidsLimit == 0) and
-        .[0].HostConfig.CpusetCpus == ""
-    ' >/dev/null || fail "container $index has an unexpected resource restriction"
+    docker inspect "${containers[$index]}" | jq \
+        --arg imageRef "$image" '
+        .[0] |
+        {
+          schema:"qkt-live-container-resources-v1",imageRef:$imageRef,imageId:.Image,
+          networkMode:.HostConfig.NetworkMode,user:.Config.User,
+          memoryBytes:.HostConfig.Memory,nanoCpus:.HostConfig.NanoCpus,cpuQuota:.HostConfig.CpuQuota,
+          pidsLimit:.HostConfig.PidsLimit,cpusetCpus:.HostConfig.CpusetCpus,
+          credentialStoredInConfig:false,jvmOverrideEnvironmentPresent:false
+        }
+    ' > "$output/evidence/container-resources-$index.json"
+    jq -e '
+        .networkMode == "host" and
+        .memoryBytes == 0 and .nanoCpus == 0 and .cpuQuota == 0 and
+        (.pidsLimit == null or .pidsLimit == 0) and .cpusetCpus == "" and
+        .credentialStoredInConfig == false and .jvmOverrideEnvironmentPresent == false
+    ' "$output/evidence/container-resources-$index.json" >/dev/null ||
+        fail "container $index has an unexpected resource restriction"
 done
 
 for index in 0 1; do
@@ -689,6 +700,10 @@ for index in 0 1; do
     has_live_timeframe_evidence "$index" || fail "scenario $index lacks matched live M1/M5 stream and strategy evaluation evidence"
 
     daemon_log="${scenarios[$index]}/logs/container-daemon.log"
+    unexpected_errors="$(awk '/ ERROR / && !/MarketDataGate - market data .* STALE:/ {count++} END {print count + 0}' "$daemon_log")"
+    [ "$unexpected_errors" -eq 0 ] || fail "scenario $index emitted an unexpected runtime error"
+    stale_market_data_gates="$(awk '/MarketDataGate - market data .* STALE:/ {count++} END {print count + 0}' "$daemon_log")"
+    feed_disconnect_warnings="$(awk '/LiveTickFeed source disconnected; waiting up to .* for reconnect/ {count++} END {print count + 0}' "$daemon_log")"
     raw_entry_traces="$(awk '/bounded indicator entry side=/ {count++} END {print count + 0}' "$daemon_log")"
     raw_exit_traces="$(awk '/bounded indicator exit signed_qty=/ {count++} END {print count + 0}' "$daemon_log")"
     [ "$raw_entry_traces" -eq 1 ] || fail "scenario $index did not retain exactly one indicator-entry trace"
@@ -864,6 +879,8 @@ for index in 0 1; do
         --argjson ticket "${tickets[$index]}" \
         --arg intentAnchor "$intent_anchor" \
         --arg entryAnchorDriftPoints "$entry_anchor_drift_points" \
+        --argjson staleMarketDataGates "$stale_market_data_gates" \
+        --argjson feedDisconnectWarnings "$feed_disconnect_warnings" \
         --argjson entryTimeMs "$(if [ "$index" -eq 0 ]; then printf '%s' "$entry_a_ms"; else printf '%s' "$entry_b_ms"; fi)" \
         --argjson exitTimeMs "$(if [ "$index" -eq 0 ]; then printf '%s' "$exit_a_ms"; else printf '%s' "$exit_b_ms"; fi)" \
         --argjson decisions "$decisions" --argjson links "$links" \
@@ -881,6 +898,7 @@ for index in 0 1; do
           traces:{indicatorEntry:true,indicatorExit:true},
           audit:{ruleDecisions:$decisions,decisionOrderLinks:$links,accepted:$accepted,filled:$filled,accounted:$accounted,rejected:0},
           transport:{orderPosts:1,protectionPosts:1,closePosts:1,mutations:$mutations},
+          operationalWarnings:{staleMarketDataGates:$staleMarketDataGates,feedDisconnectWarnings:$feedDisconnectWarnings},
           golden:{fills:2,linkedPlacements:1,mutations:3,sha256:$goldenSha256}
         }
     ' > "${evidences[$index]}/result.json"
@@ -898,6 +916,17 @@ for index in 0 1; do
     fi
     [ ! -e "${states[$index]}/daemon.pid" ] || unlink "${states[$index]}/daemon.pid"
 done
+
+for scenario in "${scenarios[@]}"; do
+    (
+        cd "$scenario"
+        find . -type f ! -path './RUN-SHA256SUMS' -print0 | sort -z | xargs -0 sha256sum > RUN-SHA256SUMS
+        sha256sum --check RUN-SHA256SUMS >/dev/null
+        sha256sum --check SHA256SUMS >/dev/null
+    )
+done
+case_a_manifest_sha="$(sha256sum "${scenarios[0]}/RUN-SHA256SUMS" | awk '{print $1}')"
+case_b_manifest_sha="$(sha256sum "${scenarios[1]}/RUN-SHA256SUMS" | awk '{print $1}')"
 
 for root in "$output" "${scenarios[0]}" "${scenarios[1]}"; do
     if printf '%s' "$QKT_BROKER_API_KEY" | rg --text --fixed-strings --quiet -f - "$root"; then
@@ -925,6 +954,8 @@ jq -n \
     --argjson overlapEndMs "$earliest_exit_ms" \
     --arg balanceDelta "$balance_delta" \
     --arg dealNet "$deal_net" \
+    --arg caseAManifestSha256 "$case_a_manifest_sha" \
+    --arg caseBManifestSha256 "$case_b_manifest_sha" \
     --slurpfile caseA "${evidences[0]}/result.json" \
     --slurpfile caseB "${evidences[1]}/result.json" '
     {
@@ -937,17 +968,16 @@ jq -n \
       ownershipVerified:true,strategyOwnedCloseVerified:true,accountReconciled:true,
       bracketDistancesVerified:true,timeframePathsVerified:true,indicatorTracesVerified:true,
       finalPositions:0,finalOrders:0,balanceDelta:$balanceDelta,ownedDealNet:$dealNet,
-      dockerResourceRestrictionsVerifiedAbsent:true,cases:[$caseA[0],$caseB[0]]
+      dockerResourceRestrictionsVerifiedAbsent:true,
+      publicationSafe:false,containsPrivateAccountMetadata:true,
+      caseArtifactManifests:[
+        {scenarioId:$caseA[0].scenarioId,manifest:"RUN-SHA256SUMS",sha256:$caseAManifestSha256},
+        {scenarioId:$caseB[0].scenarioId,manifest:"RUN-SHA256SUMS",sha256:$caseBManifestSha256}
+      ],
+      cases:[$caseA[0],$caseB[0]]
     }
 ' > "$output/evidence/result.json"
 
-for scenario in "${scenarios[@]}"; do
-    (
-        cd "$scenario"
-        find . -type f ! -path './RUN-SHA256SUMS' -print0 | sort -z | xargs -0 sha256sum > RUN-SHA256SUMS
-        sha256sum --check RUN-SHA256SUMS >/dev/null
-    )
-done
 (
     cd "$output"
     find . -type f ! -path './SHA256SUMS' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
