@@ -70,7 +70,7 @@ for required in \
     'entry fill accounting does not establish the 0.01 strategy position' \
     'exit fill accounting does not reduce the complete strategy position' \
     'armed runtime lacks live tick evidence' \
-    'armed runtime lacks matched M1/M5 bars and evaluations' \
+    'armed runtime lacked post-deployment matched M1/M5 bars and evaluations within $timeout_seconds seconds' \
     'collector observed a sequence gap or regression' \
     'Insights health reported dropped envelopes' \
     'Insights journal did not fully drain' \
@@ -84,6 +84,8 @@ for required in \
     'qkt_assert_no_retained_account_identity' \
     'qkt_count_cross_owner_causal_events' \
     'qkt_count_joined_rule_order_links' \
+    'qkt_has_post_deployment_matched_stream_evaluations' \
+    'qkt_wait_for_post_deployment_matched_stream_evaluations' \
     'qkt_export_armed_rule_decisions' \
     'qkt_validate_bounded_rule_decisions' \
     'qkt_write_engine_rule_decisions' \
@@ -162,6 +164,26 @@ SQL
 sqlite3 "$link_db" "update events set payload='{\"orderId\":\"unrelated\",\"orderType\":\"Market\"}' where type='order.submit' and json_extract(payload,'$.orderId')='market-close';"
 [ "$(qkt_count_joined_rule_order_links "$link_db" live armed)" -eq 1 ] ||
     fail "a genuinely missing decision-to-order link was accepted"
+
+alignment_journals="$work/alignment-journals"
+mkdir -p "$alignment_journals"
+cat > "$alignment_journals/audit.jsonl" <<'JSON'
+{"eventType":"com.qkt.events.StreamCandleEvent","symbol":"EXNESS:EURUSD","timeframe":"5m","ts":900,"candle":{"startTimeMs":600,"endTimeMs":900}}
+{"eventType":"com.qkt.events.StrategyCandleEvaluatedEvent","strategyId":"armed","alias":"asset5","symbol":"EXNESS:EURUSD","timeframe":"5m","ts":901,"candle":{"startTimeMs":600,"endTimeMs":900}}
+{"eventType":"com.qkt.events.StreamCandleEvent","symbol":"EXNESS:EURUSD","timeframe":"1m","ts":1100,"candle":{"startTimeMs":1000,"endTimeMs":1060}}
+{"eventType":"com.qkt.events.StrategyCandleEvaluatedEvent","strategyId":"armed","alias":"asset1","symbol":"EXNESS:EURUSD","timeframe":"1m","ts":1101,"candle":{"startTimeMs":1000,"endTimeMs":1060}}
+JSON
+if qkt_wait_for_post_deployment_matched_stream_evaluations \
+    "$alignment_journals" armed EXNESS:EURUSD 1000 0 "" 0; then
+    fail "a pre-deployment M5 evaluation satisfied the bounded wait"
+fi
+cat >> "$alignment_journals/audit.jsonl" <<'JSON'
+{"eventType":"com.qkt.events.StreamCandleEvent","symbol":"EXNESS:EURUSD","timeframe":"5m","ts":1300,"candle":{"startTimeMs":1000,"endTimeMs":1300}}
+{"eventType":"com.qkt.events.StrategyCandleEvaluatedEvent","strategyId":"armed","alias":"asset5","symbol":"EXNESS:EURUSD","timeframe":"5m","ts":1301,"candle":{"startTimeMs":1000,"endTimeMs":1300}}
+JSON
+qkt_wait_for_post_deployment_matched_stream_evaluations \
+    "$alignment_journals" armed EXNESS:EURUSD 1000 0 "" 0 ||
+    fail "unfavorable M5 alignment did not resolve after its post-deployment close"
 
 decision_db="$work/decisions.db"
 sqlite3 "$decision_db" <<'SQL'

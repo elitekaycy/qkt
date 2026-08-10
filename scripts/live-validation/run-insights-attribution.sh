@@ -312,6 +312,8 @@ done
 
 docker stop "$container" > "$evidence/insights-stop-outage.txt"
 broker_mutation_possible=true
+armed_deployed_after_ms="$(date +%s%3N)"
+certification_deadline=$((SECONDS + timeout_seconds))
 "$cli" deploy "${armed_sources[0]}" --as "$armed_name" --state-dir "$scenario/state" --json > "$evidence/deploy-armed.json"
 position_seen=false
 for _ in $(seq 1 180); do
@@ -320,6 +322,7 @@ for _ in $(seq 1 180); do
     [ "$count" -le 1 ] || fail "armed strategy created more than one position"
     if [ "$count" -eq 1 ]; then position_seen=true; break; fi
     kill -0 "$daemon_pid" 2>/dev/null || fail "daemon exited while waiting for fill"
+    [ "$SECONDS" -lt "$certification_deadline" ] || break
     sleep 1
 done
 $position_seen || fail "bounded position did not open"
@@ -386,8 +389,7 @@ jq -e --arg strategy "$armed_name" 'length == 1 and .[0].strategy_id == $strateg
 # The successful path must be the actual second DSL decision followed by the
 # strategy-owned close-by-ticket transport call. Operator flatten is never used.
 strategy_closed=false
-deadline=$((SECONDS + timeout_seconds))
-while [ "$SECONDS" -lt "$deadline" ]; do
+while [ "$SECONDS" -lt "$certification_deadline" ]; do
     mapfile -t audit_journals < <(find "$scenario/state/state/audit-journal" -type f -name '*.jsonl' | sort)
     mapfile -t transport_journals < <(find "$scenario/state/state/mt5-transport-journal" -type f -name '*.jsonl' | sort)
     decision_count="$(jq -r --arg strategy "$armed_name" '
@@ -427,6 +429,20 @@ for _ in $(seq 1 30); do
     sleep 1
 done
 $collector_flat || fail "collector did not retain both deal legs and the final flat projection"
+
+# Keep the flat strategy active until both declared streams have produced a real
+# post-deployment bar and the strategy has evaluated that exact candle.
+remaining_seconds=$((certification_deadline - SECONDS))
+[ "$remaining_seconds" -ge 0 ] || remaining_seconds=0
+matched_streams_status=0
+qkt_wait_for_post_deployment_matched_stream_evaluations \
+    "$scenario/state/state/audit-journal" "$armed_name" "$armed_symbol" \
+    "$armed_deployed_after_ms" "$remaining_seconds" "$daemon_pid" || matched_streams_status=$?
+case "$matched_streams_status" in
+    0) ;;
+    2) fail "daemon exited while waiting for post-deployment M1/M5 evaluations" ;;
+    *) fail "armed runtime lacked post-deployment matched M1/M5 bars and evaluations within $timeout_seconds seconds" ;;
+esac
 "$cli" stop "$armed_name" --state-dir "$scenario/state" --json > "$evidence/stop-armed.json"
 "$cli" stop "$readonly_name" --state-dir "$scenario/state" --json > "$evidence/stop-readonly.json"
 "$cli" daemon stop --state-dir "$scenario/state" > "$evidence/daemon-stop.log"
@@ -521,15 +537,9 @@ for timeframe_ms in 60000 300000; do
 done
 jq -e --arg symbol "$armed_symbol" 'select(.eventType == "com.qkt.events.TickEvent" and .symbol == $symbol)' \
     "${audit_journals[@]}" >/dev/null || fail "armed runtime lacks live tick evidence"
-jq -s -e --arg strategy "$armed_name" --arg symbol "$armed_symbol" '
-    . as $events | all([["asset1","1m"],["asset5","5m"]][];
-      .[0] as $alias | .[1] as $timeframe |
-      any($events[]; .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
-        .strategyId == $strategy and .symbol == $symbol and .alias == $alias and .timeframe == $timeframe and
-        (. as $evaluation | any($events[]; .eventType == "com.qkt.events.StreamCandleEvent" and
-          .symbol == $symbol and .timeframe == $timeframe and
-          .candle.startTimeMs == $evaluation.candle.startTimeMs and .candle.endTimeMs == $evaluation.candle.endTimeMs))))
-' "${audit_journals[@]}" >/dev/null || fail "armed runtime lacks matched M1/M5 bars and evaluations"
+qkt_has_post_deployment_matched_stream_evaluations \
+    "$scenario/state/state/audit-journal" "$armed_name" "$armed_symbol" "$armed_deployed_after_ms" ||
+    fail "armed runtime lacks post-deployment matched M1/M5 bars and evaluations"
 
 order_posts="$(jq -r 'select(.method == "POST" and .path == "/order") | 1' "${transport_journals[@]}" | awk 'END {print NR + 0}')"
 protection_posts="$(jq -r 'select(.method == "POST" and .path == "/modify_sl_tp") | 1' "${transport_journals[@]}" | awk 'END {print NR + 0}')"

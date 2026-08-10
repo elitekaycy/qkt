@@ -70,6 +70,50 @@ qkt_count_joined_rule_order_links() {
     "
 }
 
+qkt_has_post_deployment_matched_stream_evaluations() {
+    local journal_root="$1"
+    local strategy="$2"
+    local symbol="$3"
+    local deployed_after_ms="$4"
+    local journals=()
+    mapfile -t journals < <(find "$journal_root" -type f -name '*.jsonl' | sort)
+    [ "${#journals[@]}" -gt 0 ] || return 1
+    jq -s -e --arg strategy "$strategy" --arg symbol "$symbol" \
+        --argjson deployedAfterMs "$deployed_after_ms" '
+        . as $events | all([["asset1","1m"],["asset5","5m"]][];
+          .[0] as $alias | .[1] as $timeframe |
+          any($events[]; .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
+            .strategyId == $strategy and .symbol == $symbol and .alias == $alias and
+            .timeframe == $timeframe and .ts >= $deployedAfterMs and
+            (. as $evaluation | any($events[]; .eventType == "com.qkt.events.StreamCandleEvent" and
+              .symbol == $symbol and .timeframe == $timeframe and .ts >= $deployedAfterMs and
+              .candle.startTimeMs == $evaluation.candle.startTimeMs and
+              .candle.endTimeMs == $evaluation.candle.endTimeMs))))
+    ' "${journals[@]}" >/dev/null
+}
+
+qkt_wait_for_post_deployment_matched_stream_evaluations() {
+    local journal_root="$1"
+    local strategy="$2"
+    local symbol="$3"
+    local deployed_after_ms="$4"
+    local timeout_seconds="$5"
+    local daemon_pid="${6:-}"
+    local poll_seconds="${7:-1}"
+    local deadline=$((SECONDS + timeout_seconds))
+    while true; do
+        if qkt_has_post_deployment_matched_stream_evaluations \
+            "$journal_root" "$strategy" "$symbol" "$deployed_after_ms"; then
+            return 0
+        fi
+        [ "$SECONDS" -lt "$deadline" ] || return 1
+        if [ -n "$daemon_pid" ] && ! kill -0 "$daemon_pid" 2>/dev/null; then
+            return 2
+        fi
+        sleep "$poll_seconds"
+    done
+}
+
 qkt_validate_bounded_rule_decisions() {
     local decisions="$1"
     local symbol="$2"
