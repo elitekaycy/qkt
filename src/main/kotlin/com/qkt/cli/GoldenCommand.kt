@@ -277,12 +277,13 @@ class GoldenCommand(
     ): String =
         buildString {
             append("{\n")
-            append("  \"schemaVersion\": 1,\n")
+            append("  \"schemaVersion\": 2,\n")
             append("  \"kind\": \"MT5_GOLDEN_CAPTURE\",\n")
             append("  \"session\": ").append(json(session)).append(",\n")
             append("  \"createdAtUtc\": ").append(json(createdAt.toString())).append(",\n")
-            append("  \"qktVersion\": ").append(json(BuildInfo.VERSION)).append(",\n")
-            append("  \"gitSha\": ").append(json(BuildInfo.GIT_SHA)).append(",\n")
+            append("  \"captureQktVersion\": ").append(json(BuildInfo.VERSION)).append(",\n")
+            append("  \"captureGitSha\": ").append(json(BuildInfo.GIT_SHA)).append(",\n")
+            append("  \"captureBuildTimestamp\": ").append(json(BuildInfo.BUILD_TIMESTAMP)).append(",\n")
             append("  \"window\": {\"fromMs\": ").append(audit.firstTimestampMs)
             append(", \"toMs\": ").append(audit.lastTimestampMs).append("},\n")
             append("  \"counts\": {\"ticks\": ").append(audit.tickCount)

@@ -104,7 +104,7 @@ and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 | `qkt brokers list [--json]` | Resolved broker profiles (defaults + user config + env). |
 | `qkt instruments verify [--broker NAME] [--instruments PATH] [--json]` | Compare static instrument metadata with each matching MT5 profile's live `/symbol_info`; exits non-zero on any mismatch. |
 | `qkt audit-ticks --symbol X --duration N --mt5-profile P [--reference tradingview\|mt5-history]` | Compare TV with MT5, or reconcile live MT5 quotes against raw venue history. |
-| `qkt golden capture --session <strategy> [--state-dir DIR] [--out ZIP]` | Export retained engine ticks/fills, orders, and raw MT5 exchanges as a checksummed ZIP. Requires a filled order ID linked to an MT5 `/order` idempotency key and fails if evidence is missing or a journal reports dropped records. |
+| `qkt golden capture --session <strategy> [--state-dir DIR] [--out ZIP]` | Export retained engine ticks/fills, orders, and raw MT5 exchanges as a checksummed ZIP. Requires a filled order linked to a successful MT5 `/order` exchange by explicit engine ID or venue ticket and fails if evidence is missing or a journal reports dropped records. Manifest `capture*` build fields identify the CLI that created the ZIP; a supervising run manifest must separately identify the daemon build that produced the session. |
 | `qkt soak report <strategy> --testing-sha SHA --image REPO@sha256:DIGEST --started-at UTC --completed-at UTC --trading-days N --health JSONL --reconciliation JSON --golden ZIP --out JSON` | Derive fail-closed paper-soak promotion evidence from health samples, final reconciliation, and a golden bundle. The promotion verifier separately enforces 48 hours or five trading days. |
 
 ## Global flags

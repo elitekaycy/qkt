@@ -45,6 +45,7 @@ done
 [ -n "$scenario" ] || fail "--scenario is required"
 scenario="$(realpath "$scenario")"
 [ -x "$cli" ] || fail "QKT CLI is not executable: $cli"
+command -v unzip >/dev/null || fail "unzip is required"
 bash "$readonly_runner" --scenario "$scenario" --cli "$cli" --verify-only >/dev/null
 
 mapfile -t armed_strategies < <(find "$scenario/strategies/armed" -maxdepth 1 -type f -name '*_market_bracket.qkt' | sort)
@@ -77,6 +78,8 @@ expected_login="$(jq -r '.account.login' "$scenario/expected.json")"
 expected_server="$(jq -r '.account.server' "$scenario/expected.json")"
 expected_leverage="$(jq -r '.account.leverage' "$scenario/expected.json")"
 expected_balance="$(jq -r '.account.startingBalance' "$scenario/expected.json")"
+qkt_commit="$(jq -r '.qktCommit' "$scenario/scenario.json")"
+qkt_dirty="$(jq -r '.qktDirty' "$scenario/scenario.json")"
 config="$scenario/qkt.config.yaml"
 evidence="$scenario/evidence"
 run_started_ms="$(date +%s%3N)"
@@ -299,6 +302,35 @@ close_posts="$(jq -r 'select(.method == "POST" and .path == "/close_position" an
 [ "$order_posts" -ge 1 ] || fail "transport journal is missing the accepted MT5 order call"
 [ "$close_posts" -ge 1 ] || fail "transport journal is missing the accepted MT5 close call"
 
+golden_zip="$evidence/golden.zip"
+golden_manifest="$evidence/golden-manifest.json"
+"$cli" golden capture \
+    --session "$strategy_name" \
+    --state-dir "$scenario/state" \
+    --out "$golden_zip" > "$evidence/golden-capture.log"
+unzip -p "$golden_zip" manifest.json > "$golden_manifest"
+jq -e \
+    --arg strategy "$strategy_name" \
+    --arg qktCommit "$qkt_commit" '
+        .schemaVersion == 2 and
+        .kind == "MT5_GOLDEN_CAPTURE" and
+        .session == $strategy and
+        (.captureGitSha as $capture | ($qktCommit | startswith($capture))) and
+        .counts.ticks > 0 and
+        .counts.fills >= 2 and
+        .counts.gatewayExchanges > 0 and
+        .counts.linkedPlacements >= 1
+    ' "$golden_manifest" >/dev/null || fail "golden capture does not match the completed live session"
+while IFS=$'\t' read -r path expected_sha; do
+    actual_sha="$(unzip -p "$golden_zip" "$path" | sha256sum | awk '{print $1}')"
+    [ "$actual_sha" = "$expected_sha" ] || fail "golden capture entry hash mismatch: $path"
+done < <(jq -r '.entries[] | [.path,.sha256] | @tsv' "$golden_manifest")
+golden_ticks="$(jq -r '.counts.ticks' "$golden_manifest")"
+golden_fills="$(jq -r '.counts.fills' "$golden_manifest")"
+golden_exchanges="$(jq -r '.counts.gatewayExchanges' "$golden_manifest")"
+golden_placements="$(jq -r '.counts.linkedPlacements' "$golden_manifest")"
+golden_sha="$(sha256sum "$golden_zip" | awk '{print $1}')"
+
 stale_events="$(rg -c 'market data .* STALE:' "$scenario/logs/daemon.log" || printf '0\n')"
 recovery_events="$(rg -c 'market data .* healthy again' "$scenario/logs/daemon.log" || printf '0\n')"
 [ "$recovery_events" -ge "$stale_events" ] || fail "market-data stale episode did not recover before shutdown"
@@ -311,8 +343,6 @@ mv "$scenario/cleanup.json.tmp" "$scenario/cleanup.json"
 
 qkt_version="$("$cli" --version)"
 gateway_version="$(jq -r '.version' "$evidence/gateway-health.json")"
-qkt_commit="$(jq -r '.qktCommit' "$scenario/scenario.json")"
-qkt_dirty="$(jq -r '.qktDirty' "$scenario/scenario.json")"
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 jq -n \
     --arg finishedAt "$finished_at" \
@@ -329,6 +359,11 @@ jq -n \
     --arg filledEvents "$filled_events" \
     --arg orderPosts "$order_posts" \
     --arg closePosts "$close_posts" \
+    --arg goldenTicks "$golden_ticks" \
+    --arg goldenFills "$golden_fills" \
+    --arg goldenExchanges "$golden_exchanges" \
+    --arg goldenPlacements "$golden_placements" \
+    --arg goldenSha "$golden_sha" \
     --arg staleEvents "$stale_events" \
     --arg recoveryEvents "$recovery_events" '
         {
@@ -351,6 +386,13 @@ jq -n \
           dealNet:$dealNet,
           audit:{acceptedEvents:($acceptedEvents|tonumber),filledEvents:($filledEvents|tonumber)},
           transport:{orderPosts:($orderPosts|tonumber),closePosts:($closePosts|tonumber)},
+          golden:{
+            ticks:($goldenTicks|tonumber),
+            fills:($goldenFills|tonumber),
+            gatewayExchanges:($goldenExchanges|tonumber),
+            linkedPlacements:($goldenPlacements|tonumber),
+            sha256:$goldenSha
+          },
           staleEvents:($staleEvents|tonumber),
           recoveredStaleEvents:($recoveryEvents|tonumber)
         }

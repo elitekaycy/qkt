@@ -70,6 +70,9 @@ class GoldenCommandTest {
                     .readText()
             val root = Json.parseToJsonElement(manifest).jsonObject
             assertThat(root["kind"]!!.jsonPrimitive.content).isEqualTo("MT5_GOLDEN_CAPTURE")
+            assertThat(root["schemaVersion"]!!.jsonPrimitive.content).isEqualTo("2")
+            assertThat(root["captureGitSha"]!!.jsonPrimitive.content).isEqualTo(BuildInfo.GIT_SHA)
+            assertThat(root).doesNotContainKeys("gitSha", "qktVersion")
             assertThat(root["counts"].toString())
                 .contains("\"ticks\":1")
                 .contains("\"fills\":1")

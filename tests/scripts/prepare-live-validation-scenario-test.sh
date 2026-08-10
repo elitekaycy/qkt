@@ -105,6 +105,8 @@ if rg --quiet 'Order(Accepted|Filled)Event' "$repo_root/scripts/live-validation/
     exit 1
 fi
 grep -F "|| printf '0\\n'" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'golden capture' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '.captureGitSha as $capture' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 
 if bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \
