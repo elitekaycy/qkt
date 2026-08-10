@@ -73,9 +73,54 @@ class Mt5MarketSourceTimeBaseTest {
         }
     }
 
+    @Test
+    fun `empty recent history retries and recovers before time-base validation`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val tickTimeMs = Instant.parse("2026-07-15T11:05:00Z").toEpochMilli()
+            server.enqueue(MockResponse().setBody("""{"point":"0.00001"}"""))
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"open":1,"high":1,"low":1,"close":1,"spread":0,"tick_volume":1,"time":"2026-07-15T11:00:00Z"}]""",
+                ),
+            )
+            server.enqueue(
+                MockResponse().setBody(
+                    """{"bid":1,"ask":1,"last":1,"flags":6,"time_msc":$tickTimeMs}""",
+                ),
+            )
+
+            val bars = source(server, retryAttempts = 1).bars("TEST:EURUSD", WINDOW, RANGE).toList()
+
+            assertThat(bars).hasSize(1)
+            assertThat(server.requestCount).isEqualTo(4)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `empty recent history still fails closed after retries are exhausted`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(MockResponse().setBody("""{"point":"0.00001"}"""))
+            repeat(3) { server.enqueue(MockResponse().setBody("[]")) }
+
+            assertThatThrownBy {
+                source(server, retryAttempts = 2).bars("TEST:EURUSD", WINDOW, RANGE).toList()
+            }.isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("no decoded bar remained")
+            assertThat(server.requestCount).isEqualTo(4)
+        } finally {
+            server.shutdown()
+        }
+    }
+
     private fun source(
         server: MockWebServer,
         range: TimeRange = RANGE,
+        retryAttempts: Int = 0,
     ): Mt5MarketSource {
         val cryptoCalendars = SymbolCalendars(emptyList(), TradingCalendar.crypto())
         val profile =
@@ -86,11 +131,13 @@ class Mt5MarketSourceTimeBaseTest {
                 serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
                 magic = 10,
                 symbolCalendars = cryptoCalendars,
+                retryAttempts = retryAttempts,
             )
         return Mt5MarketSource(
             profile = profile,
             clock = FixedClock(range.to.toEpochMilli()),
             symbolCalendars = cryptoCalendars,
+            retryBackoffMs = 0L,
         )
     }
 

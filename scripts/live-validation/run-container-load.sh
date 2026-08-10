@@ -264,7 +264,8 @@ start_daemon() {
 wait_ready() {
     local index="$1"
     local state="$output/cases/${case_ids[$index]}/state"
-    for _ in $(seq 1 90); do
+    local deadline=$((SECONDS + 90))
+    while [ "$SECONDS" -lt "$deadline" ]; do
         if ! kill -0 "${exec_pids[$index]}" 2>/dev/null; then
             fail "container ${case_ids[$index]} daemon exited before readiness"
         fi
