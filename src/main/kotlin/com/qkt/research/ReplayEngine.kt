@@ -262,6 +262,7 @@ class ReplayEngine(
                         priceTracker,
                         instruments,
                         fillAtTriggerPrice = barFills,
+                        calendar = calendar,
                     )
                 BrokerKind.MT5_SIM ->
                     MT5BrokerSimulator(

@@ -4,10 +4,13 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.Side
+import com.qkt.common.TradingCalendar
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
+import com.qkt.execution.withExpiresAt
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
@@ -16,6 +19,7 @@ import com.qkt.marketdata.buyExecPrice
 import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 import org.slf4j.LoggerFactory
 
 /**
@@ -47,6 +51,7 @@ class PaperBroker(
      * 1.085 (inflated loss); on -> fills 1.09. Wired on only for the `--bars` tier.
      */
     private val fillAtTriggerPrice: Boolean = false,
+    private val calendar: TradingCalendar = TradingCalendar.crypto(),
 ) : Broker {
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
 
@@ -78,7 +83,18 @@ class PaperBroker(
         )
 
     override fun submit(request: OrderRequest): SubmitAck {
-        val sized = sizeForVenue(request) ?: return rejectBelowMinimum(request)
+        val expiring =
+            if (request.timeInForce == TimeInForce.DAY && request.expiresAt == null) {
+                request.withExpiresAt(
+                    calendar
+                        .sessionRange(request.symbol, Instant.ofEpochMilli(clock.now()))
+                        .to
+                        .toEpochMilli(),
+                )
+            } else {
+                request
+            }
+        val sized = sizeForVenue(expiring) ?: return rejectBelowMinimum(expiring)
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = sized.id,
@@ -91,14 +107,43 @@ class PaperBroker(
             is OrderRequest.Market -> fillMarket(sized)
             is OrderRequest.Limit, is OrderRequest.Stop,
             is OrderRequest.StopLimit, is OrderRequest.IfTouched,
-            ->
-                working.add(sized)
+            -> {
+                if (sized.timeInForce == TimeInForce.IOC || sized.timeInForce == TimeInForce.FOK) {
+                    fillImmediateOrCancel(sized)
+                } else {
+                    working.add(sized)
+                }
+            }
             else -> error("PaperBroker received unexpected order type: ${sized::class.simpleName}")
         }
         return SubmitAck(
             clientOrderId = sized.id,
             brokerOrderId = sized.id,
             accepted = true,
+        )
+    }
+
+    /** Paper has no depth model, so marketable IOC and FOK both fill completely at the current quote. */
+    private fun fillImmediateOrCancel(request: OrderRequest) {
+        val price = priceProvider.lastPrice(request.symbol)
+        val tick = price?.let { Tick(request.symbol, it, clock.now()) }
+        if (tick == null || !checkTrigger(request, tick)) {
+            publishImmediateCancel(request)
+            return
+        }
+        fillFromTrigger(request, tick, isGapOpen = false)
+        if (working.removeAll { it.id == request.id }) publishImmediateCancel(request)
+    }
+
+    private fun publishImmediateCancel(request: OrderRequest) {
+        bus.publish(
+            BrokerEvent.OrderCancelled(
+                clientOrderId = request.id,
+                brokerOrderId = request.id,
+                reason = "${request.timeInForce} unfilled",
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
         )
     }
 
@@ -155,7 +200,7 @@ class PaperBroker(
     fun onTick(tick: Tick) {
         val previousTimestamp = lastTickTimestampBySymbol.put(tick.symbol, tick.timestamp)
         if (working.isEmpty()) return
-        expireGtd(tick)
+        expireDeadlines(tick)
         if (working.isEmpty()) return
         // BarTickFeed closes a bar at endTime-1 and opens the next contiguous bar at endTime.
         // A larger timestamp jump therefore identifies a session/data gap. Stops that gap
@@ -178,7 +223,7 @@ class PaperBroker(
         }
     }
 
-    private fun expireGtd(tick: Tick) {
+    private fun expireDeadlines(tick: Tick) {
         gtdExpiredScratch.clear()
         for (i in working.indices) {
             val request = working[i]
@@ -193,7 +238,7 @@ class PaperBroker(
                 BrokerEvent.OrderCancelled(
                     clientOrderId = request.id,
                     brokerOrderId = request.id,
-                    reason = "GTD expired",
+                    reason = "${request.timeInForce} expired",
                     strategyId = request.strategyId,
                     timestamp = clock.now(),
                 ),

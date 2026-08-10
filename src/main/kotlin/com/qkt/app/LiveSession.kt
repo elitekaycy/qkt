@@ -904,6 +904,7 @@ class LiveSession(
                 object : com.qkt.instrument.InstrumentRegistry {
                     override fun lookup(qktSymbol: String) = paperInstruments.get().lookup(qktSymbol)
                 },
+                calendar = calendar,
             )
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()

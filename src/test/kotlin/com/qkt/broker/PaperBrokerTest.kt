@@ -186,6 +186,101 @@ class PaperBrokerTest {
     }
 
     @Test
+    fun `IOC and FOK cancel immediately when the current quote cannot fill`() {
+        for (tif in listOf(TimeInForce.IOC, TimeInForce.FOK)) {
+            val tracker = MarketPriceTracker()
+            tracker.update("EURUSD", Money.of("1.10"))
+            val clock = FixedClock(0L)
+            val bus = EventBus(clock, MonotonicSequenceGenerator())
+            val fills = mutableListOf<BrokerEvent.OrderFilled>()
+            val cancellations = mutableListOf<BrokerEvent.OrderCancelled>()
+            bus.subscribe<BrokerEvent.OrderFilled>(fills::add)
+            bus.subscribe<BrokerEvent.OrderCancelled>(cancellations::add)
+            val broker = PaperBroker(bus, clock, tracker)
+
+            broker.submit(
+                OrderRequest.Limit(
+                    id = tif.name,
+                    symbol = "EURUSD",
+                    side = Side.BUY,
+                    quantity = Money.of("1"),
+                    limitPrice = Money.of("1.09"),
+                    timeInForce = tif,
+                    timestamp = 0L,
+                    strategyId = "owner",
+                ),
+            )
+            broker.onTick(tick("EURUSD", "1.08"))
+
+            assertThat(fills).isEmpty()
+            assertThat(cancellations.single().reason).isEqualTo("$tif unfilled")
+            assertThat(cancellations.single().strategyId).isEqualTo("owner")
+        }
+    }
+
+    @Test
+    fun `marketable IOC fills completely at the current paper quote`() {
+        val tracker = MarketPriceTracker()
+        tracker.update("EURUSD", Money.of("1.10"))
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val cancellations = mutableListOf<BrokerEvent.OrderCancelled>()
+        bus.subscribe<BrokerEvent.OrderFilled>(fills::add)
+        bus.subscribe<BrokerEvent.OrderCancelled>(cancellations::add)
+        val broker = PaperBroker(bus, clock, tracker)
+
+        broker.submit(
+            OrderRequest.Limit(
+                id = "ioc-fill",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("1.11"),
+                timeInForce = TimeInForce.IOC,
+                timestamp = 0L,
+            ),
+        )
+
+        assertThat(fills.single().price).isEqualByComparingTo("1.10")
+        assertThat(cancellations).isEmpty()
+    }
+
+    @Test
+    fun `DAY pending order expires at the bound calendar session end`() {
+        val dayEnd = 86_400_000L
+        val tracker = MarketPriceTracker()
+        tracker.update("EURUSD", Money.of("1.10"))
+        val clock = FixedClock(dayEnd - 60_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val cancellations = mutableListOf<BrokerEvent.OrderCancelled>()
+        bus.subscribe<BrokerEvent.OrderFilled>(fills::add)
+        bus.subscribe<BrokerEvent.OrderCancelled>(cancellations::add)
+        val broker = PaperBroker(bus, clock, tracker)
+
+        broker.submit(
+            OrderRequest.Limit(
+                id = "day",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("1.09"),
+                timeInForce = TimeInForce.DAY,
+                timestamp = clock.now(),
+                strategyId = "owner",
+            ),
+        )
+        clock.time = dayEnd
+        broker.onTick(tick("EURUSD", "1.10", dayEnd))
+        broker.onTick(tick("EURUSD", "1.08", dayEnd + 1L))
+
+        assertThat(fills).isEmpty()
+        assertThat(cancellations.single().reason).isEqualTo("DAY expired")
+        assertThat(cancellations.single().strategyId).isEqualTo("owner")
+    }
+
+    @Test
     fun `Stop converts to Market on trigger`() {
         val tracker = MarketPriceTracker()
         tracker.update("EURUSD", Money.of("1.10"))
