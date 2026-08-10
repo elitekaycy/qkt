@@ -295,12 +295,14 @@ while true; do
         for index in 0 1 2 3; do
             case_id="${case_ids[$index]}"
             state="$output/cases/$case_id/state"
-            status="$("$cli" daemon status --state-dir "$state" --json)"
+            status_file="$output/cases/$case_id/evidence/status-sample-latest.json"
+            "$cli" daemon status --state-dir "$state" --json > "$status_file" ||
+                fail "$case_id control status sample failed"
             jq -e '
                 .status == "ok" and .strategies == 1 and .perStrategy[0].running == true and
                 .perStrategy[0].halted == false and .perStrategy[0].droppedTicks == 0
-            ' <<<"$status" >/dev/null || fail "$case_id health sample failed"
-            jq -c --argjson second "$elapsed" '. + {sampleSecond:$second}' <<<"$status" \
+            ' "$status_file" >/dev/null || fail "$case_id health sample failed"
+            jq -c --argjson second "$elapsed" '. + {sampleSecond:$second}' "$status_file" \
                 >> "$output/cases/$case_id/evidence/health.jsonl"
             stats="$(docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}' "${containers[$index]}")"
             printf '%s,%s,%s,%s,%s\n' "$elapsed" "$case_id" "${stats%%|*}" "$(cut -d '|' -f2 <<<"$stats")" "${stats##*|}" \

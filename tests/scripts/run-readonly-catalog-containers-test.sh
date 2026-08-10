@@ -92,6 +92,7 @@ grep -F 'configured $warmup_bars-bar warmup evidence' "$runner" >/dev/null
 grep -F 'TickEvent' "$runner" >/dev/null
 grep -F 'StreamCandleEvent' "$runner" >/dev/null
 grep -F 'StrategyCandleEvaluatedEvent' "$runner" >/dev/null
+grep -F 'status-sample-latest.json' "$runner" >/dev/null
 grep -F 'matched constructed bar/evaluation evidence' "$runner" >/dev/null
 grep -F 'did not emit readiness vector' "$runner" >/dev/null
 grep -F 'emitted an order, fill, accounting, or rejection event' "$runner" >/dev/null
