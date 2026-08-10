@@ -34,6 +34,7 @@ grep -F 'book_risk:' "$out/qkt.config.yaml" >/dev/null
 grep -F 'EVERY 1m' "$out/strategies/readonly/validation_a01_bars_readonly.qkt" >/dev/null
 grep -F 'EVERY 5m' "$out/strategies/readonly/validation_a01_bars_readonly.qkt" >/dev/null
 grep -F 'TRADES.today = 0' "$out/strategies/armed/validation_a01_market_bracket.qkt" >/dev/null
+grep -F 'STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060' "$out/strategies/armed/validation_a01_market_bracket.qkt" >/dev/null
 
 jq -e '.account.tradeMode == "demo" and .safety.maximumLots == "0.01"' "$out/expected.json" >/dev/null
 jq -e '.credentialsStored == false and .executionState == "prepared" and (.qktDirty | type) == "boolean"' "$out/scenario.json" >/dev/null
@@ -89,6 +90,19 @@ bash "$repo_root/scripts/live-validation/run-readonly.sh" \
     --scenario "$out" \
     --cli "$cli" \
     --verify-only >/dev/null
+bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
+    --scenario "$out" \
+    --cli "$cli" \
+    --verify-only >/dev/null
+
+if bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
+    --scenario "$out" \
+    --cli "$cli" \
+    --timeout-seconds 60 >"$tmp/unarmed.out" 2>&1; then
+    echo 'expected unarmed order-runner rejection' >&2
+    exit 1
+fi
+grep -F 'missing exact --arm confirmation' "$tmp/unarmed.out" >/dev/null
 
 if bash "$repo_root/scripts/live-validation/run-readonly.sh" \
     --scenario "$out" \

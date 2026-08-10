@@ -29,9 +29,8 @@ The command creates:
 - expected account, cleanup, scenario, and source-checksum documents; and
 - isolated data, state, log, journal, and evidence directories.
 
-Never point daemon `--load-dir` at `strategies/armed/`. The armed strategy exists so
-its exact DSL and risk contract can be reviewed before the later bounded-order
-runner is implemented and approved.
+Never point daemon `--load-dir` at `strategies/armed/`. The armed strategy is
+deployed explicitly only by the bounded-order runner after its safety gates pass.
 
 ## Verify And Run
 
@@ -69,3 +68,41 @@ The observation takes at least 310 seconds so one M5 boundary must close. It:
 This is read-only feed, candle, indicator, daemon, journal, and resource evidence.
 It is not evidence for order/fill/accounting parity, sustained stress, multiple
 containers, QKT Insights, or production readiness; those remain later gates.
+
+## Bounded Demo Bracket
+
+Static verification of the armed scenario performs no network or trading calls:
+
+```bash
+scripts/live-validation/run-market-bracket.sh \
+  --scenario /var/tmp/qkt-validation/run-001 \
+  --verify-only
+```
+
+Live execution is deliberately difficult to invoke accidentally. It needs a freshly
+prepared scenario, an initially flat allowlisted account, the broker credential, and
+both exact confirmations:
+
+```bash
+export QKT_BROKER_API_KEY="$LOCAL_GATEWAY_KEY"
+export QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY
+scripts/live-validation/run-market-bracket.sh \
+  --scenario /var/tmp/qkt-validation/run-001 \
+  --arm I_UNDERSTAND_DEMO_ORDER_0.01
+```
+
+The runner starts an empty daemon, explicitly deploys the single armed strategy,
+allows one `0.01`-lot EURUSD market entry with attached `0.0030` stop and `0.0060`
+target distances, and records the magic-scoped venue position. It then invokes
+QKT's broker-verified kill/flatten path, stops the strategy and daemon, and requires:
+
+- no remaining account-wide or magic-scoped position or pending order;
+- matching entry and exit deals for the owned position ticket;
+- balance change equal to profit, commission, swap, and fee from those deals;
+- accepted and filled engine-audit lifecycle events;
+- successful MT5 `/order` and `/close_position` transport records; and
+- a final flat, tradeable demo-account snapshot.
+
+On failure, the exit trap queries only the scenario magic and attempts to close or
+cancel only its owned tickets. This single bracket is the first execution proof, not
+coverage of the remaining order lifecycle matrix.

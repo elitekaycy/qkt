@@ -187,7 +187,7 @@ RULES
      AND OPEN_ORDERS.eur = 0
      AND TRADES.today = 0
     THEN BUY eur SIZING 0.01
-         BRACKET { STOP LOSS BY 30, TAKE PROFIT BY 60 }
+         BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 }
          ; LOG "bounded demo entry" bar_close=eur.close
 EOF
 
@@ -208,6 +208,8 @@ cat > "$output/expected.json" <<EOF
     "maximumLots": "0.01",
     "maximumOpenPositions": 1,
     "maximumTradesPerDay": 1,
+    "stopDistance": "0.0030",
+    "takeProfitDistance": "0.0060",
     "requiredInitialOwnership": "reconciled",
     "requiredFinalPositions": 0,
     "requiredFinalOrders": 0
