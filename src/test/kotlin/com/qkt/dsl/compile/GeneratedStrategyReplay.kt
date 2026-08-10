@@ -5,6 +5,7 @@ import com.qkt.backtest.TradeRecord
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -13,6 +14,9 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.risk.DailyDrawdownBasis
+import com.qkt.risk.DrawdownBasis
+import com.qkt.risk.HaltRule
 import com.qkt.risk.StrategyRiskLimits
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
@@ -37,12 +41,16 @@ internal object GeneratedStrategyReplay {
         closes: List<String>,
         expectedTradeCount: Int = 1,
         expectedRejectionCount: Int = 0,
+        expectedHaltCount: Int = 0,
         startingBalance: BigDecimal = BigDecimal.ZERO,
         bookCapital: BigDecimal? = null,
         instruments: InstrumentRegistry = NoopInstrumentRegistry,
         strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
         maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
         maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+        dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
+        totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
+        haltRules: () -> List<HaltRule> = { emptyList() },
     ) {
         val candles =
             (closes + closes.last()).mapIndexed { index, close -> candle(close, index) }
@@ -53,12 +61,16 @@ internal object GeneratedStrategyReplay {
             closeOnlyTicks = true,
             expectedTradeCount = expectedTradeCount,
             expectedRejectionCount = expectedRejectionCount,
+            expectedHaltCount = expectedHaltCount,
             startingBalance = startingBalance,
             bookCapital = bookCapital,
             instruments = instruments,
             strategyRiskLimits = strategyRiskLimits,
             maxOrderQty = maxOrderQty,
             maxOrderNotional = maxOrderNotional,
+            dailyDdBasis = dailyDdBasis,
+            totalDdBasis = totalDdBasis,
+            haltRules = haltRules,
         )
     }
 
@@ -69,12 +81,16 @@ internal object GeneratedStrategyReplay {
         closeOnlyTicks: Boolean = false,
         expectedTradeCount: Int = 1,
         expectedRejectionCount: Int = 0,
+        expectedHaltCount: Int = 0,
         startingBalance: BigDecimal = BigDecimal.ZERO,
         bookCapital: BigDecimal? = null,
         instruments: InstrumentRegistry = NoopInstrumentRegistry,
         strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
         maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
         maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+        dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
+        totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
+        haltRules: () -> List<HaltRule> = { emptyList() },
     ) {
         val symbols = candlesBySymbol.keys.toList()
         val allCandles = candlesBySymbol.values.flatten()
@@ -86,6 +102,7 @@ internal object GeneratedStrategyReplay {
         val tickResult =
             Backtest(
                 strategies = listOf(namedStrategy(path)),
+                haltRules = haltRules(),
                 ticks = ticks,
                 candleWindow = window,
                 startingBalance = startingBalance,
@@ -95,6 +112,8 @@ internal object GeneratedStrategyReplay {
                 strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
+                dailyDdBasis = dailyDdBasis,
+                totalDdBasis = totalDdBasis,
             ).run()
 
         val barSource =
@@ -107,6 +126,7 @@ internal object GeneratedStrategyReplay {
             Backtest
                 .fromSource(
                     strategies = listOf(namedStrategy(path)),
+                    haltRules = haltRules(),
                     source = barSource,
                     request =
                         MarketRequest(
@@ -122,12 +142,18 @@ internal object GeneratedStrategyReplay {
                     strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
                     maxOrderQty = maxOrderQty,
                     maxOrderNotional = maxOrderNotional,
+                    dailyDdBasis = dailyDdBasis,
+                    totalDdBasis = totalDdBasis,
                 ).run()
 
         assertThat(tickResult.rejections).hasSize(expectedRejectionCount)
         assertThat(barResult.rejections).hasSize(expectedRejectionCount)
         assertThat(barResult.rejections.map(::canonical))
             .isEqualTo(tickResult.rejections.map(::canonical))
+        assertThat(tickResult.halts).hasSize(expectedHaltCount)
+        assertThat(barResult.halts).hasSize(expectedHaltCount)
+        assertThat(barResult.halts.map(::canonical))
+            .isEqualTo(tickResult.halts.map(::canonical))
         assertThat(tickResult.trades).hasSize(expectedTradeCount)
         assertThat(barResult.trades).hasSize(expectedTradeCount)
         assertThat(barResult.trades.map(::canonical))
@@ -143,6 +169,9 @@ internal object GeneratedStrategyReplay {
         with(event.request) {
             listOf(strategyId, symbol, side, quantity, event.reason, event.timestamp)
         }
+
+    private fun canonical(event: RiskEvent.Halted): List<Any?> =
+        listOf(event.reason, event.strategyId, event.cancelWorkingOrders, event.timestamp)
 
     private fun closeOnlyTicks(candle: Candle): List<Tick> =
         listOf(Tick(candle.symbol, candle.close, candle.startTime, volume = candle.volume))

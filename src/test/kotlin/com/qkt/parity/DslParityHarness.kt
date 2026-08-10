@@ -21,6 +21,8 @@ import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.candleToTicks
+import com.qkt.risk.DailyDrawdownBasis
+import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
 import com.qkt.risk.StrategyRiskLimits
 import com.qkt.strategy.Strategy
@@ -92,6 +94,8 @@ internal object DslParityHarness {
         bookCapital: BigDecimal? = null,
         maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
         maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
+        dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
+        totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
         haltRules: () -> List<HaltRule> = { emptyList() },
     ): Result {
         require(ticks.isNotEmpty()) { "parity tape must not be empty" }
@@ -111,6 +115,8 @@ internal object DslParityHarness {
                 instruments = instruments,
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
+                dailyDdBasis = dailyDdBasis,
+                totalDdBasis = totalDdBasis,
             ).run()
         val backtest =
             Snapshot(
@@ -171,6 +177,8 @@ internal object DslParityHarness {
                 bookBalance = bookCapital?.let { capital -> com.qkt.pnl.BookBalanceView { capital } },
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
+                dailyDdBasis = dailyDdBasis,
+                totalDdBasis = totalDdBasis,
                 busOverride = liveBus,
             ).start()
         check(handle.awaitTermination(Duration.ofSeconds(10))) { "live parity session did not terminate" }
