@@ -194,7 +194,9 @@ grep -F 'com.qkt.events.StreamCandleEvent' "$repo_root/scripts/live-validation/r
 grep -F '.counts.mutations == 0' "$repo_root/scripts/live-validation/run-readonly.sh" >/dev/null
 
 container_script="$repo_root/scripts/live-validation/run-container-load.sh"
+container_evidence_lib="$repo_root/scripts/live-validation/lib/container-load-evidence.sh"
 bash -n "$container_script"
+bash -n "$container_evidence_lib"
 bash "$container_script" --help | grep -F 'two isolated, read-only QKT containers' >/dev/null
 grep -F -- '--network host' "$container_script" >/dev/null
 grep -F 'QKT_LATENCY_TRACKING=1' "$container_script" >/dev/null
@@ -208,7 +210,7 @@ grep -F 'Docker image is not built from' "$container_script" >/dev/null
 grep -F 'broker credential was persisted in retained artifacts' "$container_script" >/dev/null
 grep -F 'health-during-peer-restart.jsonl' "$container_script" >/dev/null
 grep -F 'com.qkt.events.StreamCandleEvent' "$container_script" >/dev/null
-grep -F 'sourceTimeframeMs' "$container_script" >/dev/null
+grep -F 'sourceTimeframeMs' "$container_evidence_lib" >/dev/null
 grep -F 'transport journal reported dropped records' "$container_script" >/dev/null
 grep -F 'transport crossed magic ownership' "$container_script" >/dev/null
 grep -F 'daemon control token was persisted' "$container_script" >/dev/null
