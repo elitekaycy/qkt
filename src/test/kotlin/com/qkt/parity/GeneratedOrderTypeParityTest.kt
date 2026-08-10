@@ -1,8 +1,6 @@
 package com.qkt.parity
 
-import com.qkt.common.Money
 import com.qkt.dsl.compile.GeneratedStrategyReplay
-import com.qkt.marketdata.Tick
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -66,15 +64,13 @@ class GeneratedOrderTypeParityTest {
                 val path = tempDir.resolve("${case.id}.qkt")
                 Files.writeString(path, source)
 
-                GeneratedStrategyReplay.assertTickAndBarParity(
-                    path = path,
-                    closes = case.prices,
-                    expectedTradeCount = case.expectedSides.size,
-                )
+                val result =
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                        path = path,
+                        closes = case.prices,
+                        expectedTradeCount = case.expectedSides.size,
+                    )
 
-                val replayPrices = case.prices + case.prices.last()
-                val result = DslParityHarness.run(case.id, Files.readString(path), ticks(replayPrices))
-                assertThat(result.live).isEqualTo(result.backtest)
                 assertThat(result.backtest.trades.map { it.side }).containsExactlyElementsOf(case.expectedSides)
             }
         }
@@ -106,9 +102,4 @@ class GeneratedOrderTypeParityTest {
               BUY x SIZING EXIT.qty ORDER_TYPE = $orderType
             }
         """.trimIndent()
-
-    private fun ticks(prices: List<String>): List<Tick> =
-        prices.mapIndexed { index, price ->
-            Tick("BACKTEST:X", Money.of(price), index * 60_000L)
-        }
 }

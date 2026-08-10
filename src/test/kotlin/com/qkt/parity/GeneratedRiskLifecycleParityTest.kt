@@ -61,24 +61,13 @@ class GeneratedRiskLifecycleParityTest {
                 val haltRules = { globalHaltRules(config) }
                 val expectedHaltCount = if (case.riskKey in PACER_REJECTION_KEYS) 0 else 1
 
-                GeneratedStrategyReplay.assertTickAndBarParity(
-                    path = strategyPath,
-                    closes = PRICES,
-                    expectedTradeCount = 2,
-                    expectedRejectionCount = 1,
-                    expectedHaltCount = expectedHaltCount,
-                    startingBalance = STARTING_BALANCE,
-                    strategyRiskLimits = limits,
-                    dailyDdBasis = config.dailyDdBasis,
-                    totalDdBasis = config.totalDdBasis,
-                    haltRules = haltRules,
-                )
-
                 val result =
-                    DslParityHarness.run(
-                        strategyId = case.id,
-                        source = source,
-                        ticks = GeneratedTape.ticks(PRICES + PRICES.last()),
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                        path = strategyPath,
+                        closes = PRICES,
+                        expectedTradeCount = 2,
+                        expectedRejectionCount = 1,
+                        expectedHaltCount = expectedHaltCount,
                         startingBalance = STARTING_BALANCE,
                         strategyRiskLimits = limits,
                         dailyDdBasis = config.dailyDdBasis,
@@ -86,7 +75,6 @@ class GeneratedRiskLifecycleParityTest {
                         haltRules = haltRules,
                     )
 
-                assertThat(result.live).isEqualTo(result.backtest)
                 assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL")
                 assertThat(result.backtest.pnl.realized).isEqualTo("-10")
                 assertThat(result.backtest.rejections).hasSize(1)
@@ -156,13 +144,6 @@ class GeneratedRiskLifecycleParityTest {
             totalDdBasis = config.totalDdBasis,
             startingBalance = STARTING_BALANCE,
         )
-
-    private object GeneratedTape {
-        fun ticks(prices: List<String>) =
-            prices.mapIndexed { index, price ->
-                com.qkt.marketdata.Tick("BACKTEST:X", BigDecimal(price), index * 60_000L)
-            }
-    }
 
     private companion object {
         val STARTING_BALANCE: BigDecimal = BigDecimal("100")

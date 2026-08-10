@@ -6,6 +6,7 @@ import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
+import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
@@ -18,9 +19,9 @@ import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
-import com.qkt.marketdata.source.candleToTicks
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
@@ -28,8 +29,10 @@ import com.qkt.risk.StrategyRiskLimits
 import com.qkt.risk.book.BookRiskConfig
 import com.qkt.risk.book.BookRiskController
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.WarmupStream
 import java.math.BigDecimal
 import java.time.Duration
+import java.time.Instant
 
 internal object DslParityHarness {
     data class TradeState(
@@ -89,6 +92,7 @@ internal object DslParityHarness {
         source: String,
         ticks: List<Tick>,
         warmupCandles: List<Candle> = emptyList(),
+        warmupByStream: Map<WarmupStream, List<Candle>> = emptyMap(),
         candleWindow: TimeWindow = TimeWindow.ONE_MINUTE,
         startingBalance: BigDecimal = BigDecimal("10000"),
         instruments: InstrumentRegistry = NoopInstrumentRegistry,
@@ -103,25 +107,51 @@ internal object DslParityHarness {
     ): Result {
         require(ticks.isNotEmpty()) { "parity tape must not be empty" }
         val symbols = ticks.map { it.symbol }.distinct()
-        val backtestTicks = warmupCandles.flatMap(::candleToTicks) + ticks
+        val tapeSource = TapeSource(ticks, warmupCandles, warmupByStream)
         val backtestResult =
-            Backtest(
-                strategies = listOf(strategyId to compile(source)),
-                haltRules = haltRules(),
-                ticks = backtestTicks,
-                candleWindow = candleWindow,
-                initialTimestamp = backtestTicks.first().timestamp,
-                startingBalance = startingBalance,
-                startingBalances = mapOf(strategyId to startingBalance),
-                strategyRiskLimits = mapOf(strategyId to strategyRiskLimits),
-                bookCapital = bookCapital,
-                bookRiskConfig = bookRiskConfig,
-                instruments = instruments,
-                maxOrderQty = maxOrderQty,
-                maxOrderNotional = maxOrderNotional,
-                dailyDdBasis = dailyDdBasis,
-                totalDdBasis = totalDdBasis,
-            ).run()
+            if (warmupCandles.isNotEmpty() || warmupByStream.isNotEmpty()) {
+                Backtest
+                    .fromSource(
+                        strategies = listOf(strategyId to compile(source)),
+                        haltRules = haltRules(),
+                        source = tapeSource,
+                        request =
+                            MarketRequest(
+                                symbols = symbols,
+                                from = Instant.ofEpochMilli(ticks.first().timestamp),
+                                to = Instant.ofEpochMilli(Math.addExact(ticks.last().timestamp, 1L)),
+                            ),
+                        candleWindow = candleWindow,
+                        startingBalance = startingBalance,
+                        startingBalances = mapOf(strategyId to startingBalance),
+                        strategyRiskLimits = mapOf(strategyId to strategyRiskLimits),
+                        bookCapital = bookCapital,
+                        bookRiskConfig = bookRiskConfig,
+                        instruments = instruments,
+                        maxOrderQty = maxOrderQty,
+                        maxOrderNotional = maxOrderNotional,
+                        dailyDdBasis = dailyDdBasis,
+                        totalDdBasis = totalDdBasis,
+                    ).run()
+            } else {
+                Backtest(
+                    strategies = listOf(strategyId to compile(source)),
+                    haltRules = haltRules(),
+                    ticks = ticks,
+                    candleWindow = candleWindow,
+                    initialTimestamp = ticks.first().timestamp,
+                    startingBalance = startingBalance,
+                    startingBalances = mapOf(strategyId to startingBalance),
+                    strategyRiskLimits = mapOf(strategyId to strategyRiskLimits),
+                    bookCapital = bookCapital,
+                    bookRiskConfig = bookRiskConfig,
+                    instruments = instruments,
+                    maxOrderQty = maxOrderQty,
+                    maxOrderNotional = maxOrderNotional,
+                    dailyDdBasis = dailyDdBasis,
+                    totalDdBasis = totalDdBasis,
+                ).run()
+            }
         val backtest =
             Snapshot(
                 trades =
@@ -158,7 +188,7 @@ internal object DslParityHarness {
             LiveSession(
                 strategies = listOf(strategyId to compile(source)),
                 haltRules = haltRules(),
-                source = TapeSource(ticks, warmupCandles),
+                source = tapeSource,
                 symbols = symbols,
                 candleWindow = candleWindow,
                 clock = liveClock,
@@ -257,10 +287,16 @@ internal object DslParityHarness {
     private class TapeSource(
         private val ticks: List<Tick>,
         private val warmupCandles: List<Candle>,
+        private val warmupByStream: Map<WarmupStream, List<Candle>>,
     ) : MarketSource {
         override val name: String = "DslParityTape"
         override val capabilities: Set<MarketSourceCapability> =
-            setOf(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
+            setOf(
+                MarketSourceCapability.TICKS,
+                MarketSourceCapability.LIVE_TICKS,
+                MarketSourceCapability.BARS,
+                MarketSourceCapability.VOLUME,
+            )
 
         override fun supports(symbol: String): Boolean = true
 
@@ -273,15 +309,27 @@ internal object DslParityHarness {
                 override fun close() = Unit
             }
 
+        override fun ticks(
+            symbol: String,
+            range: TimeRange,
+        ): Sequence<Tick> =
+            ticks.asSequence().filter {
+                it.symbol == symbol &&
+                    it.timestamp >= range.from.toEpochMilli() &&
+                    it.timestamp < range.to.toEpochMilli()
+            }
+
         override fun bars(
             symbol: String,
             window: TimeWindow,
             range: com.qkt.common.TimeRange,
         ): Sequence<Candle> =
-            warmupCandles.asSequence().filter {
-                it.symbol == symbol &&
-                    it.startTime >= range.from.toEpochMilli() &&
-                    it.startTime < range.to.toEpochMilli()
-            }
+            (warmupByStream[WarmupStream(symbol, window)] ?: warmupCandles)
+                .asSequence()
+                .filter {
+                    it.symbol == symbol &&
+                        it.startTime >= range.from.toEpochMilli() &&
+                        it.startTime < range.to.toEpochMilli()
+                }
     }
 }

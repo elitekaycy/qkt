@@ -65,7 +65,7 @@ class GeneratedNumericFunctionStrategyTest {
                 val buy = signals.single() as Signal.Buy
                 assertThat(buy.symbol).isEqualTo("BACKTEST:X")
                 assertThat(buy.size).isEqualByComparingTo("0.01")
-                GeneratedStrategyReplay.assertTickAndBarParity(path, listOf("10"))
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(path, listOf("10"))
             }
         }
     }

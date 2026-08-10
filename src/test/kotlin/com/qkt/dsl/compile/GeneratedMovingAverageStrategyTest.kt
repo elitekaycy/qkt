@@ -34,17 +34,8 @@ class GeneratedMovingAverageStrategyTest {
     ): List<DynamicTest> =
         cases.map { (name, case) ->
             DynamicTest.dynamicTest(name) {
-                val source =
-                    """
-                    STRATEGY generated_${name.lowercase()} VERSION 1
-                    SYMBOLS
-                      s = BACKTEST:X EVERY 1m
-                    RULES
-                      WHEN ${case.call} = ${case.expected} AND POSITION.s = 0
-                      THEN BUY s SIZING 0.01
-                    """.trimIndent()
                 val path = tempDir.resolve("${name.lowercase()}.qkt")
-                Files.writeString(path, source)
+                Files.writeString(path, strategySource(name, "${case.call} = ${case.expected}"))
 
                 val strategy = GeneratedStrategyReplay.compile(path)
                 val signals = mutableListOf<Signal>()
@@ -55,9 +46,24 @@ class GeneratedMovingAverageStrategyTest {
                 assertThat(signals).hasSize(1)
                 assertThat(signals.single()).isInstanceOf(Signal.Buy::class.java)
                 assertThat((signals.single() as Signal.Buy).size).isEqualByComparingTo("0.01")
-                GeneratedStrategyReplay.assertTickAndBarParity(path, case.closes)
+
+                Files.writeString(path, strategySource(name, "${case.call} IS NOT NULL"))
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(path, case.closes)
             }
         }
+
+    private fun strategySource(
+        name: String,
+        condition: String,
+    ): String =
+        """
+        STRATEGY generated_${name.lowercase()} VERSION 1
+        SYMBOLS
+          s = BACKTEST:X EVERY 1m
+        RULES
+          WHEN $condition AND POSITION.s = 0
+          THEN BUY s SIZING 0.01
+        """.trimIndent()
 
     private fun candle(
         close: String,

@@ -4,7 +4,6 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.Config
 import com.qkt.dsl.compile.GeneratedStrategyReplay
 import com.qkt.marketdata.Candle
-import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -55,25 +54,17 @@ class GeneratedMultiSymbolRiskParityTest {
                         .getValue(case.id)
                         .toLimits()
 
-                GeneratedStrategyReplay.assertTickAndBarParity(
-                    path = strategyPath,
-                    candlesBySymbol = CANDLES,
-                    window = TimeWindow.ONE_MINUTE,
-                    closeOnlyTicks = true,
-                    expectedTradeCount = case.expectedTradeSymbols.size,
-                    expectedRejectionCount = case.expectedRejectionCount,
-                    strategyRiskLimits = limits,
-                )
-
                 val result =
-                    DslParityHarness.run(
-                        strategyId = case.id,
-                        source = source,
-                        ticks = TICKS,
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                        path = strategyPath,
+                        candlesBySymbol = CANDLES,
+                        window = TimeWindow.ONE_MINUTE,
+                        closeOnlyTicks = true,
+                        expectedTradeCount = case.expectedTradeSymbols.size,
+                        expectedRejectionCount = case.expectedRejectionCount,
                         strategyRiskLimits = limits,
                     )
 
-                assertThat(result.live).isEqualTo(result.backtest)
                 assertThat(result.backtest.trades.map { it.symbol })
                     .containsExactlyElementsOf(case.expectedTradeSymbols)
                 assertThat(result.backtest.rejections).hasSize(case.expectedRejectionCount)
@@ -117,11 +108,6 @@ class GeneratedMultiSymbolRiskParityTest {
                 X to candles(X, listOf("100", "100", "101", "101")),
                 Y to candles(Y, listOf("199", "200", "201", "201")),
             )
-        val TICKS: List<Tick> =
-            CANDLES.values
-                .flatten()
-                .map { candle -> Tick(candle.symbol, candle.close, candle.startTime) }
-                .sortedWith(compareBy<Tick> { it.timestamp }.thenBy { it.symbol })
 
         fun candles(
             symbol: String,

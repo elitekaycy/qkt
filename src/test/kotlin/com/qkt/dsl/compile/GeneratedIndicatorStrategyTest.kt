@@ -25,7 +25,7 @@ class GeneratedIndicatorStrategyTest {
                     val path = tempDir.resolve("${name.lowercase()}.qkt")
                     Files.writeString(path, strategySource(name))
 
-                    GeneratedStrategyReplay.assertTickAndBarParity(
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
                         path = path,
                         candlesBySymbol = candles,
                         window = TimeWindow.ONE_HOUR,

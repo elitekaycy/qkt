@@ -1,11 +1,9 @@
 package com.qkt.parity
 
 import com.qkt.cli.Config
-import com.qkt.common.Money
 import com.qkt.dsl.compile.GeneratedStrategyReplay
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
-import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -85,26 +83,16 @@ class GeneratedSizingRiskParityTest {
                 val path = tempDir.resolve("${case.id}.qkt")
                 Files.writeString(path, source)
 
-                GeneratedStrategyReplay.assertTickAndBarParity(
-                    path = path,
-                    closes = case.prices,
-                    expectedTradeCount = case.expectedQuantities.size,
-                    startingBalance = STARTING_BALANCE,
-                    bookCapital = case.bookCapital,
-                    instruments = unitInstrument,
-                )
-
                 val result =
-                    DslParityHarness.run(
-                        strategyId = case.id,
-                        source = source,
-                        ticks = ticks(case.prices + case.prices.last()),
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                        path = path,
+                        closes = case.prices,
+                        expectedTradeCount = case.expectedQuantities.size,
                         startingBalance = STARTING_BALANCE,
-                        instruments = unitInstrument,
                         bookCapital = case.bookCapital,
+                        instruments = unitInstrument,
                     )
 
-                assertThat(result.live).isEqualTo(result.backtest)
                 assertThat(result.backtest.rejections).isEmpty()
                 assertThat(result.backtest.trades.map { it.quantity })
                     .containsExactlyElementsOf(case.expectedQuantities)
@@ -125,23 +113,12 @@ class GeneratedSizingRiskParityTest {
                 val config = Config.load(configPath)
                 val strategyRisk = config.perStrategyRisk.getValue(case.id).toLimits()
 
-                GeneratedStrategyReplay.assertTickAndBarParity(
-                    path = strategyPath,
-                    closes = listOf("99", "100", "101"),
-                    expectedTradeCount = if (case.expectedRejection == null) 1 else 0,
-                    expectedRejectionCount = if (case.expectedRejection == null) 0 else 1,
-                    startingBalance = STARTING_BALANCE,
-                    instruments = unitInstrument,
-                    strategyRiskLimits = strategyRisk,
-                    maxOrderQty = config.maxOrderQty,
-                    maxOrderNotional = config.maxOrderNotional,
-                )
-
                 val result =
-                    DslParityHarness.run(
-                        strategyId = case.id,
-                        source = source,
-                        ticks = ticks(listOf("99", "100", "101", "101")),
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                        path = strategyPath,
+                        closes = listOf("99", "100", "101"),
+                        expectedTradeCount = if (case.expectedRejection == null) 1 else 0,
+                        expectedRejectionCount = if (case.expectedRejection == null) 0 else 1,
                         startingBalance = STARTING_BALANCE,
                         instruments = unitInstrument,
                         strategyRiskLimits = strategyRisk,
@@ -149,7 +126,6 @@ class GeneratedSizingRiskParityTest {
                         maxOrderNotional = config.maxOrderNotional,
                     )
 
-                assertThat(result.live).isEqualTo(result.backtest)
                 if (case.expectedRejection == null) {
                     assertThat(result.backtest.rejections).isEmpty()
                     assertThat(result.backtest.trades).hasSize(1)
@@ -186,13 +162,7 @@ class GeneratedSizingRiskParityTest {
               max_position_size: "${case.maxPositionSize}"
         """.trimIndent()
 
-    private fun ticks(prices: List<String>): List<Tick> =
-        prices.mapIndexed { index, price ->
-            Tick(SYMBOL, Money.of(price), index * 60_000L)
-        }
-
     private companion object {
-        const val SYMBOL = "BACKTEST:X"
         val STARTING_BALANCE: BigDecimal = BigDecimal("10000")
         val unitInstrument =
             object : InstrumentRegistry {

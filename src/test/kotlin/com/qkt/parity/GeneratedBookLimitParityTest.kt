@@ -54,27 +54,17 @@ class GeneratedBookLimitParityTest {
                 val config = Config.load(configPath)
                 val expectedRejections = if (case.expectedReason == null) 0 else 1
 
-                GeneratedStrategyReplay.assertTickAndBarParity(
-                    path = strategyPath,
-                    closes = listOf("99", "100", "101"),
-                    expectedTradeCount = if (case.expectedReason == null) 1 else 0,
-                    expectedRejectionCount = expectedRejections,
-                    startingBalance = CAPITAL,
-                    instruments = unitInstrument,
-                    bookRiskConfig = config.bookRisk,
-                )
-
                 val result =
-                    DslParityHarness.run(
-                        strategyId = case.id,
-                        source = source,
-                        ticks = GeneratedTape.ticks(listOf("99", "100", "101", "101")),
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                        path = strategyPath,
+                        closes = listOf("99", "100", "101"),
+                        expectedTradeCount = if (case.expectedReason == null) 1 else 0,
+                        expectedRejectionCount = expectedRejections,
                         startingBalance = CAPITAL,
                         instruments = unitInstrument,
                         bookRiskConfig = config.bookRisk,
                     )
 
-                assertThat(result.live).isEqualTo(result.backtest)
                 assertThat(result.backtest.rejections).hasSize(expectedRejections)
                 if (case.expectedReason == null) {
                     assertThat(result.backtest.trades).hasSize(1)
@@ -103,13 +93,6 @@ class GeneratedBookLimitParityTest {
             "  capital: \"$CAPITAL\"\n" +
             "  limits:\n" +
             case.limits.prependIndent("    ")
-
-    private object GeneratedTape {
-        fun ticks(prices: List<String>) =
-            prices.mapIndexed { index, price ->
-                com.qkt.marketdata.Tick("BACKTEST:X", BigDecimal(price), index * 60_000L)
-            }
-    }
 
     private companion object {
         val CAPITAL: BigDecimal = BigDecimal("1000")

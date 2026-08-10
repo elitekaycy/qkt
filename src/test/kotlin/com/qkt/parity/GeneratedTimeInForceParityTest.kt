@@ -1,10 +1,8 @@
 package com.qkt.parity
 
 import com.qkt.candles.TimeWindow
-import com.qkt.common.Money
 import com.qkt.dsl.compile.GeneratedStrategyReplay
 import com.qkt.marketdata.Candle
-import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -55,16 +53,15 @@ class GeneratedTimeInForceParityTest {
                 Files.writeString(path, strategySource(case))
                 val candles = candles(case)
 
-                GeneratedStrategyReplay.assertTickAndBarParity(
-                    path = path,
-                    candlesBySymbol = mapOf("BACKTEST:X" to candles),
-                    window = TimeWindow.ONE_MINUTE,
-                    closeOnlyTicks = true,
-                    expectedTradeCount = case.expectedTrades,
-                )
+                val result =
+                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                        path = path,
+                        candlesBySymbol = mapOf("BACKTEST:X" to candles),
+                        window = TimeWindow.ONE_MINUTE,
+                        closeOnlyTicks = true,
+                        expectedTradeCount = case.expectedTrades,
+                    )
 
-                val result = DslParityHarness.run(case.id, Files.readString(path), ticks(candles))
-                assertThat(result.live).isEqualTo(result.backtest)
                 assertThat(result.backtest.trades).hasSize(case.expectedTrades)
             }
         }
@@ -92,10 +89,5 @@ class GeneratedTimeInForceParityTest {
                 startTime = start,
                 endTime = start + 60_000L,
             )
-        }
-
-    private fun ticks(candles: List<Candle>): List<Tick> =
-        candles.map { candle ->
-            Tick(candle.symbol, Money.of(candle.close.toPlainString()), candle.startTime, volume = candle.volume)
         }
 }

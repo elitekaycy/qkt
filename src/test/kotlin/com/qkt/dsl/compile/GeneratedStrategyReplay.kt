@@ -14,13 +14,18 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.parity.DslParityHarness
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
 import com.qkt.risk.StrategyRiskLimits
 import com.qkt.risk.book.BookRiskConfig
+import com.qkt.strategy.PerStreamWarmable
 import com.qkt.strategy.Strategy
+import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 import java.math.BigDecimal
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
@@ -37,7 +42,7 @@ internal object GeneratedStrategyReplay {
         return ast.name to AstCompiler().compile(ast)
     }
 
-    fun assertTickAndBarParity(
+    fun assertTickBarAndLiveParity(
         path: Path,
         closes: List<String>,
         expectedTradeCount: Int = 1,
@@ -53,10 +58,10 @@ internal object GeneratedStrategyReplay {
         dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
         totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
         haltRules: () -> List<HaltRule> = { emptyList() },
-    ) {
+    ): DslParityHarness.Result {
         val candles =
             (closes + closes.last()).mapIndexed { index, close -> candle(close, index) }
-        assertTickAndBarParity(
+        return assertTickBarAndLiveParity(
             path,
             mapOf(SYMBOL to candles),
             window = TimeWindow.ONE_MINUTE,
@@ -77,7 +82,7 @@ internal object GeneratedStrategyReplay {
         )
     }
 
-    fun assertTickAndBarParity(
+    fun assertTickBarAndLiveParity(
         path: Path,
         candlesBySymbol: Map<String, List<Candle>>,
         window: TimeWindow,
@@ -95,7 +100,7 @@ internal object GeneratedStrategyReplay {
         dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
         totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
         haltRules: () -> List<HaltRule> = { emptyList() },
-    ) {
+    ): DslParityHarness.Result {
         val symbols = candlesBySymbol.keys.toList()
         val allCandles = candlesBySymbol.values.flatten()
         val ticks =
@@ -164,6 +169,67 @@ internal object GeneratedStrategyReplay {
         assertThat(barResult.trades).hasSize(expectedTradeCount)
         assertThat(barResult.trades.map(::canonical))
             .isEqualTo(tickResult.trades.map(::canonical))
+
+        val strategyId = namedStrategy(path).first
+        val liveParity =
+            DslParityHarness.run(
+                strategyId = strategyId,
+                source = Files.readString(path),
+                ticks = ticks,
+                warmupByStream = generatedWarmup(namedStrategy(path).second, ticks),
+                candleWindow = window,
+                startingBalance = startingBalance,
+                instruments = instruments,
+                strategyRiskLimits = strategyRiskLimits,
+                bookCapital = bookCapital,
+                bookRiskConfig = bookRiskConfig,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                dailyDdBasis = dailyDdBasis,
+                totalDdBasis = totalDdBasis,
+                haltRules = haltRules,
+            )
+        assertThat(liveParity.live).isEqualTo(liveParity.backtest)
+        assertThat(liveParity.backtest.rejections).hasSize(expectedRejectionCount)
+        assertThat(liveParity.backtest.halts).hasSize(expectedHaltCount)
+        assertThat(liveParity.backtest.trades).hasSize(expectedTradeCount)
+        return liveParity
+    }
+
+    private fun generatedWarmup(
+        strategy: Strategy,
+        ticks: List<Tick>,
+    ): Map<WarmupStream, List<Candle>> {
+        val specs = (strategy as? PerStreamWarmable)?.perStreamWarmup.orEmpty()
+        val upperMs = specs.keys.associateWith { stream -> stream.window.windowStartFor(ticks.first().timestamp) }
+        return specs.mapValues { (stream, spec) ->
+            when (spec) {
+                WarmupSpec.None -> emptyList()
+                is WarmupSpec.Bars -> {
+                    val base = ticks.first { it.symbol == stream.symbol }.price
+                    val step = base.abs().max(BigDecimal.ONE).movePointLeft(4)
+                    (0 until spec.count).map { index ->
+                        val offset = step.multiply(BigDecimal(index % 7 - 3))
+                        val open = base.subtract(offset)
+                        val close = base.add(offset)
+                        val startTime = upperMs.getValue(stream) - (spec.count - index) * spec.window.durationMs
+                        Candle(
+                            symbol = stream.symbol,
+                            open = open,
+                            high = open.max(close).add(step),
+                            low = open.min(close).subtract(step),
+                            close = close,
+                            volume = BigDecimal(index + 1),
+                            startTime = startTime,
+                            endTime = startTime + spec.window.durationMs,
+                        )
+                    }
+                }
+                is WarmupSpec.Duration,
+                is WarmupSpec.Ticks,
+                -> error("compiled DSL stream must declare bar warmup: $stream=$spec")
+            }
+        }
     }
 
     private fun canonical(record: TradeRecord): List<Any> =
