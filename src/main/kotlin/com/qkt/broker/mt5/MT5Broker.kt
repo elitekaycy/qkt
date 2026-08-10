@@ -122,12 +122,10 @@ private fun nativeStopTrigger(request: OrderRequest): NativeStopTrigger? =
  * number, and capability restrictions. See [MT5DefaultProfiles] for shipped templates
  * (Exness, ICMarkets, FTMO, Pepperstone) and [MT5BrokerProfileLoader] for YAML config.
  *
- * Phase 26b note: market/bracket orders publish `OrderFilled` synchronously after
- * successful placement (the venue fills immediately). Pending shapes (Stop, Limit,
- * StopLimit, TrailingStop, StandaloneOCO) publish `OrderAccepted` and rely on the
- * position poller for eventual fill detection. End-to-end pending-order lifecycle
- * (fill detection via position deltas, OCO sibling cancel-on-fill via ticket
- * correlation) is Phase 26c.
+ * Market/bracket orders publish `OrderFilled` synchronously after successful placement
+ * (the venue fills immediately). Pending Stop/Limit entries publish `OrderAccepted` and
+ * rely on the position poller for eventual fill detection. MT5 has no venue-atomic OCO;
+ * [com.qkt.app.OrderManager] places and links its pending legs separately.
  */
 class MT5Broker(
     val profile: MT5BrokerProfile,
