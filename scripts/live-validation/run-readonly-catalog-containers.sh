@@ -2,6 +2,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/live-validation/lib/catalog-startup-window.sh
+source "$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"
+# shellcheck source=scripts/live-validation/lib/catalog-evidence.sh
+source "$repo_root/scripts/live-validation/lib/catalog-evidence.sh"
 
 usage() {
     cat <<'EOF'
@@ -59,16 +63,20 @@ suite="$(realpath "$suite")"
 gateway_url="$(jq -er '.gatewayUrl' "$suite/suite.json")"
 [[ "$gateway_url" =~ ^http://127\.0\.0\.1:[0-9]{1,5}$ ]] || fail "suite gateway must be a localhost endpoint"
 jq -e '
-    .schema == "qkt-live-readonly-catalog-suite-v1" and
+    .schema == "qkt-live-readonly-catalog-suite-v2" and
     .credentialsStored == false and
     .contract == {
       containers:4,parallel:true,financiallyReadOnly:true,requiredGatewayMutations:0,
-      requiredOrderEvents:0,requiredFills:0,barsFirstClass:true,
+      requiredOrderEvents:0,requiredFills:0,barsFirstClass:true,streamEvaluationRoles:true,
       polling:{tickPollIntervalMs:500,brokerPollIntervalMs:5000,parallelTickSymbols:5}
     } and
     ([.cases[].id] == ["numeric-candle","cross-multi-tf","session-history","volume-negative"]) and
     ([.cases[].magic] | unique | length) == 4 and
-    all(.cases[]; .expectedDeployment == "running" and (.streams | length) > 0 and (.vectors | length) > 0) and
+    all(.cases[];
+        .expectedDeployment == "running" and (.streams | length) > 0 and (.vectors | length) > 0 and
+        all(.streams[]; .evaluationRole == "rule-driver" or .evaluationRole == "dependency") and
+        ([.streams[] | select(.evaluationRole == "rule-driver")] | length) > 0
+    ) and
     (.cases[] | select(.id == "volume-negative") | .negativeDeployment) == "volume-capability-rejected"
 ' "$suite/suite.json" >/dev/null || fail "suite contract is not the reviewed four-case read-only catalog"
 
@@ -162,6 +170,62 @@ gateway_get() {
         curl --silent --show-error --fail-with-body --config - "$gateway_url$path"
 }
 
+wait_for_catalog_startup_window() {
+    local evidence="$output/evidence/startup-window.jsonl"
+    local total_wait_seconds=0
+    local max_total_wait_seconds=260
+    local attempt
+    : > "$evidence"
+    for attempt in 1 2 3; do
+        local tick_file="$output/evidence/startup-tick-$attempt.json"
+        gateway_get /symbol_info_tick/EURUSDm > "$tick_file"
+        local broker_tick_ms
+        broker_tick_ms="$(jq -er '(.time_msc // ((.time | tonumber) * 1000)) | tonumber' "$tick_file")" ||
+            fail "gateway startup tick did not contain a usable broker timestamp"
+        local observed_at_ms="$(date +%s%3N)"
+        local tick_age_ms=$((observed_at_ms - broker_tick_ms))
+        [ "$tick_age_ms" -ge -5000 ] && [ "$tick_age_ms" -le 60000 ] ||
+            fail "gateway startup tick is not current enough to select a safe launch window"
+        local phase_clock_ms="$broker_tick_ms"
+        [ "$tick_age_ms" -lt 0 ] || phase_clock_ms=$((broker_tick_ms + tick_age_ms))
+        local broker_phase_ms=$((broker_tick_ms % QKT_CATALOG_ROLLOVER_PERIOD_MS))
+        local phase_ms=$((phase_clock_ms % QKT_CATALOG_ROLLOVER_PERIOD_MS))
+        local delay_ms
+        delay_ms="$(qkt_catalog_startup_delay_ms "$phase_ms")" || fail "invalid broker startup phase: $phase_ms"
+        local sleep_seconds=0
+        if [ "$delay_ms" -gt 0 ]; then
+            # Round up and cross the boundary by one second instead of launching on it.
+            sleep_seconds=$(((delay_ms + 999) / 1000 + 1))
+        fi
+        jq -cn --argjson attempt "$attempt" --argjson observedAtMs "$observed_at_ms" \
+            --argjson brokerTickMs "$broker_tick_ms" --argjson phaseMs "$phase_ms" \
+            --argjson phaseClockMs "$phase_clock_ms" --argjson brokerPhaseMs "$broker_phase_ms" \
+            --argjson tickAgeMs "$tick_age_ms" --argjson delayMs "$delay_ms" --argjson sleepSeconds "$sleep_seconds" \
+            '{attempt:$attempt,observedAtMs:$observedAtMs,brokerTickMs:$brokerTickMs,
+              tickAgeMs:$tickAgeMs,phaseClockMs:$phaseClockMs,brokerPhaseMs:$brokerPhaseMs,
+              phaseMs:$phaseMs,delayMs:$delayMs,sleepSeconds:$sleepSeconds,
+              safeToLaunch:($delayMs == 0)}' >> "$evidence"
+        if [ "$delay_ms" -eq 0 ]; then
+            jq -n --argjson enteredAtBrokerMs "$broker_tick_ms" --argjson enteredAtClockMs "$phase_clock_ms" \
+                --argjson enteredAtPhaseMs "$phase_ms" \
+                --argjson totalWaitSeconds "$total_wait_seconds" '
+                {schema:"qkt-live-readonly-catalog-startup-window-v1",status:"passed",
+                 clockSource:"broker-tick-validated-utc",wireSymbol:"EURUSDm",periodMs:300000,
+                 safeStartMs:90000,safeEndMs:150000,
+                 enteredAtBrokerMs:$enteredAtBrokerMs,enteredAtClockMs:$enteredAtClockMs,
+                 enteredAtPhaseMs:$enteredAtPhaseMs,
+                 totalWaitSeconds:$totalWaitSeconds,maxWaitSeconds:260,maxObservations:3}
+            ' > "$output/evidence/startup-window.json"
+            return
+        fi
+        [ "$((total_wait_seconds + sleep_seconds))" -le "$max_total_wait_seconds" ] ||
+            fail "broker tick clock did not enter the catalog startup window within 260 seconds"
+        total_wait_seconds=$((total_wait_seconds + sleep_seconds))
+        sleep "$sleep_seconds"
+    done
+    fail "broker tick clock did not enter the bounded catalog startup window after three observations"
+}
+
 gateway_get /health > "$output/evidence/gateway-health.json"
 jq -e '.ok == true and .status == "healthy" and .mt5_status == "connected" and .kill_switch_active == false' \
     "$output/evidence/gateway-health.json" >/dev/null || fail "gateway is not healthy and connected"
@@ -179,6 +243,7 @@ jq -e '.ok == true and (.data | length) == 0' "$output/evidence/positions-initia
     fail "demo account has an open position"
 jq -e '.ok == true and (.orders | length) == 0' "$output/evidence/orders-initial.json" >/dev/null ||
     fail "demo account has a pending order"
+wait_for_catalog_startup_window
 
 containers=()
 daemon_pids=("" "" "" "")
@@ -255,6 +320,11 @@ for index in 0 1 2 3; do
     deadline=$((SECONDS + 120))
     while [ "$SECONDS" -lt "$deadline" ]; do
         kill -0 "${daemon_pids[$index]}" 2>/dev/null || fail "$case_id daemon exited before readiness"
+        if rg --quiet 'failed to auto-deploy' "$output/cases/$case_id/logs/daemon.log"; then
+            rg --no-heading 'failed to auto-deploy' "$output/cases/$case_id/logs/daemon.log" \
+                > "$output/cases/$case_id/evidence/startup-deploy-failure.log"
+            fail "$case_id control strategy auto-deploy failed after the guarded startup window"
+        fi
         if "$cli" daemon status --state-dir "$state" --json > "$output/cases/$case_id/evidence/status-ready.json" 2>/dev/null &&
             jq -e --arg strategy "${strategies[$index]}" '
                 .status == "ok" and .strategies == 1 and .perStrategy[0].name == $strategy and
@@ -327,6 +397,17 @@ for index in 0 1 2 3; do
         "$case_dir/evidence/status-final.json" >/dev/null || fail "$case_id did not finish healthy and drained"
     port="$(<"$case_dir/state/control.port")"
     curl --silent --show-error --fail "http://127.0.0.1:$port/latency" > "$case_dir/evidence/latency.json"
+    cp "$case_dir/logs/daemon.log" "$case_dir/evidence/runtime-before-shutdown.log"
+    "$cli" daemon stop --state-dir "$case_dir/state" > "$case_dir/evidence/daemon-stop.log"
+    wait "${daemon_pids[$index]}" || fail "$case_id daemon failed during final stop"
+    daemon_pids[$index]=""
+    if ! qkt_catalog_runtime_log_summary "$case_dir/evidence/runtime-before-shutdown.log" \
+        "$case_dir/logs/daemon.log" > "$case_dir/evidence/runtime-log-summary.json"; then
+        fail "$case_id runtime log policy failed"
+    fi
+    stale_events="$(jq -er '.staleEvents' "$case_dir/evidence/runtime-log-summary.json")"
+    recovered_stale_events="$(jq -er '.recoveredStaleEvents' "$case_dir/evidence/runtime-log-summary.json")"
+    shutdown_disconnect_warnings="$(jq -er '.shutdownDisconnectWarnings' "$case_dir/evidence/runtime-log-summary.json")"
 
     mapfile -t audits < <(find "$case_dir/state/state/audit-journal" -type f -name '*.jsonl' | sort)
     [ "${#audits[@]}" -gt 0 ] || fail "$case_id produced no engine audit journal"
@@ -339,7 +420,9 @@ for index in 0 1 2 3; do
     ) | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
     [ "$order_events" -eq 0 ] || fail "$case_id emitted an order, fill, accounting, or rejection event"
 
-    while IFS=$'\t' read -r alias symbol timeframe warmup_bars; do
+    rule_driver_streams=0
+    dependency_streams=0
+    while IFS=$'\t' read -r alias symbol timeframe warmup_bars evaluation_role; do
         timeframe_ms=60000
         [ "$timeframe" = "1m" ] || timeframe_ms=300000
         warmup_tick_count="$(jq -s --arg symbol "$symbol" --argjson timeframeMs "$timeframe_ms" '[.[] |
@@ -351,23 +434,18 @@ for index in 0 1 2 3; do
         jq -e --arg symbol "$symbol" '
             select(.eventType == "com.qkt.events.TickEvent" and .symbol == $symbol)
         ' "${audits[@]}" >/dev/null || fail "$case_id lacks $alias live tick evidence"
-        jq -s -e --arg strategy "${strategies[$index]}" --arg alias "$alias" \
-            --arg symbol "$symbol" --arg timeframe "$timeframe" '
-            . as $events |
-            any($events[];
-                .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
-                .strategyId == $strategy and .alias == $alias and .symbol == $symbol and
-                .timeframe == $timeframe and .rulesEvaluated > 0 and
-                (. as $evaluation | any($events[];
-                    .eventType == "com.qkt.events.StreamCandleEvent" and
-                    .symbol == $symbol and .timeframe == $timeframe and
-                    .candle.startTimeMs == $evaluation.candle.startTimeMs and
-                    .candle.endTimeMs == $evaluation.candle.endTimeMs
-                ))
-            )
-        ' "${audits[@]}" >/dev/null || fail "$case_id lacks matched constructed bar/evaluation evidence for $alias"
+        matched_evaluations="$(qkt_catalog_matched_evaluation_count "${strategies[$index]}" "$alias" \
+            "$symbol" "$timeframe" "$evaluation_role" "${audits[@]}")" ||
+            fail "$case_id has an invalid evaluation role for $alias"
+        [ "$matched_evaluations" -gt 0 ] ||
+            fail "$case_id lacks matched constructed bar/evaluation evidence for $alias ($evaluation_role)"
+        if [ "$evaluation_role" = rule-driver ]; then
+            rule_driver_streams=$((rule_driver_streams + 1))
+        else
+            dependency_streams=$((dependency_streams + 1))
+        fi
     done < <(jq -r --arg id "$case_id" '.cases[] | select(.id == $id) | .streams[] |
-        [.alias,.symbol,.timeframe,(.warmupBars|tostring)] | @tsv' "$suite/suite.json")
+        [.alias,.symbol,.timeframe,(.warmupBars|tostring),.evaluationRole] | @tsv' "$suite/suite.json")
 
     rg --no-heading --fixed-strings "catalog vector case=$case_id" "$case_dir/logs/daemon.log" \
         > "$case_dir/evidence/evaluation-vectors.log" || fail "$case_id produced no evaluation vector"
@@ -375,6 +453,12 @@ for index in 0 1 2 3; do
         rg --fixed-strings "catalog vector case=$case_id $vector" "$case_dir/evidence/evaluation-vectors.log" >/dev/null ||
             fail "$case_id did not emit readiness vector $vector"
     done < <(jq -r --arg id "$case_id" '.cases[] | select(.id == $id) | .vectors[]' "$suite/suite.json")
+    if [ "$case_id" = cross-multi-tf ]; then
+        for consumed_alias in eur1 eur5 gbp1 gbp5; do
+            rg --fixed-strings "$consumed_alias=" "$case_dir/evidence/evaluation-vectors.log" >/dev/null ||
+                fail "$case_id dependency proof vector did not consume $consumed_alias"
+        done
+    fi
 
     mapfile -t transports < <(find "$case_dir/state/state/mt5-transport-journal" -type f -name '*.jsonl' | sort)
     [ "${#transports[@]}" -gt 0 ] || fail "$case_id produced no MT5 transport journal"
@@ -397,20 +481,21 @@ for index in 0 1 2 3; do
     vectors="$(awk 'END {print NR + 0}' "$case_dir/evidence/evaluation-vectors.log")"
     jq -n --arg caseId "$case_id" --arg strategy "${strategies[$index]}" \
         --argjson warmups "$warmups" --argjson ticks "$ticks" --argjson candles "$candles" \
-        --argjson evaluations "$evaluations" --argjson vectors "$vectors" '
-        {schema:"qkt-live-readonly-catalog-case-result-v1",status:"passed",caseId:$caseId,strategy:$strategy,
+        --argjson evaluations "$evaluations" --argjson vectors "$vectors" \
+        --argjson ruleDriverStreams "$rule_driver_streams" --argjson dependencyStreams "$dependency_streams" \
+        --argjson staleEvents "$stale_events" --argjson recoveredStaleEvents "$recovered_stale_events" \
+        --argjson shutdownDisconnectWarnings "$shutdown_disconnect_warnings" '
+        {schema:"qkt-live-readonly-catalog-case-result-v2",status:"passed",caseId:$caseId,strategy:$strategy,
           counts:{warmupTicks:$warmups,liveTicks:$ticks,constructedBars:$candles,evaluations:$evaluations,
             readinessVectors:$vectors,gatewayMutations:0,orderEvents:0,fills:0},
           bars:{warmupBars:true,readinessVectors:true,liveTicks:true,constructedBars:true,evaluationsJoined:true},
+          evaluationRoles:{ruleDriverStreams:$ruleDriverStreams,dependencyStreams:$dependencyStreams,
+            positiveRuleCountRequiredOnlyForDrivers:true},
+          runtimeLogs:{staleEvents:$staleEvents,recoveredStaleEvents:$recoveredStaleEvents,
+            inWindowDisconnectWarnings:0,shutdownDisconnectWarnings:$shutdownDisconnectWarnings,
+            postBoundaryStaleEvents:0,unexpectedErrors:0,allStaleEpisodesRecovered:true},
           financiallyReadOnly:true}
     ' > "$case_dir/evidence/result.json"
-done
-
-for index in 0 1 2 3; do
-    case_id="${case_ids[$index]}"
-    "$cli" daemon stop --state-dir "$output/cases/$case_id/state" > "$output/cases/$case_id/evidence/daemon-stop.log"
-    wait "${daemon_pids[$index]}" || fail "$case_id daemon failed during final stop"
-    daemon_pids[$index]=""
 done
 
 control_tokens=()
@@ -455,18 +540,27 @@ jq -n \
     --arg qktCommit "$qkt_commit" --arg hostVersion "$host_version" \
     --arg image "$image" --arg imageVersion "$image_version" \
     --argjson durationSeconds "$duration_seconds" \
+    --slurpfile startupWindow "$output/evidence/startup-window.json" \
     --slurpfile suite "$suite/suite.json" \
     --slurpfile numeric "$output/cases/numeric-candle/evidence/result.json" \
     --slurpfile cross "$output/cases/cross-multi-tf/evidence/result.json" \
     --slurpfile session "$output/cases/session-history/evidence/result.json" \
     --slurpfile volume "$output/cases/volume-negative/evidence/result.json" '
-    {schema:"qkt-live-readonly-catalog-run-v1",status:"passed",finishedAt:$finishedAt,
+    {schema:"qkt-live-readonly-catalog-run-v2",status:"passed",finishedAt:$finishedAt,
       qktCommit:$qktCommit,hostVersion:$hostVersion,image:$image,imageVersion:$imageVersion,
       durationSeconds:$durationSeconds,containers:4,parallelLaunch:true,
+      startupWindow:$startupWindow[0],
       financiallyReadOnly:true,accountUnchanged:true,venueDealsDuringRun:0,
       gatewayMutations:0,orderEvents:0,fills:0,volumeCapabilityRejected:true,
       polling:$suite[0].contract.polling,
       bars:{warmupBars:true,readinessVectors:true,liveTicks:true,constructedBars:true,evaluationsJoined:true},
+      evaluationRoles:{positiveRuleCountRequiredOnlyForDrivers:true},
+      runtimeLogs:{
+        staleEvents:([$numeric[0],$cross[0],$session[0],$volume[0]] | map(.runtimeLogs.staleEvents) | add),
+        recoveredStaleEvents:([$numeric[0],$cross[0],$session[0],$volume[0]] | map(.runtimeLogs.recoveredStaleEvents) | add),
+        inWindowDisconnectWarnings:0,
+        shutdownDisconnectWarnings:([$numeric[0],$cross[0],$session[0],$volume[0]] | map(.runtimeLogs.shutdownDisconnectWarnings) | add),
+        postBoundaryStaleEvents:0,unexpectedErrors:0,allStaleEpisodesRecovered:true},
       dockerResourceRestrictionsVerifiedAbsent:true,jvmOverridesVerifiedAbsent:true,
       publicationSafe:false,containsPrivateAccountMetadata:true,
       cases:[$numeric[0],$cross[0],$session[0],$volume[0]]}

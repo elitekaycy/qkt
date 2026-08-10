@@ -172,6 +172,23 @@ reduces the configured gateway cadence from roughly 62 to 12.4 requests per seco
 while retaining two quote polls per second for live M1/M5 bar construction. The
 sealed suite contract and final result both record these polling values.
 
+Before launching the four JVMs, the runner validates UTC against the authoritative
+broker tick clock and waits for a bounded startup phase 90-150 seconds after a
+five-minute boundary.
+This avoids asking MT5 for concurrent M1/M5 warmups while its recent-history cache is
+rolling to a new M5 bucket. The wait is capped at 260 seconds, every observation is
+retained, and a stale tick or any subsequent load-directory auto-deploy failure stops
+the run immediately with evidence. The guard does not relax the engine's history
+freshness check or retry a genuine time-base mismatch.
+
+Each prepared stream also declares whether it is the rule-driving alias or a
+dependency. Both roles require an exact `StreamCandleEvent` to
+`StrategyCandleEvaluatedEvent` candle-window join; only rule drivers require a
+positive `rulesEvaluated` count. Dependency values remain proven by their named
+evaluation vectors. Runtime log evidence separately requires every in-window stale
+episode to recover, rejects in-window feed disconnects and unrelated errors, and
+counts final-shutdown disconnect warnings without treating them as runtime failures.
+
 Market-contingent stateful values such as failed breaks, gap fills, and defended
 initial-balance levels may be undefined when the observed history does not contain
 that market pattern. Their retained vector proves that the mapped expression was

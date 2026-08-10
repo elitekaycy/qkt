@@ -7,7 +7,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 prepare="$repo_root/scripts/live-validation/prepare-readonly-catalog.sh"
 runner="$repo_root/scripts/live-validation/run-readonly-catalog-containers.sh"
-cli="$repo_root/build/install/qkt/bin/qkt"
+startup_window="$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"
+cli="${QKT_TEST_CLI:-$repo_root/build/install/qkt/bin/qkt}"
 verify_cli="$tmp/qkt-verify-fixture"
 
 cat > "$verify_cli" <<'EOF'
@@ -19,6 +20,8 @@ EOF
 chmod +x "$verify_cli"
 
 bash -n "$runner"
+bash -n "$startup_window"
+bash "$repo_root/tests/scripts/catalog-startup-window-test.sh" >/dev/null
 bash "$runner" --help | grep -F 'four isolated, financially read-only QKT containers in parallel' >/dev/null
 test -x "$cli"
 
@@ -30,7 +33,8 @@ bash "$prepare" \
     --expected-login 436804390 \
     --expected-server Exness-MT5Trial9 \
     --expected-balance 100000.22 \
-    --expected-leverage 500 >/dev/null
+    --expected-leverage 500 \
+    --cli "$cli" >/dev/null
 
 bash "$runner" --suite "$suite" --verify-only --cli "$verify_cli" > "$tmp/verified.out"
 grep -F 'verified ' "$tmp/verified.out" >/dev/null
@@ -96,6 +100,11 @@ grep -F 'broker polling interval' "$runner" >/dev/null
 grep -F -- '--network host' "$runner" >/dev/null
 grep -F 'QKT_LATENCY_TRACKING=1' "$runner" >/dev/null
 grep -F 'parallel daemon launch skew exceeded 1500 ms' "$runner" >/dev/null
+grep -F 'wait_for_catalog_startup_window' "$runner" >/dev/null
+grep -F '/symbol_info_tick/EURUSDm' "$runner" >/dev/null
+grep -F 'safeStartMs:90000,safeEndMs:150000' "$runner" >/dev/null
+grep -F 'within 260 seconds' "$runner" >/dev/null
+grep -F 'auto-deploy failed after the guarded startup window' "$runner" >/dev/null
 grep -F 'must be unset; this run does not restrict or override the JVM' "$runner" >/dev/null
 grep -F 'image config restricts or overrides the JVM' "$runner" >/dev/null
 grep -F '.HostConfig.Memory == 0' "$runner" >/dev/null
@@ -105,6 +114,10 @@ grep -F 'volume-requiring strategy unexpectedly deployed' "$runner" >/dev/null
 grep -F 'does not supply volume|volume-bearing feed|VOLUME' "$runner" >/dev/null
 grep -F 'WarmupTickEvent' "$runner" >/dev/null
 grep -F 'configured $warmup_bars-bar warmup evidence' "$runner" >/dev/null
+grep -F 'evaluationRole' "$repo_root/scripts/live-validation/prepare-readonly-catalog.sh" >/dev/null
+grep -F 'positiveRuleCountRequiredOnlyForDrivers:true' "$runner" >/dev/null
+grep -F 'runtime-before-shutdown.log' "$runner" >/dev/null
+grep -F 'allStaleEpisodesRecovered:true' "$runner" >/dev/null
 grep -F 'TickEvent' "$runner" >/dev/null
 grep -F 'StreamCandleEvent' "$runner" >/dev/null
 grep -F 'StrategyCandleEvaluatedEvent' "$runner" >/dev/null

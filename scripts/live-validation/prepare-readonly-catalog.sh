@@ -274,24 +274,24 @@ jq -n \
     --arg balance "$expected_balance" \
     --argjson leverage "$expected_leverage" '
     {
-      schema:"qkt-live-readonly-catalog-suite-v1",suiteId:$suiteId,createdAt:$createdAt,
+      schema:"qkt-live-readonly-catalog-suite-v2",suiteId:$suiteId,createdAt:$createdAt,
       qktCommit:$qktCommit,gatewayUrl:$gatewayUrl,credentialsStored:false,
       account:{login:$login,server:$server,tradeMode:"demo",currency:"USD",balance:$balance,leverage:$leverage},
       contract:{containers:4,parallel:true,financiallyReadOnly:true,requiredGatewayMutations:0,
-        requiredOrderEvents:0,requiredFills:0,barsFirstClass:true,
+        requiredOrderEvents:0,requiredFills:0,barsFirstClass:true,streamEvaluationRoles:true,
         polling:{tickPollIntervalMs:500,brokerPollIntervalMs:5000,parallelTickSymbols:5}},
       cases:[
         {id:"numeric-candle",strategy:($suiteId+"_numeric_candle"),magic:918101,
-          symbols:["EXNESS:EURUSD"],streams:[{alias:"eur1",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:40},{alias:"eur5",symbol:"EXNESS:EURUSD",timeframe:"5m",warmupBars:40}],
+          symbols:["EXNESS:EURUSD"],streams:[{alias:"eur1",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:40,evaluationRole:"rule-driver"},{alias:"eur5",symbol:"EXNESS:EURUSD",timeframe:"5m",warmupBars:40,evaluationRole:"dependency"}],
           vectors:["group=numeric","group=candle","group=math"],expectedDeployment:"running"},
         {id:"cross-multi-tf",strategy:($suiteId+"_cross_multi_tf"),magic:918102,
-          symbols:["EXNESS:EURUSD","EXNESS:GBPUSD"],streams:[{alias:"eur1",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:40},{alias:"eur5",symbol:"EXNESS:EURUSD",timeframe:"5m",warmupBars:40},{alias:"gbp1",symbol:"EXNESS:GBPUSD",timeframe:"1m",warmupBars:40},{alias:"gbp5",symbol:"EXNESS:GBPUSD",timeframe:"5m",warmupBars:40}],
+          symbols:["EXNESS:EURUSD","EXNESS:GBPUSD"],streams:[{alias:"eur1",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:40,evaluationRole:"rule-driver"},{alias:"eur5",symbol:"EXNESS:EURUSD",timeframe:"5m",warmupBars:40,evaluationRole:"dependency"},{alias:"gbp1",symbol:"EXNESS:GBPUSD",timeframe:"1m",warmupBars:40,evaluationRole:"dependency"},{alias:"gbp5",symbol:"EXNESS:GBPUSD",timeframe:"5m",warmupBars:40,evaluationRole:"dependency"}],
           vectors:["group=cross"],expectedDeployment:"running"},
         {id:"session-history",strategy:($suiteId+"_session_history"),magic:918103,
-          symbols:["EXNESS:EURUSD"],streams:[{alias:"eur",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:5000}],
+          symbols:["EXNESS:EURUSD"],streams:[{alias:"eur",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:5000,evaluationRole:"rule-driver"}],
           vectors:["group=history","group=stateful","group=clock"],expectedDeployment:"running"},
         {id:"volume-negative",strategy:($suiteId+"_volume_control"),negativeStrategy:($suiteId+"_volume_requires_data"),magic:918104,
-          symbols:["EXNESS:EURUSD"],streams:[{alias:"eur",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:10}],
+          symbols:["EXNESS:EURUSD"],streams:[{alias:"eur",symbol:"EXNESS:EURUSD",timeframe:"1m",warmupBars:10,evaluationRole:"rule-driver"}],
           vectors:["group=control"],expectedDeployment:"running",negativeDeployment:"volume-capability-rejected"}
       ]
     }

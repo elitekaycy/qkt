@@ -6,7 +6,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 prepare="$repo_root/scripts/live-validation/prepare-readonly-catalog.sh"
-cli="$repo_root/build/install/qkt/bin/qkt"
+cli="${QKT_TEST_CLI:-$repo_root/build/install/qkt/bin/qkt}"
 
 bash -n "$prepare"
 bash "$prepare" --help | grep -F 'four financially read-only live catalog cases' >/dev/null
@@ -20,23 +20,26 @@ bash "$prepare" \
     --expected-login 436804390 \
     --expected-server Exness-MT5Trial9 \
     --expected-balance 100000.22 \
-    --expected-leverage 500 >/dev/null
+    --expected-leverage 500 \
+    --cli "$cli" >/dev/null
 
 (
     cd "$suite"
     sha256sum --check SHA256SUMS >/dev/null
 )
 jq -e '
-    .schema == "qkt-live-readonly-catalog-suite-v1" and
+    .schema == "qkt-live-readonly-catalog-suite-v2" and
     .gatewayUrl == "http://127.0.0.1:5001" and .credentialsStored == false and
     .contract.containers == 4 and .contract.parallel == true and
     .contract.financiallyReadOnly == true and .contract.requiredGatewayMutations == 0 and
     .contract.requiredOrderEvents == 0 and .contract.requiredFills == 0 and
-    .contract.barsFirstClass == true and
+    .contract.barsFirstClass == true and .contract.streamEvaluationRoles == true and
     .contract.polling == {tickPollIntervalMs:500,brokerPollIntervalMs:5000,parallelTickSymbols:5} and
     [.cases[].id] == ["numeric-candle","cross-multi-tf","session-history","volume-negative"] and
     ([.cases[].magic] | unique | length) == 4 and
-    all(.cases[]; (.streams | length) > 0 and (.vectors | length) > 0) and
+    all(.cases[]; (.streams | length) > 0 and (.vectors | length) > 0 and
+        all(.streams[]; .evaluationRole == "rule-driver" or .evaluationRole == "dependency") and
+        ([.streams[] | select(.evaluationRole == "rule-driver")] | length) > 0) and
     (.cases[] | select(.id == "volume-negative") | .negativeDeployment) == "volume-capability-rejected"
 ' "$suite/suite.json" >/dev/null
 
