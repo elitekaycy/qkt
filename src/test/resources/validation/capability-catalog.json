@@ -141,6 +141,24 @@
       },
       "notApplicable": {}
     },
+    "generated-timeframes": {
+      "passed": {
+        "oracle": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt"],
+        "dsl": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt"],
+        "ticks": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "bars": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "tickResolvedBars": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt", "src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt"],
+        "livePaper": ["src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt", "src/test/kotlin/com/qkt/parity/DslParityHarness.kt"]
+      },
+      "gaps": {
+        "mt5Demo": "No bounded demo-gateway scenario covers every supported timeframe partition.",
+        "reports": "Generated runs do not yet retain and reconcile complete report bundles and manifests.",
+        "journal": "Generated runs do not yet assert the complete causal event and transport journal chain.",
+        "insights": "Generated runs do not yet assert exact Insights delivery and attribution.",
+        "portfolio": "Every timeframe has not yet been exercised across isolated multi-strategy books."
+      },
+      "notApplicable": {}
+    },
     "unproven": {
       "passed": {},
       "gaps": {
@@ -244,7 +262,7 @@
     "timeframes": {
       "source": "TimeWindow.parse equivalence partitions",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
-      "evidenceProfile": "unproven",
+      "evidenceProfile": "generated-timeframes",
       "capabilities": ["1s", "5s", "1m", "2m", "5m", "15m", "1h", "1d", "invalid-5ms"]
     },
     "runtimeScenarios": {
