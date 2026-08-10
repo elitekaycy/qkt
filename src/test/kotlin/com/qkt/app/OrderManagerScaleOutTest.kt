@@ -163,6 +163,93 @@ class OrderManagerScaleOutTest {
     }
 
     @Test
+    fun `venue cancellation of a partially filled basis arms exits for the executed quantity`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val basis =
+            OrderRequest.Limit(
+                id = "e1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("2"),
+                limitPrice = Money.of("100"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+
+        om.submit(scaleOut(basis, strategyId = "alpha"))
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = basis.id,
+                brokerOrderId = "position-9",
+                symbol = basis.symbol,
+                side = basis.side,
+                price = Money.of("100"),
+                quantity = Money.of("0.4"),
+                cumulativeFilled = Money.of("0.4"),
+                strategyId = "alpha",
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderCancelled(
+                clientOrderId = basis.id,
+                brokerOrderId = "residual-10",
+                reason = "unfilled residual cancelled",
+                strategyId = "alpha",
+            ),
+        )
+
+        val exits = om.pendingOrders().map { it.request }.filterIsInstance<OrderRequest.IfTouched>()
+        assertThat(exits).hasSize(2)
+        assertThat(exits).allSatisfy { exit ->
+            assertThat(exit.quantity).isEqualByComparingTo("0.2")
+            assertThat(exit.closesTicket).isEqualTo("position-9")
+            assertThat(exit.partialClose).isTrue()
+        }
+    }
+
+    @Test
+    fun `explicit ScaleOut cancellation after a partial fill does not arm exits`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val basis =
+            OrderRequest.Limit(
+                id = "e1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("2"),
+                limitPrice = Money.of("100"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+
+        om.submit(scaleOut(basis, strategyId = "alpha"))
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = basis.id,
+                brokerOrderId = "position-9",
+                symbol = basis.symbol,
+                side = basis.side,
+                price = Money.of("100"),
+                quantity = Money.of("0.4"),
+                cumulativeFilled = Money.of("0.4"),
+                strategyId = "alpha",
+            ),
+        )
+
+        om.cancel("s1")
+
+        assertThat(om.pendingOrders().map { it.request }.filterIsInstance<OrderRequest.IfTouched>()).isEmpty()
+        assertThat(om.getOrder("s1")?.state).isEqualTo(OrderState.CANCELLED)
+    }
+
+    @Test
     fun `ScaleOut leg side is opposite of basis side`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
@@ -397,7 +484,7 @@ class OrderManagerScaleOutTest {
         )
 
     private fun scaleOut(
-        basis: OrderRequest.Market,
+        basis: OrderRequest,
         strategyId: String,
     ): OrderRequest.ScaleOut =
         OrderRequest.ScaleOut(

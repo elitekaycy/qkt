@@ -380,8 +380,9 @@ sealed interface OrderRequest {
      * Engine-managed multi-leg exit — closes [basis] in fractional slices per [legs].
      *
      * The broker only sees the individual leg orders; the manager owns the lifecycle.
-     * Partial basis executions are accounted, but legs activate only after the terminal fill;
-     * proportional leg activation is unsupported.
+     * Partial basis executions remain dormant while the residual is working. A terminal fill or
+     * venue-side residual cancellation activates legs against the actual cumulative fill;
+     * explicitly cancelling the ScaleOut wrapper cancels the plan without activating them.
      */
     data class ScaleOut(
         override val id: String,

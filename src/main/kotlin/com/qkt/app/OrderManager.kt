@@ -250,6 +250,12 @@ class OrderManager(
     /** Pre-fill ScaleOut wrappers keyed by basis id so their activation survives restart. */
     private val pendingScaleOutsByBasis: MutableMap<String, OrderRequest.ScaleOut> = mutableMapOf()
 
+    /** Owned position ticket reported by the latest partial execution of a ScaleOut basis. */
+    private val partialScaleOutPositionTickets: MutableMap<String, String> = mutableMapOf()
+
+    /** ScaleOut wrappers currently cascading an explicit user cancellation to their children. */
+    private val cancellingScaleOutWrappers: MutableSet<String> = mutableSetOf()
+
     /** Filled ScaleOut wrappers retained while at least one ticketed exit remains live. */
     private val activeScaleOutsById: MutableMap<String, OrderRequest.ScaleOut> = mutableMapOf()
     private val scaleOutByExitId: MutableMap<String, String> = mutableMapOf()
@@ -462,9 +468,15 @@ class OrderManager(
             return
         }
         if (managed.childClientOrderIds.isNotEmpty()) {
-            for (childId in managed.childClientOrderIds) cancel(childId)
-            update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-            exposureEntries.remove(clientOrderId)
+            val scaleOutCancellation = managed.request is OrderRequest.ScaleOut
+            if (scaleOutCancellation) cancellingScaleOutWrappers.add(clientOrderId)
+            try {
+                for (childId in managed.childClientOrderIds) cancel(childId)
+                update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
+                exposureEntries.remove(clientOrderId)
+            } finally {
+                if (scaleOutCancellation) cancellingScaleOutWrappers.remove(clientOrderId)
+            }
             return
         }
         when (managed.state) {
@@ -2491,6 +2503,8 @@ class OrderManager(
         managedStopLevel.remove(id)
         siblings.remove(id)
         pendingScaleOutsByBasis.remove(id)
+        partialScaleOutPositionTickets.remove(id)
+        cancellingScaleOutWrappers.remove(id)
         scaleOutByExitId.remove(id)
         ocoSiblingCancelStarted.remove(id)
         emulatedOcoGroupByLeg.remove(id)
@@ -2800,6 +2814,7 @@ class OrderManager(
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)
         pendingOtosByParent.remove(e.clientOrderId)
         pendingScaleOutsByBasis.remove(e.clientOrderId)
+        partialScaleOutPositionTickets.remove(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
@@ -2838,6 +2853,11 @@ class OrderManager(
                 )
             }
         if (!applied) return
+        if (e.clientOrderId in pendingScaleOutsByBasis) {
+            e.brokerOrderId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { partialScaleOutPositionTickets[e.clientOrderId] = it }
+        }
         exposureEntries[e.clientOrderId]?.filledQuantity = e.cumulativeFilled
         log.info(
             "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
@@ -2982,43 +3002,13 @@ class OrderManager(
             }
             else -> pending?.forEach { dispatch(it) }
         }
+        partialScaleOutPositionTickets.remove(e.clientOrderId)
         pendingScaleOutsByBasis.remove(e.clientOrderId)?.let { scaleReq ->
-            val basisQty = orders[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity
-            val positionTicket = e.brokerOrderId?.takeIf { it.isNotBlank() }
-            if (requireArmedTrailTicket &&
-                OrderTypeCapability.MULTI_POSITION_PER_SYMBOL in broker.capabilitiesFor(scaleReq.symbol) &&
-                positionTicket == null
-            ) {
-                reportProtectionFailure(
-                    scaleReq.strategyId,
-                    "ScaleOut ${scaleReq.id} basis ${e.clientOrderId} filled without an owned position ticket; " +
-                        "no opposite exit orders were armed",
-                )
-                update(scaleReq.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
-                return@let
-            }
-            val exitSide = if (scaleReq.side == Side.BUY) Side.SELL else Side.BUY
-            val exitRequests =
-                scaleReq.legs.mapIndexed { idx, leg ->
-                    val legQty =
-                        basisQty
-                            .multiply(leg.fraction)
-                            .setScale(Money.SCALE, Money.ROUNDING)
-                    OrderRequest.IfTouched(
-                        id = "${scaleReq.id}-leg-$idx",
-                        symbol = scaleReq.symbol,
-                        side = exitSide,
-                        quantity = legQty,
-                        triggerPrice = leg.priceTarget,
-                        onTrigger = TriggerType.MARKET,
-                        timeInForce = scaleReq.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = scaleReq.strategyId,
-                        closesTicket = positionTicket,
-                        partialClose = legQty < basisQty,
-                    )
-                }
-            armScaleOutExits(scaleReq, exitRequests)
+            activateScaleOut(
+                scaleOut = scaleReq,
+                basisQuantity = orders[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity,
+                positionTicket = e.brokerOrderId?.takeIf { it.isNotBlank() },
+            )
         }
         resolveOcoOnExecution(e.clientOrderId)
         ocoSiblingCancelStarted.remove(e.clientOrderId)
@@ -3132,8 +3122,25 @@ class OrderManager(
         completeScaleOutExit(e.clientOrderId, OrderState.CANCELLED)
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)
         pendingOtosByParent.remove(e.clientOrderId)
-        pendingScaleOutsByBasis.remove(e.clientOrderId)
+        val pendingScaleOut = pendingScaleOutsByBasis.remove(e.clientOrderId)
+        val partialPositionTicket = partialScaleOutPositionTickets.remove(e.clientOrderId)
         unarmedChildren?.forEach { child -> cancel(child.id) }
+        val cancelled = orders[e.clientOrderId]
+        val wrapperId = cancelled?.parentClientOrderId
+        val wrapperWasExplicitlyCancelled =
+            wrapperId != null &&
+                (wrapperId in cancellingScaleOutWrappers || orders[wrapperId]?.state == OrderState.CANCELLED)
+        if (pendingScaleOut != null &&
+            cancelled != null &&
+            cancelled.cumulativeFilledQuantity.signum() > 0 &&
+            !wrapperWasExplicitlyCancelled
+        ) {
+            activateScaleOut(
+                scaleOut = pendingScaleOut,
+                basisQuantity = cancelled.cumulativeFilledQuantity,
+                positionTicket = partialPositionTicket,
+            )
+        }
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
             e.clientOrderId,
@@ -3141,6 +3148,47 @@ class OrderManager(
             e.reason,
         )
         clearOcoSequenceFor(e.clientOrderId)
+    }
+
+    private fun activateScaleOut(
+        scaleOut: OrderRequest.ScaleOut,
+        basisQuantity: BigDecimal,
+        positionTicket: String?,
+    ) {
+        if (requireArmedTrailTicket &&
+            OrderTypeCapability.MULTI_POSITION_PER_SYMBOL in broker.capabilitiesFor(scaleOut.symbol) &&
+            positionTicket == null
+        ) {
+            reportProtectionFailure(
+                scaleOut.strategyId,
+                "ScaleOut ${scaleOut.id} basis ${scaleOut.basis.id} completed without an owned position ticket; " +
+                    "no opposite exit orders were armed",
+            )
+            update(scaleOut.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
+            return
+        }
+        val exitSide = if (scaleOut.side == Side.BUY) Side.SELL else Side.BUY
+        val exitRequests =
+            scaleOut.legs.mapIndexed { idx, leg ->
+                val legQuantity =
+                    basisQuantity
+                        .multiply(leg.fraction)
+                        .setScale(Money.SCALE, Money.ROUNDING)
+                OrderRequest.IfTouched(
+                    id = "${scaleOut.id}-leg-$idx",
+                    symbol = scaleOut.symbol,
+                    side = exitSide,
+                    quantity = legQuantity,
+                    triggerPrice = leg.priceTarget,
+                    onTrigger = TriggerType.MARKET,
+                    timeInForce = scaleOut.timeInForce,
+                    timestamp = clock.now(),
+                    strategyId = scaleOut.strategyId,
+                    closesTicket = positionTicket,
+                    partialClose = legQuantity < basisQuantity,
+                )
+            }
+        armScaleOutExits(scaleOut, exitRequests)
     }
 
     private fun armScaleOutExits(
