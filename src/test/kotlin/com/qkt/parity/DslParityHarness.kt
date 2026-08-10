@@ -25,6 +25,8 @@ import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
 import com.qkt.risk.StrategyRiskLimits
+import com.qkt.risk.book.BookRiskConfig
+import com.qkt.risk.book.BookRiskController
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 import java.time.Duration
@@ -92,6 +94,7 @@ internal object DslParityHarness {
         instruments: InstrumentRegistry = NoopInstrumentRegistry,
         strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
         bookCapital: BigDecimal? = null,
+        bookRiskConfig: BookRiskConfig? = null,
         maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
         maxOrderNotional: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
         dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
@@ -112,6 +115,7 @@ internal object DslParityHarness {
                 startingBalances = mapOf(strategyId to startingBalance),
                 strategyRiskLimits = mapOf(strategyId to strategyRiskLimits),
                 bookCapital = bookCapital,
+                bookRiskConfig = bookRiskConfig,
                 instruments = instruments,
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
@@ -160,6 +164,10 @@ internal object DslParityHarness {
                 clock = liveClock,
                 calendar = TradingCalendar.crypto(),
                 onTrade = { trade, realized, owner -> liveTrades.add(tradeState(owner, trade, realized)) },
+                bookRiskController =
+                    bookRiskConfig?.let { config ->
+                        BookRiskController(config, config.capital ?: bookCapital ?: startingBalance)
+                    },
                 initialBalance = startingBalance,
                 startingBalances = mapOf(strategyId to startingBalance),
                 instrumentRegistry = instruments,

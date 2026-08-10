@@ -18,6 +18,7 @@ import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
 import com.qkt.risk.StrategyRiskLimits
+import com.qkt.risk.book.BookRiskConfig
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 import java.nio.file.Path
@@ -44,6 +45,7 @@ internal object GeneratedStrategyReplay {
         expectedHaltCount: Int = 0,
         startingBalance: BigDecimal = BigDecimal.ZERO,
         bookCapital: BigDecimal? = null,
+        bookRiskConfig: BookRiskConfig? = null,
         instruments: InstrumentRegistry = NoopInstrumentRegistry,
         strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
         maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
@@ -64,6 +66,7 @@ internal object GeneratedStrategyReplay {
             expectedHaltCount = expectedHaltCount,
             startingBalance = startingBalance,
             bookCapital = bookCapital,
+            bookRiskConfig = bookRiskConfig,
             instruments = instruments,
             strategyRiskLimits = strategyRiskLimits,
             maxOrderQty = maxOrderQty,
@@ -84,6 +87,7 @@ internal object GeneratedStrategyReplay {
         expectedHaltCount: Int = 0,
         startingBalance: BigDecimal = BigDecimal.ZERO,
         bookCapital: BigDecimal? = null,
+        bookRiskConfig: BookRiskConfig? = null,
         instruments: InstrumentRegistry = NoopInstrumentRegistry,
         strategyRiskLimits: StrategyRiskLimits = StrategyRiskLimits(),
         maxOrderQty: BigDecimal = com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
@@ -108,6 +112,7 @@ internal object GeneratedStrategyReplay {
                 startingBalance = startingBalance,
                 startingBalances = mapOf(namedStrategy(path).first to startingBalance),
                 bookCapital = bookCapital,
+                bookRiskConfig = bookRiskConfig,
                 instruments = instruments,
                 strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
                 maxOrderQty = maxOrderQty,
@@ -138,6 +143,7 @@ internal object GeneratedStrategyReplay {
                     startingBalance = startingBalance,
                     startingBalances = mapOf(namedStrategy(path).first to startingBalance),
                     bookCapital = bookCapital,
+                    bookRiskConfig = bookRiskConfig,
                     instruments = instruments,
                     strategyRiskLimits = mapOf(namedStrategy(path).first to strategyRiskLimits),
                     maxOrderQty = maxOrderQty,
