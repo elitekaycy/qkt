@@ -551,6 +551,8 @@ class MT5Client(
     /**
      * All venue deals for [positionTicket] in the requested UTC range. The query is padded
      * by one day at each edge, matching [getClosingDeal], so entry-side costs are included.
+     * The response is filtered locally because gateways may ignore the wire-level position
+     * filter and return account-wide history.
      */
     fun getPositionDeals(
         positionTicket: Long,
@@ -562,7 +564,9 @@ class MT5Client(
         val url = "$gatewayUrl/history_deals_get?from_date=$from&to_date=$to&position=$positionTicket"
         val raw = getWithRetry(url) ?: return null
         val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
-        return arr.map { parseDeal(it.jsonObject) }
+        return arr
+            .map { parseDeal(it.jsonObject) }
+            .filter { it.positionTicket == positionTicket }
     }
 
     /**
