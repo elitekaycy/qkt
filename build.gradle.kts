@@ -403,10 +403,25 @@ val prepareLiveValidationScenarioScriptTest by tasks.registering(Exec::class) {
     )
 }
 
+val containerLoadScriptTest by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verify multi-container live-load evidence gates against offline fixtures."
+    onlyIf {
+        !System.getProperty("os.name").lowercase().contains("win")
+    }
+    commandLine("bash", "tests/scripts/run-container-load-test.sh")
+    inputs.files(
+        "scripts/live-validation/run-container-load.sh",
+        "scripts/live-validation/lib/container-load-evidence.sh",
+        "tests/scripts/run-container-load-test.sh",
+    )
+}
+
 tasks.named("check") {
     dependsOn(checkTestLogBudget)
     dependsOn(auditReportBundleScriptTest)
     dependsOn(prepareLiveValidationScenarioScriptTest)
+    dependsOn(containerLoadScriptTest)
 }
 
 fun org.w3c.dom.Document.textFor(tag: String): String {

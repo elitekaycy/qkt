@@ -223,7 +223,7 @@ if rg --quiet 'for second in \$\(seq 1 "\$duration_seconds"\)' "$container_scrip
     echo 'container runner measures duration by loop iterations instead of wall-clock time' >&2
     exit 1
 fi
-if rg --quiet -- '-Xmx|-Xms|MaxRAMPercentage|MaxRAM=|JAVA_TOOL_OPTIONS=|JDK_JAVA_OPTIONS=|--memory(=|[[:space:]])|--cpus(=|[[:space:]])|--pids-limit|--cpuset-cpus' "$container_script"; then
+if rg --quiet -- '-Xmx|-Xms|MaxRAMPercentage|MaxRAM=|--memory(=|[[:space:]])|--cpus(=|[[:space:]])|--pids-limit|--cpuset-cpus' "$container_script"; then
     echo 'container runner adds a JVM or container resource restriction' >&2
     exit 1
 fi

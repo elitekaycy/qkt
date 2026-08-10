@@ -100,19 +100,32 @@ scripts/live-validation/run-container-load.sh \
   --expected-leverage "$CURRENT_LEVERAGE"
 ```
 
-The minimum seven-minute observation runs eight M1/M5 streams over four symbols.
+The minimum eleven-minute observation runs eight M1/M5 streams over four symbols.
 Each temporary strategy exercises EMA, RSI, SMA, and ATR mappings with global,
 per-strategy, and book-risk configuration. The runner samples queue depth, dropped
 ticks, tick-processing latency, CPU, memory, and process count; restarts one daemon
-mid-run; proves the peer remains healthy; and verifies automatic redeployment from
-the persisted state directory. It retains valid audit journals and requires all
-streams to emit after warmup.
+mid-run; proves the peer keeps receiving ticks and evaluating every stream; and
+verifies source-directory auto-deployment plus restoration of persisted rule-edge
+state. It does not claim deployment metadata can restore a strategy without its
+source directory. The restart clock requires a full 310-second observation after
+generation 2 reports ready, and every stream must produce an exact candle/evaluation
+join before and after the restart where applicable.
 
 This scenario intentionally emits no orders. Concurrent read-only containers isolate
 load and restart failures without allowing separate daemons to contend for positions
 on one account. The bounded demo scenarios own distinct magic numbers and test order,
 fill, protection, rejection, reconciliation, and accounting behavior separately.
-The runner records resource use but sets no JVM heap or container memory limit.
+The runner records resource use but sets no JVM heap or container resource limit.
+It rejects host, image, or container JVM override variables and retains sanitized
+container-inspection evidence showing that Docker memory, CPU, PID, and CPU-set
+restrictions are absent. State persistence remains asynchronous and off the engine
+hot path.
+
+The two containers poll each distinct symbol every `500 ms` and reconcile the flat
+account every `5 s`. For four distinct symbols and two broker cycles, the configured
+upper-bound gateway cadence is approximately 9.2 requests per second. These values,
+the actual resource sample counts, exact warmup counts, restart timestamps, zero
+mutating requests, and zero order/fill/accounting events are sealed in the result.
 
 ## Read-Only Catalog Wave 1
 

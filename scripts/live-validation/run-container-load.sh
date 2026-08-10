@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/live-validation/lib/container-load-evidence.sh
+source "$repo_root/scripts/live-validation/lib/container-load-evidence.sh"
 
 usage() {
     cat <<'EOF'
@@ -10,7 +12,7 @@ Usage: run-container-load.sh --output DIR --image IMAGE --gateway-url URL \
   --expected-leverage N [--duration-seconds N] [--cli PATH]
 
 Runs two isolated, read-only QKT containers against a localhost MT5 demo gateway.
-The seven-minute minimum covers M1/M5 routing while one container is restarted.
+The eleven-minute minimum covers M1/M5 routing before and after one container restart.
 The broker key is read only from QKT_BROKER_API_KEY and piped to each daemon process;
 it is never placed in Docker container configuration or retained artifacts.
 EOF
@@ -28,7 +30,7 @@ expected_login=""
 expected_server=""
 expected_balance=""
 expected_leverage=""
-duration_seconds=420
+duration_seconds=620
 cli="$repo_root/build/install/qkt/bin/qkt"
 
 while [ "$#" -gt 0 ]; do
@@ -57,11 +59,16 @@ gateway_url="${gateway_url%/}"
 [[ "$expected_balance" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--expected-balance must be a decimal"
 [[ "$expected_leverage" =~ ^[1-9][0-9]*$ ]] || fail "--expected-leverage must be a positive integer"
 [[ "$duration_seconds" =~ ^[0-9]+$ ]] || fail "--duration-seconds must be an integer"
-[ "$duration_seconds" -ge 420 ] || fail "--duration-seconds must be at least 420"
+[ "$duration_seconds" -ge 620 ] || fail "--duration-seconds must be at least 620"
 [ -x "$cli" ] || fail "QKT CLI is not executable: $cli"
 [ -n "${QKT_BROKER_API_KEY:-}" ] || fail "QKT_BROKER_API_KEY is required"
 for command in curl docker find jq rg sha256sum sort; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
+done
+for jvm_env in JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS GRADLE_OPTS; do
+    if [[ -v "$jvm_env" ]]; then
+        fail "$jvm_env must be unset; this run does not restrict or override the JVM"
+    fi
 done
 
 output="$(realpath -m "$output")"
@@ -71,6 +78,13 @@ qkt_commit="$(git -C "$repo_root" rev-parse HEAD)"
 qkt_short="${qkt_commit:0:8}"
 host_version="$("$cli" --version)"
 [[ "$host_version" == *"($qkt_short)"* ]] || fail "host CLI is not built from $qkt_short"
+docker image inspect "$image" | jq -e '
+    (.[0].Config.Env // []) |
+    all(.[];
+        (startswith("JAVA_TOOL_OPTIONS=") or startswith("JDK_JAVA_OPTIONS=") or
+         startswith("_JAVA_OPTIONS=") or startswith("GRADLE_OPTS=")) | not
+    )
+' >/dev/null || fail "Docker image config restricts or overrides the JVM"
 image_version="$(docker run --rm --entrypoint qkt "$image" --version)"
 [[ "$image_version" == *"($qkt_short)"* ]] || fail "Docker image is not built from $qkt_short"
 
@@ -135,8 +149,8 @@ brokers:
     expected_account_server: $expected_server
     expected_trade_mode: demo
     expected_account_currency: USD
-    tick_poll_interval_ms: 100
-    poll_interval_ms: 1000
+    tick_poll_interval_ms: 500
+    poll_interval_ms: 5000
     http_timeout_ms: 5000
     retry_attempts: 3
 risk:
@@ -250,6 +264,16 @@ for index in 0 1; do
         (.[0].HostConfig.PidsLimit == null or .[0].HostConfig.PidsLimit == 0) and
         .[0].HostConfig.CpusetCpus == ""
     ' >/dev/null || fail "container ${case_ids[$index]} has an unexpected resource restriction"
+    if docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${containers[$index]}" |
+        rg --quiet '^(JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS|GRADLE_OPTS)='; then
+        fail "container ${case_ids[$index]} config restricts or overrides the JVM"
+    fi
+    docker inspect "${containers[$index]}" | jq '.[0] | {
+        schema:"qkt-live-multi-container-runtime-v1",id:.Id,image:.Image,
+        resourceRestrictions:{memoryBytes:.HostConfig.Memory,nanoCpus:.HostConfig.NanoCpus,
+          cpuQuota:.HostConfig.CpuQuota,pidsLimit:.HostConfig.PidsLimit,cpusetCpus:.HostConfig.CpusetCpus},
+        credentialStoredInConfig:false,jvmOverrideEnvironmentPresent:false
+    }' > "$case_dir/evidence/container.json"
 done
 
 start_daemon() {
@@ -340,6 +364,7 @@ memory_kib() {
 restart_second=$((duration_seconds - 310))
 restart_completed=false
 load_started_second=$SECONDS
+required_end_second=$duration_seconds
 next_sample_second=10
 while true; do
     sleep 1
@@ -348,21 +373,45 @@ while true; do
         kill -0 "${exec_pids[$index]}" 2>/dev/null || fail "container ${case_ids[$index]} daemon exited during load"
     done
     if ! $restart_completed && [ "$elapsed_seconds" -ge "$restart_second" ]; then
-        "$cli" daemon status --state-dir "$output/cases/b/state" --json > "$output/cases/b/evidence/status-before-peer-restart.json"
-        "$cli" daemon stop --state-dir "$output/cases/a/state" > "$output/cases/a/evidence/stop-for-restart.log"
-        wait "${exec_pids[0]}" || fail "container a daemon failed during controlled stop"
-        "$cli" daemon status --state-dir "$output/cases/b/state" --json > "$output/cases/b/evidence/status-during-peer-restart.json"
-        jq -e '.status == "ok" and .perStrategy[0].running == true' \
-            "$output/cases/b/evidence/status-during-peer-restart.json" >/dev/null ||
-            fail "container b was disrupted while container a restarted"
         restart_started_ms="$(date +%s%3N)"
         : > "$output/cases/b/evidence/health-during-peer-restart.jsonl"
+        "$cli" daemon status --state-dir "$output/cases/a/state" --json > "$output/cases/a/evidence/status-before-restart.json"
+        "$cli" daemon status --state-dir "$output/cases/b/state" --json > "$output/cases/b/evidence/status-before-peer-restart.json"
+        jq -e '.status == "ok" and .perStrategy[0].running == true and
+            .perStrategy[0].droppedTicks == 0 and .perStrategy[0].inboundQueueDepth == 0' \
+            "$output/cases/b/evidence/status-before-peer-restart.json" >/dev/null ||
+            fail "container b was not healthy and drained before its peer restarted"
+        "$cli" daemon stop --state-dir "$output/cases/a/state" > "$output/cases/a/evidence/stop-for-restart.log"
+        wait "${exec_pids[0]}" || fail "container a daemon failed during controlled stop"
+        sequence_state="$output/cases/a/state/state/${strategies[0]}/sequences.json"
+        [ -f "$sequence_state" ] || fail "case a persisted no rule-edge state before restart"
+        jq -e '
+            [.sequences[] | select(.name == "__qkt_rule_edges__") | .lastValues[]] as $edges |
+            ($edges | length) == 4 and all($edges[]; . == true)
+        ' "$sequence_state" >/dev/null || fail "case a did not persist four true rule edges before restart"
+        cp "$sequence_state" "$output/cases/a/evidence/rule-edges-before-restart.json"
+        "$cli" daemon status --state-dir "$output/cases/b/state" --json > "$output/cases/b/evidence/status-during-peer-restart.json"
+        jq -e '.status == "ok" and .perStrategy[0].running == true and
+            .perStrategy[0].droppedTicks == 0 and .perStrategy[0].inboundQueueDepth == 0' \
+            "$output/cases/b/evidence/status-during-peer-restart.json" >/dev/null ||
+            fail "container b was disrupted while container a restarted"
         start_daemon 0 2
         wait_ready 0 1
+        restart_ready_ms="$(date +%s%3N)"
+        restart_ready_second=$((SECONDS - load_started_second))
+        # SECONDS is integer-valued; one extra second guarantees 310,000 ms after readiness.
+        required_end_second=$((restart_ready_second + 311))
+        [ "$required_end_second" -ge "$duration_seconds" ] || required_end_second=$duration_seconds
         restart_completed=true
-        jq -n --argjson atSecond "$elapsed_seconds" --argjson restartedAtMs "$restart_started_ms" \
+        jq -n --argjson atSecond "$elapsed_seconds" \
+            --argjson restartStartedAtMs "$restart_started_ms" --argjson restartReadyAtMs "$restart_ready_ms" \
+            --argjson requiredPostRestartObservationSeconds 310 \
             --arg containerA "${containers[0]}" --arg containerB "${containers[1]}" \
-            '{status:"passed",atSecond:$atSecond,restartedAtMs:$restartedAtMs,restarted:$containerA,uninterrupted:$containerB}' \
+            '{status:"passed",atSecond:$atSecond,restartStartedAtMs:$restartStartedAtMs,
+              restartReadyAtMs:$restartReadyAtMs,
+              requiredPostRestartObservationSeconds:$requiredPostRestartObservationSeconds,
+              restarted:$containerA,uninterrupted:$containerB,
+              sourceAutoRedeploy:true,stateRestoreVerified:true,persistedDeploymentRestore:false}' \
             > "$output/evidence/restart.json"
     fi
     elapsed_seconds=$((SECONDS - load_started_second))
@@ -391,9 +440,17 @@ while true; do
             next_sample_second=$((next_sample_second + 10))
         done
     fi
-    [ "$elapsed_seconds" -ge "$duration_seconds" ] && break
+    [ "$elapsed_seconds" -ge "$required_end_second" ] && break
 done
 $restart_completed || fail "controlled restart did not run"
+observation_ended_ms="$(date +%s%3N)"
+jq --argjson observationEndedAtMs "$observation_ended_ms" '
+    . + {observationEndedAtMs:$observationEndedAtMs,
+         postRestartObservationSeconds:((($observationEndedAtMs - .restartReadyAtMs) / 1000) | floor)}
+' "$output/evidence/restart.json" > "$output/evidence/restart.json.tmp"
+mv "$output/evidence/restart.json.tmp" "$output/evidence/restart.json"
+jq -e '.postRestartObservationSeconds >= .requiredPostRestartObservationSeconds' \
+    "$output/evidence/restart.json" >/dev/null || fail "generation 2 received less than 310 seconds after readiness"
 [ "$(awk 'END {print NR + 0}' "$output/cases/b/evidence/health-during-peer-restart.jsonl")" -gt 0 ] ||
     fail "container b produced no health samples during its peer restart"
 
@@ -410,8 +467,14 @@ for index in 0 1; do
         .[$strategy].strategies[$strategy].TICK_PROCESSING.p99Nanos < 100000000 and
         .[$strategy].strategies[$strategy].TICK_PROCESSING.maxNanos < 1000000000
     ' "$case_dir/evidence/latency.json" >/dev/null || fail "$case_id tick-processing latency gate failed"
-    max_dropped="$(jq -s '[.[].perStrategy[].droppedTicks] | max // 0' "$case_dir/evidence/health.jsonl")"
-    max_queue="$(jq -s '[.[].perStrategy[].inboundQueueDepth] | max // 0' "$case_dir/evidence/health.jsonl")"
+    "$cli" daemon stop --state-dir "$case_dir/state" > "$case_dir/evidence/daemon-stop.log"
+    wait "${exec_pids[$index]}" || fail "container $case_id daemon failed during final stop"
+    exec_pids[$index]=""
+    mapfile -t status_evidence < <(find "$case_dir/evidence" -type f -name 'status-*.json' | sort)
+    max_dropped="$(jq -s '[.[].perStrategy[]?.droppedTicks] | max // 0' \
+        "$case_dir/evidence/health.jsonl" "${status_evidence[@]}")"
+    max_queue="$(jq -s '[.[].perStrategy[]?.inboundQueueDepth] | max // 0' \
+        "$case_dir/evidence/health.jsonl" "${status_evidence[@]}")"
     [ "$max_dropped" -eq 0 ] || fail "$case_id reported $max_dropped dropped live ticks"
     jq -e '.perStrategy[0].inboundQueueDepth == 0 and .perStrategy[0].droppedTicks == 0' \
         "$case_dir/evidence/status-final.json" >/dev/null || fail "$case_id did not finish with a drained queue"
@@ -428,14 +491,20 @@ for index in 0 1; do
     recovered="$({ rg --no-heading --no-filename 'market data .* healthy again' "$case_dir/logs" || true; } |
         awk 'END {print NR + 0}')"
     [ "$recovered" -ge "$stale" ] || fail "$case_id ended with unrecovered stale market data"
+    unexpected_errors="$({ rg --no-heading --no-filename '\bERROR\b' "$case_dir/logs" || true; } |
+        { rg -v 'MarketDataGate.*STALE' || true; })"
+    [ -z "$unexpected_errors" ] || fail "$case_id logs contain an unexpected ERROR"
     mapfile -t audits < <(find "$case_dir/state/state/audit-journal" -type f -name '*.jsonl' | sort)
     [ "${#audits[@]}" -gt 0 ] || fail "$case_id produced no engine audit journal"
     for audit in "${audits[@]}"; do jq -c . "$audit" >/dev/null || fail "invalid audit JSONL: $audit"; done
     [ -z "$(find "$case_dir/state/state/audit-journal" -type f -name '*.dropped' -print -quit)" ] ||
         fail "$case_id audit journal reported dropped records"
-    order_events="$(jq -r 'select((.eventType // "") | test("BrokerEvent.Order(Accepted|Filled|Rejected)")) | 1' "${audits[@]}" |
+    order_events="$(jq -r 'select(
+        ((.eventType // "") | test("BrokerEvent[.]Order(Accepted|Filled|Rejected)$")) or
+        ((.eventType // "") | test("[.](RiskRejectedEvent|OrderEvent|FillAccountedEvent|DecisionOrderLinkedEvent)$"))
+    ) | 1' "${audits[@]}" |
         awk 'END {print NR + 0}')"
-    [ "$order_events" -eq 0 ] || fail "$case_id read-only strategy emitted broker order events"
+    [ "$order_events" -eq 0 ] || fail "$case_id emitted an order, fill, accounting, linkage, or rejection event"
     warmup_tick_events="$(jq -r 'select(.eventType == "com.qkt.events.WarmupTickEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
     live_tick_events="$(jq -r 'select(.eventType == "com.qkt.events.TickEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
     stream_candle_events="$(jq -r 'select(.eventType == "com.qkt.events.StreamCandleEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
@@ -445,6 +514,8 @@ for index in 0 1; do
     [ "$live_tick_events" -gt 0 ] || fail "$case_id retained no live ticks"
     [ "$stream_candle_events" -gt 0 ] || fail "$case_id retained no exact stream candles"
     [ "$strategy_evaluations" -gt 0 ] || fail "$case_id retained no completed strategy candle evaluations"
+    stream_counts_file="$case_dir/evidence/stream-counts.json"
+    printf '[]\n' > "$stream_counts_file"
     for symbol in ${case_symbols[$index]}; do
         alias_prefix=""
         case "$symbol" in
@@ -461,59 +532,79 @@ for index in 0 1; do
             [ "$timeframe_ms" -eq 60000 ] || timeframe="5m"
             alias="${alias_prefix}1"
             [ "$timeframe_ms" -eq 60000 ] || alias="${alias_prefix}5"
-            jq -e --arg symbol "EXNESS:$symbol" --argjson timeframeMs "$timeframe_ms" '
-                select(
-                    .eventType == "com.qkt.events.WarmupTickEvent" and
-                    .symbol == $symbol and .sourceTimeframeMs == $timeframeMs
-                )
-            ' "${audits[@]}" >/dev/null || fail "$case_id retained no $timeframe warmup ticks for $symbol"
+            warmup_tick_count="$(qkt_count_warmup_pseudo_ticks \
+                "EXNESS:$symbol" "$timeframe_ms" -1 -1 "${audits[@]}")"
+            expected_warmup_ticks=$((20 * 4 * generations[index]))
+            [ "$warmup_tick_count" -eq "$expected_warmup_ticks" ] ||
+                fail "$case_id $alias warmup count was $warmup_tick_count; expected $expected_warmup_ticks pseudo-ticks for configured 20 bars"
             jq -e --arg symbol "EXNESS:$symbol" --arg timeframe "$timeframe" '
                 select(
                     .eventType == "com.qkt.events.StreamCandleEvent" and
                     .symbol == $symbol and .timeframe == $timeframe
                 )
             ' "${audits[@]}" >/dev/null || fail "$case_id retained no $timeframe stream candles for $symbol"
-            jq -s -e \
-                --arg strategy "$strategy" \
-                --arg alias "$alias" \
-                --arg symbol "EXNESS:$symbol" \
-                --arg timeframe "$timeframe" '
-                    . as $events |
-                    any(
-                        $events[];
-                        .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
-                        .strategyId == $strategy and .alias == $alias and
-                        .symbol == $symbol and .timeframe == $timeframe and .rulesEvaluated == 1 and
-                        (. as $evaluated |
-                            any(
-                                $events[];
-                                .eventType == "com.qkt.events.StreamCandleEvent" and
-                                .symbol == $symbol and .timeframe == $timeframe and
-                                .candle.startTimeMs == $evaluated.candle.startTimeMs and
-                                .candle.endTimeMs == $evaluated.candle.endTimeMs
-                            )
-                        )
-                    )
-                ' "${audits[@]}" >/dev/null ||
+            matched_evaluations="$(qkt_count_matched_evaluations \
+                "$strategy" "$alias" "EXNESS:$symbol" "$timeframe" -1 -1 "${audits[@]}")"
+            [ "$matched_evaluations" -gt 0 ] ||
                 fail "$case_id retained no matched $alias strategy evaluation for $symbol $timeframe"
+            jq --arg alias "$alias" --arg symbol "EXNESS:$symbol" --arg timeframe "$timeframe" \
+                --argjson configuredWarmupBars 20 --argjson warmupPseudoTicks "$warmup_tick_count" \
+                --argjson matchedEvaluations "$matched_evaluations" \
+                '. + [{alias:$alias,symbol:$symbol,timeframe:$timeframe,
+                    configuredWarmupBars:$configuredWarmupBars,warmupPseudoTicks:$warmupPseudoTicks,
+                    matchedEvaluations:$matchedEvaluations}]' "$stream_counts_file" > "$stream_counts_file.tmp"
+            mv "$stream_counts_file.tmp" "$stream_counts_file"
         done
     done
     if [ "$case_id" = a ]; then
-        restart_ms="$(jq -er '.restartedAtMs' "$output/evidence/restart.json")"
-        jq -e --argjson restartMs "$restart_ms" '
-            select(.ts >= $restartMs and .eventType == "com.qkt.events.WarmupTickEvent")
-        ' "${audits[@]}" >/dev/null || fail "case a generation 2 retained no warmup ticks"
-        jq -e --argjson restartMs "$restart_ms" '
-            select(.ts >= $restartMs and .eventType == "com.qkt.events.StreamCandleEvent" and .timeframe == "5m")
-        ' "${audits[@]}" >/dev/null || fail "case a generation 2 retained no M5 stream candle"
+        restart_start_ms="$(jq -er '.restartStartedAtMs' "$output/evidence/restart.json")"
+        restart_ready_ms="$(jq -er '.restartReadyAtMs' "$output/evidence/restart.json")"
+        jq -e '
+            [.sequences[] | select(.name == "__qkt_rule_edges__") | .lastValues[]] as $edges |
+            ($edges | length) == 4 and all($edges[]; . == true)
+        ' "$sequence_state" >/dev/null || fail "case a did not restore four true rule edges"
+        cp "$sequence_state" "$case_dir/evidence/rule-edges-after-restart.json"
         for alias in eur1 eur5 gbp1 gbp5; do
-            jq -e --argjson restartMs "$restart_ms" --arg strategy "$strategy" --arg alias "$alias" '
-                select(
-                    .ts >= $restartMs and
-                    .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
-                    .strategyId == $strategy and .alias == $alias and .rulesEvaluated == 1
-                )
-            ' "${audits[@]}" >/dev/null || fail "case a generation 2 did not evaluate $alias"
+            case "$alias" in
+                eur1) symbol=EURUSD; timeframe=1m; timeframe_ms=60000 ;;
+                eur5) symbol=EURUSD; timeframe=5m; timeframe_ms=300000 ;;
+                gbp1) symbol=GBPUSD; timeframe=1m; timeframe_ms=60000 ;;
+                gbp5) symbol=GBPUSD; timeframe=5m; timeframe_ms=300000 ;;
+            esac
+            post_restart_warmups="$(qkt_count_warmup_pseudo_ticks \
+                "EXNESS:$symbol" "$timeframe_ms" "$restart_start_ms" -1 "${audits[@]}")"
+            [ "$post_restart_warmups" -eq 80 ] ||
+                fail "case a generation 2 $alias warmup count was $post_restart_warmups; expected 80 pseudo-ticks"
+            post_restart_matches="$(qkt_count_matched_evaluations "$strategy" "$alias" \
+                "EXNESS:$symbol" "$timeframe" "$restart_ready_ms" -1 "${audits[@]}")"
+            [ "$post_restart_matches" -gt 0 ] ||
+                fail "case a generation 2 lacks a post-ready matched candle/evaluation for $alias"
+        done
+    else
+        restart_start_ms="$(jq -er '.restartStartedAtMs' "$output/evidence/restart.json")"
+        restart_ready_ms="$(jq -er '.restartReadyAtMs' "$output/evidence/restart.json")"
+        peer_restart_ticks="$(qkt_count_events_in_window \
+            "com.qkt.events.TickEvent" "$restart_start_ms" "$restart_ready_ms" "${audits[@]}")"
+        [ "$peer_restart_ticks" -gt 0 ] || fail "case b retained no live tick while case a restarted"
+        for alias in jpy1 jpy5 xau1 xau5; do
+            case "$alias" in
+                jpy1) symbol=USDJPY; timeframe=1m ;;
+                jpy5) symbol=USDJPY; timeframe=5m ;;
+                xau1) symbol=XAUUSD; timeframe=1m ;;
+                xau5) symbol=XAUUSD; timeframe=5m ;;
+            esac
+            for boundary in before after; do
+                after_ms=-1
+                before_ms="$restart_start_ms"
+                if [ "$boundary" = after ]; then
+                    after_ms="$restart_ready_ms"
+                    before_ms=-1
+                fi
+                boundary_matches="$(qkt_count_matched_evaluations "$strategy" "$alias" \
+                    "EXNESS:$symbol" "$timeframe" "$after_ms" "$before_ms" "${audits[@]}")"
+                [ "$boundary_matches" -gt 0 ] ||
+                    fail "case b lacks a $boundary-restart matched candle/evaluation for $alias"
+            done
         done
     fi
     mapfile -t transports < <(find "$case_dir/state/state/mt5-transport-journal" -type f -name '*.jsonl' | sort)
@@ -521,6 +612,9 @@ for index in 0 1; do
     for transport in "${transports[@]}"; do jq -c . "$transport" >/dev/null || fail "invalid transport JSONL: $transport"; done
     [ -z "$(find "$case_dir/state/state/mt5-transport-journal" -type f -name '*.dropped' -print -quit)" ] ||
         fail "$case_id transport journal reported dropped records"
+    gateway_mutations="$(jq -r 'select((.method // "GET") | test("^(POST|PUT|PATCH|DELETE)$")) | 1' \
+        "${transports[@]}" | awk 'END {print NR + 0}')"
+    [ "$gateway_mutations" -eq 0 ] || fail "$case_id issued a mutating gateway request"
     magic="${magics[$index]}"
     jq -e --arg orders "/orders?magic=$magic" --arg positions "/get_positions?magic=$magic" '
         select(.path == $orders or .path == $positions)
@@ -529,6 +623,12 @@ for index in 0 1; do
         select((.path | test("^/(orders|get_positions)[?]magic=")) and .path != $orders and .path != $positions) | 1
     ' "${transports[@]}" | awk 'END {print NR + 0}')"
     [ "$foreign_magic_reads" -eq 0 ] || fail "$case_id transport crossed magic ownership"
+    resource_samples="$(awk -F, -v caseId="$case_id" 'NR > 1 && $2 == caseId {count++} END {print count + 0}' \
+        "$output/evidence/resources.csv")"
+    minimum_resource_samples=$((duration_seconds / 10 - 10))
+    [ "$minimum_resource_samples" -gt 0 ] || minimum_resource_samples=1
+    [ "$resource_samples" -ge "$minimum_resource_samples" ] ||
+        fail "$case_id retained only $resource_samples resource samples; expected at least $minimum_resource_samples"
     tick_latency="$(jq -c --arg strategy "$strategy" '.[$strategy].strategies[$strategy].TICK_PROCESSING' "$case_dir/evidence/latency.json")"
     jq -n \
         --arg caseId "$case_id" \
@@ -543,23 +643,25 @@ for index in 0 1; do
         --arg magic "$magic" \
         --arg stale "$stale" \
         --arg recovered "$recovered" \
+        --arg resourceSamples "$resource_samples" \
+        --arg minimumResourceSamples "$minimum_resource_samples" \
+        --slurpfile streams "$stream_counts_file" \
         --argjson latency "$tick_latency" '
         {
+          schema:"qkt-live-multi-container-case-v2",status:"passed",
           caseId:$caseId,strategy:$strategy,generations:($generations|tonumber),
           maxInboundQueue:($maxQueue|tonumber),maxDroppedTicks:($maxDropped|tonumber),
           warmupTickEvents:($warmupTicks|tonumber),liveTickEvents:($liveTicks|tonumber),
           streamCandleEvents:($streamCandles|tonumber),strategyCandleEvaluations:($strategyEvaluations|tonumber),
           magic:($magic|tonumber),
-          staleEvents:($stale|tonumber),recoveredStaleEvents:($recovered|tonumber),tickProcessing:$latency
+          gatewayMutations:0,orderEvents:0,fills:0,
+          staleEvents:($stale|tonumber),recoveredStaleEvents:($recovered|tonumber),
+          resourceSamples:($resourceSamples|tonumber),minimumResourceSamples:($minimumResourceSamples|tonumber),
+          polling:{tickPollIntervalMs:500,brokerPollIntervalMs:5000},stateAsync:true,
+          bars:{configuredWarmupCounts:true,liveTicks:true,constructedBars:true,evaluationsJoined:true},
+          streams:$streams[0],tickProcessing:$latency
         }
     ' > "$case_dir/evidence/result.json"
-done
-
-for index in 0 1; do
-    "$cli" daemon stop --state-dir "$output/cases/${case_ids[$index]}/state" \
-        > "$output/cases/${case_ids[$index]}/evidence/daemon-stop.log"
-    wait "${exec_pids[$index]}" || fail "container ${case_ids[$index]} daemon failed during final stop"
-    exec_pids[$index]=""
 done
 
 control_tokens=()
@@ -619,18 +721,32 @@ jq -n \
     --arg hostVersion "$host_version" \
     --arg image "$image" \
     --arg imageVersion "$image_version" \
-    --arg duration "$duration_seconds" \
+    --arg requestedDuration "$duration_seconds" \
+    --arg actualDuration "$elapsed_seconds" \
     --arg maxCpu "$max_cpu" \
     --arg maxMemory "$max_memory" \
     --arg maxPids "$max_pids" \
+    --slurpfile restart "$output/evidence/restart.json" \
     --slurpfile caseA "$output/cases/a/evidence/result.json" \
     --slurpfile caseB "$output/cases/b/evidence/result.json" '
     {
-      schema:"qkt-live-multi-container-load-v1",status:"passed",finishedAt:$finishedAt,
+      schema:"qkt-live-multi-container-load-v2",status:"passed",finishedAt:$finishedAt,
       qktCommit:$qktCommit,hostVersion:$hostVersion,image:$image,imageVersion:$imageVersion,
-      durationSeconds:($duration|tonumber),containers:2,symbols:4,timeframes:["1m","5m"],streams:8,
-      controlledRestart:true,accountUnchanged:true,venueDealsDuringRun:0,
-      resources:{samplesPerContainer:(($duration|tonumber)/10),maxAggregateCpuPercent:($maxCpu|tonumber),maxAggregateMemoryKiB:($maxMemory|tonumber),maxAggregatePids:($maxPids|tonumber)},
+      requestedDurationSeconds:($requestedDuration|tonumber),actualDurationSeconds:($actualDuration|tonumber),
+      containers:2,symbols:4,timeframes:["1m","5m"],streams:8,
+      controlledRestart:true,restart:$restart[0],
+      sourceAutoRedeploy:true,stateRestoreVerified:true,persistedDeploymentRestore:false,
+      financiallyReadOnly:true,accountUnchanged:true,venueDealsDuringRun:0,
+      gatewayMutations:0,orderEvents:0,fills:0,
+      polling:{tickPollIntervalMs:500,brokerPollIntervalMs:5000,parallelTickSymbols:4,
+        estimatedGatewayRequestsPerSecond:9.2},
+      bars:{configuredWarmupCounts:true,liveTicks:true,constructedBars:true,evaluationsJoined:true,
+        preAndPostRestart:true},
+      stateAsync:true,dockerResourceRestrictionsVerifiedAbsent:true,jvmOverridesVerifiedAbsent:true,
+      resources:{samplesPerCase:{a:$caseA[0].resourceSamples,b:$caseB[0].resourceSamples},
+        maxAggregateCpuPercent:($maxCpu|tonumber),maxAggregateMemoryKiB:($maxMemory|tonumber),
+        maxAggregatePids:($maxPids|tonumber)},
+      publicationSafe:false,containsPrivateAccountMetadata:true,
       cases:[$caseA[0],$caseB[0]]
     }
 ' > "$output/evidence/result.json"
