@@ -57,11 +57,15 @@ THEN BUY btc SIZING 0.1     -- fires once per bar where we're flat AND above 50k
 | `>=` | Greater than or equal |
 
 Both `=` and `==` work for equality; `!=` and `<>` both work for inequality. The DSL is liberal about syntax conventions you might be used to from SQL or C-family languages.
+Equality and inequality accept either two numbers or two strings. String comparison is exact and
+case-sensitive; `<`, `<=`, `>`, and `>=` accept numbers only. Mixed or unsupported operand types
+evaluate as undefined, so the containing rule does not fire.
 
 ```qkt
 WHEN rsi(btc.close, 14) < 30 THEN LOG INFO "oversold"
 WHEN account.equity >= 10000 THEN BUY btc SIZING 0.5 PCT
 WHEN POSITION.btc = 0 THEN ...
+WHEN status = "ready" THEN BUY btc SIZING 0.01
 ```
 
 ## Boolean combinators
