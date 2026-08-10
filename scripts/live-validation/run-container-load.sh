@@ -339,12 +339,15 @@ memory_kib() {
 # Leave a full M5-close observation after restart so generation 2 proves its own stream path.
 restart_second=$((duration_seconds - 310))
 restart_completed=false
-for second in $(seq 1 "$duration_seconds"); do
+load_started_second=$SECONDS
+next_sample_second=10
+while true; do
     sleep 1
+    elapsed_seconds=$((SECONDS - load_started_second))
     for index in 0 1; do
         kill -0 "${exec_pids[$index]}" 2>/dev/null || fail "container ${case_ids[$index]} daemon exited during load"
     done
-    if [ "$second" -eq "$restart_second" ]; then
+    if ! $restart_completed && [ "$elapsed_seconds" -ge "$restart_second" ]; then
         "$cli" daemon status --state-dir "$output/cases/b/state" --json > "$output/cases/b/evidence/status-before-peer-restart.json"
         "$cli" daemon stop --state-dir "$output/cases/a/state" > "$output/cases/a/evidence/stop-for-restart.log"
         wait "${exec_pids[0]}" || fail "container a daemon failed during controlled stop"
@@ -357,12 +360,13 @@ for second in $(seq 1 "$duration_seconds"); do
         start_daemon 0 2
         wait_ready 0 1
         restart_completed=true
-        jq -n --argjson atSecond "$second" --argjson restartedAtMs "$restart_started_ms" \
+        jq -n --argjson atSecond "$elapsed_seconds" --argjson restartedAtMs "$restart_started_ms" \
             --arg containerA "${containers[0]}" --arg containerB "${containers[1]}" \
             '{status:"passed",atSecond:$atSecond,restartedAtMs:$restartedAtMs,restarted:$containerA,uninterrupted:$containerB}' \
             > "$output/evidence/restart.json"
     fi
-    if [ $((second % 10)) -eq 0 ]; then
+    elapsed_seconds=$((SECONDS - load_started_second))
+    if [ "$elapsed_seconds" -ge "$next_sample_second" ]; then
         for index in 0 1; do
             case_id="${case_ids[$index]}"
             status="$("$cli" daemon status --state-dir "$output/cases/$case_id/state" --json)"
@@ -371,7 +375,7 @@ for second in $(seq 1 "$duration_seconds"); do
                 .perStrategy[0].running == true and .perStrategy[0].halted == false and
                 .perStrategy[0].droppedTicks == 0
             ' <<<"$status" >/dev/null || fail "$case_id health sample was not ready and unhalted"
-            jq -c --argjson second "$second" --argjson generation "${generations[$index]}" \
+            jq -c --argjson second "$elapsed_seconds" --argjson generation "${generations[$index]}" \
                 '. + {sampleSecond:$second,generation:$generation}' <<<"$status" \
                 >> "$output/cases/$case_id/evidence/health.jsonl"
             stats="$(docker stats --no-stream --format '{{.CPUPerc}}|{{.MemUsage}}|{{.PIDs}}' "${containers[$index]}")"
@@ -380,10 +384,14 @@ for second in $(seq 1 "$duration_seconds"); do
             memory="${rest%% / *}"
             pids="${stats##*|}"
             printf '%s,%s,%s,%s,%s,%s\n' \
-                "$second" "$case_id" "${generations[$index]}" "${cpu%%%}" "$(memory_kib "$memory")" "$pids" \
+                "$elapsed_seconds" "$case_id" "${generations[$index]}" "${cpu%%%}" "$(memory_kib "$memory")" "$pids" \
                 >> "$output/evidence/resources.csv"
         done
+        while [ "$next_sample_second" -le "$elapsed_seconds" ]; do
+            next_sample_second=$((next_sample_second + 10))
+        done
     fi
+    [ "$elapsed_seconds" -ge "$duration_seconds" ] && break
 done
 $restart_completed || fail "controlled restart did not run"
 [ "$(awk 'END {print NR + 0}' "$output/cases/b/evidence/health-during-peer-restart.jsonl")" -gt 0 ] ||
@@ -407,11 +415,14 @@ for index in 0 1; do
     [ "$max_dropped" -eq 0 ] || fail "$case_id reported $max_dropped dropped live ticks"
     jq -e '.perStrategy[0].inboundQueueDepth == 0 and .perStrategy[0].droppedTicks == 0' \
         "$case_dir/evidence/status-final.json" >/dev/null || fail "$case_id did not finish with a drained queue"
-    current_log="$case_dir/logs/daemon-${generations[$index]}.log"
+    first_log="$case_dir/logs/daemon-1.log"
     for stream in $(if [ "$case_id" = a ]; then printf 'eur1 eur5 gbp1 gbp5'; else printf 'jpy1 jpy5 xau1 xau5'; fi); do
-        rg --fixed-strings "container load trace stream=$stream" "$current_log" >/dev/null ||
-            fail "$case_id generation ${generations[$index]} did not trace $stream"
+        rg --fixed-strings "container load trace stream=$stream" "$first_log" >/dev/null ||
+            fail "$case_id generation 1 did not trace $stream"
     done
+    if [ "$case_id" = a ] && rg --quiet 'container load trace stream=' "$case_dir/logs/daemon-2.log"; then
+        fail "case a generation 2 re-fired a restored true rule edge"
+    fi
     stale="$({ rg --no-heading --no-filename 'market data .* STALE:' "$case_dir/logs" || true; } |
         awk 'END {print NR + 0}')"
     recovered="$({ rg --no-heading --no-filename 'market data .* healthy again' "$case_dir/logs" || true; } |
@@ -428,15 +439,28 @@ for index in 0 1; do
     warmup_tick_events="$(jq -r 'select(.eventType == "com.qkt.events.WarmupTickEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
     live_tick_events="$(jq -r 'select(.eventType == "com.qkt.events.TickEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
     stream_candle_events="$(jq -r 'select(.eventType == "com.qkt.events.StreamCandleEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
+    strategy_evaluations="$(jq -r 'select(.eventType == "com.qkt.events.StrategyCandleEvaluatedEvent") | 1' "${audits[@]}" |
+        awk 'END {print NR + 0}')"
     [ "$warmup_tick_events" -gt 0 ] || fail "$case_id retained no warmup ticks"
     [ "$live_tick_events" -gt 0 ] || fail "$case_id retained no live ticks"
     [ "$stream_candle_events" -gt 0 ] || fail "$case_id retained no exact stream candles"
+    [ "$strategy_evaluations" -gt 0 ] || fail "$case_id retained no completed strategy candle evaluations"
     for symbol in ${case_symbols[$index]}; do
+        alias_prefix=""
+        case "$symbol" in
+            EURUSD) alias_prefix=eur ;;
+            GBPUSD) alias_prefix=gbp ;;
+            USDJPY) alias_prefix=jpy ;;
+            XAUUSD) alias_prefix=xau ;;
+            *) fail "unsupported container-load symbol: $symbol" ;;
+        esac
         jq -e --arg symbol "EXNESS:$symbol" 'select(.eventType == "com.qkt.events.TickEvent" and .symbol == $symbol)' \
             "${audits[@]}" >/dev/null || fail "$case_id retained no live ticks for $symbol"
         for timeframe_ms in 60000 300000; do
             timeframe="1m"
             [ "$timeframe_ms" -eq 60000 ] || timeframe="5m"
+            alias="${alias_prefix}1"
+            [ "$timeframe_ms" -eq 60000 ] || alias="${alias_prefix}5"
             jq -e --arg symbol "EXNESS:$symbol" --argjson timeframeMs "$timeframe_ms" '
                 select(
                     .eventType == "com.qkt.events.WarmupTickEvent" and
@@ -449,6 +473,29 @@ for index in 0 1; do
                     .symbol == $symbol and .timeframe == $timeframe
                 )
             ' "${audits[@]}" >/dev/null || fail "$case_id retained no $timeframe stream candles for $symbol"
+            jq -s -e \
+                --arg strategy "$strategy" \
+                --arg alias "$alias" \
+                --arg symbol "EXNESS:$symbol" \
+                --arg timeframe "$timeframe" '
+                    . as $events |
+                    any(
+                        $events[];
+                        .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
+                        .strategyId == $strategy and .alias == $alias and
+                        .symbol == $symbol and .timeframe == $timeframe and .rulesEvaluated == 1 and
+                        (. as $evaluated |
+                            any(
+                                $events[];
+                                .eventType == "com.qkt.events.StreamCandleEvent" and
+                                .symbol == $symbol and .timeframe == $timeframe and
+                                .candle.startTimeMs == $evaluated.candle.startTimeMs and
+                                .candle.endTimeMs == $evaluated.candle.endTimeMs
+                            )
+                        )
+                    )
+                ' "${audits[@]}" >/dev/null ||
+                fail "$case_id retained no matched $alias strategy evaluation for $symbol $timeframe"
         done
     done
     if [ "$case_id" = a ]; then
@@ -459,6 +506,15 @@ for index in 0 1; do
         jq -e --argjson restartMs "$restart_ms" '
             select(.ts >= $restartMs and .eventType == "com.qkt.events.StreamCandleEvent" and .timeframe == "5m")
         ' "${audits[@]}" >/dev/null || fail "case a generation 2 retained no M5 stream candle"
+        for alias in eur1 eur5 gbp1 gbp5; do
+            jq -e --argjson restartMs "$restart_ms" --arg strategy "$strategy" --arg alias "$alias" '
+                select(
+                    .ts >= $restartMs and
+                    .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
+                    .strategyId == $strategy and .alias == $alias and .rulesEvaluated == 1
+                )
+            ' "${audits[@]}" >/dev/null || fail "case a generation 2 did not evaluate $alias"
+        done
     fi
     mapfile -t transports < <(find "$case_dir/state/state/mt5-transport-journal" -type f -name '*.jsonl' | sort)
     [ "${#transports[@]}" -gt 0 ] || fail "$case_id produced no MT5 transport journal"
@@ -483,6 +539,7 @@ for index in 0 1; do
         --arg warmupTicks "$warmup_tick_events" \
         --arg liveTicks "$live_tick_events" \
         --arg streamCandles "$stream_candle_events" \
+        --arg strategyEvaluations "$strategy_evaluations" \
         --arg magic "$magic" \
         --arg stale "$stale" \
         --arg recovered "$recovered" \
@@ -491,7 +548,8 @@ for index in 0 1; do
           caseId:$caseId,strategy:$strategy,generations:($generations|tonumber),
           maxInboundQueue:($maxQueue|tonumber),maxDroppedTicks:($maxDropped|tonumber),
           warmupTickEvents:($warmupTicks|tonumber),liveTickEvents:($liveTicks|tonumber),
-          streamCandleEvents:($streamCandles|tonumber),magic:($magic|tonumber),
+          streamCandleEvents:($streamCandles|tonumber),strategyCandleEvaluations:($strategyEvaluations|tonumber),
+          magic:($magic|tonumber),
           staleEvents:($stale|tonumber),recoveredStaleEvents:($recovered|tonumber),tickProcessing:$latency
         }
     ' > "$case_dir/evidence/result.json"

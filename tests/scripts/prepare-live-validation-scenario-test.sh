@@ -138,6 +138,16 @@ grep -F 'transport journal reported dropped records' "$container_script" >/dev/n
 grep -F 'transport crossed magic ownership' "$container_script" >/dev/null
 grep -F 'daemon control token was persisted' "$container_script" >/dev/null
 grep -F 'maxAggregateMemoryKiB' "$container_script" >/dev/null
+grep -F 'com.qkt.events.StrategyCandleEvaluatedEvent' "$container_script" >/dev/null
+grep -F 'generation 2 re-fired a restored true rule edge' "$container_script" >/dev/null
+grep -F 'retained no matched $alias strategy evaluation' "$container_script" >/dev/null
+grep -F 'load_started_second=$SECONDS' "$container_script" >/dev/null
+grep -F 'elapsed_seconds=$((SECONDS - load_started_second))' "$container_script" >/dev/null
+grep -F '[ "$elapsed_seconds" -ge "$next_sample_second" ]' "$container_script" >/dev/null
+if rg --quiet 'for second in \$\(seq 1 "\$duration_seconds"\)' "$container_script"; then
+    echo 'container runner measures duration by loop iterations instead of wall-clock time' >&2
+    exit 1
+fi
 if rg --quiet -- '-Xmx|-Xms|MaxRAMPercentage|MaxRAM=|JAVA_TOOL_OPTIONS=|JDK_JAVA_OPTIONS=|--memory(=|[[:space:]])|--cpus(=|[[:space:]])|--pids-limit|--cpuset-cpus' "$container_script"; then
     echo 'container runner adds a JVM or container resource restriction' >&2
     exit 1
