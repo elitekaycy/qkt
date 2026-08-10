@@ -25,6 +25,16 @@ class HMATest {
     }
 
     @Test
+    fun `matches a hand calculated period four ramp`() {
+        val h = HMA(4)
+        listOf("1", "2", "3", "4", "5").forEach { h.update(Money.of(it)) }
+
+        // Exact rationals yield 5; the two 8-decimal intermediate WMAs produce one
+        // final unit at Money.SCALE after half-even rounding.
+        assertThat(h.value()).isEqualByComparingTo(Money.of("5.00000001"))
+    }
+
+    @Test
     fun `rejects period below 2`() {
         assertThatThrownBy { HMA(1) }.isInstanceOf(IllegalArgumentException::class.java)
     }

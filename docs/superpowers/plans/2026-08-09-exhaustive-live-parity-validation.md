@@ -9,7 +9,7 @@ journals, portfolios, and QKT Insights before any external strategy is promoted.
 - [x] Add a machine-readable capability catalog and a CI test that detects registry/runtime drift.
 - [ ] Inventory existing evidence without upgrading parser, construction, or vacuous tests to
       behavioral proof.
-- [ ] Add independent numeric/readiness oracles for every indicator output and DSL numeric function.
+- [x] Add independent numeric/readiness oracles for every indicator output and DSL numeric function.
 - [ ] Add non-vacuous DSL trace scenarios for every expression, state reference, action, schedule,
       sequence, session, basket, and supported interaction.
 - [ ] Generate temporary `.qkt` strategies plus config, risk, book-risk, identity, expected-trace,
@@ -21,7 +21,7 @@ journals, portfolios, and QKT Insights before any external strategy is promoted.
 - [ ] Reconcile fills, positions, cash, equity, realized/unrealized PnL, spread, commission, fees,
       swap, reports, manifests, and journals for every applicable scenario.
 - [ ] Validate multi-symbol, multi-timeframe, multi-strategy, and portfolio isolation and aggregation.
-- [ ] Add a localhost-only Exness demo harness with account allowlisting, bounded 0.01-lot exposure,
+- [x] Add a localhost-only Exness demo harness with account allowlisting, bounded 0.01-lot exposure,
       deterministic correlation, mandatory cleanup, and final reconciliation.
 - [ ] Measure sustained gateway polling, routing, latency, queueing, resource trend, reconnect,
       restart, resynchronization, and already-deployed behavior without restricting JVM heap.
