@@ -2221,6 +2221,7 @@ class OrderManager(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
                 brokerOrderId = request.id,
+                strategyId = request.strategyId,
                 timestamp = clock.now(),
             ),
         )
