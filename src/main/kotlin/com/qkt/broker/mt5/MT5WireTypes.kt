@@ -220,7 +220,8 @@ data class MT5SymbolInfo(
  *
  * [clientOrderId] identifies one placement attempt to the gateway. It is deliberately
  * separate from [comment], which remains the stable engine order id used to correlate
- * venue state during recovery.
+ * venue state during recovery. [engineOrderId] retains that stable id even when a
+ * composite translation decorates [comment] for the MT5 wire.
  */
 data class MT5OrderRequest(
     val symbol: String,
@@ -237,6 +238,7 @@ data class MT5OrderRequest(
     val clientOrderId: String = comment,
     val expiration: Long? = null,
     val typeTime: String? = null,
+    val engineOrderId: String = comment,
 )
 
 /** Inner result block of a venue order response — `retcode` is the MQL5 trade return code. */

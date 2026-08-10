@@ -112,6 +112,7 @@ class MT5Client(
                 error = error,
                 durationMs = (monotonicNanos() - startedNs) / 1_000_000L,
                 idempotencyKey = request.header("Idempotency-Key"),
+                engineOrderId = request.tag(TransportCorrelation::class.java)?.engineOrderId,
             )
         }.onFailure { captureError ->
             log.error("MT5 transport capture failed without affecting request: {}", captureError.message)
@@ -146,6 +147,7 @@ class MT5Client(
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
                 .header("Idempotency-Key", req.clientOrderId)
+                .tag(TransportCorrelation::class.java, TransportCorrelation(req.engineOrderId))
                 .post(body)
                 .build()
         // POST /order is NOT retried: duplicate placement is worse than a surfaced failure.
@@ -185,6 +187,7 @@ class MT5Client(
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
                 .header("Idempotency-Key", req.clientOrderId)
+                .tag(TransportCorrelation::class.java, TransportCorrelation(req.engineOrderId))
                 .post(body)
                 .build()
         http.newCall(request).enqueue(
@@ -959,4 +962,8 @@ class MT5Client(
         /** Padding either side of the deal search window — venue clock skew is hours, not days. */
         private const val DEAL_WINDOW_PAD_MS: Long = 24L * 3600_000L
     }
+
+    private data class TransportCorrelation(
+        val engineOrderId: String,
+    )
 }

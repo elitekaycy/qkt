@@ -27,14 +27,14 @@ class GoldenCommandTest {
             audit,
             """
             {"v":1,"ts":1000,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:XAUUSD","tick":{"timestampMs":1000,"price":"2000","bid":"1999","ask":"2001"}}
-            {"v":1,"ts":2000,"seq":2,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","symbol":"EXNESS:XAUUSD","fill":{"side":"BUY","price":"2001","quantity":"0.1","partial":false}}
+            {"v":1,"ts":2000,"seq":2,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","symbol":"EXNESS:XAUUSD","fill":{"side":"BUY","price":"2001","quantity":"0.1","brokerOrderId":"42","partial":false}}
             """.trimIndent() + "\n",
         )
         Files.writeString(orders, """{"ts":1500,"kind":"submitted","id":"o-1"}""" + "\n")
         Files.writeString(
             transport,
             """
-            {"v":1,"ts":1600,"seq":1,"profile":"demo","method":"POST","path":"/order","idempotencyKey":"o-1",
+            {"v":1,"ts":1600,"seq":1,"profile":"demo","method":"POST","path":"/order","idempotencyKey":"mt5-placement-1","engineOrderId":"o-1",
             "requestBody":"{}","responseCode":200,
             "responseBody":"{\\\"result\\\":{\\\"retcode\\\":10009}}","durationMs":5}
             """.trimIndent().replace("\n", "") + "\n",
@@ -80,6 +80,49 @@ class GoldenCommandTest {
     }
 
     @Test
+    fun `capture links a legacy transport exchange through the venue order ticket`(
+        @TempDir tmp: Path,
+    ) {
+        val audit = tmp.resolve("state/audit-journal/alpha/audit-2026-08-09.jsonl")
+        val transport = tmp.resolve("state/mt5-transport-journal/demo/transport-2026-08-09.jsonl")
+        audit.parent.let(Files::createDirectories)
+        transport.parent.let(Files::createDirectories)
+        Files.writeString(
+            audit,
+            """
+            {"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","tick":{}}
+            {"v":1,"ts":2000,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","fill":{"brokerOrderId":"42"}}
+            """.trimIndent() + "\n",
+        )
+        Files.writeString(
+            transport,
+            """
+            {"v":1,"ts":1500,"method":"POST","path":"/order","idempotencyKey":"mt5-placement-1",
+            "responseCode":200,"responseBody":"{\"result\":{\"order\":42}}"}
+            """.trimIndent().replace("\n", "") + "\n",
+        )
+        val output = tmp.resolve("legacy-golden.zip")
+
+        val code =
+            GoldenCommand(
+                Args(
+                    arrayOf(
+                        "golden",
+                        "capture",
+                        "--session",
+                        "alpha",
+                        "--state-dir",
+                        tmp.toString(),
+                        "--out",
+                        output.toString(),
+                    ),
+                ),
+            ).run()
+
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+    }
+
+    @Test
     fun `capture fails closed without gateway evidence`(
         @TempDir tmp: Path,
     ) {
@@ -118,8 +161,10 @@ class GoldenCommandTest {
         )
         Files.writeString(
             transport,
-            """{"v":1,"ts":1500,"method":"POST","path":"/order","idempotencyKey":"other-order"}""" +
-                "\n",
+            """
+            {"v":1,"ts":1500,"method":"POST","path":"/order","idempotencyKey":"other-order",
+            "engineOrderId":"other-order","responseCode":200}
+            """.trimIndent().replace("\n", "") + "\n",
         )
 
         val code =
@@ -148,8 +193,10 @@ class GoldenCommandTest {
         )
         Files.writeString(
             transport,
-            """{"v":1,"ts":1500,"method":"POST","path":"/order","idempotencyKey":"o-1","responseCode":200}""" +
-                "\n",
+            """
+            {"v":1,"ts":1500,"method":"POST","path":"/order","idempotencyKey":"o-1",
+            "engineOrderId":"o-1","responseCode":200}
+            """.trimIndent().replace("\n", "") + "\n",
         )
         Files.writeString(auditDir.resolve("audit-1970-01-01.dropped"), "1\n")
 

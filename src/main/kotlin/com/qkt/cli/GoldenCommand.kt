@@ -18,6 +18,7 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -153,6 +154,7 @@ class GoldenCommand(
         var ticks = 0L
         var fills = 0L
         val filledOrderIds = mutableSetOf<String>()
+        val filledBrokerOrderIds = mutableSetOf<String>()
         for (file in files) {
             Files.newBufferedReader(file, StandardCharsets.UTF_8).use { reader ->
                 var lineNumber = 0L
@@ -175,13 +177,19 @@ class GoldenCommand(
                                 ?.contentOrNull
                                 ?.takeIf(String::isNotBlank)
                                 ?.let(filledOrderIds::add)
+                            (record["fill"] as? JsonObject)
+                                ?.get("brokerOrderId")
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?.takeIf(String::isNotBlank)
+                                ?.let(filledBrokerOrderIds::add)
                         }
                     }
                 }
             }
         }
         require(first != Long.MAX_VALUE) { "engine audit journal is empty" }
-        return AuditSummary(first, last, ticks, fills, filledOrderIds)
+        return AuditSummary(first, last, ticks, fills, filledOrderIds, filledBrokerOrderIds)
     }
 
     private fun scanTransport(
@@ -202,10 +210,19 @@ class GoldenCommand(
                     exchanges += 1L
                     val endpoint = record["path"]?.jsonPrimitive?.contentOrNull?.substringBefore('?')
                     val idempotencyKey = record["idempotencyKey"]?.jsonPrimitive?.contentOrNull
+                    val engineOrderId = record["engineOrderId"]?.jsonPrimitive?.contentOrNull
+                    val brokerOrderId = responseBrokerOrderId(record)
+                    val responseCode = record["responseCode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
                     if (
                         record["method"]?.jsonPrimitive?.contentOrNull == "POST" &&
                         endpoint == "/order" &&
-                        idempotencyKey in audit.filledOrderIds
+                        responseCode != null &&
+                        responseCode in 200..299 &&
+                        (
+                            engineOrderId in audit.filledOrderIds ||
+                                idempotencyKey in audit.filledOrderIds ||
+                                brokerOrderId in audit.filledBrokerOrderIds
+                        )
                     ) {
                         linkedPlacements += 1L
                     }
@@ -213,6 +230,13 @@ class GoldenCommand(
             }
         }
         return TransportSummary(exchanges, linkedPlacements)
+    }
+
+    private fun responseBrokerOrderId(record: JsonObject): String? {
+        val raw = record["responseBody"]?.jsonPrimitive?.contentOrNull ?: return null
+        val response = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return null
+        val result = response["result"] as? JsonObject ?: return null
+        return result["order"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
     }
 
     private fun addJsonl(
@@ -386,6 +410,7 @@ class GoldenCommand(
         val tickCount: Long,
         val fillCount: Long,
         val filledOrderIds: Set<String>,
+        val filledBrokerOrderIds: Set<String>,
     )
 
     private data class TransportSummary(
