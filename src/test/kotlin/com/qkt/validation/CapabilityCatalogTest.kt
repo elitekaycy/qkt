@@ -66,6 +66,24 @@ class CapabilityCatalogTest {
             assertThat(classifiedAxes).`as`("%s classified axes", name).doesNotHaveDuplicates()
             assertThat(classifiedAxes.toSet()).`as`("%s evidence coverage", name).isEqualTo(requiredAxes.toSet())
 
+            category["behaviorEvidence"]?.jsonObject?.let { behaviorEvidence ->
+                assertThat(behaviorEvidence.keys)
+                    .`as`("%s behavior evidence keys", name)
+                    .containsExactlyInAnyOrderElementsOf(capabilities)
+                for ((capability, evidenceValue) in behaviorEvidence) {
+                    val evidence = strings(evidenceValue.jsonArray)
+                    assertThat(evidence)
+                        .`as`("%s %s behavior evidence", name, capability)
+                        .isNotEmpty
+                        .doesNotHaveDuplicates()
+                    evidence.forEach { path ->
+                        assertThat(Files.isRegularFile(Path.of(path)))
+                            .`as`("%s %s behavior evidence %s", name, capability, path)
+                            .isTrue()
+                    }
+                }
+            }
+
             for ((axis, evidenceValue) in passed) {
                 val evidence = strings(evidenceValue.jsonArray)
                 assertThat(evidence).`as`("%s %s pass evidence", name, axis).isNotEmpty.doesNotHaveDuplicates()

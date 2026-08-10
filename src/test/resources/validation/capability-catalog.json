@@ -177,6 +177,37 @@
       },
       "notApplicable": {}
     },
+    "normalized-order-unit-oracles": {
+      "passed": {
+        "oracle": [
+          "src/test/kotlin/com/qkt/app/OrderManagerArmedTrailCloseTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerBracketTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerOcoTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerOtoTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerScaleOutTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerStackTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerStopRatchetTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerTimeExitTest.kt",
+          "src/test/kotlin/com/qkt/app/OrderManagerTrailingTest.kt",
+          "src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt",
+          "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt",
+          "src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"
+        ]
+      },
+      "gaps": {
+        "dsl": "IfTouched, ScaleOut, TimeExit, and TrailingStopLimit are not all directly expressible by the DSL; expressible variants still need per-row classification.",
+        "ticks": "Every normalized request does not yet have a registry-locked raw-tick lifecycle trace.",
+        "bars": "Every normalized request does not yet have an ordinary-bar lifecycle trace.",
+        "tickResolvedBars": "Every normalized request does not yet have a tick-resolved-bar lifecycle trace.",
+        "livePaper": "Every normalized request does not yet have a registry-locked live-paper lifecycle trace.",
+        "mt5Demo": "No bounded demo-gateway matrix covers every normalized request and fallback path.",
+        "reports": "Normalized request lifecycles do not yet reconcile complete report bundles and manifests.",
+        "journal": "Normalized request lifecycles do not yet assert the complete causal event and transport journal chain.",
+        "insights": "Normalized request lifecycles do not yet assert exact Insights delivery and attribution.",
+        "portfolio": "Normalized request lifecycles have not yet been isolated across multi-strategy books."
+      },
+      "notApplicable": {}
+    },
     "unproven": {
       "passed": {},
       "gaps": {
@@ -270,12 +301,30 @@
     "normalizedOrders": {
       "source": "OrderRequest.permittedSubclasses",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
-      "evidenceProfile": "unproven",
+      "evidenceProfile": "normalized-order-unit-oracles",
       "capabilities": [
         "ArmedTrailingStop", "Bracket", "IfTouched", "Limit", "Market", "OTO", "ScaleOut",
         "StandaloneOCO", "Stack", "SteppedStop", "Stop", "StopLimit", "TimeExit",
         "TimeTighteningStop", "TrailingStop", "TrailingStopLimit"
-      ]
+      ],
+      "behaviorEvidence": {
+        "ArmedTrailingStop": ["src/test/kotlin/com/qkt/app/OrderManagerArmedTrailCloseTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt"],
+        "Bracket": ["src/test/kotlin/com/qkt/app/OrderManagerBracketTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt"],
+        "IfTouched": ["src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt", "src/test/kotlin/com/qkt/app/OrderManagerScaleOutTest.kt"],
+        "Limit": ["src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"],
+        "Market": ["src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"],
+        "OTO": ["src/test/kotlin/com/qkt/app/OrderManagerOtoTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt"],
+        "ScaleOut": ["src/test/kotlin/com/qkt/app/OrderManagerScaleOutTest.kt"],
+        "StandaloneOCO": ["src/test/kotlin/com/qkt/app/OrderManagerOcoTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt"],
+        "Stack": ["src/test/kotlin/com/qkt/app/OrderManagerStackTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt"],
+        "SteppedStop": ["src/test/kotlin/com/qkt/app/OrderManagerStopRatchetTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt"],
+        "Stop": ["src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"],
+        "StopLimit": ["src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"],
+        "TimeExit": ["src/test/kotlin/com/qkt/app/OrderManagerTimeExitTest.kt"],
+        "TimeTighteningStop": ["src/test/kotlin/com/qkt/app/OrderManagerStopRatchetTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedCompositeOrderParityTest.kt"],
+        "TrailingStop": ["src/test/kotlin/com/qkt/app/OrderManagerTrailingTest.kt", "src/test/kotlin/com/qkt/parity/GeneratedOrderTypeParityTest.kt"],
+        "TrailingStopLimit": ["src/test/kotlin/com/qkt/app/OrderManagerTrailingTest.kt"]
+      }
     },
     "timeInForce": {
       "source": "TimeInForce.entries",
