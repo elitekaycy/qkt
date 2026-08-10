@@ -1,8 +1,12 @@
 package com.qkt.cli
 
+import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
+import com.qkt.marketdata.store.BinaryBarStore
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.util.zip.ZipFile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -84,6 +88,44 @@ class GoldenCommandTest {
                 .contains("\"linkedPlacements\":1")
             assertThat(root["entries"].toString()).contains("\"sha256\"")
         }
+
+        val replayRoot = tmp.resolve("replay-data")
+        val materializeCode =
+            GoldenCommand(
+                Args(
+                    arrayOf(
+                        "golden",
+                        "materialize",
+                        "--bundle",
+                        output.toString(),
+                        "--out",
+                        replayRoot.toString(),
+                    ),
+                ),
+                clock = FixedClock(1_754_740_800_000L),
+            ).run()
+
+        assertThat(materializeCode).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(Files.readString(replayRoot.resolve("symbols/XAUUSD/1970-01-01.csv")))
+            .startsWith("timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n")
+            .contains("900,XAUUSD,1998,,1997,1999,,")
+            .contains("1000,XAUUSD,2000,,1999,2001,,")
+        assertThat(replayRoot.resolve("symbols/XAUUSD/manifest.json")).exists()
+        assertThat(Files.readString(replayRoot.resolve("bars/EXNESS/XAUUSD/1s/1970-01-01.csv")))
+            .contains("0,1990,2005,1985,2000,10")
+        val binaryCandle =
+            BinaryBarStore(replayRoot)
+                .readDay("EXNESS", "XAUUSD", TimeWindow.ONE_SECOND, java.time.LocalDate.EPOCH)
+                .single()
+        assertThat(binaryCandle.symbol).isEqualTo("EXNESS:XAUUSD")
+        assertThat(binaryCandle.close).isEqualByComparingTo("2000")
+        val replayManifest =
+            Json.parseToJsonElement(Files.readString(replayRoot.resolve("golden-replay-manifest.json"))).jsonObject
+        assertThat(replayManifest["sourceCaptureGitSha"]!!.jsonPrimitive.content).isEqualTo(BuildInfo.GIT_SHA)
+        assertThat(replayManifest["counts"].toString())
+            .contains("\"ticks\":1")
+            .contains("\"warmupTicks\":1")
+            .contains("\"candles\":1")
     }
 
     @Test
@@ -252,5 +294,76 @@ class GoldenCommandTest {
             ).run()
 
         assertThat(unstructuredCandle).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
+    fun `materialize rejects a golden bundle with a modified engine entry`(
+        @TempDir tmp: Path,
+    ) {
+        val bundle = createValidGolden(tmp)
+        FileSystems.newFileSystem(bundle, emptyMap<String, Any>()).use { zip ->
+            Files.writeString(
+                zip.getPath("/engine/audit-2026-08-09.jsonl"),
+                "{}\n",
+                StandardOpenOption.APPEND,
+            )
+        }
+        val output = tmp.resolve("replay-data")
+
+        val code =
+            GoldenCommand(
+                Args(
+                    arrayOf(
+                        "golden",
+                        "materialize",
+                        "--bundle",
+                        bundle.toString(),
+                        "--out",
+                        output.toString(),
+                    ),
+                ),
+            ).run()
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(output).doesNotExist()
+    }
+
+    private fun createValidGolden(tmp: Path): Path {
+        val state = tmp.resolve("state")
+        val audit = state.resolve("audit-journal/alpha/audit-2026-08-09.jsonl")
+        val transport = state.resolve("mt5-transport-journal/demo/transport-2026-08-09.jsonl")
+        audit.parent.let(Files::createDirectories)
+        transport.parent.let(Files::createDirectories)
+        Files.writeString(
+            audit,
+            """
+            {"v":1,"ts":1000,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:XAUUSD","tick":{"timestampMs":1000,"price":"2000"}}
+            {"v":1,"ts":2000,"seq":2,"eventType":"com.qkt.events.BrokerEvent.OrderFilled","orderId":"o-1","fill":{"brokerOrderId":"42"}}
+            """.trimIndent() + "\n",
+        )
+        Files.writeString(
+            transport,
+            """
+            {"v":1,"ts":1500,"method":"POST","path":"/order","engineOrderId":"o-1","responseCode":200}
+            """.trimIndent() + "\n",
+        )
+        val bundle = tmp.resolve("golden.zip")
+        val code =
+            GoldenCommand(
+                Args(
+                    arrayOf(
+                        "golden",
+                        "capture",
+                        "--session",
+                        "alpha",
+                        "--state-dir",
+                        tmp.toString(),
+                        "--out",
+                        bundle.toString(),
+                    ),
+                ),
+            ).run()
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        return bundle
     }
 }

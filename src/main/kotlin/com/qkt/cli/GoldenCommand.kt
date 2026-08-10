@@ -33,11 +33,28 @@ class GoldenCommand(
     fun run(): Int =
         when (val action = args.positional(0)) {
             "capture" -> capture()
+            "materialize" -> materialize()
             else -> {
-                System.err.println("qkt: unknown golden action '${action ?: ""}' (expected: capture)")
+                System.err.println("qkt: unknown golden action '${action ?: ""}' (expected: capture or materialize)")
                 printUsage()
                 ExitCodes.ARG_ERROR
             }
+        }
+
+    private fun materialize(): Int =
+        try {
+            val bundle = Path.of(args.requireOption("bundle"))
+            val output = Path.of(args.requireOption("out"))
+            val summary = GoldenReplayDataMaterializer(bundle, output, clock).materialize()
+            println(
+                "qkt golden materialize: wrote ${output.toAbsolutePath().normalize()} " +
+                    "(${summary.liveTicks} live ticks, ${summary.warmupTicks} warmup ticks, " +
+                    "${summary.candles} candles)",
+            )
+            ExitCodes.SUCCESS
+        } catch (error: Exception) {
+            System.err.println("qkt: golden materialize failed: ${error.message}")
+            ExitCodes.USER_ERROR
         }
 
     private fun capture(): Int {
@@ -484,6 +501,7 @@ class GoldenCommand(
 
     private fun printUsage() {
         System.err.println("usage: qkt golden capture --session <strategy> [--state-dir <dir>] [--out <zip>]")
+        System.err.println("       qkt golden materialize --bundle <zip> --out <data-root>")
     }
 
     private data class AuditSummary(

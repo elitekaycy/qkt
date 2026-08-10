@@ -84,6 +84,23 @@ class CliOptionSchemaTest {
         assertThatCode { validate(args) }.doesNotThrowAnyException()
     }
 
+    @Test
+    fun `golden schema accepts replay materialization paths`() {
+        val args =
+            Args(
+                arrayOf(
+                    "golden",
+                    "materialize",
+                    "--bundle",
+                    "capture.zip",
+                    "--out",
+                    "replay-data",
+                ),
+            )
+
+        assertThatCode { validate(args) }.doesNotThrowAnyException()
+    }
+
     private fun validate(args: Args) {
         val schema = checkNotNull(CliOptionSchemas.forSubcommand(args.subcommand))
         args.validateOptions(
