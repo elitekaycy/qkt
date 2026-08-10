@@ -736,6 +736,9 @@ private data class OrderRequestDto(
     val timestamp: Long,
     val strategyId: String = "",
     // Variant-specific fields:
+    val closesTicket: String? = null,
+    val closesLegId: String? = null,
+    val partialClose: Boolean = false,
     val limitPrice: String? = null,
     val stopPrice: String? = null,
     val triggerPrice: String? = null,
@@ -778,6 +781,9 @@ private data class OrderRequestDto(
                     timeInForce = tif,
                     timestamp = timestamp,
                     strategyId = strategyId,
+                    closesTicket = closesTicket,
+                    closesLegId = closesLegId,
+                    partialClose = partialClose,
                 )
             "Limit" ->
                 com.qkt.execution.OrderRequest.Limit(
@@ -1077,6 +1083,9 @@ private data class OrderRequestDto(
                         timeInForce = req.timeInForce.name,
                         timestamp = req.timestamp,
                         strategyId = req.strategyId,
+                        closesTicket = req.closesTicket,
+                        closesLegId = req.closesLegId,
+                        partialClose = req.partialClose,
                     )
                 is com.qkt.execution.OrderRequest.Limit ->
                     OrderRequestDto(

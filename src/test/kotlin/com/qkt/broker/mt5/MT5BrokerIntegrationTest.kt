@@ -17,7 +17,9 @@ import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.persistence.FileStatePersistor
 import java.math.BigDecimal
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.mockwebserver.MockResponse
@@ -27,6 +29,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import org.slf4j.LoggerFactory
 
 class MT5BrokerIntegrationTest {
@@ -845,6 +848,44 @@ class MT5BrokerIntegrationTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/position_close_partial")
         assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"ticket":424242,"volume":0.60}""")
+    }
+
+    @Test
+    fun `persisted partial close still uses the gateway partial-close route`(
+        @TempDir tmp: Path,
+    ) {
+        val close =
+            OrderRequest.Market(
+                id = "resize-recovered",
+                symbol = "EXNESS:EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.60"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+                closesTicket = "424242",
+                closesLegId = "primary",
+                partialClose = true,
+            )
+        val persistor = FileStatePersistor(tmp)
+        persistor.savePendingOrders("s1", mapOf(close.id to close))
+        val recovered = persistor.loadPendingOrders("s1").getValue(close.id)
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":778,"price":"1.1050","volume":"0.60","comment":"ok"}}""",
+            ),
+        )
+        server.enqueue(MockResponse().setBody("[]"))
+
+        broker.submit(recovered)
+
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        server.takeRequest() // state recovery
+        server.takeRequest() // position poller seed
+        server.takeRequest() // pending poller seed
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/position_close_partial")
         assertThat(recorded.body.readUtf8()).isEqualTo("""{"ticket":424242,"volume":0.60}""")
     }
 
