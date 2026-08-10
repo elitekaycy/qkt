@@ -11,7 +11,7 @@ usage() {
     cat <<'EOF'
 Usage: compare-golden-replay.sh --scenario DIR --out DIR [--cli PATH] [--verify-only]
 
-Materialize an MT5 golden capture and compare full-tick, bar, and tick-resolved replay evidence.
+Materialize an MT5 golden capture and compare full-tick and plain-bar replay evidence.
 The command is offline: it never contacts the configured broker gateway.
 EOF
 }
@@ -187,13 +187,13 @@ run_replay() {
         "$@" >"$output/logs/$name.stdout.json" 2>"$output/logs/$name.stderr.log"
     require_file "$report/result.json"
     require_file "$report/trades.csv"
+    require_file "$report/orders.jsonl"
     jq -e '.global.tradeCount == 1' "$report/result.json" >/dev/null || fail "$name did not produce exactly one trade"
 }
 
 run_replay full-ticks-paper paper
 run_replay bars-paper paper --bars --bar-tf 1m
 run_replay full-ticks-mt5 mt5-sim
-run_replay tick-resolved-bars-mt5 mt5-sim --bars --tick-fills --bar-tf 1m
 
 trade_json() {
     local csv="$1"
@@ -220,26 +220,29 @@ trade_json() {
 }
 
 mkdir -m 700 "$output/comparison"
-for mode in full-ticks-paper bars-paper full-ticks-mt5 tick-resolved-bars-mt5; do
+for mode in full-ticks-paper bars-paper full-ticks-mt5; do
     trade_json "$output/reports/$mode/trades.csv" >"$output/comparison/$mode-trade.json"
 done
 
-jq '{strategy, symbol, side, positionEffect, orderType, quantity, price, stopLossPrice, takeProfitPrice}' \
-    "$output/comparison/full-ticks-paper-trade.json" >"$output/comparison/full-ticks-paper-decision.json"
-jq '{strategy, symbol, side, positionEffect, orderType, quantity, price, stopLossPrice, takeProfitPrice}' \
-    "$output/comparison/bars-paper-trade.json" >"$output/comparison/bars-paper-decision.json"
-cmp -s "$output/comparison/full-ticks-paper-decision.json" "$output/comparison/bars-paper-decision.json" ||
-    fail "plain-bar decision differs from full-tick paper decision"
-
-cmp -s "$output/reports/full-ticks-mt5/trades.csv" "$output/reports/tick-resolved-bars-mt5/trades.csv" ||
-    fail "tick-resolved MT5 trades are not byte-identical to full-tick MT5 trades"
-jq -S 'del(.evidence)' "$output/reports/full-ticks-mt5/result.json" \
-    >"$output/comparison/full-ticks-mt5-result-canonical.json"
-jq -S 'del(.evidence)' "$output/reports/tick-resolved-bars-mt5/result.json" \
-    >"$output/comparison/tick-resolved-bars-mt5-result-canonical.json"
-cmp -s "$output/comparison/full-ticks-mt5-result-canonical.json" \
-    "$output/comparison/tick-resolved-bars-mt5-result-canonical.json" ||
-    fail "tick-resolved MT5 result differs semantically from full-tick MT5 result"
+canonicalize_report_orders() {
+    jq -s '
+        map(del(.seq, .ts) | .request |=
+            (del(.createdTs) | if has("entry") then .entry |= del(.createdTs) else . end))
+    ' "$1"
+}
+canonicalize_report_orders "$output/reports/full-ticks-paper/orders.jsonl" \
+    >"$output/comparison/full-ticks-paper-orders-normalized.json"
+canonicalize_report_orders "$output/reports/bars-paper/orders.jsonl" \
+    >"$output/comparison/bars-paper-orders-normalized.json"
+cmp -s "$output/reports/full-ticks-paper/orders.jsonl" "$output/reports/full-ticks-mt5/orders.jsonl" ||
+    fail "full-ticks paper and MT5 order journals are not byte-identical"
+cmp -s "$output/comparison/full-ticks-paper-orders-normalized.json" \
+    "$output/comparison/bars-paper-orders-normalized.json" ||
+    fail "timestamp-normalized plain-bar orders differ from full-tick orders"
+jq -s -e '
+    [.[] | select(.decision == "approved" and .request.orderType == "Bracket")] |
+    if length == 1 then .[0].request else error("expected one approved bracket entry") end
+' "$output/reports/full-ticks-paper/orders.jsonl" >"$output/comparison/full-ticks-entry-order.json"
 
 engine_entry="$(jq -er '.entries[] | select(.path | startswith("engine/")) | .path' "$external_manifest")"
 transport_entry="$(jq -er '.entries[] | select(.path | startswith("gateway/")) | .path' "$external_manifest")"
@@ -314,23 +317,24 @@ jq -n \
 paper_trade="$(jq -c '.' "$output/comparison/full-ticks-paper-trade.json")"
 mt5_trade="$(jq -c '.' "$output/comparison/full-ticks-mt5-trade.json")"
 live_entry="$(jq -c '.' "$output/comparison/live-entry.json")"
-jq -en --argjson paper "$paper_trade" --argjson mt5 "$mt5_trade" --argjson live "$live_entry" '
+jq -en --slurpfile intent "$output/comparison/full-ticks-entry-order.json" \
+    --argjson paper "$paper_trade" --argjson mt5 "$mt5_trade" --argjson live "$live_entry" '
     def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
     ($paper.symbol == $mt5.symbol) and
     ($paper.symbol == $live.fill.symbol) and
-    ($paper.side == $live.request.side) and
+    ($intent[0].side == $live.request.side) and
     ($mt5.side == $live.fill.side) and
-    near($paper.quantity; $live.request.quantity) and
+    near($intent[0].qty; $live.request.quantity) and
     near($mt5.quantity; $live.fill.quantity) and
-    near($paper.stopLossPrice; $live.request.stopLossPrice) and
-    near($paper.takeProfitPrice; $live.request.takeProfitPrice) and
+    near($intent[0].stopLoss.price; $live.request.stopLossPrice) and
+    near($intent[0].takeProfit; $live.request.takeProfitPrice) and
     near($mt5.price; $live.fill.price) and
     near($mt5.stopLossPrice; $live.protection.stopLossPrice) and
     near($mt5.takeProfitPrice; $live.protection.takeProfitPrice)
 ' >/dev/null || fail "captured live order, fill, or protection differs from replay"
 
 replay_git_sha="$(jq -er '.evidence.gitSha' "$output/reports/full-ticks-mt5/result.json")"
-for mode in full-ticks-paper bars-paper tick-resolved-bars-mt5; do
+for mode in full-ticks-paper bars-paper; do
     [ "$(jq -er '.evidence.gitSha' "$output/reports/$mode/result.json")" = "$replay_git_sha" ] ||
         fail "replay modes used different QKT builds"
 done
@@ -349,10 +353,7 @@ jq -n \
     --argjson sourceCounts "$(jq -c '.counts' "$external_manifest")" \
     --argjson liveEntry "$live_entry" \
     --argjson paperTrade "$paper_trade" \
-    --argjson mt5Trade "$mt5_trade" \
-    --arg fullMt5TradesSha256 "$(sha256sum "$output/reports/full-ticks-mt5/trades.csv" | awk '{print $1}')" \
-    --arg tickResolvedTradesSha256 \
-        "$(sha256sum "$output/reports/tick-resolved-bars-mt5/trades.csv" | awk '{print $1}')" '
+    --argjson mt5Trade "$mt5_trade" '
     {
         schema: "qkt-live-golden-replay-comparison-v1",
         status: "passed",
@@ -372,27 +373,22 @@ jq -n \
             toUtc: $toUtc
         },
         parity: {
-            paperDecisionExact: true,
-            mt5TickResolvedTradesByteExact: ($fullMt5TradesSha256 == $tickResolvedTradesSha256),
-            mt5TickResolvedResultSemanticExact: true,
-            liveInitialProtectionMatchesPaper: true,
+            fullTickOrderJournalsByteExact: true,
+            barsOrdersTimestampNormalizedExact: true,
+            liveInitialProtectionMatchesCanonicalIntent: true,
             liveFillAndAdjustedProtectionMatchMt5Simulation: true
         },
         liveEntry: $liveEntry,
         paperTrade: $paperTrade,
         mt5SimTrade: $mt5Trade,
-        hashes: {
-            fullMt5TradesSha256: $fullMt5TradesSha256,
-            tickResolvedTradesSha256: $tickResolvedTradesSha256
-        },
         limitations: [
             (
                 "The operator flatten fill occurs after the bounded strategy replay window and " +
                 "is reconciled by the live result, not replayed as a strategy decision."
             ),
             (
-                "Plain OHLCV bars prove the bar-close decision for this scenario; only " +
-                "tick-resolved bars carry the exact intrabar fill claim."
+                "Tick-resolved bars are unsupported for mixed-timeframe strategies because " +
+                "a finer stream can dispatch before another symbol or timeframe bar resolves."
             )
         ]
     }

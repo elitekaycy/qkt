@@ -230,7 +230,12 @@ fi
 
 comparison_script="$repo_root/scripts/live-validation/compare-golden-replay.sh"
 bash -n "$comparison_script"
-bash "$comparison_script" --help | grep -F 'full-tick, bar, and tick-resolved replay evidence' >/dev/null
+bash "$comparison_script" --help | grep -F 'full-tick and plain-bar replay evidence' >/dev/null
+grep -F 'liveInitialProtectionMatchesCanonicalIntent: true' "$comparison_script" >/dev/null
+if rg --quiet 'run_replay tick-resolved|--tick-fills' "$comparison_script"; then
+    echo 'legacy comparator invokes unsupported tick-resolved bars' >&2
+    exit 1
+fi
 if bash "$comparison_script" \
     --scenario "$out" \
     --out "$tmp/replay" \
