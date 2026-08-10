@@ -326,8 +326,8 @@ for index in 0 1 2 3 4; do
     case_dir="$output/cases/${case_ids[$index]}"
     deploy_launch_ms+=("$(date +%s%3N)")
     (
-        "$cli" deploy "/work/strategies/${strategies[$index]}.qkt" \
-            --as "${strategies[$index]}" --state-dir "$case_dir/state" --json \
+        docker exec "${containers[$index]}" qkt deploy "/work/strategies/${strategies[$index]}.qkt" \
+            --as "${strategies[$index]}" --state-dir /work/state --json \
             > "$case_dir/evidence/deploy.json"
     ) &
     deploy_pids[$index]=$!

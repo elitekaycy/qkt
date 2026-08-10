@@ -70,7 +70,8 @@ grep -F 'fixedIntentQty:"0.01"' "$runner" >/dev/null
 grep -F 'statefulRiskCasesPassed == false' "$runner" >/dev/null
 grep -F '[ "$((launch_max - launch_min))" -le 1500 ]' "$runner" >/dev/null
 grep -F '[ "$((deploy_max - deploy_min))" -le 1500 ]' "$runner" >/dev/null
-grep -F 'deploy "/work/strategies/${strategies[$index]}.qkt"' "$runner" >/dev/null
+grep -F 'docker exec "${containers[$index]}" qkt deploy "/work/strategies/${strategies[$index]}.qkt"' \
+    "$runner" >/dev/null
 grep -F 'mod(NOW.minute_utc, 2) = 0' "$runner" >/dev/null
 grep -F 'qktCommit' "$runner" >/dev/null
 grep -F 'repository must be clean' "$runner" >/dev/null
