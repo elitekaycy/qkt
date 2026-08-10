@@ -35,12 +35,91 @@ count_records() {
     awk 'END {print NR + 0}'
 }
 
+has_live_timeframe_evidence() {
+    local index="$1"
+    local -a audit_files=()
+    mapfile -t audit_files < <(find "${states[$index]}/state/audit-journal" -type f -name '*.jsonl' 2>/dev/null | sort)
+    [ "${#audit_files[@]}" -gt 0 ] || return 1
+    jq -s -e \
+        --arg strategy "${strategies[$index]}" \
+        --arg symbol "${expected_symbols[$index]}" '
+        . as $events |
+        [["asset1", "1m"], ["asset5", "5m"]] as $required |
+        all(
+            $required[];
+            .[0] as $alias |
+            .[1] as $timeframe |
+            any(
+                $events[];
+                .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
+                .strategyId == $strategy and .symbol == $symbol and
+                .alias == $alias and .timeframe == $timeframe and
+                (. as $evaluation |
+                    any(
+                        $events[];
+                        .eventType == "com.qkt.events.StreamCandleEvent" and
+                        .symbol == $symbol and .timeframe == $timeframe and
+                        .candle.startTimeMs == $evaluation.candle.startTimeMs and
+                        .candle.endTimeMs == $evaluation.candle.endTimeMs
+                    )
+                )
+            )
+        )
+    ' "${audit_files[@]}" >/dev/null
+}
+
+extract_indicator_entry_trace() {
+    awk '
+        function numeric(value) {
+            return value ~ /^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/
+        }
+        /bounded indicator entry side=/ {
+            side = score = m1fast = m1slow = m5fast = m5slow = closing = ""
+            for (i = 1; i <= NF; i++) {
+                split($i, pair, "=")
+                if (pair[1] == "side") side = pair[2]
+                if (pair[1] == "score") score = pair[2]
+                if (pair[1] == "m1_fast") m1fast = pair[2]
+                if (pair[1] == "m1_slow") m1slow = pair[2]
+                if (pair[1] == "m5_fast") m5fast = pair[2]
+                if (pair[1] == "m5_slow") m5slow = pair[2]
+                if (pair[1] == "close") closing = pair[2]
+            }
+            if ((side == "BUY" || side == "SELL") && numeric(score) &&
+                numeric(m1fast) && numeric(m1slow) && numeric(m5fast) &&
+                numeric(m5slow) && numeric(closing)) {
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", side, score, m1fast, m1slow, m5fast, m5slow, closing
+            }
+        }
+    ' "$1"
+}
+
+extract_indicator_exit_trace() {
+    awk '
+        function numeric(value) {
+            return value ~ /^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/
+        }
+        /bounded indicator exit signed_qty=/ {
+            quantity = holding = closing = ""
+            for (i = 1; i <= NF; i++) {
+                split($i, pair, "=")
+                if (pair[1] == "signed_qty") quantity = pair[2]
+                if (pair[1] == "holding_seconds") holding = pair[2]
+                if (pair[1] == "close") closing = pair[2]
+            }
+            if (numeric(quantity) && numeric(holding) && numeric(closing)) {
+                printf "%s\t%s\t%s\n", quantity, holding, closing
+            }
+        }
+    ' "$1"
+}
+
 scenario_a=""
 scenario_b=""
 output=""
 image=""
 cli="$repo_root/build/install/qkt/bin/qkt"
-timeout_seconds=300
+timeout_seconds=360
 arm=""
 verify_only=false
 
@@ -168,8 +247,8 @@ fi
 [ -n "$output" ] || fail "--output is required"
 [ -n "$image" ] || fail "--image is required"
 [[ "$timeout_seconds" =~ ^[0-9]+$ ]] || fail "--timeout-seconds must be an integer"
-[ "$timeout_seconds" -ge 120 ] && [ "$timeout_seconds" -le 600 ] ||
-    fail "--timeout-seconds must be in 120..600"
+[ "$timeout_seconds" -ge 330 ] && [ "$timeout_seconds" -le 600 ] ||
+    fail "--timeout-seconds must be in 330..600"
 [ "$arm" = "I_UNDERSTAND_TWO_CONCURRENT_DEMO_ORDERS_0.01" ] || fail "missing exact --arm confirmation"
 [ "${QKT_LIVE_DEMO_ORDER_APPROVAL:-}" = "LOCALHOST_DEMO_ONLY" ] ||
     fail "QKT_LIVE_DEMO_ORDER_APPROVAL must equal LOCALHOST_DEMO_ONLY"
@@ -251,7 +330,8 @@ for index in 0 1; do
     gateway_get "/symbol_info/${venue_symbols[$index]}" > "$output/evidence/symbol-$index.json"
     jq -e --arg symbol "${venue_symbols[$index]}" '
         .name == $symbol and .trade_mode == 4 and
-        .volume_min == 0.01 and .volume_step == 0.01 and .trade_contract_size == 100000
+        .volume_min == 0.01 and .volume_step == 0.01 and .trade_contract_size == 100000 and
+        .point > 0 and .digits > 0
     ' "$output/evidence/symbol-$index.json" >/dev/null || fail "scenario $index venue metadata is not the reviewed FX contract"
     "$cli" preflight "${strategy_files[$index]}" --config "${configs[$index]}" \
         > "${evidences[$index]}/preflight.log" 2>&1
@@ -393,13 +473,24 @@ while [ "$SECONDS" -lt "$deadline" ]; do
             jq -e \
                 --arg symbol "${venue_symbols[$index]}" \
                 --argjson magic "${magics[$index]}" \
+                --arg point "$(jq -er '.point' "$output/evidence/symbol-$index.json")" \
                 --arg strategyPrefix "dsl-${strategies[$index]}" '
                     .ok == true and .data[0].symbol == $symbol and .data[0].magic == $magic and
                     .data[0].volume == 0.01 and .data[0].price_open > 0 and
                     .data[0].sl > 0 and .data[0].tp > 0 and
                     (
-                        (.data[0].type == 0 and .data[0].sl < .data[0].price_open and .data[0].tp > .data[0].price_open) or
-                        (.data[0].type == 1 and .data[0].tp < .data[0].price_open and .data[0].sl > .data[0].price_open)
+                        (
+                            .data[0].type == 0 and
+                            .data[0].sl < .data[0].price_open and .data[0].tp > .data[0].price_open and
+                            ((((.data[0].price_open - .data[0].sl) - 0.0030) | fabs) <= ($point | tonumber)) and
+                            ((((.data[0].tp - .data[0].price_open) - 0.0060) | fabs) <= ($point | tonumber))
+                        ) or
+                        (
+                            .data[0].type == 1 and
+                            .data[0].tp < .data[0].price_open and .data[0].sl > .data[0].price_open and
+                            ((((.data[0].sl - .data[0].price_open) - 0.0030) | fabs) <= ($point | tonumber)) and
+                            ((((.data[0].price_open - .data[0].tp) - 0.0060) | fabs) <= ($point | tonumber))
+                        )
                     ) and
                     (.data[0].comment as $comment | ($strategyPrefix | startswith($comment)))
                 ' "$latest" >/dev/null || fail "scenario $index venue position violates the bounded contract"
@@ -427,6 +518,28 @@ done
 [ -n "${tickets[0]}" ] && [ -n "${tickets[1]}" ] || fail "both bounded entry positions were not observed"
 ${flat_seen[0]} && ${flat_seen[1]} || fail "both strategies did not close their positions within $timeout_seconds seconds"
 [ "${tickets[0]}" != "${tickets[1]}" ] || fail "concurrent scenarios reported the same venue ticket"
+
+timeframe_evidence=(false false)
+while [ "$SECONDS" -lt "$deadline" ]; do
+    for index in 0 1; do
+        kill -0 "${daemon_pids[$index]}" 2>/dev/null || fail "container $index daemon exited while waiting for M5 evidence"
+        gateway_get "/get_positions?magic=${magics[$index]}" > "${evidences[$index]}/positions-post-flat-latest.json"
+        gateway_get "/orders?magic=${magics[$index]}" > "${evidences[$index]}/orders-post-flat-latest.json"
+        jq -e '.ok == true and (.data | length) == 0' "${evidences[$index]}/positions-post-flat-latest.json" >/dev/null ||
+            fail "scenario $index reopened a position while waiting for M5 evidence"
+        jq -e '.ok == true and (.orders | length) == 0' "${evidences[$index]}/orders-post-flat-latest.json" >/dev/null ||
+            fail "scenario $index opened an order while waiting for M5 evidence"
+        if has_live_timeframe_evidence "$index"; then
+            timeframe_evidence[$index]=true
+        fi
+    done
+    if ${timeframe_evidence[0]} && ${timeframe_evidence[1]}; then
+        break
+    fi
+    sleep 1
+done
+${timeframe_evidence[0]} && ${timeframe_evidence[1]} ||
+    fail "both scenarios did not retain matched live M1/M5 stream and strategy evaluations within $timeout_seconds seconds"
 
 for index in 0 1; do
     gateway_get "/get_positions?magic=${magics[$index]}" > "${evidences[$index]}/positions-magic-final.json"
@@ -530,12 +643,19 @@ for index in 0 1; do
     jq -e --arg symbol "${expected_symbols[$index]}" '
         select(.eventType == "com.qkt.events.TickEvent" and .symbol == $symbol)
     ' "${audits[@]}" >/dev/null || fail "scenario $index lacks live tick evidence"
-    jq -e --arg strategy "$strategy" --arg symbol "${expected_symbols[$index]}" '
-        select(
-            .eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
-            .strategyId == $strategy and .symbol == $symbol and .alias == "asset1" and .timeframe == "1m"
-        )
-    ' "${audits[@]}" >/dev/null || fail "scenario $index lacks M1 strategy evaluation evidence"
+    has_live_timeframe_evidence "$index" || fail "scenario $index lacks matched live M1/M5 stream and strategy evaluation evidence"
+
+    daemon_log="${scenarios[$index]}/logs/container-daemon.log"
+    raw_entry_traces="$(awk '/bounded indicator entry side=/ {count++} END {print count + 0}' "$daemon_log")"
+    raw_exit_traces="$(awk '/bounded indicator exit signed_qty=/ {count++} END {print count + 0}' "$daemon_log")"
+    [ "$raw_entry_traces" -eq 1 ] || fail "scenario $index did not retain exactly one indicator-entry trace"
+    [ "$raw_exit_traces" -eq 1 ] || fail "scenario $index did not retain exactly one indicator-exit trace"
+    extract_indicator_entry_trace "$daemon_log" > "${evidences[$index]}/indicator-entry-trace.tsv"
+    extract_indicator_exit_trace "$daemon_log" > "${evidences[$index]}/indicator-exit-trace.tsv"
+    [ "$(count_records < "${evidences[$index]}/indicator-entry-trace.tsv")" -eq 1 ] ||
+        fail "scenario $index indicator-entry trace is not parseable"
+    [ "$(count_records < "${evidences[$index]}/indicator-exit-trace.tsv")" -eq 1 ] ||
+        fail "scenario $index indicator-exit trace is not parseable"
 
     order_posts="$(jq -r 'select(.method == "POST" and .path == "/order") | 1' "${transports[@]}" | count_records)"
     protection_posts="$(jq -r 'select(.method == "POST" and .path == "/modify_sl_tp") | 1' "${transports[@]}" | count_records)"
@@ -586,6 +706,8 @@ for index in 0 1; do
 
     side=BUY
     [ "${position_types[$index]}" -eq 0 ] || side=SELL
+    [ "$(awk -F '\t' 'NR == 1 {print $1}' "${evidences[$index]}/indicator-entry-trace.tsv")" = "$side" ] ||
+        fail "scenario $index indicator trace side differs from the venue position"
     jq -n \
         --arg scenarioId "${scenario_ids[$index]}" \
         --arg strategy "$strategy" \
@@ -603,7 +725,10 @@ for index in 0 1; do
           schema:"qkt-live-container-round-trip-case-v1",status:"passed",
           scenarioId:$scenarioId,strategy:$strategy,symbol:$symbol,side:$side,magic:$magic,
           positionTicket:$ticket,lots:"0.01",entryTimeMs:$entryTimeMs,exitTimeMs:$exitTimeMs,
+          bracket:{stopDistance:"0.0030",takeProfitDistance:"0.0060",symbolPointToleranceVerified:true},
           strategyOwnedClose:true,finalPositions:0,finalOrders:0,
+          timeframeEvidence:{m1StreamAndEvaluation:true,m5StreamAndEvaluation:true},
+          traces:{indicatorEntry:true,indicatorExit:true},
           audit:{ruleDecisions:$decisions,decisionOrderLinks:$links,accepted:$accepted,filled:$filled,accounted:$accounted,rejected:0},
           transport:{orderPosts:1,protectionPosts:1,closePosts:1,mutations:$mutations},
           golden:{fills:2,linkedPlacements:1,mutations:3,sha256:$goldenSha256}
@@ -660,6 +785,7 @@ jq -n \
       synchronizedDeployment:{startedAtMs:$deployStartedMs,launchSkewMs:$deployLaunchSkewMs,completionSkewMs:$deploySkewMs},
       overlap:{verified:true,startMs:$overlapStartMs,endMs:$overlapEndMs},
       ownershipVerified:true,strategyOwnedCloseVerified:true,accountReconciled:true,
+      bracketDistancesVerified:true,timeframePathsVerified:true,indicatorTracesVerified:true,
       finalPositions:0,finalOrders:0,balanceDelta:$balanceDelta,ownedDealNet:$dealNet,
       dockerResourceRestrictionsVerifiedAbsent:true,cases:[$caseA[0],$caseB[0]]
     }

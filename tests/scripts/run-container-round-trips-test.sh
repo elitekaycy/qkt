@@ -141,6 +141,27 @@ grep -F '[ "$accounted" -eq 2 ]' "$runner" >/dev/null
 grep -F '[ "$rejected" -eq 0 ]' "$runner" >/dev/null
 grep -F 'RiskRejectedEvent|BrokerEvent.OrderRejected' "$runner" >/dev/null
 grep -F '[ "$deploy_launch_skew_ms" -le 1000 ]' "$runner" >/dev/null
+grep -F 'timeout_seconds=360' "$runner" >/dev/null
+grep -F 'must be in 330..600' "$runner" >/dev/null
+grep -F '(.data[0].price_open - .data[0].sl) - 0.0030' "$runner" >/dev/null
+grep -F '(.data[0].tp - .data[0].price_open) - 0.0060' "$runner" >/dev/null
+grep -F '(.data[0].sl - .data[0].price_open) - 0.0030' "$runner" >/dev/null
+grep -F '(.data[0].price_open - .data[0].tp) - 0.0060' "$runner" >/dev/null
+grep -F '<= ($point | tonumber)' "$runner" >/dev/null
+grep -F 'has_live_timeframe_evidence' "$runner" >/dev/null
+grep -F '[["asset1", "1m"], ["asset5", "5m"]]' "$runner" >/dev/null
+grep -F 'StreamCandleEvent' "$runner" >/dev/null
+grep -F 'StrategyCandleEvaluatedEvent' "$runner" >/dev/null
+grep -F 'positions-post-flat-latest.json' "$runner" >/dev/null
+grep -F 'indicator-entry-trace.tsv' "$runner" >/dev/null
+grep -F 'indicator-exit-trace.tsv' "$runner" >/dev/null
+grep -F '[ "$raw_entry_traces" -eq 1 ]' "$runner" >/dev/null
+grep -F '[ "$raw_exit_traces" -eq 1 ]' "$runner" >/dev/null
+grep -F 'side = score = m1fast = m1slow = m5fast = m5slow = closing' "$runner" >/dev/null
+grep -F 'indicator trace side differs from the venue position' "$runner" >/dev/null
+grep -F 'symbolPointToleranceVerified:true' "$runner" >/dev/null
+grep -F 'm5StreamAndEvaluation:true' "$runner" >/dev/null
+grep -F 'indicatorTracesVerified:true' "$runner" >/dev/null
 grep -F '[ "$latest_entry_ms" -lt "$earliest_exit_ms" ]' "$runner" >/dev/null
 grep -F '[ "$balance_delta" = "$deal_net" ]' "$runner" >/dev/null
 grep -F '.counts.fills == 2' "$runner" >/dev/null
