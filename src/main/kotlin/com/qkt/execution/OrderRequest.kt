@@ -158,6 +158,10 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        /** Venue position ticket owned by the entry this trigger reduces. */
+        val closesTicket: String? = null,
+        /** Whether the triggered market order reduces only part of [closesTicket]. */
+        val partialClose: Boolean = false,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }

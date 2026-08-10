@@ -762,6 +762,7 @@ private data class OrderRequestDto(
     val stopLossType: String? = null,
     val takeProfitAst: ChildPriceAstDto? = null,
     val stopLossAst: ChildPriceAstDto? = null,
+    val scaleOutLegs: List<ScaleOutLegDto>? = null,
 ) {
     fun toDomain(): com.qkt.execution.OrderRequest {
         val sideEnum =
@@ -828,6 +829,8 @@ private data class OrderRequestDto(
                     timestamp = timestamp,
                     strategyId = strategyId,
                     expiresAt = expiresAt,
+                    closesTicket = closesTicket,
+                    partialClose = partialClose,
                 )
             "ArmedTrailingStop" ->
                 com.qkt.execution.OrderRequest.ArmedTrailingStop(
@@ -1066,6 +1069,21 @@ private data class OrderRequestDto(
                     strategyId = strategyId,
                     expiresAt = expiresAt,
                 )
+            "ScaleOut" ->
+                com.qkt.execution.OrderRequest.ScaleOut(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    basis = requireNotNull(entry) { "ScaleOut DTO missing basis" }.toDomain(),
+                    legs =
+                        requireNotNull(scaleOutLegs) { "ScaleOut DTO missing legs" }
+                            .map { it.toDomain() },
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
             else -> error("Unknown OrderRequest type in persisted state: $type")
         }
     }
@@ -1127,6 +1145,8 @@ private data class OrderRequestDto(
                         onTrigger = req.onTrigger.name,
                         limitPrice = req.limitPrice?.toPlainString(),
                         expiresAt = req.expiresAt,
+                        closesTicket = req.closesTicket,
+                        partialClose = req.partialClose,
                     )
                 is com.qkt.execution.OrderRequest.ArmedTrailingStop ->
                     OrderRequestDto(
@@ -1312,14 +1332,50 @@ private data class OrderRequestDto(
                         children = children,
                     )
                 }
+                is com.qkt.execution.OrderRequest.ScaleOut ->
+                    OrderRequestDto(
+                        type = "ScaleOut",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        expiresAt = req.expiresAt,
+                        entry =
+                            requireNotNull(fromDomain(req.basis)) {
+                                "ScaleOut ${req.id} basis ${req.basis::class.simpleName} cannot be persisted"
+                            },
+                        scaleOutLegs = req.legs.map(ScaleOutLegDto::fromDomain),
+                    )
                 // Composite variants are persisted by their dedicated paths (OCO legs,
                 // bracket pairs, stack tiers), not as flat pending orders — skip them here.
                 is com.qkt.execution.OrderRequest.StandaloneOCO,
-                is com.qkt.execution.OrderRequest.ScaleOut,
                 is com.qkt.execution.OrderRequest.TimeExit,
                 is com.qkt.execution.OrderRequest.Stack,
                 -> null
             }
+    }
+}
+
+@Serializable
+private data class ScaleOutLegDto(
+    val priceTarget: String,
+    val fraction: String,
+) {
+    fun toDomain(): com.qkt.execution.ScaleOutLeg =
+        com.qkt.execution.ScaleOutLeg(
+            priceTarget = java.math.BigDecimal(priceTarget),
+            fraction = java.math.BigDecimal(fraction),
+        )
+
+    companion object {
+        fun fromDomain(leg: com.qkt.execution.ScaleOutLeg): ScaleOutLegDto =
+            ScaleOutLegDto(
+                priceTarget = leg.priceTarget.toPlainString(),
+                fraction = leg.fraction.toPlainString(),
+            )
     }
 }
 

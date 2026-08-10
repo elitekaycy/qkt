@@ -235,7 +235,13 @@ class OrderManager(
     private val pendingPositionModifications: MutableMap<String, PendingPositionModification> = mutableMapOf()
     private val persistedStrategies = mutableSetOf<String>()
 
-    private val scaleOutLegs: MutableMap<String, Pair<OrderRequest.ScaleOut, BigDecimal>> = mutableMapOf()
+    /** Pre-fill ScaleOut wrappers keyed by basis id so their activation survives restart. */
+    private val pendingScaleOutsByBasis: MutableMap<String, OrderRequest.ScaleOut> = mutableMapOf()
+
+    /** Filled ScaleOut wrappers retained while at least one ticketed exit remains live. */
+    private val activeScaleOutsById: MutableMap<String, OrderRequest.ScaleOut> = mutableMapOf()
+    private val scaleOutByExitId: MutableMap<String, String> = mutableMapOf()
+    private val remainingScaleOutExitIds: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
@@ -450,6 +456,7 @@ class OrderManager(
             OrderState.CREATED, OrderState.PENDING -> {
                 update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
                 exposureEntries.remove(clientOrderId)
+                completeScaleOutExit(clientOrderId, OrderState.CANCELLED)
             }
             else -> broker.cancel(clientOrderId)
         }
@@ -605,13 +612,27 @@ class OrderManager(
                     siblings[exitId] = exitIds.filter { it != exitId }
                 }
             }
-            for ((id, request) in persistor.loadPendingOrders(sid)) {
+            val pendingOrders = persistor.loadPendingOrders(sid)
+            for ((id, request) in pendingOrders) {
+                if (request is OrderRequest.ScaleOut && id == request.id) {
+                    restoreActiveScaleOut(request, pendingOrders.keys)
+                }
+            }
+            for ((id, request) in pendingOrders) {
                 if (orders.containsKey(id)) continue
                 if (request is OrderRequest.OTO) {
                     require(id == request.parent.id) {
                         "persisted OTO ${request.id} keyed by $id instead of parent ${request.parent.id}"
                     }
                     restorePendingOto(request, recovered)
+                    continue
+                }
+                if (request is OrderRequest.ScaleOut) {
+                    if (id == request.id) continue
+                    require(id == request.basis.id) {
+                        "persisted ScaleOut ${request.id} keyed by $id instead of basis ${request.basis.id}"
+                    }
+                    restorePendingScaleOut(request, recovered)
                     continue
                 }
                 if (request is OrderRequest.Bracket) {
@@ -629,18 +650,21 @@ class OrderManager(
                     continue
                 }
                 val now = clock.now()
+                val engineHeldScaleOutExit =
+                    request is OrderRequest.IfTouched && request.closesTicket != null
                 val managed =
                     ManagedOrder(
                         id = id,
                         request = request,
-                        state = OrderState.WORKING,
+                        state = if (engineHeldScaleOutExit) OrderState.PENDING else OrderState.WORKING,
+                        parentClientOrderId = scaleOutByExitId[id],
                         createdAt = now,
                         lastUpdatedAt = now,
                     )
                 orders[id] = managed
                 indexLive(managed)
                 registerExposure(request)
-                recovered += managed
+                if (!engineHeldScaleOutExit) recovered += managed
             }
             // Older journals may contain a dynamic stop without the duplicate pending-order
             // snapshot. Keep accepting that shape after the current OCO and pending snapshots have
@@ -658,6 +682,71 @@ class OrderManager(
         if (recovered.isNotEmpty()) {
             broker.recoverPendingOrders(recovered)
         }
+    }
+
+    private fun restorePendingScaleOut(
+        request: OrderRequest.ScaleOut,
+        recovered: MutableList<ManagedOrder>,
+    ) {
+        require(request.basis.id != request.id) { "ScaleOut ${request.id} basis must have a distinct id" }
+        require(orders[request.id] == null) {
+            "persisted ScaleOut ${request.id} collides with already-restored order state"
+        }
+        val now = clock.now()
+        val wrapper =
+            ManagedOrder(
+                id = request.id,
+                request = request,
+                state = OrderState.WORKING,
+                childClientOrderIds = listOf(request.basis.id),
+                createdAt = now,
+                lastUpdatedAt = now,
+            )
+        val basis =
+            ManagedOrder(
+                id = request.basis.id,
+                request = request.basis,
+                state = OrderState.WORKING,
+                parentClientOrderId = request.id,
+                createdAt = now,
+                lastUpdatedAt = now,
+            )
+        orders[wrapper.id] = wrapper
+        indexLive(wrapper)
+        orders[basis.id] = basis
+        indexLive(basis)
+        pendingScaleOutsByBasis[basis.id] = request
+        registerExposure(exposureEntryRequest(request.basis))
+        recovered += basis
+    }
+
+    private fun restoreActiveScaleOut(
+        request: OrderRequest.ScaleOut,
+        persistedIds: Set<String>,
+    ) {
+        val exitIds =
+            request.legs.indices
+                .map { "${request.id}-leg-$it" }
+                .filterTo(linkedSetOf()) { it in persistedIds }
+        if (exitIds.isEmpty()) return
+        require(orders[request.id] == null) {
+            "persisted active ScaleOut ${request.id} collides with already-restored order state"
+        }
+        val now = clock.now()
+        val wrapper =
+            ManagedOrder(
+                id = request.id,
+                request = request,
+                state = OrderState.WORKING,
+                childClientOrderIds = listOf(request.basis.id) + request.legs.indices.map { "${request.id}-leg-$it" },
+                createdAt = now,
+                lastUpdatedAt = now,
+            )
+        orders[wrapper.id] = wrapper
+        indexLive(wrapper)
+        activeScaleOutsById[request.id] = request
+        remainingScaleOutExitIds[request.id] = exitIds
+        for (exitId in exitIds) scaleOutByExitId[exitId] = request.id
     }
 
     private fun restorePendingOto(
@@ -1005,7 +1094,9 @@ class OrderManager(
                 }
 
             is OrderRequest.IfTouched ->
-                if (OrderTypeCapability.IF_TOUCHED in broker.capabilitiesFor(request.symbol)) {
+                if (request.closesTicket == null &&
+                    OrderTypeCapability.IF_TOUCHED in broker.capabilitiesFor(request.symbol)
+                ) {
                     submitToBroker(request)
                 } else {
                     holdPending(request)
@@ -1104,27 +1195,30 @@ class OrderManager(
         }
 
     private fun submitScaleOut(req: OrderRequest.ScaleOut): SubmitAck {
+        val strategyId = req.strategyId.ifBlank { req.basis.strategyId }
+        val normalized = req.copy(strategyId = strategyId, basis = req.basis.withStrategyId(strategyId))
         val now = clock.now()
         update(req.id) {
             it.copy(
+                request = normalized,
                 state = OrderState.WORKING,
-                childClientOrderIds = listOf(req.basis.id),
+                childClientOrderIds = listOf(normalized.basis.id),
                 lastUpdatedAt = now,
             )
         }
         track(
             ManagedOrder(
-                id = req.basis.id,
-                request = req.basis,
+                id = normalized.basis.id,
+                request = normalized.basis,
                 state = OrderState.CREATED,
                 parentClientOrderId = req.id,
                 createdAt = now,
                 lastUpdatedAt = now,
             ),
         )
-        scaleOutLegs[req.basis.id] = req to req.basis.quantity
-        registerExposure(exposureEntryRequest(req.basis))
-        dispatch(req.basis)
+        pendingScaleOutsByBasis[normalized.basis.id] = normalized
+        registerExposure(exposureEntryRequest(normalized.basis))
+        dispatch(normalized.basis)
         return SubmitAck(req.id, req.id, accepted = true)
     }
 
@@ -2366,7 +2460,8 @@ class OrderManager(
         timeTightenIntervals.remove(id)
         managedStopLevel.remove(id)
         siblings.remove(id)
-        scaleOutLegs.remove(id)
+        pendingScaleOutsByBasis.remove(id)
+        scaleOutByExitId.remove(id)
         pendingChildren.remove(id)
         pendingOtosByParent.remove(id)
         engineHeldCloseTickets.remove(id)
@@ -2455,6 +2550,7 @@ class OrderManager(
                 }
             }
             overlayPendingOtos(pendingByStrategy)
+            overlayPendingScaleOuts(pendingByStrategy)
             for ((entryId, bracket) in preFillBrackets) {
                 if (orders[entryId]?.state?.isTerminal == true) continue
                 val sid = bracket.strategyId
@@ -2544,6 +2640,16 @@ class OrderManager(
                 result[parentId] = oto
             }
         }
+        pendingScaleOutsByBasis.forEach { (basisId, scaleOut) ->
+            if (scaleOut.strategyId == strategyId && orders[basisId]?.state?.isTerminal == false) {
+                result[basisId] = scaleOut
+            }
+        }
+        activeScaleOutsById.forEach { (scaleOutId, scaleOut) ->
+            if (scaleOut.strategyId == strategyId && remainingScaleOutExitIds[scaleOutId].orEmpty().isNotEmpty()) {
+                result[scaleOutId] = scaleOut
+            }
+        }
         for ((entryId, bracket) in preFillBrackets) {
             if (bracket.strategyId == strategyId && orders[entryId]?.state?.isTerminal != true) {
                 result[entryId] = bracket
@@ -2564,6 +2670,19 @@ class OrderManager(
             if (strategyId.isBlank() || orders[parentId]?.state?.isTerminal != false) continue
             // Replace the atomic parent snapshot with the wrapper so restart can re-arm children.
             pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[parentId] = oto
+        }
+    }
+
+    private fun overlayPendingScaleOuts(pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>) {
+        for ((basisId, scaleOut) in pendingScaleOutsByBasis) {
+            val strategyId = scaleOut.strategyId
+            if (strategyId.isBlank() || orders[basisId]?.state?.isTerminal != false) continue
+            pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[basisId] = scaleOut
+        }
+        for ((scaleOutId, scaleOut) in activeScaleOutsById) {
+            val strategyId = scaleOut.strategyId
+            if (strategyId.isBlank() || remainingScaleOutExitIds[scaleOutId].orEmpty().isEmpty()) continue
+            pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[scaleOutId] = scaleOut
         }
     }
 
@@ -2648,12 +2767,14 @@ class OrderManager(
         fillAnchoredAttachedBrackets.remove(e.clientOrderId)
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)
         pendingOtosByParent.remove(e.clientOrderId)
+        pendingScaleOutsByBasis.remove(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
         exposureEntries.remove(e.clientOrderId)
+        completeScaleOutExit(e.clientOrderId, OrderState.REJECTED)
         reportBracketByClientOrderId.remove(e.clientOrderId)?.let { bracket ->
             reportBracketByClientOrderId.remove(bracket.id)
             reportBracketByClientOrderId.remove(bracket.entry.id)
@@ -2722,6 +2843,7 @@ class OrderManager(
             }
         if (!applied) return
         exposureEntries.remove(e.clientOrderId)
+        completeScaleOutExit(e.clientOrderId, OrderState.FILLED)
         log.info(
             "order filled order_id={} strategy_id={} symbol={} side={} qty={} price={}",
             e.clientOrderId,
@@ -2808,14 +2930,28 @@ class OrderManager(
             }
             else -> pending?.forEach { dispatch(it) }
         }
-        scaleOutLegs.remove(e.clientOrderId)?.let { (scaleReq, basisQty) ->
+        pendingScaleOutsByBasis.remove(e.clientOrderId)?.let { scaleReq ->
+            val basisQty = orders[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity
+            val positionTicket = e.brokerOrderId?.takeIf { it.isNotBlank() }
+            if (requireArmedTrailTicket &&
+                OrderTypeCapability.MULTI_POSITION_PER_SYMBOL in broker.capabilitiesFor(scaleReq.symbol) &&
+                positionTicket == null
+            ) {
+                reportProtectionFailure(
+                    scaleReq.strategyId,
+                    "ScaleOut ${scaleReq.id} basis ${e.clientOrderId} filled without an owned position ticket; " +
+                        "no opposite exit orders were armed",
+                )
+                update(scaleReq.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
+                return@let
+            }
             val exitSide = if (scaleReq.side == Side.BUY) Side.SELL else Side.BUY
-            scaleReq.legs.forEachIndexed { idx, leg ->
-                val legQty =
-                    basisQty
-                        .multiply(leg.fraction)
-                        .setScale(Money.SCALE, Money.ROUNDING)
-                val legReq =
+            val exitRequests =
+                scaleReq.legs.mapIndexed { idx, leg ->
+                    val legQty =
+                        basisQty
+                            .multiply(leg.fraction)
+                            .setScale(Money.SCALE, Money.ROUNDING)
                     OrderRequest.IfTouched(
                         id = "${scaleReq.id}-leg-$idx",
                         symbol = scaleReq.symbol,
@@ -2825,9 +2961,12 @@ class OrderManager(
                         onTrigger = TriggerType.MARKET,
                         timeInForce = scaleReq.timeInForce,
                         timestamp = clock.now(),
+                        strategyId = scaleReq.strategyId,
+                        closesTicket = positionTicket,
+                        partialClose = legQty < basisQty,
                     )
-                submit(legReq)
-            }
+                }
+            armScaleOutExits(scaleReq, exitRequests)
         }
         var deferredSiblingCancel = false
         siblings[e.clientOrderId]?.forEach { sibId ->
@@ -2859,8 +2998,10 @@ class OrderManager(
             }
         if (!applied) return
         exposureEntries.remove(e.clientOrderId)
+        completeScaleOutExit(e.clientOrderId, OrderState.CANCELLED)
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)
         pendingOtosByParent.remove(e.clientOrderId)
+        pendingScaleOutsByBasis.remove(e.clientOrderId)
         unarmedChildren?.forEach { child -> cancel(child.id) }
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
@@ -2869,6 +3010,65 @@ class OrderManager(
             e.reason,
         )
         clearOcoSequenceFor(e.clientOrderId)
+    }
+
+    private fun armScaleOutExits(
+        scaleOut: OrderRequest.ScaleOut,
+        exits: List<OrderRequest.IfTouched>,
+    ) {
+        val now = clock.now()
+        val exitIds = exits.mapTo(linkedSetOf()) { it.id }
+        activeScaleOutsById[scaleOut.id] = scaleOut
+        remainingScaleOutExitIds[scaleOut.id] = exitIds
+        for (exit in exits) {
+            scaleOutByExitId[exit.id] = scaleOut.id
+            val managed =
+                ManagedOrder(
+                    id = exit.id,
+                    request = exit,
+                    state = OrderState.PENDING,
+                    parentClientOrderId = scaleOut.id,
+                    createdAt = now,
+                    lastUpdatedAt = now,
+                )
+            orders[exit.id] = managed
+            indexLive(managed)
+            registerExposure(exit)
+        }
+        orders[scaleOut.id]?.let { wrapper ->
+            orders[scaleOut.id] =
+                wrapper.copy(
+                    childClientOrderIds = listOf(scaleOut.basis.id) + exitIds,
+                    lastUpdatedAt = now,
+                )
+        }
+        persistSubmissionIntent(scaleOut.strategyId)
+        for (exit in exits) {
+            bus.publish(
+                BrokerEvent.OrderAccepted(
+                    clientOrderId = exit.id,
+                    brokerOrderId = exit.id,
+                    strategyId = exit.strategyId,
+                    timestamp = now,
+                ),
+            )
+        }
+    }
+
+    private fun completeScaleOutExit(
+        exitId: String,
+        terminalState: OrderState,
+    ) {
+        val scaleOutId = scaleOutByExitId.remove(exitId) ?: return
+        val remaining = remainingScaleOutExitIds[scaleOutId] ?: return
+        remaining.remove(exitId)
+        if (remaining.isNotEmpty()) {
+            persistAll()
+            return
+        }
+        remainingScaleOutExitIds.remove(scaleOutId)
+        activeScaleOutsById.remove(scaleOutId)
+        update(scaleOutId) { it.copy(state = terminalState, lastUpdatedAt = clock.now()) }
     }
 
     private fun evaluateTriggers(tick: Tick) {
@@ -3283,6 +3483,8 @@ class OrderManager(
                             timeInForce = req.timeInForce,
                             timestamp = clock.now(),
                             strategyId = req.strategyId,
+                            closesTicket = req.closesTicket,
+                            partialClose = req.partialClose,
                         )
                     } else {
                         OrderRequest.Limit(

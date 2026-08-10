@@ -97,6 +97,8 @@ object OrderRequestEvidence {
                 base["triggerPrice"] = request.triggerPrice
                 base["onTrigger"] = request.onTrigger.name
                 base["limitPrice"] = request.limitPrice
+                base["closesTicket"] = request.closesTicket
+                base["partialClose"] = request.partialClose
             }
             is OrderRequest.TrailingStop -> {
                 base["trailAmount"] = request.trailAmount
