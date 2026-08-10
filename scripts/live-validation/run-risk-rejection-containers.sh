@@ -396,10 +396,42 @@ for index in 0 1 2 3 4; do
 done
 
 for index in 0 1 2 3 4; do
-    case_id="${case_ids[$index]}"
-    case_dir="$output/cases/$case_id"
+    case_dir="$output/cases/${case_ids[$index]}"
     if [ -f "$case_dir/state/control.token" ]; then unlink "$case_dir/state/control.token"; fi
     if [ -f "$case_dir/state/daemon.pid" ]; then unlink "$case_dir/state/daemon.pid"; fi
+done
+
+# Capture the final financial state before evaluating artifact oracles. A formatting
+# mismatch must not prevent retention of the evidence that the venue stayed clean.
+gateway_get /health > "$output/evidence/gateway-health-final.json"
+jq -e '.ok == true and .status == "healthy" and .mt5_status == "connected" and .kill_switch_active == false' \
+    "$output/evidence/gateway-health-final.json" >/dev/null || fail "gateway did not remain healthy and unhalted"
+gateway_get /account > "$output/evidence/account-final.json"
+gateway_get /get_positions > "$output/evidence/positions-final.json"
+gateway_get /orders > "$output/evidence/orders-final.json"
+jq -e '.ok == true and (.data | length) == 0' "$output/evidence/positions-final.json" >/dev/null ||
+    fail "risk matrix ended with an account position"
+jq -e '.ok == true and (.orders | length) == 0' "$output/evidence/orders-final.json" >/dev/null ||
+    fail "risk matrix ended with a pending order"
+jq -e --slurpfile initial "$output/evidence/account-initial.json" '
+    .login == $initial[0].login and .server == $initial[0].server and
+    .trade_mode == $initial[0].trade_mode and .currency == $initial[0].currency and
+    .balance == $initial[0].balance and .equity == $initial[0].equity and .margin == $initial[0].margin and
+    .leverage == $initial[0].leverage and .trade_allowed == true and .trade_expert == true
+' "$output/evidence/account-final.json" >/dev/null || fail "account identity or financial state changed"
+for index in 0 1 2 3 4; do
+    case_dir="$output/cases/${case_ids[$index]}"
+    gateway_get "/get_positions?magic=${magics[$index]}" > "$case_dir/evidence/positions-final.json"
+    gateway_get "/orders?magic=${magics[$index]}" > "$case_dir/evidence/orders-final.json"
+    jq -e '.ok == true and (.data | length) == 0' "$case_dir/evidence/positions-final.json" >/dev/null ||
+        fail "${case_ids[$index]} ended with an owned position"
+    jq -e '.ok == true and (.orders | length) == 0' "$case_dir/evidence/orders-final.json" >/dev/null ||
+        fail "${case_ids[$index]} ended with an owned order"
+done
+
+for index in 0 1 2 3 4; do
+    case_id="${case_ids[$index]}"
+    case_dir="$output/cases/$case_id"
 
     mapfile -t audits < <(find "$case_dir/state/state/audit-journal" -type f -name '*.jsonl' | sort)
     mapfile -t transports < <(find "$case_dir/state/state/mt5-transport-journal" -type f -name '*.jsonl' | sort)
@@ -479,32 +511,6 @@ for index in 0 1 2 3 4; do
           financiallyReadOnly:true,venueStateUnchanged:true
         }
     ' > "$case_dir/evidence/result.json"
-done
-
-gateway_get /health > "$output/evidence/gateway-health-final.json"
-jq -e '.ok == true and .status == "healthy" and .mt5_status == "connected" and .kill_switch_active == false' \
-    "$output/evidence/gateway-health-final.json" >/dev/null || fail "gateway did not remain healthy and unhalted"
-gateway_get /account > "$output/evidence/account-final.json"
-gateway_get /get_positions > "$output/evidence/positions-final.json"
-gateway_get /orders > "$output/evidence/orders-final.json"
-jq -e '.ok == true and (.data | length) == 0' "$output/evidence/positions-final.json" >/dev/null ||
-    fail "risk matrix ended with an account position"
-jq -e '.ok == true and (.orders | length) == 0' "$output/evidence/orders-final.json" >/dev/null ||
-    fail "risk matrix ended with a pending order"
-jq -e --slurpfile initial "$output/evidence/account-initial.json" '
-    .login == $initial[0].login and .server == $initial[0].server and
-    .trade_mode == $initial[0].trade_mode and .currency == $initial[0].currency and
-    .balance == $initial[0].balance and .equity == $initial[0].equity and .margin == $initial[0].margin and
-    .leverage == $initial[0].leverage and .trade_allowed == true and .trade_expert == true
-' "$output/evidence/account-final.json" >/dev/null || fail "account identity or financial state changed"
-for index in 0 1 2 3 4; do
-    case_dir="$output/cases/${case_ids[$index]}"
-    gateway_get "/get_positions?magic=${magics[$index]}" > "$case_dir/evidence/positions-final.json"
-    gateway_get "/orders?magic=${magics[$index]}" > "$case_dir/evidence/orders-final.json"
-    jq -e '.ok == true and (.data | length) == 0' "$case_dir/evidence/positions-final.json" >/dev/null ||
-        fail "${case_ids[$index]} ended with an owned position"
-    jq -e '.ok == true and (.orders | length) == 0' "$case_dir/evidence/orders-final.json" >/dev/null ||
-        fail "${case_ids[$index]} ended with an owned order"
 done
 
 jq -n \

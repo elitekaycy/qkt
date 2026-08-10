@@ -205,7 +205,7 @@ rules=(MaxOrderQty MaxOrderNotional PriceCollar MeasuredUsage RiskEngineHaltGate
 reason_kinds=(exact regex regex regex exact)
 reason_values=(
     'order qty 0.01 exceeds per-order cap 0.005'
-    '^order notional [0-9]+([.][0-9]+)? exceeds cap 1 [(]qty=0[.]01 ref=[0-9]+([.][0-9]+)? contractSize=100000 currency=USD[)]$'
+    '^order notional [0-9]+([.][0-9]+)? exceeds cap 1 [(]qty=0[.]01 ref=[0-9]+([.][0-9]+)? contractSize=100000([.]0+)? currency=USD[)]$'
     '^order price 9[.]00000 deviates [0-9]+([.][0-9]+)? from last [0-9]+([.][0-9]+)? [(]collar 0[.]01[)]$'
     '^measured-usage window active until epoch [0-9]+ms: order qty 0[.]01 exceeds the validation cap 0[.]005 [(]set risk[.]measured_usage_hours: 0 to opt out[)]$'
     'halted: operator'

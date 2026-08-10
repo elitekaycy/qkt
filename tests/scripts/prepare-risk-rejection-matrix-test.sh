@@ -56,6 +56,24 @@ jq -e '
     all(.cases[]; (.why | length) > 0 and (.requiredFixture | length) > 0)
 ' "$suite/stateful-deferred.json" >/dev/null
 
+max_notional_reason_pattern="$(jq -er '.cases[] | select(.caseId == "max-notional") | .expectedReason.value' \
+    "$suite/suite.json")"
+jq -n -e --arg pattern "$max_notional_reason_pattern" '
+    "order notional 1154.35000000 exceeds cap 1 (qty=0.01 ref=1.15435000 contractSize=100000.0 currency=USD)" |
+    test($pattern)
+' >/dev/null
+jq -n -e --arg pattern "$max_notional_reason_pattern" '
+    "order notional 1154.35000000 exceeds cap 1 (qty=0.01 ref=1.15435000 contractSize=100000 currency=USD)" |
+    test($pattern)
+' >/dev/null
+if jq -n -e --arg pattern "$max_notional_reason_pattern" '
+    "order notional 1154.35000000 exceeds cap 1 (qty=0.01 ref=1.15435000 contractSize=99999.0 currency=USD)" |
+    test($pattern)
+' >/dev/null; then
+    echo 'max-notional reason contract accepted the wrong instrument contract size' >&2
+    exit 1
+fi
+
 test "$(find "$suite/cases" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 5
 test "$(find "$suite/cases" -type f -name '*.qkt' | wc -l)" -eq 5
 for strategy in "$suite"/cases/*/strategies/*.qkt; do

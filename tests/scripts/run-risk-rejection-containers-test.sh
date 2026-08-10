@@ -101,6 +101,12 @@ grep -F 'riskRejections:5' "$runner" >/dev/null
 grep -F 'gatewayMutations:0' "$runner" >/dev/null
 grep -F 'publicationSafe:false,containsPrivateAccountMetadata:true' "$runner" >/dev/null
 
+final_capture_line="$(grep -n -m1 'gateway-health-final.json' "$runner" | cut -d: -f1)"
+token_scrub_line="$(grep -n -m1 'unlink "$case_dir/state/control.token"' "$runner" | cut -d: -f1)"
+artifact_oracle_line="$(grep -n -m1 'mapfile -t audits' "$runner" | cut -d: -f1)"
+test "$token_scrub_line" -lt "$artifact_oracle_line"
+test "$final_capture_line" -lt "$artifact_oracle_line"
+
 if rg --quiet -- '-Xmx|-Xms|MaxRAMPercentage|MaxRAM=|--memory(=|[[:space:]])|--cpus(=|[[:space:]])|--pids-limit|--cpuset-cpus' "$runner"; then
     echo 'risk matrix runner adds a JVM or Docker resource restriction' >&2
     exit 1
