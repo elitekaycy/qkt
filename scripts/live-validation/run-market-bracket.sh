@@ -157,6 +157,11 @@ cleanup_owned() {
         "$cli" daemon stop --state-dir "$scenario/state" >/dev/null 2>&1 || kill -TERM "$daemon_pid" 2>/dev/null || true
         wait "$daemon_pid" 2>/dev/null || true
     fi
+    for transient in "$scenario/state/control.token" "$scenario/state/daemon.pid"; do
+        if [ -e "$transient" ]; then
+            unlink "$transient"
+        fi
+    done
 }
 trap cleanup_owned EXIT
 
@@ -191,6 +196,9 @@ for second in $(seq 1 "$timeout_seconds"); do
         position_seen=true
         break
     fi
+    if rg --quiet 'Order rejected:' "$scenario/logs/daemon.log"; then
+        fail "broker rejected the bracket before a position opened"
+    fi
     sleep 1
 done
 $position_seen || fail "no magic-scoped bracket position appeared within $timeout_seconds seconds"
@@ -218,7 +226,7 @@ jq \
     "$scenario/cleanup.json" > "$scenario/cleanup.json.tmp"
 mv "$scenario/cleanup.json.tmp" "$scenario/cleanup.json"
 
-"$cli" status "$strategy_name" --state-dir "$scenario/state" --json > "$evidence/strategy-status-open.json"
+"$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-open.json"
 "$cli" kill "$strategy_name" --flatten --state-dir "$scenario/state" --json > "$evidence/kill-flatten.json"
 jq -e '.state == "killed" and .flatten == true and .flattenVerified == true and (.remainingTickets | length) == 0' \
     "$evidence/kill-flatten.json" >/dev/null || fail "QKT could not verify the bracket position was flattened"

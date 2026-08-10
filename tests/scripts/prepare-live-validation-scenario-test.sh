@@ -94,6 +94,10 @@ bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \
     --cli "$cli" \
     --verify-only >/dev/null
+if rg --quiet '\$cli" status .*--json' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
+    echo 'order runner passes unsupported --json to qkt status' >&2
+    exit 1
+fi
 
 if bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \
