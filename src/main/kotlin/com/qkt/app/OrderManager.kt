@@ -543,11 +543,11 @@ class OrderManager(
     fun siblingsOf(clientOrderId: String): List<String> = siblings[clientOrderId].orEmpty()
 
     /**
-     * Rebuild OCO leg tracking and sibling linkage from the persistor for [strategyIds],
-     * then hand the legs to the broker so it can reconcile them against venue truth —
-     * re-seeding still-pending legs and republishing any fill missed during downtime.
-     * Called once at session startup. Persistence read failures abort startup rather than silently
-     * discarding live order state.
+     * Rebuild pending order tracking and sibling linkage from the persistor for [strategyIds].
+     * Venue-held orders are handed to the broker for reconciliation; engine-held orders resume as
+     * [OrderState.PENDING] monitors and are deliberately excluded from venue recovery. Called once
+     * at session startup. Persistence read failures abort startup rather than silently discarding
+     * live order state.
      */
     fun restore(strategyIds: List<String>) {
         val recovered = mutableListOf<ManagedOrder>()
@@ -564,26 +564,21 @@ class OrderManager(
                     (leg.siblingIds + leg.clientOrderId)
                         .sorted()
                         .joinToString(prefix = "restored-oco:", separator = "|")
-                if (isPersistentManagedStop(leg.request)) {
+                if (isEngineHeldOnRestore(leg.request)) {
                     siblings[leg.clientOrderId] = leg.siblingIds
                     val persisted = dynamicStops.remove(leg.clientOrderId)
-                    if (persisted == null) {
+                    if (persisted == null && hasPersistentDynamicState(leg.request)) {
                         log.warn(
-                            "[restore] dynamic state missing for {}; restarting from its initial stop",
+                            "[restore] dynamic state missing for {}; restarting from its available anchor",
                             leg.clientOrderId,
                         )
                     }
-                    restorePersistentManagedStop(
-                        persisted
-                            ?: com.qkt.persistence.PersistedTrailingStop(
-                                clientOrderId = leg.clientOrderId,
-                                brokerOrderId = leg.brokerOrderId,
-                                strategyId = leg.strategyId,
-                                request = leg.request,
-                                armed = false,
-                                hwm = managedStopEntryPrice(leg.request),
-                            ),
-                        groupId,
+                    restoreEngineHeldOrder(
+                        clientOrderId = leg.clientOrderId,
+                        brokerOrderId = leg.brokerOrderId,
+                        request = leg.request,
+                        dynamicState = persisted,
+                        groupId = groupId,
                     )
                     continue
                 }
@@ -602,9 +597,6 @@ class OrderManager(
                 siblings[leg.clientOrderId] = leg.siblingIds
                 registerExposure(leg.request, groupId)
                 recovered += managed
-            }
-            for (stop in dynamicStops.values) {
-                restorePersistentManagedStop(stop, groupId = null)
             }
             val pairs = persistor.loadBracketPairs(sid)
             for (pair in pairs) {
@@ -626,16 +618,12 @@ class OrderManager(
                     restorePendingBracket(request, recovered)
                     continue
                 }
-                if (isPersistentManagedStop(request)) {
-                    restorePersistentManagedStop(
-                        com.qkt.persistence.PersistedTrailingStop(
-                            clientOrderId = id,
-                            brokerOrderId = null,
-                            strategyId = sid,
-                            request = request,
-                            armed = false,
-                            hwm = managedStopEntryPrice(request),
-                        ),
+                if (isEngineHeldOnRestore(request)) {
+                    restoreEngineHeldOrder(
+                        clientOrderId = id,
+                        brokerOrderId = null,
+                        request = request,
+                        dynamicState = dynamicStops.remove(id),
                         groupId = null,
                     )
                     continue
@@ -653,6 +641,18 @@ class OrderManager(
                 indexLive(managed)
                 registerExposure(request)
                 recovered += managed
+            }
+            // Older journals may contain a dynamic stop without the duplicate pending-order
+            // snapshot. Keep accepting that shape after the current OCO and pending snapshots have
+            // consumed their matching state.
+            for (stop in dynamicStops.values) {
+                restoreEngineHeldOrder(
+                    clientOrderId = stop.clientOrderId,
+                    brokerOrderId = stop.brokerOrderId,
+                    request = stop.request,
+                    dynamicState = stop,
+                    groupId = null,
+                )
             }
         }
         if (recovered.isNotEmpty()) {
@@ -812,52 +812,59 @@ class OrderManager(
         }
     }
 
-    private fun restorePersistentManagedStop(
-        stop: com.qkt.persistence.PersistedTrailingStop,
+    private fun restoreEngineHeldOrder(
+        clientOrderId: String,
+        brokerOrderId: String?,
+        request: OrderRequest,
+        dynamicState: com.qkt.persistence.PersistedTrailingStop?,
         groupId: String?,
     ) {
-        if (orders.containsKey(stop.clientOrderId)) return
+        if (orders.containsKey(clientOrderId)) return
+        require(request.id == clientOrderId) {
+            "persisted engine-held order $clientOrderId contains request ${request.id}"
+        }
+        require(dynamicState == null || dynamicState.clientOrderId == clientOrderId) {
+            "dynamic state ${dynamicState?.clientOrderId} does not belong to $clientOrderId"
+        }
         val now = clock.now()
         val managed =
             ManagedOrder(
-                id = stop.clientOrderId,
-                request = stop.request,
-                // Engine-managed stops are monitors, not venue working orders.
+                id = clientOrderId,
+                request = request,
                 state = OrderState.PENDING,
-                brokerOrderId = stop.brokerOrderId,
+                brokerOrderId = brokerOrderId,
                 createdAt = now,
                 lastUpdatedAt = now,
             )
-        orders[stop.clientOrderId] = managed
+        orders[clientOrderId] = managed
         indexLive(managed)
-        trailingHwm[stop.clientOrderId] = stop.hwm
-        when (val request = stop.request) {
+        dynamicState?.let { trailingHwm[clientOrderId] = it.hwm }
+        when (request) {
+            is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> Unit
             is OrderRequest.ArmedTrailingStop ->
-                armedTrailArmed[stop.clientOrderId] = stop.armed
+                armedTrailArmed[clientOrderId] = dynamicState?.armed ?: false
             is OrderRequest.SteppedStop -> {
-                steppedStopIndex[stop.clientOrderId] = stop.stepIndex
-                managedStopLevel[stop.clientOrderId] =
-                    stop.stopLevel
+                steppedStopIndex[clientOrderId] = dynamicState?.stepIndex ?: 0
+                managedStopLevel[clientOrderId] =
+                    dynamicState?.stopLevel
                         ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
             }
             is OrderRequest.TimeTighteningStop -> {
-                timeTightenIntervals[stop.clientOrderId] = stop.elapsedIntervals
-                managedStopLevel[stop.clientOrderId] =
-                    stop.stopLevel
+                timeTightenIntervals[clientOrderId] = dynamicState?.elapsedIntervals ?: 0L
+                managedStopLevel[clientOrderId] =
+                    dynamicState?.stopLevel
                         ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
             }
-            else -> error("unsupported persisted managed stop ${request::class.simpleName}")
+            is OrderRequest.StopLimit -> Unit
+            else -> error("unsupported restored engine-held order ${request::class.simpleName}")
         }
-        registerExposure(stop.request, groupId)
-    }
-
-    private fun managedStopEntryPrice(request: OrderRequest): BigDecimal =
         when (request) {
-            is OrderRequest.ArmedTrailingStop -> request.entryPrice
-            is OrderRequest.SteppedStop -> request.entryPrice
-            is OrderRequest.TimeTighteningStop -> request.entryPrice
-            else -> error("${request::class.simpleName} is not a persistent managed stop")
+            is OrderRequest.ArmedTrailingStop -> trailingHwm.putIfAbsent(clientOrderId, request.entryPrice)
+            is OrderRequest.SteppedStop -> trailingHwm.putIfAbsent(clientOrderId, request.entryPrice)
+            else -> Unit
         }
+        registerExposure(request, groupId)
+    }
 
     /** Symbol, side, and quantity submitted under [clientOrderId]. */
     data class OrderDetails(
@@ -2567,7 +2574,7 @@ class OrderManager(
             .map { it.id }
             .toSet()
 
-    /** Flushes HWM-only armed-trail changes at the live heartbeat cadence. */
+    /** Flushes HWM-only trailing-stop changes at the live heartbeat cadence. */
     fun persistTrailingStateIfDirty() {
         if (!trailingStateDirty) return
         runCatching {
@@ -2582,7 +2589,7 @@ class OrderManager(
         val result = mutableMapOf<String, MutableList<com.qkt.persistence.PersistedTrailingStop>>()
         for ((id, managed) in orders) {
             val request = managed.request
-            if (!isPersistentManagedStop(request) || managed.state != OrderState.PENDING) continue
+            if (!hasPersistentDynamicState(request) || managed.state != OrderState.PENDING) continue
             val strategyId = request.strategyId
             if (strategyId.isBlank()) continue
             val entryPrice =
@@ -2590,6 +2597,8 @@ class OrderManager(
                     is OrderRequest.ArmedTrailingStop -> request.entryPrice
                     is OrderRequest.SteppedStop -> request.entryPrice
                     is OrderRequest.TimeTighteningStop -> request.entryPrice
+                    is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit ->
+                        trailingHwm[id] ?: continue
                     else -> error("unreachable")
                 }
             result.getOrPut(strategyId) { mutableListOf() }.add(
@@ -3113,9 +3122,14 @@ class OrderManager(
             else -> {
                 val params = trailParams(request) ?: return
                 val current = trailingHwm[managed.id]
-                when (params.side) {
-                    Side.SELL -> if (current == null || tickPrice > current) trailingHwm[managed.id] = tickPrice
-                    Side.BUY -> if (current == null || tickPrice < current) trailingHwm[managed.id] = tickPrice
+                val newHwm =
+                    when (params.side) {
+                        Side.SELL -> if (current == null || tickPrice > current) tickPrice else current
+                        Side.BUY -> if (current == null || tickPrice < current) tickPrice else current
+                    }
+                if (newHwm != current) {
+                    trailingHwm[managed.id] = newHwm
+                    trailingStateDirty = true
                 }
             }
         }
@@ -3368,6 +3382,19 @@ class OrderManager(
         request is OrderRequest.ArmedTrailingStop ||
             request is OrderRequest.SteppedStop ||
             request is OrderRequest.TimeTighteningStop
+
+    private fun hasPersistentDynamicState(request: OrderRequest): Boolean =
+        request is OrderRequest.TrailingStop ||
+            request is OrderRequest.TrailingStopLimit ||
+            isPersistentManagedStop(request)
+
+    private fun isEngineHeldOnRestore(request: OrderRequest): Boolean =
+        when (request) {
+            is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> true
+            is OrderRequest.StopLimit ->
+                OrderTypeCapability.STOP_LIMIT !in broker.capabilitiesFor(request.symbol)
+            else -> isPersistentManagedStop(request)
+        }
 
     private fun initialStopLevel(
         exitSide: Side,
