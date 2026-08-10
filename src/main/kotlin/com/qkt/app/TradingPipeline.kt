@@ -512,7 +512,7 @@ class TradingPipeline(
                     side = e.side,
                     timestamp = e.timestamp,
                 )
-            bus.publish(TradeEvent(trade))
+            bus.publish(TradeEvent(trade, strategyId = e.strategyId))
             onFilled(
                 trade,
                 if (reducedExposure) netAccountStratRealized else accountStratRealized,
@@ -608,7 +608,7 @@ class TradingPipeline(
             )
             val trade =
                 Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
-            bus.publish(TradeEvent(trade))
+            bus.publish(TradeEvent(trade, strategyId = e.strategyId))
             onFilled(
                 trade,
                 if (reducedExposure) netAccountStratRealized else accountStratRealized,

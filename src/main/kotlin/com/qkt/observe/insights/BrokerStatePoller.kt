@@ -143,7 +143,8 @@ class BrokerStatePoller(
 
         if (emitDeals) {
             var newest = lastDealTs.getOrPut(broker) { now - backfillDays * DAY_MS }
-            for (d in broker.deals(newest + 1, now)) {
+            val from = newest + 1
+            for (d in broker.deals(from, now).filter { it.ts in from..now }) {
                 val strategyId =
                     attribution.ownerOf(d.positionTicket ?: d.dealTicket)
                         ?: attribution.fromComment(d.comment, deployed)

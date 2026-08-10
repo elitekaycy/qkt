@@ -91,4 +91,6 @@ data class TradeEvent(
     val trade: Trade,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,
+    /** Strategy that owns the fill, or blank when the source cannot attribute it. */
+    val strategyId: String = "",
 ) : Event

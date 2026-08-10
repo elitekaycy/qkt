@@ -52,6 +52,7 @@ class BrokerStatePollerTest {
         var tickets: List<BrokerPositionTicket> = emptyList()
         var allDeals: List<BrokerDeal> = emptyList()
         var pending: List<BrokerPendingOrder> = emptyList()
+        var ignoreDealRange: Boolean = false
 
         override fun accountState(): BrokerAccountState? {
             accountReads.incrementAndGet()
@@ -65,7 +66,7 @@ class BrokerStatePollerTest {
         override fun deals(
             from: Long,
             to: Long,
-        ): List<BrokerDeal> = allDeals.filter { it.ts in from..to }
+        ): List<BrokerDeal> = if (ignoreDealRange) allDeals else allDeals.filter { it.ts in from..to }
     }
 
     private fun deal(
@@ -179,6 +180,30 @@ class BrokerStatePollerTest {
         // Already shipped in the first cycle; the cursor advanced past them.
         assertThat(second).doesNotContain("deal-FAKE-1")
         assertThat(second).doesNotContain("deal-FAKE-2")
+    }
+
+    @Test
+    fun `poller rejects stale deals returned outside the requested millisecond range`() {
+        var now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.ignoreDealRange = true
+        broker.allDeals = listOf(deal("1", ts = now - 1_000L))
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+
+        poller.pollOnce()
+        assertThat(collectBodies("deal-FAKE-1")).contains("deal-FAKE-1")
+        now += 1_000L
+        poller.pollOnce()
+
+        assertThat(collectBodies("posn-FAKE-1700000001000")).doesNotContain("deal-FAKE-1")
     }
 
     @Test

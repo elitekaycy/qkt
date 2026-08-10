@@ -42,8 +42,8 @@ import java.math.BigDecimal
  * Pure functions, no I/O — cheap enough for the engine thread. Returns null only for
  * source events that have no useful insights representation.
  *
- * Envelope ids derive from the bus sequenceId ("e42"), which is unique per instance,
- * so a re-sent batch dedupes at the collector instead of double-counting.
+ * Envelope ids combine the event identity fields so a re-sent batch dedupes at the
+ * collector without colliding with another strategy session's bus sequence.
  */
 object InsightsTranslate {
     fun fromSignal(e: SignalEvent): InsightsEnvelope? {
@@ -103,14 +103,20 @@ object InsightsTranslate {
         return envelope(e.sequenceId, e.timestamp, strategyId, type, payload)
     }
 
-    fun fromOrderSubmit(e: OrderEvent): InsightsEnvelope =
-        envelope(
+    fun fromOrderSubmit(e: OrderEvent): InsightsEnvelope {
+        val payload = orderPayload(e.request).toMutableMap()
+        if (e.request is OrderRequest.Bracket) {
+            payload["planOrderId"] = e.request.id
+            payload["orderId"] = e.request.entry.id
+        }
+        return envelope(
             e.sequenceId,
             e.timestamp,
             e.request.strategyId,
             "order.submit",
-            orderPayload(e.request),
+            payload,
         )
+    }
 
     fun fromOrderAccepted(e: BrokerEvent.OrderAccepted): InsightsEnvelope =
         envelope(
@@ -192,7 +198,7 @@ object InsightsTranslate {
         envelope(
             e.sequenceId,
             e.timestamp,
-            null,
+            e.strategyId,
             "trade",
             mapOf(
                 "orderId" to e.trade.orderId,
@@ -648,7 +654,7 @@ object InsightsTranslate {
         payload: Map<String, Any?>,
     ): InsightsEnvelope =
         InsightsEnvelope(
-            id = "e$seq",
+            id = "event-$type-${strategyId.orEmpty()}-$ts-$seq",
             seq = seq,
             ts = ts,
             strategyId = strategyId?.takeIf { it.isNotBlank() },

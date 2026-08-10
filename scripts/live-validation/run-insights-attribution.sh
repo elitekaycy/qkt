@@ -275,9 +275,11 @@ jq -e '.ok == true and (.orders | length) == 0' "$evidence/orders-account-final.
 jq -e '.trade_mode == 0 and .margin == 0 and .equity == .balance' "$evidence/gateway-account-final.json" >/dev/null || fail "final account snapshot is inconsistent"
 
 sqlite3 -json "$evidence/insights-data/insights.db" "select strategy_id,count(*) count from orders where instance_id='$instance' group by strategy_id order by strategy_id;" > "$evidence/insights-orders-by-strategy.json"
+sqlite3 -json "$evidence/insights-data/insights.db" "select order_id,strategy_id,state,broker_order_id from orders where instance_id='$instance' order by created_ts,order_id;" > "$evidence/insights-orders.json"
 sqlite3 -json "$evidence/insights-data/insights.db" "select strategy_id,entry,count(*) count,printf('%.2f',sum(profit+coalesce(commission,0)+coalesce(swap,0)+coalesce(fee,0))) net from deals where instance_id='$instance' and position_ticket='$owned_ticket' group by strategy_id,entry order by entry;" > "$evidence/insights-deals-by-strategy.json"
 sqlite3 -json "$evidence/insights-data/insights.db" "select type,strategy_id,count(*) count from events where instance_id='$instance' group by type,strategy_id order by type,strategy_id;" > "$evidence/insights-events.json"
 sqlite3 -json "$evidence/insights-data/insights.db" "select kind,count(*) count from ingest_observations where instance_id='$instance' group by kind order by kind;" > "$evidence/ingest-observations.json"
+sqlite3 -json "$evidence/insights-data/insights.db" "select event_id,count(*) count from ingest_observations where instance_id='$instance' and kind='duplicate' group by event_id order by count desc,event_id limit 20;" > "$evidence/duplicate-event-ids.json"
 sqlite3 -json "$evidence/insights-data/insights.db" "select strategy_id,count(*) count from logs where instance_id='$instance' group by strategy_id order by strategy_id;" > "$evidence/insights-logs.json"
 
 jq -e --arg armed "$armed_name" --arg readonly "$readonly_name" '
@@ -290,16 +292,30 @@ jq -e --arg armed "$armed_name" '
     ([.[] | select(.strategy_id == $armed and .entry == "OUT")] | length) >= 1 and
     ([.[] | select(.strategy_id == null)] | length) == 0
 ' "$evidence/insights-deals-by-strategy.json" >/dev/null || fail "deal attribution is incomplete"
+trade_count="$(sqlite3 "$evidence/insights-data/insights.db" "select count(*) from events where instance_id='$instance' and type='trade';")"
+bad_trade_count="$(sqlite3 "$evidence/insights-data/insights.db" "select count(*) from events where instance_id='$instance' and type='trade' and coalesce(strategy_id,'') != '$armed_name';")"
+[ "$trade_count" -ge 2 ] && [ "$bad_trade_count" -eq 0 ] || fail "trade events are missing strategy attribution"
+bracket_entry_id="$(sqlite3 "$evidence/insights-data/insights.db" "select json_extract(payload,'$.orderId') from events where instance_id='$instance' and type='order.submit' and json_extract(payload,'$.planOrderId') is not null limit 1;")"
+bracket_plan_id="$(sqlite3 "$evidence/insights-data/insights.db" "select json_extract(payload,'$.planOrderId') from events where instance_id='$instance' and type='order.submit' and json_extract(payload,'$.planOrderId') is not null limit 1;")"
+[ -n "$bracket_entry_id" ] && [ -n "$bracket_plan_id" ] || fail "bracket order identity evidence is missing"
+sqlite3 "$evidence/insights-data/insights.db" "select 1 from orders where instance_id='$instance' and order_id='$bracket_entry_id' and state='FILLED';" | grep -qx 1 || fail "bracket entry lifecycle did not fold to FILLED"
+[ "$(sqlite3 "$evidence/insights-data/insights.db" "select count(*) from orders where instance_id='$instance' and order_id='$bracket_plan_id';")" -eq 0 ] || fail "bracket plan created an orphan submitted order"
+[ "$(sqlite3 "$evidence/insights-data/insights.db" "select count(*) from ingest_observations where instance_id='$instance' and kind in ('gap','regression');")" -eq 0 ] || fail "producer-local sequences created false delivery observations"
+max_duplicate_count="$(jq -r '([.[].count] | max) // 0' "$evidence/duplicate-event-ids.json")"
+[ "$max_duplicate_count" -le 2 ] || fail "an event id was replayed excessively"
 
 image_id="$(docker image inspect "$insights_image" --format '{{.Id}}')"
 qkt_version="$("$cli" --version)"
 jq -n --arg qktVersion "$qkt_version" --arg insightsImage "$image_id" --arg instance "$instance" \
     --arg owner "$armed_name" --arg sibling "$readonly_name" --arg ticket "$owned_ticket" \
-    --arg pending "$pending_before" --arg candles "$closed_candles" '
+    --arg pending "$pending_before" --arg candles "$closed_candles" --arg trades "$trade_count" \
+    --arg maxDuplicates "$max_duplicate_count" '
     {schema:"qkt-live-insights-attribution-v1",status:"passed",qktVersion:$qktVersion,
      insightsImage:$insightsImage,instanceId:$instance,ownerStrategy:$owner,readonlySibling:$sibling,
      positionTicket:$ticket,bars:{closedCandleEvents:($candles|tonumber)},
      outage:{pendingBeforeRecovery:($pending|tonumber),replayDrained:true},
+     telemetry:{attributedTradeEvents:($trades|tonumber),maxDuplicateAttemptsPerEventId:($maxDuplicates|tonumber),
+       bracketLifecycleFolded:true,falseSequenceObservations:0},
      liveState:{samples:30,nullAttributionSamples:0},final:{flat:true,pendingOrders:0}}
 ' > "$evidence/result.json"
 

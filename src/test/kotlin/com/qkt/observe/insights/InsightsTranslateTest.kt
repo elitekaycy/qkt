@@ -53,13 +53,55 @@ class InsightsTranslateTest {
                     ),
                 timestamp = 1718000000001L,
                 sequenceId = 42L,
+                strategyId = "latch",
             )
         val env = InsightsTranslate.fromTrade(e)
         assertThat(env.type).isEqualTo("trade")
+        assertThat(env.strategyId).isEqualTo("latch")
         assertThat(env.seq).isEqualTo(42L)
-        assertThat(env.id).isEqualTo("e42")
+        assertThat(env.id).isEqualTo("event-trade-latch-1718000000001-42")
         assertThat(env.payload["orderId"]).isEqualTo("o1")
         assertThat(env.payload["side"]).isEqualTo("BUY")
+    }
+
+    @Test
+    fun `event ids do not collide across strategy sessions sharing a bus sequence`() {
+        val first =
+            InsightsTranslate.fromTrade(
+                TradeEvent(
+                    trade =
+                        Trade(
+                            orderId = "o1",
+                            symbol = "XAUUSD",
+                            price = BigDecimal("2350.5"),
+                            quantity = BigDecimal("0.1"),
+                            side = Side.BUY,
+                            timestamp = 1718000000000L,
+                        ),
+                    timestamp = 1718000000001L,
+                    sequenceId = 42L,
+                    strategyId = "first",
+                ),
+            )
+        val second =
+            InsightsTranslate.fromTrade(
+                TradeEvent(
+                    trade =
+                        Trade(
+                            orderId = "o2",
+                            symbol = "XAUUSD",
+                            price = BigDecimal("2350.5"),
+                            quantity = BigDecimal("0.1"),
+                            side = Side.BUY,
+                            timestamp = 1718000000000L,
+                        ),
+                    timestamp = 1718000000001L,
+                    sequenceId = 42L,
+                    strategyId = "second",
+                ),
+            )
+
+        assertThat(first.id).isNotEqualTo(second.id)
     }
 
     @Test
@@ -585,6 +627,8 @@ class InsightsTranslateTest {
             )
 
         val env = InsightsTranslate.fromOrderSubmit(OrderEvent(bracket, timestamp = 1L, sequenceId = 12L))
+        assertThat(env.payload).containsEntry("orderId", "entry")
+        assertThat(env.payload).containsEntry("planOrderId", "br1")
         assertThat(env.payload).containsEntry("orderType", "Bracket")
         assertThat(env.payload).containsEntry("timeInForce", "GTC")
         assertThat(env.payload).containsEntry("strategyId", "latch")
