@@ -258,6 +258,10 @@ cmp -s "$output/reports/full-ticks-paper/orders.jsonl" "$output/reports/full-tic
     fail "full-ticks paper and MT5 order journals are not byte-identical"
 cmp -s "$output/comparison/full-ticks-paper-orders-normalized.json" "$output/comparison/bars-paper-orders-normalized.json" ||
     fail "timestamp-normalized bars-paper orders differ from full-tick orders"
+jq -s -e '
+    [.[] | select(.decision == "approved" and .request.orderType == "Bracket")] |
+    if length == 1 then .[0].request else error("expected one approved bracket entry") end
+' "$output/reports/full-ticks-paper/orders.jsonl" >"$output/comparison/full-ticks-entry-order.json"
 
 engine_entry="$(jq -er '.entries[] | select(.path | startswith("engine/")) | .path' "$external_manifest")"
 transport_entry="$(jq -er '.entries[] | select(.path | startswith("gateway/")) | .path' "$external_manifest")"
@@ -382,24 +386,32 @@ jq -ne --slurpfile live "$output/comparison/live-trades-normalized.json" \
         $live[0][$i].reducedExposure == $replay[0][$i].reducedExposure)
 ' >/dev/null || fail "live and full-ticks-mt5 fills or PnL differ after numeric normalization"
 jq -ne --slurpfile live "$output/comparison/live-execution.json" \
-    --slurpfile paper "$output/comparison/full-ticks-paper-trades.json" \
+    --slurpfile intent "$output/comparison/full-ticks-entry-order.json" \
     --slurpfile mt5 "$output/comparison/full-ticks-mt5-trades.json" '
     def norm: ((tonumber * 100000000) | round);
     ($live[0].entryResponse.ok and $live[0].adjustedProtection.accepted and $live[0].closeResponse.ok) and
     ([$live[0].entryResponse.retcode,$live[0].adjustedProtection.retcode,$live[0].closeResponse.retcode] |
         all(.[]; . == 10008 or . == 10009 or . == 10010)) and
-    ($live[0].initialRequest.stopLoss|norm) == ($paper[0][0].stopLossPrice|norm) and
-    ($live[0].initialRequest.takeProfit|norm) == ($paper[0][0].takeProfitPrice|norm) and
+    $live[0].initialRequest.side == $intent[0].side and
+    ($live[0].initialRequest.quantity|norm) == ($intent[0].qty|norm) and
+    ($live[0].initialRequest.stopLoss|norm) == ($intent[0].stopLoss.price|norm) and
+    ($live[0].initialRequest.takeProfit|norm) == ($intent[0].takeProfit|norm) and
     ($live[0].adjustedProtection.stopLoss|norm) == ($mt5[0][0].stopLossPrice|norm) and
     ($live[0].adjustedProtection.takeProfit|norm) == ($mt5[0][0].takeProfitPrice|norm) and
     ($live[0].entryResponse.price|norm) == ($mt5[0][0].price|norm) and
     ($live[0].closeResponse.price|norm) == ($mt5[0][1].price|norm)
 ' >/dev/null || fail "live request, protection, or fills differ from MT5 simulation"
 
-jq '[.[] | del(.timestamp,.fxRateTimestamp,.brokerOrderId)]' "$output/comparison/full-ticks-paper-trades.json" >"$output/comparison/full-ticks-paper-trades-semantic.json"
-jq '[.[] | del(.timestamp,.fxRateTimestamp,.brokerOrderId)]' "$output/comparison/bars-paper-trades.json" >"$output/comparison/bars-paper-trades-semantic.json"
+jq '[.[] | del(
+    .timestamp,.fxRateTimestamp,.brokerOrderId,.price,.realized,.netAccountRealized,
+    .grossAccountRealized,.nativeRealized,.accountRealized,.fillNotional
+)]' "$output/comparison/full-ticks-paper-trades.json" >"$output/comparison/full-ticks-paper-trades-semantic.json"
+jq '[.[] | del(
+    .timestamp,.fxRateTimestamp,.brokerOrderId,.price,.realized,.netAccountRealized,
+    .grossAccountRealized,.nativeRealized,.accountRealized,.fillNotional
+)]' "$output/comparison/bars-paper-trades.json" >"$output/comparison/bars-paper-trades-semantic.json"
 cmp -s "$output/comparison/full-ticks-paper-trades-semantic.json" "$output/comparison/bars-paper-trades-semantic.json" ||
-    fail "bars-paper trades differ semantically from full-ticks-paper"
+    fail "bars-paper trade ownership or structure differs from full-ticks-paper"
 
 paper_entry="$(jq -er '.[0].price' "$output/comparison/full-ticks-paper-trades.json")"
 paper_exit="$(jq -er '.[1].price' "$output/comparison/full-ticks-paper-trades.json")"
@@ -407,9 +419,13 @@ mt5_entry="$(jq -er '.[0].price' "$output/comparison/full-ticks-mt5-trades.json"
 mt5_exit="$(jq -er '.[1].price' "$output/comparison/full-ticks-mt5-trades.json")"
 paper_pnl="$(jq -er '.global.realizedTotal' "$output/reports/full-ticks-paper/result.json")"
 mt5_pnl="$(jq -er '.global.realizedTotal' "$output/reports/full-ticks-mt5/result.json")"
+bars_exit="$(jq -er '.[1].price' "$output/comparison/bars-paper-trades.json")"
+bars_pnl="$(jq -er '.global.realizedTotal' "$output/reports/bars-paper/result.json")"
 paper_entry_delta="$(awk -v paper="$paper_entry" -v mt5="$mt5_entry" 'BEGIN {printf "%.8f", paper-mt5}')"
 paper_exit_delta="$(awk -v paper="$paper_exit" -v mt5="$mt5_exit" 'BEGIN {printf "%.8f", paper-mt5}')"
 paper_pnl_delta="$(awk -v paper="$paper_pnl" -v mt5="$mt5_pnl" 'BEGIN {printf "%.8f", paper-mt5}')"
+bars_exit_delta="$(awk -v bars="$bars_exit" -v ticks="$paper_exit" 'BEGIN {printf "%.8f", bars-ticks}')"
+bars_pnl_delta="$(awk -v bars="$bars_pnl" -v ticks="$paper_pnl" 'BEGIN {printf "%.8f", bars-ticks}')"
 [ "$paper_entry_delta" != "0.00000000" ] || [ "$paper_exit_delta" != "0.00000000" ] ||
     fail "paper fills do not expose the expected spread-model difference"
 [ "$paper_pnl_delta" != "0.00000000" ] || fail "paper PnL does not expose the expected execution-model difference"
@@ -433,7 +449,9 @@ jq -n \
     --argjson sourceCounts "$source_counts" \
     --arg liveHolding "$live_holding" --arg fullHolding "$full_holding" --arg barsHolding "$bars_holding" \
     --arg paperEntryDelta "$paper_entry_delta" --arg paperExitDelta "$paper_exit_delta" \
-    --arg paperPnl "$paper_pnl" --arg mt5Pnl "$mt5_pnl" --arg paperPnlDelta "$paper_pnl_delta" '
+    --arg paperPnl "$paper_pnl" --arg mt5Pnl "$mt5_pnl" --arg paperPnlDelta "$paper_pnl_delta" \
+    --arg barsExit "$bars_exit" --arg barsPnl "$bars_pnl" --arg barsExitDelta "$bars_exit_delta" \
+    --arg barsPnlDelta "$bars_pnl_delta" '
     {
         schema:"qkt-live-container-round-trip-replay-comparison-v1",status:"passed",finishedAt:$finishedAt,
         source:{bundle:"source/golden.zip",bundleSha256:$bundleSha256,captureGitSha:$captureGitSha,counts:$sourceCounts},
@@ -443,13 +461,19 @@ jq -n \
             fullTickInputCandleEvaluationCountsExact:true,twoApprovedOrdersAndFills:true,
             zeroRejectionsAndFinalFlat:true,fullTickOrderJournalsByteExact:true,
             barsOrdersTimestampNormalizedExact:true,indicatorEntryExact:true,
-            indicatorExitQuantityAndCloseExact:true,liveMt5FillsProtectionPnlExact:true
+            indicatorExitQuantityAndCloseExact:true,liveCanonicalEntryIntentExact:true,
+            liveMt5FillsProtectionPnlExact:true
         },
         indicatorHoldingSeconds:{live:($liveHolding|tonumber),fullTicks:($fullHolding|tonumber),barsPaper:($barsHolding|tonumber)},
         paperModelDifferences:{
             entryPriceDeltaFromMt5:$paperEntryDelta,exitPriceDeltaFromMt5:$paperExitDelta,
             paperPnl:$paperPnl,liveAndMt5Pnl:$mt5Pnl,pnlDeltaFromMt5:$paperPnlDelta,
             reason:"Paper fills at the tracked price without bid/ask spread; MT5 simulation and live use ask for BUY and bid for SELL."
+        },
+        barsPaperModelDifferences:{
+            exitPrice:$barsExit,realizedPnl:$barsPnl,exitPriceDeltaFromFullTicksPaper:$barsExitDelta,
+            pnlDeltaFromFullTicksPaper:$barsPnlDelta,
+            reason:"Bars-paper fills at bar dispatch while full-ticks-paper fills on the tracked tick available at dispatch."
         },
         liveOnlyDifferences:[
             "Live retains venue tickets, gateway retcodes, and network/terminal latency; replay uses deterministic local identifiers and no transport.",
