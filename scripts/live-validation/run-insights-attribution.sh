@@ -478,21 +478,9 @@ for journal_file in "${audit_journals[@]}" "${transport_journals[@]}"; do
 done
 [ -z "$(find "$scenario/state/state/audit-journal" "$scenario/state/state/mt5-transport-journal" "$scenario/state/state/insights-journal" -type f -name '*.dropped' -print -quit)" ] ||
     fail "a live journal reported dropped records"
-jq -r --arg strategy "$armed_name" '
-    select(.eventType == "com.qkt.events.RuleDecisionEvent" and .strategyId == $strategy) |
-    [.decisionId,.ruleId,.strategyFingerprint,.ruleFingerprint,.conditionFingerprint,
-     (.conditionResult|tostring),.alias,.broker,.timeframe,.symbol,(.signalCount|tostring),
-     (.candle.startTimeMs|tostring),(.candle.endTimeMs|tostring),
-     (.candle.open|tonumber|tostring),(.candle.high|tonumber|tostring),(.candle.low|tonumber|tostring),
-     (.candle.close|tonumber|tostring),(.candle.volume|tonumber|tostring)] | @tsv
-' "${audit_journals[@]}" | sort > "$evidence/engine-rule-decisions.tsv"
-jq -r '.[] | (.payload | fromjson) |
-    [.decisionId,.ruleId,.strategyFingerprint,.ruleFingerprint,.conditionFingerprint,
-     (.conditionResult|tostring),.alias,.broker,.timeframe,.candle.symbol,(.signalCount|tostring),
-     (.candle.startTimeMs|tostring),(.candle.endTimeMs|tostring),
-     (.candle.open|tonumber|tostring),(.candle.high|tonumber|tostring),(.candle.low|tonumber|tostring),
-     (.candle.close|tonumber|tostring),(.candle.volume|tonumber|tostring)] | @tsv
-' "$evidence/insights-rule-decisions.json" | sort > "$evidence/collector-rule-decisions.tsv"
+qkt_write_engine_rule_decisions "$armed_name" "$evidence/engine-rule-decisions.tsv" "${audit_journals[@]}"
+qkt_write_collector_rule_decisions \
+    "$evidence/insights-rule-decisions.json" "$evidence/collector-rule-decisions.tsv"
 [ "$(awk 'END {print NR + 0}' "$evidence/engine-rule-decisions.tsv")" -eq 2 ] || fail "engine audit lacks exactly two rule decisions"
 cmp -s "$evidence/engine-rule-decisions.tsv" "$evidence/collector-rule-decisions.tsv" ||
     fail "collector rule decisions differ from engine audit"

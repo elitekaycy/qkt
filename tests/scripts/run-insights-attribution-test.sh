@@ -83,7 +83,9 @@ for required in \
     'qkt_assert_no_retained_account_identity' \
     'qkt_count_cross_owner_causal_events' \
     'qkt_export_armed_rule_decisions' \
-    'qkt_validate_bounded_rule_decisions'; do
+    'qkt_validate_bounded_rule_decisions' \
+    'qkt_write_engine_rule_decisions' \
+    'qkt_write_collector_rule_decisions'; do
     rg --fixed-strings --quiet "$required" "$runner" || fail "missing hardening contract: $required"
 done
 
@@ -155,6 +157,26 @@ jq 'map(if (.payload | fromjson | .ruleId) == "asset1#2" then
     "$decisions" > "$work/wrong-exit-count.json"
 if qkt_validate_bounded_rule_decisions "$work/wrong-exit-count.json" EXNESS:EURUSD; then
     fail "exit decision accepted one signal instead of cancel-pending plus exact-ticket close"
+fi
+
+engine_json="$work/engine-decisions.jsonl"
+collector_json="$work/collector-decisions.json"
+engine_tsv="$work/engine-decisions.tsv"
+collector_tsv="$work/collector-decisions.tsv"
+cat > "$engine_json" <<'JSON'
+{"eventType":"com.qkt.events.RuleDecisionEvent","strategyId":"armed","decisionId":"entry","ruleId":"asset1#0","strategyFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ruleFingerprint":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","conditionFingerprint":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","conditionResult":true,"alias":"asset1","broker":"EXNESS","timeframe":"1m","symbol":"EXNESS:EURUSD","signalCount":1,"candle":{"startTimeMs":1,"endTimeMs":2,"open":1.15439000,"high":1.15440000,"low":1.15438000,"close":1.15439000,"volume":0E-8}}
+JSON
+cat > "$collector_json" <<'JSON'
+[{"payload":"{\"decisionId\":\"entry\",\"ruleId\":\"asset1#0\",\"strategyFingerprint\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ruleFingerprint\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"conditionFingerprint\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"conditionResult\":true,\"alias\":\"asset1\",\"broker\":\"EXNESS\",\"timeframe\":\"1m\",\"signalCount\":1,\"candle\":{\"symbol\":\"EXNESS:EURUSD\",\"startTimeMs\":1,\"endTimeMs\":2,\"open\":1.15439,\"high\":1.1544,\"low\":1.15438,\"close\":1.15439,\"volume\":0}}"}]
+JSON
+qkt_write_engine_rule_decisions armed "$engine_tsv" "$engine_json"
+qkt_write_collector_rule_decisions "$collector_json" "$collector_tsv"
+cmp -s "$engine_tsv" "$collector_tsv" || fail "decimal scale changed canonical candle equality"
+jq 'map(.payload = ((.payload | fromjson | .candle.close = 1.15438) | tojson))' \
+    "$collector_json" > "$work/collector-numeric-mismatch.json"
+qkt_write_collector_rule_decisions "$work/collector-numeric-mismatch.json" "$collector_tsv"
+if cmp -s "$engine_tsv" "$collector_tsv"; then
+    fail "true candle numeric mismatch passed canonical comparison"
 fi
 
 probe_line="$(rg -n 'Reject an image that predates' "$runner" | cut -d: -f1)"

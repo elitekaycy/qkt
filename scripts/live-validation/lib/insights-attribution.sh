@@ -62,3 +62,31 @@ qkt_validate_bounded_rule_decisions() {
           $p.candle.symbol == $symbol)
     ' "$decisions" >/dev/null
 }
+
+qkt_write_engine_rule_decisions() {
+    local owner="$1"
+    local output="$2"
+    shift 2
+    jq -r --arg strategy "$owner" '
+        select(.eventType == "com.qkt.events.RuleDecisionEvent" and .strategyId == $strategy) |
+        [.decisionId,.ruleId,.strategyFingerprint,.ruleFingerprint,.conditionFingerprint,
+         (.conditionResult|tostring),.alias,.broker,.timeframe,.symbol,(.signalCount|tostring),
+         (.candle.startTimeMs|tostring),(.candle.endTimeMs|tostring),
+         (((.candle.open|tonumber)+0)|tostring),(((.candle.high|tonumber)+0)|tostring),
+         (((.candle.low|tonumber)+0)|tostring),(((.candle.close|tonumber)+0)|tostring),
+         (((.candle.volume|tonumber)+0)|tostring)] | @tsv
+    ' "$@" | sort > "$output"
+}
+
+qkt_write_collector_rule_decisions() {
+    local decisions="$1"
+    local output="$2"
+    jq -r '.[] | (.payload | fromjson) |
+        [.decisionId,.ruleId,.strategyFingerprint,.ruleFingerprint,.conditionFingerprint,
+         (.conditionResult|tostring),.alias,.broker,.timeframe,.candle.symbol,(.signalCount|tostring),
+         (.candle.startTimeMs|tostring),(.candle.endTimeMs|tostring),
+         (((.candle.open|tonumber)+0)|tostring),(((.candle.high|tonumber)+0)|tostring),
+         (((.candle.low|tonumber)+0)|tostring),(((.candle.close|tonumber)+0)|tostring),
+         (((.candle.volume|tonumber)+0)|tostring)] | @tsv
+    ' "$decisions" | sort > "$output"
+}
