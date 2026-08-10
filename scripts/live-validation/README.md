@@ -114,6 +114,55 @@ on one account. The bounded demo scenarios own distinct magic numbers and test o
 fill, protection, rejection, reconciliation, and accounting behavior separately.
 The runner records resource use but sets no JVM heap or container memory limit.
 
+## Read-Only Catalog Wave 1
+
+Prepare four checksummed catalog cases without contacting the gateway:
+
+```bash
+scripts/live-validation/prepare-readonly-catalog.sh \
+  --output /var/tmp/qkt-validation/readonly-catalog-001 \
+  --id readonly_catalog_001 \
+  --gateway-url http://127.0.0.1:5001 \
+  --expected-login "$DEMO_LOGIN" \
+  --expected-server "$DEMO_SERVER" \
+  --expected-balance "$CURRENT_BALANCE" \
+  --expected-leverage "$CURRENT_LEVERAGE"
+
+scripts/live-validation/run-readonly-catalog-containers.sh \
+  --suite /var/tmp/qkt-validation/readonly-catalog-001 \
+  --verify-only
+```
+
+After building an image from the same clean commit, run all four cases concurrently:
+
+```bash
+export QKT_BROKER_API_KEY="$LOCAL_GATEWAY_KEY"
+scripts/live-validation/run-readonly-catalog-containers.sh \
+  --suite /var/tmp/qkt-validation/readonly-catalog-001 \
+  --output /var/tmp/qkt-validation/readonly-catalog-live-001 \
+  --image qkt:live-validation-COMMIT
+```
+
+The positive cases cover numeric and candle indicators, math helpers, cross-symbol
+and M1/M5 mappings, and session/history state. The fourth container keeps an M1
+bars control running while a separate VWAP/OBV strategy must fail the live feed's
+volume-capability gate. Every case requires warmup ticks, live ticks, constructed
+bars joined to strategy evaluations, and named evaluation vectors. The aggregate
+gate requires zero mutating transport calls, order events, fills, venue deals, and
+account changes. It records runtime resource use without imposing JVM, CPU, memory,
+PID, or CPU-set limits.
+
+Market-contingent stateful values such as failed breaks, gap fills, and defended
+initial-balance levels may be undefined when the observed history does not contain
+that market pattern. Their retained vector proves that the mapped expression was
+evaluated; it does not claim that every possible state transition occurred. Those
+transitions require deterministic replay fixtures in a later coverage wave.
+Running `SINCE OPEN`/`SINCE T-N` aggregates are also deferred: the current compiler
+requires a symbol-associated action for aggregate rule context, while this wave
+permits only `LOG`. They must be exercised in a deterministic non-live fixture or
+after read-only aggregate context is supported; this harness does not disguise that
+gap by adding an order action.
+
 ## QKT Insights Attribution And Replay
 
 Use an exact local QKT Insights image and a fresh prepared scenario:
