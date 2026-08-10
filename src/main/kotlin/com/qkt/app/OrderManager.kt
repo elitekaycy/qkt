@@ -668,7 +668,12 @@ class OrderManager(
         require(request.children.none { it.id == request.id || it.id == request.parent.id }) {
             "OTO ${request.id} child ids must differ from the wrapper and parent ids"
         }
-        require(request.children.map { it.id }.distinct().size == request.children.size) {
+        require(
+            request.children
+                .map { it.id }
+                .distinct()
+                .size == request.children.size,
+        ) {
             "OTO ${request.id} child ids must be unique"
         }
         require(orders[request.id] == null && request.children.none { orders[it.id] != null }) {
@@ -2546,9 +2551,7 @@ class OrderManager(
         return result
     }
 
-    private fun overlayPendingOtos(
-        pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>,
-    ) {
+    private fun overlayPendingOtos(pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>) {
         for ((parentId, oto) in pendingOtosByParent) {
             val strategyId = oto.strategyId
             if (strategyId.isBlank() || orders[parentId]?.state?.isTerminal != false) continue
