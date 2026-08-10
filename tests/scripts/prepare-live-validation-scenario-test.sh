@@ -112,6 +112,19 @@ grep -F "|| printf '0\\n'" "$repo_root/scripts/live-validation/run-market-bracke
 grep -F 'golden capture' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F '.captureGitSha as $capture' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 
+comparison_script="$repo_root/scripts/live-validation/compare-golden-replay.sh"
+bash -n "$comparison_script"
+bash "$comparison_script" --help | grep -F 'full-tick, bar, and tick-resolved replay evidence' >/dev/null
+if bash "$comparison_script" \
+    --scenario "$out" \
+    --out "$tmp/replay" \
+    --cli "$cli" \
+    --verify-only >"$tmp/no-golden.out" 2>&1; then
+    echo 'expected replay comparison to reject a scenario without live evidence' >&2
+    exit 1
+fi
+grep -F 'required file not found:' "$tmp/no-golden.out" >/dev/null
+
 if bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \
     --cli "$cli" \

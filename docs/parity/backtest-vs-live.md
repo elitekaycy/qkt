@@ -102,8 +102,12 @@ Historical note kept for context: before Phase 30, backtest PnL was off by a fac
 `MT5BrokerSimulator` now models deterministic volume and price quantization, bid/ask fills,
 contract-size PnL, stop-distance rejection, and configurable latency/rejection stress. The
 authentic golden replay covers one market order. `qkt golden capture` now turns retained
-demo sessions into checksummed tick/fill/order/gateway bundles, but a captured bundle is evidence,
-not automatically a new verifier assertion. Promote representative captures into regression tests
+demo sessions into checksummed tick/fill/order/gateway bundles, and `qkt golden materialize`
+verifies and converts their structured ticks and candles into the normal replay stores. A captured
+bundle is evidence, not automatically a new verifier assertion. The retained live-validation
+scenarios can be checked offline with `scripts/live-validation/compare-golden-replay.sh`; it compares
+full-tick, plain-bar, and tick-resolved report bundles with the linked live request and fill. Promote
+representative captures into regression tests
 for pending/OCO orders, partial fills, rejected requests, and volatile-period latency. Those
 residuals must not be inferred from the single exact fill. `qkt backtest --chaos` applies the
 seeded stress preset; it does not claim to reproduce every gateway HTTP or venue-retcode sequence.
