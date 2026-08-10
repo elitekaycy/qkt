@@ -804,6 +804,7 @@ class LiveSession(
         val t = com.qkt.observe.insights.InsightsTranslate
         if (com.qkt.observe.insights.InsightsEventFamily.SIGNAL in insightsEvents) {
             bus.subscribe<SignalEvent> { e -> t.fromSignal(e)?.let(sink::offer) }
+            bus.subscribe<com.qkt.events.RuleDecisionEvent> { e -> sink.offer(t.fromRuleDecision(e)) }
         }
         if (com.qkt.observe.insights.InsightsEventFamily.ORDER in insightsEvents) {
             bus.subscribe<com.qkt.events.OrderEvent> { e -> sink.offer(t.fromOrderSubmit(e)) }

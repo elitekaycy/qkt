@@ -10,11 +10,13 @@ import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderRequestEvidence
+import com.qkt.marketdata.Candle
 import com.qkt.positions.Position
 import com.qkt.strategy.Signal
 import com.qkt.strategy.targetSymbol
@@ -102,6 +104,28 @@ object InsightsTranslate {
             payload,
         )
     }
+
+    /** Translate one evaluated DSL rule edge with its exact closed-bar input. */
+    fun fromRuleDecision(e: RuleDecisionEvent): InsightsEnvelope =
+        envelope(
+            e.sequenceId,
+            e.timestamp,
+            e.strategyId,
+            "decision.rule_evaluated",
+            mapOf(
+                "decisionId" to e.decisionId,
+                "ruleId" to e.ruleId,
+                "strategyFingerprint" to e.strategyFingerprint,
+                "ruleFingerprint" to e.ruleFingerprint,
+                "conditionFingerprint" to e.conditionFingerprint,
+                "conditionResult" to e.conditionResult,
+                "alias" to e.alias,
+                "broker" to e.broker,
+                "timeframe" to e.timeframe,
+                "signalCount" to e.signalCount,
+                "candle" to candlePayload(e.candle),
+            ),
+        )
 
     /** Translate a DSL decision-to-order correlation into collector evidence. */
     fun fromDecisionOrderLinked(e: DecisionOrderLinkedEvent): InsightsEnvelope =
@@ -717,6 +741,20 @@ object InsightsTranslate {
                 "openedAtMs" to it.openedAt,
             )
         }
+
+    private fun candlePayload(candle: Candle): Map<String, Any?> =
+        mapOf(
+            "symbol" to candle.symbol,
+            "startTimeMs" to candle.startTime,
+            "endTimeMs" to candle.endTime,
+            "open" to candle.open,
+            "high" to candle.high,
+            "low" to candle.low,
+            "close" to candle.close,
+            "volume" to candle.volume,
+            "bid" to candle.bid,
+            "ask" to candle.ask,
+        )
 
     private fun marketDataLifecycle(
         state: String,

@@ -18,6 +18,7 @@ import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
@@ -35,6 +36,7 @@ import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
+import com.qkt.marketdata.Candle
 import com.qkt.positions.Position
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
@@ -43,6 +45,69 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class InsightsTranslateTest {
+    @Test
+    fun `rule decision preserves condition fingerprints and evaluated candle`() {
+        val candle =
+            Candle(
+                symbol = "EXNESS:EURUSD",
+                open = BigDecimal("1.1000"),
+                high = BigDecimal("1.1020"),
+                low = BigDecimal("1.0990"),
+                close = BigDecimal("1.1010"),
+                volume = BigDecimal.ZERO,
+                startTime = 1_718_000_000_000L,
+                endTime = 1_718_000_060_000L,
+                bid = BigDecimal("1.1009"),
+                ask = BigDecimal("1.1011"),
+            )
+        val env =
+            InsightsTranslate.fromRuleDecision(
+                RuleDecisionEvent(
+                    strategyId = "alpha",
+                    decisionId = "alpha:entry:1718000060000:abc",
+                    ruleId = "entry#0",
+                    strategyFingerprint = "strategy-sha",
+                    ruleFingerprint = "rule-sha",
+                    conditionFingerprint = "condition-sha",
+                    conditionResult = true,
+                    alias = "eur1",
+                    broker = "exness",
+                    timeframe = "1m",
+                    signalCount = 1,
+                    candle = candle,
+                    timestamp = candle.endTime,
+                    sequenceId = 16L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("decision.rule_evaluated")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.payload)
+            .containsEntry("decisionId", "alpha:entry:1718000060000:abc")
+            .containsEntry("ruleId", "entry#0")
+            .containsEntry("conditionFingerprint", "condition-sha")
+            .containsEntry("conditionResult", true)
+            .containsEntry("signalCount", 1)
+        assertThat(env.payload["candle"])
+            .isEqualTo(
+                mapOf(
+                    "symbol" to "EXNESS:EURUSD",
+                    "startTimeMs" to 1_718_000_000_000L,
+                    "endTimeMs" to 1_718_000_060_000L,
+                    "open" to BigDecimal("1.1000"),
+                    "high" to BigDecimal("1.1020"),
+                    "low" to BigDecimal("1.0990"),
+                    "close" to BigDecimal("1.1010"),
+                    "volume" to BigDecimal.ZERO,
+                    "bid" to BigDecimal("1.1009"),
+                    "ask" to BigDecimal("1.1011"),
+                ),
+            )
+        assertThat(env.toJson("qkt-prod"))
+            .contains("\"type\":\"decision.rule_evaluated\"")
+            .contains("\"endTimeMs\":1718000060000")
+    }
+
     @Test
     fun `trade event maps to the contract trade payload`() {
         val e =
