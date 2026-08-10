@@ -49,6 +49,7 @@ grep -F 'AND score >= 0' "$armed" >/dev/null
 grep -F 'AND score < 0' "$armed" >/dev/null
 grep -F 'THEN BUY asset1 SIZING 0.01' "$armed" >/dev/null
 grep -F 'THEN SELL asset1 SIZING 0.01' "$armed" >/dev/null
+grep -F 'AND TRADES.today >= 1' "$armed" >/dev/null
 grep -F 'AND POSITION.asset1.holding_duration >= 1' "$armed" >/dev/null
 grep -F 'THEN CLOSE asset1' "$armed" >/dev/null
 [ "$(grep -Fc 'TRADES.today = 0' "$armed")" -eq 2 ]
@@ -69,6 +70,7 @@ jq -e '
     all(.armedScenario.streams[]; .warmupBars == 10) and
     .armedScenario.quantityLots == "0.01" and
     .armedScenario.maximumEntries == 1 and .armedScenario.maximumExits == 1 and
+    .armedScenario.closeWhen == "position!=0 and tradesToday>=1 and holdingDurationSeconds>=1" and
     .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
     .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1
 ' "$out/expected.json" >/dev/null

@@ -215,7 +215,7 @@ RULES
              side="SELL" score=score m1_fast=m1_fast m1_slow=m1_slow m5_fast=m5_fast m5_slow=m5_slow bar_close=asset1.close
 
     WHEN POSITION.asset1 != 0
-     AND TRADES.today = 1
+     AND TRADES.today >= 1
      AND POSITION.asset1.holding_duration >= 1
     THEN CLOSE asset1
          ; LOG "bounded indicator exit signed_qty={signed_qty} holding_seconds={holding_seconds} close={bar_close}"
@@ -263,6 +263,7 @@ cat > "$output/expected.json" <<EOF
     "quantityLots": "0.01",
     "maximumEntries": 1,
     "maximumExits": 1,
+    "closeWhen": "position!=0 and tradesToday>=1 and holdingDurationSeconds>=1",
     "exitTimeframe": "1m",
     "minimumHoldingSeconds": 1,
     "stopDistance": "0.0030",
