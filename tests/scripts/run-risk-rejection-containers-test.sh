@@ -89,6 +89,7 @@ grep -F '.eventType == "com.qkt.events.DecisionOrderLinkedEvent"' "$runner" >/de
 grep -F '.eventType == "com.qkt.events.RiskRejectedEvent"' "$runner" >/dev/null
 grep -F '$links[0].orderId == $rejects[0].orderId' "$runner" >/dev/null
 grep -F '$rejects[0].orderSchemaVersion == 1' "$runner" >/dev/null
+grep -F '$rejects[0].order.orderId == $rejects[0].orderId' "$runner" >/dev/null
 grep -F '$rejects[0].order.qty == 0.01' "$runner" >/dev/null
 grep -F '$rejects[0].order.orderType == $c.expectedOrderType' "$runner" >/dev/null
 grep -F '$rejects[0].reason == $c.expectedReason.value' "$runner" >/dev/null

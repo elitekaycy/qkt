@@ -433,7 +433,7 @@ for index in 0 1 2 3 4; do
         $decisions[0].ruleId == $links[0].ruleId and
         $links[0].orderId == $rejects[0].orderId and
         $rejects[0].orderSchemaVersion == 1 and
-        $rejects[0].order.id == $rejects[0].orderId and
+        $rejects[0].order.orderId == $rejects[0].orderId and
         $rejects[0].order.strategyId == $strategy and
         $rejects[0].order.symbol == $c.symbol and
         $rejects[0].order.qty == 0.01 and
