@@ -80,7 +80,8 @@ for required in \
     'emergency-cancel-$ticket.json' \
     'qkt_write_safe_account_snapshot' \
     'qkt_sanitize_account_transport_journals' \
-    'qkt_assert_no_retained_account_identity'; do
+    'qkt_assert_no_retained_account_identity' \
+    'qkt_count_cross_owner_causal_events'; do
     rg --fixed-strings --quiet "$required" "$runner" || fail "missing hardening contract: $required"
 done
 
@@ -105,6 +106,34 @@ qkt_redact_account_identity_log "$fixture/logs/daemon.log" 123456 Demo-Server
 qkt_assert_no_retained_account_identity "$fixture" 123456 Demo-Server || fail "identity sanitizer left fixture data"
 jq -e 'has("login") == false and has("server") == false and has("name") == false and .balance == 10000' "$fixture/account.json" >/dev/null
 jq -e '(.responseBody | fromjson | has("login")) == false and (.responseBody | fromjson | has("server")) == false' "$fixture/state/transport.jsonl" >/dev/null
+
+attribution_lib="$repo_root/scripts/live-validation/lib/insights-attribution.sh"
+source "$attribution_lib"
+audit_db="$work/attribution.db"
+sqlite3 "$audit_db" <<'SQL'
+create table events(instance_id text, type text, strategy_id text, payload text);
+insert into events values
+  ('live','decision.rule_evaluated','armed','{"signalCount":1}'),
+  ('live','decision.rule_evaluated','readonly','{"signalCount":0}'),
+  ('live','decision.rule_evaluated','readonly','{"signalCount":0}'),
+  ('live','decision.order_linked','armed','{}'),
+  ('live','order.submit','armed','{}'),
+  ('live','order.accepted','armed','{}'),
+  ('live','order.filled','armed','{}'),
+  ('live','trade','armed','{}'),
+  ('live','fill.accounted','armed','{}');
+SQL
+[ "$(qkt_count_cross_owner_causal_events "$audit_db" live armed)" -eq 0 ] ||
+    fail "read-only zero-signal rule evaluations were treated as causal execution"
+sqlite3 "$audit_db" "insert into events values ('live','order.submit','readonly','{}');"
+[ "$(qkt_count_cross_owner_causal_events "$audit_db" live armed)" -eq 1 ] ||
+    fail "cross-owner order submission was not rejected"
+sqlite3 "$audit_db" "delete from events where type='order.submit' and strategy_id='readonly'; insert into events values ('live','fill.accounted',null,'{}');"
+[ "$(qkt_count_cross_owner_causal_events "$audit_db" live armed)" -eq 1 ] ||
+    fail "null-owner fill accounting was not rejected"
+sqlite3 "$audit_db" "delete from events where type='fill.accounted' and strategy_id is null; insert into events values ('live','decision.rule_evaluated','readonly','{\"signalCount\":1}');"
+[ "$(qkt_count_cross_owner_causal_events "$audit_db" live armed)" -eq 1 ] ||
+    fail "cross-owner signal-producing rule decision was not rejected"
 
 probe_line="$(rg -n 'Reject an image that predates' "$runner" | cut -d: -f1)"
 broker_line="$(rg -n 'account_initial=.*gateway_get /account' "$runner" | cut -d: -f1 | head -1)"

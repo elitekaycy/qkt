@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$repo_root/scripts/live-validation/lib/account-identity.sh"
+source "$repo_root/scripts/live-validation/lib/insights-attribution.sh"
 
 fail() {
     printf 'run-insights-attribution: %s\n' "$1" >&2
@@ -462,7 +463,7 @@ for type_and_count in \
 done
 [ "$(sqlite3 "$db" "select count(*) from events where instance_id='$instance' and type in ('risk.rejected','order.rejected');")" -eq 0 ] ||
     fail "Insights retained a rejected risk or order event"
-[ "$(sqlite3 "$db" "select count(*) from events where instance_id='$instance' and type in ('decision.rule_evaluated','decision.order_linked','order.submit','order.accepted','order.filled','trade','fill.accounted') and coalesce(strategy_id,'') != '$armed_name';")" -eq 0 ] ||
+[ "$(qkt_count_cross_owner_causal_events "$db" "$instance" "$armed_name")" -eq 0 ] ||
     fail "causal execution events leaked to the read-only sibling or null owner"
 
 jq -e --arg symbol "$armed_symbol" '
