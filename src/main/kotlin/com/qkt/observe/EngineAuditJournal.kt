@@ -49,7 +49,7 @@ class EngineAuditJournal(
     private val rootDir: Path,
     private val owner: String,
     private val clock: Clock,
-    queueCapacity: Int = 10_000,
+    queueCapacity: Int = 50_000,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(EngineAuditJournal::class.java)
 
