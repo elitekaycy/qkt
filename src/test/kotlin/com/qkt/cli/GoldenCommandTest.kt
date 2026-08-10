@@ -129,6 +129,99 @@ class GoldenCommandTest {
     }
 
     @Test
+    fun `read only capture exports replayable market data without fills`(
+        @TempDir tmp: Path,
+    ) {
+        val audit = tmp.resolve("state/audit-journal/alpha/audit-2026-08-09.jsonl")
+        val transport = tmp.resolve("state/mt5-transport-journal/demo/transport-2026-08-09.jsonl")
+        audit.parent.let(Files::createDirectories)
+        transport.parent.let(Files::createDirectories)
+        Files.writeString(
+            audit,
+            """
+            {"v":1,"ts":1000,"eventType":"com.qkt.events.WarmupTickEvent","symbol":"EXNESS:XAUUSD","tick":{"timestampMs":900,"price":"1998"}}
+            {"v":1,"ts":1100,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:XAUUSD","tick":{"timestampMs":1100,"price":"2000"}}
+            {"v":1,"ts":1200,"eventType":"com.qkt.events.CandleEvent","symbol":"EXNESS:XAUUSD","candle":{"startTimeMs":0,"endTimeMs":1000,"open":"1990","high":"2005","low":"1985","close":"2000","volume":"10"}}
+            """.trimIndent() + "\n",
+        )
+        Files.writeString(
+            transport,
+            """{"v":1,"ts":1100,"method":"GET","path":"/account","responseCode":200}""" + "\n",
+        )
+        val output = tmp.resolve("read-only-golden.zip")
+
+        val code =
+            GoldenCommand(
+                Args(
+                    arrayOf(
+                        "golden",
+                        "capture",
+                        "--session",
+                        "alpha",
+                        "--state-dir",
+                        tmp.toString(),
+                        "--out",
+                        output.toString(),
+                        "--read-only",
+                    ),
+                ),
+            ).run()
+
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        ZipFile(output.toFile()).use { zip ->
+            val manifest =
+                zip
+                    .getInputStream(zip.getEntry("manifest.json"))
+                    .bufferedReader()
+                    .readText()
+            val root = Json.parseToJsonElement(manifest).jsonObject
+            assertThat(root["captureMode"]!!.jsonPrimitive.content).isEqualTo("READ_ONLY")
+            assertThat(root["counts"].toString())
+                .contains("\"ticks\":1")
+                .contains("\"warmupTicks\":1")
+                .contains("\"fills\":0")
+                .contains("\"mutations\":0")
+        }
+    }
+
+    @Test
+    fun `read only capture rejects a mutating gateway exchange`(
+        @TempDir tmp: Path,
+    ) {
+        val audit = tmp.resolve("state/audit-journal/alpha/audit-2026-08-09.jsonl")
+        val transport = tmp.resolve("state/mt5-transport-journal/demo/transport-2026-08-09.jsonl")
+        audit.parent.let(Files::createDirectories)
+        transport.parent.let(Files::createDirectories)
+        Files.writeString(
+            audit,
+            """{"v":1,"ts":1000,"eventType":"com.qkt.events.TickEvent","symbol":"X","tick":""" +
+                """{"timestampMs":1000,"price":"1"}}""" +
+                "\n",
+        )
+        Files.writeString(
+            transport,
+            """{"v":1,"ts":1000,"method":"POST","path":"/order","responseCode":200}""" + "\n",
+        )
+
+        val code =
+            GoldenCommand(
+                Args(
+                    arrayOf(
+                        "golden",
+                        "capture",
+                        "--session",
+                        "alpha",
+                        "--state-dir",
+                        tmp.toString(),
+                        "--read-only",
+                    ),
+                ),
+            ).run()
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
     fun `capture links a legacy transport exchange through the venue order ticket`(
         @TempDir tmp: Path,
     ) {

@@ -127,7 +127,7 @@ private fun printHelp() {
             preflight <file>        validate production readiness (--production to fail closed)
             promotion ...           record/query promotion states, approvals, waivers, gates
             incident collect        build an incident zip with journal/log/state evidence
-            golden capture          export replayable MT5 market data, fills, and gateway exchanges
+            golden capture          export replayable MT5 trading or strict read-only evidence
             golden materialize      verify a golden ZIP and build normal tick/bar replay stores
             soak report             derive exact-image paper-soak promotion evidence
 

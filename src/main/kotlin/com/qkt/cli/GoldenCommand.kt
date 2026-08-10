@@ -59,6 +59,7 @@ class GoldenCommand(
 
     private fun capture(): Int {
         val session = args.requireOption("session").trim()
+        val readOnly = args.flag("read-only")
         if (session.isEmpty()) throw ArgError("--session must not be blank")
         val stateDir = StateDir.resolve(args.option("state-dir"))
         val safeSession = sanitize(session)
@@ -72,14 +73,24 @@ class GoldenCommand(
         return try {
             val audit = scanAudit(auditFiles)
             require(audit.tickCount > 0L) { "session has no captured inbound ticks" }
-            require(audit.fillCount > 0L) { "session has no captured fills" }
+            if (readOnly) {
+                require(audit.fillCount == 0L) { "read-only session contains ${audit.fillCount} fill event(s)" }
+            } else {
+                require(audit.fillCount > 0L) { "session has no captured fills" }
+            }
             assertNoDrops(auditDir, "audit", audit.firstTimestampMs, audit.lastTimestampMs)
             val transportRoot = stateDir.stateRoot.resolve("mt5-transport-journal")
             val transportFiles = jsonlFilesRecursive(transportRoot)
             val transport = scanTransport(transportFiles, audit)
             require(transport.exchangeCount > 0L) { "session window has no captured MT5 gateway exchanges" }
-            require(transport.linkedPlacements > 0L) {
-                "session has no MT5 order exchange linked to a filled audit order"
+            if (readOnly) {
+                require(transport.mutationCount == 0L) {
+                    "read-only session contains ${transport.mutationCount} mutating gateway exchange(s)"
+                }
+            } else {
+                require(transport.linkedPlacements > 0L) {
+                    "session has no MT5 order exchange linked to a filled audit order"
+                }
             }
             assertNoDrops(transportRoot, "transport", audit.firstTimestampMs, audit.lastTimestampMs)
 
@@ -97,6 +108,7 @@ class GoldenCommand(
                 transportFiles = transportFiles,
                 transport = transport,
                 createdAt = createdAt,
+                readOnly = readOnly,
             )
             println("qkt golden capture: wrote ${output.toAbsolutePath().normalize()}")
             ExitCodes.SUCCESS
@@ -116,6 +128,7 @@ class GoldenCommand(
         transportFiles: List<Path>,
         transport: TransportSummary,
         createdAt: Instant,
+        readOnly: Boolean,
     ) {
         val absolute = output.toAbsolutePath().normalize()
         absolute.parent?.let(Files::createDirectories)
@@ -153,7 +166,7 @@ class GoldenCommand(
                 putText(
                     zip,
                     "manifest.json",
-                    renderManifest(session, audit, transport, createdAt, entries),
+                    renderManifest(session, audit, transport, createdAt, entries, readOnly),
                 )
             }
             try {
@@ -294,6 +307,7 @@ class GoldenCommand(
     ): TransportSummary {
         var exchanges = 0L
         var linkedPlacements = 0L
+        var mutations = 0L
         for (file in files) {
             Files.newBufferedReader(file, StandardCharsets.UTF_8).use { reader ->
                 var lineNumber = 0L
@@ -305,6 +319,7 @@ class GoldenCommand(
                     if (timestamp(record, file, lineNumber) !in audit.firstTimestampMs..audit.lastTimestampMs) continue
                     exchanges += 1L
                     val endpoint = record["path"]?.jsonPrimitive?.contentOrNull?.substringBefore('?')
+                    if (endpoint in MUTATING_ENDPOINTS) mutations += 1L
                     val idempotencyKey = record["idempotencyKey"]?.jsonPrimitive?.contentOrNull
                     val engineOrderId = record["engineOrderId"]?.jsonPrimitive?.contentOrNull
                     val brokerOrderId = responseBrokerOrderId(record)
@@ -325,7 +340,7 @@ class GoldenCommand(
                 }
             }
         }
-        return TransportSummary(exchanges, linkedPlacements)
+        return TransportSummary(exchanges, linkedPlacements, mutations)
     }
 
     private fun responseBrokerOrderId(record: JsonObject): String? {
@@ -370,11 +385,13 @@ class GoldenCommand(
         transport: TransportSummary,
         createdAt: Instant,
         entries: List<EntryEvidence>,
+        readOnly: Boolean,
     ): String =
         buildString {
             append("{\n")
             append("  \"schemaVersion\": 2,\n")
             append("  \"kind\": \"MT5_GOLDEN_CAPTURE\",\n")
+            append("  \"captureMode\": \"").append(if (readOnly) "READ_ONLY" else "TRADING").append("\",\n")
             append("  \"session\": ").append(json(session)).append(",\n")
             append("  \"createdAtUtc\": ").append(json(createdAt.toString())).append(",\n")
             append("  \"captureQktVersion\": ").append(json(BuildInfo.VERSION)).append(",\n")
@@ -387,7 +404,8 @@ class GoldenCommand(
             append(", \"candles\": ").append(audit.candleCount)
             append(", \"fills\": ").append(audit.fillCount)
             append(", \"gatewayExchanges\": ").append(transport.exchangeCount)
-            append(", \"linkedPlacements\": ").append(transport.linkedPlacements).append("},\n")
+            append(", \"linkedPlacements\": ").append(transport.linkedPlacements)
+            append(", \"mutations\": ").append(transport.mutationCount).append("},\n")
             append("  \"entries\": [\n")
             entries.sortedBy { it.name }.forEachIndexed { index, evidence ->
                 append("    {\"path\": ").append(json(evidence.name))
@@ -500,7 +518,9 @@ class GoldenCommand(
     }
 
     private fun printUsage() {
-        System.err.println("usage: qkt golden capture --session <strategy> [--state-dir <dir>] [--out <zip>]")
+        System.err.println(
+            "usage: qkt golden capture --session <strategy> [--state-dir <dir>] [--out <zip>] [--read-only]",
+        )
         System.err.println("       qkt golden materialize --bundle <zip> --out <data-root>")
     }
 
@@ -518,6 +538,7 @@ class GoldenCommand(
     private data class TransportSummary(
         val exchangeCount: Long,
         val linkedPlacements: Long,
+        val mutationCount: Long,
     )
 
     private data class EntryEvidence(
@@ -525,4 +546,9 @@ class GoldenCommand(
         val records: Long,
         val sha256: String,
     )
+
+    private companion object {
+        val MUTATING_ENDPOINTS =
+            setOf("/order", "/close_position", "/position_close_partial", "/modify_sl_tp", "/cancel_order")
+    }
 }
