@@ -497,9 +497,10 @@ fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
  * [OrderRequest.Stack]).
  *
  * Composite shapes are decomposed by [com.qkt.app.OrderManager] into single-leg orders
- * before they reach the broker; their recovery flows through dedicated persistor channels
- * (OCO legs, bracket pairs, stack tier state). They are never persisted as a generic
- * pending order, so callers building a pending-order snapshot should skip them.
+ * before they reach the broker. Most recovery state uses dedicated persistor channels
+ * (OCO legs, bracket pairs, stack tier state); an unfilled [OrderRequest.OTO] is the exception:
+ * its wrapper is stored under the atomic parent's id so child activation survives restart.
+ * Callers building a leaf-order snapshot should otherwise skip composite containers.
  */
 fun OrderRequest.isCompositeShape(): Boolean =
     this is OrderRequest.StandaloneOCO ||

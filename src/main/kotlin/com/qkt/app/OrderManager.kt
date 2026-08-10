@@ -196,6 +196,13 @@ class OrderManager(
 
     private val pendingChildren: MutableMap<String, List<OrderRequest>> = mutableMapOf()
 
+    /**
+     * OTO wrappers whose parent is live and whose children are still unarmed, keyed by parent id.
+     * Persistence snapshots scan only this bounded active set on order-state mutations; the tick
+     * path never reads or scans it.
+     */
+    private val pendingOtosByParent: MutableMap<String, OrderRequest.OTO> = mutableMapOf()
+
     /** Original pre-fill brackets retained until their entry resolves, for durable re-arming. */
     private val preFillBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
     private val fillAnchoredFallbackBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
@@ -608,6 +615,13 @@ class OrderManager(
             }
             for ((id, request) in persistor.loadPendingOrders(sid)) {
                 if (orders.containsKey(id)) continue
+                if (request is OrderRequest.OTO) {
+                    require(id == request.parent.id) {
+                        "persisted OTO ${request.id} keyed by $id instead of parent ${request.parent.id}"
+                    }
+                    restorePendingOto(request, recovered)
+                    continue
+                }
                 if (request is OrderRequest.Bracket) {
                     restorePendingBracket(request, recovered)
                     continue
@@ -644,6 +658,64 @@ class OrderManager(
         if (recovered.isNotEmpty()) {
             broker.recoverPendingOrders(recovered)
         }
+    }
+
+    private fun restorePendingOto(
+        request: OrderRequest.OTO,
+        recovered: MutableList<ManagedOrder>,
+    ) {
+        require(request.parent.id != request.id) { "OTO ${request.id} parent must have a distinct id" }
+        require(request.children.none { it.id == request.id || it.id == request.parent.id }) {
+            "OTO ${request.id} child ids must differ from the wrapper and parent ids"
+        }
+        require(request.children.map { it.id }.distinct().size == request.children.size) {
+            "OTO ${request.id} child ids must be unique"
+        }
+        require(orders[request.id] == null && request.children.none { orders[it.id] != null }) {
+            "persisted OTO ${request.id} collides with already-restored order state"
+        }
+        val now = clock.now()
+        val childIds = request.children.map { it.id }
+        val wrapper =
+            ManagedOrder(
+                id = request.id,
+                request = request,
+                state = OrderState.WORKING,
+                childClientOrderIds = listOf(request.parent.id) + childIds,
+                createdAt = now,
+                lastUpdatedAt = now,
+            )
+        orders[wrapper.id] = wrapper
+        indexLive(wrapper)
+
+        val parent =
+            ManagedOrder(
+                id = request.parent.id,
+                request = request.parent,
+                state = OrderState.WORKING,
+                parentClientOrderId = request.id,
+                createdAt = now,
+                lastUpdatedAt = now,
+            )
+        orders[parent.id] = parent
+        indexLive(parent)
+        for (child in request.children) {
+            val managed =
+                ManagedOrder(
+                    id = child.id,
+                    request = child,
+                    state = OrderState.CREATED,
+                    parentClientOrderId = request.id,
+                    createdAt = now,
+                    lastUpdatedAt = now,
+                )
+            orders[managed.id] = managed
+            indexLive(managed)
+        }
+        pendingChildren[parent.id] = request.children
+        pendingOtosByParent[parent.id] = request
+        registerExposure(exposureEntryRequest(request.parent))
+        recovered += parent
     }
 
     private fun restorePendingBracket(
@@ -2061,6 +2133,7 @@ class OrderManager(
             )
         }
         pendingChildren[req.parent.id] = req.children
+        pendingOtosByParent[req.parent.id] = req
         registerExposure(exposureEntryRequest(req.parent))
         dispatch(req.parent)
         return SubmitAck(req.id, req.id, accepted = true)
@@ -2283,6 +2356,7 @@ class OrderManager(
         siblings.remove(id)
         scaleOutLegs.remove(id)
         pendingChildren.remove(id)
+        pendingOtosByParent.remove(id)
         engineHeldCloseTickets.remove(id)
         exposureEntries.remove(id)
     }
@@ -2368,6 +2442,7 @@ class OrderManager(
                     pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = managed.request
                 }
             }
+            overlayPendingOtos(pendingByStrategy)
             for ((entryId, bracket) in preFillBrackets) {
                 if (orders[entryId]?.state?.isTerminal == true) continue
                 val sid = bracket.strategyId
@@ -2452,6 +2527,11 @@ class OrderManager(
                         !managed.request.isCompositeShape() &&
                         id !in unarmedChildren
                 }.associateTo(linkedMapOf()) { (id, managed) -> id to managed.request }
+        pendingOtosByParent.forEach { (parentId, oto) ->
+            if (oto.strategyId == strategyId && orders[parentId]?.state?.isTerminal == false) {
+                result[parentId] = oto
+            }
+        }
         for ((entryId, bracket) in preFillBrackets) {
             if (bracket.strategyId == strategyId && orders[entryId]?.state?.isTerminal != true) {
                 result[entryId] = bracket
@@ -2464,6 +2544,17 @@ class OrderManager(
             result[id] = bracket
         }
         return result
+    }
+
+    private fun overlayPendingOtos(
+        pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>,
+    ) {
+        for ((parentId, oto) in pendingOtosByParent) {
+            val strategyId = oto.strategyId
+            if (strategyId.isBlank() || orders[parentId]?.state?.isTerminal != false) continue
+            // Replace the atomic parent snapshot with the wrapper so restart can re-arm children.
+            pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[parentId] = oto
+        }
     }
 
     private fun unarmedChildIds(): Set<String> =
@@ -2544,6 +2635,7 @@ class OrderManager(
         fillAnchoredFallbackBrackets.remove(e.clientOrderId)
         fillAnchoredAttachedBrackets.remove(e.clientOrderId)
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)
+        pendingOtosByParent.remove(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
@@ -2628,6 +2720,7 @@ class OrderManager(
             e.price,
         )
         val pending = pendingChildren.remove(e.clientOrderId)
+        pendingOtosByParent.remove(e.clientOrderId)
         val fallbackBracket = fillAnchoredFallbackBrackets.remove(e.clientOrderId)
         val attachedBracket = fillAnchoredAttachedBrackets.remove(e.clientOrderId)
         when {
@@ -2754,7 +2847,9 @@ class OrderManager(
             }
         if (!applied) return
         exposureEntries.remove(e.clientOrderId)
-        pendingChildren.remove(e.clientOrderId)?.forEach { child -> cancel(child.id) }
+        val unarmedChildren = pendingChildren.remove(e.clientOrderId)
+        pendingOtosByParent.remove(e.clientOrderId)
+        unarmedChildren?.forEach { child -> cancel(child.id) }
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
             e.clientOrderId,

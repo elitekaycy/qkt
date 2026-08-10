@@ -373,8 +373,8 @@ class FileStatePersistor(
         orders: Map<String, OrderRequest>,
     ) {
         // Composite shapes with dedicated recovery channels are filtered upstream by
-        // [com.qkt.app.OrderManager]. Pre-fill Brackets are retained here because their
-        // entry-to-exit arming state must survive a restart.
+        // [com.qkt.app.OrderManager]. Pre-fill Brackets and OTO wrappers are retained here
+        // because their entry-to-child arming state must survive a restart.
         val entries = orders.mapNotNull { (cid, req) -> OrderRequestDto.fromDomain(req)?.let { cid to it } }
         val dto =
             PendingOrdersDto(
@@ -753,6 +753,8 @@ private data class OrderRequestDto(
     val trailMode: String? = null,
     val limitOffset: String? = null,
     val entry: OrderRequestDto? = null,
+    val parent: OrderRequestDto? = null,
+    val children: List<OrderRequestDto>? = null,
     val takeProfit: String? = null,
     val stopLossType: String? = null,
     val takeProfitAst: ChildPriceAstDto? = null,
@@ -1045,6 +1047,19 @@ private data class OrderRequestDto(
                     stopLossAst = stopLossAst?.toDomain(),
                 )
             }
+            "OTO" ->
+                com.qkt.execution.OrderRequest.OTO(
+                    id = id,
+                    symbol = symbol,
+                    side = sideEnum,
+                    quantity = qty,
+                    parent = requireNotNull(parent) { "OTO DTO missing parent" }.toDomain(),
+                    children = requireNotNull(children) { "OTO DTO missing children" }.map { it.toDomain() },
+                    timeInForce = tif,
+                    timestamp = timestamp,
+                    strategyId = strategyId,
+                    expiresAt = expiresAt,
+                )
             else -> error("Unknown OrderRequest type in persisted state: $type")
         }
     }
@@ -1263,10 +1278,34 @@ private data class OrderRequestDto(
                         stopLossAst = req.stopLossAst?.let(ChildPriceAstDto::fromDomain),
                     )
                 }
+                is com.qkt.execution.OrderRequest.OTO -> {
+                    val parent =
+                        requireNotNull(fromDomain(req.parent)) {
+                            "OTO ${req.id} parent ${req.parent::class.simpleName} cannot be persisted"
+                        }
+                    val children =
+                        req.children.map { child ->
+                            requireNotNull(fromDomain(child)) {
+                                "OTO ${req.id} child ${child.id} (${child::class.simpleName}) cannot be persisted"
+                            }
+                        }
+                    OrderRequestDto(
+                        type = "OTO",
+                        id = req.id,
+                        symbol = req.symbol,
+                        side = req.side.name,
+                        quantity = req.quantity.toPlainString(),
+                        timeInForce = req.timeInForce.name,
+                        timestamp = req.timestamp,
+                        strategyId = req.strategyId,
+                        expiresAt = req.expiresAt,
+                        parent = parent,
+                        children = children,
+                    )
+                }
                 // Composite variants are persisted by their dedicated paths (OCO legs,
                 // bracket pairs, stack tiers), not as flat pending orders — skip them here.
                 is com.qkt.execution.OrderRequest.StandaloneOCO,
-                is com.qkt.execution.OrderRequest.OTO,
                 is com.qkt.execution.OrderRequest.ScaleOut,
                 is com.qkt.execution.OrderRequest.TimeExit,
                 is com.qkt.execution.OrderRequest.Stack,

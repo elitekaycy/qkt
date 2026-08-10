@@ -180,6 +180,51 @@ class FileStatePersistorPendingOrdersTest {
     }
 
     @Test
+    fun `OTO wrapper round trips with its parent and unarmed children`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val parent =
+            OrderRequest.Limit(
+                id = "parent",
+                symbol = "XAUUSDm",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                limitPrice = BigDecimal("4700"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+            )
+        val child =
+            OrderRequest.Stop(
+                id = "child",
+                symbol = "XAUUSDm",
+                side = Side.SELL,
+                quantity = BigDecimal("0.10"),
+                stopPrice = BigDecimal("4680"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+            )
+        val oto =
+            OrderRequest.OTO(
+                id = "oto",
+                symbol = "XAUUSDm",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                parent = parent,
+                children = listOf(child),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+            )
+
+        persistor.savePendingOrders("hedge", mapOf(parent.id to oto))
+
+        assertThat(persistor.loadPendingOrders("hedge")).containsExactlyEntriesOf(mapOf(parent.id to oto))
+    }
+
+    @Test
     fun `loadPendingOrders returns empty when file missing`(
         @TempDir tmp: Path,
     ) {
