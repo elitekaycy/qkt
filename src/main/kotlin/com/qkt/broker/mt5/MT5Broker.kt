@@ -1098,12 +1098,15 @@ class MT5Broker(
                 (request is OrderRequest.Bracket && request.entry is OrderRequest.Market)
         val isPartialEntry = isInstantFill && resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
         val partialQuantity = resp.result.volume
-        if (isPartialEntry &&
-            (partialQuantity == null ||
-                partialQuantity.signum() != 1 ||
-                partialQuantity >= placement.volume ||
-                resp.result.order == 0L ||
-                resp.result.deal == 0L)
+        if (
+            isPartialEntry &&
+            (
+                partialQuantity == null ||
+                    partialQuantity.signum() != 1 ||
+                    partialQuantity >= placement.volume ||
+                    resp.result.order == 0L ||
+                    resp.result.deal == 0L
+            )
         ) {
             executeUnknownResolution {
                 resolveUnknownOutcome(
