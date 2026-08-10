@@ -15,6 +15,7 @@ import com.qkt.dsl.ast.StackDirection
 import com.qkt.events.BrokerEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
+import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
@@ -24,6 +25,7 @@ import com.qkt.execution.ExpiryAction
 import com.qkt.execution.Immediate
 import com.qkt.execution.LayerSpec
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.OrderRequestEvidence
 import com.qkt.execution.ScaleOutLeg
 import com.qkt.execution.StackPlan
 import com.qkt.execution.StopLossSpec
@@ -580,6 +582,38 @@ class InsightsTranslateTest {
     }
 
     @Test
+    fun `submit signal approved order and risk rejection share canonical order evidence`() {
+        val request =
+            OrderRequest.StopLimit(
+                id = "stop-limit",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.25"),
+                stopPrice = BigDecimal("2355.00"),
+                limitPrice = BigDecimal("2355.50"),
+                timeInForce = TimeInForce.GTD,
+                timestamp = 1_718_000_000_000L,
+                strategyId = "latch",
+                expiresAt = 1_718_000_060_000L,
+            )
+        val expected = OrderRequestEvidence.payload(request)
+        val signal =
+            InsightsTranslate.fromSignal(
+                SignalEvent(Signal.Submit(request), strategyId = "latch", timestamp = 1L, sequenceId = 10L),
+            )!!
+        val approved = InsightsTranslate.fromOrderSubmit(OrderEvent(request, timestamp = 2L, sequenceId = 11L))
+        val rejected =
+            InsightsTranslate.fromRiskRejected(
+                RiskRejectedEvent(request, reason = "max-notional", timestamp = 3L, sequenceId = 12L),
+            )
+
+        assertThat(signal.payload["order"]).isEqualTo(expected)
+        assertThat(approved.payload).isEqualTo(expected)
+        assertThat(rejected.payload["order"]).isEqualTo(expected)
+        assertThat(rejected.payload).containsEntry("reason", "max-notional")
+    }
+
+    @Test
     fun `suppressed signal preserves reason and target`() {
         val env =
             InsightsTranslate.fromSignalSuppressed(
@@ -732,6 +766,36 @@ class InsightsTranslateTest {
                     1L,
                     "latch",
                 ),
+                OrderRequest.SteppedStop(
+                    id = "stepped",
+                    symbol = "XAUUSD",
+                    side = Side.SELL,
+                    quantity = BigDecimal("0.10"),
+                    entryPrice = BigDecimal("2350"),
+                    initialDistance = BigDecimal("10"),
+                    steps =
+                        listOf(
+                            StopLossSpec.Step(BigDecimal("12"), BigDecimal.ZERO),
+                            StopLossSpec.Step(BigDecimal("20"), BigDecimal("5")),
+                        ),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
+                ),
+                OrderRequest.TimeTighteningStop(
+                    id = "time-tightening",
+                    symbol = "XAUUSD",
+                    side = Side.SELL,
+                    quantity = BigDecimal("0.10"),
+                    entryPrice = BigDecimal("2350"),
+                    initialDistance = BigDecimal("10"),
+                    tightenBy = BigDecimal("2"),
+                    intervalMs = 5_000L,
+                    floorDistance = BigDecimal("4"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
+                ),
                 OrderRequest.TrailingStopLimit(
                     "tsl",
                     "XAUUSD",
@@ -858,6 +922,8 @@ class InsightsTranslateTest {
                 "IfTouched",
                 "TrailingStop",
                 "ArmedTrailingStop",
+                "SteppedStop",
+                "TimeTighteningStop",
                 "TrailingStopLimit",
                 "StandaloneOCO",
                 "OTO",
@@ -884,6 +950,12 @@ class InsightsTranslateTest {
         assertThat(
             byType.getValue("ArmedTrailingStop"),
         ).containsEntry("entryPrice", BigDecimal("2350")).containsEntry("mfeThreshold", BigDecimal("12"))
+        assertThat(byType.getValue("SteppedStop"))
+            .containsEntry("initialDistance", BigDecimal("10"))
+        assertThat(byType.getValue("SteppedStop")["steps"]).isInstanceOf(List::class.java)
+        assertThat(byType.getValue("TimeTighteningStop"))
+            .containsEntry("intervalMs", 5_000L)
+            .containsEntry("floorDistance", BigDecimal("4"))
         assertThat(
             byType.getValue("TrailingStopLimit"),
         ).containsEntry("trailMode", "PERCENT").containsEntry("limitOffset", BigDecimal("0.2"))

@@ -4,26 +4,6 @@ import com.qkt.accounting.ConvertedMoney
 import com.qkt.broker.BrokerAccountState
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.OrderModification
-import com.qkt.dsl.ast.BoolLit
-import com.qkt.dsl.ast.ChildArmedTrail
-import com.qkt.dsl.ast.ChildAt
-import com.qkt.dsl.ast.ChildBy
-import com.qkt.dsl.ast.ChildPct
-import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.ChildRr
-import com.qkt.dsl.ast.ExprAst
-import com.qkt.dsl.ast.NumLit
-import com.qkt.dsl.ast.OrderTypeAst
-import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizePctBalance
-import com.qkt.dsl.ast.SizePctEquity
-import com.qkt.dsl.ast.SizePositionFull
-import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.SizeRiskFrac
-import com.qkt.dsl.ast.SizeRiskFracOfBook
-import com.qkt.dsl.ast.SizingAst
-import com.qkt.dsl.ast.StringLit
 import com.qkt.events.BrokerEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
@@ -32,7 +12,7 @@ import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.OrderRequest
-import com.qkt.execution.StopLossSpec
+import com.qkt.execution.OrderRequestEvidence
 import com.qkt.strategy.Signal
 import com.qkt.strategy.targetSymbol
 import java.math.BigDecimal
@@ -73,7 +53,7 @@ object InsightsTranslate {
                             "symbol" to s.request.symbol,
                             "side" to s.request.side.name,
                             "qty" to s.request.quantity,
-                            "order" to orderPayload(s.request),
+                            "order" to OrderRequestEvidence.payload(s.request),
                         )
                 is Signal.CancelPendingForSymbol ->
                     "signal.cancel" to
@@ -104,7 +84,7 @@ object InsightsTranslate {
     }
 
     fun fromOrderSubmit(e: OrderEvent): InsightsEnvelope {
-        val payload = orderPayload(e.request).toMutableMap()
+        val payload = OrderRequestEvidence.payload(e.request).toMutableMap()
         if (e.request is OrderRequest.Bracket) {
             payload["planOrderId"] = e.request.id
             payload["orderId"] = e.request.entry.id
@@ -283,6 +263,7 @@ object InsightsTranslate {
                 "symbol" to e.request.symbol,
                 "side" to e.request.side.name,
                 "qty" to e.request.quantity,
+                "order" to OrderRequestEvidence.payload(e.request),
             ),
         )
 
@@ -661,284 +642,6 @@ object InsightsTranslate {
             type = type,
             payload = payload,
         )
-
-    private fun orderPayload(request: OrderRequest): Map<String, Any?> {
-        val base =
-            linkedMapOf<String, Any?>(
-                "orderId" to request.id,
-                "orderType" to request.javaClass.simpleName,
-                "symbol" to request.symbol,
-                "side" to request.side.name,
-                "qty" to request.quantity,
-                "strategyId" to request.strategyId.takeIf { it.isNotBlank() },
-                "timeInForce" to request.timeInForce.name,
-                "createdTs" to request.timestamp,
-                "expiresAt" to request.expiresAt,
-            )
-        when (request) {
-            is OrderRequest.Market -> {
-                base["closesTicket"] = request.closesTicket
-                base["closesLegId"] = request.closesLegId
-                base["partialClose"] = request.partialClose
-            }
-            is OrderRequest.Limit -> base["limitPrice"] = request.limitPrice
-            is OrderRequest.Stop -> base["stopPrice"] = request.stopPrice
-            is OrderRequest.StopLimit -> {
-                base["stopPrice"] = request.stopPrice
-                base["limitPrice"] = request.limitPrice
-            }
-            is OrderRequest.IfTouched -> {
-                base["triggerPrice"] = request.triggerPrice
-                base["onTrigger"] = request.onTrigger.name
-                base["limitPrice"] = request.limitPrice
-            }
-            is OrderRequest.TrailingStop -> {
-                base["trailAmount"] = request.trailAmount
-                base["trailMode"] = request.trailMode.name
-            }
-            is OrderRequest.ArmedTrailingStop -> {
-                base["entryPrice"] = request.entryPrice
-                base["trailDistance"] = request.trailDistance
-                base["mfeThreshold"] = request.mfeThreshold
-            }
-            is OrderRequest.SteppedStop -> {
-                base["entryPrice"] = request.entryPrice
-                base["initialDistance"] = request.initialDistance
-                base["steps"] =
-                    request.steps.map {
-                        mapOf(
-                            "mfeThreshold" to it.mfeThreshold,
-                            "profitDistance" to it.profitDistance,
-                        )
-                    }
-            }
-            is OrderRequest.TimeTighteningStop -> {
-                base["entryPrice"] = request.entryPrice
-                base["initialDistance"] = request.initialDistance
-                base["tightenBy"] = request.tightenBy
-                base["intervalMs"] = request.intervalMs
-                base["floorDistance"] = request.floorDistance
-            }
-            is OrderRequest.TrailingStopLimit -> {
-                base["trailAmount"] = request.trailAmount
-                base["trailMode"] = request.trailMode.name
-                base["limitOffset"] = request.limitOffset
-            }
-            is OrderRequest.StandaloneOCO -> {
-                base["leg1"] = orderPayload(request.leg1)
-                base["leg2"] = orderPayload(request.leg2)
-            }
-            is OrderRequest.OTO -> {
-                base["parent"] = orderPayload(request.parent)
-                base["children"] = request.children.map(::orderPayload)
-            }
-            is OrderRequest.Bracket -> {
-                base["entry"] = orderPayload(request.entry)
-                base["takeProfit"] = request.takeProfit
-                base["stopLoss"] = stopLossPayload(request.stopLoss)
-                base["takeProfitAst"] = childPricePayload(request.takeProfitAst)
-                base["stopLossAst"] = childPricePayload(request.stopLossAst)
-            }
-            is OrderRequest.ScaleOut -> {
-                base["basis"] = orderPayload(request.basis)
-                base["legs"] =
-                    request.legs.map {
-                        mapOf(
-                            "priceTarget" to it.priceTarget,
-                            "fraction" to it.fraction,
-                        )
-                    }
-            }
-            is OrderRequest.TimeExit -> {
-                base["target"] = orderPayload(request.target)
-                base["deadline"] = request.deadline.toEpochMilli()
-                base["onExpiry"] = request.onExpiry.name
-            }
-            is OrderRequest.Stack -> {
-                base["layers"] = request.plan.layers.size
-                base["stackLayers"] = request.plan.layers.map(::stackLayerPayload)
-                base["withinMillis"] = request.plan.withinMillis
-                base["hasOuterBracket"] = request.plan.outerBracket != null
-                base["outerBracket"] =
-                    request.plan.outerBracket?.let {
-                        mapOf(
-                            "takeProfit" to childPricePayload(it.takeProfit),
-                            "stopLoss" to childPricePayload(it.stopLoss),
-                        )
-                    }
-            }
-        }
-        return base
-    }
-
-    private fun stackLayerPayload(layer: com.qkt.execution.LayerSpec): Map<String, Any?> =
-        mapOf(
-            "index" to layer.index,
-            "sizing" to sizingPayload(layer.sizing),
-            "orderType" to orderTypePayload(layer.orderType),
-            "trigger" to layerTriggerPayload(layer.trigger),
-            "resolvedQuantity" to layer.resolvedQuantity,
-        )
-
-    private fun layerTriggerPayload(trigger: com.qkt.execution.LayerTrigger): Map<String, Any?> =
-        when (trigger) {
-            is com.qkt.execution.Immediate ->
-                mapOf("type" to "Immediate")
-            is com.qkt.execution.At ->
-                mapOf(
-                    "type" to "At",
-                    "price" to exprPayload(trigger.price),
-                    "direction" to trigger.direction.name,
-                )
-        }
-
-    private fun sizingPayload(sizing: SizingAst): Map<String, Any?> =
-        when (sizing) {
-            is SizeQty ->
-                mapOf("type" to "SizeQty", "expr" to exprPayload(sizing.expr))
-            is SizeNotional ->
-                mapOf("type" to "SizeNotional", "usd" to exprPayload(sizing.usd))
-            is SizePctEquity ->
-                mapOf("type" to "SizePctEquity", "frac" to exprPayload(sizing.frac))
-            is SizePctBalance ->
-                mapOf("type" to "SizePctBalance", "frac" to exprPayload(sizing.frac))
-            is SizeRiskFrac ->
-                mapOf("type" to "SizeRiskFrac", "frac" to exprPayload(sizing.frac))
-            is SizeRiskFracOfBook ->
-                mapOf("type" to "SizeRiskFracOfBook", "frac" to exprPayload(sizing.frac))
-            is SizeRiskAbs ->
-                mapOf("type" to "SizeRiskAbs", "usd" to exprPayload(sizing.usd))
-            is SizePositionFull ->
-                mapOf("type" to "SizePositionFull", "stream" to sizing.stream)
-        }
-
-    private fun orderTypePayload(orderType: OrderTypeAst): Map<String, Any?> =
-        when (orderType) {
-            is com.qkt.dsl.ast.Market ->
-                mapOf("type" to "Market")
-            is com.qkt.dsl.ast.Limit ->
-                mapOf("type" to "Limit", "price" to exprPayload(orderType.price))
-            is com.qkt.dsl.ast.ExitRelativeLimit ->
-                mapOf(
-                    "type" to "ExitRelativeLimit",
-                    "sense" to orderType.price.sense.name,
-                    "distance" to exprPayload(orderType.price.dist),
-                )
-            is com.qkt.dsl.ast.Stop ->
-                mapOf("type" to "Stop", "price" to exprPayload(orderType.price))
-            is com.qkt.dsl.ast.ExitRelativeStop ->
-                mapOf(
-                    "type" to "ExitRelativeStop",
-                    "sense" to orderType.price.sense.name,
-                    "distance" to exprPayload(orderType.price.dist),
-                )
-            is com.qkt.dsl.ast.StopLimit ->
-                mapOf(
-                    "type" to "StopLimit",
-                    "stopPrice" to exprPayload(orderType.stopPrice),
-                    "limitPrice" to exprPayload(orderType.limitPrice),
-                )
-            is com.qkt.dsl.ast.TrailingBy ->
-                mapOf("type" to "TrailingBy", "distance" to exprPayload(orderType.distance))
-            is com.qkt.dsl.ast.TrailingPct ->
-                mapOf("type" to "TrailingPct", "percent" to exprPayload(orderType.percent))
-        }
-
-    private fun childPricePayload(child: ChildPriceAst?): Map<String, Any?>? =
-        when (child) {
-            null -> null
-            is ChildAt ->
-                mapOf("type" to "At", "price" to exprPayload(child.price))
-            is ChildBy ->
-                buildMap {
-                    put("type", "By")
-                    put("distance", exprPayload(child.distance))
-                    when (val ratchet = child.ratchet) {
-                        null -> Unit
-                        is com.qkt.dsl.ast.SteppedStopAst ->
-                            put(
-                                "ratchet",
-                                mapOf(
-                                    "type" to "Stepped",
-                                    "steps" to
-                                        ratchet.steps.map {
-                                            mapOf(
-                                                "mfeThreshold" to exprPayload(it.mfeThreshold),
-                                                "profitDistance" to exprPayload(it.profitDistance),
-                                            )
-                                        },
-                                ),
-                            )
-                        is com.qkt.dsl.ast.TimeTightenAst ->
-                            put(
-                                "ratchet",
-                                mapOf(
-                                    "type" to "TimeTighten",
-                                    "tightenBy" to exprPayload(ratchet.tightenBy),
-                                    "intervalMs" to ratchet.interval.millis,
-                                    "floorDistance" to exprPayload(ratchet.floorDistance),
-                                ),
-                            )
-                    }
-                }
-            is ChildPct ->
-                mapOf("type" to "Pct", "percent" to exprPayload(child.percent))
-            is ChildRr ->
-                mapOf("type" to "Rr", "multiplier" to exprPayload(child.multiplier))
-            is ChildArmedTrail ->
-                mapOf(
-                    "type" to "ArmedTrail",
-                    "trailDistance" to exprPayload(child.trailDistance),
-                    "mfeThreshold" to exprPayload(child.mfeThreshold),
-                )
-        }
-
-    private fun exprPayload(expr: ExprAst): Map<String, Any?> =
-        when (expr) {
-            is NumLit -> mapOf("type" to "NumLit", "value" to expr.value)
-            is BoolLit -> mapOf("type" to "BoolLit", "value" to expr.value)
-            is StringLit -> mapOf("type" to "StringLit", "value" to expr.value)
-            else ->
-                mapOf(
-                    "type" to (expr::class.simpleName ?: expr.javaClass.simpleName),
-                    "text" to expr.toString(),
-                )
-        }
-
-    private fun stopLossPayload(stopLoss: StopLossSpec): Map<String, Any?> =
-        when (stopLoss) {
-            is StopLossSpec.Fixed ->
-                mapOf(
-                    "type" to "Fixed",
-                    "price" to stopLoss.price,
-                )
-            is StopLossSpec.ArmedTrail ->
-                mapOf(
-                    "type" to "ArmedTrail",
-                    "trailDistance" to stopLoss.trailDistance,
-                    "mfeThreshold" to stopLoss.mfeThreshold,
-                )
-            is StopLossSpec.SteppedStop ->
-                mapOf(
-                    "type" to "SteppedStop",
-                    "initialDistance" to stopLoss.initialDistance,
-                    "steps" to
-                        stopLoss.steps.map {
-                            mapOf(
-                                "mfeThreshold" to it.mfeThreshold,
-                                "profitDistance" to it.profitDistance,
-                            )
-                        },
-                )
-            is StopLossSpec.TimeTighten ->
-                mapOf(
-                    "type" to "TimeTighten",
-                    "initialDistance" to stopLoss.initialDistance,
-                    "tightenBy" to stopLoss.tightenBy,
-                    "intervalMs" to stopLoss.intervalMs,
-                    "floorDistance" to stopLoss.floorDistance,
-                )
-        }
 
     private fun orderModificationPayload(changes: OrderModification): Map<String, Any?> =
         linkedMapOf<String, Any?>(
