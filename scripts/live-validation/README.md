@@ -102,6 +102,28 @@ on one account. The bounded demo scenarios own distinct magic numbers and test o
 fill, protection, rejection, reconciliation, and accounting behavior separately.
 The runner records resource use but sets no JVM heap or container memory limit.
 
+## QKT Insights Attribution And Replay
+
+Use an exact local QKT Insights image and a fresh prepared scenario:
+
+```bash
+export QKT_BROKER_API_KEY="$LOCAL_GATEWAY_KEY"
+export QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY
+scripts/live-validation/run-insights-attribution.sh \
+  --scenario /var/tmp/qkt-validation/run-001 \
+  --insights-image qkt-insights:validation-COMMIT \
+  --arm I_UNDERSTAND_DEMO_ORDER_0.01
+```
+
+The runner starts an isolated Insights container and one real QKT daemon with an
+M1/M5 read-only strategy. After observing a closed bar, it stops the collector,
+deploys the separately armed `0.01`-lot bracket, and requires unacknowledged Insights
+envelopes in QKT's durable spool. It restarts the same collector and database,
+requires replay to drain, repeatedly verifies that the open venue ticket remains
+attributed only to the armed owner, then flattens through QKT and checks durable order
+and deal attribution. Runtime credentials are generated in memory and scanned against
+the retained artifacts. The runner sets no JVM or container memory limit.
+
 ## Bounded Demo Bracket
 
 Static verification of the armed scenario performs no network or trading calls:

@@ -170,6 +170,8 @@ class LiveSession(
     private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
     /** Per-strategy runtime/source metadata to attach to `strategy.started` insights envelopes. */
     private val insightsStrategyMetadata: Map<String, Map<String, Any?>> = emptyMap(),
+    /** All strategy ids deployed in this daemon, used to reject ambiguous truncated broker comments. */
+    private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     /** Broker state poller cadence (insights `state_poll_ms`); active when the STATE family is enabled. */
     private val insightsStatePollMs: Long = 10_000L,
     /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
@@ -1817,7 +1819,7 @@ class LiveSession(
                         brokers = builtBrokers.toList(),
                         sink = insightsSink,
                         attribution = ticketAttribution,
-                        deployedIds = { strategies.map { it.first } },
+                        deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
                         pollIntervalMs = insightsStatePollMs,
                         backfillDays = insightsDealBackfillDays,
                         emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,

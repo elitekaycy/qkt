@@ -300,6 +300,35 @@ class BrokerStatePollerTest {
     }
 
     @Test
+    fun `truncated comment shared by daemon siblings stays unattributed without a ticket owner`() {
+        val now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.tickets = listOf(ticket("T1", comment = "dsl-run_20260810_common_pref"))
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = {
+                    listOf(
+                        "run_20260810_common_prefix_bars_readonly",
+                        "run_20260810_common_prefix_market_bracket",
+                    )
+                },
+                clock = { now },
+            )
+
+        poller.pollOnce()
+
+        val all = collectBodies("posn-FAKE-1700000000000")
+        val position = all.substringAfter(""""ticket":"T1"""").substringBefore("}")
+        assertThat(position)
+            .doesNotContain("strategyId")
+            .doesNotContain("bars_readonly")
+            .doesNotContain("market_bracket")
+    }
+
+    @Test
     fun `attribution map is pruned to the broker's live tickets each cycle`() {
         val now = 1_700_000_000_000L
         val broker = FakeBroker()
