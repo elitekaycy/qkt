@@ -7,6 +7,7 @@ import com.qkt.backtest.TradeRecord
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.evidence.EvidenceHasher
 import com.qkt.evidence.EvidenceJson
+import com.qkt.execution.OrderRequestEvidence
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -48,6 +49,7 @@ class BacktestReportWriter(
         Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
         Files.writeString(dir.resolve("financing.csv"), renderFinancingCsv(result.global.swapPaid))
         Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
+        Files.writeString(dir.resolve("orders.jsonl"), renderOrdersJsonl(result))
         Files.writeString(dir.resolve("pnl_components.csv"), renderPnlComponentsCsv(result))
         result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), renderBookRiskCsv(it)) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
@@ -176,6 +178,47 @@ class BacktestReportWriter(
                 .append('\n')
         }
         return sb.toString()
+    }
+
+    private fun renderOrdersJsonl(result: BacktestResult): String {
+        val lines =
+            buildList {
+                result.causality?.approvedOrders.orEmpty().forEach { event ->
+                    add(
+                        Triple(
+                            event.sequenceId,
+                            event.timestamp,
+                            buildString {
+                                append("{\"schema\":\"qkt-order-decision-v1\",\"schemaVersion\":1")
+                                append(",\"decision\":\"approved\",\"seq\":").append(event.sequenceId)
+                                append(",\"ts\":").append(event.timestamp)
+                                append(",\"requestSchemaVersion\":").append(OrderRequestEvidence.SCHEMA_VERSION)
+                                append(",\"request\":").append(OrderRequestEvidence.toJson(event.request))
+                                append('}')
+                            },
+                        ),
+                    )
+                }
+                result.rejections.forEach { event ->
+                    add(
+                        Triple(
+                            event.sequenceId,
+                            event.timestamp,
+                            buildString {
+                                append("{\"schema\":\"qkt-order-decision-v1\",\"schemaVersion\":1")
+                                append(",\"decision\":\"rejected\",\"seq\":").append(event.sequenceId)
+                                append(",\"ts\":").append(event.timestamp)
+                                append(",\"reason\":").append(ReportSerializer.jsonString(event.reason))
+                                append(",\"requestSchemaVersion\":").append(OrderRequestEvidence.SCHEMA_VERSION)
+                                append(",\"request\":").append(OrderRequestEvidence.toJson(event.request))
+                                append('}')
+                            },
+                        ),
+                    )
+                }
+            }.sortedWith(compareBy<Triple<Long, Long, String>> { it.first }.thenBy { it.second })
+        if (lines.isEmpty()) return ""
+        return lines.joinToString(separator = "\n", postfix = "\n") { it.third }
     }
 
     private fun renderPnlComponentsCsv(result: BacktestResult): String {
@@ -328,6 +371,7 @@ class BacktestReportWriter(
             append("{\"resultJson\": \"result.json\"")
             append(", \"tradesCsv\": \"trades.csv\"")
             append(", \"rejectionsCsv\": \"rejections.csv\"")
+            append(", \"ordersJsonl\": \"orders.jsonl\"")
             append(", \"pnlComponentsCsv\": \"pnl_components.csv\"")
             append(", \"manifestJson\": \"manifest.json\"")
             append(", \"equityGlobalCsv\": \"equity_global.csv\"")
@@ -388,6 +432,7 @@ class BacktestReportWriter(
                 add("trades.csv")
                 add("financing.csv")
                 add("rejections.csv")
+                add("orders.jsonl")
                 add("pnl_components.csv")
                 if (result.bookRisk != null) add("book_risk.csv")
                 add("report.html")
