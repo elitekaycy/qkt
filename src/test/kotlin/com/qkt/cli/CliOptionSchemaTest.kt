@@ -78,6 +78,7 @@ class CliOptionSchemaTest {
                     "state",
                     "--out",
                     "capture.zip",
+                    "--read-only",
                 ),
             )
 
