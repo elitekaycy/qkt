@@ -269,14 +269,13 @@ data class MT5OrderResponse(
 )
 
 /**
- * Max length MT5 accepts for an order comment. `mt5.order_send` rejects a longer
- * comment outright with `Invalid "comment" argument` (error -2) — it fails the
- * placement, it does not silently truncate. The terminal then stores only the first
- * ~16 chars of what it does accept, so capping the sent comment here is transparent to
- * round-trip correlation (state recovery already keys off that truncated prefix).
- * e.g. the 33-char "dsl-hedge_straddle--7-stack-tier0" goes on the wire as its first 31.
+ * Conservative order-comment limit accepted by the supported MT5 Python terminal.
+ * Some terminal/broker combinations reject 30 or more characters with `Invalid
+ * "comment" argument` (error -2), even though other MT5 documentation cites 31.
+ * The full qkt identifier remains in `client_order_id`; the venue comment is only a
+ * recovery fallback and is commonly stored as an even shorter prefix by the terminal.
  */
-const val MT5_COMMENT_MAX_LENGTH: Int = 31
+const val MT5_COMMENT_MAX_LENGTH: Int = 29
 
 /** MQL5 trade return code for a successful order (`TRADE_RETCODE_DONE`). */
 const val MT5_TRADE_RETCODE_DONE: Int = 10009

@@ -184,10 +184,8 @@ class MT5ClientTest {
 
     @Test
     fun `placeOrder caps an over-long comment to the MT5 wire limit`() {
-        // mt5.order_send rejects comments longer than MT5_COMMENT_MAX_LENGTH with
-        // `Invalid "comment" argument`. The hedge-straddle stack-tier clientOrderId
-        // (e.g. "dsl-hedge_straddle--7-stack-tier0", 33 chars) tripped this live (#210),
-        // failing every stack placement. The wire comment must be truncated to fit.
+        // The supported terminal rejects 30+ characters with `Invalid "comment"
+        // argument`; the full identifier remains in client_order_id for correlation.
         server.enqueue(
             MockResponse().setBody(
                 """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
