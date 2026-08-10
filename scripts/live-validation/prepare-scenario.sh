@@ -266,6 +266,7 @@ cat > "$output/expected.json" <<EOF
     "closeWhen": "position!=0 and tradesToday>=1 and holdingDurationSeconds>=1",
     "exitTimeframe": "1m",
     "minimumHoldingSeconds": 1,
+    "maximumEntryAnchorDriftPoints": 20,
     "stopDistance": "0.0030",
     "takeProfitDistance": "0.0060"
   }

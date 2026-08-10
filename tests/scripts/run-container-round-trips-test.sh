@@ -143,11 +143,22 @@ grep -F 'RiskRejectedEvent|BrokerEvent.OrderRejected' "$runner" >/dev/null
 grep -F '[ "$deploy_launch_skew_ms" -le 1000 ]' "$runner" >/dev/null
 grep -F 'timeout_seconds=360' "$runner" >/dev/null
 grep -F 'must be in 330..600' "$runner" >/dev/null
+grep -F '.armedScenario.maximumEntryAnchorDriftPoints == 20' "$runner" >/dev/null
+grep -F 'entry drift exceeds the reviewed 20-point bound' "$runner" >/dev/null
 grep -F '(.data[0].price_open - .data[0].sl) - 0.0030' "$runner" >/dev/null
 grep -F '(.data[0].tp - .data[0].price_open) - 0.0060' "$runner" >/dev/null
 grep -F '(.data[0].sl - .data[0].price_open) - 0.0030' "$runner" >/dev/null
 grep -F '(.data[0].price_open - .data[0].tp) - 0.0060' "$runner" >/dev/null
 grep -F '<= ($point | tonumber)' "$runner" >/dev/null
+grep -F 'protection_seen=(false false)' "$runner" >/dev/null
+grep -F 'position-fill-anchored-protection.json' "$runner" >/dev/null
+grep -F 'did not expose fill-anchored bracket distances before closing' "$runner" >/dev/null
+grep -F 'lacks canonical bounded bracket order evidence' "$runner" >/dev/null
+grep -F '.orderSchemaVersion == 1' "$runner" >/dev/null
+grep -F '.responseBody | fromjson? | .result.retcode' "$runner" >/dev/null
+grep -F '$placement.request.deviation == 20' "$runner" >/dev/null
+grep -F 'initial venue bracket does not match canonical order evidence' "$runner" >/dev/null
+grep -F 'protection update was not anchored to the venue fill' "$runner" >/dev/null
 grep -F 'has_live_timeframe_evidence' "$runner" >/dev/null
 grep -F '[["asset1", "1m"], ["asset5", "5m"]]' "$runner" >/dev/null
 grep -F 'StreamCandleEvent' "$runner" >/dev/null

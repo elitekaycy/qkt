@@ -190,6 +190,7 @@ for index in 0 1; do
         .armedScenario.maximumEntries == 1 and .armedScenario.maximumExits == 1 and
         .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
         .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1 and
+        .armedScenario.maximumEntryAnchorDriftPoints == 20 and
         .armedScenario.stopDistance == "0.0030" and
         .armedScenario.takeProfitDistance == "0.0060"
     ' "$scenario/expected.json" >/dev/null || fail "scenario $index expected contract is not the bounded round trip"
@@ -344,6 +345,8 @@ daemon_pids=("" "")
 deploy_pids=("" "")
 tickets=("" "")
 position_types=("" "")
+entry_prices=("" "")
+protection_seen=(false false)
 flat_seen=(false false)
 control_tokens=()
 cleanup_running=false
@@ -474,6 +477,7 @@ while [ "$SECONDS" -lt "$deadline" ]; do
                 --arg symbol "${venue_symbols[$index]}" \
                 --argjson magic "${magics[$index]}" \
                 --arg point "$(jq -er '.point' "$output/evidence/symbol-$index.json")" \
+                --argjson maximumEntryAnchorDriftPoints 20 \
                 --arg strategyPrefix "dsl-${strategies[$index]}" '
                     .ok == true and .data[0].symbol == $symbol and .data[0].magic == $magic and
                     .data[0].volume == 0.01 and .data[0].price_open > 0 and
@@ -482,22 +486,39 @@ while [ "$SECONDS" -lt "$deadline" ]; do
                         (
                             .data[0].type == 0 and
                             .data[0].sl < .data[0].price_open and .data[0].tp > .data[0].price_open and
-                            ((((.data[0].price_open - .data[0].sl) - 0.0030) | fabs) <= ($point | tonumber)) and
-                            ((((.data[0].tp - .data[0].price_open) - 0.0060) | fabs) <= ($point | tonumber))
+                            (.data[0].price_open - .data[0].sl) <=
+                                (0.0030 + (($point | tonumber) * $maximumEntryAnchorDriftPoints))
                         ) or
                         (
                             .data[0].type == 1 and
                             .data[0].tp < .data[0].price_open and .data[0].sl > .data[0].price_open and
-                            ((((.data[0].sl - .data[0].price_open) - 0.0030) | fabs) <= ($point | tonumber)) and
-                            ((((.data[0].price_open - .data[0].tp) - 0.0060) | fabs) <= ($point | tonumber))
+                            (.data[0].sl - .data[0].price_open) <=
+                                (0.0030 + (($point | tonumber) * $maximumEntryAnchorDriftPoints))
                         )
                     ) and
                     (.data[0].comment as $comment | ($strategyPrefix | startswith($comment)))
                 ' "$latest" >/dev/null || fail "scenario $index venue position violates the bounded contract"
+            if jq -e \
+                --arg point "$(jq -er '.point' "$output/evidence/symbol-$index.json")" '
+                    (
+                        .data[0].type == 0 and
+                        ((((.data[0].price_open - .data[0].sl) - 0.0030) | fabs) <= ($point | tonumber)) and
+                        ((((.data[0].tp - .data[0].price_open) - 0.0060) | fabs) <= ($point | tonumber))
+                    ) or
+                    (
+                        .data[0].type == 1 and
+                        ((((.data[0].sl - .data[0].price_open) - 0.0030) | fabs) <= ($point | tonumber)) and
+                        ((((.data[0].price_open - .data[0].tp) - 0.0060) | fabs) <= ($point | tonumber))
+                    )
+                ' "$latest" >/dev/null; then
+                protection_seen[$index]=true
+                cp "$latest" "${evidences[$index]}/position-fill-anchored-protection.json"
+            fi
             current_ticket="$(jq -er '.data[0].ticket' "$latest")"
             if [ -z "${tickets[$index]}" ]; then
                 tickets[$index]="$current_ticket"
                 position_types[$index]="$(jq -er '.data[0].type' "$latest")"
+                entry_prices[$index]="$(jq -er '.data[0].price_open' "$latest")"
                 cp "$latest" "${evidences[$index]}/position-open.json"
                 jq --argjson ticket "$current_ticket" \
                     '.ownedPositionTickets = [$ticket] | .status = "position_open"' \
@@ -517,6 +538,8 @@ while [ "$SECONDS" -lt "$deadline" ]; do
 done
 [ -n "${tickets[0]}" ] && [ -n "${tickets[1]}" ] || fail "both bounded entry positions were not observed"
 ${flat_seen[0]} && ${flat_seen[1]} || fail "both strategies did not close their positions within $timeout_seconds seconds"
+${protection_seen[0]} && ${protection_seen[1]} ||
+    fail "both positions did not expose fill-anchored bracket distances before closing"
 [ "${tickets[0]}" != "${tickets[1]}" ] || fail "concurrent scenarios reported the same venue ticket"
 
 timeframe_evidence=(false false)
@@ -623,6 +646,8 @@ for index in 0 1; do
     [ -z "$(find "${states[$index]}/state/audit-journal" "${states[$index]}/state/mt5-transport-journal" -type f -name '*.dropped' -print -quit)" ] ||
         fail "scenario $index journal reported dropped records"
     strategy="${strategies[$index]}"
+    expected_wire_side=BUY
+    [ "${position_types[$index]}" -eq 0 ] || expected_wire_side=SELL
     decisions="$(jq -r --arg strategy "$strategy" 'select(.eventType == "com.qkt.events.RuleDecisionEvent" and .strategyId == $strategy) | 1' "${audits[@]}" | count_records)"
     links="$(jq -r --arg strategy "$strategy" 'select(.eventType == "com.qkt.events.DecisionOrderLinkedEvent" and .strategyId == $strategy) | 1' "${audits[@]}" | count_records)"
     accepted="$(jq -r --arg strategy "$strategy" 'select(.eventType == "com.qkt.events.BrokerEvent.OrderAccepted" and .strategyId == $strategy) | 1' "${audits[@]}" | count_records)"
@@ -643,6 +668,24 @@ for index in 0 1; do
     jq -e --arg symbol "${expected_symbols[$index]}" '
         select(.eventType == "com.qkt.events.TickEvent" and .symbol == $symbol)
     ' "${audits[@]}" >/dev/null || fail "scenario $index lacks live tick evidence"
+    jq -e \
+        --arg strategy "$strategy" \
+        --arg symbol "${expected_symbols[$index]}" \
+        --arg side "$expected_wire_side" '
+        select(
+            .eventType == "com.qkt.events.OrderEvent" and
+            .strategyId == $strategy and .symbol == $symbol and
+            .orderSchemaVersion == 1 and
+            .order.orderType == "Bracket" and .order.qty == 0.01 and
+            .order.side == $side and
+            .order.entry.orderType == "Market" and
+            .order.entry.side == $side and .order.entry.qty == 0.01 and
+            .order.stopLossAst.type == "By" and .order.stopLossAst.distance.type == "NumLit" and
+            .order.stopLossAst.distance.value == 0.0030 and
+            .order.takeProfitAst.type == "By" and .order.takeProfitAst.distance.type == "NumLit" and
+            .order.takeProfitAst.distance.value == 0.0060
+        )
+    ' "${audits[@]}" >/dev/null || fail "scenario $index lacks canonical bounded bracket order evidence"
     has_live_timeframe_evidence "$index" || fail "scenario $index lacks matched live M1/M5 stream and strategy evaluation evidence"
 
     daemon_log="${scenarios[$index]}/logs/container-daemon.log"
@@ -661,7 +704,16 @@ for index in 0 1; do
     protection_posts="$(jq -r 'select(.method == "POST" and .path == "/modify_sl_tp") | 1' "${transports[@]}" | count_records)"
     close_posts="$(jq -r 'select(.method == "POST" and .path == "/close_position") | 1' "${transports[@]}" | count_records)"
     mutation_posts="$(jq -r 'select(.method == "POST" and (.path == "/order" or .path == "/modify_sl_tp" or .path == "/close_position" or .path == "/position_close_partial" or .path == "/cancel_order")) | 1' "${transports[@]}" | count_records)"
-    failed_mutations="$(jq -r 'select(.method == "POST" and (.path == "/order" or .path == "/modify_sl_tp" or .path == "/close_position" or .path == "/position_close_partial" or .path == "/cancel_order") and (.responseCode < 200 or .responseCode >= 300 or .error != null)) | 1' "${transports[@]}" | count_records)"
+    failed_mutations="$(jq -r '
+        def mutation:
+            .method == "POST" and
+            (.path == "/order" or .path == "/modify_sl_tp" or .path == "/close_position" or
+                .path == "/position_close_partial" or .path == "/cancel_order");
+        def mt5_success:
+            (.responseBody | fromjson? | .result.retcode) as $retcode |
+            $retcode == 10008 or $retcode == 10009 or $retcode == 10010;
+        select(mutation and (.responseCode < 200 or .responseCode >= 300 or .error != null or (mt5_success | not))) | 1
+    ' "${transports[@]}" | count_records)"
     [ "$order_posts" -eq 1 ] || fail "scenario $index did not issue exactly one entry order"
     [ "$protection_posts" -eq 1 ] || fail "scenario $index did not issue exactly one protection update"
     [ "$close_posts" -eq 1 ] || fail "scenario $index did not issue exactly one strategy close"
@@ -677,8 +729,103 @@ for index in 0 1; do
                 (.path == "/modify_sl_tp" and (request.position | tostring) == ($ticket | tostring)) or
                 (.path == "/close_position" and (request.position.ticket | tostring) == ($ticket | tostring))
             )
-        ' "${transports[@]}" | jq -s -e 'length == 3' >/dev/null ||
+    ' "${transports[@]}" | jq -s -e 'length == 3' >/dev/null ||
         fail "scenario $index mutation correlation does not match its magic, symbol, and ticket"
+    mapfile -t canonical_stops < <(jq -r --arg strategy "$strategy" '
+        select(.eventType == "com.qkt.events.OrderEvent" and .strategyId == $strategy and .order.orderType == "Bracket") |
+        .order.stopLoss.price
+    ' "${audits[@]}")
+    mapfile -t canonical_targets < <(jq -r --arg strategy "$strategy" '
+        select(.eventType == "com.qkt.events.OrderEvent" and .strategyId == $strategy and .order.orderType == "Bracket") |
+        .order.takeProfit
+    ' "${audits[@]}")
+    [ "${#canonical_stops[@]}" -eq 1 ] && [ "${#canonical_targets[@]}" -eq 1 ] ||
+        fail "scenario $index canonical bracket evidence is not unique"
+    point="$(jq -er '.point' "$output/evidence/symbol-$index.json")"
+    read -r intent_anchor entry_anchor_drift_points < <(
+        awk \
+            -v side="$expected_wire_side" \
+            -v stop="${canonical_stops[0]}" \
+            -v target="${canonical_targets[0]}" \
+            -v entry="${entry_prices[$index]}" \
+            -v point="$point" '
+            function abs(value) { return value < 0 ? -value : value }
+            BEGIN {
+                if (side == "BUY") {
+                    stopAnchor = stop + 0.0030
+                    targetAnchor = target - 0.0060
+                } else {
+                    stopAnchor = stop - 0.0030
+                    targetAnchor = target + 0.0060
+                }
+                if (abs(stopAnchor - targetAnchor) > point) exit 1
+                driftPoints = (entry - stopAnchor) / point
+                if (abs(driftPoints) > 20.000001) exit 1
+                printf "%.8f %.8f\n", stopAnchor, driftPoints
+            }
+        '
+    ) || fail "scenario $index entry drift exceeds the reviewed 20-point bound"
+    jq -e \
+        --arg strategy "$strategy" \
+        --arg side "$expected_wire_side" \
+        --argjson ticket "${tickets[$index]}" \
+        --arg entryPrice "${entry_prices[$index]}" \
+        --arg point "$point" '
+        select(
+            .eventType == "com.qkt.events.BrokerEvent.OrderFilled" and
+            .strategyId == $strategy and .fill.side == $side and
+            (.fill.brokerOrderId | tonumber) == $ticket and
+            (((.fill.price | tonumber) - ($entryPrice | tonumber)) | fabs) <= ($point | tonumber)
+        )
+    ' "${audits[@]}" >/dev/null || fail "scenario $index entry fill does not match its venue position"
+    jq -s -e \
+        --argjson magic "${magics[$index]}" \
+        --arg symbol "${venue_symbols[$index]}" \
+        --arg side "$expected_wire_side" \
+        --arg stopLoss "${canonical_stops[0]}" \
+        --arg takeProfit "${canonical_targets[0]}" \
+        --arg entryPrice "${entry_prices[$index]}" \
+        --argjson ticket "${tickets[$index]}" \
+        --arg point "$point" '
+            [.[] | select(.method == "POST" and .path == "/order") |
+                {request:(.requestBody | fromjson), response:(.responseBody | fromjson)}] as $placements |
+            $placements[0] as $placement |
+            ($point | tonumber) as $tolerance |
+            ($placements | length) == 1 and
+            $placement.request.magic == $magic and
+            $placement.request.symbol == $symbol and
+            $placement.request.type == $side and
+            $placement.request.volume == 0.01 and
+            $placement.request.deviation == 20 and
+            ((($placement.request.sl - ($stopLoss | tonumber)) | fabs) <= $tolerance) and
+            ((($placement.request.tp - ($takeProfit | tonumber)) | fabs) <= $tolerance) and
+            ((($placement.response.result.price - ($entryPrice | tonumber)) | fabs) <= $tolerance) and
+            ($placement.response.result.order == $ticket or $placement.response.result.deal == $ticket) and
+            ($placement.response.result.retcode == 10008 or
+                $placement.response.result.retcode == 10009 or
+                $placement.response.result.retcode == 10010)
+        ' "${transports[@]}" >/dev/null ||
+        fail "scenario $index initial venue bracket does not match canonical order evidence"
+    jq -s -e \
+        --arg entryPrice "${entry_prices[$index]}" \
+        --arg point "$point" \
+        --argjson positionType "${position_types[$index]}" '
+            [.[] | select(.method == "POST" and .path == "/modify_sl_tp") | (.requestBody | fromjson)] as $updates |
+            ($entryPrice | tonumber) as $entry |
+            ($point | tonumber) as $tolerance |
+            $updates[0] as $update |
+            ($updates | length) == 1 and
+            (
+                if $positionType == 0 then
+                    (((($entry - $update.sl) - 0.0030) | fabs) <= $tolerance) and
+                    (((($update.tp - $entry) - 0.0060) | fabs) <= $tolerance)
+                else
+                    (((($update.sl - $entry) - 0.0030) | fabs) <= $tolerance) and
+                    (((($entry - $update.tp) - 0.0060) | fabs) <= $tolerance)
+                end
+            )
+        ' "${transports[@]}" >/dev/null ||
+        fail "scenario $index protection update was not anchored to the venue fill"
     foreign_magic_reads="$(jq -r --arg magic "${magics[$index]}" '
         select(
             (.path | test("^/(orders|get_positions)[?]magic=")) and
@@ -715,6 +862,8 @@ for index in 0 1; do
         --arg side "$side" \
         --argjson magic "${magics[$index]}" \
         --argjson ticket "${tickets[$index]}" \
+        --arg intentAnchor "$intent_anchor" \
+        --arg entryAnchorDriftPoints "$entry_anchor_drift_points" \
         --argjson entryTimeMs "$(if [ "$index" -eq 0 ]; then printf '%s' "$entry_a_ms"; else printf '%s' "$entry_b_ms"; fi)" \
         --argjson exitTimeMs "$(if [ "$index" -eq 0 ]; then printf '%s' "$exit_a_ms"; else printf '%s' "$exit_b_ms"; fi)" \
         --argjson decisions "$decisions" --argjson links "$links" \
@@ -725,7 +874,8 @@ for index in 0 1; do
           schema:"qkt-live-container-round-trip-case-v1",status:"passed",
           scenarioId:$scenarioId,strategy:$strategy,symbol:$symbol,side:$side,magic:$magic,
           positionTicket:$ticket,lots:"0.01",entryTimeMs:$entryTimeMs,exitTimeMs:$exitTimeMs,
-          bracket:{stopDistance:"0.0030",takeProfitDistance:"0.0060",symbolPointToleranceVerified:true},
+          bracket:{stopDistance:"0.0030",takeProfitDistance:"0.0060",maximumEntryAnchorDriftPoints:20,
+            intentAnchor:$intentAnchor,entryAnchorDriftPoints:$entryAnchorDriftPoints,symbolPointToleranceVerified:true},
           strategyOwnedClose:true,finalPositions:0,finalOrders:0,
           timeframeEvidence:{m1StreamAndEvaluation:true,m5StreamAndEvaluation:true},
           traces:{indicatorEntry:true,indicatorExit:true},
