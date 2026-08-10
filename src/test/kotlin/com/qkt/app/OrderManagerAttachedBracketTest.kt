@@ -9,6 +9,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.NumLit
+import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
@@ -201,6 +202,36 @@ class OrderManagerAttachedBracketTest {
         val shipped = broker.submits.single()
         assertThat(shipped).isInstanceOf(OrderRequest.Bracket::class.java)
         assertThat(shipped.id).isEqualTo("stk-tier0-entry")
+    }
+
+    @Test
+    fun `cancelling a partially filled residual leaves venue-attached protection intact`() {
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        om.submit(armedTrailBracket())
+        val attached = broker.submits.single() as OrderRequest.Bracket
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = attached.id,
+                brokerOrderId = "position-1",
+                symbol = attached.symbol,
+                side = attached.side,
+                price = Money.of("100"),
+                quantity = Money.of("0.4"),
+                cumulativeFilled = Money.of("0.4"),
+            ),
+        )
+
+        om.cancel(attached.id)
+
+        assertThat(broker.cancels).containsExactly(attached.id)
+        assertThat(om.getOrder(attached.id)?.cumulativeFilledQuantity).isEqualByComparingTo("0.4")
+        assertThat((attached.stopLoss as StopLossSpec.ArmedTrail).trailDistance).isEqualByComparingTo("5")
+        assertThat(attached.takeProfit).isEqualByComparingTo("120")
+        assertThat(broker.modifyPositions).isEmpty()
     }
 
     @Test

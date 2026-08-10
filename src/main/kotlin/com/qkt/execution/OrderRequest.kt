@@ -321,7 +321,10 @@ sealed interface OrderRequest {
         }
     }
 
-    /** Parent order that activates [children] only after it fills (One-Triggers-Other). */
+    /**
+     * Parent order that activates [children] only after it terminally fills (One-Triggers-Other).
+     * Partial parent executions are accounted, but proportional child activation is unsupported.
+     */
     data class OTO(
         override val id: String,
         override val symbol: String,
@@ -377,6 +380,8 @@ sealed interface OrderRequest {
      * Engine-managed multi-leg exit — closes [basis] in fractional slices per [legs].
      *
      * The broker only sees the individual leg orders; the manager owns the lifecycle.
+     * Partial basis executions are accounted, but legs activate only after the terminal fill;
+     * proportional leg activation is unsupported.
      */
     data class ScaleOut(
         override val id: String,

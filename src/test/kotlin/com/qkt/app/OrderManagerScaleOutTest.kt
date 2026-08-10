@@ -110,6 +110,59 @@ class OrderManagerScaleOutTest {
     }
 
     @Test
+    fun `ScaleOut leaves legs dormant until a terminal basis fill`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.IF_TOUCHED),
+            )
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val basis =
+            OrderRequest.Limit(
+                id = "e1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                limitPrice = Money.of("100"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            )
+        om.submit(
+            OrderRequest.ScaleOut(
+                id = "s1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                basis = basis,
+                legs = listOf(ScaleOutLeg(Money.of("110"), Money.of("1"))),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = "e1",
+                brokerOrderId = "e1",
+                symbol = "X",
+                side = Side.BUY,
+                price = Money.of("100"),
+                quantity = Money.of("0.4"),
+                cumulativeFilled = Money.of("0.4"),
+            ),
+        )
+
+        assertThat(broker.submits.filterIsInstance<OrderRequest.IfTouched>()).isEmpty()
+
+        broker.emitFill(basis, price = Money.of("100"), quantity = Money.of("0.6"))
+
+        assertThat(broker.submits.filterIsInstance<OrderRequest.IfTouched>()).hasSize(1)
+    }
+
+    @Test
     fun `ScaleOut leg side is opposite of basis side`() {
         val bus = newBus()
         val clock = FixedClock(time = 0L)

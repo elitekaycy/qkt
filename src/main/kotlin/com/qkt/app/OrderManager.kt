@@ -243,6 +243,9 @@ class OrderManager(
     private val scaleOutByExitId: MutableMap<String, String> = mutableMapOf()
     private val remainingScaleOutExitIds: MutableMap<String, MutableSet<String>> = mutableMapOf()
 
+    /** Winning OCO legs whose first positive execution slice already started sibling cancellation. */
+    private val ocoSiblingCancelStarted: MutableSet<String> = mutableSetOf()
+
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
     private val stacks: StackTracker = StackTracker()
@@ -2462,6 +2465,8 @@ class OrderManager(
         siblings.remove(id)
         pendingScaleOutsByBasis.remove(id)
         scaleOutByExitId.remove(id)
+        ocoSiblingCancelStarted.remove(id)
+        scaleOutLegs.remove(id)
         pendingChildren.remove(id)
         pendingOtosByParent.remove(id)
         engineHeldCloseTickets.remove(id)
@@ -2773,6 +2778,7 @@ class OrderManager(
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
+        ocoSiblingCancelStarted.remove(e.clientOrderId)
         exposureEntries.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.REJECTED)
         reportBracketByClientOrderId.remove(e.clientOrderId)?.let { bracket ->
@@ -2809,6 +2815,9 @@ class OrderManager(
             e.cumulativeFilled,
             e.price,
         )
+        if (e.quantity.signum() > 0 && e.cumulativeFilled.signum() > 0) {
+            resolveOcoOnExecution(e.clientOrderId)
+        }
     }
 
     private fun onFilled(e: BrokerEvent.OrderFilled) {
@@ -2968,8 +2977,16 @@ class OrderManager(
                 }
             armScaleOutExits(scaleReq, exitRequests)
         }
+        resolveOcoOnExecution(e.clientOrderId)
+        ocoSiblingCancelStarted.remove(e.clientOrderId)
+    }
+
+    /** Cancel an OCO sibling exactly once, beginning with the first positive execution slice. */
+    private fun resolveOcoOnExecution(clientOrderId: String) {
+        val siblingIds = siblings[clientOrderId].orEmpty()
+        if (siblingIds.isEmpty() || !ocoSiblingCancelStarted.add(clientOrderId)) return
         var deferredSiblingCancel = false
-        siblings[e.clientOrderId]?.forEach { sibId ->
+        siblingIds.forEach { sibId ->
             val sib = orders[sibId] ?: return@forEach
             if (sib.state.isTerminal) return@forEach
             // If the sibling is an OCO leg2 that the venue hasn't acknowledged yet, its ticket
@@ -2984,7 +3001,7 @@ class OrderManager(
         }
         // The filled leg resolved its OCO; drop the sequence unless a cancel is still deferred
         // (that path clears it once leg2 is acknowledged and cancelled).
-        if (!deferredSiblingCancel) clearOcoSequenceFor(e.clientOrderId)
+        if (!deferredSiblingCancel) clearOcoSequenceFor(clientOrderId)
     }
 
     private fun onCancelled(e: BrokerEvent.OrderCancelled) {
@@ -2997,6 +3014,7 @@ class OrderManager(
                 it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
+        ocoSiblingCancelStarted.remove(e.clientOrderId)
         exposureEntries.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.CANCELLED)
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)

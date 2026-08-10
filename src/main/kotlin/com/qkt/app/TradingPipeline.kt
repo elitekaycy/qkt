@@ -663,7 +663,7 @@ class TradingPipeline(
             val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
-            val rawStratRealized = strategyPositions.applyFill(asFill)
+            val rawStratRealized = strategyPositions.applyPartialFill(asFill)
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
                 accounting

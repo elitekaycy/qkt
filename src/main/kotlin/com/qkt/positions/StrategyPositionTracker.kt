@@ -143,10 +143,9 @@ class StrategyPositionTracker(
     }
 
     /**
-     * Drop any registered-but-unfilled pending intent for [clientOrderId]. Called when an
-     * order is cancelled or rejected (e.g. the losing leg of an OCO bracket) — its open/close
-     * intent will never be matched by a fill, so without this it would leak in the pending maps
-     * for the life of the session.
+     * Drop the remaining pending intent for [clientOrderId] after cancellation or rejection.
+     * Already-executed owned quantity remains in its leg; a late execution carrying that leg's
+     * stable venue ticket still correlates by ticket instead of falling through to PRIMARY.
      */
     fun forgetPending(
         strategyId: String,
@@ -158,30 +157,44 @@ class StrategyPositionTracker(
         pendingIndependentOpens.remove(key)
     }
 
-    fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal {
+    /** Apply a terminal execution slice and consume any matching ownership intent. */
+    fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = true)
+
+    /**
+     * Apply a non-terminal execution slice while retaining its matching ownership intent for the
+     * remaining slices. The caller must later deliver a terminal fill, cancellation, or rejection.
+     */
+    fun applyPartialFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = false)
+
+    private fun applyFillSlice(
+        event: BrokerEvent.OrderFilled,
+        terminal: Boolean,
+    ): BigDecimal {
         if (event.strategyId.isBlank()) return Money.ZERO
 
         val key = "${event.strategyId}|${event.clientOrderId}"
 
-        pendingStackOpens.remove(key)?.let { intent ->
+        pendingStackOpens[key]?.let { intent ->
             val realized = applyStackOpen(event, intent)
+            if (terminal) pendingStackOpens.remove(key, intent)
             persistBook(event.strategyId, event.symbol)
             return realized
         }
-        pendingStackCloses.remove(key)?.let { stackLegId ->
+        pendingStackCloses[key]?.let { stackLegId ->
             val realized = applyStackClose(event, stackLegId)
+            if (terminal) pendingStackCloses.remove(key, stackLegId)
             persistBook(event.strategyId, event.symbol)
             return realized
         }
-        pendingIndependentOpens.remove(key)?.let { legId ->
+        pendingIndependentOpens[key]?.let { legId ->
             applyIndependentOpen(event, legId)
+            if (terminal) pendingIndependentOpens.remove(key, legId)
             persistBook(event.strategyId, event.symbol)
             return Money.ZERO
         }
-        // A venue-detected close of a leg held with attached SL/TP arrives under the entry's id
-        // (the position poller), not a registered exit id, so it isn't caught above. Match it to
-        // the leg by its venue ticket and realize that leg, instead of netting.
-        closeLegByTicket(event)?.let { realized ->
+        // A later slice or venue-detected close may arrive without its transient registration
+        // (notably after recovery). The stable position ticket still identifies its owned leg.
+        applyOwnedLegByTicket(event)?.let { realized ->
             persistBook(event.strategyId, event.symbol)
             return realized
         }
@@ -260,7 +273,8 @@ class StrategyPositionTracker(
     ): BigDecimal {
         val books = byStrategy.getOrPut(event.strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(event.symbol) { LegBook(event.symbol) }
-        book.add(
+        mergeOwnedOpenSlice(
+            book,
             PositionLeg(
                 legId = intent.stackLegId,
                 symbol = event.symbol,
@@ -282,7 +296,8 @@ class StrategyPositionTracker(
     ) {
         val books = byStrategy.getOrPut(event.strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(event.symbol) { LegBook(event.symbol) }
-        book.add(
+        mergeOwnedOpenSlice(
+            book,
             PositionLeg(
                 legId = legId,
                 symbol = event.symbol,
@@ -296,21 +311,70 @@ class StrategyPositionTracker(
         )
     }
 
+    /** Merge another execution slice into one stable owned leg without scanning the book. */
+    private fun mergeOwnedOpenSlice(
+        book: LegBook,
+        slice: PositionLeg,
+    ) {
+        val existing = book.leg(slice.legId)
+        if (existing == null) {
+            book.add(slice)
+            return
+        }
+        require(existing.symbol == slice.symbol && existing.side == slice.side) {
+            "owned leg ${slice.legId} changed symbol or side across execution slices"
+        }
+        require(existing.role == slice.role && existing.parentLegId == slice.parentLegId) {
+            "owned leg ${slice.legId} changed ownership across execution slices"
+        }
+        require(
+            existing.brokerTicket == null ||
+                slice.brokerTicket == null ||
+                existing.brokerTicket == slice.brokerTicket,
+        ) {
+            "owned leg ${slice.legId} changed broker ticket across execution slices"
+        }
+        val totalQuantity = existing.quantity.add(slice.quantity)
+        val averagePrice =
+            existing.entryPrice
+                .multiply(existing.quantity)
+                .add(slice.entryPrice.multiply(slice.quantity))
+                .divide(totalQuantity, Money.CONTEXT)
+                .setScale(Money.SCALE, Money.ROUNDING)
+        book.close(existing.legId)
+        book.add(
+            existing.copy(
+                quantity = totalQuantity,
+                entryPrice = averagePrice,
+                brokerTicket = existing.brokerTicket ?: slice.brokerTicket,
+            ),
+        )
+    }
+
     /**
-     * Close the leg whose venue ticket matches this close fill's
-     * [BrokerEvent.OrderFilled.brokerOrderId], realizing its PnL at the close price. Matches any
-     * ticketed leg — an [LegRole.INDEPENDENT] straddle leg or a [LegRole.STACK] tier — since both
-     * are held with venue-attached SL/TP and close by ticket. Returns the realized PnL, or null if
-     * no such leg (so the caller falls through to the netting path). PRIMARY legs carry no ticket,
-     * so they never match here.
+     * Apply an unregistered execution to the owned leg carrying the same venue ticket. A same-side
+     * slice extends that leg; an opposite-side slice closes it and realizes PnL. This covers
+     * position-poller closes and recovered partial entries without falling through to PRIMARY
+     * netting. Returns `null` when no owned leg has the ticket.
      */
-    private fun closeLegByTicket(event: BrokerEvent.OrderFilled): BigDecimal? {
+    private fun applyOwnedLegByTicket(event: BrokerEvent.OrderFilled): BigDecimal? {
         val ticket = event.brokerOrderId?.takeIf { it.isNotBlank() } ?: return null
         val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return null
         val leg =
             book.all().firstOrNull {
                 it.role != LegRole.PRIMARY && it.brokerTicket == ticket
             } ?: return null
+        if (leg.side == event.side) {
+            mergeOwnedOpenSlice(
+                book,
+                leg.copy(
+                    quantity = event.quantity,
+                    entryPrice = event.price,
+                    openedAt = event.timestamp,
+                ),
+            )
+            return Money.ZERO
+        }
         val closed = book.close(leg.legId) ?: return null
         val closingQty = closed.quantity.min(event.quantity)
         val priceDiff =

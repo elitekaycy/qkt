@@ -61,6 +61,123 @@ class StrategyPositionTrackerStackTest {
     }
 
     @Test
+    fun `partial stack-open slices remain one owned leg through terminal fill`() {
+        val tracker = StrategyPositionTracker()
+        tracker.applyFill(fill("alpha", "primary", "BTCUSDT", Side.BUY, "1", "90"))
+        tracker.registerStackOpen("alpha", "stack-entry", "stack-leg", "primary")
+
+        tracker.applyPartialFill(
+            fill("alpha", "stack-entry", "BTCUSDT", Side.BUY, "0.04", "100")
+                .copy(brokerOrderId = "POSITION-7"),
+        )
+        tracker.applyPartialFill(
+            fill("alpha", "stack-entry", "BTCUSDT", Side.BUY, "0.03", "101")
+                .copy(brokerOrderId = "POSITION-7"),
+        )
+        tracker.applyFill(
+            fill("alpha", "stack-entry", "BTCUSDT", Side.BUY, "0.03", "102")
+                .copy(brokerOrderId = "POSITION-7"),
+        )
+
+        val book = tracker.legBookFor("alpha", "BTCUSDT")!!
+        assertThat(book.primary()!!.quantity).isEqualByComparingTo("1")
+        val stack = book.stacks().single()
+        assertThat(stack.legId).isEqualTo("stack-leg")
+        assertThat(stack.quantity).isEqualByComparingTo("0.10")
+        assertThat(stack.entryPrice).isEqualByComparingTo("100.9")
+        assertThat(stack.brokerTicket).isEqualTo("POSITION-7")
+    }
+
+    @Test
+    fun `partial independent-open slices never fall through to primary ownership`() {
+        val tracker = StrategyPositionTracker()
+        tracker.registerIndependentOpen("alpha", "entry", "independent-leg")
+
+        tracker.applyPartialFill(
+            fill("alpha", "entry", "XAUUSD", Side.BUY, "0.04", "2400")
+                .copy(brokerOrderId = "POSITION-9"),
+        )
+        tracker.applyPartialFill(
+            fill("alpha", "entry", "XAUUSD", Side.BUY, "0.03", "2401")
+                .copy(brokerOrderId = "POSITION-9"),
+        )
+        tracker.applyFill(
+            fill("alpha", "entry", "XAUUSD", Side.BUY, "0.03", "2402")
+                .copy(brokerOrderId = "POSITION-9"),
+        )
+
+        val book = tracker.legBookFor("alpha", "XAUUSD")!!
+        assertThat(book.primary()).isNull()
+        val leg = book.all().single()
+        assertThat(leg.role).isEqualTo(LegRole.INDEPENDENT)
+        assertThat(leg.legId).isEqualTo("independent-leg")
+        assertThat(leg.quantity).isEqualByComparingTo("0.10")
+        assertThat(leg.entryPrice).isEqualByComparingTo("2400.9")
+        assertThat(leg.brokerTicket).isEqualTo("POSITION-9")
+    }
+
+    @Test
+    fun `partial owned-close slices retain close intent until terminal fill`() {
+        val tracker = StrategyPositionTracker()
+        tracker.applyFill(fill("alpha", "primary", "BTCUSDT", Side.BUY, "1", "90"))
+        tracker.registerStackOpen("alpha", "stack-entry", "stack-leg", "primary")
+        tracker.applyFill(fill("alpha", "stack-entry", "BTCUSDT", Side.BUY, "0.10", "100"))
+        tracker.registerStackClose("alpha", "stack-exit", "stack-leg")
+
+        val realized =
+            listOf(
+                tracker.applyPartialFill(fill("alpha", "stack-exit", "BTCUSDT", Side.SELL, "0.04", "110")),
+                tracker.applyPartialFill(fill("alpha", "stack-exit", "BTCUSDT", Side.SELL, "0.03", "110")),
+                tracker.applyFill(fill("alpha", "stack-exit", "BTCUSDT", Side.SELL, "0.03", "110")),
+            ).fold(BigDecimal.ZERO, BigDecimal::add)
+
+        val book = tracker.legBookFor("alpha", "BTCUSDT")!!
+        assertThat(realized).isEqualByComparingTo("1")
+        assertThat(book.stacks()).isEmpty()
+        assertThat(book.primary()!!.quantity).isEqualByComparingTo("1")
+    }
+
+    @Test
+    fun `residual cancellation forgets intent without erasing executed owned quantity`() {
+        val tracker = StrategyPositionTracker()
+        tracker.registerIndependentOpen("alpha", "entry", "independent-leg")
+        tracker.applyPartialFill(
+            fill("alpha", "entry", "XAUUSD", Side.BUY, "0.04", "2400")
+                .copy(brokerOrderId = "POSITION-9"),
+        )
+
+        tracker.forgetPending("alpha", "entry")
+
+        val book = tracker.legBookFor("alpha", "XAUUSD")!!
+        assertThat(book.primary()).isNull()
+        assertThat(book.all().single().quantity).isEqualByComparingTo("0.04")
+        assertThat(book.all().single().brokerTicket).isEqualTo("POSITION-9")
+    }
+
+    @Test
+    fun `stable venue ticket preserves ownership when a later slice has no registration`() {
+        val tracker = StrategyPositionTracker()
+        tracker.registerIndependentOpen("alpha", "entry", "independent-leg")
+        tracker.applyPartialFill(
+            fill("alpha", "entry", "XAUUSD", Side.BUY, "0.04", "2400")
+                .copy(brokerOrderId = "POSITION-9"),
+        )
+        tracker.forgetPending("alpha", "entry")
+
+        tracker.applyFill(
+            fill("alpha", "entry", "XAUUSD", Side.BUY, "0.06", "2401")
+                .copy(brokerOrderId = "POSITION-9"),
+        )
+
+        val book = tracker.legBookFor("alpha", "XAUUSD")!!
+        assertThat(book.primary()).isNull()
+        val leg = book.all().single()
+        assertThat(leg.legId).isEqualTo("independent-leg")
+        assertThat(leg.quantity).isEqualByComparingTo("0.10")
+        assertThat(leg.entryPrice).isEqualByComparingTo("2400.6")
+    }
+
+    @Test
     fun `forgetPending drops a stack-open intent so a later fill adds no STACK leg`() {
         val tracker = StrategyPositionTracker()
         tracker.applyFill(fill("alpha", "primary-1", "BTCUSDT", Side.BUY, "1.0", "100"))
