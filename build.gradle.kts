@@ -384,9 +384,25 @@ val auditReportBundleScriptTest by tasks.registering(Exec::class) {
     )
 }
 
+val prepareLiveValidationScenarioScriptTest by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verify localhost live-validation scenario generation and static safety gates."
+    onlyIf {
+        !System.getProperty("os.name").lowercase().contains("win")
+    }
+    dependsOn(tasks.named("installDist"))
+    commandLine("bash", "tests/scripts/prepare-live-validation-scenario-test.sh")
+    inputs.files(
+        "scripts/live-validation/prepare-scenario.sh",
+        "scripts/live-validation/run-readonly.sh",
+        "tests/scripts/prepare-live-validation-scenario-test.sh",
+    )
+}
+
 tasks.named("check") {
     dependsOn(checkTestLogBudget)
     dependsOn(auditReportBundleScriptTest)
+    dependsOn(prepareLiveValidationScenarioScriptTest)
 }
 
 fun org.w3c.dom.Document.textFor(tag: String): String {
