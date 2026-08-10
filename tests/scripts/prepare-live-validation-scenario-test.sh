@@ -98,6 +98,13 @@ if rg --quiet '\$cli" status .*--json' "$repo_root/scripts/live-validation/run-m
     echo 'order runner passes unsupported --json to qkt status' >&2
     exit 1
 fi
+grep -F 'com.qkt.events.BrokerEvent.OrderAccepted' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'com.qkt.events.BrokerEvent.OrderFilled' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+if rg --quiet 'Order(Accepted|Filled)Event' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
+    echo 'order runner uses obsolete broker audit event names' >&2
+    exit 1
+fi
+grep -F "|| printf '0\\n'" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 
 if bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \

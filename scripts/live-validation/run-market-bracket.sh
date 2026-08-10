@@ -290,8 +290,8 @@ mapfile -t transport_journals < <(find "$scenario/state/state/mt5-transport-jour
 for journal in "${audit_journals[@]}" "${transport_journals[@]}"; do
     jq -c . "$journal" >/dev/null || fail "journal is not valid JSONL: $journal"
 done
-accepted_events="$(jq -r 'select(.eventType | endswith("OrderAcceptedEvent")) | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
-filled_events="$(jq -r 'select(.eventType | endswith("OrderFilledEvent")) | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
+accepted_events="$(jq -r 'select(.eventType == "com.qkt.events.BrokerEvent.OrderAccepted") | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
+filled_events="$(jq -r 'select(.eventType == "com.qkt.events.BrokerEvent.OrderFilled") | 1' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
 [ "$accepted_events" -ge 2 ] || fail "audit journal is missing accepted entry/exit events"
 [ "$filled_events" -ge 2 ] || fail "audit journal is missing filled entry/exit events"
 order_posts="$(jq -r 'select(.method == "POST" and .path == "/order" and (.responseCode >= 200 and .responseCode < 300)) | 1' "${transport_journals[@]}" | awk 'END {print NR + 0}')"
@@ -299,8 +299,8 @@ close_posts="$(jq -r 'select(.method == "POST" and .path == "/close_position" an
 [ "$order_posts" -ge 1 ] || fail "transport journal is missing the accepted MT5 order call"
 [ "$close_posts" -ge 1 ] || fail "transport journal is missing the accepted MT5 close call"
 
-stale_events="$(rg -c 'market data .* STALE:' "$scenario/logs/daemon.log" || true)"
-recovery_events="$(rg -c 'market data .* healthy again' "$scenario/logs/daemon.log" || true)"
+stale_events="$(rg -c 'market data .* STALE:' "$scenario/logs/daemon.log" || printf '0\n')"
+recovery_events="$(rg -c 'market data .* healthy again' "$scenario/logs/daemon.log" || printf '0\n')"
 [ "$recovery_events" -ge "$stale_events" ] || fail "market-data stale episode did not recover before shutdown"
 
 jq \
