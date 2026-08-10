@@ -5,6 +5,8 @@ import com.qkt.broker.BrokerAccountState
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.OrderModification
 import com.qkt.events.BrokerEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
@@ -13,6 +15,7 @@ import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderRequestEvidence
+import com.qkt.positions.Position
 import com.qkt.strategy.Signal
 import com.qkt.strategy.targetSymbol
 import java.math.BigDecimal
@@ -53,6 +56,7 @@ object InsightsTranslate {
                             "symbol" to s.request.symbol,
                             "side" to s.request.side.name,
                             "qty" to s.request.quantity,
+                            "orderSchemaVersion" to OrderRequestEvidence.SCHEMA_VERSION,
                             "order" to OrderRequestEvidence.payload(s.request),
                         )
                 is Signal.CancelPendingForSymbol ->
@@ -85,6 +89,7 @@ object InsightsTranslate {
 
     fun fromOrderSubmit(e: OrderEvent): InsightsEnvelope {
         val payload = OrderRequestEvidence.payload(e.request).toMutableMap()
+        payload["orderSchemaVersion"] = OrderRequestEvidence.SCHEMA_VERSION
         if (e.request is OrderRequest.Bracket) {
             payload["planOrderId"] = e.request.id
             payload["orderId"] = e.request.entry.id
@@ -97,6 +102,58 @@ object InsightsTranslate {
             payload,
         )
     }
+
+    /** Translate a DSL decision-to-order correlation into collector evidence. */
+    fun fromDecisionOrderLinked(e: DecisionOrderLinkedEvent): InsightsEnvelope =
+        envelope(
+            e.sequenceId,
+            e.timestamp,
+            e.strategyId,
+            "decision.order_linked",
+            mapOf(
+                "decisionId" to e.decisionId,
+                "ruleId" to e.ruleId,
+                "signalIndex" to e.signalIndex,
+                "orderId" to e.orderId,
+            ),
+        )
+
+    /** Translate one post-accounting fill slice, including position and PnL evidence. */
+    fun fromFillAccounted(e: FillAccountedEvent): InsightsEnvelope =
+        envelope(
+            e.sequenceId,
+            e.timestamp,
+            e.strategyId,
+            "fill.accounted",
+            mapOf(
+                "orderId" to e.orderId,
+                "symbol" to e.symbol,
+                "fillSliceId" to e.fillSliceId,
+                "sourceFillSequenceId" to e.sourceFillSequenceId,
+                "cumulativeFilled" to e.cumulativeFilled,
+                "modeledCommissionAccount" to e.modeledCommissionAccount,
+                "venueCostsAccount" to e.venueCostsAccount,
+                "totalCostsAccount" to e.totalCostsAccount,
+                "accountNativeRealized" to e.accountNativeRealized,
+                "strategyNativeRealized" to e.strategyNativeRealized,
+                "nativeCurrency" to e.nativeCurrency,
+                "grossAccountRealized" to e.grossAccountRealized,
+                "grossStrategyAccountRealized" to e.grossStrategyAccountRealized,
+                "accountCurrency" to e.accountCurrency,
+                "netAccountRealized" to e.netAccountRealized,
+                "netStrategyAccountRealized" to e.netStrategyAccountRealized,
+                "conversionRate" to e.conversionRate,
+                "conversionTimestampMs" to e.conversionTimestampMs,
+                "conversionSource" to e.conversionSource,
+                "contractSize" to e.contractSize,
+                "accountPositionBefore" to positionPayload(e.accountPositionBefore),
+                "accountPositionAfter" to positionPayload(e.accountPositionAfter),
+                "strategyPositionBefore" to positionPayload(e.strategyPositionBefore),
+                "strategyPositionAfter" to positionPayload(e.strategyPositionAfter),
+                "reducedExposure" to e.reducedExposure,
+                "partial" to e.partial,
+            ),
+        )
 
     fun fromOrderAccepted(e: BrokerEvent.OrderAccepted): InsightsEnvelope =
         envelope(
@@ -263,6 +320,7 @@ object InsightsTranslate {
                 "symbol" to e.request.symbol,
                 "side" to e.request.side.name,
                 "qty" to e.request.quantity,
+                "orderSchemaVersion" to OrderRequestEvidence.SCHEMA_VERSION,
                 "order" to OrderRequestEvidence.payload(e.request),
             ),
         )
@@ -649,6 +707,16 @@ object InsightsTranslate {
             "newLimitPrice" to changes.newLimitPrice,
             "newStopPrice" to changes.newStopPrice,
         )
+
+    private fun positionPayload(position: Position?): Map<String, Any?>? =
+        position?.let {
+            mapOf(
+                "symbol" to it.symbol,
+                "quantity" to it.quantity,
+                "avgEntryPrice" to it.avgEntryPrice,
+                "openedAtMs" to it.openedAt,
+            )
+        }
 
     private fun marketDataLifecycle(
         state: String,

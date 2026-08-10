@@ -807,6 +807,9 @@ class LiveSession(
         }
         if (com.qkt.observe.insights.InsightsEventFamily.ORDER in insightsEvents) {
             bus.subscribe<com.qkt.events.OrderEvent> { e -> sink.offer(t.fromOrderSubmit(e)) }
+            bus.subscribe<com.qkt.events.DecisionOrderLinkedEvent> { e ->
+                sink.offer(t.fromDecisionOrderLinked(e))
+            }
             bus.subscribe<BrokerEvent.OrderAccepted> { e -> sink.offer(t.fromOrderAccepted(e)) }
             bus.subscribe<BrokerEvent.OrderFilled> { e -> sink.offer(t.fromOrderFilled(e)) }
             bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> sink.offer(t.fromOrderPartiallyFilled(e)) }
@@ -816,6 +819,7 @@ class LiveSession(
         }
         if (com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents) {
             bus.subscribe<com.qkt.events.TradeEvent> { e -> sink.offer(t.fromTrade(e)) }
+            bus.subscribe<com.qkt.events.FillAccountedEvent> { e -> sink.offer(t.fromFillAccounted(e)) }
         }
         if (com.qkt.observe.insights.InsightsEventFamily.RISK in insightsEvents) {
             bus.subscribe<com.qkt.events.RiskRejectedEvent> { e -> sink.offer(t.fromRiskRejected(e)) }

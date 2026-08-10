@@ -13,6 +13,8 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackDirection
 import com.qkt.events.BrokerEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
@@ -33,6 +35,7 @@ import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
+import com.qkt.positions.Position
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 import java.time.Instant
@@ -608,9 +611,122 @@ class InsightsTranslateTest {
             )
 
         assertThat(signal.payload["order"]).isEqualTo(expected)
-        assertThat(approved.payload).isEqualTo(expected)
+        assertThat(signal.payload).containsEntry("orderSchemaVersion", OrderRequestEvidence.SCHEMA_VERSION)
+        assertThat(approved.payload)
+            .containsAllEntriesOf(expected)
+            .containsEntry("orderSchemaVersion", OrderRequestEvidence.SCHEMA_VERSION)
         assertThat(rejected.payload["order"]).isEqualTo(expected)
+        assertThat(rejected.payload).containsEntry("orderSchemaVersion", OrderRequestEvidence.SCHEMA_VERSION)
         assertThat(rejected.payload).containsEntry("reason", "max-notional")
+    }
+
+    @Test
+    fun `decision order link preserves rule signal and order correlation`() {
+        val env =
+            InsightsTranslate.fromDecisionOrderLinked(
+                DecisionOrderLinkedEvent(
+                    strategyId = "alpha",
+                    decisionId = "alpha:gold:1718000000000:abc",
+                    ruleId = "gold#0",
+                    signalIndex = 2,
+                    orderId = "o-42",
+                    timestamp = 1_718_000_000_010L,
+                    sequenceId = 17L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("decision.order_linked")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.seq).isEqualTo(17L)
+        assertThat(env.payload)
+            .containsEntry("decisionId", "alpha:gold:1718000000000:abc")
+            .containsEntry("ruleId", "gold#0")
+            .containsEntry("signalIndex", 2)
+            .containsEntry("orderId", "o-42")
+    }
+
+    @Test
+    fun `accounted fill exposes costs realized pnl positions and fill correlation`() {
+        val before =
+            Position(
+                symbol = "EXNESS:XAUUSD",
+                quantity = BigDecimal("0.10"),
+                avgEntryPrice = BigDecimal("2350.00"),
+                openedAt = 1_717_999_000_000L,
+            )
+        val after = before.copy(quantity = BigDecimal("0.04"))
+        val env =
+            InsightsTranslate.fromFillAccounted(
+                FillAccountedEvent(
+                    orderId = "o-close",
+                    strategyId = "alpha",
+                    symbol = "EXNESS:XAUUSD",
+                    fillSliceId = "o-close:91",
+                    sourceFillSequenceId = 91L,
+                    cumulativeFilled = BigDecimal("0.06"),
+                    modeledCommissionAccount = BigDecimal("0.10"),
+                    venueCostsAccount = BigDecimal("0.20"),
+                    totalCostsAccount = BigDecimal("0.30"),
+                    accountNativeRealized = BigDecimal("12.00"),
+                    strategyNativeRealized = BigDecimal("7.20"),
+                    nativeCurrency = "USD",
+                    grossAccountRealized = BigDecimal("12.00"),
+                    grossStrategyAccountRealized = BigDecimal("7.20"),
+                    accountCurrency = "USD",
+                    netAccountRealized = BigDecimal("11.70"),
+                    netStrategyAccountRealized = BigDecimal("6.90"),
+                    conversionRate = BigDecimal.ONE,
+                    conversionTimestampMs = 1_718_000_000_000L,
+                    conversionSource = "identity",
+                    contractSize = BigDecimal("100"),
+                    accountPositionBefore = before,
+                    accountPositionAfter = after,
+                    strategyPositionBefore = before,
+                    strategyPositionAfter = after,
+                    reducedExposure = true,
+                    partial = true,
+                    timestamp = 1_718_000_000_100L,
+                    sequenceId = 92L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("fill.accounted")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.payload)
+            .containsEntry("orderId", "o-close")
+            .containsEntry("fillSliceId", "o-close:91")
+            .containsEntry("sourceFillSequenceId", 91L)
+            .containsEntry("cumulativeFilled", BigDecimal("0.06"))
+            .containsEntry("modeledCommissionAccount", BigDecimal("0.10"))
+            .containsEntry("venueCostsAccount", BigDecimal("0.20"))
+            .containsEntry("totalCostsAccount", BigDecimal("0.30"))
+            .containsEntry("grossAccountRealized", BigDecimal("12.00"))
+            .containsEntry("netAccountRealized", BigDecimal("11.70"))
+            .containsEntry("netStrategyAccountRealized", BigDecimal("6.90"))
+            .containsEntry("reducedExposure", true)
+            .containsEntry("partial", true)
+        assertThat(env.payload["accountPositionBefore"])
+            .isEqualTo(
+                mapOf(
+                    "symbol" to "EXNESS:XAUUSD",
+                    "quantity" to BigDecimal("0.10"),
+                    "avgEntryPrice" to BigDecimal("2350.00"),
+                    "openedAtMs" to 1_717_999_000_000L,
+                ),
+            )
+        assertThat(env.payload["strategyPositionAfter"])
+            .isEqualTo(
+                mapOf(
+                    "symbol" to "EXNESS:XAUUSD",
+                    "quantity" to BigDecimal("0.04"),
+                    "avgEntryPrice" to BigDecimal("2350.00"),
+                    "openedAtMs" to 1_717_999_000_000L,
+                ),
+            )
+        assertThat(env.toJson("qkt-prod"))
+            .contains("\"sourceFillSequenceId\":91")
+            .contains("\"totalCostsAccount\":0.30")
+            .contains("\"accountPositionBefore\":{")
     }
 
     @Test
