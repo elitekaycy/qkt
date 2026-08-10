@@ -35,6 +35,41 @@ qkt_export_armed_rule_decisions() {
     " > "$output"
 }
 
+qkt_count_joined_rule_order_links() {
+    local db="$1"
+    local instance="$2"
+    local owner="$3"
+    sqlite3 "$db" "
+        select count(*)
+        from events link
+        where link.instance_id='$instance'
+          and link.type='decision.order_linked'
+          and link.strategy_id='$owner'
+          and exists (
+              select 1
+              from events rule
+              where rule.instance_id=link.instance_id
+                and rule.type='decision.rule_evaluated'
+                and rule.strategy_id=link.strategy_id
+                and json_extract(rule.payload,'$.decisionId')=
+                    json_extract(link.payload,'$.decisionId')
+          )
+          and exists (
+              select 1
+              from events submit
+              where submit.instance_id=link.instance_id
+                and submit.type='order.submit'
+                and submit.strategy_id=link.strategy_id
+                and (
+                    json_extract(submit.payload,'$.orderId')=
+                        json_extract(link.payload,'$.orderId')
+                    or json_extract(submit.payload,'$.planOrderId')=
+                        json_extract(link.payload,'$.orderId')
+                )
+          );
+    "
+}
+
 qkt_validate_bounded_rule_decisions() {
     local decisions="$1"
     local symbol="$2"

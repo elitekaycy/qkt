@@ -487,7 +487,7 @@ qkt_write_collector_rule_decisions \
 cmp -s "$evidence/engine-rule-decisions.tsv" "$evidence/collector-rule-decisions.tsv" ||
     fail "collector rule decisions differ from engine audit"
 
-[ "$(sqlite3 "$db" "select count(*) from events link join events rule on rule.instance_id=link.instance_id and rule.type='decision.rule_evaluated' and json_extract(rule.payload,'$.decisionId')=json_extract(link.payload,'$.decisionId') join events submit on submit.instance_id=link.instance_id and submit.type='order.submit' and json_extract(submit.payload,'$.orderId')=json_extract(link.payload,'$.orderId') where link.instance_id='$instance' and link.type='decision.order_linked' and link.strategy_id='$armed_name' and rule.strategy_id=link.strategy_id and submit.strategy_id=link.strategy_id;")" -eq 2 ] ||
+[ "$(qkt_count_joined_rule_order_links "$db" "$instance" "$armed_name")" -eq 2 ] ||
     fail "collector did not join both rule decisions through links to submitted orders"
 [ "$(sqlite3 "$db" "select count(*) from orders where instance_id='$instance' and strategy_id='$armed_name' and state='FILLED';")" -eq 2 ] ||
     fail "collector orders did not fold exactly entry and exit to FILLED"

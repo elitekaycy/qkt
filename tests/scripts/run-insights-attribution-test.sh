@@ -83,6 +83,7 @@ for required in \
     'qkt_sanitize_account_transport_journals' \
     'qkt_assert_no_retained_account_identity' \
     'qkt_count_cross_owner_causal_events' \
+    'qkt_count_joined_rule_order_links' \
     'qkt_export_armed_rule_decisions' \
     'qkt_validate_bounded_rule_decisions' \
     'qkt_write_engine_rule_decisions' \
@@ -144,6 +145,23 @@ sqlite3 "$audit_db" "delete from events where type='order.submit' and strategy_i
 sqlite3 "$audit_db" "delete from events where type='fill.accounted' and strategy_id is null; insert into events values ('live','decision.rule_evaluated','readonly','{\"signalCount\":1}');"
 [ "$(qkt_count_cross_owner_causal_events "$audit_db" live armed)" -eq 1 ] ||
     fail "cross-owner signal-producing rule decision was not rejected"
+
+link_db="$work/decision-links.db"
+sqlite3 "$link_db" <<'SQL'
+create table events(instance_id text, type text, strategy_id text, payload text);
+insert into events values
+  ('live','decision.rule_evaluated','armed','{"decisionId":"entry"}'),
+  ('live','decision.order_linked','armed','{"decisionId":"entry","orderId":"bracket-plan"}'),
+  ('live','order.submit','armed','{"orderId":"bracket-entry","planOrderId":"bracket-plan","orderType":"Bracket"}'),
+  ('live','decision.rule_evaluated','armed','{"decisionId":"exit"}'),
+  ('live','decision.order_linked','armed','{"decisionId":"exit","orderId":"market-close"}'),
+  ('live','order.submit','armed','{"orderId":"market-close","orderType":"Market"}');
+SQL
+[ "$(qkt_count_joined_rule_order_links "$link_db" live armed)" -eq 2 ] ||
+    fail "bracket plan and market order links did not resolve canonically"
+sqlite3 "$link_db" "update events set payload='{\"orderId\":\"unrelated\",\"orderType\":\"Market\"}' where type='order.submit' and json_extract(payload,'$.orderId')='market-close';"
+[ "$(qkt_count_joined_rule_order_links "$link_db" live armed)" -eq 1 ] ||
+    fail "a genuinely missing decision-to-order link was accepted"
 
 decision_db="$work/decisions.db"
 sqlite3 "$decision_db" <<'SQL'
