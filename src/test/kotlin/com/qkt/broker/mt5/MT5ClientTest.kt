@@ -629,11 +629,14 @@ class MT5ClientTest {
         server.enqueue(
             MockResponse().setBody(
                 """[{"ticket":901,"order":801,"position_id":7001,"symbol":"XAUUSDm","type":0,"entry":0,""" +
-                    """"volume":"0.10","price":"2300.0","profit":"0","commission":"-0.70","time_msc":1700040000000},""" +
+                    """"volume":"0.10","price":"2300.0","profit":"0","commission":"-0.70",""" +
+                    """"time_msc":1700040000000},""" +
                     """{"ticket":902,"order":802,"position_id":8002,"symbol":"GBPUSDm","type":1,"entry":1,""" +
-                    """"volume":"50","price":"1.0","profit":"999999","commission":"-5000","time_msc":1700045000000},""" +
+                    """"volume":"50","price":"1.0","profit":"999999","commission":"-5000",""" +
+                    """"time_msc":1700045000000},""" +
                     """{"ticket":903,"order":803,"position_id":7001,"symbol":"XAUUSDm","type":1,"entry":1,""" +
-                    """"volume":"0.04","price":"2299.0","profit":"-4","commission":"-0.28","time_msc":1700050000000},""" +
+                    """"volume":"0.04","price":"2299.0","profit":"-4","commission":"-0.28",""" +
+                    """"time_msc":1700050000000},""" +
                     """{"ticket":904,"order":804,"position_id":7001,"symbol":"XAUUSDm","type":1,"entry":1,""" +
                     """"volume":"0.06","price":"2301.0","profit":"6","commission":"-0.42","time_msc":1700051000000}]""",
             ),
