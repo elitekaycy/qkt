@@ -113,6 +113,12 @@ Use `./scripts/precheck.sh` when appropriate.
 - Claims about parity, fidelity, or production readiness need linked tests or
   should be explicitly marked unproven.
 
+For live-impacting changes, follow
+[`docs/contributing/live-parity-attestation.md`](docs/contributing/live-parity-attestation.md).
+The live-parity attestation is generated from a real demo run against the exact
+testing image; generated captures are evidence artifacts and must not be committed
+to the source tree.
+
 ## Local Hygiene
 
 - Use `rg` for search.
