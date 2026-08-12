@@ -137,6 +137,13 @@ expected_exits="$(jq -er '.expectedLifecycle.exits // 1' "$live_result")"
 expected_lifecycle_events=$((expected_entries + expected_exits))
 lifecycle="$(jq -er '.lifecycle // "single"' "$live_result")"
 blocked_reason="$(jq -r '.blockedReentry.reason // ""' "$live_result")"
+expected_blocked_entries="$(jq -er '.blockedReentry.expected // 0' "$live_result")"
+replay_expected_entries="$expected_entries"
+replay_expected_lifecycle_events="$expected_lifecycle_events"
+if [ "$lifecycle" = "reentry_blocked_operator_halt" ]; then
+    replay_expected_entries=$((expected_entries + expected_blocked_entries))
+    replay_expected_lifecycle_events=$((expected_lifecycle_events + expected_blocked_entries))
+fi
 stop_distance="$(jq -er '.armedScenario.stopDistance' "$expected")"
 take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$expected")"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
@@ -204,8 +211,8 @@ run_replay() {
     require_file "$report/result.json"
     require_file "$report/trades.csv"
     require_file "$report/orders.jsonl"
-    jq -e --argjson expectedEvents "$expected_lifecycle_events" '.global.tradeCount == $expectedEvents' "$report/result.json" >/dev/null ||
-        fail "$name did not produce $expected_lifecycle_events trade event(s)"
+    jq -e --argjson expectedEvents "$replay_expected_lifecycle_events" '.global.tradeCount == $expectedEvents' "$report/result.json" >/dev/null ||
+        fail "$name did not produce $replay_expected_lifecycle_events trade event(s)"
 }
 
 run_replay full-ticks-paper paper
@@ -214,8 +221,8 @@ run_replay full-ticks-mt5 mt5-sim
 
 trades_json() {
     local csv="$1"
-    [ "$(awk 'END { print NR }' "$csv")" -eq "$((expected_lifecycle_events + 1))" ] ||
-        fail "expected $expected_lifecycle_events trade row(s) in $csv"
+    [ "$(awk 'END { print NR }' "$csv")" -eq "$((replay_expected_lifecycle_events + 1))" ] ||
+        fail "expected $replay_expected_lifecycle_events trade row(s) in $csv"
     jq -Rn '
         [inputs] as $lines |
         ($lines[0] | split(",")) as $header |
@@ -263,10 +270,10 @@ cmp -s "$output/comparison/full-ticks-paper-orders-normalized.json" \
     "$output/comparison/bars-paper-orders-normalized.json" ||
     fail "timestamp-normalized plain-bar orders differ from full-tick orders"
 jq -s -e '
-    $expectedEntries as $expectedEntries |
+    $replayExpectedEntries as $replayExpectedEntries |
     [.[] | select(.decision == "approved" and .request.orderType == "Bracket")] |
-    if length == $expectedEntries then map(.request) else error("expected approved bracket entries") end
-' --argjson expectedEntries "$expected_entries" "$output/reports/full-ticks-paper/orders.jsonl" \
+    if length == $replayExpectedEntries then map(.request) else error("expected approved bracket entries") end
+' --argjson replayExpectedEntries "$replay_expected_entries" "$output/reports/full-ticks-paper/orders.jsonl" \
     >"$output/comparison/full-ticks-entry-orders.json"
 
 engine_entry="$(jq -er '.entries[] | select(.path | startswith("engine/")) | .path' "$external_manifest")"
@@ -370,10 +377,10 @@ jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
         else
             false
         end;
-    ($paper | length) == $expectedEntries and
-    ($mt5 | length) == $expectedEntries and
+    ($paper | length) >= $expectedEntries and
+    ($mt5 | length) >= $expectedEntries and
     ($live | length) == $expectedEntries and
-    ($intents[0] | length) == $expectedEntries and
+    ($intents[0] | length) >= $expectedEntries and
     all(range(0; $expectedEntries); . as $i |
         ($paper[$i].symbol == $mt5[$i].symbol) and
         ($paper[$i].symbol == $live[$i].fill.symbol) and
@@ -425,6 +432,8 @@ jq -n \
     --arg lifecycle "$lifecycle" \
     --arg blockedReason "$blocked_reason" \
     --argjson expectedEntries "$expected_entries" \
+    --argjson replayExpectedEntries "$replay_expected_entries" \
+    --argjson replayExpectedTradeCount "$replay_expected_lifecycle_events" \
     --argjson liveEntries "$live_entries" \
     --argjson paperTrades "$paper_trades" \
     --argjson mt5FillExact "$mt5_fill_exact" \
@@ -450,6 +459,8 @@ jq -n \
         },
         lifecycle: $lifecycle,
         expectedEntries: $expectedEntries,
+        replayExpectedEntries: $replayExpectedEntries,
+        replayExpectedTradeCount: $replayExpectedTradeCount,
         parity: {
             fullTickOrderJournalsByteExact: true,
             barsOrdersTimestampNormalizedExact: true,
@@ -473,7 +484,11 @@ jq -n \
                 "The live blocked re-entry capture includes one strategy-owned close and a " +
                 "pre-transport " + $blockedReason + " rejection for the next entry; " +
                 "replay comparison checks the filled entry intent/protection and byte-identical " +
-                "replay order journals."
+                "replay order journals." +
+                (if $lifecycle == "reentry_blocked_operator_halt" then
+                    " Operator halt is an external control-plane event; unhalted replay therefore " +
+                    "retains the extra entry that live correctly rejected after the halt."
+                 else "" end)
              else
                 "The live re-entry capture includes strategy-owned close fills; replay comparison " +
                 "checks entry intent, fill, and adjusted protection parity for each entry and relies " +
