@@ -2634,9 +2634,38 @@ bash -n scripts/live-validation/compare-golden-replay.sh
 bash tests/scripts/prepare-live-validation-scenario-test.sh
 ```
 
-Still not sealed:
+Retained live/replay evidence:
 
-- The new lifecycle has not yet been armed against MT5 in this branch state.
-- Next step is a clean build, fresh scenario preparation on one localhost demo gateway, armed
-  `run-market-bracket.sh`, and `compare-golden-replay.sh` on the retained golden capture.
-- If the live run passes, add the evidence paths here and commit a docs sealing note.
+- Live scenario:
+  `/var/tmp/qkt-validation/xau-nextday-maxtrades-reentry-20260812T051759Z/evidence/result.json`
+- Replay comparison:
+  `/var/tmp/qkt-validation/xau-nextday-maxtrades-reentry-20260812T051759Z-replay/result.json`
+
+Live result summary:
+
+- `status:"passed"`, `qktDirty:false`, `magic:938514`, demo2 account `476434211`.
+- Seeded state:
+  `state/state/xau_nextday_maxtrades_market_bracket/risk-state.json`, kind
+  `previous-day-max-trades`, entry fill `1786492740000`.
+- Lifecycle: one real XAUUSD strategy-owned entry and one strategy-owned close, then one same-day
+  `MaxTradesPerDay` rejection before MT5 transport.
+- `blockedReentry:{expected:1, reason:"MaxTradesPerDay", rejections:1, preTransport:true}`.
+- Final account ownership: `finalPositions:0`, `finalOrders:0`.
+- Transport counts: `orderPosts:1`, `closePosts:1`.
+- Audit counts: `acceptedEvents:2`, `filledEvents:2`, `riskRejections:1`.
+- Venue reconciliation: `balanceDelta:"2.81"` and `dealNet:"2.81"`.
+- Golden capture: `ticks:188`, `warmupTicks:80`, `candles:13`, `fills:2`,
+  `linkedPlacements:1`, SHA-256
+  `9b0597f670b056234bebaf455defef9e273ae2591e70405e5faaed1da3a520ff`.
+- Stale-data count during this run: `staleEvents:0`, `recoveredStaleEvents:0`.
+
+Replay result summary:
+
+- `status:"passed"`, lifecycle `reentry_max_trades_next_day_recovered`.
+- Full-tick order journals were byte-exact.
+- Bar replay order journals were timestamp-normalized exact.
+- Live initial protection matched canonical intent.
+- Live adjusted protection matched captured broker fill.
+- MT5 simulation used the same canonical intent.
+- Live fill and adjusted protection matched MT5 simulation exactly for the entry:
+  live SELL fill `4395.484`, simulated fill `4395.48400000`, delta `0`.
