@@ -1645,7 +1645,10 @@ QKT-side hardening added on Wednesday, August 12, 2026:
   `./gradlew test --tests com.qkt.observe.insights.BrokerStatePollerTest -Pkotlin.compiler.execution.strategy=daemon`
   and
   `./gradlew test --tests com.qkt.observe.insights.TicketAttributionTest -Pkotlin.compiler.execution.strategy=daemon`
-  both passed at `2026-08-12T06:48:53Z`.
+  both passed at `2026-08-12T06:48:53Z`;
+- the wrapper contract test
+  `bash tests/scripts/run-shared-account-insights-round-trips-test.sh`
+  also passed after the QKT emission hardening.
 
 Practical consequence for the next person:
 
@@ -2045,7 +2048,9 @@ This is the source-of-truth order for the next stage as of Wednesday, August 12,
    - focused tests passed:
      `./gradlew test --tests com.qkt.observe.insights.BrokerStatePollerTest -Pkotlin.compiler.execution.strategy=daemon`
      and
-     `./gradlew test --tests com.qkt.observe.insights.TicketAttributionTest -Pkotlin.compiler.execution.strategy=daemon`.
+     `./gradlew test --tests com.qkt.observe.insights.TicketAttributionTest -Pkotlin.compiler.execution.strategy=daemon`;
+   - wrapper contract test passed:
+     `bash tests/scripts/run-shared-account-insights-round-trips-test.sh`.
 4. Shared-account QKT Insights live round trip is sealed on demo2 for the previous validation image
    pair and must be rerun after the current QKT emission hardening is rebuilt:
    - two real temporary QKT strategies;
