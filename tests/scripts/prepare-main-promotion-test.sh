@@ -55,35 +55,49 @@ case "$*" in
         printf '%s\n' '{"status":"ok"}' > "$out_dir/health.jsonl"
         printf '%s\n' 'journal evidence' > "$out_dir/golden.zip"
         printf '%s\n' '{"clean":true}' > "$out_dir/reconcile.json"
+        printf '%s\n' '{"coverage":true}' > "$out_dir/coverage.json"
+        printf '%s\n' '{"parity":true}' > "$out_dir/parity.json"
+        printf '%s\n' '{"insights":true}' > "$out_dir/insights.json"
         health_sha="$(sha256sum "$out_dir/health.jsonl" | cut -d' ' -f1)"
         journal_sha="$(sha256sum "$out_dir/golden.zip" | cut -d' ' -f1)"
         reconcile_sha="$(sha256sum "$out_dir/reconcile.json" | cut -d' ' -f1)"
+        coverage_sha="$(sha256sum "$out_dir/coverage.json" | cut -d' ' -f1)"
+        parity_sha="$(sha256sum "$out_dir/parity.json" | cut -d' ' -f1)"
+        insights_sha="$(sha256sum "$out_dir/insights.json" | cut -d' ' -f1)"
         cat > "$out_dir/paper-soak-attestation.json" <<JSON
 {
   "schemaVersion": 1,
+  "attestationType": "live-parity",
   "testingSha": "0123456789abcdef0123456789abcdef01234567",
   "image": "ghcr.io/test/qkt@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "accountMode": "demo",
   "canaryStrategy": "ema-canary",
   "startedAtUtc": "2026-08-03T00:00:00Z",
-  "completedAtUtc": "2026-08-05T00:00:00Z",
-  "tradingDays": 2,
+  "completedAtUtc": "2026-08-03T00:20:00Z",
+  "tradingDays": 0,
   "status": "pass",
   "metrics": {
     "unreconciledPositions": 0,
     "unknownOutcomePlacements": 0,
     "droppedTicks": 0,
-    "healthSamples": 5760
+    "healthSamples": 20
   },
+  "parity": {"durationMinutes": 20, "strategiesTested": 2, "indicatorsTested": 3, "mathScenariosTested": 2, "dslScenariosTested": 2, "orderTypesTested": 2, "totalTicks": 100, "totalBars": 20, "fills": 2, "parityComparisons": 2, "insightsEvents": 10, "parityMismatches": 0, "unexplainedRejections": 0, "unexplainedOrderOutcomes": 0},
   "artifacts": {
     "health": "health.jsonl",
     "journal": "golden.zip",
-    "reconciliation": "reconcile.json"
+    "reconciliation": "reconcile.json",
+    "coverage": "coverage.json",
+    "parity": "parity.json",
+    "insights": "insights.json"
   },
   "artifactSha256": {
     "health": "$health_sha",
     "journal": "$journal_sha",
-    "reconciliation": "$reconcile_sha"
+    "reconciliation": "$reconcile_sha",
+    "coverage": "$coverage_sha",
+    "parity": "$parity_sha",
+    "insights": "$insights_sha"
   }
 }
 JSON
