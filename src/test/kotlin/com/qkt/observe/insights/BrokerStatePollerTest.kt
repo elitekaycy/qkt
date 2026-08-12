@@ -325,6 +325,40 @@ class BrokerStatePollerTest {
     }
 
     @Test
+    fun `deployed strategy poller emits only locally attributed broker deals`() {
+        val now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.allDeals =
+            listOf(
+                deal("local-ticket", ts = now - 4_000L, positionTicket = "P_LOCAL", comment = "[tp 4332.689]"),
+                deal("local-comment", ts = now - 3_000L, comment = "dsl-local_strat"),
+                deal("foreign-ticket", ts = now - 2_000L, positionTicket = "P_FOREIGN", comment = "[tp 4332.689]"),
+                deal("unknown", ts = now - 1_000L, comment = null),
+            )
+        val attribution = TicketAttribution()
+        attribution.record("P_LOCAL", "local_strat")
+        attribution.record("P_FOREIGN", "foreign_strat")
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = attribution,
+                deployedIds = { listOf("local_strat") },
+                backfillDays = 1L,
+                clock = { now },
+            )
+
+        poller.pollOnce()
+
+        val all = collectBodies("deal-FAKE-local-ticket", "deal-FAKE-local-comment")
+        assertThat(all)
+            .contains("deal-FAKE-local-ticket")
+            .contains("deal-FAKE-local-comment")
+            .doesNotContain("deal-FAKE-foreign-ticket")
+            .doesNotContain("deal-FAKE-unknown")
+    }
+
+    @Test
     fun `truncated comment shared by daemon siblings stays unattributed without a ticket owner`() {
         val now = 1_700_000_000_000L
         val broker = FakeBroker()

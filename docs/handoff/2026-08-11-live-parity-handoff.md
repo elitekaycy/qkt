@@ -3124,3 +3124,51 @@ Final demo2 snapshot after H4:
 - Balance/equity `100002.33`, margin `0.0`, leverage `500`.
 - `trade_allowed:true`, `trade_expert:true`.
 - Magic-scoped positions/orders for the H4 scenario were empty.
+
+## 2026-08-12 Update: QKT Shared-Account Deal Emission Hardening
+
+Closed the upstream QKT side of the shared-account Insights attribution risk.
+
+Problem clarified:
+
+- A live strategy daemon polls whole-account broker deal history from MT5.
+- Before this hardening, `BrokerStatePoller` emitted `broker.deal` envelopes even when the deal could
+  not be attributed to one of that daemon's deployed strategy ids.
+- In a shared MT5 account with multiple independent QKT daemons, that could send null-owned or
+  sibling-owned deal rows into the wrong daemon instance before `qkt-insights` had a chance to
+  scope/drop them.
+
+Source fix:
+
+- [BrokerStatePoller.kt](/home/dickson/Desktop/personal/qkt/src/main/kotlin/com/qkt/observe/insights/BrokerStatePoller.kt:147)
+  now emits `broker.deal` only when:
+  - the poller has no deployed strategy ids, preserving account-level backfill behavior; or
+  - the deal is attributed by ticket/comment to one of the poller's deployed strategy ids.
+- Skipped foreign/unattributed deals still advance the broker deal timestamp cursor, so a strategy
+  daemon does not repeatedly refetch the same irrelevant account history.
+
+Regression coverage:
+
+- [BrokerStatePollerTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/observe/insights/BrokerStatePollerTest.kt:327)
+  now proves a deployed strategy poller emits local ticket-owned and local comment-owned deals while
+  suppressing sibling-owned and unknown shared-account deals.
+
+Verification run without JVM heap or worker restrictions:
+
+```bash
+./gradlew test --tests com.qkt.observe.insights.BrokerStatePollerTest -Pkotlin.compiler.execution.strategy=daemon
+./gradlew test --tests com.qkt.observe.insights.TicketAttributionTest --tests com.qkt.observe.insights.InsightsTranslateTest -Pkotlin.compiler.execution.strategy=daemon
+bash tests/scripts/run-shared-account-insights-round-trips-test.sh
+git diff --check
+```
+
+All four commands passed.
+
+Effect on the live parity plan:
+
+- The retained `qkt-insights:validation-live-state-attribution-20260812` collector proof is still
+  valid and remains necessary.
+- QKT now also avoids producing wrong-instance `broker.deal` envelopes in the first place for
+  deployed live daemons.
+- The next live shared-account rerun should rebuild the QKT validation image from this commit before
+  claiming the upstream emission hardening in retained live evidence.
