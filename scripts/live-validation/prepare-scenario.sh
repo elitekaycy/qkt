@@ -9,12 +9,12 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
+  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
+  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
 be an explicit 127.0.0.1 HTTP endpoint. Credentials are never accepted as arguments;
@@ -47,6 +47,7 @@ cooldown_after_loss_ms=0
 seed_risk_state_kind=""
 seeded_prior_entry_ms=0
 seeded_prior_epoch_day=0
+seeded_risk_state_expected_json="null"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -155,6 +156,18 @@ case "$lifecycle" in
         seed_risk_state_kind="previous-day-max-trades"
         close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; previous-day max-trades seed is ignored, then second same-day entry is blocked by MaxTradesPerDay"
         ;;
+    reentry_daily_halt_next_day_recovered)
+        max_trades_per_day=1
+        entry_trade_guard="TRADES.today < 2"
+        close_trade_guard="TRADES.today >= 1"
+        maximum_entries=1
+        maximum_exits=1
+        maximum_blocked_entries=1
+        expected_blocked_reason="MaxTradesPerDay"
+        max_round_trips_10m=2
+        seed_risk_state_kind="previous-day-daily-halt"
+        close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; previous-day DAILY risk halt is ignored, then second same-day entry is blocked by MaxTradesPerDay"
+        ;;
     reentry_blocked_operator_halt)
         max_trades_per_day=2
         entry_trade_guard="TRADES.today < 2"
@@ -204,7 +217,7 @@ case "$lifecycle" in
       loss_streak_halt_scope: persistent'
         close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; second entry intentionally blocked by LossStreakHalt after the first losing close"
         ;;
-    *) fail "--lifecycle must be one of: single, reentry, reentry_blocked_max_trades, reentry_max_trades_next_day_recovered, reentry_blocked_operator_halt, reentry_operator_halt_recovered, reentry_cooldown_recovered, reentry_blocked_loss_streak" ;;
+    *) fail "--lifecycle must be one of: single, reentry, reentry_blocked_max_trades, reentry_max_trades_next_day_recovered, reentry_daily_halt_next_day_recovered, reentry_blocked_operator_halt, reentry_operator_halt_recovered, reentry_cooldown_recovered, reentry_blocked_loss_streak" ;;
 esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
@@ -232,32 +245,79 @@ if [ -n "$seed_risk_state_kind" ]; then
     seeded_prior_epoch_day="$((current_epoch_day - 1))"
     seeded_prior_entry_ms="$((current_epoch_day * 86400000 - 60000))"
     mkdir -p "$output/state/state/${scenario_id}_market_bracket"
-    jq -n \
-        --arg strategy "${scenario_id}_market_bracket" \
-        --argjson epochDay "$seeded_prior_epoch_day" \
-        --argjson priorEntryMs "$seeded_prior_entry_ms" '
-            {
-              version:1,
-              strategyId:$strategy,
-              epochDay:$epochDay,
-              realizedToday:"0",
-              perStrategyRealizedToday:{},
-              halted:false,
-              haltReason:null,
-              haltScope:"PERSISTENT",
-              haltEpochDay:0,
-              strategyHalts:[],
-              globalRealizedTotal:"0",
-              dailyDrawdownEpochDay:$epochDay,
-              globalDailyDrawdownRef:null,
-              perStrategyDailyDrawdownRefs:{},
-              peakTotalEquity:null,
-              perStrategyPeakEquity:{},
-              pacerEntryFillsByStrategy:{($strategy):[$priorEntryMs]},
-              pacerLossStreakByStrategy:{},
-              pacerLastLossAtByStrategy:{}
-            }
-        ' > "$output/state/state/${scenario_id}_market_bracket/risk-state.json"
+    case "$seed_risk_state_kind" in
+        previous-day-max-trades)
+            jq -n \
+                --arg strategy "${scenario_id}_market_bracket" \
+                --argjson epochDay "$seeded_prior_epoch_day" \
+                --argjson priorEntryMs "$seeded_prior_entry_ms" '
+                    {
+                      version:1,
+                      strategyId:$strategy,
+                      epochDay:$epochDay,
+                      realizedToday:"0",
+                      perStrategyRealizedToday:{},
+                      halted:false,
+                      haltReason:null,
+                      haltScope:"PERSISTENT",
+                      haltEpochDay:0,
+                      strategyHalts:[],
+                      globalRealizedTotal:"0",
+                      dailyDrawdownEpochDay:$epochDay,
+                      globalDailyDrawdownRef:null,
+                      perStrategyDailyDrawdownRefs:{},
+                      peakTotalEquity:null,
+                      perStrategyPeakEquity:{},
+                      pacerEntryFillsByStrategy:{($strategy):[$priorEntryMs]},
+                      pacerLossStreakByStrategy:{},
+                      pacerLastLossAtByStrategy:{}
+                    }
+                ' > "$output/state/state/${scenario_id}_market_bracket/risk-state.json"
+            seeded_risk_state_expected_json="$(jq -nc \
+                --arg kind "$seed_risk_state_kind" \
+                --arg strategy "${scenario_id}_market_bracket" \
+                --arg path "state/state/${scenario_id}_market_bracket/risk-state.json" \
+                --argjson epochDay "$seeded_prior_epoch_day" \
+                --argjson entryFillMs "$seeded_prior_entry_ms" \
+                '{kind:$kind,strategy:$strategy,path:$path,epochDay:$epochDay,entryFillMs:$entryFillMs}')"
+            ;;
+        previous-day-daily-halt)
+            jq -n \
+                --arg strategy "${scenario_id}_market_bracket" \
+                --arg reason "DailyLoss" \
+                --argjson epochDay "$seeded_prior_epoch_day" '
+                    {
+                      version:1,
+                      strategyId:$strategy,
+                      epochDay:$epochDay,
+                      realizedToday:"0",
+                      perStrategyRealizedToday:{},
+                      halted:true,
+                      haltReason:$reason,
+                      haltScope:"DAILY",
+                      haltEpochDay:$epochDay,
+                      strategyHalts:[{strategyId:$strategy,reason:$reason,scope:"DAILY",epochDay:$epochDay}],
+                      globalRealizedTotal:"0",
+                      dailyDrawdownEpochDay:$epochDay,
+                      globalDailyDrawdownRef:null,
+                      perStrategyDailyDrawdownRefs:{},
+                      peakTotalEquity:null,
+                      perStrategyPeakEquity:{},
+                      pacerEntryFillsByStrategy:{},
+                      pacerLossStreakByStrategy:{},
+                      pacerLastLossAtByStrategy:{}
+                    }
+                ' > "$output/state/state/${scenario_id}_market_bracket/risk-state.json"
+            seeded_risk_state_expected_json="$(jq -nc \
+                --arg kind "$seed_risk_state_kind" \
+                --arg strategy "${scenario_id}_market_bracket" \
+                --arg path "state/state/${scenario_id}_market_bracket/risk-state.json" \
+                --arg reason "DailyLoss" \
+                --argjson epochDay "$seeded_prior_epoch_day" \
+                '{kind:$kind,strategy:$strategy,path:$path,epochDay:$epochDay,haltScope:"DAILY",haltReason:$reason}')"
+            ;;
+        *) fail "unsupported seeded risk-state kind: $seed_risk_state_kind" ;;
+    esac
 fi
 
 if $runtime_account_identity; then
@@ -508,7 +568,7 @@ $account_identity_metadata
     "maximumExits": $maximum_exits,
     "maximumBlockedEntries": $maximum_blocked_entries,
     "expectedBlockedReason": "$expected_blocked_reason",
-    "seededRiskState": $(if [ -n "$seed_risk_state_kind" ]; then printf '{"kind":"%s","strategy":"%s","path":"state/state/%s/risk-state.json","epochDay":%s,"entryFillMs":%s}' "$seed_risk_state_kind" "${scenario_id}_market_bracket" "${scenario_id}_market_bracket" "$seeded_prior_epoch_day" "$seeded_prior_entry_ms"; else printf 'null'; fi),
+    "seededRiskState": $seeded_risk_state_expected_json,
     "cooldownAfterLossMs": $cooldown_after_loss_ms,
     "closeWhen": "$close_when",
     "exitTimeframe": "1m",

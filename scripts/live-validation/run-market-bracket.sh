@@ -109,6 +109,18 @@ case "$lifecycle" in
         [ "$seeded_risk_state_kind" = "previous-day-max-trades" ] ||
             fail "max-trades next-day lifecycle must declare the previous-day risk-state seed"
         ;;
+    reentry_daily_halt_next_day_recovered)
+        grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null ||
+            fail "daily-halt next-day scenario does not attempt the reviewed same-day second entry"
+        grep -F 'max_trades_per_day: 1' "$config" >/dev/null ||
+            fail "daily-halt next-day scenario does not cap current-day live entries at one"
+        [ "$expected_entries" -eq 1 ] && [ "$expected_exits" -eq 1 ] && [ "$expected_blocked_entries" -eq 1 ] ||
+            fail "daily-halt next-day lifecycle must expect one filled entry, one close, and one blocked same-day entry"
+        [ "$expected_blocked_reason" = "MaxTradesPerDay" ] ||
+            fail "daily-halt next-day lifecycle must retain the MaxTradesPerDay rejection reason"
+        [ "$seeded_risk_state_kind" = "previous-day-daily-halt" ] ||
+            fail "daily-halt next-day lifecycle must declare the previous-day DAILY halt seed"
+        ;;
     reentry_blocked_operator_halt)
         grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null ||
             fail "operator-halt re-entry strategy does not attempt the reviewed second entry"
@@ -606,8 +618,10 @@ wait_for_cooldown_recovery_window() {
 
 verify_seeded_risk_state() {
     [ -z "$seeded_risk_state_kind" ] && return
-    [ "$seeded_risk_state_kind" = "previous-day-max-trades" ] ||
-        fail "unsupported seeded risk-state kind: $seeded_risk_state_kind"
+    case "$seeded_risk_state_kind" in
+        previous-day-max-trades|previous-day-daily-halt) ;;
+        *) fail "unsupported seeded risk-state kind: $seeded_risk_state_kind" ;;
+    esac
     [ -n "$seeded_risk_state_path" ] || fail "seeded risk-state path is missing"
     case "$seeded_risk_state_path" in
         /*|*..*) fail "seeded risk-state path must be scenario-relative: $seeded_risk_state_path" ;;
@@ -619,20 +633,39 @@ verify_seeded_risk_state() {
     prior_epoch_day="$((current_epoch_day - 1))"
     current_day_start_ms="$((current_epoch_day * 86400000))"
     prior_day_start_ms="$((prior_epoch_day * 86400000))"
-    jq -e \
-        --arg strategy "$strategy_name" \
-        --argjson priorEpochDay "$prior_epoch_day" \
-        --argjson priorDayStartMs "$prior_day_start_ms" \
-        --argjson currentDayStartMs "$current_day_start_ms" \
-        --argjson expectedEntryMs "$seeded_risk_state_entry_ms" '
-            .version == 1 and
-            .strategyId == $strategy and
-            .epochDay == $priorEpochDay and
-            .halted == false and
-            .haltReason == null and
-            .pacerEntryFillsByStrategy[$strategy] == [$expectedEntryMs] and
-            ($expectedEntryMs >= $priorDayStartMs and $expectedEntryMs < $currentDayStartMs)
-        ' "$seed_file" >/dev/null || fail "seeded risk-state does not prove a previous-day max-trades entry"
+    case "$seeded_risk_state_kind" in
+        previous-day-max-trades)
+            jq -e \
+                --arg strategy "$strategy_name" \
+                --argjson priorEpochDay "$prior_epoch_day" \
+                --argjson priorDayStartMs "$prior_day_start_ms" \
+                --argjson currentDayStartMs "$current_day_start_ms" \
+                --argjson expectedEntryMs "$seeded_risk_state_entry_ms" '
+                    .version == 1 and
+                    .strategyId == $strategy and
+                    .epochDay == $priorEpochDay and
+                    .halted == false and
+                    .haltReason == null and
+                    .pacerEntryFillsByStrategy[$strategy] == [$expectedEntryMs] and
+                    ($expectedEntryMs >= $priorDayStartMs and $expectedEntryMs < $currentDayStartMs)
+                ' "$seed_file" >/dev/null || fail "seeded risk-state does not prove a previous-day max-trades entry"
+            ;;
+        previous-day-daily-halt)
+            jq -e \
+                --arg strategy "$strategy_name" \
+                --argjson priorEpochDay "$prior_epoch_day" '
+                    .version == 1 and
+                    .strategyId == $strategy and
+                    .epochDay == $priorEpochDay and
+                    .halted == true and
+                    .haltReason == "DailyLoss" and
+                    .haltScope == "DAILY" and
+                    .haltEpochDay == $priorEpochDay and
+                    .strategyHalts == [{strategyId:$strategy,reason:"DailyLoss",scope:"DAILY",epochDay:$priorEpochDay}] and
+                    (.pacerEntryFillsByStrategy[$strategy] // []) == []
+                ' "$seed_file" >/dev/null || fail "seeded risk-state does not prove a previous-day DAILY halt"
+            ;;
+    esac
     cp "$seed_file" "$evidence/seeded-risk-state.json"
     jq -n \
         --arg kind "$seeded_risk_state_kind" \
@@ -640,7 +673,7 @@ verify_seeded_risk_state() {
         --arg strategy "$strategy_name" \
         --argjson epochDay "$prior_epoch_day" \
         --argjson entryFillMs "$seeded_risk_state_entry_ms" \
-        '{kind:$kind,path:$path,strategy:$strategy,epochDay:$epochDay,entryFillMs:$entryFillMs,status:"verified"}' \
+        '{kind:$kind,path:$path,strategy:$strategy,epochDay:$epochDay,entryFillMs:(if $entryFillMs == 0 then null else $entryFillMs end),status:"verified"}' \
         > "$evidence/seeded-risk-state-verification.json"
 }
 
@@ -730,7 +763,7 @@ if [ "$lifecycle" = "reentry" ]; then
     gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
     jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
         fail "re-entry lifecycle did not end flat"
-elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_max_trades_next_day_recovered" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ] || [ "$lifecycle" = "reentry_blocked_loss_streak" ]; then
+elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_max_trades_next_day_recovered" ] || [ "$lifecycle" = "reentry_daily_halt_next_day_recovered" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ] || [ "$lifecycle" = "reentry_blocked_loss_streak" ]; then
     wait_for_open_cycle 1
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-open.json"
     wait_for_flat_cycle 1
@@ -977,8 +1010,13 @@ jq -n \
           },
           bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance},
           flattenVerified:(if $lifecycle == "single" then true else false end),
-          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak"),
-          seededRiskState:(if $seededRiskStateKind == "" then null else {kind:$seededRiskStateKind,path:$seededRiskStatePath,entryFillMs:($seededRiskStateEntryMs|tonumber)} end),
+          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak"),
+          seededRiskState:(
+            if $seededRiskStateKind == "" then null
+            else {kind:$seededRiskStateKind,path:$seededRiskStatePath} +
+              (if ($seededRiskStateEntryMs|tonumber) == 0 then {} else {entryFillMs:($seededRiskStateEntryMs|tonumber)} end)
+            end
+          ),
           finalPositions:0,
           finalOrders:0,
           balanceDelta:$balanceDelta,

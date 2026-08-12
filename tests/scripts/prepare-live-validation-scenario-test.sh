@@ -352,6 +352,57 @@ jq -e --slurpfile expected "$next_day_reentry_out/expected.json" '
 "$cli" parse "$next_day_reentry_armed" >/dev/null
 (cd "$next_day_reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
 
+daily_halt_next_day_out="$tmp/daily-halt-next-day-scenario"
+bash "$script" \
+    --output "$daily_halt_next_day_out" \
+    --id validation_daily_halt_reset \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917015 \
+    --symbol XAUUSD \
+    --lifecycle reentry_daily_halt_next_day_recovered >/dev/null
+daily_halt_next_day_armed="$daily_halt_next_day_out/strategies/armed/validation_daily_halt_reset_market_bracket.qkt"
+daily_halt_seed="$daily_halt_next_day_out/state/state/validation_daily_halt_reset_market_bracket/risk-state.json"
+[ "$(grep -Fc 'TRADES.today < 2' "$daily_halt_next_day_armed")" -eq 2 ]
+[ "$(grep -Fc 'TRADES.today = 0' "$daily_halt_next_day_armed")" -eq 0 ]
+grep -F 'max_trades_per_day: 1' "$daily_halt_next_day_out/qkt.config.yaml" >/dev/null
+test -f "$daily_halt_seed"
+jq -e '
+    .safety.maximumTradesPerDay == 1 and
+    .armedScenario.lifecycle == "reentry_daily_halt_next_day_recovered" and
+    .armedScenario.maximumEntries == 1 and
+    .armedScenario.maximumExits == 1 and
+    .armedScenario.maximumBlockedEntries == 1 and
+    .armedScenario.expectedBlockedReason == "MaxTradesPerDay" and
+    .armedScenario.seededRiskState.kind == "previous-day-daily-halt" and
+    .armedScenario.seededRiskState.strategy == "validation_daily_halt_reset_market_bracket" and
+    .armedScenario.seededRiskState.path == "state/state/validation_daily_halt_reset_market_bracket/risk-state.json" and
+    .armedScenario.seededRiskState.haltScope == "DAILY" and
+    .armedScenario.seededRiskState.haltReason == "DailyLoss" and
+    (.armedScenario.closeWhen | contains("previous-day DAILY risk halt is ignored"))
+' "$daily_halt_next_day_out/expected.json" >/dev/null
+jq -e '
+    .version == 1 and
+    .strategyId == "validation_daily_halt_reset_market_bracket" and
+    .halted == true and
+    .haltReason == "DailyLoss" and
+    .haltScope == "DAILY" and
+    (.strategyHalts | length) == 1 and
+    .strategyHalts[0].strategyId == "validation_daily_halt_reset_market_bracket" and
+    .strategyHalts[0].scope == "DAILY" and
+    (.pacerEntryFillsByStrategy.validation_daily_halt_reset_market_bracket // [] | length) == 0
+' "$daily_halt_seed" >/dev/null
+jq -e --slurpfile expected "$daily_halt_next_day_out/expected.json" '
+    .epochDay == $expected[0].armedScenario.seededRiskState.epochDay and
+    .haltEpochDay == $expected[0].armedScenario.seededRiskState.epochDay and
+    .strategyHalts[0].epochDay == $expected[0].armedScenario.seededRiskState.epochDay
+' "$daily_halt_seed" >/dev/null
+"$cli" parse "$daily_halt_next_day_armed" >/dev/null
+(cd "$daily_halt_next_day_out" && sha256sum --check SHA256SUMS >/dev/null)
+
 if bash "$script" \
     --output "$tmp/unsupported-symbol" \
     --id validation_jpy \
@@ -445,6 +496,10 @@ bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$next_day_reentry_out" \
     --cli "$cli" \
     --verify-only >/dev/null
+bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
+    --scenario "$daily_halt_next_day_out" \
+    --cli "$cli" \
+    --verify-only >/dev/null
 bash "$repo_root/scripts/live-validation/run-market-bracket.sh" --help | grep -F '/var/tmp/qkt-validation/LIVE-LOCK-<server>-<login>' >/dev/null
 if rg --quiet '\$cli" status .*--json' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner passes unsupported --json to qkt status' >&2
@@ -466,6 +521,7 @@ grep -F 'wait_for_flat_cycle() {' "$repo_root/scripts/live-validation/run-market
 grep -F 'wait_for_blocked_reentry() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_blocked_max_trades' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_max_trades_next_day_recovered' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'reentry_daily_halt_next_day_recovered' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_blocked_operator_halt' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_operator_halt_recovered' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_cooldown_recovered' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
@@ -475,7 +531,7 @@ grep -F '"$cli" halt "$strategy_name" --state-dir "$scenario/state" --json' "$re
 grep -F '"$cli" resume "$strategy_name" --state-dir "$scenario/state" --json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'operator-halt-before-blocked-reentry.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'operator-resume-before-recovered-reentry.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'blockedReentry:{' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'verify_seeded_risk_state() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'preTransport:($expectedBlockedEntries == 0 or ($orderPosts|tonumber) == $expectedEntries)' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
