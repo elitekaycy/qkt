@@ -934,6 +934,11 @@ As of Wednesday, August 12, 2026:
   counting for strategy-owned exits.
 - `scripts/live-validation/compare-golden-replay.sh`: passed for the clean XAUUSD re-entry capture at
   `/var/tmp/qkt-validation/xau-reentry-clean-20260812T001516Z-replay5/result.json`.
+- `./gradlew test --tests com.qkt.parity.GeneratedReentryParityTest -Pkotlin.compiler.execution.strategy=daemon`:
+  passed on Wednesday, August 12, 2026 after expanding generated re-entry parity coverage for
+  allowed re-entry plus blocked re-entry under max trades, cooldown after loss, loss streak halt,
+  strategy daily loss, strategy drawdown, strategy daily drawdown, global daily loss, global
+  drawdown, and global daily drawdown.
 
 The repo-health checks are green on the current `HEAD`. The remaining blockers are no longer local
 build instability; they are the still-open exhaustive live-validation matrix and the required demo
@@ -1873,8 +1878,10 @@ Existing partial coverage:
 
 - JVM parity already covers a second entry attempt after a loss/risk event in
   `src/test/kotlin/com/qkt/parity/GeneratedRiskLifecycleParityTest.kt`;
-- new JVM parity coverage now proves the allowed re-entry path and a max-trades risk-blocked
-  re-entry path across tick, bars, tick-resolved bars, and live-paper in
+- JVM parity coverage now proves the allowed re-entry path plus blocked re-entry under max trades,
+  cooldown after loss, loss streak halt, strategy daily loss, strategy drawdown, strategy daily
+  drawdown, global daily loss, global drawdown, and global daily drawdown across tick, bars,
+  tick-resolved bars, and live-paper in
   `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
 - `prepare-scenario.sh` can now emit a static generated `--lifecycle reentry` scenario. The focused
   shell regression proves the generated armed strategy uses `TRADES.today < 2`, keeps the 0.01-lot
