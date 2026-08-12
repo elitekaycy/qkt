@@ -30,9 +30,10 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 142`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 143`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `test(risk): cover portfolio book exposure recovery`
   - `docs(docs): seal margin floor recovery status`
   - `test(risk): cover global daily halt reentry reset`
   - `test(risk): cover daily halt reentry reset`
@@ -1046,10 +1047,11 @@ downstream.
 
 As of Wednesday, August 12, 2026:
 
-- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 142`, tracked
-  worktree clean after the current margin-floor handoff correction; two pre-existing untracked Kimi/audit
-  docs remain.
+- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 143`, tracked
+  worktree clean after the current portfolio book-exposure recovery commit; two pre-existing
+  untracked Kimi/audit docs remain.
 - Current continuation commits now on the branch:
+  - `test(risk): cover portfolio book exposure recovery`
   - `docs(docs): seal margin floor recovery status`
   - `test(risk): cover global daily halt reentry reset`
   - `test(risk): cover daily halt reentry reset`
@@ -1085,6 +1087,13 @@ As of Wednesday, August 12, 2026:
 - `bash tests/scripts/run-margin-floor-fixture-test.sh`: passed again on Wednesday, August 12, 2026
   while correcting the handoff to treat the retained live margin-floor recovery fixture as sealed
   rather than open. No JVM heap or worker restrictions were used.
+- `./gradlew test --tests 'com.qkt.cli.daemon.portfolio.PortfolioDeployerE2ETest.book exposure rejects a follow-up order and recovers after exposure clears' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed on Wednesday, August 12, 2026 after extending the real portfolio deployer E2E path to prove
+  a shared book controller rejects an oversized same-book follow-up order, allows the
+  risk-reducing sell, samples the cleared exposure, and then allows a later recovered entry. The
+  test also reads the durable order journal and asserts the rejected order was recorded as
+  `risk-rejected` with `book gross exposure`, so the cause is audited rather than inferred only from
+  fill counts. No JVM heap or worker restrictions were used.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed on Wednesday, August 12, 2026 after adding explicit UTC next-day max-trades re-entry
   recovery coverage, elapsed cooldown-after-loss re-entry recovery coverage, and loss-streak reset
@@ -2269,6 +2278,13 @@ Existing partial coverage:
   re-entry is rejected while sibling book exposure consumes headroom, close-by-ticket remains
   allowed, and a fresh book-risk sample with cleared exposure reopens the gate. See
   `src/test/kotlin/com/qkt/risk/rules/BookExposureLimitTest.kt`;
+- portfolio deployer E2E coverage now proves the same-book controller recovery path through real
+  deployed child `LiveSession`s: after drawdown scaling, a follow-up order is rejected by book gross
+  exposure, a risk-reducing sell remains allowed, a fresh book-risk sample clears exposure, and a
+  later recovered entry is accepted. The same test now asserts the durable order journal contains a
+  `risk-rejected` record with the `book gross exposure` reason, which gives explicit cause
+  attribution for the blocked order. See
+  `src/test/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployerE2ETest.kt`;
 - focused margin-floor coverage now proves the margin-floor re-entry contract at the same pre-trade
   rule used by live sessions: fresh margin headroom allows entry, collapsed margin blocks same-side
   re-entry, risk-reducing exits remain allowed, and restored margin headroom reopens the gate. See
