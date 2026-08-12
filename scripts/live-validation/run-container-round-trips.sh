@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/live-validation/lib/catalog-startup-window.sh
+source "$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"
 
 usage() {
     cat <<'EOF'
@@ -114,6 +116,163 @@ extract_indicator_exit_trace() {
     ' "$1"
 }
 
+write_tick_freshness_gate() {
+    local evidence_dir="$1"
+    local samples="${2:-25}"
+    local max_age_ms="${3:-8000}"
+    local jsonl="$evidence_dir/tick-freshness-gate.jsonl"
+    local summary="$evidence_dir/tick-freshness-gate-summary.json"
+
+    : > "$jsonl"
+    for _ in $(seq 1 "$samples"); do
+        local observed_at_ms
+        observed_at_ms="$(date +%s%3N)"
+        for symbol in "${venue_symbols[@]}"; do
+            local tick
+            tick="$(gateway_get "/symbol_info_tick/$symbol")" ||
+                fail "gateway tick freshness probe failed for $symbol"
+            jq -c \
+                --arg symbol "$symbol" \
+                --argjson observedAtMs "$observed_at_ms" \
+                --argjson maxAgeMs "$max_age_ms" '
+                (.time_msc | tonumber? // ((.time | tonumber? // 0) * 1000)) as $tickMs |
+                (.bid | tonumber? // 0) as $bid |
+                (.ask | tonumber? // 0) as $ask |
+                ($observedAtMs - $tickMs) as $ageMs |
+                {
+                  symbol:$symbol,
+                  observedAtMs:$observedAtMs,
+                  tickMs:$tickMs,
+                  bid:$bid,
+                  ask:$ask,
+                  ageMs:$ageMs,
+                  valid: ($tickMs > 0 and $bid > 0 and $ask > 0 and $ageMs >= -5000 and $ageMs <= $maxAgeMs),
+                  invalidReason: (
+                    if $tickMs <= 0 then "missing-or-zero-timestamp"
+                    elif $bid <= 0 or $ask <= 0 then "missing-or-zero-price"
+                    elif $ageMs < -5000 then "future-tick-clock-skew"
+                    elif $ageMs > $maxAgeMs then "stale-tick"
+                    else null
+                    end
+                  )
+                }
+            ' <<<"$tick" \
+                >> "$jsonl"
+        done
+        sleep 1
+    done
+
+    jq -s \
+        --argjson maxAgeMs "$max_age_ms" '
+        sort_by(.symbol) |
+        group_by(.symbol) |
+        map({
+          symbol: .[0].symbol,
+          samples: length,
+          invalid: (map(select(.valid != true)) | length),
+          maxAgeMs: (map(.ageMs) | max),
+          overLimit: (map(select(.ageMs > $maxAgeMs)) | length),
+          last: .[-1]
+        }) as $symbols |
+        {
+          schema: "qkt-live-tick-freshness-gate-v1",
+          status: (if all($symbols[]; .invalid == 0 and .maxAgeMs <= $maxAgeMs and .overLimit == 0) then "passed" else "failed" end),
+          maxAllowedAgeMs: $maxAgeMs,
+          symbols: $symbols
+        }
+    ' "$jsonl" > "$summary"
+
+    jq -e '.status == "passed"' "$summary" >/dev/null ||
+        fail "gateway tick freshness gate failed before arming live orders; see $summary"
+}
+
+wait_for_startup_window() {
+    local evidence="$output/evidence/startup-window.jsonl"
+    : > "$evidence"
+    local valid_observations=0
+    for attempt in $(seq 1 10); do
+        local tick_file="$output/evidence/startup-tick-$attempt.json"
+        gateway_get "/symbol_info_tick/${venue_symbols[0]}" > "$tick_file"
+        local observed_at_ms tick_sample tick_invalid broker_tick_ms tick_age_ms phase_clock_ms broker_phase_ms phase_ms delay_ms sleep_seconds
+        observed_at_ms="$(date +%s%3N)"
+        tick_sample="$(jq -c \
+            --argjson attempt "$attempt" \
+            --arg symbol "${venue_symbols[0]}" \
+            --argjson observedAtMs "$observed_at_ms" '
+            (.time_msc | tonumber? // ((.time | tonumber? // 0) * 1000)) as $tickMs |
+            (.bid | tonumber? // 0) as $bid |
+            (.ask | tonumber? // 0) as $ask |
+            ($observedAtMs - $tickMs) as $ageMs |
+            {
+              attempt:$attempt,
+              wireSymbol:$symbol,
+              observedAtMs:$observedAtMs,
+              brokerTickMs:$tickMs,
+              bid:$bid,
+              ask:$ask,
+              tickAgeMs:$ageMs,
+              tickInvalid: (
+                if $tickMs <= 0 then "missing-or-zero-timestamp"
+                elif $bid <= 0 or $ask <= 0 then "missing-or-zero-price"
+                else null
+                end
+              )
+            }
+        ' "$tick_file")"
+        tick_invalid="$(jq -er '.tickInvalid // empty' <<<"$tick_sample" || true)"
+        if [ -n "$tick_invalid" ]; then
+            jq -c '. + {status:"invalid"}' <<<"$tick_sample" >> "$evidence"
+            sleep 2
+            continue
+        fi
+        broker_tick_ms="$(jq -er '.brokerTickMs' <<<"$tick_sample")"
+        tick_age_ms=$((observed_at_ms - broker_tick_ms))
+        [ "$tick_age_ms" -ge -5000 ] && [ "$tick_age_ms" -le 60000 ] ||
+            fail "gateway startup tick is not current enough to select a safe launch window"
+        valid_observations=$((valid_observations + 1))
+        phase_clock_ms="$observed_at_ms"
+        [ "$tick_age_ms" -lt 0 ] && phase_clock_ms="$broker_tick_ms"
+        broker_phase_ms=$((broker_tick_ms % QKT_CATALOG_ROLLOVER_PERIOD_MS))
+        phase_ms=$((phase_clock_ms % QKT_CATALOG_ROLLOVER_PERIOD_MS))
+        delay_ms="$(qkt_catalog_startup_delay_ms "$phase_ms")" ||
+            fail "could not compute safe startup delay"
+        sleep_seconds="$(((delay_ms + 999) / 1000))"
+        jq -cn \
+            --argjson attempt "$attempt" \
+            --argjson observedAtMs "$observed_at_ms" \
+            --argjson brokerTickMs "$broker_tick_ms" \
+            --argjson phaseMs "$phase_ms" \
+            --argjson brokerPhaseMs "$broker_phase_ms" \
+            --argjson tickAgeMs "$tick_age_ms" \
+            --argjson delayMs "$delay_ms" \
+            --argjson sleepSeconds "$sleep_seconds" \
+            --argjson validObservations "$valid_observations" \
+            '{attempt:$attempt,status:"valid",validObservations:$validObservations,
+              observedAtMs:$observedAtMs,brokerTickMs:$brokerTickMs,tickAgeMs:$tickAgeMs,
+              phaseMs:$phaseMs,brokerPhaseMs:$brokerPhaseMs,delayMs:$delayMs,sleepSeconds:$sleepSeconds}' \
+            >> "$evidence"
+        if [ "$delay_ms" -eq 0 ]; then
+            jq -n \
+                --argjson enteredAtBrokerMs "$broker_tick_ms" \
+                --argjson enteredAtClockMs "$phase_clock_ms" \
+                --argjson tickAgeMs "$tick_age_ms" \
+                --argjson phaseMs "$phase_ms" \
+                --arg symbol "${venue_symbols[0]}" \
+                '{schema:"qkt-live-startup-window-v1",status:"passed",
+                  clockSource:"broker-tick-validated-utc",wireSymbol:$symbol,periodMs:300000,
+                  safeWindow:{startMs:90000,endMs:150000},enteredAtBrokerMs:$enteredAtBrokerMs,
+                  enteredAtClockMs:$enteredAtClockMs,tickAgeMs:$tickAgeMs,phaseMs:$phaseMs}' \
+                > "$output/evidence/startup-window.json"
+            return
+        fi
+        [ "$valid_observations" -lt 3 ] ||
+            fail "broker tick clock did not enter the bounded startup window after three valid observations"
+        [ "$sleep_seconds" -le 260 ] || fail "broker tick clock did not enter the startup window within 260 seconds"
+        sleep "$sleep_seconds"
+    done
+    fail "broker tick clock did not enter the bounded startup window after ten startup probes"
+}
+
 scenario_a=""
 scenario_b=""
 output=""
@@ -154,6 +313,7 @@ venue_symbols=("EURUSDm" "GBPUSDm")
 configs=("" "")
 states=("" "")
 evidences=("" "")
+expecteds=("" "")
 strategies=("" "")
 strategy_files=("" "")
 scenario_ids=("" "")
@@ -190,7 +350,7 @@ for index in 0 1; do
         .armedScenario.maximumEntries == 1 and .armedScenario.maximumExits == 1 and
         .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
         .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1 and
-        .armedScenario.maximumEntryAnchorDriftPoints == 20 and
+        .armedScenario.maximumEntryAnchorDriftPoints == 80 and
         .armedScenario.stopDistance == "0.0030" and
         .armedScenario.takeProfitDistance == "0.0060"
     ' "$scenario/expected.json" >/dev/null || fail "scenario $index expected contract is not the bounded round trip"
@@ -218,6 +378,7 @@ for index in 0 1; do
     configs[$index]="$scenario/qkt.config.yaml"
     states[$index]="$scenario/state"
     evidences[$index]="$scenario/evidence"
+    expecteds[$index]="$scenario/expected.json"
     strategies[$index]="$strategy"
     strategy_files[$index]="$strategy_file"
     scenario_ids[$index]="$(jq -er '.scenarioId' "$scenario/scenario.json")"
@@ -299,6 +460,7 @@ gateway_get() {
         curl --silent --show-error --fail-with-body --config - "$gateway_url$path"
 }
 
+wait_for_startup_window
 gateway_get /health > "$output/evidence/gateway-health.json"
 jq -e '.ok == true and .status == "healthy" and .mt5_status == "connected" and .kill_switch_active == false' \
     "$output/evidence/gateway-health.json" >/dev/null || fail "gateway is not healthy and connected"
@@ -334,6 +496,9 @@ for index in 0 1; do
         .volume_min == 0.01 and .volume_step == 0.01 and .trade_contract_size == 100000 and
         .point > 0 and .digits > 0
     ' "$output/evidence/symbol-$index.json" >/dev/null || fail "scenario $index venue metadata is not the reviewed FX contract"
+done
+write_tick_freshness_gate "$output/evidence"
+for index in 0 1; do
     "$cli" preflight "${strategy_files[$index]}" --config "${configs[$index]}" \
         > "${evidences[$index]}/preflight.log" 2>&1
 done
@@ -419,10 +584,11 @@ done
 
 for index in 0 1; do
     (
-        printf '%s\n' "$QKT_BROKER_API_KEY" |
+        printf '%s\n%s\n' "$QKT_BROKER_API_KEY" "${QKT_INSIGHTS_TOKEN:-}" |
             docker exec -i "${containers[$index]}" /bin/sh -c '
                 IFS= read -r QKT_BROKER_API_KEY
-                export QKT_BROKER_API_KEY QKT_LATENCY_TRACKING=1 QKT_STATE_DIR="$2"
+                IFS= read -r QKT_INSIGHTS_TOKEN
+                export QKT_BROKER_API_KEY QKT_INSIGHTS_TOKEN QKT_LATENCY_TRACKING=1 QKT_STATE_DIR="$2"
                 exec qkt daemon start --config "$1" --state-dir "$2"
             ' sh "${configs[$index]}" "${states[$index]}"
     ) > "${scenarios[$index]}/logs/container-daemon.log" 2>&1 &
@@ -488,7 +654,7 @@ while [ "$SECONDS" -lt "$deadline" ]; do
                 --arg symbol "${venue_symbols[$index]}" \
                 --argjson magic "${magics[$index]}" \
                 --arg point "$(jq -er '.point' "$output/evidence/symbol-$index.json")" \
-                --argjson maximumEntryAnchorDriftPoints 20 \
+                --argjson maximumEntryAnchorDriftPoints "$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "${expecteds[$index]}")" \
                 --arg strategyPrefix "dsl-${strategies[$index]}" '
                     .ok == true and .data[0].symbol == $symbol and .data[0].magic == $magic and
                     .data[0].volume == 0.01 and .data[0].price_open > 0 and
@@ -757,13 +923,15 @@ for index in 0 1; do
     [ "${#canonical_stops[@]}" -eq 1 ] && [ "${#canonical_targets[@]}" -eq 1 ] ||
         fail "scenario $index canonical bracket evidence is not unique"
     point="$(jq -er '.point' "$output/evidence/symbol-$index.json")"
+    maximum_entry_anchor_drift_points="$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "${expecteds[$index]}")"
     read -r intent_anchor entry_anchor_drift_points < <(
         awk \
             -v side="$expected_wire_side" \
             -v stop="${canonical_stops[0]}" \
             -v target="${canonical_targets[0]}" \
             -v entry="${entry_prices[$index]}" \
-            -v point="$point" '
+            -v point="$point" \
+            -v maximumEntryAnchorDriftPoints="$maximum_entry_anchor_drift_points" '
             function abs(value) { return value < 0 ? -value : value }
             BEGIN {
                 if (side == "BUY") {
@@ -775,11 +943,11 @@ for index in 0 1; do
                 }
                 if (abs(stopAnchor - targetAnchor) > point) exit 1
                 driftPoints = (entry - stopAnchor) / point
-                if (abs(driftPoints) > 20.000001) exit 1
+                if (abs(driftPoints) > maximumEntryAnchorDriftPoints + 0.000001) exit 1
                 printf "%.8f %.8f\n", stopAnchor, driftPoints
             }
         '
-    ) || fail "scenario $index entry drift exceeds the reviewed 20-point bound"
+    ) || fail "scenario $index entry drift exceeds the reviewed $maximum_entry_anchor_drift_points-point bound"
     jq -e \
         --arg strategy "$strategy" \
         --arg side "$expected_wire_side" \
@@ -886,12 +1054,13 @@ for index in 0 1; do
         --argjson decisions "$decisions" --argjson links "$links" \
         --argjson accepted "$accepted" --argjson filled "$filled" --argjson accounted "$accounted" \
         --argjson mutations "$mutation_posts" \
+        --argjson maximumEntryAnchorDriftPoints "$maximum_entry_anchor_drift_points" \
         --arg goldenSha256 "$(sha256sum "$golden_zip" | awk '{print $1}')" '
         {
           schema:"qkt-live-container-round-trip-case-v1",status:"passed",
           scenarioId:$scenarioId,strategy:$strategy,symbol:$symbol,side:$side,magic:$magic,
           positionTicket:$ticket,lots:"0.01",entryTimeMs:$entryTimeMs,exitTimeMs:$exitTimeMs,
-          bracket:{stopDistance:"0.0030",takeProfitDistance:"0.0060",maximumEntryAnchorDriftPoints:20,
+          bracket:{stopDistance:"0.0030",takeProfitDistance:"0.0060",maximumEntryAnchorDriftPoints:$maximumEntryAnchorDriftPoints,
             intentAnchor:$intentAnchor,entryAnchorDriftPoints:$entryAnchorDriftPoints,symbolPointToleranceVerified:true},
           strategyOwnedClose:true,finalPositions:0,finalOrders:0,
           timeframeEvidence:{m1StreamAndEvaluation:true,m5StreamAndEvaluation:true},

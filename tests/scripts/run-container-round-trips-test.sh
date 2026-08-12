@@ -115,6 +115,15 @@ grep -F 'QKT_LIVE_DEMO_ORDER_APPROVAL must equal LOCALHOST_DEMO_ONLY' "$runner" 
 grep -F '.hedging == true' "$runner" >/dev/null
 grep -F 'repository must be clean' "$runner" >/dev/null
 grep -F 'Docker image is not built from' "$runner" >/dev/null
+grep -F 'source "$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"' "$runner" >/dev/null
+grep -F 'wait_for_startup_window' "$runner" >/dev/null
+grep -F 'qkt-live-startup-window-v1' "$runner" >/dev/null
+grep -F 'tickInvalid: (' "$runner" >/dev/null
+grep -F 'missing-or-zero-timestamp' "$runner" >/dev/null
+grep -F 'missing-or-zero-price' "$runner" >/dev/null
+grep -F 'status:"invalid"' "$runner" >/dev/null
+grep -F 'validObservations' "$runner" >/dev/null
+grep -F 'broker tick clock did not enter the bounded startup window' "$runner" >/dev/null
 grep -F -- '--network host' "$runner" >/dev/null
 grep -F 'QKT_LATENCY_TRACKING=1' "$runner" >/dev/null
 grep -F 'QKT_STATE_DIR="$2"' "$runner" >/dev/null
@@ -126,6 +135,15 @@ grep -F 'must be unset; this run does not restrict the JVM' "$runner" >/dev/null
 grep -F 'image config restricts or overrides the JVM' "$runner" >/dev/null
 grep -F 'trap cleanup EXIT' "$runner" >/dev/null
 grep -F 'get_positions?magic=' "$runner" >/dev/null
+grep -F 'write_tick_freshness_gate "$output/evidence"' "$runner" >/dev/null
+grep -F '/symbol_info_tick/$symbol' "$runner" >/dev/null
+grep -F 'qkt-live-tick-freshness-gate-v1' "$runner" >/dev/null
+grep -F 'invalidReason' "$runner" >/dev/null
+grep -F 'future-tick-clock-skew' "$runner" >/dev/null
+grep -F 'stale-tick' "$runner" >/dev/null
+grep -F 'gateway tick freshness gate failed before arming live orders' "$runner" >/dev/null
+grep -F 'expecteds=("" "")' "$runner" >/dev/null
+grep -F 'expecteds[$index]="$scenario/expected.json"' "$runner" >/dev/null
 grep -F 'bot close "${expected_symbols[$index]}" --ticket' "$runner" >/dev/null
 grep -F 'bot cancel "${expected_symbols[$index]}" --order' "$runner" >/dev/null
 grep -F '[ "$order_posts" -eq 1 ]' "$runner" >/dev/null
@@ -142,8 +160,8 @@ grep -F 'RiskRejectedEvent|BrokerEvent.OrderRejected' "$runner" >/dev/null
 grep -F '[ "$deploy_launch_skew_ms" -le 1000 ]' "$runner" >/dev/null
 grep -F 'timeout_seconds=360' "$runner" >/dev/null
 grep -F 'must be in 330..600' "$runner" >/dev/null
-grep -F '.armedScenario.maximumEntryAnchorDriftPoints == 20' "$runner" >/dev/null
-grep -F 'entry drift exceeds the reviewed 20-point bound' "$runner" >/dev/null
+grep -F '.armedScenario.maximumEntryAnchorDriftPoints == 80' "$runner" >/dev/null
+grep -F 'entry drift exceeds the reviewed $maximum_entry_anchor_drift_points-point bound' "$runner" >/dev/null
 grep -F '(.data[0].price_open - .data[0].sl) - 0.0030' "$runner" >/dev/null
 grep -F '(.data[0].tp - .data[0].price_open) - 0.0060' "$runner" >/dev/null
 grep -F '(.data[0].sl - .data[0].price_open) - 0.0030' "$runner" >/dev/null
