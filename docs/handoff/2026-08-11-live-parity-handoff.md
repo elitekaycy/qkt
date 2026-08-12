@@ -1065,6 +1065,9 @@ As of Wednesday, August 12, 2026:
   normalization and generated indicator log-budget hardening.
 - `bash tests/scripts/run-container-load-test.sh`: passed on Wednesday, August 12, 2026 before
   committing the container-load health/version hardening.
+- `./gradlew test --tests 'com.qkt.marketdata.MarketDataGateTest' --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed on Wednesday, August 12, 2026 after adding explicit stale-market-data re-entry regression
+  coverage. No JVM heap or worker restrictions were used.
 - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon`: passed on Tuesday, August 11, 2026
   after narrowing the `TickResolvedParityTest` comparison to ignore only replay-input counters that
   intentionally differ between full-tick replay and `--bars --tick-fills`:
@@ -2186,6 +2189,11 @@ Existing partial coverage:
   drawdown, global daily loss, global drawdown, and global daily drawdown across tick, bars,
   tick-resolved bars, and live-paper in
   `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
+- focused market-data gate coverage now proves the stale-data re-entry contract at the same
+  pre-trade rule used by live sessions: the first entry is allowed on fresh data, a later same-side
+  re-entry is rejected while the symbol is stale, protective exits remain allowed, and a fresh tick
+  reopens the gate. See
+  `src/test/kotlin/com/qkt/marketdata/MarketDataGateTest.kt`;
 - `prepare-scenario.sh` can now emit a static generated `--lifecycle reentry` scenario. The focused
   shell regression proves the generated armed strategy uses `TRADES.today < 2`, keeps the 0.01-lot
   cap, widens only the intended risk counters to two entries, and parses through the QKT CLI;
@@ -2221,7 +2229,7 @@ Existing partial coverage:
 Concrete next work:
 
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
-  recovered variants, especially strategy/global risk halt, stale-market-data gate, daily
+  recovered variants, especially strategy/global risk halt, live stale-market-data gate, daily
   loss/drawdown, margin floor, exposure limits, cooldown/loss-streak reset, and next-day reset
   behavior;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
