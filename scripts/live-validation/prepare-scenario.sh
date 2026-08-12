@@ -9,12 +9,12 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry|reentry_blocked_max_trades]
+  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_blocked_operator_halt]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry|reentry_blocked_max_trades]
+  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_blocked_operator_halt]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
 be an explicit 127.0.0.1 HTTP endpoint. Credentials are never accepted as arguments;
@@ -138,7 +138,18 @@ case "$lifecycle" in
         max_round_trips_10m=2
         close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; second entry intentionally blocked by MaxTradesPerDay"
         ;;
-    *) fail "--lifecycle must be one of: single, reentry, reentry_blocked_max_trades" ;;
+    reentry_blocked_operator_halt)
+        max_trades_per_day=2
+        entry_trade_guard="TRADES.today < 2"
+        close_trade_guard="TRADES.today >= 1"
+        maximum_entries=1
+        maximum_exits=1
+        maximum_blocked_entries=1
+        expected_blocked_reason="halted: operator"
+        max_round_trips_10m=3
+        close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; second entry intentionally blocked by operator halt"
+        ;;
+    *) fail "--lifecycle must be one of: single, reentry, reentry_blocked_max_trades, reentry_blocked_operator_halt" ;;
 esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"

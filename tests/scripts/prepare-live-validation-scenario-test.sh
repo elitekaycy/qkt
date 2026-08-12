@@ -191,6 +191,34 @@ jq -e '
 "$cli" parse "$blocked_reentry_armed" >/dev/null
 (cd "$blocked_reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
 
+operator_halt_reentry_out="$tmp/operator-halt-reentry-scenario"
+bash "$script" \
+    --output "$operator_halt_reentry_out" \
+    --id validation_halt_reentry \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917010 \
+    --symbol XAUUSD \
+    --lifecycle reentry_blocked_operator_halt >/dev/null
+operator_halt_reentry_armed="$operator_halt_reentry_out/strategies/armed/validation_halt_reentry_market_bracket.qkt"
+[ "$(grep -Fc 'TRADES.today < 2' "$operator_halt_reentry_armed")" -eq 2 ]
+[ "$(grep -Fc 'TRADES.today = 0' "$operator_halt_reentry_armed")" -eq 0 ]
+grep -F 'max_trades_per_day: 2' "$operator_halt_reentry_out/qkt.config.yaml" >/dev/null
+jq -e '
+    .safety.maximumTradesPerDay == 2 and
+    .armedScenario.lifecycle == "reentry_blocked_operator_halt" and
+    .armedScenario.maximumEntries == 1 and
+    .armedScenario.maximumExits == 1 and
+    .armedScenario.maximumBlockedEntries == 1 and
+    .armedScenario.expectedBlockedReason == "halted: operator" and
+    (.armedScenario.closeWhen | contains("second entry intentionally blocked by operator halt"))
+' "$operator_halt_reentry_out/expected.json" >/dev/null
+"$cli" parse "$operator_halt_reentry_armed" >/dev/null
+(cd "$operator_halt_reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
+
 if bash "$script" \
     --output "$tmp/unsupported-symbol" \
     --id validation_jpy \
@@ -264,6 +292,10 @@ bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$blocked_reentry_out" \
     --cli "$cli" \
     --verify-only >/dev/null
+bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
+    --scenario "$operator_halt_reentry_out" \
+    --cli "$cli" \
+    --verify-only >/dev/null
 bash "$repo_root/scripts/live-validation/run-market-bracket.sh" --help | grep -F '/var/tmp/qkt-validation/LIVE-LOCK-<server>-<login>' >/dev/null
 if rg --quiet '\$cli" status .*--json' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner passes unsupported --json to qkt status' >&2
@@ -284,7 +316,10 @@ grep -F 'wait_for_open_cycle() {' "$repo_root/scripts/live-validation/run-market
 grep -F 'wait_for_flat_cycle() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'wait_for_blocked_reentry() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_blocked_max_trades' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'reentry_blocked_operator_halt' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '"$cli" halt "$strategy_name" --state-dir "$scenario/state" --json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'operator-halt-before-blocked-reentry.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'blockedReentry:{' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'preTransport:($expectedBlockedEntries == 0 or ($orderPosts|tonumber) == $expectedEntries)' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'positionTickets:($tickets | map(.ticket))' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
@@ -315,7 +350,7 @@ grep -F '.data[0].type == 0 or .data[0].type == 1' "$repo_root/scripts/live-vali
 grep -F '.data[0].type == 1 and .data[0].sl > .data[0].price_open and .data[0].tp < .data[0].price_open' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F '($comment | startswith($strategyPrefix)) or' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F '($strategyPrefix | startswith($comment))' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F "halt \(operator kill\):" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F "halt \\((operator kill|operator)\\):" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'stale_log="$evidence/daemon-pre-halt.log"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'command -v flock >/dev/null || fail "flock is required for armed live runs"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'exec {live_lock_fd}> "$live_lock_path"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
@@ -389,6 +424,7 @@ grep -F 'expected_entries="$(jq -er' "$comparison_script" >/dev/null
 grep -F 'expected_exits="$(jq -er' "$comparison_script" >/dev/null
 grep -F 'expected_lifecycle_events=$((expected_entries + expected_exits))' "$comparison_script" >/dev/null
 grep -F 'lifecycle="$(jq -er' "$comparison_script" >/dev/null
+grep -F 'blocked_reason="$(jq -r' "$comparison_script" >/dev/null
 grep -F '.global.tradeCount == $expectedEvents' "$comparison_script" >/dev/null
 grep -F 'trades_json() {' "$comparison_script" >/dev/null
 grep -F '$mode-trades.json' "$comparison_script" >/dev/null
@@ -400,6 +436,8 @@ grep -F 'paperTrades: $paperTrades' "$comparison_script" >/dev/null
 grep -F 'mt5SimTrades: $mt5Trades' "$comparison_script" >/dev/null
 grep -F '($lifecycle == "reentry" and .strategyOwnedLifecycle == true)' "$comparison_script" >/dev/null
 grep -F '$lifecycle == "reentry_blocked_max_trades"' "$comparison_script" >/dev/null
+grep -F '$lifecycle == "reentry_blocked_operator_halt"' "$comparison_script" >/dev/null
+grep -F 'pre-transport " + $blockedReason + " rejection' "$comparison_script" >/dev/null
 grep -F '.blockedReentry.preTransport == true' "$comparison_script" >/dev/null
 grep -F 'expectedEntries: $expectedEntries' "$comparison_script" >/dev/null
 grep -F 'all(range(0; $expectedEntries); . as $i |' "$comparison_script" >/dev/null

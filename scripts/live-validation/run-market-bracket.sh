@@ -91,6 +91,16 @@ case "$lifecycle" in
         [ "$expected_blocked_reason" = "MaxTradesPerDay" ] ||
             fail "blocked re-entry lifecycle must retain the MaxTradesPerDay rejection reason"
         ;;
+    reentry_blocked_operator_halt)
+        grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null ||
+            fail "operator-halt re-entry strategy does not attempt the reviewed second entry"
+        grep -F 'max_trades_per_day: 2' "$config" >/dev/null ||
+            fail "operator-halt re-entry scenario should leave max trades open for the operator gate"
+        [ "$expected_entries" -eq 1 ] && [ "$expected_exits" -eq 1 ] && [ "$expected_blocked_entries" -eq 1 ] ||
+            fail "operator-halt re-entry lifecycle must expect one filled entry, one close, and one blocked entry"
+        [ "$expected_blocked_reason" = "halted: operator" ] ||
+            fail "operator-halt re-entry lifecycle must retain the halted: operator rejection reason"
+        ;;
     *) fail "unsupported armed lifecycle: $lifecycle" ;;
 esac
 grep -F "STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance" "$armed_strategy" >/dev/null ||
@@ -602,11 +612,18 @@ if [ "$lifecycle" = "reentry" ]; then
     gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
     jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
         fail "re-entry lifecycle did not end flat"
-elif [ "$lifecycle" = "reentry_blocked_max_trades" ]; then
+elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ]; then
     wait_for_open_cycle 1
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-open.json"
     wait_for_flat_cycle 1
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-flat.json"
+    if [ "$lifecycle" = "reentry_blocked_operator_halt" ]; then
+        "$cli" halt "$strategy_name" --state-dir "$scenario/state" --json > "$evidence/operator-halt-before-blocked-reentry.json"
+        jq -e --arg strategy "$strategy_name" '
+            .state == "halted" and (.affected | index($strategy)) != null
+        ' "$evidence/operator-halt-before-blocked-reentry.json" >/dev/null ||
+            fail "operator halt did not affect the re-entry strategy"
+    fi
     wait_for_blocked_reentry
     gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
     jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
@@ -743,7 +760,7 @@ golden_placements="$(jq -r '.counts.linkedPlacements' "$golden_manifest")"
 golden_sha="$(sha256sum "$golden_zip" | awk '{print $1}')"
 
 stale_log="$scenario/logs/daemon.log"
-halt_line="$(rg -n 'halt \(operator kill\):' "$scenario/logs/daemon.log" | tail -n 1 | cut -d: -f1 || true)"
+halt_line="$(rg -n 'halt \((operator kill|operator)\):' "$scenario/logs/daemon.log" | tail -n 1 | cut -d: -f1 || true)"
 if [ -n "$halt_line" ] && [ "$halt_line" -gt 1 ]; then
     stale_log="$evidence/daemon-pre-halt.log"
     sed -n "1,$((halt_line - 1))p" "$scenario/logs/daemon.log" > "$stale_log"
@@ -820,7 +837,7 @@ jq -n \
           },
           bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance},
           flattenVerified:(if $lifecycle == "single" then true else false end),
-          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades"),
+          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt"),
           finalPositions:0,
           finalOrders:0,
           balanceDelta:$balanceDelta,

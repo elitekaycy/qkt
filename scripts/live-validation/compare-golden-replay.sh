@@ -115,7 +115,8 @@ jq -e '
     .qktDirty == false and
     (($lifecycle == "single" and .flattenVerified == true) or
      ($lifecycle == "reentry" and .strategyOwnedLifecycle == true) or
-     ($lifecycle == "reentry_blocked_max_trades" and .strategyOwnedLifecycle == true and
+     (($lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt") and
+      .strategyOwnedLifecycle == true and
       .blockedReentry.preTransport == true and .blockedReentry.rejections >= $blockedEntries)) and
     .finalPositions == 0 and
     .finalOrders == 0 and
@@ -135,6 +136,7 @@ expected_entries="$(jq -er '.expectedLifecycle.entries // 1' "$live_result")"
 expected_exits="$(jq -er '.expectedLifecycle.exits // 1' "$live_result")"
 expected_lifecycle_events=$((expected_entries + expected_exits))
 lifecycle="$(jq -er '.lifecycle // "single"' "$live_result")"
+blocked_reason="$(jq -r '.blockedReentry.reason // ""' "$live_result")"
 stop_distance="$(jq -er '.armedScenario.stopDistance' "$expected")"
 take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$expected")"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
@@ -421,6 +423,7 @@ jq -n \
     --arg toUtc "$to_utc" \
     --argjson sourceCounts "$(jq -c '.counts' "$external_manifest")" \
     --arg lifecycle "$lifecycle" \
+    --arg blockedReason "$blocked_reason" \
     --argjson expectedEntries "$expected_entries" \
     --argjson liveEntries "$live_entries" \
     --argjson paperTrades "$paper_trades" \
@@ -466,10 +469,11 @@ jq -n \
             (if $lifecycle == "single" then
                 "The operator flatten fill occurs after the bounded strategy replay window and " +
                 "is reconciled by the live result, not replayed as a strategy decision."
-             elif $lifecycle == "reentry_blocked_max_trades" then
+             elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" then
                 "The live blocked re-entry capture includes one strategy-owned close and a " +
-                "pre-transport MaxTradesPerDay rejection for the next entry; replay comparison " +
-                "checks the filled entry intent/protection and byte-identical replay order journals."
+                "pre-transport " + $blockedReason + " rejection for the next entry; " +
+                "replay comparison checks the filled entry intent/protection and byte-identical " +
+                "replay order journals."
              else
                 "The live re-entry capture includes strategy-owned close fills; replay comparison " +
                 "checks entry intent, fill, and adjusted protection parity for each entry and relies " +
