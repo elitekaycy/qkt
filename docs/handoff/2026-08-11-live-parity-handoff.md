@@ -30,9 +30,10 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 178`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 179`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `docs(docs): record strict case sanity proof`
   - `fix(scripts): bound golden replay execution drift`
   - `docs(docs): record strict atr sanity proof`
   - `docs(docs): record strict rsi sanity proof`
@@ -3939,6 +3940,36 @@ Generated final-sanity matrix is now sealed:
 - `case_math` on GBPUSD: strict live-plus-replay sealed.
 
 This closes the quick final generated strategy sanity matrix. It does not by itself close the whole
-go-live program: higher-timeframe warmup validation, retained-risk sanity review, full pre-push
-checks, PR to `dev`, promotion, and downstream `qkt-forge`/`qkt-insights` rollout are still separate
-gates.
+go-live program: full pre-push checks, PR to `dev`, promotion, and downstream
+`qkt-forge`/`qkt-insights` rollout are still separate gates.
+
+## 2026-08-12 Update: Closeout Gate Recheck
+
+Status recheck at `2026-08-12T11:03:07Z`:
+
+- The generated final-sanity live-plus-replay matrix is sealed for `ema_cross`, `rsi_reversion`,
+  `atr_channel`, and `case_math`.
+- Higher-timeframe proof is already sealed for the fast validation pattern: M15, H1, and H4 use a
+  `1m` primary execution stream plus warmed higher-timeframe secondary stream, with real daemon
+  order-path evidence and replay comparison retained.
+- Retained-risk proof is already sealed for the reviewed restored-state matrix and controlled
+  margin-floor fixture. The focused script tests were rerun from this checkout and passed:
+
+```bash
+bash tests/scripts/prepare-stateful-risk-matrix-test.sh
+bash tests/scripts/run-stateful-risk-containers-test.sh
+```
+
+No JVM heap, CPU, worker, or Docker resource restrictions were used for this recheck.
+
+Remaining before the branch can be called done:
+
+1. Run the required pre-push checks from this final state:
+   `./gradlew build`, `./gradlew test`, `git status`, `git log --oneline origin/dev..HEAD`, and
+   `rg -n 'TODO|FIXME|XXX' src/ || true`.
+2. Fix any issue those final checks expose, then rerun the affected checks.
+3. Open the PR from `test/exhaustive-live-parity` to `dev` with the retained evidence linked.
+4. After PR merge/promotion, apply the proven `qkt`, `qkt-insights`, images/tags, and related runtime
+   changes to `qkt-forge` on `sshbot2`, rerun the selected strategies there, then do portfolio
+   backtests from the promoted/proven runtime.
+5. Only after `qkt-forge` forward-test is clean, update bot1 `qkt-quantlive`.
