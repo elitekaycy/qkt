@@ -437,6 +437,11 @@ grep -F '"$cli" --version' "$repo_root/scripts/live-validation/run-market-bracke
 grep -F '"$cli" bot bars "$dsl_symbol" --tf "$tf" --count 3 --config "$config" --json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'wait_for_startup_window() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'wait_for_history_ready() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'command -v timeout >/dev/null || fail "timeout is required"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'history_attempt_timeout_seconds=20' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'capture_history_snapshot() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'timeout --foreground "${history_attempt_timeout_seconds}s"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'history-during-run-attempt-$attempt.log' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'wait_for_fresh_tick_after_daemon() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'qkt_catalog_startup_delay_ms "$phase_ms"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'status:"entered"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null

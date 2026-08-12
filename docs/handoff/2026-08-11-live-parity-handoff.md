@@ -30,9 +30,10 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 148`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 149`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `fix(scripts): bound market history reconciliation`
   - `test(dsl): cover pending reentry guard`
   - `docs(docs): seal loss-streak reentry live evidence`
   - `feat(scripts): add loss-streak reentry live lifecycle`
@@ -1147,10 +1148,11 @@ downstream.
 
 As of Wednesday, August 12, 2026:
 
-- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 148`, tracked
-  worktree clean after the pending re-entry guard parity commit; two pre-existing untracked
+- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 149`, tracked
+  worktree clean after the market history reconciliation hardening commit; two pre-existing untracked
   Kimi/audit docs remain.
 - Current continuation commits now on the branch:
+  - `fix(scripts): bound market history reconciliation`
   - `test(dsl): cover pending reentry guard`
   - `docs(docs): seal loss-streak reentry live evidence`
   - `feat(scripts): add loss-streak reentry live lifecycle`
@@ -1217,6 +1219,12 @@ As of Wednesday, August 12, 2026:
   `reentry_blocked_loss_streak`. The retained armed live run and replay comparison then passed at
   `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z/evidence/result.json` and
   `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z-replay/result.json`.
+- `bash -n scripts/live-validation/run-market-bracket.sh && bash -n tests/scripts/prepare-live-validation-scenario-test.sh`:
+  passed on Wednesday, August 12, 2026 after adding a process-level timeout around final
+  `qkt bot history` reconciliation in the market-bracket runner.
+- `bash tests/scripts/prepare-live-validation-scenario-test.sh`: passed again on Wednesday, August
+  12, 2026 after pinning the market-bracket runner's bounded history reconciliation helper and
+  per-attempt diagnostic stderr artifacts.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed again on Wednesday, August 12, 2026 after adding explicit generated-DSL strategy daily-loss
   recovery coverage: first live-paper/replay order lifecycle trips a DAILY strategy halt, same-day
@@ -1994,6 +2002,10 @@ This is the source-of-truth order for the next stage as of Wednesday, August 12,
    passed after the expected-contract, startup-window, and tick-freshness gate fixes:
    - `tests/scripts/run-container-round-trips-test.sh`
    - `tests/scripts/run-shared-account-insights-round-trips-test.sh`
+   - `run-market-bracket.sh` now also wraps final `qkt bot history` reconciliation in a
+     20-second process timeout per attempt and retains `history-during-run-attempt-N.log`. The MT5
+     client already honors profile `http_timeout_ms`; this shell cap protects the live validation
+     lane if a CLI/JVM process wedges after the account has already been verified flat.
 2. QKT Insights attribution/contract fix is verified locally but not committed in qkt-insights yet:
    - `pnpm build:all && pnpm test` passed with `196` tests across `19` files;
    - local no-cache validation image

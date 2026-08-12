@@ -35,6 +35,7 @@ fail() {
 scenario=""
 cli="$repo_root/build/install/qkt/bin/qkt"
 timeout_seconds=180
+history_attempt_timeout_seconds=20
 arm=""
 verify_only=false
 
@@ -54,6 +55,7 @@ done
 scenario="$(realpath "$scenario")"
 [ -x "$cli" ] || fail "QKT CLI is not executable: $cli"
 command -v unzip >/dev/null || fail "unzip is required"
+command -v timeout >/dev/null || fail "timeout is required"
 bash "$readonly_runner" --scenario "$scenario" --cli "$cli" --verify-only >/dev/null
 
 mapfile -t armed_strategies < <(find "$scenario/strategies/armed" -maxdepth 1 -type f -name '*_market_bracket.qkt' | sort)
@@ -587,6 +589,13 @@ wait_for_cooldown_recovery_window() {
         > "$evidence/cooldown-recovery-wait.json"
 }
 
+capture_history_snapshot() {
+    local attempt="$1"
+    timeout --foreground "${history_attempt_timeout_seconds}s" \
+        "$cli" bot history --broker exness --since "$run_started_ms" --config "$config" --json \
+        > "$evidence/history-during-run.json" 2> "$evidence/history-during-run-attempt-$attempt.log"
+}
+
 acquire_live_lock
 verify_cli_git_sha
 
@@ -728,8 +737,11 @@ jq -e 'length == 0' "$evidence/positions-final.json" >/dev/null || fail "demo ac
 jq -e 'length == 0' "$evidence/orders-final.json" >/dev/null || fail "demo account has a pending order after the scenario"
 
 deals_seen=false
-for _ in $(seq 1 30); do
-    "$cli" bot history --broker exness --since "$run_started_ms" --config "$config" --json > "$evidence/history-during-run.json"
+for attempt in $(seq 1 30); do
+    if ! capture_history_snapshot "$attempt"; then
+        sleep 1
+        continue
+    fi
     entry_count="$(jq --arg venueSymbol "$venue_symbol" '[.[] | select(.symbol == $venueSymbol and .entry == "IN" and .lots == 0.01)] | length' "$evidence/history-during-run.json")"
     exit_count="$(jq --arg venueSymbol "$venue_symbol" '[.[] | select(.symbol == $venueSymbol and .entry == "OUT" and .lots == 0.01)] | length' "$evidence/history-during-run.json")"
     if [ "$entry_count" -ge "$expected_entries" ] && [ "$exit_count" -ge "$expected_exits" ]; then
