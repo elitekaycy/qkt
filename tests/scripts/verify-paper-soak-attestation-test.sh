@@ -32,6 +32,8 @@ write_attestation() {
 {
   "schemaVersion": 1,
   "attestationType": "live-parity",
+  "runId": "parity-test-20260805-0001",
+  "inputFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "testingSha": "$attested_sha",
   "image": "$repository@$digest",
   "accountMode": "demo",

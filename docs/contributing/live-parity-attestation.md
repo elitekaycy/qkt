@@ -42,6 +42,14 @@ The run may use one deliberately comprehensive strategy or several focused
 strategies. A comprehensive strategy is acceptable only when its trace proves each
 condition independently; a single final trade is not evidence that every branch ran.
 
+The supported indicator and numeric-function inventory is read from the repository's
+validation catalog, not guessed from a sample strategy. The suite manifest records
+that inventory and each run must classify every capability as covered, not applicable
+with a reason, or an explicit gap. A four-case smoke wave is therefore useful for
+fast feedback but cannot be called exhaustive when capabilities such as ZSCORE,
+CORRELATION, BETA, PERCENTILE_RANK, MACD, BOLLINGER, rank functions, or session and
+volume indicators were not exercised.
+
 The retained coverage artifact must identify the scenario, strategy/book namespace,
 symbol, timeframe, input range, warmup range, and evaluation sequence for each case.
 The cases must exercise, as applicable:
@@ -85,7 +93,11 @@ boundary transition does not prove H1/H4 behavior.
 
 ## Attestation Contract
 
-The verifier requires `attestationType: live-parity` and an immutable image digest.
+The verifier requires `attestationType: live-parity`, an immutable image digest,
+and a fresh opaque `runId` plus `inputFingerprint`. The trusted runner maintains a
+locked used-run-id ledger, so replaying or editing a previous attestation cannot
+pass as a new run. The fingerprint must be calculated from the exact captured input
+window and strategy/config/source checksums; changing only timestamps is invalid.
 The `parity` object must contain positive counts for strategies, indicators, math,
 DSL scenarios, order types, ticks, bars, fills, parity comparisons, and Insights
 events. It must contain zero `parityMismatches`, `unexplainedRejections`, and

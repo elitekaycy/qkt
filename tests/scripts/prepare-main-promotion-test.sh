@@ -68,6 +68,8 @@ case "$*" in
 {
   "schemaVersion": 1,
   "attestationType": "live-parity",
+  "runId": "parity-test-20260803-0001",
+  "inputFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "testingSha": "0123456789abcdef0123456789abcdef01234567",
   "image": "ghcr.io/test/qkt@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "accountMode": "demo",

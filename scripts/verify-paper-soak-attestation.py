@@ -14,6 +14,7 @@ from pathlib import Path
 
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}")
 REQUIRED_ARTIFACTS = (
     "health",
     "journal",
@@ -67,6 +68,12 @@ def validate(
     attestation_type = require_string(document.get("attestationType"), "attestationType").lower()
     if attestation_type != "live-parity":
         fail("attestationType must be live-parity")
+    run_id = require_string(document.get("runId"), "runId")
+    if not RUN_ID_RE.fullmatch(run_id):
+        fail("runId must be a fresh opaque run identifier")
+    input_fingerprint = require_string(document.get("inputFingerprint"), "inputFingerprint")
+    if not re.fullmatch(r"[0-9a-f]{64}", input_fingerprint):
+        fail("inputFingerprint must be a lowercase SHA-256")
 
     git_sha = require_string(document.get("testingSha"), "testingSha")
     if not SHA_RE.fullmatch(git_sha):
