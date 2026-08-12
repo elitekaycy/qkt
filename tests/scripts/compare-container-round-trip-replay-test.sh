@@ -30,12 +30,17 @@ grep -F 'indicator entry values differ from live' "$runner" >/dev/null
 grep -F 'indicator exit quantity or close differs from live' "$runner" >/dev/null
 grep -F '$2 + 0 >= 1' "$runner" >/dev/null
 grep -F 'def norm: ((tonumber * 100000000) | round);' "$runner" >/dev/null
-grep -F 'live and full-ticks-mt5 fills or PnL differ after numeric normalization' "$runner" >/dev/null
-grep -F 'live request, protection, or fills differ from MT5 simulation' "$runner" >/dev/null
+grep -F 'scenario is not in the reviewed live-vs-replay drift set' "$runner" >/dev/null
+grep -F 'live and full-ticks-mt5 fills or PnL exceed reviewed market-execution drift bounds' "$runner" >/dev/null
+grep -F 'live request, protection, or fill response differs from strategy intent' "$runner" >/dev/null
+grep -F 'live-mt5-execution-drift.json' "$runner" >/dev/null
 grep -F 'liveCanonicalEntryIntentExact:true' "$runner" >/dev/null
+grep -F 'liveRequestAndProtectionIntentExact:true,liveMt5ExecutionDriftBounded:true' "$runner" >/dev/null
 grep -F 'paperModelDifferences' "$runner" >/dev/null
+grep -F 'liveModelDifferences' "$runner" >/dev/null
 grep -F 'barsPaperModelDifferences' "$runner" >/dev/null
 grep -F 'Paper fills at the tracked price without bid/ask spread' "$runner" >/dev/null
+grep -F 'Live MT5 market execution includes terminal/gateway/venue latency' "$runner" >/dev/null
 grep -F 'sha256sum --check SHA256SUMS' "$runner" >/dev/null
 
 [ "$(grep -c '^run_replay full-' "$runner")" -eq 2 ]

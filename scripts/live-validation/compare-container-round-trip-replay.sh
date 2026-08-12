@@ -148,6 +148,28 @@ cp -- "$strategy_file" "$output/source/strategy.qkt"
 replay_bundle="$output/source/golden.zip"
 replay_strategy="$output/source/strategy.qkt"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
+expected_symbol="$(jq -er '.armedScenario.symbol' "$expected")"
+venue_symbol="$(jq -er '.armedScenario.venueSymbol' "$expected")"
+expected_contract_size="$(jq -er '.armedScenario.expectedContractSize' "$expected")"
+quantity_lots="$(jq -er '.armedScenario.quantityLots' "$expected")"
+stop_distance="$(jq -er '.armedScenario.stopDistance' "$expected")"
+take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$expected")"
+maximum_execution_drift_points="$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "$expected")"
+case "$expected_symbol:$venue_symbol:$expected_contract_size:$maximum_execution_drift_points" in
+    EXNESS:EURUSD:EURUSDm:100000:80|EXNESS:GBPUSD:GBPUSDm:100000:80)
+        symbol_point="0.00001"
+        ;;
+    EXNESS:XAUUSD:XAUUSDm:100:1000)
+        symbol_point="0.001"
+        ;;
+    *)
+        fail "scenario is not in the reviewed live-vs-replay drift set: $expected_symbol/$venue_symbol"
+        ;;
+esac
+execution_price_drift_limit="$(awk -v point="$symbol_point" -v maxPoints="$maximum_execution_drift_points" \
+    'BEGIN {printf "%.8f", point * maxPoints}')"
+execution_pnl_drift_limit="$(awk -v priceLimit="$execution_price_drift_limit" -v qty="$quantity_lots" -v contract="$expected_contract_size" \
+    'BEGIN {printf "%.8f", 2 * priceLimit * qty * contract}')"
 
 # All replay brokers are local models. Override any caller credential and disable fetching.
 export QKT_BROKER_API_KEY=offline-replay-not-used
@@ -371,36 +393,98 @@ jq -s '
 ' "$output/work/transport.jsonl" >"$output/comparison/live-execution.json"
 
 jq -ne --slurpfile live "$output/comparison/live-trades-normalized.json" \
-    --slurpfile replay "$output/comparison/full-ticks-mt5-trades-normalized.json" '
+    --slurpfile replay "$output/comparison/full-ticks-mt5-trades-normalized.json" \
+    --arg priceDriftLimit "$execution_price_drift_limit" \
+    --arg pnlDriftLimit "$execution_pnl_drift_limit" '
     def norm: ((tonumber * 100000000) | round);
+    def absval: if . < 0 then - . else . end;
+    ($priceDriftLimit | tonumber) as $priceLimit |
+    ($pnlDriftLimit | tonumber) as $pnlLimit |
     ($live[0]|length) == 2 and ($replay[0]|length) == 2 and
     all(range(0;2); . as $i |
         $live[0][$i].strategy == $replay[0][$i].strategy and
         $live[0][$i].symbol == $replay[0][$i].symbol and
         $live[0][$i].side == $replay[0][$i].side and
         ($live[0][$i].quantity|norm) == ($replay[0][$i].quantity|norm) and
-        ($live[0][$i].price|norm) == ($replay[0][$i].price|norm) and
-        ($live[0][$i].netAccountRealized|norm) == ($replay[0][$i].netAccountRealized|norm) and
-        ($live[0][$i].grossAccountRealized|norm) == ($replay[0][$i].grossAccountRealized|norm) and
+        ((($live[0][$i].price | tonumber) - ($replay[0][$i].price | tonumber)) | absval) <= $priceLimit and
+        ((($live[0][$i].netAccountRealized | tonumber) - ($replay[0][$i].netAccountRealized | tonumber)) | absval) <= $pnlLimit and
+        ((($live[0][$i].grossAccountRealized | tonumber) - ($replay[0][$i].grossAccountRealized | tonumber)) | absval) <= $pnlLimit and
         ($live[0][$i].totalCostsAccount|norm) == ($replay[0][$i].totalCostsAccount|norm) and
         $live[0][$i].reducedExposure == $replay[0][$i].reducedExposure)
-' >/dev/null || fail "live and full-ticks-mt5 fills or PnL differ after numeric normalization"
+' >/dev/null ||
+    fail "live and full-ticks-mt5 fills or PnL exceed reviewed market-execution drift bounds"
+
+jq -n --slurpfile live "$output/comparison/live-trades-normalized.json" \
+    --slurpfile replay "$output/comparison/full-ticks-mt5-trades-normalized.json" \
+    --arg symbolPoint "$symbol_point" \
+    --arg maximumExecutionDriftPoints "$maximum_execution_drift_points" \
+    --arg priceDriftLimit "$execution_price_drift_limit" \
+    --arg pnlDriftLimit "$execution_pnl_drift_limit" '
+    def absval: if . < 0 then - . else . end;
+    def price_delta($i): (($live[0][$i].price | tonumber) - ($replay[0][$i].price | tonumber));
+    def pnl_delta($field): (($live[0][1][$field] | tonumber) - ($replay[0][1][$field] | tonumber));
+    {
+        symbolPoint:$symbolPoint,
+        maximumExecutionDriftPoints:($maximumExecutionDriftPoints | tonumber),
+        priceDriftLimit:$priceDriftLimit,
+        pnlDriftLimit:$pnlDriftLimit,
+        entryPriceDelta:(price_delta(0) | tostring),
+        exitPriceDelta:(price_delta(1) | tostring),
+        entryDriftPoints:((price_delta(0) / ($symbolPoint | tonumber)) | tostring),
+        exitDriftPoints:((price_delta(1) / ($symbolPoint | tonumber)) | tostring),
+        netPnlDelta:(pnl_delta("netAccountRealized") | tostring),
+        grossPnlDelta:(pnl_delta("grossAccountRealized") | tostring),
+        withinReviewedBounds:(
+            ([price_delta(0), price_delta(1)] | map(absval) | max) <= ($priceDriftLimit | tonumber) and
+            ([pnl_delta("netAccountRealized"), pnl_delta("grossAccountRealized")] | map(absval) | max) <= ($pnlDriftLimit | tonumber)
+        ),
+        reason:"Live market orders fill after terminal/gateway/venue latency; mt5-sim replays the same deterministic decision against the recorded tick stream without transport latency."
+    }
+' >"$output/comparison/live-mt5-execution-drift.json"
+
 jq -ne --slurpfile live "$output/comparison/live-execution.json" \
     --slurpfile intent "$output/comparison/full-ticks-entry-order.json" \
-    --slurpfile mt5 "$output/comparison/full-ticks-mt5-trades.json" '
+    --slurpfile liveTrades "$output/comparison/live-trades-normalized.json" \
+    --arg stopDistance "$stop_distance" \
+    --arg takeProfitDistance "$take_profit_distance" '
     def norm: ((tonumber * 100000000) | round);
-    ($live[0].entryResponse.ok and $live[0].adjustedProtection.accepted and $live[0].closeResponse.ok) and
-    ([$live[0].entryResponse.retcode,$live[0].adjustedProtection.retcode,$live[0].closeResponse.retcode] |
-        all(.[]; . == 10008 or . == 10009 or . == 10010)) and
-    $live[0].initialRequest.side == $intent[0].side and
-    ($live[0].initialRequest.quantity|norm) == ($intent[0].qty|norm) and
-    ($live[0].initialRequest.stopLoss|norm) == ($intent[0].stopLoss.price|norm) and
-    ($live[0].initialRequest.takeProfit|norm) == ($intent[0].takeProfit|norm) and
-    ($live[0].adjustedProtection.stopLoss|norm) == ($mt5[0][0].stopLossPrice|norm) and
-    ($live[0].adjustedProtection.takeProfit|norm) == ($mt5[0][0].takeProfitPrice|norm) and
-    ($live[0].entryResponse.price|norm) == ($mt5[0][0].price|norm) and
-    ($live[0].closeResponse.price|norm) == ($mt5[0][1].price|norm)
-' >/dev/null || fail "live request, protection, or fills differ from MT5 simulation"
+    ($stopDistance | tonumber) as $stopDistance |
+    ($takeProfitDistance | tonumber) as $takeProfitDistance |
+    ($live[0].entryResponse.price | tonumber) as $entryPrice |
+    if $live[0].initialRequest.side == "BUY" then
+        ($entryPrice - $stopDistance) as $expectedStop |
+        ($entryPrice + $takeProfitDistance) as $expectedTakeProfit |
+        ($live[0].entryResponse.ok and $live[0].adjustedProtection.accepted and $live[0].closeResponse.ok) and
+        ([$live[0].entryResponse.retcode,$live[0].adjustedProtection.retcode,$live[0].closeResponse.retcode] |
+            all(.[]; . == 10008 or . == 10009 or . == 10010)) and
+        $live[0].initialRequest.side == $intent[0].side and
+        ($live[0].initialRequest.quantity|norm) == ($intent[0].qty|norm) and
+        ($live[0].initialRequest.stopLoss|norm) == ($intent[0].stopLoss.price|norm) and
+        ($live[0].initialRequest.takeProfit|norm) == ($intent[0].takeProfit|norm) and
+        ($live[0].entryResponse.price|norm) == ($liveTrades[0][0].price|norm) and
+        ($live[0].closeResponse.price|norm) == ($liveTrades[0][1].price|norm) and
+        ($live[0].adjustedProtection.stopLoss|norm) == ($expectedStop|tostring|norm) and
+        ($live[0].adjustedProtection.takeProfit|norm) == ($expectedTakeProfit|tostring|norm) and
+        $live[0].closeRequest.ticketTargeted and
+        ($live[0].closeRequest.volume|norm) == ($intent[0].qty|norm)
+    else
+        ($entryPrice + $stopDistance) as $expectedStop |
+        ($entryPrice - $takeProfitDistance) as $expectedTakeProfit |
+        ($live[0].entryResponse.ok and $live[0].adjustedProtection.accepted and $live[0].closeResponse.ok) and
+        ([$live[0].entryResponse.retcode,$live[0].adjustedProtection.retcode,$live[0].closeResponse.retcode] |
+            all(.[]; . == 10008 or . == 10009 or . == 10010)) and
+        $live[0].initialRequest.side == $intent[0].side and
+        ($live[0].initialRequest.quantity|norm) == ($intent[0].qty|norm) and
+        ($live[0].initialRequest.stopLoss|norm) == ($intent[0].stopLoss.price|norm) and
+        ($live[0].initialRequest.takeProfit|norm) == ($intent[0].takeProfit|norm) and
+        ($live[0].entryResponse.price|norm) == ($liveTrades[0][0].price|norm) and
+        ($live[0].closeResponse.price|norm) == ($liveTrades[0][1].price|norm) and
+        ($live[0].adjustedProtection.stopLoss|norm) == ($expectedStop|tostring|norm) and
+        ($live[0].adjustedProtection.takeProfit|norm) == ($expectedTakeProfit|tostring|norm) and
+        $live[0].closeRequest.ticketTargeted and
+        ($live[0].closeRequest.volume|norm) == ($intent[0].qty|norm)
+    end
+' >/dev/null || fail "live request, protection, or fill response differs from strategy intent"
 
 jq '[.[] | del(
     .timestamp,.fxRateTimestamp,.brokerOrderId,.price,.realized,.netAccountRealized,
@@ -417,6 +501,7 @@ paper_entry="$(jq -er '.[0].price' "$output/comparison/full-ticks-paper-trades.j
 paper_exit="$(jq -er '.[1].price' "$output/comparison/full-ticks-paper-trades.json")"
 mt5_entry="$(jq -er '.[0].price' "$output/comparison/full-ticks-mt5-trades.json")"
 mt5_exit="$(jq -er '.[1].price' "$output/comparison/full-ticks-mt5-trades.json")"
+live_pnl="$(jq -er '.[1].netAccountRealized' "$output/comparison/live-trades-normalized.json")"
 paper_pnl="$(jq -er '.global.realizedTotal' "$output/reports/full-ticks-paper/result.json")"
 mt5_pnl="$(jq -er '.global.realizedTotal' "$output/reports/full-ticks-mt5/result.json")"
 bars_exit="$(jq -er '.[1].price' "$output/comparison/bars-paper-trades.json")"
@@ -424,6 +509,7 @@ bars_pnl="$(jq -er '.global.realizedTotal' "$output/reports/bars-paper/result.js
 paper_entry_delta="$(awk -v paper="$paper_entry" -v mt5="$mt5_entry" 'BEGIN {printf "%.8f", paper-mt5}')"
 paper_exit_delta="$(awk -v paper="$paper_exit" -v mt5="$mt5_exit" 'BEGIN {printf "%.8f", paper-mt5}')"
 paper_pnl_delta="$(awk -v paper="$paper_pnl" -v mt5="$mt5_pnl" 'BEGIN {printf "%.8f", paper-mt5}')"
+live_mt5_pnl_delta="$(awk -v live="$live_pnl" -v mt5="$mt5_pnl" 'BEGIN {printf "%.8f", live-mt5}')"
 bars_exit_delta="$(awk -v bars="$bars_exit" -v ticks="$paper_exit" 'BEGIN {printf "%.8f", bars-ticks}')"
 bars_pnl_delta="$(awk -v bars="$bars_pnl" -v ticks="$paper_pnl" 'BEGIN {printf "%.8f", bars-ticks}')"
 [ "$paper_entry_delta" != "0.00000000" ] || [ "$paper_exit_delta" != "0.00000000" ] ||
@@ -449,9 +535,11 @@ jq -n \
     --argjson sourceCounts "$source_counts" \
     --arg liveHolding "$live_holding" --arg fullHolding "$full_holding" --arg barsHolding "$bars_holding" \
     --arg paperEntryDelta "$paper_entry_delta" --arg paperExitDelta "$paper_exit_delta" \
-    --arg paperPnl "$paper_pnl" --arg mt5Pnl "$mt5_pnl" --arg paperPnlDelta "$paper_pnl_delta" \
+    --arg paperPnl "$paper_pnl" --arg livePnl "$live_pnl" --arg mt5Pnl "$mt5_pnl" \
+    --arg paperPnlDelta "$paper_pnl_delta" --arg liveMt5PnlDelta "$live_mt5_pnl_delta" \
     --arg barsExit "$bars_exit" --arg barsPnl "$bars_pnl" --arg barsExitDelta "$bars_exit_delta" \
-    --arg barsPnlDelta "$bars_pnl_delta" '
+    --arg barsPnlDelta "$bars_pnl_delta" \
+    --slurpfile executionDrift "$output/comparison/live-mt5-execution-drift.json" '
     {
         schema:"qkt-live-container-round-trip-replay-comparison-v1",status:"passed",finishedAt:$finishedAt,
         source:{bundle:"source/golden.zip",bundleSha256:$bundleSha256,captureGitSha:$captureGitSha,counts:$sourceCounts},
@@ -462,13 +550,18 @@ jq -n \
             zeroRejectionsAndFinalFlat:true,fullTickOrderJournalsByteExact:true,
             barsOrdersTimestampNormalizedExact:true,indicatorEntryExact:true,
             indicatorExitQuantityAndCloseExact:true,liveCanonicalEntryIntentExact:true,
-            liveMt5FillsProtectionPnlExact:true
+            liveRequestAndProtectionIntentExact:true,liveMt5ExecutionDriftBounded:true
         },
         indicatorHoldingSeconds:{live:($liveHolding|tonumber),fullTicks:($fullHolding|tonumber),barsPaper:($barsHolding|tonumber)},
+        liveMt5ExecutionDrift:$executionDrift[0],
         paperModelDifferences:{
             entryPriceDeltaFromMt5:$paperEntryDelta,exitPriceDeltaFromMt5:$paperExitDelta,
-            paperPnl:$paperPnl,liveAndMt5Pnl:$mt5Pnl,pnlDeltaFromMt5:$paperPnlDelta,
+            paperPnl:$paperPnl,mt5Pnl:$mt5Pnl,pnlDeltaFromMt5:$paperPnlDelta,
             reason:"Paper fills at the tracked price without bid/ask spread; MT5 simulation and live use ask for BUY and bid for SELL."
+        },
+        liveModelDifferences:{
+            livePnl:$livePnl,mt5Pnl:$mt5Pnl,pnlDeltaFromMt5:$liveMt5PnlDelta,
+            reason:"Live MT5 market execution includes terminal/gateway/venue latency; replay preserves deterministic strategy decisions against captured market data."
         },
         barsPaperModelDifferences:{
             exitPrice:$barsExit,realizedPnl:$barsPnl,exitPriceDeltaFromFullTicksPaper:$barsExitDelta,

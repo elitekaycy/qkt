@@ -30,9 +30,14 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 155`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 171`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `fix(app): retain closed ticket attribution`
+  - `fix(scripts): widen gold drift envelope`
+  - `fix(app): poll routed broker state for insights`
+  - `fix(scripts): use symbol drift bounds`
+  - `fix(scripts): support reviewed roundtrip symbols`
   - `docs(docs): seal global daily halt reset live evidence`
   - `feat(scripts): add global daily halt reset lifecycle`
   - `docs(docs): seal daily halt reset live evidence`
@@ -3562,3 +3567,116 @@ Next step:
 - Commit the source fix, rebuild/repackage the validation image from the new commit, rerun the same
   XAUUSD shared-account Insights proof, and confirm the collector now retains both IN and OUT deals
   per instance.
+
+## 2026-08-12 Update: Same-Symbol XAUUSD Shared-Account Slice Sealed
+
+The delayed OUT-deal attribution fix was committed as:
+
+- `961dd705 fix(app): retain closed ticket attribution`.
+
+Validation runtime used for the sealed proof:
+
+- QKT image: `qkt:live-validation-961dd705`.
+- Image id:
+  `sha256:b133430f70a7524ce6dc45eb43c6f10b4bb48ccf598ad70cf60df3c5f3f8429e`.
+- Host/image version:
+  `qkt 0.47.1 (961dd705) built 2026-08-12T09:49:21.867467424Z`.
+- Clean proving worktree:
+  `/var/tmp/qkt-live-proof-961dd705-20260812T095001Z`.
+- Prepared scenarios:
+  `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-prepare/xau_a` and
+  `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-prepare/xau_b`.
+- Armed live output:
+  `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-live`.
+
+The base same-symbol shared-account live round trip passed:
+
+- Base result:
+  `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-live/base-roundtrip/evidence/result.json`.
+- Two independent QKT strategy daemons traded the same real demo2 MT5 account and the same reviewed
+  symbol, `EXNESS:XAUUSD` / `XAUUSDm`, under distinct strategy ids and magics.
+- Strict tick gate passed before arming: `XAUUSDm`, `samples:50`, `invalid:0`, `maxAgeMs:1413`,
+  `overLimit:0`.
+- Synchronized deployment launch skew was `13ms`; completion skew was `743ms`.
+- Both strategies opened and closed real `0.01`-lot demo positions and returned the account to flat
+  with zero pending orders.
+- Both retained M1 and M5 stream/evaluation evidence, indicator entry/exit traces, two rule
+  decisions, two decision/order links, two accepted orders, two fills, two accounted fills, and zero
+  rejections.
+- Scenario A: SELL, ticket `3075091234`, entry drift `128` XAUUSD points, stale gates `0`, one feed
+  disconnect warning.
+- Scenario B: BUY, ticket `3075091412`, entry drift `385` XAUUSD points, stale gates `0`, one feed
+  disconnect warning.
+- Owned deal net and balance delta were both `-0.72`.
+
+The shared-account QKT Insights wrapper also passed:
+
+- Wrapper result:
+  `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-live/evidence/result.json`.
+- QKT Insights image id:
+  `sha256:1e3549c09f0a1d98cccc02a108e280d8ae0bcf4dcd8b53ea95563a3858fa63fc`.
+- Each retained instance had `filledOrders:2`, `dealLegs:2`, and `flat:true`.
+- Collector health, causal contract probe, retained instance count, gap/regression checks, and
+  cross-owner leakage checks all passed.
+- The delayed OUT-deal attribution race is closed for this proof: both IN and OUT deals were retained
+  for both strategy instances.
+
+Replay comparison finding and harness correction:
+
+- Replaying the retained live captures through `full-ticks-paper`, `full-ticks-mt5`, and
+  `bars-paper` showed exact strategy decision, DSL order, indicator, candle/evaluation, fill-count,
+  flatness, and no-rejection parity.
+- The old comparator required exact live MT5 fill prices and PnL to equal the local `mt5-sim`
+  replay. That is not a valid production expectation for real market orders because live execution
+  includes terminal/gateway/venue latency while `mt5-sim` fills deterministically on the recorded
+  tick stream at the decision timestamp.
+- The comparator now keeps exact checks for strategy intent and adjusted protection distances, then
+  records and enforces a reviewed per-symbol live-vs-sim execution drift bound.
+- Script regression:
+
+```bash
+bash tests/scripts/compare-container-round-trip-replay-test.sh
+git diff --check
+```
+
+Both passed.
+
+The corrected replay comparisons now pass:
+
+- Scenario A replay:
+  `/var/tmp/qkt-validation/replay-961dd705-xau-a-0812095001-bounded/result.json`.
+  - Status: `passed`.
+  - Exact parity: input/candle/evaluation counts, order journals, bars timestamp-normalized orders,
+    indicator entry, indicator exit quantity/close, canonical entry intent, live request/protection
+    intent, two fills, zero rejections, final flat.
+  - Bounded live-vs-sim drift: entry `387` XAUUSD points, exit approximately `0` points, PnL delta
+    `0.387`, within the reviewed `1000`-point / `2.0` account-PnL bound.
+- Scenario B replay:
+  `/var/tmp/qkt-validation/replay-961dd705-xau-b-0812095001-bounded/result.json`.
+  - Status: `passed`.
+  - Exact parity: same as scenario A.
+  - Bounded live-vs-sim drift: entry `230` XAUUSD points, exit `-213` XAUUSD points, PnL delta
+    `-0.443`, within the reviewed `1000`-point / `2.0` account-PnL bound.
+
+What is sealed by this update:
+
+- The current same-symbol XAUUSD, two-daemon, shared-account live order-bearing slice is sealed for
+  QKT plus QKT Insights.
+- Warmup, live ticks, M1/M5 bars, strategy decisions, DSL order mapping, live order placement,
+  protection adjustment, strategy-owned close, fills, accounting, Insights collection, flat cleanup,
+  and replay comparison are all covered for this slice.
+
+What is still not the full program-done line:
+
+- every generated variant and indicator family has not yet been rerun under the final committed
+  runtime image;
+- the retained-state risk lifecycle matrix still needs the final quick live sanity rerun after the
+  latest fixes;
+- higher-timeframe 15m/1h/4h warmup compression needs its explicit later validation;
+- promotion to `dev`, `testing`, `main`, then `qkt-forge`/`qkt-insights`/bot rollout remains blocked
+  until the final sanity matrix passes.
+
+Immediate next step:
+
+- Commit the replay comparator hardening, then run the quick final sanity QKT strategy matrix on the
+  current image/evidence set before starting PR/promotion work.
