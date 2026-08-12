@@ -344,8 +344,9 @@ for index in 0 1; do
     stop_distance="$(jq -er '.armedScenario.stopDistance' "$scenario/expected.json")"
     take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$scenario/expected.json")"
     expected_contract_size="$(jq -er '.armedScenario.expectedContractSize' "$scenario/expected.json")"
-    case "$expected_symbol:$venue_symbol:$expected_contract_size" in
-        EXNESS:EURUSD:EURUSDm:100000|EXNESS:GBPUSD:GBPUSDm:100000|EXNESS:XAUUSD:XAUUSDm:100) ;;
+    maximum_entry_anchor_drift_points="$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "$scenario/expected.json")"
+    case "$expected_symbol:$venue_symbol:$expected_contract_size:$maximum_entry_anchor_drift_points" in
+        EXNESS:EURUSD:EURUSDm:100000:80|EXNESS:GBPUSD:GBPUSDm:100000:80|EXNESS:XAUUSD:XAUUSDm:100:400) ;;
         *) fail "scenario $index symbol contract is not in the reviewed live set" ;;
     esac
     jq -e \
@@ -353,7 +354,8 @@ for index in 0 1; do
         --arg symbol "$expected_symbol" \
         --arg venueSymbol "$venue_symbol" \
         --arg stopDistance "$stop_distance" \
-        --arg takeProfitDistance "$take_profit_distance" '
+        --arg takeProfitDistance "$take_profit_distance" \
+        --argjson maximumEntryAnchorDriftPoints "$maximum_entry_anchor_drift_points" '
         .schema == "qkt-live-validation-expected-v2" and
         .account.tradeMode == "demo" and .account.currency == "USD" and
         .safety.gatewayUrl == (.safety.gatewayUrl | select(startswith("http://127.0.0.1:"))) and
@@ -367,7 +369,7 @@ for index in 0 1; do
         .armedScenario.maximumEntries == 1 and .armedScenario.maximumExits == 1 and
         .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
         .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1 and
-        .armedScenario.maximumEntryAnchorDriftPoints == 80 and
+        .armedScenario.maximumEntryAnchorDriftPoints == $maximumEntryAnchorDriftPoints and
         .armedScenario.stopDistance == $stopDistance and
         .armedScenario.takeProfitDistance == $takeProfitDistance
     ' "$scenario/expected.json" >/dev/null || fail "scenario $index expected contract is not the bounded round trip"

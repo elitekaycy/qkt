@@ -101,12 +101,14 @@ case "$symbol" in
         stop_distance="0.0030"
         take_profit_distance="0.0060"
         expected_contract_size="100000"
+        maximum_entry_anchor_drift_points=80
         ;;
     XAUUSD)
         max_order_notional="10000"
         stop_distance="3.000"
         take_profit_distance="6.000"
         expected_contract_size="100"
+        maximum_entry_anchor_drift_points=400
         ;;
     *) fail "--symbol must be one of: EURUSD, GBPUSD, XAUUSD" ;;
 esac
@@ -596,7 +598,7 @@ $account_identity_metadata
     "closeWhen": "$close_when",
     "exitTimeframe": "1m",
     "minimumHoldingSeconds": 1,
-    "maximumEntryAnchorDriftPoints": 80,
+    "maximumEntryAnchorDriftPoints": $maximum_entry_anchor_drift_points,
     "stopDistance": "$stop_distance",
     "takeProfitDistance": "$take_profit_distance"
   }

@@ -3319,3 +3319,66 @@ Next live retry:
   to fail the strict pre-arm freshness gate.
 - Do not count the prior `74a77097` pre-arm attempts as an armed live proof; they remain valid safety
   evidence only.
+
+## 2026-08-12 Update: XAUUSD Same-Symbol Armed Finding
+
+Prepared and ran a same-account, same-symbol demo2 proof using the current `980a13cc` image:
+
+- Clean proving worktree:
+  `/var/tmp/qkt-live-proof-980a13cc-20260812T085823Z`.
+- Prepared scenarios:
+  `/var/tmp/qkt-validation/shared-account-insights-980a13cc-0812085849-prepare/xau_a` and
+  `/var/tmp/qkt-validation/shared-account-insights-980a13cc-0812085849-prepare/xau_b`.
+- Armed output:
+  `/var/tmp/qkt-validation/shared-account-insights-980a13cc-0812085849-live`.
+- Both scenarios used `EXNESS:XAUUSD` / `XAUUSDm` on demo2 with distinct strategy ids and magics
+  `980211` and `980212`.
+- Wrapper verify-only passed before arming.
+- The strict tick-freshness gate passed before arming: `XAUUSDm`, `samples:50`, `invalid:0`,
+  `maxAgeMs:1723`, `overLimit:0`, `maxAllowedAgeMs:8000`.
+
+Live behavior observed before the post-run audit failure:
+
+- Two real `0.01`-lot demo orders were opened concurrently on the same XAUUSD symbol and same MT5
+  account, with distinct magics and comments.
+- The strategies took opposite sides, then both issued strategy-owned closes.
+- Final demo2 state was flat: `/get_positions` empty, `/orders` empty, account balance/equity
+  `100002.06`, margin `0.0`.
+- No QKT strategy containers remained running after the attempt.
+
+The run failed after live trading, during retained evidence validation:
+
+- Failure: `run-container-round-trips: scenario 0 entry drift exceeds the reviewed 80-point bound`.
+- Root cause: harness-side FX-sized entry-drift threshold reused for XAUUSD.
+- Evidence: the XAUUSD symbol point is `0.001` and the observed spread was about `260` points; the
+  strategy decision/bracket anchor was `4405.172`, while the live fills were about `4404.971` to
+  `4404.972`, roughly `200` points from the decision anchor and inside the observed spread class.
+- The venue protection itself was correctly anchored to the actual fill price; this was not an
+  engine fill/protection bug.
+
+Fix applied locally after the finding:
+
+- [prepare-scenario.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/prepare-scenario.sh)
+  now emits symbol-specific reviewed entry-anchor drift: `80` points for EURUSD/GBPUSD and `400`
+  points for XAUUSD.
+- [run-container-round-trips.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-container-round-trips.sh)
+  now accepts only the reviewed symbol/contract/drift tuples:
+  `EXNESS:EURUSD/EURUSDm/100000/80`, `EXNESS:GBPUSD/GBPUSDm/100000/80`, and
+  `EXNESS:XAUUSD/XAUUSDm/100/400`.
+
+Verification after the harness fix:
+
+```bash
+bash tests/scripts/prepare-live-validation-scenario-test.sh
+bash tests/scripts/run-container-round-trips-test.sh
+git diff --check
+```
+
+All three passed.
+
+Next step:
+
+- Commit the harness fix, rebuild/repackage a new QKT validation image from that commit, prepare a
+  fresh demo2 XAUUSD scenario pair from the latest account snapshot, rerun the same armed
+  shared-account Insights proof, and then run replay comparisons on any passing retained live
+  captures.
