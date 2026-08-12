@@ -1815,14 +1815,15 @@ class LiveSession(
         // Broker truth → insights: account state, per-ticket positions, and deal history
         // polled on the poller's own thread, off the engine loop. Replaces the retired
         // engine-thread ledger snapshots — dashboards read state.* / broker.deal now.
+        val brokerStatePollerBrokers = builtBrokers.ifEmpty { listOf(broker) }.distinct()
         val brokerStatePoller =
             if (insightsSink != null &&
                 com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents &&
-                builtBrokers.isNotEmpty()
+                brokerStatePollerBrokers.isNotEmpty()
             ) {
                 com.qkt.observe.insights
                     .BrokerStatePoller(
-                        brokers = builtBrokers.toList(),
+                        brokers = brokerStatePollerBrokers,
                         sink = insightsSink,
                         attribution = ticketAttribution,
                         deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },

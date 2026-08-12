@@ -3382,3 +3382,71 @@ Next step:
   fresh demo2 XAUUSD scenario pair from the latest account snapshot, rerun the same armed
   shared-account Insights proof, and then run replay comparisons on any passing retained live
   captures.
+
+## 2026-08-12 Update: XAUUSD Base Pass, Insights Deal Gap
+
+Rebuilt and reran after `fix(scripts): use symbol drift bounds`:
+
+- QKT commit under proof: `cd345372c7707a0d7ff22ba074fb9632d6bf623d`.
+- Docker validation image:
+  `qkt:live-validation-cd345372`, image id
+  `sha256:8637a90a02df42cbc80081a5e4e2dc457f289d5f7da600c077ab14c8ddfab3ca`.
+- Host/image version:
+  `qkt 0.47.1 (cd345372) built 2026-08-12T09:11:27.694273378Z`.
+- Clean proving worktree:
+  `/var/tmp/qkt-live-proof-cd345372-20260812T091226Z`.
+- Prepared scenarios:
+  `/var/tmp/qkt-validation/shared-account-insights-cd345372-0812091300-prepare/xau_a` and
+  `/var/tmp/qkt-validation/shared-account-insights-cd345372-0812091300-prepare/xau_b`.
+- Armed output:
+  `/var/tmp/qkt-validation/shared-account-insights-cd345372-0812091300-live`.
+
+The base shared-account live round trip passed:
+
+- Base result:
+  `/var/tmp/qkt-validation/shared-account-insights-cd345372-0812091300-live/base-roundtrip/evidence/result.json`.
+- Status: `passed`.
+- Symbols: two same-account `EXNESS:XAUUSD` strategies with distinct magics `345211` and `345212`.
+- Synchronized deployment: `launchSkewMs:11`, `completionSkewMs:246`.
+- Strict tick gate passed: `XAUUSDm`, `samples:50`, `invalid:0`, `maxAgeMs:1471`, `overLimit:0`.
+- Both strategies opened real `0.01`-lot demo positions, saw M1 and M5 stream/evaluation evidence,
+  retained indicator entry/exit traces, issued strategy-owned closes, and reconciled to final flat.
+- Final base counts per case: two decisions, two decision/order links, two accepts, two fills, two
+  accounted fills, zero rejections, three venue mutations.
+- XAUUSD entry drift stayed inside the reviewed 400-point envelope:
+  scenario A `166` points, scenario B `-111` points.
+
+The wrapper still failed after the base pass:
+
+- Failure:
+  `collector did not retain exactly one entry and one exit deal for scd3xaua0812091300_market_bracket`.
+- Retained collector DB had two filled order rows per instance and isolated causal event streams, but
+  the `deals` table contained only the entry legs.
+- There were no `state.account`, `state.positions`, `state.orders`, or `broker.deal` events for the
+  live instances, so the collector did not drop the closing deals; QKT never emitted the state/deal
+  poller envelopes during the run.
+- The live MT5 gateway history does contain the missing OUT deals for both tickets, so this is a
+  QKT observability/poller wiring gap rather than a broker-history or order-lifecycle failure.
+
+Source fix applied locally:
+
+- [CompositeBroker.kt](/home/dickson/Desktop/personal/qkt/src/main/kotlin/com/qkt/broker/CompositeBroker.kt)
+  now exposes observer state views from its leaves: account state, deal history, and pending orders.
+- [LiveSession.kt](/home/dickson/Desktop/personal/qkt/src/main/kotlin/com/qkt/app/LiveSession.kt)
+  now builds the Insights broker-state poller from `builtBrokers.ifEmpty { listOf(broker) }`, so the
+  active routed broker state view is still available if a daemon path does not retain leaf brokers.
+
+Verification after the source fix:
+
+```bash
+./gradlew test --tests com.qkt.broker.CompositeBrokerTest --tests com.qkt.observe.insights.BrokerStatePollerTest -Pkotlin.compiler.execution.strategy=daemon
+git diff --check
+```
+
+Both passed.
+
+Next step:
+
+- Commit the source fix, rebuild/repackage the QKT validation image from the new commit, rerun the
+  same same-symbol shared-account Insights proof, and then run replay comparisons after the wrapper
+  result passes.
