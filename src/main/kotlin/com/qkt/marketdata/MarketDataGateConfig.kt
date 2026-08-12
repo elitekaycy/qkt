@@ -23,6 +23,21 @@ data class MarketDataGateConfig(
     /** Tolerance between broker tick timestamps and the local clock, in milliseconds. */
     val maxClockSkewMs: Long,
 ) {
+    init {
+        if (!staleAgeMultiple.isFinite() || staleAgeMultiple <= 0.0) {
+            throw IllegalArgumentException("market_data.stale_age_multiple must be a finite positive number")
+        }
+        if (minStaleAgeMs <= 0L) {
+            throw IllegalArgumentException("market_data.min_stale_age_ms must be positive")
+        }
+        if (!outlierSigma.isFinite() || outlierSigma <= 0.0) {
+            throw IllegalArgumentException("market_data.outlier_sigma must be a finite positive number")
+        }
+        if (maxClockSkewMs < 0L) {
+            throw IllegalArgumentException("market_data.max_clock_skew_ms must be non-negative")
+        }
+    }
+
     companion object {
         /** The gate's built-in thresholds — what every deployment ran before this knob existed. */
         val DEFAULT: MarketDataGateConfig =
@@ -37,11 +52,37 @@ data class MarketDataGateConfig(
         fun parse(raw: Any?): MarketDataGateConfig {
             val map = raw as? Map<String, Any?> ?: return DEFAULT
             return MarketDataGateConfig(
-                staleAgeMultiple = map["stale_age_multiple"]?.toString()?.toDoubleOrNull() ?: DEFAULT.staleAgeMultiple,
-                minStaleAgeMs = map["min_stale_age_ms"]?.toString()?.toLongOrNull() ?: DEFAULT.minStaleAgeMs,
-                outlierSigma = map["outlier_sigma"]?.toString()?.toDoubleOrNull() ?: DEFAULT.outlierSigma,
-                maxClockSkewMs = map["max_clock_skew_ms"]?.toString()?.toLongOrNull() ?: DEFAULT.maxClockSkewMs,
+                staleAgeMultiple = parseDouble(map, "stale_age_multiple", DEFAULT.staleAgeMultiple),
+                minStaleAgeMs = parseLong(map, "min_stale_age_ms", DEFAULT.minStaleAgeMs),
+                outlierSigma = parseDouble(map, "outlier_sigma", DEFAULT.outlierSigma),
+                maxClockSkewMs = parseLong(map, "max_clock_skew_ms", DEFAULT.maxClockSkewMs),
             )
+        }
+
+        private fun parseDouble(
+            map: Map<String, Any?>,
+            key: String,
+            default: Double,
+        ): Double {
+            val raw = map[key] ?: return default
+            val parsed: Double? = raw.toString().toDoubleOrNull()
+            if (parsed == null) {
+                throw IllegalStateException("market_data.$key must be a number")
+            }
+            return parsed
+        }
+
+        private fun parseLong(
+            map: Map<String, Any?>,
+            key: String,
+            default: Long,
+        ): Long {
+            val raw = map[key] ?: return default
+            val parsed: Long? = raw.toString().toLongOrNull()
+            if (parsed == null) {
+                throw IllegalStateException("market_data.$key must be a whole number")
+            }
+            return parsed
         }
     }
 }

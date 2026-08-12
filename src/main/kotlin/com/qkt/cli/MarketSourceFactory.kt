@@ -8,6 +8,7 @@ import com.qkt.marketdata.live.bybit.BybitLinearMarketSource
 import com.qkt.marketdata.live.bybit.BybitSpotMarketSource
 import com.qkt.marketdata.live.mt5.Mt5MarketSource
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
+import com.qkt.marketdata.source.CachedHistoricalMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
@@ -56,7 +57,8 @@ internal data class Mt5MarketDataIdentity(
  * Builds one [Mt5MarketSource] per group of MT5 broker profiles that share a
  * [Mt5MarketDataIdentity] (profiles typically differ only in `name`/`magic`, e.g. one
  * profile per strategy against the same gateway account), wrapped in a single
- * [SharedLiveMarketSource]. The canonical (first) profile of a group registers its
+ * [SharedLiveMarketSource] and short-lived historical bar cache. The canonical
+ * (first) profile of a group registers its
  * `<NAME>:` prefix route directly on the shared source; every other profile in the group
  * routes its prefix through a [PrefixRemapMarketSource] onto the same shared source, so the
  * gateway sees one tick poller per identity instead of one per profile. A singleton group
@@ -100,7 +102,7 @@ object MarketSourceFactory {
         for (group in groupByMarketDataIdentity(mt5Profiles)) {
             val canonical = group.first()
             val canonicalPrefix = "${canonical.name.uppercase()}:"
-            val shared = SharedLiveMarketSource(Mt5MarketSource(canonical))
+            val shared = CachedHistoricalMarketSource(SharedLiveMarketSource(Mt5MarketSource(canonical)))
             routes.add(SymbolPattern.prefix(canonicalPrefix) to shared)
             for (profile in group.drop(1)) {
                 val localPrefix = "${profile.name.uppercase()}:"

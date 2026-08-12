@@ -63,4 +63,55 @@ class ConfigMarketDataTest {
         assertThat(c.marketData.outlierSigma).isEqualTo(MarketDataGate.DEFAULT_OUTLIER_SIGMA)
         assertThat(c.marketData.maxClockSkewMs).isEqualTo(MarketDataGate.DEFAULT_MAX_CLOCK_SKEW_MS)
     }
+
+    @Test
+    fun `market_data block rejects malformed explicit values`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            market_data:
+              stale_age_multiple: not-a-number
+            """.trimIndent(),
+        )
+
+        val failure = loadFailure(cfg)
+
+        assertThat(failure)
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("market_data.stale_age_multiple must be a number")
+    }
+
+    @Test
+    fun `market_data block rejects unsafe threshold values`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            market_data:
+              stale_age_multiple: 0
+              min_stale_age_ms: 10000
+              outlier_sigma: 6.0
+              max_clock_skew_ms: 60000
+            """.trimIndent(),
+        )
+
+        val failure = loadFailure(cfg)
+
+        assertThat(failure)
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("market_data.stale_age_multiple must be a finite positive number")
+    }
+
+    private fun loadFailure(cfg: Path): Throwable? =
+        try {
+            Config.load(cfg)
+            null
+        } catch (failure: Throwable) {
+            failure
+        }
 }
