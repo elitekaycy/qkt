@@ -19,6 +19,11 @@ qkt_write_safe_account_snapshot() {
          margin_mode,trade_mode,trade_allowed,trade_expert}' > "$output"
 }
 
+qkt_write_safe_gateway_health_snapshot() {
+    local output="$1"
+    jq '{ok,status,mt5_status,kill_switch_active,last_error,uptime_seconds,version}' > "$output"
+}
+
 qkt_write_safe_live_state_snapshot() {
     local output="$1"
     jq '{
