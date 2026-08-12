@@ -73,6 +73,8 @@ grep -F 'probe issued a mutating gateway request before margin-floor rejection' 
 grep -F 'probe did not open after margin headroom recovered' "$runner" >/dev/null
 grep -F 'probe could not verify recovered position flatten' "$runner" >/dev/null
 grep -F 'account-after-opener-flat.raw.json' "$runner" >/dev/null
+grep -F 'bot history --broker exness --since "$run_started_ms"' "$runner" >/dev/null
+grep -F 'venue history did not expose opener and recovered probe round trips' "$runner" >/dev/null
 grep -F 'preRecoveryFinanciallyReadOnly:true' "$runner" >/dev/null
 grep -F 'recoveredOrderAccepted:true' "$runner" >/dev/null
 grep -F 'marginFloorPassed:true' "$runner" >/dev/null

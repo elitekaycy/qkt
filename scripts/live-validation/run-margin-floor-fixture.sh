@@ -533,16 +533,26 @@ if [ -f "$output/opener/state/daemon.pid" ]; then unlink "$output/opener/state/d
 if [ -f "$output/probe/state/control.token" ]; then unlink "$output/probe/state/control.token"; fi
 if [ -f "$output/probe/state/daemon.pid" ]; then unlink "$output/probe/state/daemon.pid"; fi
 
-"$cli" bot history --broker exness --since 0 --config "$output/opener/qkt.config.yaml" --json > "$output/opener/evidence/history.json"
-"$cli" bot history --broker exness --since 0 --config "$output/probe/qkt.config.yaml" --json > "$output/probe/evidence/history.json"
-jq -e --argjson ticket "$opener_ticket" '
-    ([.[] | select(.positionTicket == $ticket and .entry == "IN" and .lots == 0.01)] | length) >= 1 and
-    ([.[] | select(.positionTicket == $ticket and .entry == "OUT" and .lots == 0.01)] | length) >= 1
-' "$output/opener/evidence/history.json" >/dev/null || fail "history did not retain opener entry and exit deals on the owned ticket"
-jq -e --argjson ticket "$probe_ticket" '
-    ([.[] | select(.positionTicket == $ticket and .entry == "IN" and .lots == 0.01)] | length) >= 1 and
-    ([.[] | select(.positionTicket == $ticket and .entry == "OUT" and .lots == 0.01)] | length) >= 1
-' "$output/probe/evidence/history.json" >/dev/null || fail "history did not retain recovered probe entry and exit deals on the owned ticket"
+history_ready=false
+for _ in $(seq 1 30); do
+    "$cli" bot history --broker exness --since "$run_started_ms" --config "$output/opener/qkt.config.yaml" --json \
+        > "$output/opener/evidence/history.json"
+    "$cli" bot history --broker exness --since "$run_started_ms" --config "$output/probe/qkt.config.yaml" --json \
+        > "$output/probe/evidence/history.json"
+    if jq -e --argjson ticket "$opener_ticket" '
+        ([.[] | select(.positionTicket == $ticket and .entry == "IN" and .lots == 0.01)] | length) >= 1 and
+        ([.[] | select(.positionTicket == $ticket and .entry == "OUT" and .lots == 0.01)] | length) >= 1
+    ' "$output/opener/evidence/history.json" >/dev/null &&
+        jq -e --argjson ticket "$probe_ticket" '
+            ([.[] | select(.positionTicket == $ticket and .entry == "IN" and .lots == 0.01)] | length) >= 1 and
+            ([.[] | select(.positionTicket == $ticket and .entry == "OUT" and .lots == 0.01)] | length) >= 1
+        ' "$output/probe/evidence/history.json" >/dev/null; then
+        history_ready=true
+        break
+    fi
+    sleep 1
+done
+$history_ready || fail "venue history did not expose opener and recovered probe round trips"
 
 account_final="$(gateway_get /account)"
 printf '%s\n' "$account_final" > "$output/evidence/account-final.raw.json"
