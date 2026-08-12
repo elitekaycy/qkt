@@ -116,13 +116,20 @@ def validate(
     for field in (
         "strategiesTested", "indicatorsTested", "mathScenariosTested",
         "dslScenariosTested", "orderTypesTested", "totalTicks", "totalBars",
-        "fills", "parityComparisons", "insightsEvents",
+        "fills", "parityComparisons", "insightsEvents", "warmupBars", "warmupTicks",
+        "barBoundaryTransitions",
     ):
         if require_int(parity.get(field), f"parity.{field}") <= 0:
             fail(f"parity.{field} must be positive")
     for field in ("parityMismatches", "unexplainedRejections", "unexplainedOrderOutcomes"):
         if require_int(parity.get(field), f"parity.{field}") != 0:
             fail(f"parity.{field} must be zero")
+    timeframes = parity.get("timeframesTested")
+    if not isinstance(timeframes, list) or not timeframes:
+        fail("parity.timeframesTested must be a non-empty list")
+    for timeframe in timeframes:
+        if not isinstance(timeframe, str) or not timeframe.strip():
+            fail("parity.timeframesTested entries must be non-blank strings")
 
     artifacts = document.get("artifacts")
     if not isinstance(artifacts, dict):
