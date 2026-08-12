@@ -51,6 +51,28 @@ class GeneratedReentryParityTest {
     }
 
     @Test
+    fun `pending entry guard prevents duplicate orders before allowed reentry across replay modes`(
+        @TempDir tempDir: Path,
+    ) {
+        val strategyPath = writePendingReentryStrategy(tempDir, "reentry_pending_guard")
+
+        val result =
+            GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                path = strategyPath,
+                closes = listOf("100", "101", "102", "94", "110", "100", "101", "94", "110"),
+                expectedTradeCount = 4,
+                startingBalance = STARTING_BALANCE,
+            )
+
+        assertThat(result.backtest).isEqualTo(result.live)
+        assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
+        assertThat(result.backtest.trades.map { it.quantity }).containsOnly("1")
+        assertThat(result.backtest.rejections).isEmpty()
+        assertThat(result.backtest.halts).isEmpty()
+        assertThat(result.backtest.positions).isEmpty()
+    }
+
+    @Test
     fun `max trades reentry gate resets at UTC day boundary across replay modes`(
         @TempDir tempDir: Path,
     ) {
@@ -501,6 +523,27 @@ class GeneratedReentryParityTest {
               THEN BUY x SIZING 1
 
               WHEN x.close = 80 AND POSITION.x != 0
+              THEN CLOSE x
+            """.trimIndent(),
+        )
+        return strategyPath
+    }
+
+    private fun writePendingReentryStrategy(
+        tempDir: Path,
+        id: String,
+    ): Path {
+        val strategyPath = tempDir.resolve("$id.qkt")
+        Files.writeString(
+            strategyPath,
+            """
+            STRATEGY $id VERSION 1
+            SYMBOLS x = BACKTEST:X EVERY 1m
+            RULES
+              WHEN x.close >= 100 AND POSITION.x = 0 AND OPEN_ORDERS.x = 0
+              THEN BUY x SIZING 1 ORDER_TYPE = LIMIT AT 95 TIF GTD NOW + 4m
+
+              WHEN x.close >= 110 AND POSITION.x != 0
               THEN CLOSE x
             """.trimIndent(),
         )

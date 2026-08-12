@@ -30,9 +30,10 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 147`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 148`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `test(dsl): cover pending reentry guard`
   - `docs(docs): seal loss-streak reentry live evidence`
   - `feat(scripts): add loss-streak reentry live lifecycle`
   - `docs(docs): seal cooldown reentry live evidence`
@@ -1146,10 +1147,11 @@ downstream.
 
 As of Wednesday, August 12, 2026:
 
-- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 147`, tracked
-  worktree clean after the loss-streak live evidence handoff commit; two pre-existing untracked
+- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 148`, tracked
+  worktree clean after the pending re-entry guard parity commit; two pre-existing untracked
   Kimi/audit docs remain.
 - Current continuation commits now on the branch:
+  - `test(dsl): cover pending reentry guard`
   - `docs(docs): seal loss-streak reentry live evidence`
   - `feat(scripts): add loss-streak reentry live lifecycle`
   - `docs(docs): seal cooldown reentry live evidence`
@@ -1227,6 +1229,12 @@ As of Wednesday, August 12, 2026:
   strategy halt, same-day re-entry is rejected with the retained halt reason, and next-UTC-day
   re-entry opens and closes identically across tick, bar, tick-resolved-bar, and live-paper modes. No
   JVM heap or worker restrictions were used.
+- `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed again on Wednesday, August 12, 2026 after adding explicit generated-DSL pending-entry
+  duplicate prevention coverage: persistent qualifying entry bars create only one pending limit
+  order while `OPEN_ORDERS.x != 0`, the first fill/close cycle completes, and the same guarded
+  strategy re-enters exactly once after the close across tick, bar, tick-resolved-bar, and
+  live-paper modes. No JVM heap or worker restrictions were used.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed again on Wednesday, August 12, 2026 after adding generated-DSL global DAILY halt recovery
   coverage for both `MaxDailyLoss` and `MaxDailyDrawdown`: the account/global halt rejects same-day
@@ -2396,6 +2404,11 @@ Existing partial coverage:
   re-entry is rejected while the symbol is stale, protective exits remain allowed, and a fresh tick
   reopens the gate. See
   `src/test/kotlin/com/qkt/marketdata/MarketDataGateTest.kt`;
+- JVM parity coverage now proves generated-DSL duplicate-entry prevention for pending re-entry
+  guards: repeated qualifying bars with `POSITION.x = 0` do not create duplicate pending limit
+  entries while `OPEN_ORDERS.x != 0`, the first pending entry fills and closes, and the same guarded
+  strategy later re-enters exactly once across tick, bar, tick-resolved-bar, and live-paper modes in
+  `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
 - focused book-exposure coverage now proves the exposure-limit re-entry contract at the same
   pre-trade rule used by live sessions: an entry at the cap boundary is allowed, a later same-side
   re-entry is rejected while sibling book exposure consumes headroom, close-by-ticket remains
