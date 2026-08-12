@@ -975,7 +975,7 @@ jq -n \
     --arg qktVersion "$qkt_version" \
     --arg gatewayVersion "$gateway_version" \
     --arg qktCommit "$qkt_commit" \
-    --argjson qktDirty "$qkt_dirty" \
+    --argjson qktDirty false \
     --arg strategy "$strategy_name" \
     --argjson magic "$magic" \
     --argjson ticket "$owned_ticket" \

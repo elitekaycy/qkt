@@ -103,6 +103,12 @@ for index in 0 1 2 3; do
         --symbol "$symbol" \
         --variant "$variant" \
         >/dev/null
+    jq '.qktDirty = false' "$scenario_output/scenario.json" > "$scenario_output/.scenario.json.tmp"
+    mv "$scenario_output/.scenario.json.tmp" "$scenario_output/scenario.json"
+    (
+        cd "$scenario_output"
+        find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+    )
 done
 
 jq -n \
