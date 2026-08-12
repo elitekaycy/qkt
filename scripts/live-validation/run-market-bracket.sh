@@ -66,6 +66,8 @@ config="$scenario/qkt.config.yaml"
 stop_distance="$(jq -r '.armedScenario.stopDistance' "$scenario/expected.json")"
 take_profit_distance="$(jq -r '.armedScenario.takeProfitDistance' "$scenario/expected.json")"
 expected_contract_size="$(jq -r '.armedScenario.expectedContractSize // "100000"' "$scenario/expected.json")"
+mapfile -t armed_timeframes < <(jq -r '.armedScenario.streams[]?.timeframe' "$scenario/expected.json" | sort -u)
+[ "${#armed_timeframes[@]}" -gt 0 ] || fail "armed scenario declares no stream timeframes"
 lifecycle="$(jq -r '.armedScenario.lifecycle // "single"' "$scenario/expected.json")"
 expected_entries="$(jq -r '.armedScenario.maximumEntries // 1' "$scenario/expected.json")"
 expected_exits="$(jq -r '.armedScenario.maximumExits // 1' "$scenario/expected.json")"
@@ -384,7 +386,7 @@ wait_for_history_ready() {
     local attempt tf stdout_file stderr_file
     for attempt in $(seq 1 12); do
         local all_ready=true
-        for tf in 1m 5m; do
+        for tf in "${armed_timeframes[@]}"; do
             stdout_file="$evidence/history-ready-$tf-attempt-$attempt.json"
             stderr_file="$evidence/history-ready-$tf-attempt-$attempt.log"
             if ! "$cli" bot bars "$dsl_symbol" --tf "$tf" --count 3 --config "$config" --json \
@@ -395,16 +397,19 @@ wait_for_history_ready() {
             jq -e 'length >= 2' "$stdout_file" >/dev/null || all_ready=false
         done
         if $all_ready; then
+            local timeframes_json
+            timeframes_json="$(printf '%s\n' "${armed_timeframes[@]}" | jq -R . | jq -sc .)"
             jq -n \
                 --arg symbol "$dsl_symbol" \
                 --argjson attempts "$attempt" \
-                '{symbol:$symbol,status:"ready",attempts:$attempts,timeframes:["1m","5m"]}' \
+                --argjson timeframes "$timeframes_json" \
+                '{symbol:$symbol,status:"ready",attempts:$attempts,timeframes:$timeframes}' \
                 > "$evidence/history-ready.json"
             return
         fi
         sleep 5
     done
-    fail "broker history did not become ready for the 1m/5m warmup probes; see evidence/history-ready-*.log"
+    fail "broker history did not become ready for the armed stream warmup probes; see evidence/history-ready-*.log"
 }
 
 wait_for_fresh_tick_after_daemon() {
@@ -955,6 +960,7 @@ golden_fills="$(jq -r '.counts.fills' "$golden_manifest")"
 golden_exchanges="$(jq -r '.counts.gatewayExchanges' "$golden_manifest")"
 golden_placements="$(jq -r '.counts.linkedPlacements' "$golden_manifest")"
 golden_sha="$(sha256sum "$golden_zip" | awk '{print $1}')"
+armed_timeframes_json="$(printf '%s\n' "${armed_timeframes[@]}" | jq -R . | jq -sc .)"
 
 stale_log="$scenario/logs/daemon.log"
 halt_line="$(rg -n 'halt \((operator kill|operator)\):' "$scenario/logs/daemon.log" | tail -n 1 | cut -d: -f1 || true)"
@@ -1009,6 +1015,7 @@ jq -n \
     --arg goldenSha "$golden_sha" \
     --arg staleEvents "$stale_events" \
     --arg recoveryEvents "$recovery_events" \
+    --argjson armedTimeframes "$armed_timeframes_json" \
     --arg stopDistance "$stop_distance" \
     --arg takeProfitDistance "$take_profit_distance" \
     --arg seededRiskStateKind "$seeded_risk_state_kind" \
@@ -1024,6 +1031,7 @@ jq -n \
           gatewayVersion:$gatewayVersion,
           strategy:$strategy,
           lifecycle:$lifecycle,
+          armedTimeframes:$armedTimeframes,
           magic:$magic,
           positionTicket:$ticket,
           positionTickets:($tickets | map(.ticket)),

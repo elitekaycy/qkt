@@ -9,11 +9,13 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
+  [--secondary-timeframe 5m|15m|1h|4h] \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
+  [--secondary-timeframe 5m|15m|1h|4h] \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
@@ -40,6 +42,7 @@ expected_leverage=""
 magic=""
 symbol="EURUSD"
 variant="ema_cross"
+secondary_timeframe="5m"
 lifecycle="single"
 runtime_account_identity=false
 per_strategy_extra=""
@@ -61,6 +64,7 @@ while [ "$#" -gt 0 ]; do
         --magic) magic="${2:-}"; shift 2 ;;
         --symbol) symbol="${2:-}"; shift 2 ;;
         --variant) variant="${2:-}"; shift 2 ;;
+        --secondary-timeframe) secondary_timeframe="${2:-}"; shift 2 ;;
         --lifecycle) lifecycle="${2:-}"; shift 2 ;;
         --runtime-account-identity) runtime_account_identity=true; shift ;;
         --help|-h) usage; exit 0 ;;
@@ -109,6 +113,10 @@ esac
 case "$variant" in
     ema_cross|rsi_reversion|atr_channel|case_math) ;;
     *) fail "--variant must be one of: ema_cross, rsi_reversion, atr_channel, case_math" ;;
+esac
+case "$secondary_timeframe" in
+    5m|15m|1h|4h) ;;
+    *) fail "--secondary-timeframe must be one of: 5m, 15m, 1h, 4h" ;;
 esac
 case "$lifecycle" in
     single)
@@ -440,66 +448,66 @@ STRATEGY ${scenario_id}_market_bracket VERSION 1
 
 SYMBOLS
     asset1 = EXNESS:$symbol EVERY 1m WARMUP 10 BARS,
-    asset5 = EXNESS:$symbol EVERY 5m WARMUP 10 BARS
+    asset5 = EXNESS:$symbol EVERY $secondary_timeframe WARMUP 10 BARS
 EOF
 
 case "$variant" in
     ema_cross)
-        armed_indicators_json='["ema(1m,3)", "ema(1m,5)", "ema(5m,3)", "ema(5m,5)"]'
-        armed_score='(m1_fast-m1_slow)+(m5_fast-m5_slow)'
+        armed_indicators_json="$(jq -nc --arg secondary "$secondary_timeframe" '["ema(1m,3)","ema(1m,5)","ema(" + $secondary + ",3)","ema(" + $secondary + ",5)"]')"
+        armed_score='(m1_fast-m1_slow)+(secondary_fast-secondary_slow)'
         armed_buy_when='score>=0'
         armed_sell_when='score<0'
         cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
 
 LET m1_fast = ema(asset1.close, 3),
     m1_slow = ema(asset1.close, 5),
-    m5_fast = ema(asset5.close, 3),
-    m5_slow = ema(asset5.close, 5),
-    score = (m1_fast - m1_slow) + (m5_fast - m5_slow)
+    secondary_fast = ema(asset5.close, 3),
+    secondary_slow = ema(asset5.close, 5),
+    score = (m1_fast - m1_slow) + (secondary_fast - secondary_slow)
 EOF
         ;;
     rsi_reversion)
-        armed_indicators_json='["rsi(1m,5)", "sma(1m,5)", "rsi(5m,5)", "sma(5m,5)"]'
-        armed_score='((50-m1_fast)+(m1_slow-asset1.close))+((50-m5_fast)+(m5_slow-asset5.close))'
+        armed_indicators_json="$(jq -nc --arg secondary "$secondary_timeframe" '["rsi(1m,5)","sma(1m,5)","rsi(" + $secondary + ",5)","sma(" + $secondary + ",5)"]')"
+        armed_score='((50-m1_fast)+(m1_slow-asset1.close))+((50-secondary_fast)+(secondary_slow-asset5.close))'
         armed_buy_when='score>=0'
         armed_sell_when='score<0'
         cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
 
 LET m1_fast = rsi(asset1.close, 5),
     m1_slow = sma(asset1.close, 5),
-    m5_fast = rsi(asset5.close, 5),
-    m5_slow = sma(asset5.close, 5),
-    score = ((50 - m1_fast) + (m1_slow - asset1.close)) + ((50 - m5_fast) + (m5_slow - asset5.close))
+    secondary_fast = rsi(asset5.close, 5),
+    secondary_slow = sma(asset5.close, 5),
+    score = ((50 - m1_fast) + (m1_slow - asset1.close)) + ((50 - secondary_fast) + (secondary_slow - asset5.close))
 EOF
         ;;
     atr_channel)
-        armed_indicators_json='["atr(1m,5)", "ema(1m,5)", "atr(5m,5)", "ema(5m,5)"]'
-        armed_score='((asset1.close-m1_slow)+(asset5.close-m5_slow))+(m1_fast-m5_fast)'
+        armed_indicators_json="$(jq -nc --arg secondary "$secondary_timeframe" '["atr(1m,5)","ema(1m,5)","atr(" + $secondary + ",5)","ema(" + $secondary + ",5)"]')"
+        armed_score='((asset1.close-m1_slow)+(asset5.close-secondary_slow))+(m1_fast-secondary_fast)'
         armed_buy_when='score>=0'
         armed_sell_when='score<0'
         cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
 
 LET m1_fast = atr(asset1, 5),
     m1_slow = ema(asset1.close, 5),
-    m5_fast = atr(asset5, 5),
-    m5_slow = ema(asset5.close, 5),
-    score = ((asset1.close - m1_slow) + (asset5.close - m5_slow)) + (m1_fast - m5_fast)
+    secondary_fast = atr(asset5, 5),
+    secondary_slow = ema(asset5.close, 5),
+    score = ((asset1.close - m1_slow) + (asset5.close - secondary_slow)) + (m1_fast - secondary_fast)
 EOF
         ;;
     case_math)
-        armed_indicators_json='["round_to(1m close,0.0001)", "lag(1m close,1)", "highest(5m,5)", "lowest(5m,5)"]'
-        armed_score='signed_m1_delta+signed_m5_bias'
+        armed_indicators_json="$(jq -nc --arg secondary "$secondary_timeframe" '["round_to(1m close,0.0001)","lag(1m close,1)","highest(" + $secondary + ",5)","lowest(" + $secondary + ",5)"]')"
+        armed_score='signed_m1_delta+signed_secondary_bias'
         armed_buy_when='score>=0'
         armed_sell_when='score<0'
         cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
 
 LET m1_fast = round_to(asset1.close, 0.0001),
     m1_slow = lag(asset1.close, 1),
-    m5_fast = highest(asset5.close, 5),
-    m5_slow = lowest(asset5.close, 5),
+    secondary_fast = highest(asset5.close, 5),
+    secondary_slow = lowest(asset5.close, 5),
     signed_m1_delta = CASE WHEN m1_fast >= m1_slow THEN abs(m1_fast - m1_slow) ELSE -abs(m1_fast - m1_slow) END,
-    signed_m5_bias = CASE WHEN asset5.close >= ((m5_fast + m5_slow) / 2) THEN 1 ELSE -1 END,
-    score = signed_m1_delta + signed_m5_bias
+    signed_secondary_bias = CASE WHEN asset5.close >= ((secondary_fast + secondary_slow) / 2) THEN 1 ELSE -1 END,
+    score = signed_m1_delta + signed_secondary_bias
 EOF
         ;;
 esac
@@ -514,8 +522,8 @@ RULES
      AND $entry_trade_guard
     THEN BUY asset1 SIZING 0.01
          BRACKET { STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance }
-         ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} m5_fast={m5_fast} m5_slow={m5_slow} close={bar_close}"
-             side="BUY" score=score m1_fast=m1_fast m1_slow=m1_slow m5_fast=m5_fast m5_slow=m5_slow bar_close=asset1.close
+         ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} secondary_fast={secondary_fast} secondary_slow={secondary_slow} close={bar_close}"
+             side="BUY" score=score m1_fast=m1_fast m1_slow=m1_slow secondary_fast=secondary_fast secondary_slow=secondary_slow bar_close=asset1.close
 
     WHEN score IS NOT NULL
      AND score < 0
@@ -524,8 +532,8 @@ RULES
      AND $entry_trade_guard
     THEN SELL asset1 SIZING 0.01
          BRACKET { STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance }
-         ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} m5_fast={m5_fast} m5_slow={m5_slow} close={bar_close}"
-             side="SELL" score=score m1_fast=m1_fast m1_slow=m1_slow m5_fast=m5_fast m5_slow=m5_slow bar_close=asset1.close
+         ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} secondary_fast={secondary_fast} secondary_slow={secondary_slow} close={bar_close}"
+             side="SELL" score=score m1_fast=m1_fast m1_slow=m1_slow secondary_fast=secondary_fast secondary_slow=secondary_slow bar_close=asset1.close
 
     WHEN POSITION.asset1 != 0
      AND $close_trade_guard
@@ -570,8 +578,10 @@ $account_identity_metadata
     "expectedContractSize": "$expected_contract_size",
     "streams": [
       {"symbol": "EXNESS:$symbol", "timeframe": "1m", "warmupBars": 10},
-      {"symbol": "EXNESS:$symbol", "timeframe": "5m", "warmupBars": 10}
+      {"symbol": "EXNESS:$symbol", "timeframe": "$secondary_timeframe", "warmupBars": 10}
     ],
+    "primaryTimeframe": "1m",
+    "secondaryTimeframe": "$secondary_timeframe",
     "indicators": $armed_indicators_json,
     "score": "$armed_score",
     "buyWhen": "$armed_buy_when",

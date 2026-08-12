@@ -43,9 +43,9 @@ grep -F 'asset1 = EXNESS:EURUSD EVERY 1m WARMUP 10 BARS' "$armed" >/dev/null
 grep -F 'asset5 = EXNESS:EURUSD EVERY 5m WARMUP 10 BARS' "$armed" >/dev/null
 grep -F 'm1_fast = ema(asset1.close, 3)' "$armed" >/dev/null
 grep -F 'm1_slow = ema(asset1.close, 5)' "$armed" >/dev/null
-grep -F 'm5_fast = ema(asset5.close, 3)' "$armed" >/dev/null
-grep -F 'm5_slow = ema(asset5.close, 5)' "$armed" >/dev/null
-grep -F 'score = (m1_fast - m1_slow) + (m5_fast - m5_slow)' "$armed" >/dev/null
+grep -F 'secondary_fast = ema(asset5.close, 3)' "$armed" >/dev/null
+grep -F 'secondary_slow = ema(asset5.close, 5)' "$armed" >/dev/null
+grep -F 'score = (m1_fast - m1_slow) + (secondary_fast - secondary_slow)' "$armed" >/dev/null
 grep -F 'AND score >= 0' "$armed" >/dev/null
 grep -F 'AND score < 0' "$armed" >/dev/null
 grep -F 'THEN BUY asset1 SIZING 0.01' "$armed" >/dev/null
@@ -68,6 +68,7 @@ jq -e '
     .armedScenario.symbol == "EXNESS:EURUSD" and
     .armedScenario.venueSymbol == "EURUSDm" and
     (.armedScenario.streams | map(.timeframe) == ["1m", "5m"]) and
+    .armedScenario.primaryTimeframe == "1m" and .armedScenario.secondaryTimeframe == "5m" and
     all(.armedScenario.streams[]; .symbol == "EXNESS:EURUSD") and
     all(.armedScenario.streams[]; .warmupBars == 10) and
     .armedScenario.variant == "ema_cross" and
@@ -87,6 +88,35 @@ if grep -F './cleanup.json' "$out/SHA256SUMS" >/dev/null; then
     exit 1
 fi
 (cd "$out" && sha256sum --check SHA256SUMS >/dev/null)
+
+higher_tf_out="$tmp/higher-tf-scenario"
+bash "$script" \
+    --output "$higher_tf_out" \
+    --id validation_htf \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917017 \
+    --symbol XAUUSD \
+    --secondary-timeframe 15m >/dev/null
+higher_tf_armed="$higher_tf_out/strategies/armed/validation_htf_market_bracket.qkt"
+grep -F 'asset1 = EXNESS:XAUUSD EVERY 1m WARMUP 10 BARS' "$higher_tf_armed" >/dev/null
+grep -F 'asset5 = EXNESS:XAUUSD EVERY 15m WARMUP 10 BARS' "$higher_tf_armed" >/dev/null
+grep -F 'secondary_fast = ema(asset5.close, 3)' "$higher_tf_armed" >/dev/null
+grep -F 'secondary_slow = ema(asset5.close, 5)' "$higher_tf_armed" >/dev/null
+jq -e '
+    .armedScenario.symbol == "EXNESS:XAUUSD" and
+    .armedScenario.venueSymbol == "XAUUSDm" and
+    .armedScenario.primaryTimeframe == "1m" and
+    .armedScenario.secondaryTimeframe == "15m" and
+    (.armedScenario.streams | map(.timeframe) == ["1m", "15m"]) and
+    (.armedScenario.indicators | index("ema(15m,3)") != null) and
+    (.armedScenario.indicators | index("ema(15m,5)") != null)
+' "$higher_tf_out/expected.json" >/dev/null
+"$cli" parse "$higher_tf_armed" >/dev/null
+(cd "$higher_tf_out" && sha256sum --check SHA256SUMS >/dev/null)
 
 gbp_out="$tmp/gbp-scenario"
 bash "$script" \
@@ -521,6 +551,10 @@ bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --cli "$cli" \
     --verify-only >/dev/null
 bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
+    --scenario "$higher_tf_out" \
+    --cli "$cli" \
+    --verify-only >/dev/null
+bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$blocked_reentry_out" \
     --cli "$cli" \
     --verify-only >/dev/null
@@ -565,6 +599,8 @@ grep -F 'venue_symbol="$(jq -r ' "$repo_root/scripts/live-validation/run-market-
 grep -F 'gateway_get "/symbol_info/$venue_symbol"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'gateway_get "/symbol_info_tick/$venue_symbol"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'expected_contract_size="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'mapfile -t armed_timeframes < <(jq -r' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'armedTimeframes:$armedTimeframes' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'lifecycle="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'expected_entries="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'expected_blocked_entries="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
