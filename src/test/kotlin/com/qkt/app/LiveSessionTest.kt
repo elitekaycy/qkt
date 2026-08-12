@@ -94,6 +94,35 @@ class LiveSessionTest {
     }
 
     @Test
+    fun `opt-in latency tracks every processed live tick`() {
+        val source = InMemoryMarketSource()
+        source.seedLive(
+            "X",
+            listOf(
+                Tick("X", Money.of("100"), now.toEpochMilli()),
+                Tick("X", Money.of("101"), now.plusSeconds(1).toEpochMilli()),
+            ),
+        )
+        val handle =
+            LiveSession(
+                strategies = listOf("latency" to CapturingStrategy()),
+                source = source,
+                symbols = listOf("X"),
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                latencyEnabled = true,
+            ).start()
+
+        assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
+        val tickLatency =
+            handle
+                .latencySnapshot()
+                .strategies["latency"]!![com.qkt.observability.LatencyStage.TICK_PROCESSING]!!
+        assertThat(tickLatency.count).isEqualTo(2)
+        assertThat(tickLatency.maxNanos).isGreaterThan(0L)
+    }
+
+    @Test
     fun `tick flood sheds oldest ticks but keeps the freshest`() {
         // 30k ticks against an engine thread blocked on its first tick: the bounded
         // inbound queue must shed the OLDEST ticks (a newer tick supersedes), never

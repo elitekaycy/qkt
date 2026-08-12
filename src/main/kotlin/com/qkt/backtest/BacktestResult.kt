@@ -1,6 +1,10 @@
 package com.qkt.backtest
 
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
+import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.evidence.EvidenceEnvelope
 import com.qkt.observability.LatencyRegistry
 import com.qkt.positions.Position
@@ -14,6 +18,27 @@ data class RunawayBreakerReport(
     val maxRejections: Int,
     val rejectionWindowMs: Long,
     val trips: List<RunawayBreakerTrip>,
+)
+
+/** Market inputs actually attempted, accepted, and emitted by one replay. */
+data class ReplayInputReport(
+    val attemptedFeedTicks: Long,
+    val liveTicks: Long,
+    val warmupTicks: Long,
+    val warmupCandles: Long,
+    val liveCandles: Long,
+    val malformedTicks: Long,
+    val droppedLateTicks: Long,
+    val streamCandles: Map<String, Long> = emptyMap(),
+    val strategyCandleEvaluations: Map<String, Long> = emptyMap(),
+)
+
+/** Ordered causal evidence retained from the shared engine pipeline during replay. */
+data class ReplayCausalityReport(
+    val approvedOrders: List<OrderEvent>,
+    val ruleDecisions: List<RuleDecisionEvent>,
+    val decisionOrderLinks: List<DecisionOrderLinkedEvent>,
+    val accountedFills: List<FillAccountedEvent>,
 )
 
 data class BacktestResult(
@@ -68,4 +93,8 @@ data class BacktestResult(
     val finalPositionsByStrategy: Map<String, Map<String, Position>> = emptyMap(),
     /** Live safety-breaker assumptions and any point where an unconstrained replay diverged. */
     val runawayBreaker: RunawayBreakerReport? = null,
+    /** Replay input accounting. Null only for manually constructed or legacy results. */
+    val inputSummary: ReplayInputReport? = null,
+    /** Full order-decision and fill provenance from the replay pipeline. */
+    val causality: ReplayCausalityReport? = null,
 )

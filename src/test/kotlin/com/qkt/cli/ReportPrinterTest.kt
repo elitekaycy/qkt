@@ -7,6 +7,7 @@ import com.qkt.backtest.EquitySample
 import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
+import com.qkt.backtest.ReplayInputReport
 import com.qkt.backtest.RunawayBreakerReport
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
@@ -80,6 +81,62 @@ class ReportPrinterTest {
         val buf = ByteArrayOutputStream()
         ReportPrinter.print(result(commissionPaid, swapPaid), fmt, PrintStream(buf), brokerKind)
         return buf.toString()
+    }
+
+    @Test
+    fun `reports carry replay input accounting`() {
+        val inputs =
+            ReplayInputReport(
+                attemptedFeedTicks = 12,
+                liveTicks = 10,
+                warmupTicks = 8,
+                warmupCandles = 2,
+                liveCandles = 3,
+                malformedTicks = 2,
+                droppedLateTicks = 1,
+                streamCandles = mapOf("EXNESS:EURUSD:5m" to 2L),
+                strategyCandleEvaluations = mapOf("alpha:eur5:EXNESS:EURUSD:5m" to 2L),
+            )
+        val result = result().copy(inputSummary = inputs)
+
+        val jsonOut = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Json, PrintStream(jsonOut), BrokerKind.PAPER)
+        val json = Json.parseToJsonElement(jsonOut.toString()).jsonObject
+        val summary = json.getValue("inputSummary").jsonObject
+        assertThat(summary.getValue("attemptedFeedTicks").jsonPrimitive.content).isEqualTo("12")
+        assertThat(summary.getValue("liveTicks").jsonPrimitive.content).isEqualTo("10")
+        assertThat(summary.getValue("warmupTicks").jsonPrimitive.content).isEqualTo("8")
+        assertThat(summary.getValue("warmupCandles").jsonPrimitive.content).isEqualTo("2")
+        assertThat(summary.getValue("liveCandles").jsonPrimitive.content).isEqualTo("3")
+        assertThat(summary.getValue("malformedTicks").jsonPrimitive.content).isEqualTo("2")
+        assertThat(summary.getValue("droppedLateTicks").jsonPrimitive.content).isEqualTo("1")
+        assertThat(
+            summary
+                .getValue("streamCandles")
+                .jsonObject
+                .getValue("EXNESS:EURUSD:5m")
+                .jsonPrimitive
+                .content,
+        ).isEqualTo("2")
+        assertThat(
+            summary
+                .getValue("strategyCandleEvaluations")
+                .jsonObject
+                .getValue("alpha:eur5:EXNESS:EURUSD:5m")
+                .jsonPrimitive
+                .content,
+        ).isEqualTo("2")
+
+        val textOut = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Text, PrintStream(textOut), BrokerKind.PAPER)
+        assertThat(textOut.toString())
+            .contains(
+                "Replay inputs",
+                "warmup ticks:    8",
+                "late ticks:      1",
+                "stream EXNESS:EURUSD:5m: 2 candles",
+                "strategy evaluation alpha:eur5:EXNESS:EURUSD:5m: 2 candles",
+            )
     }
 
     @Test

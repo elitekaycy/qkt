@@ -170,10 +170,14 @@ class LiveSession(
     private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
     /** Per-strategy runtime/source metadata to attach to `strategy.started` insights envelopes. */
     private val insightsStrategyMetadata: Map<String, Map<String, Any?>> = emptyMap(),
+    /** All strategy ids deployed in this daemon, used to reject ambiguous truncated broker comments. */
+    private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     /** Broker state poller cadence (insights `state_poll_ms`); active when the STATE family is enabled. */
     private val insightsStatePollMs: Long = 10_000L,
     /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
     private val insightsDealBackfillDays: Long = 30L,
+    /** Opt-in bounded hot-path timing; disabled leaves the tick loop without nano-time reads. */
+    private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
      * SCHEDULE block heartbeat interval in milliseconds (#77 follow-up). A
      * dedicated daemon thread calls [com.qkt.app.TradingPipeline.scheduleHeartbeat]
@@ -800,9 +804,13 @@ class LiveSession(
         val t = com.qkt.observe.insights.InsightsTranslate
         if (com.qkt.observe.insights.InsightsEventFamily.SIGNAL in insightsEvents) {
             bus.subscribe<SignalEvent> { e -> t.fromSignal(e)?.let(sink::offer) }
+            bus.subscribe<com.qkt.events.RuleDecisionEvent> { e -> sink.offer(t.fromRuleDecision(e)) }
         }
         if (com.qkt.observe.insights.InsightsEventFamily.ORDER in insightsEvents) {
             bus.subscribe<com.qkt.events.OrderEvent> { e -> sink.offer(t.fromOrderSubmit(e)) }
+            bus.subscribe<com.qkt.events.DecisionOrderLinkedEvent> { e ->
+                sink.offer(t.fromDecisionOrderLinked(e))
+            }
             bus.subscribe<BrokerEvent.OrderAccepted> { e -> sink.offer(t.fromOrderAccepted(e)) }
             bus.subscribe<BrokerEvent.OrderFilled> { e -> sink.offer(t.fromOrderFilled(e)) }
             bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> sink.offer(t.fromOrderPartiallyFilled(e)) }
@@ -812,6 +820,7 @@ class LiveSession(
         }
         if (com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents) {
             bus.subscribe<com.qkt.events.TradeEvent> { e -> sink.offer(t.fromTrade(e)) }
+            bus.subscribe<com.qkt.events.FillAccountedEvent> { e -> sink.offer(t.fromFillAccounted(e)) }
         }
         if (com.qkt.observe.insights.InsightsEventFamily.RISK in insightsEvents) {
             bus.subscribe<com.qkt.events.RiskRejectedEvent> { e -> sink.offer(t.fromRiskRejected(e)) }
@@ -900,6 +909,7 @@ class LiveSession(
                 object : com.qkt.instrument.InstrumentRegistry {
                     override fun lookup(qktSymbol: String) = paperInstruments.get().lookup(qktSymbol)
                 },
+                calendar = calendar,
             )
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()
@@ -1273,6 +1283,7 @@ class LiveSession(
                         )
                     }.onFailure { t -> recordNotificationFailure(strategyId, "ProtectionFailure", t) }
                 },
+                latencyEnabled = latencyEnabled,
             )
         engineHeldProtectiveStopCount = pipeline.orderManager::engineHeldProtectiveStopCount
 
@@ -1303,7 +1314,7 @@ class LiveSession(
             )
         }
         journal?.let { wireJournal(bus, it) }
-        auditJournal?.let { audit -> bus.subscribeAll { e -> audit.append(e) } }
+        auditJournal?.let { audit -> bus.subscribeAllFirst { e -> audit.append(e) } }
 
         // Register notifier handlers before the warmup phase so a warmup-time risk halt
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
@@ -1606,6 +1617,7 @@ class LiveSession(
                 if (mdcStrategy != null) org.slf4j.MDC.put("strategy", mdcStrategy)
 
                 fun processTick(msg: Inbound.FeedTick) {
+                    val latencyStartNanos = if (pipeline.latency.enabled) System.nanoTime() else 0L
                     try {
                         // Drive event-time from the tick being PROCESSED (not when it was
                         // read off the feed) so a deterministic clock stays in lockstep with
@@ -1614,6 +1626,13 @@ class LiveSession(
                         pipeline.ingest(msg.tick)
                     } catch (e: Exception) {
                         onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
+                    } finally {
+                        if (pipeline.latency.enabled) {
+                            pipeline.latency.observeAll(
+                                com.qkt.observability.LatencyStage.TICK_PROCESSING,
+                                System.nanoTime() - latencyStartNanos,
+                            )
+                        }
                     }
                 }
                 try {
@@ -1796,17 +1815,18 @@ class LiveSession(
         // Broker truth → insights: account state, per-ticket positions, and deal history
         // polled on the poller's own thread, off the engine loop. Replaces the retired
         // engine-thread ledger snapshots — dashboards read state.* / broker.deal now.
+        val brokerStatePollerBrokers = builtBrokers.ifEmpty { listOf(broker) }.distinct()
         val brokerStatePoller =
             if (insightsSink != null &&
                 com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents &&
-                builtBrokers.isNotEmpty()
+                brokerStatePollerBrokers.isNotEmpty()
             ) {
                 com.qkt.observe.insights
                     .BrokerStatePoller(
-                        brokers = builtBrokers.toList(),
+                        brokers = brokerStatePollerBrokers,
                         sink = insightsSink,
                         attribution = ticketAttribution,
-                        deployedIds = { strategies.map { it.first } },
+                        deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
                         pollIntervalMs = insightsStatePollMs,
                         backfillDays = insightsDealBackfillDays,
                         emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,

@@ -1,5 +1,6 @@
 package com.qkt.backtest
 
+import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.marketdata.Tick
 import com.qkt.risk.RiskRule
@@ -221,5 +222,26 @@ class BacktestTest {
         assertThat(result.trades).hasSize(2)
         assertThat(result.rejections).hasSize(3)
         assertThat(result.finalPositions["XAUUSD"]?.quantity).isEqualByComparingTo(Money.of("2"))
+    }
+
+    @Test
+    fun `raw multi-symbol ticks sample equity once per candle boundary`() {
+        val result =
+            Backtest(
+                strategies = emptyList(),
+                ticks =
+                    listOf(
+                        tick("BACKTEST:A", "100", 0L),
+                        tick("BACKTEST:B", "200", 0L),
+                        tick("BACKTEST:A", "101", 60_000L),
+                        tick("BACKTEST:B", "201", 60_000L),
+                        tick("BACKTEST:A", "102", 120_000L),
+                        tick("BACKTEST:B", "202", 120_000L),
+                    ),
+                candleWindow = TimeWindow.ONE_MINUTE,
+            ).run()
+
+        assertThat(result.global.equityCurve.map(EquitySample::timestamp))
+            .containsExactly(60_000L, 120_000L)
     }
 }

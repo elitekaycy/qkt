@@ -606,7 +606,7 @@ class PortfolioDeployerE2ETest {
     }
 
     @Test
-    fun `losing live fill shrinks the next order and book exposure rejects the following order`(
+    fun `book exposure rejects a follow-up order and recovers after exposure clears`(
         @TempDir tmp: Path,
     ) {
         val child = tmp.resolve("risk-child.qkt")
@@ -621,6 +621,8 @@ class PortfolioDeployerE2ETest {
                 WHEN x.close = 90 THEN SELL x SIZING 1
                 WHEN x.close = 91 THEN BUY x SIZING 1
                 WHEN x.close = 92 THEN BUY x SIZING 3
+                WHEN x.close = 93 THEN SELL x SIZING 0.5
+                WHEN x.close = 94 THEN BUY x SIZING 1
             """.trimIndent(),
         )
         val portfolio = tmp.resolve("risk-book.qkt")
@@ -650,6 +652,7 @@ class PortfolioDeployerE2ETest {
         val sourceCalls =
             java.util.concurrent.atomic
                 .AtomicInteger()
+        val journalRoot = tmp.resolve("journal")
         val instruments =
             object : com.qkt.instrument.InstrumentRegistry {
                 override fun lookup(qktSymbol: String) =
@@ -692,6 +695,7 @@ class PortfolioDeployerE2ETest {
                                 ),
                             ),
                     ),
+                journalRoot = journalRoot,
             )
         val record = deployer.deploy("risk_book", PortfolioLoader.load(portfolio))
         val live = record.children.single().live
@@ -744,10 +748,29 @@ class PortfolioDeployerE2ETest {
             assertThat(bookFeed.awaitReadCalls(5)).isTrue()
             offerAndAwait("92", 3)
             offerAndAwait("92", 3)
+            offerAndAwait("93", 3)
+            offerAndAwait("93", 4)
+            bookTimestamp += 60_001L
+            bookFeed.offer(Tick("PAPER:X", BigDecimal("93"), bookTimestamp))
+            assertThat(bookFeed.awaitReadCalls(6)).isTrue()
+            offerAndAwait("94", 4)
+            offerAndAwait("94", 5)
 
             assertThat(live.recentTrades().map { it.quantity.stripTrailingZeros().toPlainString() })
-                .containsExactly("1", "1", "0.5")
+                .containsExactly("1", "1", "0.5", "0.5", "0.5")
             assertThat(live.positionsFor("risk_book:child").single().quantity).isEqualByComparingTo("0.5")
+            val journalText = StringBuilder()
+            val journalPaths = Files.walk(journalRoot)
+            try {
+                journalPaths
+                    .filter { Files.isRegularFile(it) }
+                    .forEach { journalText.append(Files.readString(it)).append('\n') }
+            } finally {
+                journalPaths.close()
+            }
+            assertThat(journalText.toString())
+                .contains("\"kind\":\"risk-rejected\"")
+                .contains("book gross exposure")
         } finally {
             record.supervisor.stop()
             for (handle in record.children) runCatching { handle.close() }

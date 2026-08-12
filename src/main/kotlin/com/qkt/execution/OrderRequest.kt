@@ -158,6 +158,10 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        /** Venue position ticket owned by the entry this trigger reduces. */
+        val closesTicket: String? = null,
+        /** Whether the triggered market order reduces only part of [closesTicket]. */
+        val partialClose: Boolean = false,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -317,7 +321,10 @@ sealed interface OrderRequest {
         }
     }
 
-    /** Parent order that activates [children] only after it fills (One-Triggers-Other). */
+    /**
+     * Parent order that activates [children] only after it terminally fills (One-Triggers-Other).
+     * Partial parent executions are accounted, but proportional child activation is unsupported.
+     */
     data class OTO(
         override val id: String,
         override val symbol: String,
@@ -373,6 +380,9 @@ sealed interface OrderRequest {
      * Engine-managed multi-leg exit — closes [basis] in fractional slices per [legs].
      *
      * The broker only sees the individual leg orders; the manager owns the lifecycle.
+     * Partial basis executions remain dormant while the residual is working. A terminal fill or
+     * venue-side residual cancellation activates legs against the actual cumulative fill;
+     * explicitly cancelling the ScaleOut wrapper cancels the plan without activating them.
      */
     data class ScaleOut(
         override val id: String,
@@ -497,9 +507,10 @@ fun OrderRequest.withStrategyId(strategyId: String): OrderRequest =
  * [OrderRequest.Stack]).
  *
  * Composite shapes are decomposed by [com.qkt.app.OrderManager] into single-leg orders
- * before they reach the broker; their recovery flows through dedicated persistor channels
- * (OCO legs, bracket pairs, stack tier state). They are never persisted as a generic
- * pending order, so callers building a pending-order snapshot should skip them.
+ * before they reach the broker. Most recovery state uses dedicated persistor channels
+ * (OCO legs, bracket pairs, stack tier state); an unfilled [OrderRequest.OTO] is the exception:
+ * its wrapper is stored under the atomic parent's id so child activation survives restart.
+ * Callers building a leaf-order snapshot should otherwise skip composite containers.
  */
 fun OrderRequest.isCompositeShape(): Boolean =
     this is OrderRequest.StandaloneOCO ||

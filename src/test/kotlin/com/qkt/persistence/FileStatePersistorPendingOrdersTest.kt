@@ -37,6 +37,56 @@ class FileStatePersistorPendingOrdersTest {
     }
 
     @Test
+    fun `Market close intent round-trips without becoming an opposite entry`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val close =
+            OrderRequest.Market(
+                id = "close-1",
+                symbol = "EXNESS:EURUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.06"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+                closesTicket = "424242",
+                closesLegId = "primary",
+                partialClose = true,
+            )
+
+        persistor.savePendingOrders("hedge", mapOf(close.id to close))
+
+        assertThat(persistor.loadPendingOrders("hedge")).containsExactlyEntriesOf(mapOf(close.id to close))
+    }
+
+    @Test
+    fun `legacy Market intent without close fields loads with entry defaults`(
+        @TempDir tmp: Path,
+    ) {
+        val strategyDir = tmp.resolve("hedge")
+        Files.createDirectories(strategyDir)
+        Files.writeString(
+            strategyDir.resolve("pending-orders.json"),
+            """{"version":1,"strategyId":"hedge","orders":[{"clientOrderId":"entry-1","request":{"type":"Market","id":"entry-1","symbol":"EXNESS:EURUSD","side":"BUY","quantity":"0.10","timeInForce":"GTC","timestamp":1000,"strategyId":"hedge"}}]}""",
+        )
+
+        val loaded = FileStatePersistor(tmp).loadPendingOrders("hedge").getValue("entry-1")
+
+        assertThat(loaded).isEqualTo(
+            OrderRequest.Market(
+                id = "entry-1",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+            ),
+        )
+    }
+
+    @Test
     fun `Limit and Stop orders round-trip`(
         @TempDir tmp: Path,
     ) {
@@ -177,6 +227,51 @@ class FileStatePersistorPendingOrdersTest {
         assertThat(loaded).hasSize(2)
         assertThat(loaded["entry"]).isEqualTo(market)
         assertThat(loaded["b-1"]).isEqualTo(bracket)
+    }
+
+    @Test
+    fun `OTO wrapper round trips with its parent and unarmed children`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val parent =
+            OrderRequest.Limit(
+                id = "parent",
+                symbol = "XAUUSDm",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                limitPrice = BigDecimal("4700"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+            )
+        val child =
+            OrderRequest.Stop(
+                id = "child",
+                symbol = "XAUUSDm",
+                side = Side.SELL,
+                quantity = BigDecimal("0.10"),
+                stopPrice = BigDecimal("4680"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+            )
+        val oto =
+            OrderRequest.OTO(
+                id = "oto",
+                symbol = "XAUUSDm",
+                side = Side.BUY,
+                quantity = BigDecimal("0.10"),
+                parent = parent,
+                children = listOf(child),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1000L,
+                strategyId = "hedge",
+            )
+
+        persistor.savePendingOrders("hedge", mapOf(parent.id to oto))
+
+        assertThat(persistor.loadPendingOrders("hedge")).containsExactlyEntriesOf(mapOf(parent.id to oto))
     }
 
     @Test

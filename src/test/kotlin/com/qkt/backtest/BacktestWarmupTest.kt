@@ -121,15 +121,29 @@ class BacktestWarmupTest {
                 to = Instant.ofEpochMilli(day15 + 60_000L),
             )
 
-        Backtest
-            .fromSource(
-                strategies = listOf("test" to strategy),
-                source = src,
-                request = request,
-                warmupSpec = WarmupSpec.Bars(TimeWindow.ONE_MINUTE, count = 30),
-            ).run()
+        val result =
+            Backtest
+                .fromSource(
+                    strategies = listOf("test" to strategy),
+                    source = src,
+                    request = request,
+                    candleWindow = TimeWindow.ONE_MINUTE,
+                    warmupSpec = WarmupSpec.Bars(TimeWindow.ONE_MINUTE, count = 30),
+                ).run()
 
         assertThat(strategy.ticks).isEqualTo(1)
+        assertThat(result.inputSummary)
+            .isEqualTo(
+                ReplayInputReport(
+                    attemptedFeedTicks = 1,
+                    liveTicks = 1,
+                    warmupTicks = 120,
+                    warmupCandles = 30,
+                    liveCandles = 1,
+                    malformedTicks = 0,
+                    droppedLateTicks = 0,
+                ),
+            )
     }
 
     @Test

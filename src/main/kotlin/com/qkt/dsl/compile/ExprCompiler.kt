@@ -993,20 +993,23 @@ class ExprCompiler(
         return CompiledExpr { ctx ->
             val lv = l.evaluate(ctx)
             val rv = r.evaluate(ctx)
-            if (lv !is Value.Num || rv !is Value.Num) {
-                Value.Undefined
-            } else {
-                val c = lv.v.compareTo(rv.v)
-                Value.of(
-                    when (op.op) {
-                        Cmp.GT -> c > 0
-                        Cmp.LT -> c < 0
-                        Cmp.GE -> c >= 0
-                        Cmp.LE -> c <= 0
-                        Cmp.EQ -> c == 0
-                        Cmp.NE -> c != 0
-                    },
-                )
+            when {
+                lv is Value.Num && rv is Value.Num -> {
+                    val c = lv.v.compareTo(rv.v)
+                    Value.of(
+                        when (op.op) {
+                            Cmp.GT -> c > 0
+                            Cmp.LT -> c < 0
+                            Cmp.GE -> c >= 0
+                            Cmp.LE -> c <= 0
+                            Cmp.EQ -> c == 0
+                            Cmp.NE -> c != 0
+                        },
+                    )
+                }
+                lv is Value.Str && rv is Value.Str && op.op == Cmp.EQ -> Value.of(lv.v == rv.v)
+                lv is Value.Str && rv is Value.Str && op.op == Cmp.NE -> Value.of(lv.v != rv.v)
+                else -> Value.Undefined
             }
         }
     }

@@ -24,14 +24,20 @@ import java.math.BigDecimal
  *    mark-to-market excursion — so this is byte-identical while feeding far fewer ticks);
  *  - `ALL_TICKS` -> the full real slice (a trailing/composite order or a time-based exit could fire on
  *    a tick the extreme filter would skip).
+ *
+ * After the last completed bar, exact ticks through [replayEndMs] are emitted unchanged so final
+ * marks and fills match full-tick replay even when the requested range ends inside a partial bar.
  */
 class BarResolvedFeed(
     perSymbolBars: Map<String, Sequence<Candle>>,
     sliceProvider: (symbol: String, fromMs: Long, toMs: Long) -> Sequence<Tick>,
     intrabarFill: (symbol: String, low: BigDecimal, high: BigDecimal, maxHalfSpread: BigDecimal) -> IntrabarFill,
+    replayEndMs: Long? = null,
 ) : TickFeed {
     private val subs =
-        perSymbolBars.entries.map { (sym, bars) -> SymbolFeed(sym, bars, sliceProvider, intrabarFill) }
+        perSymbolBars.entries.map { (sym, bars) ->
+            SymbolFeed(sym, bars, sliceProvider, intrabarFill, replayEndMs)
+        }
 
     override fun next(): Tick? {
         // The tick emitted last cycle is now ingested; let whichever symbol just emitted its opening
@@ -61,6 +67,7 @@ private class SymbolFeed(
     bars: Sequence<Candle>,
     private val slice: (String, Long, Long) -> Sequence<Tick>,
     private val intrabarFill: (String, BigDecimal, BigDecimal, BigDecimal) -> IntrabarFill,
+    private val replayEndMs: Long?,
 ) {
     private val barIter = bars.iterator()
     private var head: Tick? = null
@@ -71,6 +78,8 @@ private class SymbolFeed(
     private var awaitSlice: Iterator<Tick>? = null
     private var awaitOpening: Tick? = null
     private var rest: Iterator<Tick> = emptyList<Tick>().iterator()
+    private var lastBarEndMs: Long? = null
+    private var tailLoaded = false
 
     init {
         openNextBar()
@@ -79,6 +88,7 @@ private class SymbolFeed(
     private fun openNextBar() {
         while (barIter.hasNext()) {
             val bar = barIter.next()
+            lastBarEndMs = bar.endTime
             val it = slice(symbol, bar.startTime, bar.endTime).iterator()
             if (it.hasNext()) {
                 head = it.next()
@@ -98,6 +108,17 @@ private class SymbolFeed(
                 )
             }
             rest = candleToTicks(bar).iterator()
+            if (rest.hasNext()) {
+                head = rest.next()
+                headIsOpening = false
+                return
+            }
+        }
+        val tailFrom = lastBarEndMs
+        val tailTo = replayEndMs
+        if (!tailLoaded && tailFrom != null && tailTo != null && tailFrom < tailTo) {
+            tailLoaded = true
+            rest = slice(symbol, tailFrom, tailTo).iterator()
             if (rest.hasNext()) {
                 head = rest.next()
                 headIsOpening = false

@@ -5,6 +5,11 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.compile.CandleHub
+import com.qkt.dsl.compile.DecisionOrderLink
+import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.HubKey
+import com.qkt.dsl.compile.PendingStacks
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.InMemoryMarketSource
@@ -44,8 +49,29 @@ class LiveSessionInsightsTest {
         server.shutdown()
     }
 
-    private class BuyThenSell : Strategy {
+    private class BuyThenSell : DslCompiledStrategy {
         private var ticks = 0
+        private var signalIndex = 0
+        override val declaredStreams: Map<String, HubKey> = emptyMap()
+        override val retentionByKey: Map<HubKey, Int> = emptyMap()
+        override val pendingStacks = PendingStacks()
+
+        override fun bindToHub(
+            hub: CandleHub,
+            ctx: StrategyContext,
+            emit: (Signal) -> Unit,
+        ) = Unit
+
+        override fun onOrderSubmitted(
+            signal: Signal,
+            clientOrderId: String,
+        ): DecisionOrderLink =
+            DecisionOrderLink(
+                decisionId = "roundtrip-decision-$signalIndex",
+                ruleId = "roundtrip#0",
+                signalIndex = signalIndex++,
+                orderId = clientOrderId,
+            )
 
         override fun onTick(
             tick: Tick,
@@ -135,8 +161,10 @@ class LiveSessionInsightsTest {
         val markers =
             listOf(
                 "\"type\":\"signal\"",
+                "\"type\":\"decision.order_linked\"",
                 "\"type\":\"order.submit\"",
                 "\"type\":\"trade\"",
+                "\"type\":\"fill.accounted\"",
                 "\"type\":\"trade.closed\"",
                 "\"type\":\"strategy.started\"",
             )
@@ -153,8 +181,13 @@ class LiveSessionInsightsTest {
         val all = bodies.toString()
         assertThat(all).contains("\"instanceId\":\"qkt-test\"")
         assertThat(all).contains("\"type\":\"signal\"")
+        assertThat(all).contains("\"type\":\"decision.order_linked\"")
+        assertThat(all).contains("\"decisionId\":\"roundtrip-decision-0\"")
         assertThat(all).contains("\"type\":\"order.submit\"")
         assertThat(all).contains("\"type\":\"trade\"")
+        assertThat(all).contains("\"type\":\"fill.accounted\"")
+        assertThat(all).contains("\"sourceFillSequenceId\":")
+        assertThat(all).contains("\"orderSchemaVersion\":1")
         assertThat(all).contains("\"type\":\"trade.closed\"")
         assertThat(all).contains("\"type\":\"strategy.started\"")
         assertThat(all).contains("\"sourcePath\":\"/srv/qkt/strategies/roundtrip.qkt\"")

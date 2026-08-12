@@ -126,4 +126,31 @@ class BarResolvedFeedTest {
         drain(f)
         assertThat(seen).containsExactly(Money.of("99") to Money.of("102"), Money.of("100") to Money.of("105"))
     }
+
+    @Test
+    fun `ticks after the final completed bar remain in the replay tail`() {
+        val calls = mutableListOf<Pair<Long, Long>>()
+        val feed =
+            BarResolvedFeed(
+                perSymbolBars = mapOf("X" to sequenceOf(bar(0, "100", "102", "99", "101"))),
+                sliceProvider = { _, fromMs, toMs ->
+                    calls.add(fromMs to toMs)
+                    if (fromMs == 0L) {
+                        sequenceOf(Tick("X", Money.of("100"), 0L), Tick("X", Money.of("101"), 999L))
+                    } else {
+                        sequenceOf(Tick("X", Money.of("103"), 1_100L), Tick("X", Money.of("104"), 1_200L))
+                    }
+                },
+                intrabarFill = { _, _, _, _ -> IntrabarFill.ALL_TICKS },
+                replayEndMs = 1_250L,
+            )
+
+        assertThat(drain(feed)).containsExactly(
+            Money.of("100"),
+            Money.of("101"),
+            Money.of("103"),
+            Money.of("104"),
+        )
+        assertThat(calls).containsExactly(0L to 1_000L, 1_000L to 1_250L)
+    }
 }

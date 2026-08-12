@@ -76,10 +76,18 @@ class Mt5BarFetcher(
                 client
                     .fetchBarsByRange(symbol, tf, startIso, endIso, midPoint)
                     .asSequence()
-                    // The gateway includes the currently-open bar when `end` lands inside it;
-                    // clamp to this chunk's half-open window so consumers never see an unclosed
-                    // bar and adjacent chunks don't both emit the boundary bar.
-                    .filter { it.startTime in chunkFromMs until chunkToMs }
+                    .onEach { bar ->
+                        if (window.durationMs == HOUR_MS) {
+                            checkHourAligned(bar)
+                        }
+                    }
+                    // The gateway includes the currently-open bar when `end` lands inside it.
+                    // Require the complete candle to fit in this chunk so a mid-bar upper bound
+                    // cannot leak look-ahead data and adjacent chunks cannot duplicate a bar.
+                    .filter {
+                        it.startTime >= chunkFromMs &&
+                            it.endTime <= chunkToMs
+                    }
             }
     }
 
@@ -98,10 +106,7 @@ class Mt5BarFetcher(
         val durationMs = window.durationMs
         val buckets = linkedMapOf<Long, MutableList<Candle>>()
         for (bar in hourly.sortedBy { it.startTime }) {
-            check(bar.startTime % HOUR_MS == 0L) {
-                "MT5 H1 bar at ${Instant.ofEpochMilli(bar.startTime)} is not hour-aligned after " +
-                    "$serverTimeZone conversion; cannot rebuild the UTC grid (non-whole-hour server offset?)"
-            }
+            checkHourAligned(bar)
             buckets.getOrPut((bar.startTime / durationMs) * durationMs) { mutableListOf() }.add(bar)
         }
         return buckets
@@ -121,6 +126,13 @@ class Mt5BarFetcher(
                     ask = bars.last().ask,
                 )
             }
+    }
+
+    private fun checkHourAligned(bar: Candle) {
+        check(bar.startTime % HOUR_MS == 0L) {
+            "MT5 H1 bar at ${Instant.ofEpochMilli(bar.startTime)} is not hour-aligned after " +
+                "$serverTimeZone conversion; cannot rebuild the UTC grid (non-whole-hour server offset?)"
+        }
     }
 
     /** Contiguous half-open [from, to) sub-ranges of at most [MAX_CHUNK_DAYS] each. */

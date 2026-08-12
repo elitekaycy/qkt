@@ -41,6 +41,67 @@ class CompositeBrokerTest {
             override fun accountEquity() = Money.of(value)
         }
 
+    private fun stateBroker(nameSuffix: String): Broker =
+        object : Broker {
+            override val name = "State-$nameSuffix"
+            override val capabilities: Set<OrderTypeCapability> = emptySet()
+
+            override fun submit(request: OrderRequest): SubmitAck = error("unused")
+
+            override fun cancel(orderId: String) = Unit
+
+            override fun accountState(): BrokerAccountState =
+                BrokerAccountState(
+                    broker = name,
+                    currency = "USD",
+                    balance = Money.of("1000"),
+                    equity = Money.of("1001"),
+                    margin = Money.of("10"),
+                    marginFree = Money.of("991"),
+                    openProfit = Money.of("1"),
+                    marginLevel = Money.of("10010"),
+                    login = 42L,
+                    server = "demo",
+                    name = "account-$nameSuffix",
+                )
+
+            override fun deals(
+                from: Long,
+                to: Long,
+            ): List<BrokerDeal> =
+                listOf(
+                    BrokerDeal(
+                        broker = name,
+                        dealTicket = "D-$nameSuffix",
+                        positionTicket = "P-$nameSuffix",
+                        orderTicket = "O-$nameSuffix",
+                        symbol = "A:X",
+                        side = Side.BUY,
+                        entry = "IN",
+                        qty = Money.of("0.01"),
+                        price = Money.of("10"),
+                        profit = Money.ZERO,
+                        commission = Money.ZERO,
+                        swap = Money.ZERO,
+                        magic = 7,
+                        comment = "owned",
+                        ts = from + 1,
+                    ),
+                )
+
+            override fun pendingOrders(): List<BrokerPendingOrder> =
+                listOf(
+                    BrokerPendingOrder(
+                        ticket = "O-$nameSuffix",
+                        symbol = "A:X",
+                        side = Side.BUY,
+                        orderType = "ORDER_TYPE_BUY_LIMIT",
+                        qty = Money.of("0.01"),
+                        price = Money.of("9"),
+                    ),
+                )
+        }
+
     @Test
     fun `account equity delegates only when one leaf is authoritative`() {
         val bus = newBus()
@@ -69,6 +130,19 @@ class CompositeBrokerTest {
             )
         assertThat(ambiguous.supportsAccountEquity).isFalse()
         assertThat(ambiguous.accountEquity()).isNull()
+    }
+
+    @Test
+    fun `state and deal views delegate to leaves for observers`() {
+        val leaf = stateBroker("a")
+        val composite =
+            CompositeBroker(
+                routes = listOf(SymbolPattern.prefix("A:") to leaf),
+            )
+
+        assertThat(composite.accountState()?.login).isEqualTo(42L)
+        assertThat(composite.deals(100L, 200L).map { it.dealTicket }).containsExactly("D-a")
+        assertThat(composite.pendingOrders().map { it.ticket }).containsExactly("O-a")
     }
 
     @Test

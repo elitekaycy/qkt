@@ -34,11 +34,13 @@ class OrderManagerRestoreTest {
 
     private class RecordingBroker(
         delegate: Broker,
+        private val onRecover: (List<ManagedOrder>) -> Unit = {},
     ) : Broker by delegate {
         val recovered = mutableListOf<ManagedOrder>()
 
         override fun recoverPendingOrders(orders: List<ManagedOrder>) {
             recovered += orders
+            onRecover(orders)
         }
     }
 
@@ -92,6 +94,72 @@ class OrderManagerRestoreTest {
     }
 
     @Test
+    fun `restore compensates the second OCO position when both legs filled during downtime`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        persistor.saveOcoLegs(
+            "alpha",
+            listOf(
+                ocoLeg("oco1-a", Side.BUY, "1001", listOf("oco1-b")),
+                ocoLeg("oco1-b", Side.SELL, "1002", listOf("oco1-a")),
+            ),
+        )
+        val clock = FixedClock(10L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fake =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.MARKET, OrderTypeCapability.STOP),
+            )
+        val pendingCancels = mutableListOf<String>()
+        val delayedCancelBroker =
+            object : Broker by fake {
+                override fun cancel(orderId: String) {
+                    pendingCancels += orderId
+                }
+            }
+        val broker =
+            RecordingBroker(delayedCancelBroker) { recovered ->
+                recovered.forEachIndexed { index, managed ->
+                    val request = managed.request
+                    bus.publish(
+                        BrokerEvent.OrderFilled(
+                            clientOrderId = request.id,
+                            brokerOrderId = "position-${index + 1}",
+                            symbol = request.symbol,
+                            side = request.side,
+                            price = BigDecimal("2000"),
+                            quantity = request.quantity,
+                            strategyId = request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
+                }
+            }
+        val alerts = mutableListOf<Pair<String, String>>()
+        val manager =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                persistor,
+                onProtectionFailure = { strategyId, message -> alerts += strategyId to message },
+            )
+
+        manager.restore(listOf("alpha"))
+
+        assertThat(broker.recovered.map { it.id }).containsExactlyInAnyOrder("oco1-a", "oco1-b")
+        assertThat(pendingCancels).contains("oco1-b")
+        val compensation = fake.submits.filterIsInstance<OrderRequest.Market>().single()
+        assertThat(compensation.closesTicket).isEqualTo("position-2")
+        assertThat(compensation.strategyId).isEqualTo("alpha")
+        assertThat(alerts.single().second).contains("CRITICAL OCO invariant violated")
+    }
+
+    @Test
     fun `restore is a no-op when nothing was persisted`(
         @TempDir tmp: Path,
     ) {
@@ -139,6 +207,76 @@ class OrderManagerRestoreTest {
         assertThat(om.getOrder("entry-stop")).isNull()
         assertThat(om.activeEntryOrderCount("alpha", "XAUUSD")).isZero()
         assertThat(persistor.loadPendingOrders("alpha")).isEmpty()
+    }
+
+    @Test
+    fun `restore re-arms OTO children before broker recovery replays the parent fill`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val parent =
+            OrderRequest.Limit(
+                id = "oto-parent",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                limitPrice = BigDecimal("2000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val child =
+            OrderRequest.Limit(
+                id = "oto-child",
+                symbol = "XAUUSD",
+                side = Side.SELL,
+                quantity = BigDecimal.ONE,
+                limitPrice = BigDecimal("2010"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val oto =
+            OrderRequest.OTO(
+                id = "oto-wrapper",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                parent = parent,
+                children = listOf(child),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        persistor.savePendingOrders("alpha", mapOf(parent.id to oto))
+        val clock = FixedClock(10L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fake = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        val broker =
+            RecordingBroker(fake) { recovered ->
+                val restoredParent = recovered.single().request
+                bus.publish(
+                    BrokerEvent.OrderFilled(
+                        clientOrderId = restoredParent.id,
+                        brokerOrderId = "venue-parent",
+                        symbol = restoredParent.symbol,
+                        side = restoredParent.side,
+                        price = BigDecimal("2000"),
+                        quantity = restoredParent.quantity,
+                        strategyId = restoredParent.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+            }
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor)
+
+        manager.restore(listOf("alpha"))
+
+        assertThat(broker.recovered.map { it.id }).containsExactly(parent.id)
+        assertThat(fake.submits.map { it.id }).containsExactly(child.id)
+        assertThat(manager.getOrder(parent.id)?.state).isEqualTo(OrderState.FILLED)
+        assertThat(manager.getOrder(child.id)?.state).isEqualTo(OrderState.WORKING)
+        assertThat(persistor.loadPendingOrders("alpha")).containsExactlyEntriesOf(mapOf(child.id to child))
     }
 
     @Test

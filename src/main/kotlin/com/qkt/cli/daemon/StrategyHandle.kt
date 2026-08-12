@@ -160,6 +160,7 @@ class StrategyHandle(
         /** Insights egress sink shared across every strategy this daemon hosts; null disables. */
         private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
         private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
+        private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
         private val insightsStatePollMs: Long = 10_000L,
         private val insightsDealBackfillDays: Long = 30L,
     ) : Factory {
@@ -362,6 +363,7 @@ class StrategyHandle(
                         },
                     insightsSink = insightsSink,
                     insightsEvents = insightsEvents,
+                    insightsDeployedIds = insightsDeployedIds,
                     insightsStrategyMetadata = mapOf(ast.name to metadata),
                     insightsStatePollMs = insightsStatePollMs,
                     insightsDealBackfillDays = insightsDealBackfillDays,

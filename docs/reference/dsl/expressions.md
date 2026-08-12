@@ -17,6 +17,8 @@ NULL              -- null literal (rare; usually you get it from missing data)
 ```
 
 Numbers are parsed as exact decimals internally (BigDecimal). No floating-point drift over thousands of trades.
+Strings support exact, case-sensitive `=` / `==` and `!=` / `<>` comparisons. Ordered comparisons
+(`<`, `<=`, `>`, `>=`) remain numeric-only.
 
 ## Arithmetic
 

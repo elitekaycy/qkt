@@ -15,6 +15,26 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class MarginFloorTest {
+    private class MutableMarginBroker(
+        var level: BigDecimal?,
+    ) : Broker,
+        MarginLevelProvider {
+        override val name = "fake"
+        override val capabilities = emptySet<OrderTypeCapability>()
+        override val supportsMarginLevel = true
+
+        override fun submit(request: OrderRequest) = error("not used")
+
+        override fun cancel(orderId: String) = error("not used")
+
+        override fun modify(
+            orderId: String,
+            changes: com.qkt.broker.OrderModification,
+        ) = error("not used")
+
+        override fun marginLevel(): BigDecimal? = level
+    }
+
     private fun brokerAt(level: String?): Broker =
         object : Broker, MarginLevelProvider {
             override val name = "fake"
@@ -74,6 +94,33 @@ class MarginFloorTest {
         val rule = MarginFloor(brokerAt("120"), BigDecimal("200"))
         assertThat(rule.evaluate(entry(Side.SELL), positions)).isEqualTo(Decision.Approve)
         assertThat(rule.evaluate(entry(Side.BUY), positions)).isInstanceOf(Decision.Reject::class.java)
+    }
+
+    @Test
+    fun `margin floor blocks reentry and reopens after headroom recovers`() {
+        val broker = MutableMarginBroker(BigDecimal("850"))
+        val rule = MarginFloor(broker, BigDecimal("200"))
+        val positions = PositionTracker()
+        positions.applyFill(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "o1",
+                brokerOrderId = "b1",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                price = Money.of("2000"),
+                quantity = Money.of("1"),
+                timestamp = 0L,
+            ),
+        )
+
+        assertThat(rule.evaluate(entry(Side.BUY), positions)).isEqualTo(Decision.Approve)
+
+        broker.level = BigDecimal("120")
+        assertThat(rule.evaluate(entry(Side.BUY), positions)).isInstanceOf(Decision.Reject::class.java)
+        assertThat(rule.evaluate(entry(Side.SELL), positions)).isEqualTo(Decision.Approve)
+
+        broker.level = BigDecimal("850")
+        assertThat(rule.evaluate(entry(Side.BUY), positions)).isEqualTo(Decision.Approve)
     }
 
     @Test

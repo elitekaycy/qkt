@@ -100,4 +100,34 @@ class CandleIndicatorRegistryTest {
             assertThat(ind.value()).withFailMessage("$name should report a value").isNotNull()
         }
     }
+
+    @Test
+    fun `keltner aliases expose the correct hand calculated lines`() {
+        val expected =
+            mapOf(
+                "KELTNER_UPPER" to "18.33333333",
+                "KELTNER_MIDDLE" to "12.33333333",
+                "KELTNER_LOWER" to "6.33333333",
+            )
+        for ((name, value) in expected) {
+            val ind = create(name, listOf(2, 2))
+            ind.update(candle("11", "9", "10"))
+            ind.update(candle("13", "10", "12"))
+            ind.update(candle("14", "11", "13"))
+            assertThat(ind.value()).withFailMessage("$name mapped to the wrong line").isEqualByComparingTo(value)
+        }
+    }
+
+    @Test
+    fun `adx aliases expose the correct hand calculated lines`() {
+        val expected = mapOf("PLUS_DI" to "50", "MINUS_DI" to "0", "ADX" to "100")
+        for ((name, value) in expected) {
+            val ind = create(name, listOf(2))
+            ind.update(candle("10", "8", "9"))
+            ind.update(candle("12", "9", "11"))
+            ind.update(candle("13", "10", "12"))
+            ind.update(candle("15", "11", "14"))
+            assertThat(ind.value()).withFailMessage("$name mapped to the wrong line").isEqualByComparingTo(value)
+        }
+    }
 }

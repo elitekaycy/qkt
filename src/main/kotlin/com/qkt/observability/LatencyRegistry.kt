@@ -5,6 +5,12 @@ import org.slf4j.LoggerFactory
 /** Discrete pipeline stage measured by [LatencyRegistry]. */
 enum class LatencyStage {
     /**
+     * Wall time spent processing one inbound feed tick through the shared pipeline. A session
+     * hosting multiple strategies records the same session-wide sample for each hosted strategy.
+     */
+    TICK_PROCESSING,
+
+    /**
      * From the moment a strategy calls `emit(signal)` until `orderManager.submit(...)` returns.
      * Covers risk evaluation, order construction, and bus dispatch — the pipeline's own latency,
      * not the broker's.
@@ -68,6 +74,19 @@ class LatencyRegistry(
             trackers[strategyId]?.get(stage)?.observe(nanos)
         } catch (t: Throwable) {
             log.warn("LatencyRegistry.observe failed (strategyId=$strategyId stage=$stage)", t)
+        }
+    }
+
+    /** Record one session-wide observation for every strategy hosted by this registry. */
+    fun observeAll(
+        stage: LatencyStage,
+        nanos: Long,
+    ) {
+        if (!enabled) return
+        try {
+            for (byStage in trackers.values) byStage[stage]?.observe(nanos)
+        } catch (t: Throwable) {
+            log.warn("LatencyRegistry.observeAll failed (stage=$stage)", t)
         }
     }
 

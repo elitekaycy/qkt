@@ -12,6 +12,8 @@ import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.EquityMetrics
 import com.qkt.backtest.ExecutionSimulationConfig
+import com.qkt.backtest.ReplayCausalityReport
+import com.qkt.backtest.ReplayInputReport
 import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.ReturnAutocorrCollector
 import com.qkt.backtest.SampleCadence
@@ -26,7 +28,16 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
+import com.qkt.events.CandleEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
+import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
+import com.qkt.events.StrategyCandleEvaluatedEvent
+import com.qkt.events.StreamCandleEvent
+import com.qkt.events.TickEvent
+import com.qkt.events.WarmupTickEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
@@ -69,6 +80,7 @@ class ReplayEngine(
     private var feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
+    private val replayEndTimestamp: Long? = null,
     source: MarketSource = NullMarketSource,
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
     warmupSpec: WarmupSpec = WarmupSpec.None,
@@ -170,9 +182,19 @@ class ReplayEngine(
     private val swapBook: SwapFinancingBook
     private val tradeRecords = mutableListOf<TradeRecord>()
     private val rejections = mutableListOf<RiskRejectedEvent>()
+    private val approvedOrders = mutableListOf<OrderEvent>()
+    private val ruleDecisions = mutableListOf<RuleDecisionEvent>()
+    private val decisionOrderLinks = mutableListOf<DecisionOrderLinkedEvent>()
+    private val accountedFills = mutableListOf<FillAccountedEvent>()
     private val halts = mutableListOf<com.qkt.events.RiskEvent.Halted>()
     private val breakerTrips = mutableListOf<com.qkt.risk.RunawayBreakerTrip>()
     private val tape = mutableListOf<TapeEvent>()
+    private var liveTicksProcessed = 0L
+    private var warmupTicksProcessed = 0L
+    private var warmupCandlesEmitted = 0L
+    private var liveCandlesEmitted = 0L
+    private val streamCandlesEmitted = mutableMapOf<String, Long>()
+    private val strategyCandleEvaluations = mutableMapOf<String, Long>()
 
     init {
         require(this.cadence != SampleCadence.CANDLE_CLOSE || candleWindow != null) {
@@ -195,6 +217,28 @@ class ReplayEngine(
             strategyPnL.setStartingBalance(id, startingBalances[id] ?: startingBalance)
         }
         val bus = EventBus(clock, sequencer)
+        bus.subscribe<OrderEvent>(approvedOrders::add)
+        bus.subscribe<RuleDecisionEvent>(ruleDecisions::add)
+        bus.subscribe<DecisionOrderLinkedEvent>(decisionOrderLinks::add)
+        bus.subscribe<FillAccountedEvent>(accountedFills::add)
+        bus.subscribe<TickEvent> { liveTicksProcessed++ }
+        bus.subscribe<WarmupTickEvent> { warmupTicksProcessed++ }
+        bus.subscribe<CandleEvent> { event ->
+            if (event.candle.endTime <= initialTimestamp) {
+                warmupCandlesEmitted++
+            } else {
+                liveCandlesEmitted++
+            }
+        }
+        bus.subscribe<StreamCandleEvent> { event ->
+            val key = "${event.broker}:${event.candle.symbol.substringAfter(':')}:${event.timeframe}"
+            streamCandlesEmitted[key] = (streamCandlesEmitted[key] ?: 0L) + 1L
+        }
+        bus.subscribe<StrategyCandleEvaluatedEvent> { event ->
+            val symbol = event.candle.symbol.substringAfter(':')
+            val key = "${event.strategyId}:${event.alias}:${event.broker}:$symbol:${event.timeframe}"
+            strategyCandleEvaluations[key] = (strategyCandleEvaluations[key] ?: 0L) + 1L
+        }
         val engine = Engine(bus, priceTracker)
         val candleHub =
             com.qkt.dsl.compile
@@ -261,6 +305,7 @@ class ReplayEngine(
                         priceTracker,
                         instruments,
                         fillAtTriggerPrice = barFills,
+                        calendar = calendar,
                     )
                 BrokerKind.MT5_SIM ->
                     MT5BrokerSimulator(
@@ -532,7 +577,7 @@ class ReplayEngine(
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
         // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
         if (tickResolvedBars != null && tickSlicer != null) {
-            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill)
+            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill, replayEndTimestamp)
         }
 
         if (perStreamWarmup?.specs?.isNotEmpty() == true) {
@@ -600,7 +645,19 @@ class ReplayEngine(
     /** Advance to the end and return the result — the batch-backtest convenience path. */
     fun runToEnd(): BacktestResult {
         advanceToEnd()
+        flushCompletedReplayBoundary()
         return snapshot()
+    }
+
+    private fun flushCompletedReplayBoundary() {
+        val window = candleWindow ?: return
+        val replayEnd = replayEndTimestamp ?: return
+        if (ticksIngested == 0L) return
+        val boundary = window.windowEndFor(currentTimestamp)
+        if (boundary > replayEnd) return
+        currentTimestamp = boundary
+        clock.time = boundary
+        pipeline.flushReplayCandles(boundary)
     }
 
     /** Trades filled so far. */
@@ -666,6 +723,18 @@ class ReplayEngine(
             bookRisk = bookRiskMonitor.result(annualizationFactor),
             accounting = accounting.snapshot(),
             finalPositionsByStrategy = strategyPositions.allByStrategy(),
+            inputSummary =
+                ReplayInputReport(
+                    attemptedFeedTicks = ticksIngested,
+                    liveTicks = liveTicksProcessed,
+                    warmupTicks = warmupTicksProcessed,
+                    warmupCandles = warmupCandlesEmitted,
+                    liveCandles = liveCandlesEmitted,
+                    malformedTicks = pipeline.malformedTickCount.get(),
+                    droppedLateTicks = pipeline.droppedLateTicks(),
+                    streamCandles = streamCandlesEmitted.toSortedMap(),
+                    strategyCandleEvaluations = strategyCandleEvaluations.toSortedMap(),
+                ),
             runawayBreaker =
                 com.qkt.backtest.RunawayBreakerReport(
                     enforceLiveBreakers = enforceLiveBreakers,
@@ -674,6 +743,13 @@ class ReplayEngine(
                     maxRejections = runawayMaxRejections,
                     rejectionWindowMs = runawayRejectionWindowMs,
                     trips = breakerTrips.toList(),
+                ),
+            causality =
+                ReplayCausalityReport(
+                    approvedOrders = approvedOrders.toList(),
+                    ruleDecisions = ruleDecisions.toList(),
+                    decisionOrderLinks = decisionOrderLinks.toList(),
+                    accountedFills = accountedFills.toList(),
                 ),
         )
     }

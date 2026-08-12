@@ -95,17 +95,17 @@ interface StatePersistor : AutoCloseable {
     fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg>
 
     /**
-     * Persist the engine-managed armed trailing stops for [strategyId] — their static config
-     * plus the runtime arm flag and high-water mark — so a restart resumes the trail at its
-     * prior progress instead of re-arming from the entry (a winner would otherwise come back
-     * stop-less). Default no-op keeps persistors that predate this compiling.
+     * Persist engine-managed dynamic stops for [strategyId] — their static config plus runtime
+     * cursor and high-water state — so restart resumes from the last durably recorded favorable
+     * price. This does not reconstruct triggers or favorable extremes that occurred while offline.
+     * Default no-op keeps persistors that predate this compiling.
      */
     fun saveTrailingStops(
         strategyId: String,
         stops: List<PersistedTrailingStop>,
     ) {}
 
-    /** Restore the engine-managed armed trailing stops for [strategyId]; empty when none persisted. */
+    /** Restore engine-managed dynamic stops for [strategyId]; empty when none persisted. */
     fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> = emptyList()
 
     /**
