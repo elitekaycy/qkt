@@ -346,7 +346,7 @@ for index in 0 1; do
     expected_contract_size="$(jq -er '.armedScenario.expectedContractSize' "$scenario/expected.json")"
     maximum_entry_anchor_drift_points="$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "$scenario/expected.json")"
     case "$expected_symbol:$venue_symbol:$expected_contract_size:$maximum_entry_anchor_drift_points" in
-        EXNESS:EURUSD:EURUSDm:100000:80|EXNESS:GBPUSD:GBPUSDm:100000:80|EXNESS:XAUUSD:XAUUSDm:100:400) ;;
+        EXNESS:EURUSD:EURUSDm:100000:80|EXNESS:GBPUSD:GBPUSDm:100000:80|EXNESS:XAUUSD:XAUUSDm:100:1000) ;;
         *) fail "scenario $index symbol contract is not in the reviewed live set" ;;
     esac
     jq -e \

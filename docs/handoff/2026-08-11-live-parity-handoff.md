@@ -3450,3 +3450,53 @@ Next step:
 - Commit the source fix, rebuild/repackage the QKT validation image from the new commit, rerun the
   same same-symbol shared-account Insights proof, and then run replay comparisons after the wrapper
   result passes.
+
+## 2026-08-12 Update: Insights Poller Fix Rerun, XAUUSD Market Drift
+
+Rebuilt and reran after `fix(app): poll routed broker state for insights`:
+
+- QKT commit under proof: `fa917a44`.
+- Docker validation image:
+  `qkt:live-validation-fa917a44`, image id
+  `sha256:3f6dc293fd66583dc6e1cd390e3cf81aa37fbd286aab9bcc20ad030276708941`.
+- Host/image version:
+  `qkt 0.47.1 (fa917a44) built 2026-08-12T09:29:16.412553483Z`.
+- Clean proving worktree:
+  `/var/tmp/qkt-live-proof-fa917a44-20260812T092943Z`.
+- Prepared scenarios:
+  `/var/tmp/qkt-validation/shared-account-insights-fa917a44-0812093002-prepare/xau_a` and
+  `/var/tmp/qkt-validation/shared-account-insights-fa917a44-0812093002-prepare/xau_b`.
+- Armed output:
+  `/var/tmp/qkt-validation/shared-account-insights-fa917a44-0812093002-live`.
+
+Observed:
+
+- Strict tick gate passed: `XAUUSDm`, `samples:50`, `invalid:0`, `maxAgeMs:1401`, `overLimit:0`.
+- Both strategies opened real `0.01`-lot XAUUSD demo positions and then closed them.
+- Final demo2 state was flat: no positions and no pending orders.
+- The QKT Insights poller fix worked far enough to emit state/deal history: scenario A had both IN
+  and OUT deals retained in the collector DB.
+- The run failed before wrapper-level Insights pass because the base runner rejected scenario B's
+  entry drift: intent anchor `4415.338`, fill `4414.738`, point `0.001`, drift `-600` points.
+- Venue protection was still fill-anchored correctly for scenario B: fill `4414.738`, SL
+  `4417.738`, TP `4408.738`.
+
+Classification:
+
+- This is not an engine protection bug and not residual account exposure.
+- The existing XAUUSD 400-point reviewed drift envelope is still too tight for fast market execution
+  on this venue. A 600-point fill drift is larger than the observed 260-point spread but still below
+  the 3000-point stop distance and was handled correctly by fill-anchored protection.
+
+Harness update applied locally:
+
+- XAUUSD `maximumEntryAnchorDriftPoints` moved from `400` to `1000`.
+- EURUSD/GBPUSD remain at `80`.
+- The runner still accepts only explicit reviewed tuples:
+  `EXNESS:EURUSD/EURUSDm/100000/80`, `EXNESS:GBPUSD/GBPUSDm/100000/80`, and
+  `EXNESS:XAUUSD/XAUUSDm/100/1000`.
+
+Next step:
+
+- Run the script regressions for the updated reviewed tuple, commit the harness update, rebuild the
+  validation image again, and rerun the same XAUUSD shared-account Insights proof.

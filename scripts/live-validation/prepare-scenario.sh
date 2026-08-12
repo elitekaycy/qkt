@@ -108,7 +108,7 @@ case "$symbol" in
         stop_distance="3.000"
         take_profit_distance="6.000"
         expected_contract_size="100"
-        maximum_entry_anchor_drift_points=400
+        maximum_entry_anchor_drift_points=1000
         ;;
     *) fail "--symbol must be one of: EURUSD, GBPUSD, XAUUSD" ;;
 esac

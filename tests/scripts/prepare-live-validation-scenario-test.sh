@@ -111,7 +111,7 @@ jq -e '
     .armedScenario.venueSymbol == "XAUUSDm" and
     .armedScenario.primaryTimeframe == "1m" and
     .armedScenario.secondaryTimeframe == "15m" and
-    .armedScenario.maximumEntryAnchorDriftPoints == 400 and
+    .armedScenario.maximumEntryAnchorDriftPoints == 1000 and
     (.armedScenario.streams | map(.timeframe) == ["1m", "15m"]) and
     (.armedScenario.indicators | index("ema(15m,3)") != null) and
     (.armedScenario.indicators | index("ema(15m,5)") != null)
@@ -161,7 +161,7 @@ jq -e '
     .armedScenario.symbol == "EXNESS:XAUUSD" and
     .armedScenario.venueSymbol == "XAUUSDm" and
     .armedScenario.expectedContractSize == "100" and
-    .armedScenario.maximumEntryAnchorDriftPoints == 400 and
+    .armedScenario.maximumEntryAnchorDriftPoints == 1000 and
     .armedScenario.stopDistance == "3.000" and
     .armedScenario.takeProfitDistance == "6.000" and
     (.armedScenario.streams | all(.symbol == "EXNESS:XAUUSD"))

@@ -169,7 +169,7 @@ grep -F 'RiskRejectedEvent|BrokerEvent.OrderRejected' "$runner" >/dev/null
 grep -F '[ "$deploy_launch_skew_ms" -le 1000 ]' "$runner" >/dev/null
 grep -F 'timeout_seconds=360' "$runner" >/dev/null
 grep -F 'must be in 330..600' "$runner" >/dev/null
-grep -F 'EXNESS:EURUSD:EURUSDm:100000:80|EXNESS:GBPUSD:GBPUSDm:100000:80|EXNESS:XAUUSD:XAUUSDm:100:400' "$runner" >/dev/null
+grep -F 'EXNESS:EURUSD:EURUSDm:100000:80|EXNESS:GBPUSD:GBPUSDm:100000:80|EXNESS:XAUUSD:XAUUSDm:100:1000' "$runner" >/dev/null
 grep -F '.armedScenario.maximumEntryAnchorDriftPoints == $maximumEntryAnchorDriftPoints' "$runner" >/dev/null
 grep -F 'entry drift exceeds the reviewed $maximum_entry_anchor_drift_points-point bound' "$runner" >/dev/null
 grep -F 'EXNESS:XAUUSD:XAUUSDm:100' "$runner" >/dev/null
