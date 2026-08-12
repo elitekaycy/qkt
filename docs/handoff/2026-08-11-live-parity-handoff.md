@@ -3207,3 +3207,78 @@ Effect on the live parity plan:
   deployed live daemons.
 - The next live shared-account rerun should rebuild the QKT validation image from this commit before
   claiming the upstream emission hardening in retained live evidence.
+
+## 2026-08-12 Update: Shared-Account Rerun Pre-Arm Gate
+
+Rebuilt and verified the QKT validation runtime after the upstream shared-account deal-emission fix:
+
+- QKT commit under proof: `74a770977db72649543c0c65fa9e3ccd2ec104f6`.
+- Host CLI version:
+  `qkt 0.47.1 (74a77097) built 2026-08-12T06:51:40.008682291Z`.
+- Docker validation image:
+  `qkt:live-validation-74a77097`, image id
+  `sha256:fa33f20a03c623bbe79cb5ec39d79aa6315948a1724fc10ccfbf4de83ccc90c9`.
+- Image version matched the host CLI:
+  `qkt 0.47.1 (74a77097) built 2026-08-12T06:51:40.008682291Z`.
+- The cold Dockerfile build failed inside Docker's Gradle daemon before runtime image creation; no
+  JVM heap/worker restrictions were added to force it through. The retained validation image was
+  packaged from the already verified host `installDist` and the previous local validation runtime
+  base, preserving the same QKT version check used by the live runner.
+- Clean proving worktree used for live runner clean-repo checks:
+  `/var/tmp/qkt-live-proof-74a77097-20260812T083643Z`.
+
+Prepared fresh demo2 scenarios from the current account snapshot:
+
+- Prepared scenario root:
+  `/var/tmp/qkt-validation/shared-account-insights-74a77097-0812083710-prepare`.
+- EURUSD scenario:
+  `/var/tmp/qkt-validation/shared-account-insights-74a77097-0812083710-prepare/eurusd`.
+- GBPUSD scenario:
+  `/var/tmp/qkt-validation/shared-account-insights-74a77097-0812083710-prepare/gbpusd`.
+- Account snapshot at preparation: demo2 login `476434211`, server `Exness-MT5Trial9`,
+  balance/equity `100002.33`, leverage `500`, margin `0.0`.
+- Wrapper verify-only passed:
+  `run-shared-account-insights-round-trips.sh --verify-only` against
+  `qkt-insights:validation-live-state-attribution-20260812`.
+
+Two guarded armed attempts were made with the fixed QKT image and the August 12 Insights image. Both
+stopped before arming live QKT strategy containers because the strict pre-arm tick-freshness gate
+failed. No live order mutation occurred.
+
+Attempt 1 retained evidence:
+
+- Output:
+  `/var/tmp/qkt-validation/shared-account-insights-74a77097-0812083710-live`.
+- Tick gate summary:
+  `/var/tmp/qkt-validation/shared-account-insights-74a77097-0812083710-live/base-roundtrip/evidence/tick-freshness-gate-summary.json`.
+- Gate result: `status:"failed"`, `maxAllowedAgeMs:8000`.
+- EURUSDm: `samples:25`, `invalid:1`, `maxAgeMs:8109`, `overLimit:1`.
+- GBPUSDm: `samples:25`, `invalid:0`, `maxAgeMs:4286`, `overLimit:0`.
+
+Attempt 2 retained evidence:
+
+- Output:
+  `/var/tmp/qkt-validation/shared-account-insights-74a77097-0812083710-live-retry2`.
+- Tick gate summary:
+  `/var/tmp/qkt-validation/shared-account-insights-74a77097-0812083710-live-retry2/base-roundtrip/evidence/tick-freshness-gate-summary.json`.
+- Gate result: `status:"failed"`, `maxAllowedAgeMs:8000`.
+- EURUSDm: `samples:25`, `invalid:0`, `maxAgeMs:6705`, `overLimit:0`.
+- GBPUSDm: `samples:25`, `invalid:1`, `maxAgeMs:8816`, `overLimit:1`.
+
+Post-attempt account flatness:
+
+- demo2 account remained balance/equity `100002.33`, margin `0.0`, leverage `500`.
+- `/get_positions` returned an empty `data` array.
+- `/orders` returned an empty `orders` array and `total:0`.
+- No QKT strategy containers remained running; only the two local gateway containers remained.
+
+Current consequence:
+
+- The QKT emission fix is source-tested and packaged into a validation image.
+- The fixed-image shared-account live rerun is still not sealed because market freshness stopped both
+  attempts before arming.
+- The next retry should reuse the prepared scenario pair only while the starting balance remains
+  `100002.33`; otherwise prepare a fresh pair from the latest account snapshot.
+- Do not weaken the freshness gate. A passing live proof must show the same strict gate allows arming
+  under genuinely fresh EURUSD/GBPUSD ticks, then retain the full wrapper result and replay
+  comparisons.
