@@ -57,6 +57,7 @@ grep -F 'dynamicMarginFloorPct:true' "$runner" >/dev/null
 grep -F 'QKT_LIVE_DEMO_ORDER_APPROVAL must equal LOCALHOST_DEMO_ONLY' "$runner" >/dev/null
 grep -F 'repository must be clean' "$runner" >/dev/null
 grep -F 'Docker image is not built from' "$runner" >/dev/null
+grep -F 'run_started_ms="$(date +%s%3N)"' "$runner" >/dev/null
 grep -F -- '--network host' "$runner" >/dev/null
 grep -F 'docker exec "$opener_container" qkt deploy "/work/strategies/$opener_strategy.qkt"' "$runner" >/dev/null
 grep -F 'docker exec "$probe_container" qkt deploy "/work/strategies/$probe_strategy.qkt"' "$runner" >/dev/null

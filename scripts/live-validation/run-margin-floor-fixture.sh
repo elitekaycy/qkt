@@ -183,6 +183,7 @@ mkdir -m 700 -p "$output/source" "$output/opener" "$output/probe" "$output/evide
 cp "$fixture/suite.json" "$fixture/SHA256SUMS" "$output/source/"
 cp -a "$fixture/opener/." "$output/opener/"
 cp -a "$fixture/probe/." "$output/probe/"
+run_started_ms="$(date +%s%3N)"
 
 opener_magic="$(jq -er '.opener.magic' "$fixture/suite.json")"
 probe_magic="$(jq -er '.probe.magic' "$fixture/suite.json")"
