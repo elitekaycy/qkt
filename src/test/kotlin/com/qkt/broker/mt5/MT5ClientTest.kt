@@ -258,6 +258,52 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `sibling clients share cached position snapshots and filter magic locally`() {
+        val readCache = MT5ReadCache(ttlMs = 60_000L)
+        val clientA = cachedClient(readCache)
+        val clientB = cachedClient(readCache)
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                [
+                  {
+                    "ticket":1,
+                    "symbol":"EURUSDm",
+                    "type":0,
+                    "volume":"0.1",
+                    "price_open":"1.1",
+                    "sl":"0",
+                    "tp":"0",
+                    "profit":"0",
+                    "magic":10001,
+                    "time_msc":1700000000000,
+                    "comment":"a"
+                  },
+                  {
+                    "ticket":2,
+                    "symbol":"GBPUSDm",
+                    "type":1,
+                    "volume":"0.2",
+                    "price_open":"1.2",
+                    "sl":"0",
+                    "tp":"0",
+                    "profit":"0",
+                    "magic":10002,
+                    "time_msc":1700000000001,
+                    "comment":"b"
+                  }
+                ]
+                """.trimIndent(),
+            ),
+        )
+
+        assertThat(clientA.getPositions(magic = 10001)!!.map { it.ticket }).containsExactly(1L)
+        assertThat(clientB.getPositions(magic = 10002)!!.map { it.ticket }).containsExactly(2L)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(server.takeRequest().path).isEqualTo("/get_positions")
+    }
+
+    @Test
     fun `cancelOrder issues DELETE on the orders ticket route`() {
         server.enqueue(MockResponse().setBody("""{"message":"Order cancelled successfully"}"""))
         val body = client.cancelOrder(ticket = 555L)
@@ -370,6 +416,31 @@ class MT5ClientTest {
         server.enqueue(MockResponse().setBody("""{"ok":true,"data":[$pendingOrderJson]}"""))
         assertThat(client.getPendingOrders()).hasSize(1)
     }
+
+    @Test
+    fun `sibling clients share cached pending-order snapshots and filter magic locally`() {
+        val readCache = MT5ReadCache(ttlMs = 60_000L)
+        val clientA = cachedClient(readCache)
+        val clientB = cachedClient(readCache)
+        val other =
+            pendingOrderJson
+                .replace("\"ticket\":7", "\"ticket\":8")
+                .replace("\"magic\":10001", "\"magic\":10002")
+        server.enqueue(MockResponse().setBody("""{"orders":[$pendingOrderJson,$other],"total":2}"""))
+
+        assertThat(clientA.getPendingOrders(magic = 10001)!!.map { it.ticket }).containsExactly(7L)
+        assertThat(clientB.getPendingOrders(magic = 10002)!!.map { it.ticket }).containsExactly(8L)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(server.takeRequest().path).isEqualTo("/orders")
+    }
+
+    private fun cachedClient(readCache: MT5ReadCache): MT5Client =
+        MT5Client(
+            gatewayUrl = server.url("/").toString().trimEnd('/'),
+            serverTimeZone = MT5ServerTimeZone.UTC,
+            retryAttempts = 0,
+            readCache = readCache,
+        )
 
     @Test
     fun `configured api key authenticates readiness and data requests`() {
