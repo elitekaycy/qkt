@@ -30,9 +30,10 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 143`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 144`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `feat(scripts): add cooldown reentry live lifecycle`
   - `test(risk): cover portfolio book exposure recovery`
   - `docs(docs): seal margin floor recovery status`
   - `test(risk): cover global daily halt reentry reset`
@@ -628,6 +629,54 @@ Important replay caveat:
   latency differs from deterministic replay. The retained compared-entry drift was live
   `4389.4400000000005` vs mt5-sim `4389.43300000`, delta `0.007000000000516593`.
 
+### Active-Symbol XAUUSD Cooldown Recovery Live/Replay Extension
+
+Fresh retained evidence now exists for the first real order-bearing cooldown-after-loss recovery
+slice:
+
+- clean proving worktree:
+  `/var/tmp/qkt-live-head-5cdfe826-20260812T035920Z`
+- scenario:
+  `/var/tmp/qkt-validation/xau-cooldown-recovery-reentry-90s-20260812T042800Z`
+- live result:
+  `/var/tmp/qkt-validation/xau-cooldown-recovery-reentry-90s-20260812T042800Z/evidence/result.json`
+- successful replay comparison:
+  `/var/tmp/qkt-validation/xau-cooldown-recovery-reentry-90s-20260812T042800Z-replay/result.json`
+
+What this clean pass proved on Wednesday, August 12, 2026:
+
+- `prepare-scenario.sh --symbol XAUUSD --lifecycle reentry_cooldown_recovered` emitted a clean,
+  credential-free scenario at `qktCommit 0b093213f34ca8db07b2ea5c863041d222dfaac6` with
+  `qktDirty:false`;
+- the generated strategy intentionally allowed up to three entry attempts through the DSL with
+  `TRADES.today < 3`, while risk configured per-strategy `cooldown_after_loss: "90000"` so the
+  pacing gate, not max-trades, controlled the middle block;
+- the live run opened and closed one real `0.01`-lot XAUUSDm SELL under magic `938502`; that close
+  realized `-0.69`, arming the cooldown-after-loss gate;
+- the next qualifying SELL signal was rejected before transport with exact reason
+  `CooldownAfterLoss[validation_cooldown90_live_market_bracket]: 30s remaining`;
+- after the runner retained `cooldown-recovery-wait.json` and waited through the 90-second cooldown
+  window, a later qualifying BUY signal opened a second real `0.01`-lot XAUUSDm position and QKT
+  closed it strategy-owned;
+- retained transport evidence shows `orderPosts:2` and `closePosts:2`, proving the blocked signal
+  did not reach the gateway and the recovered signal did;
+- retained live evidence was non-vacuous: `ticks:241`, `warmupTicks:80`, `candles:15`, `fills:4`,
+  `gatewayExchanges:597`, and `linkedPlacements:2`;
+- retained audit evidence included `acceptedEvents:4`, `filledEvents:4`, and `riskRejections:1`;
+- final venue reconciliation returned `finalPositions:0` and `finalOrders:0`; balance delta
+  `-1.54` matched owned deal net `-1.54`;
+- replay passed with `fullTickOrderJournalsByteExact:true`,
+  `barsOrdersTimestampNormalizedExact:true`, `liveInitialProtectionMatchesCanonicalIntent:true`,
+  `liveAdjustedProtectionMatchesCapturedBrokerFill:true`, `mt5SimulationUsesSameCanonicalIntent:true`,
+  and `liveFillAndAdjustedProtectionMatchMt5Simulation:true`.
+
+Important implementation note:
+
+- an earlier armed attempt with a 30-second cooldown was intentionally treated as failed evidence:
+  because the strategy is 1m-bar driven, the next qualifying entry arrived after that short cooldown
+  had already elapsed and correctly opened instead of rejecting. The reviewed lifecycle therefore
+  uses a 90-second cooldown so the next 1m signal proves the blocked state before recovery.
+
 ### Sustained Read-Only Load And Restart Certification
 
 Fresh passing evidence now exists for the localhost MT5 read-only sustained load/restart slice:
@@ -1103,9 +1152,10 @@ As of Wednesday, August 12, 2026:
   2026 after adding generated live market-bracket runner and replay-comparator support for
   `reentry_cooldown_recovered`. The first armed attempt with a 30-second cooldown proved that value
   was too short for a 1m-bar re-entry signal, so the reviewed lifecycle now uses a 90-second
-  cooldown. This is preparer/runner/comparator coverage only; retained armed live evidence for
-  cooldown-after-loss recovery remains open until a real localhost MT5 run and replay comparison
-  pass.
+  cooldown. The corrected retained armed live run and replay comparison then passed at
+  `/var/tmp/qkt-validation/xau-cooldown-recovery-reentry-90s-20260812T042800Z/evidence/result.json`
+  and
+  `/var/tmp/qkt-validation/xau-cooldown-recovery-reentry-90s-20260812T042800Z-replay/result.json`.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed again on Wednesday, August 12, 2026 after adding explicit generated-DSL strategy daily-loss
   recovery coverage: first live-paper/replay order lifecycle trips a DAILY strategy halt, same-day
@@ -2308,8 +2358,8 @@ Existing partial coverage:
   `reentry_cooldown_recovered` lifecycle. The generated strategy leaves trade count open with
   `TRADES.today < 3`, configures per-strategy `cooldown_after_loss: "90000"`, requires one
   pre-transport `CooldownAfterLoss` rejection after the first live close, waits for the cooldown
-  window to elapse, then requires a second strategy-owned open/flat cycle. Static shell regression
-  is sealed; retained armed live evidence for this lifecycle remains open;
+  window to elapse, then requires a second strategy-owned open/flat cycle. Static shell regression,
+  retained armed live evidence, and replay comparison are now sealed for this lifecycle;
 - clean live evidence now proves the allowed XAUUSD re-entry path end-to-end through the real local
   MT5 gateway, real broker fills, golden capture, full-tick replay, plain-bar replay, and MT5-sim
   replay. See `Active-Symbol XAUUSD Re-Entry Live/Replay Extension` above;
@@ -2340,8 +2390,7 @@ Concrete next work:
 
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
   recovered retained-live variants, especially live stale-market-data gate recovery, live same-book
-  exposure limits, retained live cooldown/loss-streak reset, and retained live next-day reset
-  behavior;
+  exposure limits, retained live loss-streak reset, and retained live next-day reset behavior;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
   decisions and live protection adjustment, but deterministic backtest fill prices can drift from
   real broker fills because live execution latency is real;
