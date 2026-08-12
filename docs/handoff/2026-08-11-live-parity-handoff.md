@@ -1,5 +1,203 @@
 # Live Parity And Promotion Handoff
 
+## Correction - Current Status As Of 2026-08-12 17:47 UTC
+
+The qkt shared-market-source and mt5-gateway timeout work is not fully done, not merged to
+`main`, and not running on bot2 as promoted production images.
+
+### Update - 2026-08-12 18:52 UTC
+
+The qkt local fix/validation gate for warmup duplicate-request coalescing and shared MT5 polling
+is now clean in this checkout. This does not mean promoted/deployed completion; it means the local
+qkt branch is ready for PR update/review after commit and push.
+
+- Kimi/kimi-co processes: none running.
+- Final qkt local verification completed with no JVM heap caps, `--no-daemon`, or worker caps:
+  - `./gradlew build -Pkotlin.compiler.execution.strategy=daemon` passed
+    (`BUILD SUCCESSFUL in 11m 17s`).
+  - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon` passed/up-to-date
+    (`BUILD SUCCESSFUL in 22s`).
+  - `git diff --check` passed.
+  - `grep -rEn 'TODO|FIXME|XXX' src/ || true` returned no matches.
+- The first full build after the `Clock` injection failed only on ktlint import/signature ordering
+  in the new cache wrapper/test. Those style issues were fixed and the full build above passed.
+- Warmup duplicate-request coalescing is covered at three levels:
+  - focused unit tests for repeated cached requests, concurrent in-flight joining, and sibling
+    prefix remapping through the cache;
+  - same-symbol local live MT5 run showing two upstream canonical bar loads and two sibling cache
+    hits for 1m/5m warmups;
+  - full build parity/generation tests, including generated indicators through ticks and bars and
+    multi-timeframe warmup full-state parity.
+- Shared live polling remains covered by the existing shared-market-source tests plus the local
+  same-symbol live run, which showed one `mt5-tick-feed-*` thread serving both sibling prefixes.
+- The cache wrapper now uses injected `Clock`/`SystemClock` instead of direct wall-clock reads, so
+  `WallClockSourcePolicyTest` passes and deterministic source policy remains intact.
+
+- qkt checkout/PR:
+  - Local branch: `fix/mt5-shared-market-source`.
+  - Remote PR: qkt PR 981 is still open against `dev`.
+  - `origin/main` does not contain `f7e84b27` (`feat(app): make market data gate thresholds
+    configurable`) or the later local warmup/config hardening below.
+- mt5-gateway:
+  - Remote PR 78 is still open against `dev`.
+  - The gateway fix has not been promoted to `main`.
+- bot2 runtime:
+  - qkt is running the validation image `ghcr.io/elitekaycy/qkt:fix-shared-md`, not the final
+    promoted `latest` image for this branch.
+  - mt5-gateway is running the validation image `elitekaycy/mt5-gateway-api:fix-ipc`, not a
+    promoted release image.
+  - qkt-insights is running `ghcr.io/elitekaycy/qkt-insights:latest` at revision
+    `b27d8e54f831a2c945ad854dba2883eee67982ba`.
+  - `qkt status` showed `forward_bench`, `forward_bench_2`, and `forward_bench_3` running with
+    25 total child strategies, all `gateActive:true`, `operatorStop:false`, `hold:false`, and
+    `trades:0`.
+  - Gateway logs still showed repeated `waitress.queue` depth messages during the quick check,
+    so long-run stability is not sealed.
+- Additional local qkt changes made after PR 981 review:
+  - `MarketDataGateConfig` now rejects malformed explicit `market_data` values and unsafe
+    thresholds instead of silently defaulting malformed values.
+  - `MarketSourceFactory` now wraps grouped MT5 shared market sources in
+    `CachedHistoricalMarketSource`, a short-lived historical bar cache/in-flight coalescer.
+  - Warmup/history bar requests from sibling MT5 namespaces are remapped to the canonical prefix
+    first, then coalesced by canonical symbol/window/range, and restamped back to the caller prefix.
+  - New focused tests cover malformed config values, unsafe config values, cached identical bar
+    requests, concurrent in-flight joining, and remapped sibling warmup sharing.
+- Local verification completed in this checkout:
+  - `git diff --check` passed.
+  - `./gradlew compileKotlin compileJava testClasses -Pkotlin.compiler.execution.strategy=daemon`
+    passed.
+  - Focused tests passed:
+    `./gradlew test --tests com.qkt.marketdata.source.CachedHistoricalMarketSourceTest --tests com.qkt.marketdata.source.PrefixRemapMarketSourceTest --tests com.qkt.cli.MarketSourceFactoryTest --tests com.qkt.cli.ConfigMarketDataTest --tests com.qkt.marketdata.MarketDataGateTest --tests com.qkt.marketdata.MarketDataGateClockSkewTest -Pkotlin.compiler.execution.strategy=daemon`.
+  - The first compile pass was slow in Kotlin/JVM codegen but completed; no JVM heap caps,
+    `--no-daemon`, or worker restrictions were used.
+- Local MT5 live verification completed against `lab-mt5-gateway` on `127.0.0.1:5001`:
+  - Account used: Exness demo login `436804390`, server `Exness-MT5Trial9`; account was flat
+    before each run and flat after each run. The gateway API key was read from the container env
+    and was not written to artifacts.
+  - Multi-prefix, multi-symbol order proof:
+    `/var/tmp/qkt-validation/shared-prefix-live-20260812T175026Z`.
+    One daemon loaded two MT5 broker profiles (`exness_s0`, `exness_s1`) pointing at the same
+    gateway/account with different magics (`26000`, `26001`). `EXNESS_S0:EURUSD` EMA and
+    `EXNESS_S1:GBPUSD` RSI strategies both warmed 1m/5m bars, evaluated indicators/DSL,
+    submitted real 0.01-lot bracket entries, received broker accepts/fills, submitted strategy
+    closes, received close fills, retained engine audit + MT5 transport journals, and ended with
+    `positions=[]`, `orders.total=0`. Final status was `qkt: HEALTHY`; replay materialization and
+    full-ticks-paper, bars-paper, and full-ticks-mt5 backtests all produced two trade events with
+    zero rejections for both captured sessions.
+  - Same-symbol duplicate-warmup proof:
+    `/var/tmp/qkt-validation/shared-prefix-samesymbol-live-20260812T175843Z`.
+    One daemon loaded `EXNESS_S0:EURUSD` and `EXNESS_S1:EURUSD` sibling strategies against the same
+    account with magics `26010` and `26011`. Daemon logs showed exactly two upstream historical bar
+    loads for canonical `EXNESS_S0:EURUSD` (1m and 5m) and two cache hits for the remapped sibling
+    `EXNESS_S1:EURUSD` warmups. Logs showed a single `mt5-tick-feed-1911158859` thread serving both
+    prefixes. Both strategies placed and closed real 0.01-lot EURUSD orders and ended flat with no
+    pending orders.
+  - Golden capture succeeded for the local live strategy sessions and retained warmup ticks, live
+    ticks, candles, stream-candle evaluations, linked placements, order/fill/accounting events, and
+    MT5 transport mutations.
+- Still required before claiming full completion:
+  - Commit and push the local qkt fix branch, then verify/update the qkt PR against `dev`.
+  - Review/promote mt5-gateway PR 78.
+  - PR/merge qkt through `dev -> testing -> main`, update bot2 images/runtime, and monitor logs.
+
+## Current Forward Stack Status - 2026-08-12
+
+This section supersedes older branch/promotion status below for the current bot2 forward-test stage
+and the bot1 qkt-quant-live cleanup/update.
+
+- Coordination snapshot:
+  - Local qkt checkout is currently on `fix/mt5-shared-market-source`, tracking `origin/dev`.
+  - The local worktree contains active timeout/shared-market-source changes plus this handoff file. Treat the stale lower `Current Branch State` section as historical only; it still describes the old `test/exhaustive-live-parity` branch and should not be used as the current checkout/runtime state.
+  - No open qkt PR exists for `fix/mt5-shared-market-source` at this snapshot. The only open qkt PR found was PR 973 (`feature/research-docs-and-sample-bars`), unrelated to the timeout pause.
+  - Do not make qkt source edits in this checkout until the MT5 timeout investigation branch/worktree owner is clear, to avoid colliding with the other agent's fix attempt.
+- Bot1 qkt-quant-live cleanup/update:
+  - Stack path: `/opt/qkt-quant-live`.
+  - Action taken: stopped the running qkt service, archived the old promoted-book strategies, pulled current configured images, and recreated qkt plus qkt-insights.
+  - Old running strategy set before cleanup: `promoted_book` plus 14 child strategies (`audnzd_rv_*`, `eurgbp_rv`, `gold_*`, `nzdaud_rv_*`, `nzdeur_rv`, `nzdxag_rv`), all showing `0` trades after almost 7 days.
+  - Broker safety check before cleanup: IC Markets demo login `52969381`, server `ICMarketsSC-Demo`, balance/equity `60,178.43 USD`, margin `0`, margin free `60,178.43`; `/orders` returned `ok=true`, `total=0`.
+  - The direct `qkt stop promoted_book` attempt timed out through the older control client, so cleanup used `docker compose stop qkt` and then removed strategy files from the daemon load directory.
+  - Strategy archive paths:
+    - full copy: `/root/qkt-cleanup-backups/qkt-quant-live-strategies-20260812T142412Z/strategies`;
+    - non-loading archive outside `/strategies`: `/opt/qkt-quant-live/archived-strategies/archive-20260812T142412Z`.
+  - Current `/opt/qkt-quant-live/strategies` load directory contains no `.qkt` files, only `.gitkeep` and `README.md`.
+  - Current bot1 qkt image: `ghcr.io/elitekaycy/qkt:edge`, revision `be4958c662373c5f3cfea6eabc5a4164922460a4`, image id `sha256:786c3c01b10b189ca4194eac7d75db5d5c5318d5a96cb18f24e5b9397193edef`.
+  - Current bot1 qkt version: `qkt 0.47.1 (be4958c662373c5f3cfea6eabc5a4164922460a4)`, built `2026-08-12T12:09:11.241422148Z`.
+  - Current bot1 qkt-insights image: `ghcr.io/elitekaycy/qkt-insights:latest`, revision `b27d8e54f831a2c945ad854dba2883eee67982ba`, image id `sha256:edb358273ce82074923e86f2267f588fb031ff88ec3a13c86fdc1ee1bfb2d3c0`.
+  - Current bot1 mt5-gateway image remains the configured `elitekaycy/mt5-gateway-api:0.3.7`, revision `794c04c661439c400d463e22cbc31e4f72e78bc1`.
+  - Current bot1 services after update: qkt healthy, mt5-gateway healthy, qkt-insights healthy.
+  - Current qkt status after update: daemon running, control reachable, `STRATEGIES none deployed`.
+  - Current broker check after update: same account, margin `0`, `/orders` total `0`.
+  - Current qkt-insights `/live/state` after update with no strategies deployed: `accounts=0`, `positions=0`, `orders=0`.
+  - Important tag note: bot1 remains on its configured qkt tag `edge`; bot2 forward stack uses `qkt:latest` at revision `443a42fe55d27f0d0a55f620280f8c90df191ba7`.
+- Pause update: qkt strategies were paused at the user's request while another agent investigates/fixes the MT5 timeout issue.
+  - Action taken: `ssh bot2 'cd /root/forward-stack && docker compose stop qkt'`.
+  - Result: `forward-stack-qkt-1` is stopped.
+  - `forward-stack-mt5-gateway-1` remains up/healthy for timeout diagnostics.
+  - `forward-stack-qkt-insights-1` remains up/healthy.
+  - Account check after pause: login `476422618`, server `Exness-MT5Trial9`, balance/equity `5,000,000 USD`, margin `0`, margin free `5,000,000`.
+  - Pending order check after pause: `/orders` returned `ok=true`, `total=0`.
+  - Gateway logs after pause repeatedly reported `Retrieved 0 pending orders`.
+  - Do not restart qkt/strategies until the timeout work is ready for a controlled rerun.
+- qkt was promoted through `dev -> testing -> main`.
+- qkt live image on bot2 is `ghcr.io/elitekaycy/qkt:latest`.
+- qkt image revision on bot2: `443a42fe55d27f0d0a55f620280f8c90df191ba7`.
+- qkt version on bot2: `qkt 0.47.1 (443a42fe55d27f0d0a55f620280f8c90df191ba7)`.
+- qkt-insights live image on bot2 is `ghcr.io/elitekaycy/qkt-insights:latest`.
+- qkt-insights image revision on bot2: `b27d8e54f831a2c945ad854dba2883eee67982ba`.
+- qkt-insights image id on bot2: `sha256:74edde146ab47a152954346afc55da21535995555e68cbdc8ff54a4bb413d48f`.
+- qkt-insights includes:
+  - preserved live broker attribution;
+  - producer-local event sequence handling;
+  - qkt causal audit payload acceptance;
+  - local-strategy scoped broker-deal backfills;
+  - shared-account dedupe by `login + server`;
+  - logical portfolio grouping for generated shards such as `forward_bench_2` and `forward_bench_3`;
+  - visible `/live/state.positions` and `/live/state.orders` collapse of qkt sibling broker profiles such as `EXNESS_S10` through `EXNESS_S24`.
+- qkt-insights dashboard follow-up deployed:
+  - Symptom: Insights showed one account row after the account dedupe fix, but still exposed many broker-state buckets for one MT5 account.
+  - Verified live `/live/state` before the follow-up fix: `accounts=1`, but `positions=15` and `orders=15`, all keyed by physical qkt broker profiles such as `EXNESS_S10` through `EXNESS_S24`.
+  - Root cause: account snapshots were collapsed by `login + server`, but positions/orders were still returned by physical broker profile. Empty full-replace polls from every child therefore made the UI look like multiple broker/account overviews.
+  - Dev PR: qkt-insights PR 34, merged to `dev` as `586b85dd42faf0720b32486e624d0d30de0e3c60`.
+  - Main PR: qkt-insights PR 36, merged to `main` as `b27d8e54f831a2c945ad854dba2883eee67982ba`.
+  - Fix commit on main branch: `1a76add fix(store): collapse live broker state groups`.
+  - Fix behavior: keep physical profile state internally, collapse visible `/live/state.positions` and `/live/state.orders` by display broker, merge by ticket, preserve known strategy attribution, and make the web cache refetch grouped position/order state instead of reintroducing physical profile buckets from WebSocket pushes.
+  - Local verification: `pnpm build:all` passed; `pnpm test` passed with `201` tests; focused live-state/portfolio regression run passed with `17` tests.
+  - CI/publish verification: main workflow `31604381485` completed successfully for `b27d8e54f831a2c945ad854dba2883eee67982ba`; `test`, `docker-smoke`, and `docker` jobs all passed.
+  - Bot2 deployment command used: `docker compose pull qkt-insights && docker compose up -d --no-deps qkt-insights`.
+  - Bot2 qkt-insights health after deploy: healthy.
+  - `/live/state` after deploy while qkt is paused: `accounts=0`, `positions=0`, `orders=0`. This proves no visible stale broker-profile shards remain after the Insights restart, but full live-collapse proof must be repeated after qkt resumes and emits broker state again.
+- Runtime account in use: Exness demo login `476422618`, server `Exness-MT5Trial9`, balance/equity `5,000,000 USD`.
+- User decision: use one MT5 account/gateway for this forward stage; ignore the second demo account as a run path.
+- The temporary `/root/forward-stack-demo2` stack is stopped. Its failure was traced to setup/config: the generated `.env` put the wrong credential-file line into `MT5_SERVER`, so MT5 initialized against an invalid server value. This was not a qkt engine or qkt-insights bug.
+- Current bot2 services:
+  - `forward-stack-mt5-gateway-1`: healthy;
+  - `forward-stack-qkt-1`: stopped/paused;
+  - `forward-stack-qkt-insights-1`: healthy.
+- Exness namespace audit:
+  - Labels such as `EXNESS_S14` and `EXNESS_S22` are qkt broker profile aliases, not Exness accounts.
+  - `/root/forward-stack/qkt.config.yaml` defines `exness_s0` through `exness_s24`; each points to `http://mt5-gateway:5001` and uses `${QKT_EXPECTED_ACCOUNT_LOGIN}` / `${QKT_EXPECTED_ACCOUNT_SERVER}`.
+  - The active stack resolves those expected values to login `476422618`, server `Exness-MT5Trial9`.
+  - The suffix number maps to a distinct magic namespace: `EXNESS_S14 -> magic 20014`, `EXNESS_S22 -> magic 20022`. The intent is per-child order/deal attribution and recovery on one shared MT5 account.
+  - Example strategy source:
+    - `portfolio_children/14_xauusd_xag_ratio_accel_1h_rollover_catchup_v1.qkt` declares `EXNESS_S14:XAUUSD` and `EXNESS_S14:XAGUSD`;
+    - `portfolio_children/22_fx3seed-fx3_AUDUSD_6.qkt` declares `EXNESS_S22:AUDUSD` and `EXNESS_S22:NZDUSD`.
+  - Current code already has `SharedLiveMarketSource` and `PrefixRemapMarketSource`, but `MarketSourceFactory` still creates one `SharedLiveMarketSource(Mt5MarketSource(profile))` per MT5 profile. Therefore sharing works within one prefix, but not across sibling prefixes such as `EXNESS_S14:XAUUSD` and `EXNESS_S22:XAUUSD`.
+  - Practical impact: the namespace is relevant for execution attribution, but without cross-profile market-source remapping it multiplies live tick and warmup/history requests against the same gateway account. This is a likely contributor to the observed gateway queue/timeouts.
+  - Existing broker read sharing is separate: `MT5Client` uses `MT5ReadCache` for snapshot reads, but that does not by itself collapse the market-data pollers created per profile.
+  - Required source follow-up for the timeout branch: group MT5 profiles by market-data identity (`gateway_url`, api key identity, symbol policy, tick poll interval, calendars, server time zone), create one canonical `SharedLiveMarketSource(Mt5MarketSource(canonical))`, and route sibling prefixes through `PrefixRemapMarketSource`.
+- Last registered qkt deployments before the pause:
+  - `forward_bench_2`: running;
+  - `forward_bench_3`: running;
+  - 15 child strategies total (`EXNESS_S10` through `EXNESS_S24` profiles), zero trades so far.
+- Current verified qkt-insights `/live/state` shape after the latest image:
+  - qkt is paused, so the restarted in-memory live state is empty: `accounts=0`, `positions=0`, `orders=0`.
+  - When qkt resumes, repeat the `/live/state` check. Expected shape with the fix: one logical account row for `forward-bench`, one visible `EXNESS` positions group, and one visible `EXNESS` orders group instead of one bucket per qkt broker profile.
+- Remaining blocker before claiming full forward-stack completeness:
+  - `forward_bench` first shard (`EXNESS_S0` through `EXNESS_S9`, 10 children) is not running.
+  - Deploy attempts partially warmed children but the single MT5 gateway developed queue buildup and qkt control-client timeouts.
+  - Gateway stayed connected and account reads succeeded, but logs showed `waitress.queue` depth buildup and intermittent qkt `MT5Client` timeouts.
+  - Do not claim all 25 strategies are healthy until `qkt status --deep` shows `forward_bench`, `forward_bench_2`, and `forward_bench_3` all registered/running with all 25 child strategies.
+
 ## Objective
 
 Primary thread goal:
