@@ -96,7 +96,7 @@ jq -e '
     .dynamicFloorSelection == {
       schema:"qkt-live-margin-floor-selection-v1",
       source:"gateway_account.margin_level",
-      floorPctFormula:"ceil(observed_margin_level_pct) + 1",
+      floorPctFormula:"ceil(observed_margin_level_pct) + 1000",
       minObservedMarginLevelPct:"0.00000001",
       openerPositionRequired:true,
       finalMaterializedConfig:"probe/qkt.config.yaml"
@@ -369,7 +369,7 @@ dynamic_floor="$(
     awk -v level="$observed_margin_level" 'BEGIN {
         whole = int(level)
         ceil = (level > whole ? whole + 1 : whole)
-        printf "%d", ceil + 1
+        printf "%d", ceil + 1000
     }'
 )"
 awk -v floor="$dynamic_floor" -v level="$observed_margin_level" 'BEGIN {exit !(floor > level)}' ||
@@ -391,7 +391,7 @@ jq -n \
       observedMarginLevelPct:$observedMarginLevelPct,
       observedMargin:$observedMargin,
       dynamicFloorPct:$dynamicFloorPct,
-      selectionRule:"ceil(observed_margin_level_pct) + 1"
+      selectionRule:"ceil(observed_margin_level_pct) + 1000"
     }
 ' > "$output/probe/evidence/dynamic-floor.json"
 

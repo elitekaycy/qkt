@@ -48,11 +48,11 @@ jq -e '
     .probe.expectedReason.kind == "regex" and
     (.probe.expectedReason.value | contains("— no new exposure until headroom recovers")) and
     (.probe.expectedReason.value | contains("\\u2014") | not) and
-    .probe.dynamicMarginFloorSelection.floorPct == "ceil(observed_margin_level_pct) + 1" and
+    .probe.dynamicMarginFloorSelection.floorPct == "ceil(observed_margin_level_pct) + 1000" and
     .dynamicFloorSelection == {
       schema:"qkt-live-margin-floor-selection-v1",
       source:"gateway_account.margin_level",
-      floorPctFormula:"ceil(observed_margin_level_pct) + 1",
+      floorPctFormula:"ceil(observed_margin_level_pct) + 1000",
       minObservedMarginLevelPct:"0.00000001",
       openerPositionRequired:true,
       finalMaterializedConfig:"probe/qkt.config.yaml"

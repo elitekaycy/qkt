@@ -206,7 +206,7 @@ write_role_contract() {
               fixedIntentQty:"0.01",
               dynamicMarginFloorSelection:{
                 source:"gateway_account.margin_level",
-                floorPct:"ceil(observed_margin_level_pct) + 1",
+                floorPct:"ceil(observed_margin_level_pct) + 1000",
                 materializationTarget:"probe/qkt.config.yaml"
               },
               expectedRule:"MarginFloor",
@@ -254,7 +254,7 @@ jq -n '
     {
       schema:"qkt-live-margin-floor-selection-v1",
       source:"gateway_account.margin_level",
-      floorPctFormula:"ceil(observed_margin_level_pct) + 1",
+      floorPctFormula:"ceil(observed_margin_level_pct) + 1000",
       minObservedMarginLevelPct:"0.00000001",
       openerPositionRequired:true,
       finalMaterializedConfig:"probe/qkt.config.yaml"

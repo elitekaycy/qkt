@@ -63,7 +63,7 @@ grep -F 'docker exec "$probe_container" qkt deploy "/work/strategies/$probe_stra
 grep -F 'QKT_LATENCY_TRACKING=1' "$runner" >/dev/null
 grep -F 'must be unset; this run does not restrict or override the JVM' "$runner" >/dev/null
 grep -F 'margin_floor_pct: "__QKT_DYNAMIC_MARGIN_FLOOR_PCT__"' "$runner" >/dev/null
-grep -F 'ceil(observed_margin_level_pct) + 1' "$runner" >/dev/null
+grep -F 'ceil(observed_margin_level_pct) + 1000' "$runner" >/dev/null
 grep -F 'gsub("\\\\u2014"; "—")' "$runner" >/dev/null
 grep -F "jq -r -s '" "$runner" >/dev/null
 grep -F '"$gateway_url/close_position"' "$runner" >/dev/null
