@@ -1,0 +1,53 @@
+{
+  "schema": "qkt-validation-oracle-evidence-v1",
+  "evidenceStatus": "behavioral-oracle-only",
+  "categories": {
+    "indicators": [
+      {"capabilities": ["ADX", "PLUS_DI", "MINUS_DI"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/ADXTest.kt", "src/test/kotlin/com/qkt/dsl/stdlib/CandleIndicatorRegistryTest.kt"]},
+      {"capabilities": ["ANCHORED_RETURN"], "strength": "state_transition", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/AnchoredReturnTest.kt"]},
+      {"capabilities": ["ATR"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/ATRTest.kt"]},
+      {"capabilities": ["BETA"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/BetaTest.kt"]},
+      {"capabilities": ["BOLLINGER_UPPER", "BOLLINGER_MIDDLE", "BOLLINGER_LOWER"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/BollingerBandsTest.kt", "src/test/kotlin/com/qkt/dsl/stdlib/IndicatorRegistryTest.kt"]},
+      {"capabilities": ["CCI"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/CCITest.kt"]},
+      {"capabilities": ["CORRELATION"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/CorrelationTest.kt"]},
+      {"capabilities": ["DEMA"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/DEMATest.kt"]},
+      {"capabilities": ["EMA"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/EMATest.kt"]},
+      {"capabilities": ["ER"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/EfficiencyRatioTest.kt"]},
+      {"capabilities": ["FAILED_BREAK_HIGH", "FAILED_BREAK_LOW"], "strength": "state_transition", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/FailedBreakTest.kt"]},
+      {"capabilities": ["GAP_FILL_FRACTION", "REOPEN_GAP", "REOPEN_GAP_ORIGIN"], "strength": "state_transition", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/ReopenGapTest.kt"]},
+      {"capabilities": ["HIGHEST"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/RollingHighTest.kt", "src/test/kotlin/com/qkt/dsl/stdlib/IndicatorRegistryTest.kt"]},
+      {"capabilities": ["HMA"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/HMATest.kt"]},
+      {"capabilities": ["IB_DEFENDED_HIGH", "IB_DEFENDED_LOW"], "strength": "state_transition", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/IbDefendedTest.kt"]},
+      {"capabilities": ["KELTNER_UPPER", "KELTNER_MIDDLE", "KELTNER_LOWER"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/KeltnerChannelsTest.kt", "src/test/kotlin/com/qkt/dsl/stdlib/CandleIndicatorRegistryTest.kt"]},
+      {"capabilities": ["LAG"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/LagTest.kt"]},
+      {"capabilities": ["LOWEST"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/RollingLowTest.kt", "src/test/kotlin/com/qkt/dsl/stdlib/IndicatorRegistryTest.kt"]},
+      {"capabilities": ["MACD", "MACD_SIGNAL", "MACD_HIST"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/MACDTest.kt", "src/test/kotlin/com/qkt/dsl/stdlib/IndicatorRegistryTest.kt"]},
+      {"capabilities": ["OBV"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/OBVTest.kt"]},
+      {"capabilities": ["PERCENTILE_RANK"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/PercentileRankTest.kt"]},
+      {"capabilities": ["PIVOT_P", "PIVOT_R1", "PIVOT_S1"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/PivotPointsTest.kt"]},
+      {"capabilities": ["REGRESSION_SLOPE"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/RegressionSlopeTest.kt"]},
+      {"capabilities": ["RSI"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/RSITest.kt"]},
+      {"capabilities": ["RUNLENGTH"], "strength": "state_transition", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/RunLengthTest.kt"]},
+      {"capabilities": ["RUNLENGTH_WHERE"], "strength": "state_transition", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/RunLengthWhereTest.kt"]},
+      {"capabilities": ["SEASONAL_RANGE"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/SeasonalRangeTest.kt"]},
+      {"capabilities": ["SEASONAL_RANGE_STDEV"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/SeasonalRangeStdevTest.kt"]},
+      {"capabilities": ["SESSION_MOMENTUM"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/SessionMomentumTest.kt"]},
+      {"capabilities": ["SESSION_RANGE_HIGH", "SESSION_RANGE_LOW"], "strength": "state_transition", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/SessionRangeTest.kt"]},
+      {"capabilities": ["SKEW"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/SkewTest.kt"]},
+      {"capabilities": ["SMA"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/SMATest.kt"]},
+      {"capabilities": ["STDDEV"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/StddevTest.kt"]},
+      {"capabilities": ["STOCH_K", "STOCH_D"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/StochasticTest.kt", "src/test/kotlin/com/qkt/dsl/stdlib/CandleIndicatorRegistryTest.kt"]},
+      {"capabilities": ["TEMA"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/TEMATest.kt"]},
+      {"capabilities": ["VARIANCE"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/VarianceTest.kt"]},
+      {"capabilities": ["VARIANCE_RATIO"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/VarianceRatioTest.kt"]},
+      {"capabilities": ["VWAP"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/VWAPTest.kt"]},
+      {"capabilities": ["VWAP_SESSION", "VWAP_SESSION_STDEV"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/SessionVwapTest.kt"]},
+      {"capabilities": ["WILLIAMS_R"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/WilliamsRTest.kt"]},
+      {"capabilities": ["WMA"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/WMATest.kt"]},
+      {"capabilities": ["ZSCORE"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/ZScoreTest.kt"]}
+    ],
+    "numericFunctions": [
+      {"capabilities": ["ABS", "CEIL", "EXP", "FLOOR", "LOG", "MAX", "MIN", "MOD", "NORMALIZE", "POW", "RANK_OF", "ROUND", "ROUND_TO", "SOFTMAX", "SQRT"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/dsl/stdlib/FuncRegistryTest.kt"]}
+    ]
+  }
+}

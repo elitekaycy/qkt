@@ -33,6 +33,7 @@ class Backtest(
     private val feed: TickFeed,
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
+    private val replayEndTimestamp: Long? = null,
     private val source: MarketSource = NullMarketSource,
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
     private val warmupSpec: WarmupSpec = WarmupSpec.None,
@@ -89,6 +90,21 @@ class Backtest(
      */
     private val tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     private val tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
+    /**
+     * Late-bound engine slot for position-aware bar synthesis: a bar-synthesized [feed] closes over
+     * this holder to read net position signs from the engine that ends up pulling it, so each bar
+     * can emit the open position's adverse extreme first (see
+     * [com.qkt.marketdata.source.BarTickFeed]). Bound by [toEngine] only when the engine drives
+     * this backtest's own feed — an externally-driven engine (sweep fan-out) never binds it, so a
+     * shared feed stays on the flat-default ordering.
+     */
+    private val engineHolder: Array<com.qkt.research.ReplayEngine?>? = null,
+    /** When true, replay halts on the same runaway-breaker trip as live execution. */
+    private val enforceLiveBreakers: Boolean = false,
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+    private val runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -133,6 +149,11 @@ class Backtest(
         gateFor: (String) -> Boolean = { true },
         preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
         regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+        enforceLiveBreakers: Boolean = false,
+        runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+        runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+        runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+        runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
     ) : this(
         strategies = strategies,
         rules = rules,
@@ -140,6 +161,7 @@ class Backtest(
         feed = HistoricalTickFeed(ticks),
         candleWindow = candleWindow,
         initialTimestamp = initialTimestamp,
+        symbols = tradedSymbols.ifEmpty { ticks.map { it.symbol }.distinct() },
         cadence = cadence,
         startingBalance = startingBalance,
         startingBalances = startingBalances,
@@ -165,6 +187,11 @@ class Backtest(
         gateFor = gateFor,
         preCandle = preCandle,
         regimeWeights = regimeWeights,
+        enforceLiveBreakers = enforceLiveBreakers,
+        runawayMaxRoundTrips = runawayMaxRoundTrips,
+        runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+        runawayMaxRejections = runawayMaxRejections,
+        runawayRejectionWindowMs = runawayRejectionWindowMs,
     )
 
     /**
@@ -173,47 +200,59 @@ class Backtest(
      * empty feed and pushes a single shared decoded feed into all of them via [ReplayEngine.ingest],
      * so the market data is decoded once instead of once per combo.
      */
-    fun toEngine(feedOverride: TickFeed = feed): com.qkt.research.ReplayEngine =
-        com.qkt.research.ReplayEngine(
-            strategies = strategies,
-            rules = rules,
-            haltRules = haltRules,
-            feed = feedOverride,
-            candleWindow = candleWindow,
-            initialTimestamp = initialTimestamp,
-            source = source,
-            calendar = calendar,
-            warmupSpec = warmupSpec,
-            symbols = symbols,
-            cadence = cadence,
-            startingBalance = startingBalance,
-            startingBalances = startingBalances,
-            dailyDdBasis = dailyDdBasis,
-            totalDdBasis = totalDdBasis,
-            strategyRiskLimits = strategyRiskLimits,
-            bookCapital = bookCapital,
-            instruments = instruments,
-            accountingConfig = accountingConfig,
-            tradedSymbols = tradedSymbols,
-            bookRiskConfig = bookRiskConfig,
-            brokerKind = brokerKind,
-            executionConfig = executionConfig,
-            pacerLedger = pacerLedger,
-            pacerCooldownDurationMs = pacerCooldownDurationMs,
-            pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
-            pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
-            pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
-            maxOrderQty = maxOrderQty,
-            maxOrderNotional = maxOrderNotional,
-            priceCollarFrac = priceCollarFrac,
-            latencyEnabled = latencyEnabled,
-            gateFor = gateFor,
-            preCandle = preCandle,
-            regimeWeights = regimeWeights,
-            barFills = barFills,
-            tickResolvedBars = tickResolvedBars,
-            tickSlicer = tickSlicer,
-        )
+    fun toEngine(feedOverride: TickFeed = feed): com.qkt.research.ReplayEngine {
+        val engine =
+            com.qkt.research.ReplayEngine(
+                strategies = strategies,
+                rules = rules,
+                haltRules = haltRules,
+                feed = feedOverride,
+                candleWindow = candleWindow,
+                initialTimestamp = initialTimestamp,
+                replayEndTimestamp = replayEndTimestamp,
+                source = source,
+                calendar = calendar,
+                warmupSpec = warmupSpec,
+                symbols = symbols,
+                cadence = cadence,
+                startingBalance = startingBalance,
+                startingBalances = startingBalances,
+                dailyDdBasis = dailyDdBasis,
+                totalDdBasis = totalDdBasis,
+                strategyRiskLimits = strategyRiskLimits,
+                bookCapital = bookCapital,
+                instruments = instruments,
+                accountingConfig = accountingConfig,
+                tradedSymbols = tradedSymbols,
+                bookRiskConfig = bookRiskConfig,
+                brokerKind = brokerKind,
+                executionConfig = executionConfig,
+                pacerLedger = pacerLedger,
+                pacerCooldownDurationMs = pacerCooldownDurationMs,
+                pacerCooldownAfterConsecutive = pacerCooldownAfterConsecutive,
+                pacerCooldownDurationMsFor = pacerCooldownDurationMsFor,
+                pacerCooldownAfterConsecutiveFor = pacerCooldownAfterConsecutiveFor,
+                maxOrderQty = maxOrderQty,
+                maxOrderNotional = maxOrderNotional,
+                priceCollarFrac = priceCollarFrac,
+                latencyEnabled = latencyEnabled,
+                gateFor = gateFor,
+                preCandle = preCandle,
+                regimeWeights = regimeWeights,
+                enforceLiveBreakers = enforceLiveBreakers,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+                runawayMaxRejections = runawayMaxRejections,
+                runawayRejectionWindowMs = runawayRejectionWindowMs,
+                barFills = barFills,
+                tickResolvedBars = tickResolvedBars,
+                tickSlicer = tickSlicer,
+            )
+        // Bind only when the engine pulls this backtest's own feed: a position-aware feed is sound
+        // exactly when one engine consumes it. Externally-driven engines (fan-out) leave it unbound.
+        if (feedOverride === feed) engineHolder?.set(0, engine)
+        return engine
+    }
 
     fun run(): BacktestResult = toEngine().runToEnd()
 
@@ -264,6 +303,11 @@ class Backtest(
             gateFor: (String) -> Boolean = { true },
             preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
             regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+            enforceLiveBreakers: Boolean = false,
+            runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+            runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+            runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+            runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -325,6 +369,11 @@ class Backtest(
                 gateFor = gateFor,
                 preCandle = preCandle,
                 regimeWeights = regimeWeights,
+                enforceLiveBreakers = enforceLiveBreakers,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+                runawayMaxRejections = runawayMaxRejections,
+                runawayRejectionWindowMs = runawayRejectionWindowMs,
             )
         }
 
@@ -365,6 +414,11 @@ class Backtest(
             gateFor: (String) -> Boolean = { true },
             preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
             regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+            enforceLiveBreakers: Boolean = false,
+            runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+            runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
+            runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+            runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -375,9 +429,15 @@ class Backtest(
             val from = request.from ?: error("Backtest.fromSource requires explicit MarketRequest.from")
             val to = request.to ?: error("Backtest.fromSource requires explicit MarketRequest.to")
             val range = TimeRange(from, to)
+            // Late-bound engine slot: bar-synthesized feeds read net position signs from whichever
+            // engine ends up pulling this backtest's feed (bound in toEngine), so each bar emits the
+            // open position's adverse extreme first. Unbound (fan-out shared feeds), the sign reads
+            // 0 and the feed keeps the flat-default Low-first order.
+            val engineHolder = arrayOfNulls<com.qkt.research.ReplayEngine>(1)
+            val positionSign: (String) -> Int = { sym -> engineHolder[0]?.positionSign(sym) ?: 0 }
             val perSymbolFeeds: List<TickFeed> =
                 request.symbols.map { sym ->
-                    replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars)
+                    replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars, positionSign)
                 }
             val feed: TickFeed =
                 if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
@@ -410,6 +470,7 @@ class Backtest(
                 feed = feed,
                 candleWindow = candleWindow,
                 initialTimestamp = from.toEpochMilli(),
+                replayEndTimestamp = to.toEpochMilli(),
                 source = source,
                 warmupSpec = warmupSpec,
                 symbols = request.symbols,
@@ -437,12 +498,18 @@ class Backtest(
                 gateFor = gateFor,
                 preCandle = preCandle,
                 regimeWeights = regimeWeights,
+                enforceLiveBreakers = enforceLiveBreakers,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+                runawayMaxRejections = runawayMaxRejections,
+                runawayRejectionWindowMs = runawayRejectionWindowMs,
                 // Tick-resolved fills use the full-tick fill model (fill at the real tick price, not
                 // the trigger level): fills only ever occur on bars fed real ticks, so the bar-tier
                 // fill-at-trigger-price guard is both unnecessary and wrong here.
                 barFills = forceBars && !tickFills,
                 tickResolvedBars = tickResolvedBars,
                 tickSlicer = tickSlicer,
+                engineHolder = engineHolder,
             )
         }
 
@@ -458,6 +525,7 @@ class Backtest(
             range: TimeRange,
             window: TimeWindow?,
             forceBars: Boolean,
+            positionSign: (String) -> Int = { 0 },
         ): TickFeed {
             val caps = source.capabilities
             val ticksAvailable = MarketSourceCapability.TICKS in caps
@@ -477,7 +545,7 @@ class Backtest(
                 require(iter.hasNext()) {
                     "no market data for $symbol in requested range ${range.from}..${range.to}"
                 }
-                return BarTickFeed(sequenceOf(iter.next()) + iter.asSequence())
+                return BarTickFeed(sequenceOf(iter.next()) + iter.asSequence(), positionSign)
             }
             if (forceBars) {
                 error("--bars: cannot replay bars for $symbol (source has no BARS capability or no candle window)")

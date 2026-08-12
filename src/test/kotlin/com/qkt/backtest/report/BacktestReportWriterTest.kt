@@ -5,11 +5,13 @@ import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.DrawdownPeriod
 import com.qkt.backtest.EquitySample
 import com.qkt.backtest.PerformanceReport
+import com.qkt.backtest.ReplayCausalityReport
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.common.Side
+import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceEnvelope
@@ -75,6 +77,7 @@ class BacktestReportWriterTest {
         assertThat(dir.resolve("trades.csv")).exists()
         assertThat(dir.resolve("financing.csv")).exists()
         assertThat(dir.resolve("rejections.csv")).exists()
+        assertThat(dir.resolve("orders.jsonl")).exists()
         assertThat(dir.resolve("pnl_components.csv")).exists()
         assertThat(dir.resolve("manifest.json")).exists()
 
@@ -82,6 +85,12 @@ class BacktestReportWriterTest {
         assertThat(json).contains("\"schema\": \"qkt-backtest-result-v1\"")
         assertThat(json).contains("\"schemaVersion\": 1")
         assertThat(json).contains("\"cadence\": \"CANDLE_CLOSE\"")
+        assertThat(json).contains("\"inputSummary\": {\"attemptedFeedTicks\": 5")
+        assertThat(json).contains("\"liveTicks\": 5")
+        assertThat(json).contains("\"warmupTicks\": 0")
+        assertThat(json).contains("\"liveCandles\": 4")
+        assertThat(json).contains("\"streamCandles\": {}")
+        assertThat(json).contains("\"strategyCandleEvaluations\": {}")
         assertThat(json).contains("\"evidence\": {\"qktVersion\":\"test\"")
         assertThat(json).contains("\"strategyHash\":\"sha256:strategy\"")
         assertThat(json).contains("\"mutableStore\":true")
@@ -89,6 +98,7 @@ class BacktestReportWriterTest {
         assertThat(json).contains("\"global\":")
         assertThat(json).contains("\"swapPaid\": \"2.50000000\"")
         assertThat(json).contains("\"perStrategy\":")
+        assertThat(json).contains("\"runawayBreaker\": {\"enforceLiveBreakers\": false")
         Json.parseToJsonElement(json)
 
         val eqCsv = Files.readString(dir.resolve("equity_global.csv"))
@@ -148,6 +158,7 @@ class BacktestReportWriterTest {
                 "trades.csv",
                 "financing.csv",
                 "rejections.csv",
+                "orders.jsonl",
                 "pnl_components.csv",
                 "report.html",
             )
@@ -249,6 +260,17 @@ class BacktestReportWriterTest {
                     ),
                 reason = "max notional, blocked",
                 timestamp = 130_000L,
+                sequenceId = 8L,
+            )
+        val approvedRequest =
+            OrderRequest.Market(
+                id = "approved-1",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 120_000L,
+                strategyId = "s1",
             )
         val result =
             BacktestResult(
@@ -258,6 +280,20 @@ class BacktestReportWriterTest {
                 global = report,
                 perStrategy = mapOf("s1" to report),
                 cadence = SampleCadence.FILL,
+                causality =
+                    ReplayCausalityReport(
+                        approvedOrders =
+                            listOf(
+                                OrderEvent(
+                                    request = approvedRequest,
+                                    timestamp = 120_000L,
+                                    sequenceId = 7L,
+                                ),
+                            ),
+                        ruleDecisions = emptyList(),
+                        decisionOrderLinks = emptyList(),
+                        accountedFills = emptyList(),
+                    ),
             )
 
         BacktestReportWriter(dir).write(result)
@@ -322,6 +358,16 @@ class BacktestReportWriterTest {
         assertThat(pnlComponentsCsv).contains("global,,1970-01-01,20.00,0.00,20.00")
         assertThat(pnlComponentsCsv).contains("strategy,s1,1970-01-01,20.00,0.00,20.00")
         assertThat(Files.readString(dir.resolve("rejections.csv"))).contains("\"max notional, blocked\"")
+        val orders = Files.readAllLines(dir.resolve("orders.jsonl"))
+        assertThat(orders).hasSize(2)
+        assertThat(orders[0])
+            .contains("\"decision\":\"approved\"")
+            .contains("\"orderId\":\"approved-1\"")
+            .contains("\"orderType\":\"Market\"")
+        assertThat(orders[1])
+            .contains("\"decision\":\"rejected\"")
+            .contains("\"reason\":\"max notional, blocked\"")
+            .contains("\"orderId\":\"reject-1\"")
     }
 
     @Test

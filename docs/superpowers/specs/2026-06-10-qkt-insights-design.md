@@ -168,7 +168,8 @@ Snapshots flow through the same lossy sink as everything else.
 
 - `POST /ingest` — authenticates the `INGEST_TOKEN`, Zod-validates the batch, then in a single transaction: insert into `events`, fold `order.*` into `orders`, upsert `instances`/`strategies`, append `equity_snapshots` from `snapshot.equity`, index into `events_fts`.
 - After commit, emits each accepted envelope to an in-process `EventEmitter` that the API's WS hub subscribes to, so live push and durable write share one path.
-- Detects sequence gaps per instance (`seq` discontinuity) and records them for the health view.
+- Records duplicate event ids for ingest diagnostics. EventBus sequences are
+  producer-local ordering tie-breakers, not delivery-continuity signals.
 
 ### `packages/api` — query + live
 

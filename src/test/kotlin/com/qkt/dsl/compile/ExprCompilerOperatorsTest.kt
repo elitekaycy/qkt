@@ -7,6 +7,7 @@ import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.UnOp
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.marketdata.Candle
@@ -79,6 +80,31 @@ class ExprCompilerOperatorsTest {
                 .compile(CmpOp(Cmp.GT, NumLit(BigDecimal("5")), NumLit(BigDecimal("3"))))
                 .evaluate(ctx) as Value.Bool
         assertThat(v.v).isTrue()
+    }
+
+    @Test
+    fun `string equality and inequality compare exact values`() {
+        val equal =
+            ExprCompiler()
+                .compile(CmpOp(Cmp.EQ, StringLit("filled"), StringLit("filled")))
+                .evaluate(ctx)
+        val notEqual =
+            ExprCompiler()
+                .compile(CmpOp(Cmp.NE, StringLit("filled"), StringLit("cancelled")))
+                .evaluate(ctx)
+
+        assertThat(equal).isEqualTo(Value.Bool(true))
+        assertThat(notEqual).isEqualTo(Value.Bool(true))
+    }
+
+    @Test
+    fun `ordered string comparison stays undefined`() {
+        val value =
+            ExprCompiler()
+                .compile(CmpOp(Cmp.GT, StringLit("filled"), StringLit("cancelled")))
+                .evaluate(ctx)
+
+        assertThat(value).isEqualTo(Value.Undefined)
     }
 
     @Test

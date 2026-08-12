@@ -363,6 +363,35 @@ class Mt5BarFetcherTest {
     }
 
     @Test
+    fun `fetchRange drops the forming bar when range ends inside its window`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            server.enqueue(
+                MockResponse().setBody(
+                    """[{"close":1.1,"high":1.2,"low":1.0,"open":1.05,"tick_volume":7,"time":"2026-08-09T23:30:00Z"}]""",
+                ),
+            )
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "EURUSDm",
+                        window = TimeWindow.parse("5m"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-08-09T23:00:00Z"),
+                                to = Instant.parse("2026-08-09T23:33:00Z"),
+                            ),
+                    ).toList()
+
+            assertThat(candles).isEmpty()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `fetchRange drops bars whose startTime is before range from (#181)`() {
         // Defensive symmetry: a gateway that over-fetches on the lower bound
         // shouldn't leak pre-range bars into warmup either.

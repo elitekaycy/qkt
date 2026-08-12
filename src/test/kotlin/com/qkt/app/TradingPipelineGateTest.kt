@@ -8,7 +8,15 @@ import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
 import com.qkt.engine.Engine
+import com.qkt.events.BrokerEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
+import com.qkt.events.OrderEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.SignalEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
@@ -118,5 +126,44 @@ class TradingPipelineGateTest {
         assertThat(suppressed).hasSize(1)
         assertThat(suppressed.first().strategyId).isEqualTo("s1")
         assertThat(suppressed.first().reason).contains("gate")
+    }
+
+    @Test
+    fun `dsl causality is published before synchronous broker side effects`() {
+        val parsed =
+            Dsl.parse(
+                """
+                STRATEGY causal VERSION 1
+                SYMBOLS
+                  asset = PAPER:BTCUSDT EVERY 1m
+                RULES
+                  WHEN asset.close > 0 THEN BUY asset SIZING 1
+                """.trimIndent(),
+            ) as ParseResult.Success
+        val strategy = AstCompiler().compile(parsed.value)
+        val (pipeline, bus) = newPipeline(listOf("causal" to strategy)) { true }
+        val eventTypes = mutableListOf<Class<out com.qkt.events.Event>>()
+        bus.subscribeAllFirst { event -> eventTypes.add(event.javaClass) }
+
+        pipeline.ingest(Tick("PAPER:BTCUSDT", Money.of("100"), 0L))
+        pipeline.ingest(Tick("PAPER:BTCUSDT", Money.of("101"), 60_000L))
+
+        assertThat(eventTypes)
+            .contains(
+                RuleDecisionEvent::class.java,
+                SignalEvent::class.java,
+                DecisionOrderLinkedEvent::class.java,
+                OrderEvent::class.java,
+                BrokerEvent.OrderFilled::class.java,
+                FillAccountedEvent::class.java,
+            )
+        assertThat(eventTypes.indexOf(RuleDecisionEvent::class.java))
+            .isLessThan(eventTypes.indexOf(SignalEvent::class.java))
+        assertThat(eventTypes.indexOf(DecisionOrderLinkedEvent::class.java))
+            .isLessThan(eventTypes.indexOf(OrderEvent::class.java))
+        assertThat(eventTypes.indexOf(OrderEvent::class.java))
+            .isLessThan(eventTypes.indexOf(BrokerEvent.OrderFilled::class.java))
+        assertThat(eventTypes.indexOf(BrokerEvent.OrderFilled::class.java))
+            .isLessThan(eventTypes.indexOf(FillAccountedEvent::class.java))
     }
 }

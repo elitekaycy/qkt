@@ -19,7 +19,8 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
-class MT5BrokerOcoAtomicityTest {
+/** Defensive rollback for direct composite calls; normal routing uses OrderManager's emulated legs. */
+class MT5BrokerOcoPlacementRollbackTest {
     private lateinit var server: MockWebServer
     private lateinit var broker: MT5Broker
     private lateinit var bus: EventBus
@@ -60,7 +61,7 @@ class MT5BrokerOcoAtomicityTest {
     }
 
     @Test
-    fun `OCO rejects atomically when second leg fails — first leg cancelled, no OrderAccepted`() {
+    fun `client composite rolls back first leg when second placement fails`() {
         val firstTicket = 8001L
         val orderCalls = AtomicInteger(0)
         server.dispatcher =
@@ -106,7 +107,7 @@ class MT5BrokerOcoAtomicityTest {
     }
 
     @Test
-    fun `OCO rejects atomically when first leg fails — second leg never placed`() {
+    fun `client composite does not place second leg when first placement fails`() {
         val orderCalls = AtomicInteger(0)
         server.dispatcher =
             object : Dispatcher() {

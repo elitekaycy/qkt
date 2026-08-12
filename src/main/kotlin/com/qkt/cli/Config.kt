@@ -101,10 +101,7 @@ data class Config(
             AccountingConfig(
                 accountCurrency = AccountCurrency(accountCurrency),
                 missingPolicy =
-                    FxMissingPolicy.fromConfig(
-                        fxConversion["missing_policy"]
-                            ?: if (runtimeMode == RuntimeMode.PRODUCTION) "fail" else null,
-                    ),
+                    FxMissingPolicy.fromConfig(fxConversion["missing_policy"]),
                 source = fxConversion["source"]?.takeIf { it.isNotBlank() } ?: "market",
                 symbols = fxConversionSymbols,
             )
@@ -158,6 +155,14 @@ data class Config(
     val measuredUsageMaxQty: BigDecimal
         get() = risk["measured_usage_max_qty"]?.let(::BigDecimal) ?: BigDecimal("0.01")
 
+    /** Maximum closing fills per strategy in ten minutes before the runaway breaker trips. */
+    val runawayMaxRoundTrips: Int
+        get() = nonNegativeRiskInt("max_round_trips_10m", com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS)
+
+    /** Maximum broker rejections per strategy in one minute before the runaway breaker trips. */
+    val runawayMaxRejections: Int
+        get() = nonNegativeRiskInt("max_broker_rejections_1m", com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS)
+
     /** Total-drawdown halt threshold as a fraction (config `max_drawdown_pct` is a percent), or null if unset. */
     val maxDrawdownPct: BigDecimal?
         get() = pctFraction(risk["max_drawdown_pct"])
@@ -210,6 +215,16 @@ data class Config(
         if (!stateEnabled) return com.qkt.persistence.NoopStatePersistor()
         val file = com.qkt.persistence.FileStatePersistor(stateRoot)
         return if (stateAsync) com.qkt.persistence.AsyncStatePersistor(file) else file
+    }
+
+    private fun nonNegativeRiskInt(
+        key: String,
+        default: Int,
+    ): Int {
+        val raw = risk[key] ?: return default
+        val value = raw.toIntOrNull()
+        require(value != null && value >= 0) { "risk.$key must be a non-negative integer" }
+        return value
     }
 
     companion object {
@@ -369,6 +384,8 @@ data class Config(
                 "margin_floor_pct",
                 "measured_usage_hours",
                 "measured_usage_max_qty",
+                "max_round_trips_10m",
+                "max_broker_rejections_1m",
                 "max_drawdown_pct",
                 "max_daily_drawdown_pct",
                 "total_dd_basis",
@@ -540,10 +557,16 @@ data class Config(
             val allocation =
                 (m["allocation"] as? Map<String, Any?>)?.let { al ->
                     val method =
-                        when ((al["method"] as? String)?.uppercase()) {
+                        when ((al["method"] as? String)?.trim()?.uppercase()) {
+                            null, "", "FIXED" -> com.qkt.risk.book.AllocationMethod.FIXED
                             "INVERSE_VOL" -> com.qkt.risk.book.AllocationMethod.INVERSE_VOL
                             "ERC" -> com.qkt.risk.book.AllocationMethod.ERC
-                            else -> com.qkt.risk.book.AllocationMethod.FIXED
+                            "REGIME_WEIGHTED" -> com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED
+                            else ->
+                                error(
+                                    "unknown book_risk.allocation.method '${al["method"]}' " +
+                                        "(valid: FIXED, INVERSE_VOL, ERC, REGIME_WEIGHTED)",
+                                )
                         }
                     com.qkt.risk.book.Allocation(
                         method = method,

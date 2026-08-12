@@ -82,8 +82,8 @@ enum class FxMissingPolicy {
     companion object {
         fun fromConfig(raw: String?): FxMissingPolicy =
             when (raw?.trim()?.lowercase()) {
-                null, "", "warn" -> WARN
-                "fail", "strict", "production" -> FAIL
+                null, "", "fail", "strict", "production" -> FAIL
+                "warn" -> WARN
                 else -> error("unknown fx_conversion.missing_policy '$raw' (valid: warn, fail)")
             }
     }
@@ -91,7 +91,7 @@ enum class FxMissingPolicy {
 
 data class AccountingConfig(
     val accountCurrency: AccountCurrency = AccountCurrency("USD"),
-    val missingPolicy: FxMissingPolicy = FxMissingPolicy.WARN,
+    val missingPolicy: FxMissingPolicy = FxMissingPolicy.FAIL,
     val source: String = "market",
     val symbols: Map<String, String> = emptyMap(),
 ) {

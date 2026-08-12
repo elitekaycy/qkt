@@ -18,10 +18,9 @@ object MT5Protocol {
      * engine must emulate those shapes. Brokers can subtract supported capabilities
      * via [MT5BrokerProfile.capabilityRestrictions] for venue-specific restrictions.
      *
-     * Pending-order fill-event lifecycle (detecting fills via position deltas, OCO
-     * sibling cancel-on-fill via ticket correlation) is Phase 26c. Until then,
-     * placement succeeds but qkt-side fill events for pending shapes arrive lazily
-     * via the position poller.
+     * OCO deliberately remains absent: MT5 has no server-side OCO group, so qkt places
+     * independent pending legs and cancels the sibling after observing a fill. Advertising
+     * OCO here would falsely claim venue-atomic cancellation during that observation window.
      */
     val capabilities: Set<OrderTypeCapability> =
         setOf(
@@ -29,7 +28,6 @@ object MT5Protocol {
             OrderTypeCapability.BRACKET,
             OrderTypeCapability.STOP,
             OrderTypeCapability.LIMIT,
-            OrderTypeCapability.OCO,
             OrderTypeCapability.MODIFY,
             OrderTypeCapability.MULTI_POSITION_PER_SYMBOL,
             OrderTypeCapability.POSITION_MODIFY,

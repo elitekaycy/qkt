@@ -10,6 +10,7 @@ import com.qkt.common.Side
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
+import com.qkt.events.FillAccountedEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
@@ -39,6 +40,8 @@ class TradingPipelineVenueCostsTest {
         val riskState = com.qkt.risk.RiskState(pnl, strategyPnL, clock, bus)
         val callbackRealized = mutableListOf<BigDecimal>()
         val accountedFills = mutableListOf<com.qkt.backtest.FillState>()
+        val accountedEvents = mutableListOf<FillAccountedEvent>()
+        bus.subscribe<FillAccountedEvent>(accountedEvents::add)
         TradingPipeline(
             clock = clock,
             ids = SequentialIdGenerator(),
@@ -92,6 +95,19 @@ class TradingPipelineVenueCostsTest {
         assertThat(accountedFills[1].reducedExposure).isTrue()
         assertThat(accountedFills[1].netAccountRealized).isEqualByComparingTo("8")
         assertThat(accountedFills[1].accountPositionBefore?.quantity).isEqualByComparingTo("1")
+        assertThat(accountedEvents).hasSize(2)
+        assertThat(accountedEvents[0].venueCostsAccount).isEqualByComparingTo("0.5")
+        assertThat(accountedEvents[0].netStrategyAccountRealized).isEqualByComparingTo("-0.5")
+        assertThat(accountedEvents[0].partial).isFalse()
+        assertThat(accountedEvents[1].grossAccountRealized).isEqualByComparingTo("10")
+        assertThat(accountedEvents[1].grossStrategyAccountRealized).isEqualByComparingTo("10")
+        assertThat(accountedEvents[1].netAccountRealized).isEqualByComparingTo("8")
+        assertThat(accountedEvents[1].netStrategyAccountRealized).isEqualByComparingTo("8")
+        assertThat(accountedEvents.map { it.sourceFillSequenceId }).allMatch { it >= 0L }
+        assertThat(accountedEvents.map { it.fillSliceId }).doesNotHaveDuplicates()
+        assertThat(accountedEvents[1].strategyPositionBefore?.quantity).isEqualByComparingTo("1")
+        assertThat(accountedEvents[1].strategyPositionAfter).isNull()
+        assertThat(accountedEvents[1].reducedExposure).isTrue()
 
         // Halt timing is therefore cost-aware: a losing round trip plus costs trips
         // MaxDailyLoss at the NET number, not the healthier-looking gross one.

@@ -29,14 +29,23 @@ import okhttp3.OkHttpClient
  * configured calendar is out of session. Defaults to the profile's resolver (all-FX unless the
  * profile declares a `calendars` block), so FX/metals behave as before and a crypto-bearing
  * profile keeps ticking 24/7.
+ *
+ * Recent in-session history reads retry an empty successful response using the profile's existing
+ * retry count. Some MT5 terminals transiently return no bars while concurrent history requests are
+ * being populated; shifted or stale non-empty history still fails the time-base check immediately.
  */
 class Mt5MarketSource(
     private val profile: MT5BrokerProfile,
     private val http: OkHttpClient = OkHttpClient(),
     private val clock: Clock = SystemClock(),
     private val symbolCalendars: SymbolCalendars = profile.symbolCalendars,
+    private val retryBackoffMs: Long = 200L,
 ) : MarketSource,
     AutoCloseable {
+    init {
+        require(retryBackoffMs >= 0L) { "MT5 history retry backoff must not be negative" }
+    }
+
     override val name: String = "MT5:${profile.name}"
     override val capabilities: Set<MarketSourceCapability> =
         setOf(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
@@ -74,30 +83,63 @@ class Mt5MarketSource(
         require(supports(symbol)) { "$name cannot serve $symbol" }
         val bareSymbol = symbol.removePrefix(prefix)
         val wire = symbolMap.toBroker(bareSymbol)
-        val candles =
+        val fetcher =
             Mt5BarFetcher(
                 profile.gatewayUrl,
                 http,
                 profile.serverTimeZone,
                 normalizeBidBarsToMid = true,
                 apiKey = profile.apiKey,
-            ).fetchRange(wire, window, range)
+            )
+
+        fun fetch(): List<Candle> =
+            fetcher
+                .fetchRange(wire, window, range)
                 .map { candle -> candle.copy(symbol = symbol) }
                 .toList()
-        validateRecentTimeBase(bareSymbol, wire, window, range, candles)
+
+        val recentNowMs = recentInSessionNowMs(bareSymbol, range)
+        var candles = fetch()
+        if (recentNowMs != null) {
+            for (retry in 1..profile.retryAttempts) {
+                if (candles.isNotEmpty()) break
+                sleepBeforeRetry(retry)
+                candles = fetch()
+            }
+        }
+        validateRecentTimeBase(bareSymbol, wire, window, recentNowMs, candles)
         return candles.asSequence()
+    }
+
+    private fun recentInSessionNowMs(
+        bareSymbol: String,
+        range: TimeRange,
+    ): Long? {
+        val nowMs = clock.now()
+        val recent = abs(range.to.toEpochMilli() - nowMs) <= RECENT_RANGE_TOLERANCE_MS
+        val inSession = symbolCalendars.calendarFor(bareSymbol).isInSession(bareSymbol, Instant.ofEpochMilli(nowMs))
+        return nowMs.takeIf { recent && inSession }
+    }
+
+    private fun sleepBeforeRetry(retry: Int) {
+        val delayMs = retryBackoffMs * retry
+        if (delayMs == 0L) return
+        try {
+            Thread.sleep(delayMs)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw e
+        }
     }
 
     private fun validateRecentTimeBase(
         bareSymbol: String,
         wireSymbol: String,
         window: TimeWindow,
-        range: TimeRange,
+        recentNowMs: Long?,
         candles: List<Candle>,
     ) {
-        val nowMs = clock.now()
-        if (abs(range.to.toEpochMilli() - nowMs) > RECENT_RANGE_TOLERANCE_MS) return
-        if (!symbolCalendars.calendarFor(bareSymbol).isInSession(bareSymbol, Instant.ofEpochMilli(nowMs))) return
+        val nowMs = recentNowMs ?: return
         require(candles.isNotEmpty()) {
             "MT5 time-base mismatch for $bareSymbol: no decoded bar remained in the recent UTC range; " +
                 "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify " +
@@ -113,11 +155,12 @@ class Mt5MarketSource(
                 wireSymbol,
                 nowMs,
             )
-        val newestBarMs = candles.maxOf { it.startTime }
-        val barAgeMs = tick.brokerTimeMs - newestBarMs
+        val newestClosedBarEndMs = candles.maxOf { it.endTime }
+        val barAgeMs = tick.brokerTimeMs - newestClosedBarEndMs
         val maxAgeMs = maxOf(window.durationMs * 3L, MIN_RECENT_BAR_AGE_MS)
         require(barAgeMs in 0L..maxAgeMs) {
-            "MT5 time-base mismatch for $bareSymbol: newest bar=${Instant.ofEpochMilli(newestBarMs)}, " +
+            "MT5 time-base mismatch for $bareSymbol: " +
+                "newest closed bar end=${Instant.ofEpochMilli(newestClosedBarEndMs)}, " +
                 "tick=${Instant.ofEpochMilli(tick.brokerTimeMs)}, deltaMs=$barAgeMs; " +
                 "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify server_time_zone=${profile.serverTimeZone.id}"
         }

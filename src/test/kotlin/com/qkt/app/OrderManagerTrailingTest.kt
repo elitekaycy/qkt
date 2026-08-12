@@ -7,6 +7,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
@@ -18,6 +19,34 @@ import org.junit.jupiter.api.Test
 
 class OrderManagerTrailingTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+
+    @Test
+    fun `engine-held trailing acceptance retains strategy attribution`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, capabilities = setOf(OrderTypeCapability.MARKET))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val accepted = mutableListOf<BrokerEvent.OrderAccepted>()
+        bus.subscribe<BrokerEvent.OrderAccepted>(accepted::add)
+
+        bus.publish(TickEvent(Tick("X", Money.of("100"), 0L)))
+        om.submit(
+            OrderRequest.TrailingStop(
+                id = "attributed-trail",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                trailAmount = Money.of("5"),
+                trailMode = TrailMode.ABSOLUTE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "owner",
+            ),
+        )
+
+        assertThat(accepted).hasSize(1)
+        assertThat(accepted.single().strategyId).isEqualTo("owner")
+    }
 
     @Test
     fun `TrailingStop SELL fires when price drops below trail level after ratcheting up`() {

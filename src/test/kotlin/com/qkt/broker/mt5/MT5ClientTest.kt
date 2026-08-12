@@ -136,6 +136,32 @@ class MT5ClientTest {
     }
 
     @Test
+    fun `placeOrderAsync reports malformed success as an ambiguous send failure`() {
+        server.enqueue(MockResponse().setBody("not-json"))
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+
+        client.placeOrderAsync(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY",
+                magic = 10001,
+                comment = "ord-malformed",
+            ),
+        ) { response ->
+            result.set(response)
+            latch.countDown()
+        }
+
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(-1)
+        assertThat(result.get().errorMessage).startsWith("invalid gateway response after send")
+    }
+
+    @Test
     fun `failed GET retains gateway detail for the broker error`() {
         server.enqueue(MockResponse().setResponseCode(503).setBody("""{"error":"terminal unavailable"}"""))
 
@@ -158,10 +184,8 @@ class MT5ClientTest {
 
     @Test
     fun `placeOrder caps an over-long comment to the MT5 wire limit`() {
-        // mt5.order_send rejects comments longer than MT5_COMMENT_MAX_LENGTH with
-        // `Invalid "comment" argument`. The hedge-straddle stack-tier clientOrderId
-        // (e.g. "dsl-hedge_straddle--7-stack-tier0", 33 chars) tripped this live (#210),
-        // failing every stack placement. The wire comment must be truncated to fit.
+        // The supported terminal rejects 30+ characters with `Invalid "comment"
+        // argument`; the full identifier remains in client_order_id for correlation.
         server.enqueue(
             MockResponse().setBody(
                 """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
@@ -598,6 +622,32 @@ class MT5ClientTest {
         val resp = client.modifyPosition(ticket = 1L, sl = BigDecimal("1.0"))
         assertThat(isOrderSuccessful(resp.result.retcode)).isFalse
         assertThat(resp.errorMessage).contains("not found")
+    }
+
+    @Test
+    fun `getPositionDeals locally enforces the requested position ticket`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":901,"order":801,"position_id":7001,"symbol":"XAUUSDm","type":0,"entry":0,""" +
+                    """"volume":"0.10","price":"2300.0","profit":"0","commission":"-0.70",""" +
+                    """"time_msc":1700040000000},""" +
+                    """{"ticket":902,"order":802,"position_id":8002,"symbol":"GBPUSDm","type":1,"entry":1,""" +
+                    """"volume":"50","price":"1.0","profit":"999999","commission":"-5000",""" +
+                    """"time_msc":1700045000000},""" +
+                    """{"ticket":903,"order":803,"position_id":7001,"symbol":"XAUUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.04","price":"2299.0","profit":"-4","commission":"-0.28",""" +
+                    """"time_msc":1700050000000},""" +
+                    """{"ticket":904,"order":804,"position_id":7001,"symbol":"XAUUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.06","price":"2301.0","profit":"6","commission":"-0.42","time_msc":1700051000000}]""",
+            ),
+        )
+
+        val deals = client.getPositionDeals(7001L, 1_700_000_000_000L, 1_700_086_400_000L)!!
+
+        assertThat(deals.map { it.ticket }).containsExactly(901L, 903L, 904L)
+        assertThat(deals.map { it.positionTicket }).containsOnly(7001L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).contains("position=7001")
     }
 
     @Test

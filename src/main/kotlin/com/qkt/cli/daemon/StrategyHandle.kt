@@ -131,6 +131,8 @@ class StrategyHandle(
             com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
         private val priceCollarFrac: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+        private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+        private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
         private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
         private val liveEquityBasis: com.qkt.app.LiveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE,
         private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
@@ -158,6 +160,7 @@ class StrategyHandle(
         /** Insights egress sink shared across every strategy this daemon hosts; null disables. */
         private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
         private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
+        private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
         private val insightsStatePollMs: Long = 10_000L,
         private val insightsDealBackfillDays: Long = 30L,
     ) : Factory {
@@ -227,6 +230,8 @@ class StrategyHandle(
                         "maxOrderQty" to maxOrderQty,
                         "maxOrderNotional" to maxOrderNotional,
                         "priceCollarFrac" to priceCollarFrac,
+                        "runawayMaxRoundTrips10m" to runawayMaxRoundTrips,
+                        "runawayMaxBrokerRejections1m" to runawayMaxRejections,
                         "marginFloorPct" to marginFloorPct,
                         "measuredUsageHours" to measuredUsageHours,
                         "measuredUsageMaxQty" to measuredUsageMaxQty,
@@ -343,6 +348,8 @@ class StrategyHandle(
                     maxOrderQty = maxOrderQty,
                     maxOrderNotional = maxOrderNotional,
                     priceCollarFrac = priceCollarFrac,
+                    runawayMaxRoundTrips = runawayMaxRoundTrips,
+                    runawayMaxRejections = runawayMaxRejections,
                     marginFloorPct = marginFloorPct,
                     measuredUsageHours = measuredUsageHours,
                     measuredUsageMaxQty = measuredUsageMaxQty,
@@ -356,6 +363,7 @@ class StrategyHandle(
                         },
                     insightsSink = insightsSink,
                     insightsEvents = insightsEvents,
+                    insightsDeployedIds = insightsDeployedIds,
                     insightsStrategyMetadata = mapOf(ast.name to metadata),
                     insightsStatePollMs = insightsStatePollMs,
                     insightsDealBackfillDays = insightsDealBackfillDays,

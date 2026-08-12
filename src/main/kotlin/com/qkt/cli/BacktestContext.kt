@@ -99,9 +99,20 @@ class BacktestContext private constructor(
     private val gateFor: (String) -> Boolean = { true },
     private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
+    private val enforceLiveBreakers: Boolean = false,
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
+
+    /**
+     * True when fills resolve on synthesized bar ticks (`--bars` without `--tick-fills`). Sweep
+     * drivers must run these per-combo ([com.qkt.backtest.sweep.BacktestSweep]) rather than through
+     * the shared-feed fan-out: bar synthesis orders each bar's extremes adverse-first for the open
+     * position, and positions differ per combo, so one shared tick stream cannot serve them all.
+     */
+    val barFills: Boolean get() = forceBars && !tickFills
 
     /**
      * Build a backtest for [overrides] over [range] (defaults to the full configured window).
@@ -186,6 +197,9 @@ class BacktestContext private constructor(
             gateFor = gateFor,
             preCandle = preCandle,
             regimeWeights = regimeWeights,
+            enforceLiveBreakers = enforceLiveBreakers,
+            runawayMaxRoundTrips = runawayMaxRoundTrips,
+            runawayMaxRejections = runawayMaxRejections,
         )
     }
 
@@ -201,17 +215,21 @@ class BacktestContext private constructor(
     fun scenarioEngines(): Pair<() -> TickFeed, (ScenarioSpec) -> ReplayEngine> {
         val sharedFeed = { backtest(emptyMap()).detachFeed() }
         val engineFor = { s: ScenarioSpec ->
-            backtest(
-                overrides = s.params,
-                ast = s.ast ?: this.ast,
-                brokerKind = s.brokerKind ?: this.brokerKind,
-                executionConfig = executionConfig,
-                instruments = s.instruments ?: this.instruments,
-                startingBalance = s.startingBalance ?: this.startingBalance,
-            ).toEngine(SequenceTickFeed(emptySequence()))
+            scenarioBacktest(s).toEngine(SequenceTickFeed(emptySequence()))
         }
         return sharedFeed to engineFor
     }
+
+    /** One scenario as its own standalone backtest — the per-combo sweep path for [barFills]. */
+    fun scenarioBacktest(s: ScenarioSpec): Backtest =
+        backtest(
+            overrides = s.params,
+            ast = s.ast ?: this.ast,
+            brokerKind = s.brokerKind ?: this.brokerKind,
+            executionConfig = executionConfig,
+            instruments = s.instruments ?: this.instruments,
+            startingBalance = s.startingBalance ?: this.startingBalance,
+        )
 
     companion object {
         /** User-facing setup error; commands catch it and print `e.message`. */
@@ -564,6 +582,9 @@ class BacktestContext private constructor(
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,
                 priceCollarFrac = cfg.priceCollarFrac,
+                enforceLiveBreakers = args.flag("enforce-live-breakers"),
+                runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
+                runawayMaxRejections = cfg.runawayMaxRejections,
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
@@ -814,6 +835,9 @@ class BacktestContext private constructor(
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,
                 priceCollarFrac = cfg.priceCollarFrac,
+                enforceLiveBreakers = args.flag("enforce-live-breakers"),
+                runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
+                runawayMaxRejections = cfg.runawayMaxRejections,
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
@@ -858,9 +882,16 @@ class BacktestContext private constructor(
             brokerKind: BrokerKind,
         ): ExecutionSimulationConfig {
             val seed = args.option("seed")?.toLongOrNull() ?: cfg.execution["seed"]?.toLongOrNull()
+            if (args.flag("chaos") && args.option("execution") != null) {
+                throw SetupError("--chaos cannot be combined with --execution")
+            }
             val preset =
-                (args.option("execution") ?: cfg.execution["preset"])
-                    ?.let(ExecutionPreset::fromConfig)
+                if (args.flag("chaos")) {
+                    ExecutionPreset.STRESS
+                } else {
+                    (args.option("execution") ?: cfg.execution["preset"])
+                        ?.let(ExecutionPreset::fromConfig)
+                }
             var result =
                 if (preset != null) {
                     ExecutionSimulationConfig.defaultsFor(preset, seed)

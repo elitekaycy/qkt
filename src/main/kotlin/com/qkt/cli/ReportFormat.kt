@@ -75,6 +75,39 @@ object ReportPrinter {
                 out.println("  $ts  ${h.reason}${h.strategyId?.let { " [$it]" } ?: ""}")
             }
         }
+        r.runawayBreaker?.let { breaker ->
+            val mode = if (breaker.enforceLiveBreakers) "enforced" else "observe-only"
+            out.println(
+                "Runaway breaker:  $mode; ${breaker.maxRoundTrips} round trips/" +
+                    "${breaker.roundTripWindowMs / 1000}s; ${breaker.maxRejections} broker rejections/" +
+                    "${breaker.rejectionWindowMs / 1000}s",
+            )
+            if (!breaker.enforceLiveBreakers && breaker.trips.isNotEmpty()) {
+                val first = breaker.trips.first()
+                out.println(
+                    "LIVE BEHAVIOR WARNING: the runaway breaker would have halted this strategy " +
+                        "${breaker.trips.size} time(s); first at " +
+                        "${java.time.Instant.ofEpochMilli(first.timestampMs)} [${first.strategyId}]: ${first.reason()}",
+                )
+            }
+        }
+        r.inputSummary?.let { inputs ->
+            out.println()
+            out.println("Replay inputs")
+            out.println("  feed ticks:      ${inputs.attemptedFeedTicks}")
+            out.println("  live ticks:      ${inputs.liveTicks}")
+            out.println("  warmup ticks:    ${inputs.warmupTicks}")
+            out.println("  warmup candles:  ${inputs.warmupCandles}")
+            out.println("  live candles:    ${inputs.liveCandles}")
+            out.println("  malformed ticks: ${inputs.malformedTicks}")
+            out.println("  late ticks:      ${inputs.droppedLateTicks}")
+            for ((stream, count) in inputs.streamCandles.toSortedMap()) {
+                out.println("  stream $stream: $count candles")
+            }
+            for ((stream, count) in inputs.strategyCandleEvaluations.toSortedMap()) {
+                out.println("  strategy evaluation $stream: $count candles")
+            }
+        }
         out.println()
         out.println("Assumptions & conventions")
         out.println("  Execution:  ${executionModel(brokerKind)}")
@@ -299,6 +332,8 @@ object ReportPrinter {
         )
         sb.append("},")
         sb.append("\"halts\":").append(r.halts.size).append(',')
+        sb.append("\"runawayBreaker\":").append(runawayBreakerJson(r.runawayBreaker)).append(',')
+        sb.append("\"inputSummary\":").append(inputSummaryJson(r.inputSummary)).append(',')
         sb.append("\"cadence\":\"").append(r.cadence.name).append("\",")
         sb.append("\"conditionalAutocorr\":").append(conditionalAutocorrJson(r.conditionalAutocorr)).append(',')
         sb.append("\"tradeSummary\":").append(tradeSummaryJson(r)).append(',')
@@ -316,6 +351,53 @@ object ReportPrinter {
         sb.append("\"monteCarlo\":").append(monteCarloJson(g.monteCarlo))
         sb.append('}')
         out.println(sb.toString())
+    }
+
+    private fun inputSummaryJson(report: com.qkt.backtest.ReplayInputReport?): String {
+        if (report == null) return "null"
+        return buildString {
+            append("{\"attemptedFeedTicks\":").append(report.attemptedFeedTicks)
+            append(",\"liveTicks\":").append(report.liveTicks)
+            append(",\"warmupTicks\":").append(report.warmupTicks)
+            append(",\"warmupCandles\":").append(report.warmupCandles)
+            append(",\"liveCandles\":").append(report.liveCandles)
+            append(",\"malformedTicks\":").append(report.malformedTicks)
+            append(",\"droppedLateTicks\":").append(report.droppedLateTicks)
+            append(",\"streamCandles\":{")
+            report.streamCandles.entries.sortedBy { it.key }.forEachIndexed { index, (key, count) ->
+                if (index > 0) append(',')
+                append(jsonString(key)).append(':').append(count)
+            }
+            append('}')
+            append(",\"strategyCandleEvaluations\":{")
+            report.strategyCandleEvaluations.entries.sortedBy { it.key }.forEachIndexed { index, (key, count) ->
+                if (index > 0) append(',')
+                append(jsonString(key)).append(':').append(count)
+            }
+            append('}')
+            append("}")
+        }
+    }
+
+    private fun runawayBreakerJson(report: com.qkt.backtest.RunawayBreakerReport?): String {
+        if (report == null) return "null"
+        return buildString {
+            append("{\"enforceLiveBreakers\":").append(report.enforceLiveBreakers)
+            append(",\"maxRoundTrips\":").append(report.maxRoundTrips)
+            append(",\"roundTripWindowMs\":").append(report.roundTripWindowMs)
+            append(",\"maxRejections\":").append(report.maxRejections)
+            append(",\"rejectionWindowMs\":").append(report.rejectionWindowMs)
+            append(",\"trips\":[")
+            append(
+                report.trips.joinToString(",") { trip ->
+                    "{\"timestampMs\":${trip.timestampMs},\"strategyId\":" +
+                        "${jsonString(trip.strategyId)}," +
+                        "\"rule\":${jsonString(trip.rule.name.lowercase())},\"count\":${trip.count}," +
+                        "\"threshold\":${trip.threshold},\"windowMs\":${trip.windowMs}}"
+                },
+            )
+            append("]}")
+        }
     }
 
     private fun tradeSummaryJson(result: BacktestResult): String {

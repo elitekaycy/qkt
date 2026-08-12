@@ -1,0 +1,56 @@
+name: paper-soak
+
+# A trusted self-hosted runner retains the demo MT5 session evidence. This workflow
+# verifies that evidence against the exact testing image and publishes the immutable
+# artifact consumed by promote-to-main. It never accepts a moving :edge tag as proof.
+on:
+  workflow_dispatch:
+    inputs:
+      attestation_path:
+        description: Absolute path to the completed soak attestation on the trusted runner
+        required: true
+        default: /var/lib/qkt/soak/attestation.json
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  attest:
+    runs-on: [self-hosted, qkt-paper-soak]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require the testing promotion candidate
+        run: test "$GITHUB_REF" = refs/heads/testing
+      - name: Validate exact-image soak evidence
+        env:
+          ATTESTATION_PATH: ${{ inputs.attestation_path }}
+          EXPECTED_IMAGE_REPOSITORY: ghcr.io/${{ github.repository_owner }}/qkt
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-paper-soak-attestation.py "$ATTESTATION_PATH" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY"
+          image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["image"])' "$ATTESTATION_PATH")"
+          docker pull "$image"
+          revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
+          test "$revision" = "$GITHUB_SHA"
+          evidence_dir="$RUNNER_TEMP/paper-soak-attestation"
+          install -d -m 0700 "$evidence_dir"
+          source_dir="$(dirname "$ATTESTATION_PATH")"
+          for field in health journal reconciliation; do
+            artifact="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"][sys.argv[2]])' "$ATTESTATION_PATH" "$field")"
+            install -m 0600 "$source_dir/$artifact" "$evidence_dir/$artifact"
+          done
+          install -m 0600 "$ATTESTATION_PATH" "$evidence_dir/paper-soak-attestation.json"
+          python3 scripts/verify-paper-soak-attestation.py "$evidence_dir/paper-soak-attestation.json" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY"
+      - name: Upload promotion evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-soak-attestation
+          path: ${{ runner.temp }}/paper-soak-attestation/
+          retention-days: 90
+          if-no-files-found: error

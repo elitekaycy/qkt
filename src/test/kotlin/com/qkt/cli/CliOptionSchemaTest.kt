@@ -44,6 +44,64 @@ class CliOptionSchemaTest {
         assertThatCode { validate(args) }.doesNotThrowAnyException()
     }
 
+    @Test
+    fun `backtest schema accepts strict breaker and seeded chaos flags`() {
+        val args =
+            Args(
+                arrayOf(
+                    "backtest",
+                    "strategy.qkt",
+                    "--from",
+                    "2026-01-01",
+                    "--to",
+                    "2026-01-02",
+                    "--enforce-live-breakers",
+                    "--chaos",
+                    "--seed",
+                    "42",
+                ),
+            )
+
+        assertThatCode { validate(args) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `golden schema accepts capture evidence paths`() {
+        val args =
+            Args(
+                arrayOf(
+                    "golden",
+                    "capture",
+                    "--session",
+                    "alpha",
+                    "--state-dir",
+                    "state",
+                    "--out",
+                    "capture.zip",
+                    "--read-only",
+                ),
+            )
+
+        assertThatCode { validate(args) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `golden schema accepts replay materialization paths`() {
+        val args =
+            Args(
+                arrayOf(
+                    "golden",
+                    "materialize",
+                    "--bundle",
+                    "capture.zip",
+                    "--out",
+                    "replay-data",
+                ),
+            )
+
+        assertThatCode { validate(args) }.doesNotThrowAnyException()
+    }
+
     private fun validate(args: Args) {
         val schema = checkNotNull(CliOptionSchemas.forSubcommand(args.subcommand))
         args.validateOptions(

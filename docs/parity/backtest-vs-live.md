@@ -43,7 +43,7 @@ Each row lists the symptom, the source file the live behavior lives in, and whet
 | 6 | **Market-order fill price** | `priceProvider.lastPrice(symbol)` — the last tracked tick (`PaperBroker.fillMarket`) | MT5 fills at venue ask/bid at submit time, with `deviation` slack | **closed in MT5_SIM** |
 | 7 | **Contract size** | reads `contractSize` from `InstrumentRegistry`; both backtest and live multiply through it | MT5 sizes positions as `lot × contract_size` (XAUUSD = 100 oz/lot) | **closed in Phase 30** |
 | 8 | **`tradeStopsLevel`** | mt5-sim (opt-in `enforceStopsLevel`) validates pending trigger/limit distance from current price AND bracket exits from entry | rejected pre-placement in `MT5Broker`: entry distance from current price, SL/TP distance from entry, freeze-level on modifies (#638) | both halves aligned in #658; freeze-level live-only (see residuals) |
-| 9 | **OCO atomicity** | both legs always coupled in memory | emulated via comment-tag prefix + position poller; cancel-on-fill has a few-ms window between the fill event and the sibling-cancel request | divergent edge case |
+| 9 | **OCO atomicity** | both legs always coupled in memory | client-emulated independent tickets; cancel-on-fill has a poll/network window, and a detected second fill is closed immediately by its owned position ticket with a critical alert | divergent edge case with compensation |
 | 10 | **Pending-order persistence** | always in memory of the running backtest | persists to the broker's order book; daemon restart re-reads via `MT5StateRecovery` | divergent edge case |
 | 11 | **Latency** | instantaneous tick → fill | gateway HTTP round-trip + venue execution latency | divergent |
 | 12 | **Retcode handling** | no concept | MT5-specific retcodes (`10009`, `10015`, `10015` price, etc.) translated to `OrderRejected` reasons | divergent |
@@ -101,10 +101,23 @@ Historical note kept for context: before Phase 30, backtest PnL was off by a fac
 
 `MT5BrokerSimulator` now models deterministic volume and price quantization, bid/ask fills,
 contract-size PnL, stop-distance rejection, and configurable latency/rejection stress. The
-authentic golden replay covers one market order. Broader venue claims still require
-additional captures for pending/OCO orders, partial fills, rejected requests, and volatile-period
-latency. Those residuals must not be inferred from the single exact fill. Operational proof for a
-second MT5 profile remains tracked by #44.
+authentic golden replay covers one market order. `qkt golden capture` now turns retained
+demo sessions into checksummed tick/fill/order/gateway bundles, and `qkt golden materialize`
+verifies and converts their structured ticks and candles into the normal replay stores. A captured
+bundle is evidence, not automatically a new verifier assertion. The retained live-validation
+scenarios can be checked offline with `scripts/live-validation/compare-golden-replay.sh`; it compares
+full-tick, plain-bar, and tick-resolved report bundles with the linked live request and fill. Promote
+representative captures into regression tests
+for pending/OCO orders, partial fills, rejected requests, and volatile-period latency. Those
+residuals must not be inferred from the single exact fill. `qkt backtest --chaos` applies the
+seeded stress preset; it does not claim to reproduce every gateway HTTP or venue-retcode sequence.
+Operational proof for a second MT5 profile remains tracked by #44.
+
+Strict read-only captures use the same comparator in a separate mode. Their engine
+journal records source-timeframe warmup ticks and exact DSL stream candles, allowing
+the materializer to retain M1 and M5 bar stores without mixing synthetic warmup
+streams. The comparator requires exact live/full-tick/plain-bar warmup and indicator
+traces plus flat accounting; it makes no order/fill claim.
 
 ## 2026-06-10 audit addendum — divergences this catalog was missing
 
@@ -119,13 +132,13 @@ keep in mind when reading a backtest.
 | A3 | GTD expiry: venue ignores expiration; engine sweep was disabled | FIXED (#368) — engine sweep owns GTD in live; backtest sweep identical |
 | A4 | Trigger side: everything triggered on mid; venue triggers on bid/ask | FIXED (#382) — side-aware in PaperBroker, MT5_SIM, and engine-held triggers; bar-sourced backtests have no quote depth, so they still effectively trigger on the synthesized price |
 | A5 | Costs: live PnL/halts were commission/swap-blind | FIXED (#392, #644) — venue costs net out of realized in live; backtest models per-lot commission and deterministic long/short swap points at configured UTC rollovers. Live uses venue-reported swap, while replay uses the point-in-time rates in `instruments.yaml`; rate-history drift remains an input-data divergence |
-| A6 | Bar synthesis order: `BarTickFeed` emits O→L→H→C — for SHORT positions the favorable extreme arrives before the adverse one (optimistic). One ordering cannot be worst-case for both sides | INHERENT for the plain `--bars` research tier — read short-side bar results conservatively. RESOLVED by `--bars --tick-fills`, which resolves fills on real ticks for every fill-possible bar and is byte-identical to a full-tick replay (`TickResolvedParityTest`) |
+| A6 | Bar synthesis order: `BarTickFeed` emits each bar's extremes adverse-first for the net position side (net LONG → Low first, net SHORT → High first, flat → Low first), decided after the bar's open tick so an entry filled on the open steers its own bar. Residual approximation: opposing exposure nets to one sign, and the true intra-bar path is unknowable from OHLC — plain-bars sweeps therefore run per-combo (`BacktestSweep`), since one shared tick stream cannot be adverse-first for every combo's positions | MITIGATED for the plain `--bars` research tier (pessimistic for both sides; was optimistic for shorts). RESOLVED by `--bars --tick-fills`, which resolves fills on real ticks for every fill-possible bar and is byte-identical to a full-tick replay (`TickResolvedParityTest`) |
 | A7 | Tick sampling: backtest replays every stored tick; live MT5 polls at the profile's `tick_poll_interval_ms` (1000ms default) with dedupe and bounded-queue shedding. Engine-held trails/latches/stacks walk different price paths | INHERENT — quantify the configured/captured feed cadence in data parity evidence |
 | A8 | SCHEDULE timing: backtest fires on the next replayed tick after the trigger time; live fires from a 1Hz wall-clock heartbeat even with no ticks | INHERENT — sub-second placement differences |
 | A9 | Calendars: the backtest CLI uses fixed per-symbol calendar rules (crypto for `BTC*`/`*USDT`, FX default otherwise); live and portfolio book-risk annualization use the broker profile calendar. The FX weekend boundary is a FIXED UTC hour year-round and does not track New York DST (up to 1h off near the close/open in winter) | INHERENT — pinned by `FxCalendarTest`, `PortfolioRiskAggregatorTest` |
 | A10 | `x.bid` / `x.ask` / `x.spread` evaluate Undefined on bar-sourced backtest data — spread-aware rules silently never fire in bar backtests (tick-sourced backtests carry real quotes) | OPEN (#389) — prefer tick data for spread-aware strategies |
 | A12 | Quiet-symbol candle close: live closes an ended bar from the 1Hz heartbeat even with no next tick; backtest closes only on the next replayed tick (event time is its only clock) | INHERENT — affects the last bar before a session gap |
-| A11 | Live-only operational effects: restart reconcile, OCO restore, poller-synthesized closes, gateway-outage suspensions, the runaway breaker and market-data gate including its broker-clock-skew check (#395/#396/#810 are live-only by design) | INHERENT — none have a backtest equivalent. The expired-before-submit GTD reject (#811) is wired in both modes but cannot fire under event time, where a fresh deadline is always in the future |
+| A11 | Live-only operational effects: restart reconcile, OCO restore, poller-synthesized closes, gateway-outage suspensions, and the market-data gate including its broker-clock-skew check (#395/#396/#810 are live-only by design) | PARTIAL — replay now evaluates the runaway breaker with the configured live thresholds, reports every would-be trip, and can enforce them with `--enforce-live-breakers`. The remaining operational effects have no replay equivalent. The expired-before-submit GTD reject (#811) is wired in both modes but cannot fire under event time, where a fresh deadline is always in the future |
 | A13 | Week-close entries: an entry signalled on the final pre-weekend bar closes via the live heartbeat (A12) when the feed is already stale and the venue shut, so the market-data gate rejects it; backtest closes the same bar on the venue's reopen tick and fills at the reopen price | MITIGATED (#888/#890) — the rejected fire re-arms and, if the condition still holds on the first post-reopen bar close, enters one bar later than backtest. The one-bar entry lag is INHERENT |
 | A14 | Warmup seed grid: MT5 aggregates multi-hour history on the broker's day boundary, which put seeded H4/D1 bars on a shifted grid vs the epoch-aligned UTC bars live aggregation and backtest use | FIXED (#887) — multi-hour warmup history is fetched as H1 and rebuilt on the UTC grid; `CandleHub.seed` fail-closes on off-grid bars |
 | A15 | Margin floor is a live pre-trade rule because replay has no venue margin-level feed | INHERENT — repeated missing reads fail closed for new exposure; risk-reducing exits remain allowed (`MarginFloorTest`) |

@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.report.BacktestReportWriter
+import com.qkt.backtest.sweep.BacktestSweep
 import com.qkt.backtest.sweep.SweepReplay
 import com.qkt.backtest.sweep.SweepRun
 import com.qkt.common.TimeRange
@@ -217,14 +218,25 @@ class ExperimentCommand(
         rank: RankMetric,
         parallelism: Int,
     ): List<SweepRun<ParamGrid.Combo>> =
-        SweepReplay(
-            configs = combos.map { it.label to it },
-            sharedFeed = { ctx.backtest(emptyMap(), range).detachFeed() },
-            engineFor = { _, combo ->
-                ctx.backtest(combo.overrides, range).toEngine(SequenceTickFeed(emptySequence()))
-            },
-            parallelism = parallelism,
-        ).run().rankedBy { rank.score(it) }
+        // Plain-bars fills synthesize each bar's extremes adverse-first for the open position,
+        // which differs per combo — a shared tick stream cannot serve all engines, so bars sweeps
+        // run per-combo (bar decode is cheap and page-cached).
+        if (ctx.barFills) {
+            BacktestSweep(
+                configs = combos.map { it.label to it },
+                backtestFactory = { _, combo -> ctx.backtest(combo.overrides, range) },
+                parallelism = parallelism,
+            ).run().rankedBy { rank.score(it) }
+        } else {
+            SweepReplay(
+                configs = combos.map { it.label to it },
+                sharedFeed = { ctx.backtest(emptyMap(), range).detachFeed() },
+                engineFor = { _, combo ->
+                    ctx.backtest(combo.overrides, range).toEngine(SequenceTickFeed(emptySequence()))
+                },
+                parallelism = parallelism,
+            ).run().rankedBy { rank.score(it) }
+        }
 
     private fun attachEvidence(
         result: BacktestResult,

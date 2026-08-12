@@ -66,6 +66,8 @@ class PortfolioDeployer(
         com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
     private val priceCollarFrac: java.math.BigDecimal =
         com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+    private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
     private val measuredUsageHours: Long = 0L,
     private val measuredUsageMaxQty: java.math.BigDecimal =
@@ -95,6 +97,7 @@ class PortfolioDeployer(
     /** Insights egress sink shared across every portfolio child; null disables. */
     private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
     private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
+    private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     private val insightsStatePollMs: Long = 10_000L,
     private val insightsDealBackfillDays: Long = 30L,
 ) {
@@ -417,6 +420,8 @@ class PortfolioDeployer(
                     "maxDailyDrawdownPct" to maxDailyDrawdownPct,
                     "totalDdBasis" to totalDdBasis.name,
                     "dailyDdBasis" to dailyDdBasis.name,
+                    "runawayMaxRoundTrips10m" to runawayMaxRoundTrips,
+                    "runawayMaxBrokerRejections1m" to runawayMaxRejections,
                     "perStrategyMaxDailyLoss" to perStrategyOverride?.maxDailyLoss,
                     "perStrategyMaxPositionSize" to perStrategyOverride?.maxPositionSize,
                     "perStrategyMaxOpenPositions" to perStrategyOverride?.maxOpenPositions,
@@ -516,6 +521,7 @@ class PortfolioDeployer(
                 notifyEvents = notifyEvents,
                 insightsSink = insightsSink,
                 insightsEvents = insightsEvents,
+                insightsDeployedIds = insightsDeployedIds,
                 insightsStatePollMs = insightsStatePollMs,
                 insightsDealBackfillDays = insightsDealBackfillDays,
                 insightsStrategyMetadata =
@@ -544,6 +550,8 @@ class PortfolioDeployer(
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayMaxRejections = runawayMaxRejections,
                 marginFloorPct = marginFloorPct,
                 measuredUsageHours = measuredUsageHours,
                 measuredUsageMaxQty = measuredUsageMaxQty,

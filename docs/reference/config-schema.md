@@ -298,6 +298,8 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when reported margin level is below this floor. `0` disables. |
 | `measured_usage_hours` | `24` | daemon pre-trade controls | New deployments can only trade up to `measured_usage_max_qty` during this window. `0` disables. |
 | `measured_usage_max_qty` | `0.01` | daemon pre-trade controls | Max entry quantity during measured usage. |
+| `max_round_trips_10m` | `10` | daemon, foreground run, and backtest disclosure | Per-strategy closing-fill threshold in 10 minutes. `0` disables. Live halts persistently on a breach; replay records the breach unless strict mode is enabled. |
+| `max_broker_rejections_1m` | `5` | daemon, foreground run, and backtest disclosure | Per-strategy broker-rejection threshold in one minute. `0` disables. Live halts persistently on a breach; replay records the breach unless strict mode is enabled. |
 | `max_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global total-drawdown halt. |
 | `max_daily_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global daily-drawdown halt. |
 | `total_dd_basis` | `static` | halt rules | `static` uses initial balance. `trailing` uses high-water equity. |
@@ -326,7 +328,7 @@ Per-strategy rules layer on top of global rules. A global breach halts the whole
 |---|---|---|---|---|
 | `account.currency` | ISO currency string | `USD` | accounting engine, reports, risk notional | Normalized to uppercase. |
 | `fx_conversion.source` | string | `market` | accounting evidence | Descriptive source label for FX conversion. |
-| `fx_conversion.missing_policy` | `warn` or `fail` | `warn` outside production, `fail` in production | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. |
+| `fx_conversion.missing_policy` | `warn` or `fail` | `fail` | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. `warn` is an explicit unsafe compatibility override. |
 | `fx_conversion.symbols.<PAIR>` | qkt symbol | empty | backtest/accounting | Maps an FX pair such as `USDJPY` to a qkt symbol used to source conversion marks. |
 
 CLI overrides are available for backtests: `--account-currency`, `--fx-source`, `--fx-missing-policy`, and repeated `--fx-symbol PAIR=QKT_SYMBOL`.
@@ -466,7 +468,7 @@ Book-risk controls apply to portfolio/book evaluation and portfolio daemon flows
 | `book_risk.de_risk.ladder[].drawdown` | decimal | required per rung | Drawdown threshold as fraction. |
 | `book_risk.de_risk.ladder[].factor` | decimal | required per rung | Exposure scale factor at that drawdown rung. |
 | `book_risk.de_risk.ladder[].cooldown_bars` | int | unset | Bars to hold a rung after recovery. |
-| `book_risk.allocation.method` | `FIXED`, `INVERSE_VOL`, `ERC` | `FIXED` | Portfolio allocation method. |
+| `book_risk.allocation.method` | `FIXED`, `INVERSE_VOL`, `ERC`, `REGIME_WEIGHTED` | `FIXED` | Portfolio allocation method. Regime portfolio DSL selects `REGIME_WEIGHTED` automatically. |
 | `book_risk.allocation.target_vol` | decimal | unset | Target volatility for allocation. |
 | `book_risk.allocation.rebalance_every_bars` | int | `0` | Rebalance cadence. |
 | `book_risk.allocation.max_leverage` | decimal | `4` | Allocation leverage cap. |

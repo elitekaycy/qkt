@@ -7,6 +7,8 @@ import com.qkt.backtest.EquitySample
 import com.qkt.backtest.MonteCarloSummary
 import com.qkt.backtest.PerformanceReport
 import com.qkt.backtest.Regime
+import com.qkt.backtest.ReplayInputReport
+import com.qkt.backtest.RunawayBreakerReport
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
 import com.qkt.common.Side
@@ -20,6 +22,8 @@ import com.qkt.evidence.PromotionEvidence
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
+import com.qkt.risk.RunawayBreakerRule
+import com.qkt.risk.RunawayBreakerTrip
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.math.BigDecimal
@@ -80,6 +84,62 @@ class ReportPrinterTest {
     }
 
     @Test
+    fun `reports carry replay input accounting`() {
+        val inputs =
+            ReplayInputReport(
+                attemptedFeedTicks = 12,
+                liveTicks = 10,
+                warmupTicks = 8,
+                warmupCandles = 2,
+                liveCandles = 3,
+                malformedTicks = 2,
+                droppedLateTicks = 1,
+                streamCandles = mapOf("EXNESS:EURUSD:5m" to 2L),
+                strategyCandleEvaluations = mapOf("alpha:eur5:EXNESS:EURUSD:5m" to 2L),
+            )
+        val result = result().copy(inputSummary = inputs)
+
+        val jsonOut = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Json, PrintStream(jsonOut), BrokerKind.PAPER)
+        val json = Json.parseToJsonElement(jsonOut.toString()).jsonObject
+        val summary = json.getValue("inputSummary").jsonObject
+        assertThat(summary.getValue("attemptedFeedTicks").jsonPrimitive.content).isEqualTo("12")
+        assertThat(summary.getValue("liveTicks").jsonPrimitive.content).isEqualTo("10")
+        assertThat(summary.getValue("warmupTicks").jsonPrimitive.content).isEqualTo("8")
+        assertThat(summary.getValue("warmupCandles").jsonPrimitive.content).isEqualTo("2")
+        assertThat(summary.getValue("liveCandles").jsonPrimitive.content).isEqualTo("3")
+        assertThat(summary.getValue("malformedTicks").jsonPrimitive.content).isEqualTo("2")
+        assertThat(summary.getValue("droppedLateTicks").jsonPrimitive.content).isEqualTo("1")
+        assertThat(
+            summary
+                .getValue("streamCandles")
+                .jsonObject
+                .getValue("EXNESS:EURUSD:5m")
+                .jsonPrimitive
+                .content,
+        ).isEqualTo("2")
+        assertThat(
+            summary
+                .getValue("strategyCandleEvaluations")
+                .jsonObject
+                .getValue("alpha:eur5:EXNESS:EURUSD:5m")
+                .jsonPrimitive
+                .content,
+        ).isEqualTo("2")
+
+        val textOut = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Text, PrintStream(textOut), BrokerKind.PAPER)
+        assertThat(textOut.toString())
+            .contains(
+                "Replay inputs",
+                "warmup ticks:    8",
+                "late ticks:      1",
+                "stream EXNESS:EURUSD:5m: 2 candles",
+                "strategy evaluation alpha:eur5:EXNESS:EURUSD:5m: 2 candles",
+            )
+    }
+
+    @Test
     fun `text report discloses execution assumptions and metric conventions`() {
         val out = render(ReportFormat.Text, BrokerKind.PAPER)
         // #336 — execution disclosure.
@@ -90,6 +150,41 @@ class ReportPrinterTest {
         assertThat(out).doesNotContain("Sharpe (daily)")
         assertThat(out).contains("break-even trades excluded")
         assertThat(out).contains("NOT annualized")
+    }
+
+    @Test
+    fun `reports runaway breaker thresholds and live divergence`() {
+        val breaker =
+            RunawayBreakerReport(
+                enforceLiveBreakers = false,
+                maxRoundTrips = 10,
+                roundTripWindowMs = 600_000L,
+                maxRejections = 5,
+                rejectionWindowMs = 60_000L,
+                trips =
+                    listOf(
+                        RunawayBreakerTrip(
+                            1_700_000_000_000L,
+                            "fast",
+                            RunawayBreakerRule.ROUND_TRIPS,
+                            11,
+                            10,
+                            600_000L,
+                        ),
+                    ),
+            )
+        val result = result().copy(runawayBreaker = breaker)
+
+        val text = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER)
+        assertThat(text.toString()).contains("Runaway breaker:  observe-only")
+        assertThat(text.toString()).contains("LIVE BEHAVIOR WARNING")
+        assertThat(text.toString()).contains("2023-11-14T22:13:20Z")
+
+        val json = ByteArrayOutputStream()
+        ReportPrinter.print(result, ReportFormat.Json, PrintStream(json), BrokerKind.PAPER)
+        assertThat(json.toString()).contains("\"runawayBreaker\":{\"enforceLiveBreakers\":false")
+        assertThat(json.toString()).contains("\"rule\":\"round_trips\"")
     }
 
     @Test

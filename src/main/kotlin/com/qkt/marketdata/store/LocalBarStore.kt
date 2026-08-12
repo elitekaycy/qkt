@@ -93,9 +93,8 @@ class LocalBarStore(
                 .durationMs
         val out = mutableListOf<Candle>()
         Files.newBufferedReader(path).use { reader ->
-            var line = reader.readLine() ?: return emptyList()
-            // Skip header
-            line = reader.readLine()
+            if (reader.readLine() == null) return emptyList()
+            var line: String? = reader.readLine()
             while (line != null) {
                 val parts = line.split(',')
                 if (parts.size >= 6) {

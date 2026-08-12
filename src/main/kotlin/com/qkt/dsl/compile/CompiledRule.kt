@@ -18,9 +18,14 @@ class CompiledRule(
     private val onSellCaptures: List<Pair<String, CompiledExpr>>,
     private val onOpenCaptures: List<Pair<String, CompiledExpr>>,
     val referencedAliases: Set<String>,
+    internal val conditionFingerprint: String = "",
+    internal val ruleFingerprint: String = "",
     val consumesSequenceCompletion: Boolean = false,
     internal val edgeStateKey: String = ruleAlias,
 ) {
+    internal val ruleId: String
+        get() = edgeStateKey
+
     // Action gating is edge-driven (reference/dsl/conditions.md): the action runs on the
     // false->true transition of the condition, not on every bar it stays true. Without
     // this, `WHEN close > ema THEN BUY` emits an entry on all 50 bars the close holds
