@@ -115,7 +115,8 @@ jq -e '
     .qktDirty == false and
     (($lifecycle == "single" and .flattenVerified == true) or
      ($lifecycle == "reentry" and .strategyOwnedLifecycle == true) or
-     (($lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt") and
+     (($lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or
+       $lifecycle == "reentry_operator_halt_recovered") and
       .strategyOwnedLifecycle == true and
       .blockedReentry.preTransport == true and .blockedReentry.rejections >= $blockedEntries)) and
     .finalPositions == 0 and
@@ -143,6 +144,10 @@ replay_expected_lifecycle_events="$expected_lifecycle_events"
 if [ "$lifecycle" = "reentry_blocked_operator_halt" ]; then
     replay_expected_entries=$((expected_entries + expected_blocked_entries))
     replay_expected_lifecycle_events=$((expected_lifecycle_events + expected_blocked_entries))
+fi
+comparison_entries="$expected_entries"
+if [ "$lifecycle" = "reentry_operator_halt_recovered" ]; then
+    comparison_entries=1
 fi
 stop_distance="$(jq -er '.armedScenario.stopDistance' "$expected")"
 take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$expected")"
@@ -353,7 +358,7 @@ mt5_trades="$(jq -c '.' "$output/comparison/full-ticks-mt5-entry-trades.json")"
 live_entries="$(jq -c '.' "$output/comparison/live-entries.json")"
 jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
     --argjson paper "$paper_trades" --argjson mt5 "$mt5_trades" --argjson live "$live_entries" \
-    --argjson expectedEntries "$expected_entries" \
+    --argjson expectedEntries "$comparison_entries" \
     --argjson stopDistance "$stop_distance" \
     --argjson takeProfitDistance "$take_profit_distance" '
     def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
@@ -379,7 +384,7 @@ jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
         end;
     ($paper | length) >= $expectedEntries and
     ($mt5 | length) >= $expectedEntries and
-    ($live | length) == $expectedEntries and
+    ($live | length) >= $expectedEntries and
     ($intents[0] | length) >= $expectedEntries and
     all(range(0; $expectedEntries); . as $i |
         ($paper[$i].symbol == $mt5[$i].symbol) and
@@ -395,11 +400,11 @@ jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
     )
 ' >/dev/null || fail "captured live order, fill, or protection differs from replay"
 
-mt5_fill_exact="$(jq -n --argjson mt5 "$mt5_trades" --argjson live "$live_entries" --argjson expectedEntries "$expected_entries" '
+mt5_fill_exact="$(jq -n --argjson mt5 "$mt5_trades" --argjson live "$live_entries" --argjson expectedEntries "$comparison_entries" '
     def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
     all(range(0; $expectedEntries); . as $i | near($mt5[$i].price; $live[$i].fill.price))
 ')"
-fill_price_deltas="$(jq -cn --argjson mt5 "$mt5_trades" --argjson live "$live_entries" --argjson expectedEntries "$expected_entries" '
+fill_price_deltas="$(jq -cn --argjson mt5 "$mt5_trades" --argjson live "$live_entries" --argjson expectedEntries "$comparison_entries" '
     [
         range(0; $expectedEntries) as $i |
         {
@@ -432,6 +437,7 @@ jq -n \
     --arg lifecycle "$lifecycle" \
     --arg blockedReason "$blocked_reason" \
     --argjson expectedEntries "$expected_entries" \
+    --argjson comparisonEntries "$comparison_entries" \
     --argjson replayExpectedEntries "$replay_expected_entries" \
     --argjson replayExpectedTradeCount "$replay_expected_lifecycle_events" \
     --argjson liveEntries "$live_entries" \
@@ -459,6 +465,7 @@ jq -n \
         },
         lifecycle: $lifecycle,
         expectedEntries: $expectedEntries,
+        comparisonEntries: $comparisonEntries,
         replayExpectedEntries: $replayExpectedEntries,
         replayExpectedTradeCount: $replayExpectedTradeCount,
         parity: {
@@ -480,7 +487,7 @@ jq -n \
             (if $lifecycle == "single" then
                 "The operator flatten fill occurs after the bounded strategy replay window and " +
                 "is reconciled by the live result, not replayed as a strategy decision."
-             elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" then
+             elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" then
                 "The live blocked re-entry capture includes one strategy-owned close and a " +
                 "pre-transport " + $blockedReason + " rejection for the next entry; " +
                 "replay comparison checks the filled entry intent/protection and byte-identical " +
@@ -488,6 +495,11 @@ jq -n \
                 (if $lifecycle == "reentry_blocked_operator_halt" then
                     " Operator halt is an external control-plane event; unhalted replay therefore " +
                     "retains the extra entry that live correctly rejected after the halt."
+                 elif $lifecycle == "reentry_operator_halt_recovered" then
+                    " Operator halt/resume are external control-plane events; unhalted replay " +
+                    "takes the second entry at the blocked signal, while live takes the recovered " +
+                    "entry only after resume. The comparator therefore checks the pre-halt entry " +
+                    "against live and retains the recovered live entry in liveEntries."
                  else "" end)
              else
                 "The live re-entry capture includes strategy-owned close fills; replay comparison " +
