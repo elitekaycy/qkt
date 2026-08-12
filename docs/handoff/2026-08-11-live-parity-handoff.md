@@ -30,13 +30,13 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: worktree has local edits, `ahead 109`
+- Current status at handoff update: worktree has local edits, `ahead 112`
 - Latest commits:
+  - `01161803 fix(scripts): support blocked reentry validation`
+  - `1cc9b2ca test(strategy): cover gated reentry parity`
+  - `b4360622 docs(docs): update live parity handoff`
   - `6b254786 fix(scripts): record live fill drift in replay comparison`
   - `db7b50a1 fix(scripts): support reentry live parity captures`
-  - `4d37ebb4 fix(scripts): await live multi-timeframe evidence`
-  - `0621edc5 fix(scripts): join bracket decisions through plan ids`
-  - `ed5284d9 fix(scripts): sanitize insights live state`
 
 ## Authoritative Specs And Plans
 
@@ -474,6 +474,48 @@ Important replay caveat:
   against the captured broker fill. Exact live fill price equality to deterministic backtest remains
   unproven by design unless a later replay mode consumes captured broker fill events as the fill
   oracle.
+
+### Active-Symbol XAUUSD Blocked Re-Entry Live/Replay Extension
+
+Fresh retained evidence now exists for the first real order-bearing blocked re-entry slice:
+
+- clean proving worktree:
+  `/var/tmp/qkt-blocked-reentry-clean-20260812T004243Z`
+- scenario:
+  `/var/tmp/qkt-validation/xau-blocked-reentry-clean-20260812T004730Z`
+- live result:
+  `/var/tmp/qkt-validation/xau-blocked-reentry-clean-20260812T004730Z/evidence/result.json`
+- successful replay comparison:
+  `/var/tmp/qkt-validation/xau-blocked-reentry-clean-20260812T004730Z-replay/result.json`
+
+What this clean pass proved on Wednesday, August 12, 2026:
+
+- `prepare-scenario.sh --symbol XAUUSD --lifecycle reentry_blocked_max_trades` emitted a clean,
+  credential-free scenario at `qktCommit 011618031037bbc13e4d750fa549b80a05e7b256` with
+  `qktDirty:false`;
+- the generated strategy intentionally allowed a second entry signal through the DSL with
+  `TRADES.today < 2`, while risk configured `max_trades_per_day:1`;
+- the live run opened one real `0.01`-lot XAUUSDm position under magic `917118`, closed it
+  strategy-owned, then reached a second qualifying BUY signal;
+- the second signal was rejected before transport with exact reason `MaxTradesPerDay`; retained
+  transport evidence shows `orderPosts:1` and `closePosts:1`, proving no second `/order` request
+  reached the gateway;
+- retained live evidence was non-vacuous: `ticks:170`, `warmupTicks:80`, `candles:13`, `fills:2`,
+  `gatewayExchanges:315`, `linkedPlacements:1`, and `mutations:3`;
+- retained audit evidence included `acceptedEvents:2`, `filledEvents:2`, and `riskRejections:1`;
+- final venue reconciliation returned `finalPositions:0` and `finalOrders:0`; balance delta
+  `-0.15` matched owned deal net `-0.15`;
+- replay passed with `fullTickOrderJournalsByteExact:true`,
+  `barsOrdersTimestampNormalizedExact:true`, `liveInitialProtectionMatchesCanonicalIntent:true`,
+  `liveAdjustedProtectionMatchesCapturedBrokerFill:true`, and
+  `mt5SimulationUsesSameCanonicalIntent:true`.
+
+Important replay caveat:
+
+- `liveFillAndAdjustedProtectionMatchMt5Simulation:false` is expected for this blocked re-entry
+  proof for the same reason as the allowed re-entry proof: real broker fill latency differs from
+  deterministic replay. The retained entry drift was live `4380.598` vs mt5-sim `4380.49300000`,
+  delta `0.10499999999956344`.
 
 ### Sustained Read-Only Load And Restart Certification
 
@@ -939,6 +981,15 @@ As of Wednesday, August 12, 2026:
   allowed re-entry plus blocked re-entry under max trades, cooldown after loss, loss streak halt,
   strategy daily loss, strategy drawdown, strategy daily drawdown, global daily loss, global
   drawdown, and global daily drawdown.
+- `./gradlew installDist -Pkotlin.compiler.execution.strategy=daemon`: passed in clean proving
+  worktree `/var/tmp/qkt-blocked-reentry-clean-20260812T004243Z` at `01161803` on Wednesday,
+  August 12, 2026. No JVM heap or container resource caps were set.
+- `tests/scripts/prepare-live-validation-scenario-test.sh`: passed in the same clean proving
+  worktree after adding the `reentry_blocked_max_trades` scenario, live runner contract, and replay
+  comparator contract.
+- `scripts/live-validation/compare-golden-replay.sh`: passed for the clean XAUUSD blocked re-entry
+  capture at
+  `/var/tmp/qkt-validation/xau-blocked-reentry-clean-20260812T004730Z-replay/result.json`.
 
 The repo-health checks are green on the current `HEAD`. The remaining blockers are no longer local
 build instability; they are the still-open exhaustive live-validation matrix and the required demo
@@ -1894,6 +1945,10 @@ Existing partial coverage:
 - clean live evidence now proves the allowed XAUUSD re-entry path end-to-end through the real local
   MT5 gateway, real broker fills, golden capture, full-tick replay, plain-bar replay, and MT5-sim
   replay. See `Active-Symbol XAUUSD Re-Entry Live/Replay Extension` above;
+- clean live evidence now proves one blocked XAUUSD re-entry path end-to-end through the real local
+  MT5 gateway: the second qualifying signal was rejected pre-transport by `MaxTradesPerDay`, no
+  second gateway order was posted, the account finished flat, and replay retained exact order-journal
+  parity. See `Active-Symbol XAUUSD Blocked Re-Entry Live/Replay Extension` above;
 - static and stateful live rejection runners already prove several pre-transport and restored-state
   risk blocks, but they are rejection-only and do not prove an order-bearing re-entry lifecycle;
 - margin-floor live evidence exists separately, but it needs to be folded into the re-entry matrix as a
@@ -1903,7 +1958,8 @@ Concrete next work:
 
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
   recovered variants, especially operator halt, strategy/global risk halt, stale-market-data gate,
-  daily loss/drawdown, margin floor, exposure limits, and next-day reset behavior;
+  daily loss/drawdown, margin floor, exposure limits, cooldown/loss-streak reset, and next-day reset
+  behavior;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
   decisions and live protection adjustment, but deterministic backtest fill prices can drift from
   real broker fills because live execution latency is real;
