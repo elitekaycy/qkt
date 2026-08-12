@@ -15,7 +15,7 @@ import java.time.Instant
  * characters. e.g. rules `[BTC* -> crypto, * -> fx]` resolve "BTCUSD" to crypto and "EURUSD" to fx.
  */
 class SymbolCalendars(
-    rules: List<Rule>,
+    private val rules: List<Rule>,
     private val default: TradingCalendar,
 ) {
     /** One `pattern -> calendar` mapping. [pattern] is a glob on the bare qkt symbol. */
@@ -54,6 +54,14 @@ class SymbolCalendars(
      * sleeps). For an all-FX resolver this is exactly the historical single-calendar check.
      */
     fun anyCalendarInSession(t: Instant): Boolean = calendars.any { it.isInSession("", t) }
+
+    // Structural equality over the rule list and default calendar, so broker profiles can be
+    // grouped by market-data identity (com.qkt.cli.MarketSourceFactory). The built-in calendars
+    // are singletons, so Rule's data-class equality compares them correctly.
+    override fun equals(other: Any?): Boolean =
+        other is SymbolCalendars && rules == other.rules && default == other.default
+
+    override fun hashCode(): Int = 31 * rules.hashCode() + default.hashCode()
 
     companion object {
         /** All-FX resolver — the behaviour for a profile that declares no calendar rules. */

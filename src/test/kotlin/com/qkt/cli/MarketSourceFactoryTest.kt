@@ -1,5 +1,9 @@
 package com.qkt.cli
 
+import com.qkt.broker.mt5.MT5BrokerProfile
+import com.qkt.broker.mt5.SymbolCalendars
+import com.qkt.broker.mt5.SymbolPolicy
+import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.source.NullMarketSource
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -71,4 +75,85 @@ class MarketSourceFactoryTest {
         assertThat(composite.supports("MACRO:RBA_RBNZ_RATE_DIFF")).isTrue()
         assertThat(composite.supports("MACRO:DFII10")).isFalse()
     }
+
+    @Test
+    fun `profiles identical except name and magic share one market-data group`() {
+        val groups =
+            MarketSourceFactory.groupByMarketDataIdentity(
+                listOf(
+                    profile("exness_s0", magic = 100),
+                    profile("exness_s1", magic = 101),
+                    profile("exness_s2", magic = 102),
+                ),
+            )
+
+        assertThat(groups).hasSize(1)
+        assertThat(groups.single().map { it.name })
+            .containsExactly("exness_s0", "exness_s1", "exness_s2")
+    }
+
+    @Test
+    fun `profiles differing in any market-data field keep their own groups`() {
+        val base = profile("exness_s0", magic = 100)
+
+        val byGateway =
+            MarketSourceFactory.groupByMarketDataIdentity(
+                listOf(base, profile("exness_s1", magic = 101, gatewayUrl = "http://other-gateway:8080")),
+            )
+        assertThat(byGateway).hasSize(2)
+
+        val bySuffix =
+            MarketSourceFactory.groupByMarketDataIdentity(
+                listOf(base, profile("exness_s1", magic = 101, suffix = "")),
+            )
+        assertThat(bySuffix).hasSize(2)
+
+        val byPollInterval =
+            MarketSourceFactory.groupByMarketDataIdentity(
+                listOf(base, profile("exness_s1", magic = 101).copy(tickPollIntervalMs = 2000)),
+            )
+        assertThat(byPollInterval).hasSize(2)
+
+        val byCalendar =
+            MarketSourceFactory.groupByMarketDataIdentity(
+                listOf(
+                    base,
+                    profile("exness_s1", magic = 101).copy(
+                        symbolCalendars =
+                            SymbolCalendars(
+                                listOf(SymbolCalendars.Rule("BTC*", TradingCalendar.crypto())),
+                                TradingCalendar.fxDefault(),
+                            ),
+                    ),
+                ),
+            )
+        assertThat(byCalendar).hasSize(2)
+    }
+
+    @Test
+    fun `composite serves every profile prefix of a shared group but no unconfigured prefix`() {
+        val composite =
+            MarketSourceFactory.composite(
+                mt5Profiles = listOf(profile("exness_s0", magic = 100), profile("exness_s1", magic = 101)),
+                source = "local",
+                enableBybit = false,
+            )(emptyList())
+
+        assertThat(composite.supports("EXNESS_S0:EURUSD")).isTrue()
+        assertThat(composite.supports("EXNESS_S1:EURUSD")).isTrue()
+        assertThat(composite.supports("EXNESS_S2:EURUSD")).isFalse()
+    }
+
+    private fun profile(
+        name: String,
+        magic: Int,
+        gatewayUrl: String = "http://gateway:8080",
+        suffix: String = "m",
+    ): MT5BrokerProfile =
+        MT5BrokerProfile(
+            name = name,
+            gatewayUrl = gatewayUrl,
+            symbolPolicy = SymbolPolicy(suffix = suffix),
+            magic = magic,
+        )
 }

@@ -1,14 +1,19 @@
 package com.qkt.cli
 
 import com.qkt.broker.mt5.MT5BrokerProfile
+import com.qkt.broker.mt5.MT5ServerTimeZone
+import com.qkt.broker.mt5.SymbolCalendars
+import com.qkt.broker.mt5.SymbolPolicy
 import com.qkt.marketdata.live.bybit.BybitLinearMarketSource
 import com.qkt.marketdata.live.bybit.BybitSpotMarketSource
 import com.qkt.marketdata.live.mt5.Mt5MarketSource
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
+import com.qkt.marketdata.source.CachedHistoricalMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
+import com.qkt.marketdata.source.PrefixRemapMarketSource
 import com.qkt.marketdata.source.ReplayMarketSource
 import com.qkt.marketdata.source.SharedLiveMarketSource
 import com.qkt.marketdata.source.SymbolPattern
@@ -18,12 +23,51 @@ import com.qkt.marketdata.store.macro.PolicyRateSeries
 import java.nio.file.Path
 
 /**
+ * Everything [Mt5MarketSource] actually reads from an [MT5BrokerProfile]. Profiles sharing
+ * this identity poll the same gateway with the same credentials, symbol translation, poll
+ * cadence, session calendars, and history retries — one live poller can serve all of them.
+ * `name` and `magic` are deliberately absent: they tag orders, not market data.
+ */
+internal data class Mt5MarketDataIdentity(
+    val gatewayUrl: String,
+    val apiKey: String?,
+    val serverTimeZone: MT5ServerTimeZone,
+    val symbolPolicy: SymbolPolicy,
+    val tickPollIntervalMs: Long,
+    val symbolCalendars: SymbolCalendars,
+    val retryAttempts: Int,
+) {
+    companion object {
+        fun of(profile: MT5BrokerProfile): Mt5MarketDataIdentity =
+            Mt5MarketDataIdentity(
+                gatewayUrl = profile.gatewayUrl,
+                apiKey = profile.apiKey,
+                serverTimeZone = profile.serverTimeZone,
+                symbolPolicy = profile.symbolPolicy,
+                tickPollIntervalMs = profile.tickPollIntervalMs,
+                symbolCalendars = profile.symbolCalendars,
+                retryAttempts = profile.retryAttempts,
+            )
+    }
+}
+
+/**
  * Shared composite-source construction for `qkt daemon` and `qkt run`.
  *
- * Builds one [Mt5MarketSource] per loaded MT5 broker profile (prefix derived from
- * `profile.name.uppercase()+:`), registers [BybitSpotMarketSource] + [BybitLinearMarketSource]
- * unconditionally (WS open is lazy on first `liveTicks`), and uses [fallbackProvider]
- * as the catch-all.
+ * Builds one [Mt5MarketSource] per group of MT5 broker profiles that share a
+ * [Mt5MarketDataIdentity] (profiles typically differ only in `name`/`magic`, e.g. one
+ * profile per strategy against the same gateway account), wrapped in a single
+ * [SharedLiveMarketSource] and short-lived historical bar cache. The canonical
+ * (first) profile of a group registers its
+ * `<NAME>:` prefix route directly on the shared source; every other profile in the group
+ * routes its prefix through a [PrefixRemapMarketSource] onto the same shared source, so the
+ * gateway sees one tick poller per identity instead of one per profile. A singleton group
+ * behaves exactly as before — no remapping wrapper. Profiles differing in any identity field
+ * keep their own pollers.
+ *
+ * Routes symbols by prefix `<NAME>:` (`profile.name.uppercase()+:`), registers
+ * [BybitSpotMarketSource] + [BybitLinearMarketSource] when enabled (WS open is lazy on first
+ * `liveTicks`), and uses [fallbackProvider] as the catch-all.
  *
  * The default [fallbackProvider] picks based on [source]:
  *  - `"tv"` → [TradingViewMarketSource.connect] (opens a WebSocket on construction)
@@ -55,11 +99,22 @@ object MarketSourceFactory {
             SymbolPattern.exactSet(policySymbols) to
                 MacroMarketSource(MacroSeriesStore(DataRoot.resolve())),
         )
-        for (p in mt5Profiles) {
-            routes.add(
-                SymbolPattern.prefix("${p.name.uppercase()}:") to
-                    SharedLiveMarketSource(Mt5MarketSource(p)),
-            )
+        for (group in groupByMarketDataIdentity(mt5Profiles)) {
+            val canonical = group.first()
+            val canonicalPrefix = "${canonical.name.uppercase()}:"
+            val shared = CachedHistoricalMarketSource(SharedLiveMarketSource(Mt5MarketSource(canonical)))
+            routes.add(SymbolPattern.prefix(canonicalPrefix) to shared)
+            for (profile in group.drop(1)) {
+                val localPrefix = "${profile.name.uppercase()}:"
+                routes.add(
+                    SymbolPattern.prefix(localPrefix) to
+                        PrefixRemapMarketSource(
+                            delegate = shared,
+                            delegatePrefix = canonicalPrefix,
+                            localPrefix = localPrefix,
+                        ),
+                )
+            }
         }
         if (enableBybit) {
             routes.add(SymbolPattern.prefix("BYBIT_SPOT:") to BybitSpotMarketSource())
@@ -68,6 +123,13 @@ object MarketSourceFactory {
         val composite = CompositeMarketSource(routes = routes, fallback = fallbackProvider())
         return { _ -> composite }
     }
+
+    /**
+     * Group profiles by [Mt5MarketDataIdentity], preserving declaration order: the first
+     * profile of a group is its canonical poller owner. Exposed for tests.
+     */
+    internal fun groupByMarketDataIdentity(profiles: List<MT5BrokerProfile>): List<List<MT5BrokerProfile>> =
+        profiles.groupBy(Mt5MarketDataIdentity::of).values.toList()
 
     private fun defaultFallback(source: String): MarketSource =
         when (source) {
