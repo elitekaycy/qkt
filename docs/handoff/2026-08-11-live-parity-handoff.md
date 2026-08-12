@@ -1068,6 +1068,9 @@ As of Wednesday, August 12, 2026:
 - `./gradlew test --tests 'com.qkt.marketdata.MarketDataGateTest' --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed on Wednesday, August 12, 2026 after adding explicit stale-market-data re-entry regression
   coverage. No JVM heap or worker restrictions were used.
+- `./gradlew test --tests 'com.qkt.risk.rules.BookExposureLimitTest' --tests 'com.qkt.parity.GeneratedBookLimitParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed on Wednesday, August 12, 2026 after adding explicit book-exposure re-entry recovery
+  coverage. No JVM heap or worker restrictions were used.
 - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon`: passed on Tuesday, August 11, 2026
   after narrowing the `TickResolvedParityTest` comparison to ignore only replay-input counters that
   intentionally differ between full-tick replay and `--bars --tick-fills`:
@@ -2194,6 +2197,11 @@ Existing partial coverage:
   re-entry is rejected while the symbol is stale, protective exits remain allowed, and a fresh tick
   reopens the gate. See
   `src/test/kotlin/com/qkt/marketdata/MarketDataGateTest.kt`;
+- focused book-exposure coverage now proves the exposure-limit re-entry contract at the same
+  pre-trade rule used by live sessions: an entry at the cap boundary is allowed, a later same-side
+  re-entry is rejected while sibling book exposure consumes headroom, close-by-ticket remains
+  allowed, and a fresh book-risk sample with cleared exposure reopens the gate. See
+  `src/test/kotlin/com/qkt/risk/rules/BookExposureLimitTest.kt`;
 - `prepare-scenario.sh` can now emit a static generated `--lifecycle reentry` scenario. The focused
   shell regression proves the generated armed strategy uses `TRADES.today < 2`, keeps the 0.01-lot
   cap, widens only the intended risk counters to two entries, and parses through the QKT CLI;
@@ -2230,8 +2238,8 @@ Concrete next work:
 
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
   recovered variants, especially strategy/global risk halt, live stale-market-data gate, daily
-  loss/drawdown, margin floor, exposure limits, cooldown/loss-streak reset, and next-day reset
-  behavior;
+  loss/drawdown, margin floor, live same-book exposure limits, cooldown/loss-streak reset, and
+  next-day reset behavior;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
   decisions and live protection adjustment, but deterministic backtest fill prices can drift from
   real broker fills because live execution latency is real;
