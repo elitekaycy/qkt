@@ -831,20 +831,9 @@ else
     wait_for_open_cycle 1
     cp "$evidence/positions-magic-cycle-1-open.json" "$evidence/positions-magic-open.json"
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-open.json"
-    "$cli" kill "$strategy_name" --flatten --state-dir "$scenario/state" --json > "$evidence/kill-flatten.json"
-    jq -e '.state == "killed" and .flatten == true and .flattenVerified == true and (.remainingTickets | length) == 0' \
-        "$evidence/kill-flatten.json" >/dev/null || fail "QKT could not verify the bracket position was flattened"
-
-    flat_seen=false
-    for _ in $(seq 1 30); do
-        gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
-        if jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null; then
-            flat_seen=true
-            break
-        fi
-        sleep 1
-    done
-    $flat_seen || fail "scenario magic remained non-flat after verified flatten"
+    wait_for_flat_cycle 1
+    cp "$evidence/positions-magic-cycle-1-flat.json" "$evidence/positions-magic-final.json"
+    "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-flat.json"
 fi
 
 "$cli" stop "$strategy_name" --state-dir "$scenario/state" --json > "$evidence/stop-strategy.json"
@@ -1044,8 +1033,8 @@ jq -n \
             preTransport:($expectedBlockedEntries == 0 or ($orderPosts|tonumber) == $expectedEntries)
           },
           bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance},
-          flattenVerified:(if $lifecycle == "single" then true else false end),
-          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_global_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak"),
+          flattenVerified:false,
+          strategyOwnedLifecycle:($lifecycle == "single" or $lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_global_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak"),
           seededRiskState:(
             if $seededRiskStateKind == "" then null
             else {kind:$seededRiskStateKind,path:$seededRiskStatePath} +

@@ -113,7 +113,7 @@ jq -e '
     .schema == "qkt-live-validation-market-bracket-v1" and
     .status == "passed" and
     .qktDirty == false and
-    (($lifecycle == "single" and .flattenVerified == true) or
+    (($lifecycle == "single" and .strategyOwnedLifecycle == true) or
      ($lifecycle == "reentry" and .strategyOwnedLifecycle == true) or
      (($lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or
        $lifecycle == "reentry_max_trades_next_day_recovered" or

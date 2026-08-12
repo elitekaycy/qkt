@@ -622,7 +622,7 @@ grep -F '"$cli" halt "$strategy_name" --state-dir "$scenario/state" --json' "$re
 grep -F '"$cli" resume "$strategy_name" --state-dir "$scenario/state" --json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'operator-halt-before-blocked-reentry.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'operator-resume-before-recovered-reentry.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_global_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'strategyOwnedLifecycle:($lifecycle == "single" or $lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_global_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'blockedReentry:{' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'verify_seeded_risk_state() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'preTransport:($expectedBlockedEntries == 0 or ($orderPosts|tonumber) == $expectedEntries)' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
@@ -744,6 +744,7 @@ grep -F 'live-entries.json' "$comparison_script" >/dev/null
 grep -F 'liveEntries: $liveEntries' "$comparison_script" >/dev/null
 grep -F 'paperTrades: $paperTrades' "$comparison_script" >/dev/null
 grep -F 'mt5SimTrades: $mt5Trades' "$comparison_script" >/dev/null
+grep -F '($lifecycle == "single" and .strategyOwnedLifecycle == true)' "$comparison_script" >/dev/null
 grep -F '($lifecycle == "reentry" and .strategyOwnedLifecycle == true)' "$comparison_script" >/dev/null
 grep -F '$lifecycle == "reentry_blocked_max_trades"' "$comparison_script" >/dev/null
 grep -F '$lifecycle == "reentry_blocked_operator_halt"' "$comparison_script" >/dev/null
