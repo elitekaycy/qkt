@@ -73,22 +73,22 @@ atr_armed="$atr_case/strategies/armed/paritywave01_atr_eurusd_market_bracket.qkt
 math_armed="$math_case/strategies/armed/paritywave01_case_gbpusd_market_bracket.qkt"
 
 grep -F 'm1_fast = ema(asset1.close, 3)' "$ema_armed" >/dev/null
-grep -F 'm5_slow = ema(asset5.close, 5)' "$ema_armed" >/dev/null
+grep -F 'secondary_slow = ema(asset5.close, 5)' "$ema_armed" >/dev/null
 
 grep -F 'm1_fast = rsi(asset1.close, 5)' "$rsi_armed" >/dev/null
 grep -F 'm1_slow = sma(asset1.close, 5)' "$rsi_armed" >/dev/null
-grep -F 'm5_fast = rsi(asset5.close, 5)' "$rsi_armed" >/dev/null
-grep -F 'm5_slow = sma(asset5.close, 5)' "$rsi_armed" >/dev/null
+grep -F 'secondary_fast = rsi(asset5.close, 5)' "$rsi_armed" >/dev/null
+grep -F 'secondary_slow = sma(asset5.close, 5)' "$rsi_armed" >/dev/null
 
 grep -F 'm1_fast = atr(asset1, 5)' "$atr_armed" >/dev/null
 grep -F 'm1_slow = ema(asset1.close, 5)' "$atr_armed" >/dev/null
-grep -F 'm5_fast = atr(asset5, 5)' "$atr_armed" >/dev/null
-grep -F 'm5_slow = ema(asset5.close, 5)' "$atr_armed" >/dev/null
+grep -F 'secondary_fast = atr(asset5, 5)' "$atr_armed" >/dev/null
+grep -F 'secondary_slow = ema(asset5.close, 5)' "$atr_armed" >/dev/null
 
 grep -F 'm1_fast = round_to(asset1.close, 0.0001)' "$math_armed" >/dev/null
 grep -F 'm1_slow = lag(asset1.close, 1)' "$math_armed" >/dev/null
-grep -F 'm5_fast = highest(asset5.close, 5)' "$math_armed" >/dev/null
-grep -F 'm5_slow = lowest(asset5.close, 5)' "$math_armed" >/dev/null
+grep -F 'secondary_fast = highest(asset5.close, 5)' "$math_armed" >/dev/null
+grep -F 'secondary_slow = lowest(asset5.close, 5)' "$math_armed" >/dev/null
 grep -F 'signed_m1_delta = CASE WHEN m1_fast >= m1_slow THEN abs(m1_fast - m1_slow) ELSE -abs(m1_fast - m1_slow) END' "$math_armed" >/dev/null
 
 for scenario in "$ema_case" "$rsi_case" "$atr_case" "$math_case"; do
