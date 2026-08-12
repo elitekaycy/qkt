@@ -30,9 +30,12 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 171`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 174`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `fix(scripts): require strategy-owned single close`
+  - `test(scripts): align generated wave assertions`
+  - `fix(scripts): bound live replay execution drift`
   - `fix(app): retain closed ticket attribution`
   - `fix(scripts): widen gold drift envelope`
   - `fix(app): poll routed broker state for insights`
@@ -3680,3 +3683,82 @@ Immediate next step:
 
 - Commit the replay comparator hardening, then run the quick final sanity QKT strategy matrix on the
   current image/evidence set before starting PR/promotion work.
+
+## 2026-08-12 Update: Final-Sanity EMA Gate And Single-Close Harness Fix
+
+While starting the final generated strategy sanity matrix, the first EMA/EURUSD clean live run exposed
+a validation harness weakness:
+
+- Old-style single lifecycle evidence:
+  `/var/tmp/qkt-validation/final-sanity-clean-9999f9c8-ema-eurusd-0812101458/evidence/result.json`.
+- That live run opened and flattened safely, but the close fill was produced by
+  `qkt kill --flatten` as `operator-kill-*`, not by the strategy `CLOSE` rule.
+- Replay comparison rejected the capture:
+  `/var/tmp/qkt-validation/final-sanity-clean-9999f9c8-ema-eurusd-0812101458-replay`.
+- Failure:
+  `full-ticks-paper did not produce 2 trade event(s)`.
+- Root cause: [run-market-bracket.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-market-bracket.sh)
+  treated `single` scenarios as passable after entry plus operator flatten. That proves emergency
+  cleanup and broker flattening, but it does not prove strategy-owned live/backtest close parity.
+
+Harness fix committed:
+
+- `e439b14e fix(scripts): require strategy-owned single close`.
+- `single` lifecycle now waits for `wait_for_flat_cycle 1` just like the strategy-owned lifecycle
+  paths, captures `strategy-status-flat.json`, and reports `strategyOwnedLifecycle:true`.
+- `flattenVerified` is now false for passed `single` evidence; emergency flatten remains only in the
+  cleanup trap, not in the success path.
+- [compare-golden-replay.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/compare-golden-replay.sh)
+  now requires `single` captures to have `strategyOwnedLifecycle:true`.
+- Static/contract regressions passed:
+
+```bash
+bash -n scripts/live-validation/run-market-bracket.sh
+bash -n scripts/live-validation/compare-golden-replay.sh
+bash tests/scripts/prepare-live-validation-scenario-test.sh
+bash tests/scripts/prepare-generated-parity-wave-test.sh
+git diff --check
+```
+
+Strict final-sanity EMA/EURUSD rerun after the fix:
+
+- Clean proving worktree:
+  `/var/tmp/qkt-final-sanity-e439b14e-20260812T102319Z`.
+- Live scenario:
+  `/var/tmp/qkt-validation/final-sanity-clean-e439b14e-ema-eurusd-0812102321`.
+- Live result:
+  `/var/tmp/qkt-validation/final-sanity-clean-e439b14e-ema-eurusd-0812102321/evidence/result.json`.
+- Replay result:
+  `/var/tmp/qkt-validation/final-sanity-clean-e439b14e-ema-eurusd-0812102321-replay/result.json`.
+
+What the strict EMA/EURUSD proof sealed:
+
+- QKT commit under proof: `e439b14ee5bca7fe62c8fc0582d821ad7fa7bead`.
+- `qktDirty:false`.
+- Strategy: `fse439_ema_0812102321_market_bracket`.
+- Lifecycle: `single`, `strategyOwnedLifecycle:true`, `flattenVerified:false`.
+- Timeframes: `1m` and `5m`.
+- Live path: one real `0.01`-lot entry and one strategy-owned close on demo2 through the local
+  MT5 gateway.
+- Audit: two accepted events, two filled events, zero risk rejections.
+- Transport: one `/order` post and one `/close_position` post.
+- Golden capture: `ticks:21`, `warmupTicks:80`, `candles:12`, `fills:2`, `linkedPlacements:1`.
+- Operational market-data result: `staleEvents:0`, `recoveredStaleEvents:0`.
+- Final account state: flat, zero pending orders.
+- Reconciliation: `balanceDelta:-0.08`, `dealNet:-0.08`.
+- Replay comparison status: `passed`.
+- Replay parity flags:
+  - `fullTickOrderJournalsByteExact:true`;
+  - `barsOrdersTimestampNormalizedExact:true`;
+  - `liveInitialProtectionMatchesCanonicalIntent:true`;
+  - `liveAdjustedProtectionMatchesCapturedBrokerFill:true`;
+  - `mt5SimulationUsesSameCanonicalIntent:true`;
+  - `liveFillAndAdjustedProtectionMatchMt5Simulation:true`.
+
+Next generated final-sanity items still open:
+
+- run the same strict live-plus-replay proof for `rsi_reversion` on GBPUSD;
+- run the same strict live-plus-replay proof for `atr_channel`;
+- run the same strict live-plus-replay proof for `case_math`;
+- then decide whether the final generated sanity matrix is enough to move into PR/promotion, or
+  whether the higher-timeframe and retained-risk slices must be rerun first.
