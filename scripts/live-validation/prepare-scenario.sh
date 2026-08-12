@@ -9,12 +9,12 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry]
+  [--lifecycle single|reentry|reentry_blocked_max_trades]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry]
+  [--lifecycle single|reentry|reentry_blocked_max_trades]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
 be an explicit 127.0.0.1 HTTP endpoint. Credentials are never accepted as arguments;
@@ -111,6 +111,8 @@ case "$lifecycle" in
         close_trade_guard="TRADES.today >= 1"
         maximum_entries=1
         maximum_exits=1
+        maximum_blocked_entries=0
+        expected_blocked_reason=""
         max_round_trips_10m=2
         close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1"
         ;;
@@ -120,10 +122,23 @@ case "$lifecycle" in
         close_trade_guard="TRADES.today >= 1"
         maximum_entries=2
         maximum_exits=2
+        maximum_blocked_entries=0
+        expected_blocked_reason=""
         max_round_trips_10m=3
         close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; reentry allowed until tradesToday<2"
         ;;
-    *) fail "--lifecycle must be one of: single, reentry" ;;
+    reentry_blocked_max_trades)
+        max_trades_per_day=1
+        entry_trade_guard="TRADES.today < 2"
+        close_trade_guard="TRADES.today >= 1"
+        maximum_entries=1
+        maximum_exits=1
+        maximum_blocked_entries=1
+        expected_blocked_reason="MaxTradesPerDay"
+        max_round_trips_10m=2
+        close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; second entry intentionally blocked by MaxTradesPerDay"
+        ;;
+    *) fail "--lifecycle must be one of: single, reentry, reentry_blocked_max_trades" ;;
 esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
@@ -391,6 +406,8 @@ $account_identity_metadata
     "quantityLots": "0.01",
     "maximumEntries": $maximum_entries,
     "maximumExits": $maximum_exits,
+    "maximumBlockedEntries": $maximum_blocked_entries,
+    "expectedBlockedReason": "$expected_blocked_reason",
     "closeWhen": "$close_when",
     "exitTimeframe": "1m",
     "minimumHoldingSeconds": 1,

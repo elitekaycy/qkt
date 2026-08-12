@@ -109,11 +109,14 @@ jq -e '
     (.lifecycle // "single") as $lifecycle |
     (.expectedLifecycle.entries // 1) as $entries |
     (.expectedLifecycle.exits // 1) as $exits |
+    (.blockedReentry.expected // 0) as $blockedEntries |
     .schema == "qkt-live-validation-market-bracket-v1" and
     .status == "passed" and
     .qktDirty == false and
     (($lifecycle == "single" and .flattenVerified == true) or
-     ($lifecycle == "reentry" and .strategyOwnedLifecycle == true)) and
+     ($lifecycle == "reentry" and .strategyOwnedLifecycle == true) or
+     ($lifecycle == "reentry_blocked_max_trades" and .strategyOwnedLifecycle == true and
+      .blockedReentry.preTransport == true and .blockedReentry.rejections >= $blockedEntries)) and
     .finalPositions == 0 and
     .finalOrders == 0 and
     .transport.orderPosts >= $entries and
@@ -463,6 +466,10 @@ jq -n \
             (if $lifecycle == "single" then
                 "The operator flatten fill occurs after the bounded strategy replay window and " +
                 "is reconciled by the live result, not replayed as a strategy decision."
+             elif $lifecycle == "reentry_blocked_max_trades" then
+                "The live blocked re-entry capture includes one strategy-owned close and a " +
+                "pre-transport MaxTradesPerDay rejection for the next entry; replay comparison " +
+                "checks the filled entry intent/protection and byte-identical replay order journals."
              else
                 "The live re-entry capture includes strategy-owned close fills; replay comparison " +
                 "checks entry intent, fill, and adjusted protection parity for each entry and relies " +

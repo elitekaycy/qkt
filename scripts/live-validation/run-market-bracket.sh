@@ -60,23 +60,36 @@ mapfile -t armed_strategies < <(find "$scenario/strategies/armed" -maxdepth 1 -t
 [ "${#armed_strategies[@]}" -eq 1 ] || fail "expected exactly one armed market-bracket strategy"
 armed_strategy="${armed_strategies[0]}"
 strategy_name="$(basename "$armed_strategy" .qkt)"
+config="$scenario/qkt.config.yaml"
 stop_distance="$(jq -r '.armedScenario.stopDistance' "$scenario/expected.json")"
 take_profit_distance="$(jq -r '.armedScenario.takeProfitDistance' "$scenario/expected.json")"
 expected_contract_size="$(jq -r '.armedScenario.expectedContractSize // "100000"' "$scenario/expected.json")"
 lifecycle="$(jq -r '.armedScenario.lifecycle // "single"' "$scenario/expected.json")"
 expected_entries="$(jq -r '.armedScenario.maximumEntries // 1' "$scenario/expected.json")"
 expected_exits="$(jq -r '.armedScenario.maximumExits // 1' "$scenario/expected.json")"
+expected_blocked_entries="$(jq -r '.armedScenario.maximumBlockedEntries // 0' "$scenario/expected.json")"
+expected_blocked_reason="$(jq -r '.armedScenario.expectedBlockedReason // ""' "$scenario/expected.json")"
 grep -F 'SIZING 0.01' "$armed_strategy" >/dev/null || fail "armed strategy is not fixed at 0.01 lots"
 case "$lifecycle" in
     single)
         grep -F 'TRADES.today = 0' "$armed_strategy" >/dev/null || fail "armed strategy does not prevent re-entry"
-        [ "$expected_entries" -eq 1 ] && [ "$expected_exits" -eq 1 ] ||
+        [ "$expected_entries" -eq 1 ] && [ "$expected_exits" -eq 1 ] && [ "$expected_blocked_entries" -eq 0 ] ||
             fail "single lifecycle must expect exactly one entry and one exit"
         ;;
     reentry)
         grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null || fail "re-entry strategy does not allow a second entry"
-        [ "$expected_entries" -eq 2 ] && [ "$expected_exits" -eq 2 ] ||
+        [ "$expected_entries" -eq 2 ] && [ "$expected_exits" -eq 2 ] && [ "$expected_blocked_entries" -eq 0 ] ||
             fail "re-entry lifecycle must expect exactly two entries and two exits"
+        ;;
+    reentry_blocked_max_trades)
+        grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null ||
+            fail "blocked re-entry strategy does not attempt the reviewed second entry"
+        grep -F 'max_trades_per_day: 1' "$config" >/dev/null ||
+            fail "blocked re-entry scenario does not cap live entries at one"
+        [ "$expected_entries" -eq 1 ] && [ "$expected_exits" -eq 1 ] && [ "$expected_blocked_entries" -eq 1 ] ||
+            fail "blocked re-entry lifecycle must expect one filled entry, one close, and one blocked entry"
+        [ "$expected_blocked_reason" = "MaxTradesPerDay" ] ||
+            fail "blocked re-entry lifecycle must retain the MaxTradesPerDay rejection reason"
         ;;
     *) fail "unsupported armed lifecycle: $lifecycle" ;;
 esac
@@ -108,7 +121,6 @@ dsl_symbol="$(jq -r '.armedScenario.symbol' "$scenario/expected.json")"
 venue_symbol="$(jq -r '.armedScenario.venueSymbol // ((.armedScenario.symbol | split(":")[1]) + "m")' "$scenario/expected.json")"
 qkt_commit="$(jq -r '.qktCommit' "$scenario/scenario.json")"
 qkt_dirty="$(jq -r '.qktDirty' "$scenario/scenario.json")"
-config="$scenario/qkt.config.yaml"
 evidence="$scenario/evidence"
 run_started_ms="$(date +%s%3N)"
 lock_server_key="${expected_server//[^A-Za-z0-9._-]/_}"
@@ -487,6 +499,31 @@ wait_for_flat_cycle() {
     $seen || fail "cycle $cycle did not return to flat within $timeout_seconds seconds"
 }
 
+wait_for_blocked_reentry() {
+    local latest="$evidence/positions-magic-blocked-reentry.json"
+    local orders_latest="$evidence/orders-magic-blocked-reentry.json"
+    local seen=false
+    for _ in $(seq 1 "$timeout_seconds"); do
+        kill -0 "$daemon_pid" 2>/dev/null || fail "daemon exited while waiting for blocked re-entry"
+        gateway_get "/get_positions?magic=$magic" > "$latest"
+        jq -e '.ok == true and (.data | length) == 0' "$latest" >/dev/null ||
+            fail "blocked re-entry opened or retained a position"
+        gateway_get "/orders?magic=$magic" > "$orders_latest"
+        jq -e '.ok == true and (.orders | length) == 0' "$orders_latest" >/dev/null ||
+            fail "blocked re-entry left a pending order"
+        if rg --quiet "risk rejected .*${expected_blocked_reason}" "$scenario/logs/daemon.log"; then
+            seen=true
+            break
+        fi
+        if rg --quiet 'Order rejected:' "$scenario/logs/daemon.log"; then
+            fail "broker rejected an order while waiting for blocked re-entry; expected pre-transport risk rejection"
+        fi
+        sleep 1
+    done
+    $seen || fail "no $expected_blocked_reason risk rejection appeared for blocked re-entry"
+    "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-blocked-reentry.json"
+}
+
 acquire_live_lock
 verify_cli_git_sha
 
@@ -565,6 +602,15 @@ if [ "$lifecycle" = "reentry" ]; then
     gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
     jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
         fail "re-entry lifecycle did not end flat"
+elif [ "$lifecycle" = "reentry_blocked_max_trades" ]; then
+    wait_for_open_cycle 1
+    "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-open.json"
+    wait_for_flat_cycle 1
+    "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-flat.json"
+    wait_for_blocked_reentry
+    gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
+    jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
+        fail "blocked re-entry lifecycle did not end flat"
 else
     wait_for_open_cycle 1
     cp "$evidence/positions-magic-cycle-1-open.json" "$evidence/positions-magic-open.json"
@@ -649,10 +695,19 @@ filled_events="$(jq -r 'select(.eventType == "com.qkt.events.BrokerEvent.OrderFi
 expected_lifecycle_events="$((expected_entries + expected_exits))"
 [ "$accepted_events" -ge "$expected_lifecycle_events" ] || fail "audit journal is missing accepted lifecycle events"
 [ "$filled_events" -ge "$expected_lifecycle_events" ] || fail "audit journal is missing filled lifecycle events"
+risk_rejections="$(jq -r --arg reason "$expected_blocked_reason" '
+    select(.eventType == "com.qkt.events.RiskRejectedEvent" and (.reason // "" | contains($reason))) | 1
+' "${audit_journals[@]}" | awk 'END {print NR + 0}')"
 order_posts="$(jq -r 'select(.method == "POST" and .path == "/order" and (.responseCode >= 200 and .responseCode < 300)) | 1' "${transport_journals[@]}" | awk 'END {print NR + 0}')"
 close_posts="$(jq -r 'select(.method == "POST" and .path == "/close_position" and (.responseCode >= 200 and .responseCode < 300)) | 1' "${transport_journals[@]}" | awk 'END {print NR + 0}')"
 [ "$order_posts" -ge "$expected_entries" ] || fail "transport journal is missing accepted MT5 order calls"
 [ "$close_posts" -ge "$expected_exits" ] || fail "transport journal is missing accepted MT5 close calls"
+if [ "$expected_blocked_entries" -gt 0 ]; then
+    [ "$risk_rejections" -ge "$expected_blocked_entries" ] ||
+        fail "audit journal is missing the expected blocked re-entry risk rejection"
+    [ "$order_posts" -eq "$expected_entries" ] ||
+        fail "blocked re-entry reached MT5 transport; order posts=$order_posts expected=$expected_entries"
+fi
 
 golden_zip="$evidence/golden.zip"
 golden_manifest="$evidence/golden-manifest.json"
@@ -719,6 +774,8 @@ jq -n \
     --arg lifecycle "$lifecycle" \
     --argjson expectedEntries "$expected_entries" \
     --argjson expectedExits "$expected_exits" \
+    --argjson expectedBlockedEntries "$expected_blocked_entries" \
+    --arg blockedReason "$expected_blocked_reason" \
     --arg balanceDelta "$balance_delta" \
     --arg dealNet "$deal_net" \
     --arg initialLeverage "$initial_leverage" \
@@ -726,6 +783,7 @@ jq -n \
     --argjson leverageChanged "$leverage_changed" \
     --arg acceptedEvents "$accepted_events" \
     --arg filledEvents "$filled_events" \
+    --arg riskRejections "$risk_rejections" \
     --arg orderPosts "$order_posts" \
     --arg closePosts "$close_posts" \
     --arg goldenTicks "$golden_ticks" \
@@ -754,9 +812,15 @@ jq -n \
           positionTickets:($tickets | map(.ticket)),
           lots:"0.01",
           expectedLifecycle:{entries:$expectedEntries,exits:$expectedExits},
+          blockedReentry:{
+            expected:$expectedBlockedEntries,
+            reason:(if $blockedReason == "" then null else $blockedReason end),
+            rejections:($riskRejections|tonumber),
+            preTransport:($expectedBlockedEntries == 0 or ($orderPosts|tonumber) == $expectedEntries)
+          },
           bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance},
           flattenVerified:(if $lifecycle == "single" then true else false end),
-          strategyOwnedLifecycle:($lifecycle == "reentry"),
+          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades"),
           finalPositions:0,
           finalOrders:0,
           balanceDelta:$balanceDelta,
@@ -766,7 +830,11 @@ jq -n \
             final:($finalLeverage|tonumber),
             changed:$leverageChanged
           },
-          audit:{acceptedEvents:($acceptedEvents|tonumber),filledEvents:($filledEvents|tonumber)},
+          audit:{
+            acceptedEvents:($acceptedEvents|tonumber),
+            filledEvents:($filledEvents|tonumber),
+            riskRejections:($riskRejections|tonumber)
+          },
           transport:{orderPosts:($orderPosts|tonumber),closePosts:($closePosts|tonumber)},
           golden:{
             ticks:($goldenTicks|tonumber),

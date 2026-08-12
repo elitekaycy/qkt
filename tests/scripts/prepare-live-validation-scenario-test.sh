@@ -163,6 +163,34 @@ jq -e '
 "$cli" parse "$reentry_armed" >/dev/null
 (cd "$reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
 
+blocked_reentry_out="$tmp/blocked-reentry-scenario"
+bash "$script" \
+    --output "$blocked_reentry_out" \
+    --id validation_blocked_reentry \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917009 \
+    --symbol XAUUSD \
+    --lifecycle reentry_blocked_max_trades >/dev/null
+blocked_reentry_armed="$blocked_reentry_out/strategies/armed/validation_blocked_reentry_market_bracket.qkt"
+[ "$(grep -Fc 'TRADES.today < 2' "$blocked_reentry_armed")" -eq 2 ]
+[ "$(grep -Fc 'TRADES.today = 0' "$blocked_reentry_armed")" -eq 0 ]
+grep -F 'max_trades_per_day: 1' "$blocked_reentry_out/qkt.config.yaml" >/dev/null
+jq -e '
+    .safety.maximumTradesPerDay == 1 and
+    .armedScenario.lifecycle == "reentry_blocked_max_trades" and
+    .armedScenario.maximumEntries == 1 and
+    .armedScenario.maximumExits == 1 and
+    .armedScenario.maximumBlockedEntries == 1 and
+    .armedScenario.expectedBlockedReason == "MaxTradesPerDay" and
+    (.armedScenario.closeWhen | contains("second entry intentionally blocked"))
+' "$blocked_reentry_out/expected.json" >/dev/null
+"$cli" parse "$blocked_reentry_armed" >/dev/null
+(cd "$blocked_reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
+
 if bash "$script" \
     --output "$tmp/unsupported-symbol" \
     --id validation_jpy \
@@ -232,6 +260,10 @@ bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \
     --cli "$cli" \
     --verify-only >/dev/null
+bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
+    --scenario "$blocked_reentry_out" \
+    --cli "$cli" \
+    --verify-only >/dev/null
 bash "$repo_root/scripts/live-validation/run-market-bracket.sh" --help | grep -F '/var/tmp/qkt-validation/LIVE-LOCK-<server>-<login>' >/dev/null
 if rg --quiet '\$cli" status .*--json' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner passes unsupported --json to qkt status' >&2
@@ -247,9 +279,14 @@ grep -F 'gateway_get "/symbol_info_tick/$venue_symbol"' "$repo_root/scripts/live
 grep -F 'expected_contract_size="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'lifecycle="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'expected_entries="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'expected_blocked_entries="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'wait_for_open_cycle() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'wait_for_flat_cycle() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'wait_for_blocked_reentry() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'reentry_blocked_max_trades' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'blockedReentry:{' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'preTransport:($expectedBlockedEntries == 0 or ($orderPosts|tonumber) == $expectedEntries)' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'positionTickets:($tickets | map(.ticket))' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F ".counts.linkedPlacements >= '\"\$expected_entries\"'" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F '.trade_contract_size == ($expectedContractSize | tonumber)' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
@@ -362,6 +399,8 @@ grep -F 'liveEntries: $liveEntries' "$comparison_script" >/dev/null
 grep -F 'paperTrades: $paperTrades' "$comparison_script" >/dev/null
 grep -F 'mt5SimTrades: $mt5Trades' "$comparison_script" >/dev/null
 grep -F '($lifecycle == "reentry" and .strategyOwnedLifecycle == true)' "$comparison_script" >/dev/null
+grep -F '$lifecycle == "reentry_blocked_max_trades"' "$comparison_script" >/dev/null
+grep -F '.blockedReentry.preTransport == true' "$comparison_script" >/dev/null
 grep -F 'expectedEntries: $expectedEntries' "$comparison_script" >/dev/null
 grep -F 'all(range(0; $expectedEntries); . as $i |' "$comparison_script" >/dev/null
 if rg --quiet 'run_replay tick-resolved|--tick-fills' "$comparison_script"; then
