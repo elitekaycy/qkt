@@ -1041,18 +1041,30 @@ downstream.
 
 As of Wednesday, August 12, 2026:
 
-- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 109`, with local
-  edits across the current live-validation docs/scripts/tests plus the existing test-source changes
-  already present in:
-  - [TickResolvedParityTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/backtest/TickResolvedParityTest.kt:112)
-  - [GeneratedIndicatorStrategyTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/dsl/compile/GeneratedIndicatorStrategyTest.kt:14)
-  - [README.md](/home/dickson/Desktop/personal/qkt/scripts/live-validation/README.md:1)
-  - [account-identity.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/lib/account-identity.sh:1)
-  - [run-container-load.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-container-load.sh:1)
-  - [run-order-gateway-restart.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-order-gateway-restart.sh:1)
-  - [2026-08-09-exhaustive-live-parity-validation.md](/home/dickson/Desktop/personal/qkt/docs/superpowers/plans/2026-08-09-exhaustive-live-parity-validation.md:1)
-  - [2026-08-11-live-parity-handoff.md](/home/dickson/Desktop/personal/qkt/docs/handoff/2026-08-11-live-parity-handoff.md:1)
+- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 132` after the
+  current continuation's scoped commits, with no remaining tracked dirty source files outside this
+  handoff update.
+- Current continuation commits now on the branch:
+  - `5a041d4a test(dsl): cover higher timeframe warmups`
+  - `5d3eb7ae docs(docs): record higher timeframe parity proof`
+  - `0e7817fa feat(scripts): add restart and stateful validation`
+  - `125098c8 feat(scripts): prepare generated parity wave`
+  - `1824d2e4 fix(scripts): harden parity validation checks`
+  - `16341606 docs(docs): update parity validation evidence`
 - `rg -n 'TODO|FIXME|XXX' src/ || true`: clean
+- `./gradlew test --tests 'com.qkt.dsl.compile.HigherTimeframeWarmupParityTest' --tests 'com.qkt.dsl.compile.GeneratedTimeframeParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed on Wednesday, August 12, 2026 after adding explicit `15m`, `1h`, and `4h` warmup-count
+  parity coverage and adding `4h` to the generated timeframe capability catalog.
+- `bash tests/scripts/prepare-stateful-risk-matrix-test.sh && bash tests/scripts/run-stateful-risk-containers-test.sh && bash tests/scripts/run-readonly-resync-test.sh && bash tests/scripts/run-readonly-gateway-restart-test.sh && bash tests/scripts/run-readonly-deployed-gateway-restart-test.sh && bash tests/scripts/run-order-gateway-restart-test.sh`:
+  passed on Wednesday, August 12, 2026 before committing the restart/resync/stateful validation
+  harness files.
+- `bash tests/scripts/prepare-generated-parity-wave-test.sh`: passed on Wednesday, August 12, 2026
+  before committing the generated four-case parity wave preparer.
+- `./gradlew test --tests 'com.qkt.backtest.TickResolvedParityTest' --tests 'com.qkt.dsl.compile.GeneratedIndicatorStrategyTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed on Wednesday, August 12, 2026 after committing the tick-resolved replay-input
+  normalization and generated indicator log-budget hardening.
+- `bash tests/scripts/run-container-load-test.sh`: passed on Wednesday, August 12, 2026 before
+  committing the container-load health/version hardening.
 - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon`: passed on Tuesday, August 11, 2026
   after narrowing the `TickResolvedParityTest` comparison to ignore only replay-input counters that
   intentionally differ between full-tick replay and `--bars --tick-fills`:
