@@ -106,23 +106,30 @@ mapfile -d '' strategies < <(find "$scenario/strategies/armed" -maxdepth 1 -type
 strategy_file="${strategies[0]}"
 
 jq -e '
+    (.lifecycle // "single") as $lifecycle |
+    (.expectedLifecycle.entries // 1) as $entries |
+    (.expectedLifecycle.exits // 1) as $exits |
     .schema == "qkt-live-validation-market-bracket-v1" and
     .status == "passed" and
     .qktDirty == false and
-    .flattenVerified == true and
+    (($lifecycle == "single" and .flattenVerified == true) or
+     ($lifecycle == "reentry" and .strategyOwnedLifecycle == true)) and
     .finalPositions == 0 and
     .finalOrders == 0 and
-    .transport.orderPosts == 1 and
+    .transport.orderPosts >= $entries and
+    .transport.closePosts >= $exits and
     .golden.ticks > 0 and
     .golden.warmupTicks > 0 and
     .golden.candles > 0 and
-    .golden.fills >= 1 and
-    .golden.linkedPlacements == 1
+    .golden.fills >= ($entries + $exits) and
+    .golden.linkedPlacements >= $entries
 ' "$live_result" >/dev/null || fail "live result is not a clean, passed, replayable market-bracket run"
 jq -e '.qktDirty == false and .credentialsStored == false' "$scenario_json" >/dev/null ||
     fail "scenario was not captured from a clean, credential-free preparation"
 
 strategy_id="$(jq -er '.strategy' "$live_result")"
+expected_entries="$(jq -er '.expectedLifecycle.entries // 1' "$live_result")"
+lifecycle="$(jq -er '.lifecycle // "single"' "$live_result")"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
 source_sha="$(sha256sum "$bundle" | awk '{print $1}')"
 [ "$source_sha" = "$(jq -er '.golden.sha256' "$live_result")" ] || fail "golden bundle hash does not match live result"
@@ -188,40 +195,45 @@ run_replay() {
     require_file "$report/result.json"
     require_file "$report/trades.csv"
     require_file "$report/orders.jsonl"
-    jq -e '.global.tradeCount == 1' "$report/result.json" >/dev/null || fail "$name did not produce exactly one trade"
+    jq -e --argjson expectedEntries "$expected_entries" '.global.tradeCount == $expectedEntries' "$report/result.json" >/dev/null ||
+        fail "$name did not produce $expected_entries trade(s)"
 }
 
 run_replay full-ticks-paper paper
 run_replay bars-paper paper --bars --bar-tf 1m
 run_replay full-ticks-mt5 mt5-sim
 
-trade_json() {
+trades_json() {
     local csv="$1"
-    [ "$(awk 'END { print NR }' "$csv")" -eq 2 ] || fail "expected one trade row in $csv"
+    [ "$(awk 'END { print NR }' "$csv")" -eq "$((expected_entries + 1))" ] ||
+        fail "expected $expected_entries trade row(s) in $csv"
     jq -Rn '
         [inputs] as $lines |
         ($lines[0] | split(",")) as $header |
-        ($lines[1] | split(",")) as $values |
-        reduce range(0; $header | length) as $i ({}; .[$header[$i]] = $values[$i]) |
-        {
-            timestamp: (.timestamp | tonumber),
-            strategy: .strategy,
-            symbol: .symbol,
-            side: .side,
-            positionEffect: .positionEffect,
-            orderType: .orderType,
-            quantity: .quantity,
-            price: .price,
-            stopLossPrice: .stopLossPrice,
-            takeProfitPrice: .takeProfitPrice,
-            brokerOrderId: .brokerOrderId
-        }
+        [
+            $lines[1:][] |
+            split(",") as $values |
+            reduce range(0; $header | length) as $i ({}; .[$header[$i]] = $values[$i]) |
+            {
+                timestamp: (.timestamp | tonumber),
+                strategy: .strategy,
+                symbol: .symbol,
+                side: .side,
+                positionEffect: .positionEffect,
+                orderType: .orderType,
+                quantity: .quantity,
+                price: .price,
+                stopLossPrice: .stopLossPrice,
+                takeProfitPrice: .takeProfitPrice,
+                brokerOrderId: .brokerOrderId
+            }
+        ]
     ' <"$csv"
 }
 
 mkdir -m 700 "$output/comparison"
 for mode in full-ticks-paper bars-paper full-ticks-mt5; do
-    trade_json "$output/reports/$mode/trades.csv" >"$output/comparison/$mode-trade.json"
+    trades_json "$output/reports/$mode/trades.csv" >"$output/comparison/$mode-trades.json"
 done
 
 canonicalize_report_orders() {
@@ -240,9 +252,11 @@ cmp -s "$output/comparison/full-ticks-paper-orders-normalized.json" \
     "$output/comparison/bars-paper-orders-normalized.json" ||
     fail "timestamp-normalized plain-bar orders differ from full-tick orders"
 jq -s -e '
+    $expectedEntries as $expectedEntries |
     [.[] | select(.decision == "approved" and .request.orderType == "Bracket")] |
-    if length == 1 then .[0].request else error("expected one approved bracket entry") end
-' "$output/reports/full-ticks-paper/orders.jsonl" >"$output/comparison/full-ticks-entry-order.json"
+    if length == $expectedEntries then map(.request) else error("expected approved bracket entries") end
+' --argjson expectedEntries "$expected_entries" "$output/reports/full-ticks-paper/orders.jsonl" \
+    >"$output/comparison/full-ticks-entry-orders.json"
 
 engine_entry="$(jq -er '.entries[] | select(.path | startswith("engine/")) | .path' "$external_manifest")"
 transport_entry="$(jq -er '.entries[] | select(.path | startswith("gateway/")) | .path' "$external_manifest")"
@@ -265,72 +279,81 @@ jq -n \
             (decoded_response.ok == true)
         )
     ] as $orders |
-    if ($orders | length) != 1 then error("expected exactly one linked successful live order") else . end |
-    $orders[0] as $order |
-    ($order | decoded_request) as $request |
-    ($order | decoded_response) as $response |
-    ($response.result.order | tostring) as $ticket |
+    if ($orders | length) != $expectedEntries then error("expected linked successful live orders") else . end |
     [
-        $transport[] |
-        select(
-            .method == "POST" and
-            .path == "/modify_sl_tp" and
-            .responseCode == 200 and
-            ((decoded_request.position | tostring) == $ticket) and
-            (decoded_response.ok == true)
-        )
-    ] as $modifications |
-    if ($modifications | length) != 1 then error("expected exactly one successful protection update") else . end |
-    ($modifications[0] | decoded_request) as $protection |
-    [
-        $engine[] |
-        select(
-            .eventType == "com.qkt.events.BrokerEvent.OrderFilled" and
-            .strategyId == $strategy and
-            .orderId == $order.engineOrderId
-        )
-    ] as $fills |
-    if ($fills | length) != 1 then error("expected exactly one linked strategy entry fill") else . end |
-    {
-        engineOrderId: $order.engineOrderId,
-        brokerOrderId: $ticket,
-        request: {
-            symbol: $request.symbol,
-            side: $request.type,
-            quantity: ($request.volume | tostring),
-            stopLossPrice: ($request.sl | tostring),
-            takeProfitPrice: ($request.tp | tostring)
-        },
-        fill: {
-            symbol: $fills[0].symbol,
-            side: $fills[0].fill.side,
-            quantity: $fills[0].fill.quantity,
-            price: $fills[0].fill.price
-        },
-        protection: {
-            stopLossPrice: ($protection.sl | tostring),
-            takeProfitPrice: ($protection.tp | tostring)
+        $orders[] as $order |
+        ($order | decoded_request) as $request |
+        ($order | decoded_response) as $response |
+        ($response.result.order | tostring) as $ticket |
+        [
+            $transport[] |
+            select(
+                .method == "POST" and
+                .path == "/modify_sl_tp" and
+                .responseCode == 200 and
+                ((decoded_request.position | tostring) == $ticket) and
+                (decoded_response.ok == true)
+            )
+        ] as $modifications |
+        if ($modifications | length) != 1 then error("expected successful protection update") else . end |
+        ($modifications[0] | decoded_request) as $protection |
+        [
+            $engine[] |
+            select(
+                .eventType == "com.qkt.events.BrokerEvent.OrderFilled" and
+                .strategyId == $strategy and
+                .orderId == $order.engineOrderId
+            )
+        ] as $fills |
+        if ($fills | length) != 1 then error("expected linked strategy entry fill") else . end |
+        {
+            engineOrderId: $order.engineOrderId,
+            brokerOrderId: $ticket,
+            request: {
+                symbol: $request.symbol,
+                side: $request.type,
+                quantity: ($request.volume | tostring),
+                stopLossPrice: ($request.sl | tostring),
+                takeProfitPrice: ($request.tp | tostring)
+            },
+            fill: {
+                symbol: $fills[0].symbol,
+                side: $fills[0].fill.side,
+                quantity: $fills[0].fill.quantity,
+                price: $fills[0].fill.price
+            },
+            protection: {
+                stopLossPrice: ($protection.sl | tostring),
+                takeProfitPrice: ($protection.tp | tostring)
+            }
         }
-    }
-' >"$output/comparison/live-entry.json"
+    ]
+' --argjson expectedEntries "$expected_entries" >"$output/comparison/live-entries.json"
 
-paper_trade="$(jq -c '.' "$output/comparison/full-ticks-paper-trade.json")"
-mt5_trade="$(jq -c '.' "$output/comparison/full-ticks-mt5-trade.json")"
-live_entry="$(jq -c '.' "$output/comparison/live-entry.json")"
-jq -en --slurpfile intent "$output/comparison/full-ticks-entry-order.json" \
-    --argjson paper "$paper_trade" --argjson mt5 "$mt5_trade" --argjson live "$live_entry" '
+paper_trades="$(jq -c '.' "$output/comparison/full-ticks-paper-trades.json")"
+mt5_trades="$(jq -c '.' "$output/comparison/full-ticks-mt5-trades.json")"
+live_entries="$(jq -c '.' "$output/comparison/live-entries.json")"
+jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
+    --argjson paper "$paper_trades" --argjson mt5 "$mt5_trades" --argjson live "$live_entries" \
+    --argjson expectedEntries "$expected_entries" '
     def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
-    ($paper.symbol == $mt5.symbol) and
-    ($paper.symbol == $live.fill.symbol) and
-    ($intent[0].side == $live.request.side) and
-    ($mt5.side == $live.fill.side) and
-    near($intent[0].qty; $live.request.quantity) and
-    near($mt5.quantity; $live.fill.quantity) and
-    near($intent[0].stopLoss.price; $live.request.stopLossPrice) and
-    near($intent[0].takeProfit; $live.request.takeProfitPrice) and
-    near($mt5.price; $live.fill.price) and
-    near($mt5.stopLossPrice; $live.protection.stopLossPrice) and
-    near($mt5.takeProfitPrice; $live.protection.takeProfitPrice)
+    ($paper | length) == $expectedEntries and
+    ($mt5 | length) == $expectedEntries and
+    ($live | length) == $expectedEntries and
+    ($intents[0] | length) == $expectedEntries and
+    all(range(0; $expectedEntries); . as $i |
+        ($paper[$i].symbol == $mt5[$i].symbol) and
+        ($paper[$i].symbol == $live[$i].fill.symbol) and
+        ($intents[0][$i].side == $live[$i].request.side) and
+        ($mt5[$i].side == $live[$i].fill.side) and
+        near($intents[0][$i].qty; $live[$i].request.quantity) and
+        near($mt5[$i].quantity; $live[$i].fill.quantity) and
+        near($intents[0][$i].stopLoss.price; $live[$i].request.stopLossPrice) and
+        near($intents[0][$i].takeProfit; $live[$i].request.takeProfitPrice) and
+        near($mt5[$i].price; $live[$i].fill.price) and
+        near($mt5[$i].stopLossPrice; $live[$i].protection.stopLossPrice) and
+        near($mt5[$i].takeProfitPrice; $live[$i].protection.takeProfitPrice)
+    )
 ' >/dev/null || fail "captured live order, fill, or protection differs from replay"
 
 replay_git_sha="$(jq -er '.evidence.gitSha' "$output/reports/full-ticks-mt5/result.json")"
@@ -351,9 +374,11 @@ jq -n \
     --arg fromUtc "$from_utc" \
     --arg toUtc "$to_utc" \
     --argjson sourceCounts "$(jq -c '.counts' "$external_manifest")" \
-    --argjson liveEntry "$live_entry" \
-    --argjson paperTrade "$paper_trade" \
-    --argjson mt5Trade "$mt5_trade" '
+    --arg lifecycle "$lifecycle" \
+    --argjson expectedEntries "$expected_entries" \
+    --argjson liveEntries "$live_entries" \
+    --argjson paperTrades "$paper_trades" \
+    --argjson mt5Trades "$mt5_trades" '
     {
         schema: "qkt-live-golden-replay-comparison-v1",
         status: "passed",
@@ -372,19 +397,29 @@ jq -n \
             fromUtc: $fromUtc,
             toUtc: $toUtc
         },
+        lifecycle: $lifecycle,
+        expectedEntries: $expectedEntries,
         parity: {
             fullTickOrderJournalsByteExact: true,
             barsOrdersTimestampNormalizedExact: true,
             liveInitialProtectionMatchesCanonicalIntent: true,
             liveFillAndAdjustedProtectionMatchMt5Simulation: true
         },
-        liveEntry: $liveEntry,
-        paperTrade: $paperTrade,
-        mt5SimTrade: $mt5Trade,
+        liveEntry: $liveEntries[0],
+        liveEntries: $liveEntries,
+        paperTrade: $paperTrades[0],
+        paperTrades: $paperTrades,
+        mt5SimTrade: $mt5Trades[0],
+        mt5SimTrades: $mt5Trades,
         limitations: [
-            (
+            (if $lifecycle == "single" then
                 "The operator flatten fill occurs after the bounded strategy replay window and " +
                 "is reconciled by the live result, not replayed as a strategy decision."
+             else
+                "The live re-entry capture includes strategy-owned close fills; replay comparison " +
+                "checks entry intent, fill, and adjusted protection parity for each entry and relies " +
+                "on the live result for per-ticket final-flat reconciliation."
+             end
             ),
             (
                 "Tick-resolved bars are unsupported for mixed-timeframe strategies because " +

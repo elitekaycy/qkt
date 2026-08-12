@@ -6,6 +6,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 script="$repo_root/scripts/live-validation/prepare-scenario.sh"
+cli="$repo_root/build/install/qkt/bin/qkt"
 out="$tmp/scenario"
 
 bash "$script" \
@@ -65,15 +66,20 @@ jq -e '
     .account.tradeMode == "demo" and .safety.maximumLots == "0.01" and
     (.readOnlyStreams | length) == 2 and
     .armedScenario.symbol == "EXNESS:EURUSD" and
+    .armedScenario.venueSymbol == "EURUSDm" and
     (.armedScenario.streams | map(.timeframe) == ["1m", "5m"]) and
     all(.armedScenario.streams[]; .symbol == "EXNESS:EURUSD") and
     all(.armedScenario.streams[]; .warmupBars == 10) and
+    .armedScenario.variant == "ema_cross" and
     .armedScenario.quantityLots == "0.01" and
     .armedScenario.maximumEntries == 1 and .armedScenario.maximumExits == 1 and
     .armedScenario.closeWhen == "position!=0 and tradesToday>=1 and holdingDurationSeconds>=1" and
     .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
     .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1 and
-    .armedScenario.maximumEntryAnchorDriftPoints == 20
+    .armedScenario.maximumEntryAnchorDriftPoints == 80 and
+    .armedScenario.expectedContractSize == "100000" and
+    .armedScenario.stopDistance == "0.0030" and
+    .armedScenario.takeProfitDistance == "0.0060"
 ' "$out/expected.json" >/dev/null
 jq -e '.credentialsStored == false and .executionState == "prepared" and (.qktDirty | type) == "boolean"' "$out/scenario.json" >/dev/null
 if grep -F './cleanup.json' "$out/SHA256SUMS" >/dev/null; then
@@ -98,10 +104,64 @@ grep -F 'asset1 = EXNESS:GBPUSD EVERY 1m WARMUP 10 BARS' "$gbp_armed" >/dev/null
 grep -F 'asset5 = EXNESS:GBPUSD EVERY 5m WARMUP 10 BARS' "$gbp_armed" >/dev/null
 jq -e '
     .armedScenario.symbol == "EXNESS:GBPUSD" and
+    .armedScenario.venueSymbol == "GBPUSDm" and
     (.armedScenario.streams | all(.symbol == "EXNESS:GBPUSD")) and
     (.readOnlyStreams | all(.symbol == "EXNESS:EURUSD"))
 ' "$gbp_out/expected.json" >/dev/null
 (cd "$gbp_out" && sha256sum --check SHA256SUMS >/dev/null)
+
+xau_out="$tmp/xau-scenario"
+bash "$script" \
+    --output "$xau_out" \
+    --id validation_xau \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917006 \
+    --symbol XAUUSD >/dev/null
+xau_armed="$xau_out/strategies/armed/validation_xau_market_bracket.qkt"
+grep -F 'asset1 = EXNESS:XAUUSD EVERY 1m WARMUP 10 BARS' "$xau_armed" >/dev/null
+grep -F 'asset5 = EXNESS:XAUUSD EVERY 5m WARMUP 10 BARS' "$xau_armed" >/dev/null
+grep -F 'max_order_notional: "10000"' "$xau_out/qkt.config.yaml" >/dev/null
+[ "$(grep -Fc 'STOP LOSS BY 3.000, TAKE PROFIT BY 6.000' "$xau_armed")" -eq 2 ]
+jq -e '
+    .armedScenario.symbol == "EXNESS:XAUUSD" and
+    .armedScenario.venueSymbol == "XAUUSDm" and
+    .armedScenario.expectedContractSize == "100" and
+    .armedScenario.stopDistance == "3.000" and
+    .armedScenario.takeProfitDistance == "6.000" and
+    (.armedScenario.streams | all(.symbol == "EXNESS:XAUUSD"))
+' "$xau_out/expected.json" >/dev/null
+(cd "$xau_out" && sha256sum --check SHA256SUMS >/dev/null)
+
+reentry_out="$tmp/reentry-scenario"
+bash "$script" \
+    --output "$reentry_out" \
+    --id validation_reentry \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917008 \
+    --symbol XAUUSD \
+    --lifecycle reentry >/dev/null
+reentry_armed="$reentry_out/strategies/armed/validation_reentry_market_bracket.qkt"
+[ "$(grep -Fc 'TRADES.today < 2' "$reentry_armed")" -eq 2 ]
+[ "$(grep -Fc 'TRADES.today = 0' "$reentry_armed")" -eq 0 ]
+grep -F 'max_trades_per_day: 2' "$reentry_out/qkt.config.yaml" >/dev/null
+grep -F 'max_round_trips_10m: 3' "$reentry_out/qkt.config.yaml" >/dev/null
+jq -e '
+    .safety.maximumTradesPerDay == 2 and
+    .armedScenario.lifecycle == "reentry" and
+    .armedScenario.maximumEntries == 2 and
+    .armedScenario.maximumExits == 2 and
+    (.armedScenario.closeWhen | contains("reentry allowed until tradesToday<2"))
+' "$reentry_out/expected.json" >/dev/null
+"$cli" parse "$reentry_armed" >/dev/null
+(cd "$reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
 
 if bash "$script" \
     --output "$tmp/unsupported-symbol" \
@@ -111,12 +171,12 @@ if bash "$script" \
     --expected-server Demo \
     --expected-balance 10000 \
     --expected-leverage 500 \
-    --magic 917006 \
+    --magic 917007 \
     --symbol USDJPY >"$tmp/unsupported-symbol.out" 2>&1; then
     echo 'expected unsupported armed symbol rejection' >&2
     exit 1
 fi
-grep -F -- '--symbol must be one of: EURUSD, GBPUSD' "$tmp/unsupported-symbol.out" >/dev/null
+grep -F -- '--symbol must be one of: EURUSD, GBPUSD, XAUUSD' "$tmp/unsupported-symbol.out" >/dev/null
 
 if bash "$script" \
     --output "$tmp/remote" \
@@ -160,7 +220,6 @@ if bash "$script" \
 fi
 grep -F 'must be greater than zero' "$tmp/zero.out" >/dev/null
 
-cli="$repo_root/build/install/qkt/bin/qkt"
 test -x "$cli"
 "$cli" parse "$out/strategies/readonly/validation_a01_bars_readonly.qkt" >/dev/null
 "$cli" parse "$out/strategies/armed/validation_a01_market_bracket.qkt" >/dev/null
@@ -173,14 +232,65 @@ bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$out" \
     --cli "$cli" \
     --verify-only >/dev/null
+bash "$repo_root/scripts/live-validation/run-market-bracket.sh" --help | grep -F '/var/tmp/qkt-validation/LIVE-LOCK-<server>-<login>' >/dev/null
 if rg --quiet '\$cli" status .*--json' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner passes unsupported --json to qkt status' >&2
     exit 1
 fi
 grep -F 'com.qkt.events.BrokerEvent.OrderAccepted' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'com.qkt.events.BrokerEvent.OrderFilled' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'source "$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'dsl_symbol="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'venue_symbol="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'gateway_get "/symbol_info/$venue_symbol"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'gateway_get "/symbol_info_tick/$venue_symbol"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'expected_contract_size="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'lifecycle="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'expected_entries="$(jq -r ' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'wait_for_open_cycle() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'wait_for_flat_cycle() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'positionTickets:($tickets | map(.ticket))' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F ".counts.linkedPlacements >= '\"\$expected_entries\"'" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '.trade_contract_size == ($expectedContractSize | tonumber)' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '"$cli" --version' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '"$cli" bot bars "$dsl_symbol" --tf "$tf" --count 3 --config "$config" --json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'wait_for_startup_window() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'wait_for_history_ready() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'wait_for_fresh_tick_after_daemon() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'qkt_catalog_startup_delay_ms "$phase_ms"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'status:"entered"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'tickInvalid: (' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'missing-or-zero-timestamp' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'missing-or-zero-price' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'status:"invalid"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'validObservations' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'invalidReason' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'future-tick-clock-skew' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'stale-tick' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'wait_for_startup_window' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'tick did not become fresh enough after daemon startup' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F "risk rejected .*market data .*unhealthy" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '"$cli" bot close "$dsl_symbol"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '"$cli" bot cancel "$dsl_symbol"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '.data[0].type == 0 or .data[0].type == 1' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '.data[0].type == 1 and .data[0].sl > .data[0].price_open and .data[0].tp < .data[0].price_open' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '($comment | startswith($strategyPrefix)) or' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '($strategyPrefix | startswith($comment))' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F "halt \(operator kill\):" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'stale_log="$evidence/daemon-pre-halt.log"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'command -v flock >/dev/null || fail "flock is required for armed live runs"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'exec {live_lock_fd}> "$live_lock_path"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'flock -n "$live_lock_fd"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'cp "$live_lock_path" "$evidence/live-lock.txt"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'if $live_lock_acquired; then' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 if rg --quiet 'Order(Accepted|Filled)Event' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner uses obsolete broker audit event names' >&2
+    exit 1
+fi
+if rg --quiet 'EXNESS:EURUSD|EURUSDm' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
+    echo 'order runner still hardcodes EURUSD instead of using the scenario symbol' >&2
     exit 1
 fi
 grep -F "|| printf '0\\n'" "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
@@ -234,6 +344,18 @@ comparison_script="$repo_root/scripts/live-validation/compare-golden-replay.sh"
 bash -n "$comparison_script"
 bash "$comparison_script" --help | grep -F 'full-tick and plain-bar replay evidence' >/dev/null
 grep -F 'liveInitialProtectionMatchesCanonicalIntent: true' "$comparison_script" >/dev/null
+grep -F 'expected_entries="$(jq -er' "$comparison_script" >/dev/null
+grep -F 'lifecycle="$(jq -er' "$comparison_script" >/dev/null
+grep -F '.global.tradeCount == $expectedEntries' "$comparison_script" >/dev/null
+grep -F 'trades_json() {' "$comparison_script" >/dev/null
+grep -F 'full-ticks-paper-trades.json' "$comparison_script" >/dev/null
+grep -F 'live-entries.json' "$comparison_script" >/dev/null
+grep -F 'liveEntries: $liveEntries' "$comparison_script" >/dev/null
+grep -F 'paperTrades: $paperTrades' "$comparison_script" >/dev/null
+grep -F 'mt5SimTrades: $mt5Trades' "$comparison_script" >/dev/null
+grep -F '($lifecycle == "reentry" and .strategyOwnedLifecycle == true)' "$comparison_script" >/dev/null
+grep -F 'expectedEntries: $expectedEntries' "$comparison_script" >/dev/null
+grep -F 'all(range(0; $expectedEntries); . as $i |' "$comparison_script" >/dev/null
 if rg --quiet 'run_replay tick-resolved|--tick-fills' "$comparison_script"; then
     echo 'legacy comparator invokes unsupported tick-resolved bars' >&2
     exit 1

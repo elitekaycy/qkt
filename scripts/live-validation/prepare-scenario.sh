@@ -7,10 +7,14 @@ usage() {
     cat <<'EOF'
 Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
-  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD]
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
+  [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
+  [--lifecycle single|reentry]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
-  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD]
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
+  [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
+  [--lifecycle single|reentry]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
 be an explicit 127.0.0.1 HTTP endpoint. Credentials are never accepted as arguments;
@@ -35,6 +39,8 @@ expected_balance=""
 expected_leverage=""
 magic=""
 symbol="EURUSD"
+variant="ema_cross"
+lifecycle="single"
 runtime_account_identity=false
 
 while [ "$#" -gt 0 ]; do
@@ -48,6 +54,8 @@ while [ "$#" -gt 0 ]; do
         --expected-leverage) expected_leverage="${2:-}"; shift 2 ;;
         --magic) magic="${2:-}"; shift 2 ;;
         --symbol) symbol="${2:-}"; shift 2 ;;
+        --variant) variant="${2:-}"; shift 2 ;;
+        --lifecycle) lifecycle="${2:-}"; shift 2 ;;
         --runtime-account-identity) runtime_account_identity=true; shift ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
@@ -78,8 +86,44 @@ fi
 [[ "$magic" =~ ^[1-9][0-9]*$ ]] || fail "--magic must be a positive integer"
 [ "$magic" -le 2147483647 ] || fail "--magic must fit a signed 32-bit integer"
 case "$symbol" in
-    EURUSD|GBPUSD) ;;
-    *) fail "--symbol must be one of: EURUSD, GBPUSD" ;;
+    EURUSD|GBPUSD)
+        max_order_notional="2500"
+        stop_distance="0.0030"
+        take_profit_distance="0.0060"
+        expected_contract_size="100000"
+        ;;
+    XAUUSD)
+        max_order_notional="10000"
+        stop_distance="3.000"
+        take_profit_distance="6.000"
+        expected_contract_size="100"
+        ;;
+    *) fail "--symbol must be one of: EURUSD, GBPUSD, XAUUSD" ;;
+esac
+case "$variant" in
+    ema_cross|rsi_reversion|atr_channel|case_math) ;;
+    *) fail "--variant must be one of: ema_cross, rsi_reversion, atr_channel, case_math" ;;
+esac
+case "$lifecycle" in
+    single)
+        max_trades_per_day=1
+        entry_trade_guard="TRADES.today = 0"
+        close_trade_guard="TRADES.today >= 1"
+        maximum_entries=1
+        maximum_exits=1
+        max_round_trips_10m=2
+        close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1"
+        ;;
+    reentry)
+        max_trades_per_day=2
+        entry_trade_guard="TRADES.today < 2"
+        close_trade_guard="TRADES.today >= 1"
+        maximum_entries=2
+        maximum_exits=2
+        max_round_trips_10m=3
+        close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; reentry allowed until tradesToday<2"
+        ;;
+    *) fail "--lifecycle must be one of: single, reentry" ;;
 esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
@@ -144,12 +188,12 @@ $account_config
 risk:
   max_daily_loss: "25"
   max_order_qty: "0.01"
-  max_order_notional: "2500"
+  max_order_notional: "$max_order_notional"
   price_collar_pct: "1"
   margin_floor_pct: "500"
   measured_usage_hours: "720"
   measured_usage_max_qty: "0.01"
-  max_round_trips_10m: 2
+  max_round_trips_10m: $max_round_trips_10m
   max_broker_rejections_1m: 2
   max_drawdown_pct: "0.5"
   max_daily_drawdown_pct: "0.25"
@@ -159,7 +203,7 @@ risk:
       max_daily_loss: "10"
       max_position_size: "0.01"
       max_open_positions: 1
-      max_trades_per_day: 1
+      max_trades_per_day: $max_trades_per_day
       max_drawdown_pct: "0.25"
       max_daily_drawdown_pct: "0.10"
 
@@ -209,21 +253,79 @@ STRATEGY ${scenario_id}_market_bracket VERSION 1
 SYMBOLS
     asset1 = EXNESS:$symbol EVERY 1m WARMUP 10 BARS,
     asset5 = EXNESS:$symbol EVERY 5m WARMUP 10 BARS
+EOF
+
+case "$variant" in
+    ema_cross)
+        armed_indicators_json='["ema(1m,3)", "ema(1m,5)", "ema(5m,3)", "ema(5m,5)"]'
+        armed_score='(m1_fast-m1_slow)+(m5_fast-m5_slow)'
+        armed_buy_when='score>=0'
+        armed_sell_when='score<0'
+        cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
 
 LET m1_fast = ema(asset1.close, 3),
     m1_slow = ema(asset1.close, 5),
     m5_fast = ema(asset5.close, 3),
     m5_slow = ema(asset5.close, 5),
     score = (m1_fast - m1_slow) + (m5_fast - m5_slow)
+EOF
+        ;;
+    rsi_reversion)
+        armed_indicators_json='["rsi(1m,5)", "sma(1m,5)", "rsi(5m,5)", "sma(5m,5)"]'
+        armed_score='((50-m1_fast)+(m1_slow-asset1.close))+((50-m5_fast)+(m5_slow-asset5.close))'
+        armed_buy_when='score>=0'
+        armed_sell_when='score<0'
+        cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
+
+LET m1_fast = rsi(asset1.close, 5),
+    m1_slow = sma(asset1.close, 5),
+    m5_fast = rsi(asset5.close, 5),
+    m5_slow = sma(asset5.close, 5),
+    score = ((50 - m1_fast) + (m1_slow - asset1.close)) + ((50 - m5_fast) + (m5_slow - asset5.close))
+EOF
+        ;;
+    atr_channel)
+        armed_indicators_json='["atr(1m,5)", "ema(1m,5)", "atr(5m,5)", "ema(5m,5)"]'
+        armed_score='((asset1.close-m1_slow)+(asset5.close-m5_slow))+(m1_fast-m5_fast)'
+        armed_buy_when='score>=0'
+        armed_sell_when='score<0'
+        cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
+
+LET m1_fast = atr(asset1, 5),
+    m1_slow = ema(asset1.close, 5),
+    m5_fast = atr(asset5, 5),
+    m5_slow = ema(asset5.close, 5),
+    score = ((asset1.close - m1_slow) + (asset5.close - m5_slow)) + (m1_fast - m5_fast)
+EOF
+        ;;
+    case_math)
+        armed_indicators_json='["round_to(1m close,0.0001)", "lag(1m close,1)", "highest(5m,5)", "lowest(5m,5)"]'
+        armed_score='signed_m1_delta+signed_m5_bias'
+        armed_buy_when='score>=0'
+        armed_sell_when='score<0'
+        cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<'EOF'
+
+LET m1_fast = round_to(asset1.close, 0.0001),
+    m1_slow = lag(asset1.close, 1),
+    m5_fast = highest(asset5.close, 5),
+    m5_slow = lowest(asset5.close, 5),
+    signed_m1_delta = CASE WHEN m1_fast >= m1_slow THEN abs(m1_fast - m1_slow) ELSE -abs(m1_fast - m1_slow) END,
+    signed_m5_bias = CASE WHEN asset5.close >= ((m5_fast + m5_slow) / 2) THEN 1 ELSE -1 END,
+    score = signed_m1_delta + signed_m5_bias
+EOF
+        ;;
+esac
+
+cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<EOF
 
 RULES
     WHEN score IS NOT NULL
      AND score >= 0
      AND POSITION.asset1 = 0
      AND OPEN_ORDERS.asset1 = 0
-     AND TRADES.today = 0
+     AND $entry_trade_guard
     THEN BUY asset1 SIZING 0.01
-         BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 }
+         BRACKET { STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance }
          ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} m5_fast={m5_fast} m5_slow={m5_slow} close={bar_close}"
              side="BUY" score=score m1_fast=m1_fast m1_slow=m1_slow m5_fast=m5_fast m5_slow=m5_slow bar_close=asset1.close
 
@@ -231,14 +333,14 @@ RULES
      AND score < 0
      AND POSITION.asset1 = 0
      AND OPEN_ORDERS.asset1 = 0
-     AND TRADES.today = 0
+     AND $entry_trade_guard
     THEN SELL asset1 SIZING 0.01
-         BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 }
+         BRACKET { STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance }
          ; LOG "bounded indicator entry side={side} score={score} m1_fast={m1_fast} m1_slow={m1_slow} m5_fast={m5_fast} m5_slow={m5_slow} close={bar_close}"
              side="SELL" score=score m1_fast=m1_fast m1_slow=m1_slow m5_fast=m5_fast m5_slow=m5_slow bar_close=asset1.close
 
     WHEN POSITION.asset1 != 0
-     AND TRADES.today >= 1
+     AND $close_trade_guard
      AND POSITION.asset1.holding_duration >= 1
     THEN CLOSE asset1
          ; LOG "bounded indicator exit signed_qty={signed_qty} holding_seconds={holding_seconds} close={bar_close}"
@@ -260,9 +362,9 @@ $account_identity_metadata
     "gatewayUrl": "$gateway_url",
     "maximumLots": "0.01",
     "maximumOpenPositions": 1,
-    "maximumTradesPerDay": 1,
-    "stopDistance": "0.0030",
-    "takeProfitDistance": "0.0060",
+    "maximumTradesPerDay": $max_trades_per_day,
+    "stopDistance": "$stop_distance",
+    "takeProfitDistance": "$take_profit_distance",
     "requiredInitialOwnership": "reconciled",
     "requiredFinalPositions": 0,
     "requiredFinalOrders": 0
@@ -273,24 +375,28 @@ $account_identity_metadata
   ],
   "armedScenario": {
     "strategy": "${scenario_id}_market_bracket",
+    "variant": "$variant",
+    "lifecycle": "$lifecycle",
     "symbol": "EXNESS:$symbol",
+    "venueSymbol": "${symbol}m",
+    "expectedContractSize": "$expected_contract_size",
     "streams": [
       {"symbol": "EXNESS:$symbol", "timeframe": "1m", "warmupBars": 10},
       {"symbol": "EXNESS:$symbol", "timeframe": "5m", "warmupBars": 10}
     ],
-    "indicators": ["ema(1m,3)", "ema(1m,5)", "ema(5m,3)", "ema(5m,5)"],
-    "score": "(m1_fast-m1_slow)+(m5_fast-m5_slow)",
-    "buyWhen": "score>=0",
-    "sellWhen": "score<0",
+    "indicators": $armed_indicators_json,
+    "score": "$armed_score",
+    "buyWhen": "$armed_buy_when",
+    "sellWhen": "$armed_sell_when",
     "quantityLots": "0.01",
-    "maximumEntries": 1,
-    "maximumExits": 1,
-    "closeWhen": "position!=0 and tradesToday>=1 and holdingDurationSeconds>=1",
+    "maximumEntries": $maximum_entries,
+    "maximumExits": $maximum_exits,
+    "closeWhen": "$close_when",
     "exitTimeframe": "1m",
     "minimumHoldingSeconds": 1,
-    "maximumEntryAnchorDriftPoints": 20,
-    "stopDistance": "0.0030",
-    "takeProfitDistance": "0.0060"
+    "maximumEntryAnchorDriftPoints": 80,
+    "stopDistance": "$stop_distance",
+    "takeProfitDistance": "$take_profit_distance"
   }
 }
 EOF
