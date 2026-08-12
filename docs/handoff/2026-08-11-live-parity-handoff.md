@@ -1287,10 +1287,22 @@ slice:
 2. Treat the retained `margin-floor` localhost proof as sealed upstream proof, not an open harness
    contract gap:
    `/var/tmp/qkt-validation/margin-floor-20260811T171226Z-live-thin/evidence/result.json`
-3. Use the next active live slice to prove QKT Insights exact delivery, retry recovery, and strict
-   strategy/book attribution from the existing runner contract in
-   [run-insights-attribution.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-insights-attribution.sh).
-4. Expand from the already-proven first bounded concurrency proof into broader same-account
+3. Treat the two-symbol shared-account QKT Insights live slice as sealed for exact delivery,
+   producer-local sequence restart tolerance, strict per-instance/per-strategy attribution, and
+   live-to-replay parity:
+   - live wrapper:
+     `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-live/evidence/result.json`
+   - base live order proof:
+     `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-live/base-roundtrip/evidence/result.json`
+   - EURUSD replay:
+     `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-eurusd-replay/result.json`
+   - GBPUSD replay:
+     `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-gbpusd-replay/result.json`
+4. Use the existing runner contract in
+   [run-insights-attribution.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-insights-attribution.sh)
+   only for any remaining single-instance Insights retry/delivery edges not already covered by the
+   shared-account wrapper's causal ingest probe and live retained state.
+5. Expand from the already-proven first bounded concurrency proof into broader same-account
    multi-strategy and multi-book isolation/reconciliation on one MT5 account, while keeping the
    second local demo account available as an independent lane for unrelated armed runs.
    The first new harness for that slice now exists in
@@ -1298,16 +1310,17 @@ slice:
    it wraps the proven two-container live round-trip runner with a local Insights collector,
    enforces the `/healthz` plus causal-ingest contract before any broker mutation, and verifies
    per-instance/per-strategy order and deal attribution after the shared-account live pass.
-   As of Tuesday, August 11, 2026, that wrapper is shell-tested but not yet backed by retained
-   real-demo evidence.
-5. Before every new armed live pass, prepare the scenario from the current account snapshot and use
+   As of Wednesday, August 12, 2026, that wrapper is backed by retained real-demo evidence on
+   demo2.
+6. Before every new armed live pass, prepare the scenario from the current account snapshot and use
    the lock-enforcing
    [run-market-bracket.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-market-bracket.sh)
    contract, which acquires `flock` on `/var/tmp/qkt-validation/LIVE-LOCK-<server>-<login>`.
-6. Treat demo2 as the second ready independent lane. As of Tuesday, August 11, 2026, login
-   `476434211` was observed at balance `99999.80` and leverage `1000`, so any new prepared
-   scenario on `http://127.0.0.1:5002` must refresh from that live state first.
-7. Extend the exhaustive matrix in this priority order:
+7. Treat demo2 as the second ready independent lane. On Wednesday, August 12, 2026, login
+   `476434211` was used for the shared-account Insights proof at starting balance `99999.52` and
+   leverage `1000`; any new prepared scenario on `http://127.0.0.1:5002` must refresh from the
+   latest live account snapshot first.
+8. Extend the exhaustive matrix in this priority order:
    - Insights attribution and same-account strategy/book isolation;
    - broader order families and lifecycle paths beyond the first bounded bracket cases;
    - explicit already-deployed, restart, reconnect, and resynchronization slices;
@@ -1774,13 +1787,16 @@ Current status for this slice:
 
 - implemented: yes
 - exercised live: yes
-- clean retained `result.json`: not yet
-- next action: wait for an active tick window, then run one clean live rerun with the hardened
-  runner; do not arm into known-stale EURUSD/GBPUSD conditions.
+- clean retained `result.json`: yes
+- replay compared: yes, both retained live captures passed `full-ticks-paper`, `full-ticks-mt5`,
+  and `bars-paper`
+- next action: commit or PR the qkt-insights attribution fixes after explicit user approval, then
+  move to broader same-account isolation, order-family lifecycle, re-entry/risk-gated re-entry, and
+  higher-timeframe warmup/bar coverage.
 
 ## Current Next Work Queue
 
-This is the source-of-truth order for the next stage as of Tuesday, August 11, 2026.
+This is the source-of-truth order for the next stage as of Wednesday, August 12, 2026.
 
 ### Immediate Live-Parity Work
 
@@ -1788,26 +1804,20 @@ This is the source-of-truth order for the next stage as of Tuesday, August 11, 2
    passed after the expected-contract, startup-window, and tick-freshness gate fixes:
    - `tests/scripts/run-container-round-trips-test.sh`
    - `tests/scripts/run-shared-account-insights-round-trips-test.sh`
-2. Finish the QKT Insights attribution/contract fix:
-   - verify full `qkt-insights` build and test suite after the latest `bot.close` contract update;
-   - rebuild the local validation Insights image;
-   - rerun the Insights collector smoke with causal decision/fill events, `bot.close`, local deals,
-     and foreign/shared-account deal filtering.
-3. Prepare fresh shared-account live scenarios with unique strategy IDs and magic numbers so old MT5
-   demo-account history cannot pollute attribution checks.
-4. Run the shared-account QKT Insights live round trip again through the real localhost MT5 gateway:
+2. QKT Insights attribution/contract fix is verified locally but not committed in qkt-insights yet:
+   - `pnpm build:all && pnpm test` passed with `196` tests across `19` files;
+   - local no-cache validation image
+     `qkt-insights:validation-live-state-attribution-20260812` passed the collector smoke;
+   - qkt-insights source changes still require explicit user approval before commit.
+3. Shared-account QKT Insights live round trip is sealed on demo2:
    - two real temporary QKT strategies;
    - real risk config and bracket config;
    - live ticks, M1 bars, M5 bars, warmup evidence, rule decisions, order links, fills, accounting,
      and cleanup;
    - final account flat, zero pending orders;
-   - retained QKT Insights state scoped by strategy/book, not account-wide bleed-through.
-5. Replay the retained live captures through supported replay modes and compare:
-   - full-ticks paper;
-   - full-ticks MT5 simulation;
-   - supported bars replay;
-   - unsupported/unsafe modes must be recorded as explicit limitations, not silently treated as pass.
-6. If any real bug is found, apply the fix to source, add focused regression coverage, rebuild, rerun
+   - retained QKT Insights state scoped by strategy/book, not account-wide bleed-through;
+   - replay comparisons passed for both retained live captures.
+4. If any real bug is found in the remaining matrix, apply the fix to source, add focused regression coverage, rebuild, rerun
    the failed slice, and update this handoff with both the failure evidence and the fixed evidence.
 7. Add explicit re-entry coverage before promotion:
    - allowed re-entry after a completed position when the indicator/DSL condition becomes true
