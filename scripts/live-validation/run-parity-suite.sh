@@ -92,10 +92,18 @@ for scenario in "${cases[@]}"; do
     bash "$readonly_runner" --scenario "$scenario" --cli "$cli" --verify-only >/dev/null
     if ! $verify_only; then
         bash "$readonly_runner" --scenario "$scenario" --cli "$cli" >/dev/null
-        bash "$armed_runner" --scenario "$scenario" --cli "$cli" \
+        armed_scenario="$scenario/armed-live"
+        mkdir -m 700 "$armed_scenario" "$armed_scenario/evidence" "$armed_scenario/logs" "$armed_scenario/state"
+        cp "$scenario/expected.json" "$scenario/qkt.config.yaml" "$scenario/scenario.json" "$scenario/cleanup.json" "$armed_scenario/"
+        cp -a "$scenario/strategies" "$armed_scenario/strategies"
+        (
+            cd "$armed_scenario"
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+        )
+        bash "$armed_runner" --scenario "$armed_scenario" --cli "$cli" \
             --arm "$arm" >/dev/null
-        bash "$replay_runner" --scenario "$scenario" \
-            --out "$scenario/replay" --cli "$cli" >/dev/null
+        bash "$replay_runner" --scenario "$armed_scenario" \
+            --out "$armed_scenario/replay" --cli "$cli" >/dev/null
     else
         bash "$armed_runner" --scenario "$scenario" --cli "$cli" --verify-only >/dev/null
     fi

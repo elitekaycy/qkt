@@ -68,6 +68,10 @@ gateway_url="${gateway_url%/}"
 [ -x "$cli" ] || fail "QKT CLI is not executable: $cli"
 [ ! -e "$output" ] || fail "output already exists: $output"
 
+runtime_version="$($cli --version)"
+runtime_sha="$(printf '%s\n' "$runtime_version" | sed -nE 's/.*\(([0-9a-f]{8,40})\).*/\1/p')"
+[[ "$runtime_sha" =~ ^[0-9a-f]{8,40}$ ]] || fail "could not determine the runtime CLI commit from --version"
+
 output="$(realpath -m "$output")"
 git_sha="$(git -C "$repo_root" rev-parse HEAD)"
 
@@ -94,6 +98,7 @@ for index in 0 1 2 3; do
         --expected-balance "$expected_balance" \
         --expected-leverage "$expected_leverage" \
         --magic "$magic" \
+        --qkt-commit "$runtime_sha" \
         --ema-fast "$ema_fast" --ema-slow "$ema_slow" \
         --symbol "$symbol" \
         --variant "$variant" \
@@ -103,7 +108,7 @@ done
 jq -n \
     --arg suiteId "$suite_id" \
     --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg qktCommit "$git_sha" \
+    --arg qktCommit "$runtime_sha" \
     --arg gatewayUrl "$gateway_url" \
     --argjson login "$expected_login" \
     --arg server "$expected_server" \
