@@ -156,6 +156,23 @@ fi
 stop_distance="$(jq -er '.armedScenario.stopDistance' "$expected")"
 take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$expected")"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
+expected_symbol="$(jq -er '.armedScenario.symbol' "$expected")"
+venue_symbol="$(jq -er '.armedScenario.venueSymbol' "$expected")"
+expected_contract_size="$(jq -er '.armedScenario.expectedContractSize' "$expected")"
+maximum_execution_drift_points="$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "$expected")"
+case "$expected_symbol:$venue_symbol:$expected_contract_size:$maximum_execution_drift_points" in
+    EXNESS:EURUSD:EURUSDm:100000:80|EXNESS:GBPUSD:GBPUSDm:100000:80)
+        symbol_point="0.00001"
+        ;;
+    EXNESS:XAUUSD:XAUUSDm:100:1000)
+        symbol_point="0.001"
+        ;;
+    *)
+        fail "scenario is not in the reviewed live-vs-replay drift set: $expected_symbol/$venue_symbol"
+        ;;
+esac
+execution_price_drift_limit="$(awk -v point="$symbol_point" -v maxPoints="$maximum_execution_drift_points" \
+    'BEGIN {printf "%.8f", point * maxPoints}')"
 source_sha="$(sha256sum "$bundle" | awk '{print $1}')"
 [ "$source_sha" = "$(jq -er '.golden.sha256' "$live_result")" ] || fail "golden bundle hash does not match live result"
 cmp -s "$external_manifest" <(unzip -p "$bundle" manifest.json) ||
@@ -408,7 +425,25 @@ mt5_fill_exact="$(jq -n --argjson mt5 "$mt5_trades" --argjson live "$live_entrie
     def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
     all(range(0; $expectedEntries); . as $i | near($mt5[$i].price; $live[$i].fill.price))
 ')"
-fill_price_deltas="$(jq -cn --argjson mt5 "$mt5_trades" --argjson live "$live_entries" --argjson expectedEntries "$comparison_entries" '
+mt5_fill_within_reviewed_drift="$(jq -n \
+    --argjson mt5 "$mt5_trades" \
+    --argjson live "$live_entries" \
+    --argjson expectedEntries "$comparison_entries" \
+    --arg priceDriftLimit "$execution_price_drift_limit" '
+    def absval: if . < 0 then - . else . end;
+    ($priceDriftLimit | tonumber) as $limit |
+    all(range(0; $expectedEntries); . as $i |
+        ((($live[$i].fill.price | tonumber) - ($mt5[$i].price | tonumber)) | absval) <= $limit)
+')"
+[ "$mt5_fill_within_reviewed_drift" = "true" ] ||
+    fail "live fill price differs from MT5 simulation beyond reviewed execution drift"
+fill_price_deltas="$(jq -cn \
+    --argjson mt5 "$mt5_trades" \
+    --argjson live "$live_entries" \
+    --argjson expectedEntries "$comparison_entries" \
+    --arg symbolPoint "$symbol_point" \
+    --arg priceDriftLimit "$execution_price_drift_limit" \
+    --argjson maximumExecutionDriftPoints "$maximum_execution_drift_points" '
     [
         range(0; $expectedEntries) as $i |
         {
@@ -416,7 +451,11 @@ fill_price_deltas="$(jq -cn --argjson mt5 "$mt5_trades" --argjson live "$live_en
             side: $live[$i].fill.side,
             liveFillPrice: $live[$i].fill.price,
             mt5SimFillPrice: $mt5[$i].price,
-            delta: ((($live[$i].fill.price | tonumber) - ($mt5[$i].price | tonumber)) | tostring)
+            delta: ((($live[$i].fill.price | tonumber) - ($mt5[$i].price | tonumber)) | tostring),
+            driftPoints: (((($live[$i].fill.price | tonumber) - ($mt5[$i].price | tonumber)) / ($symbolPoint | tonumber)) | tostring),
+            symbolPoint: $symbolPoint,
+            maximumExecutionDriftPoints: $maximumExecutionDriftPoints,
+            priceDriftLimit: $priceDriftLimit
         }
     ]
 ')"
@@ -447,6 +486,7 @@ jq -n \
     --argjson liveEntries "$live_entries" \
     --argjson paperTrades "$paper_trades" \
     --argjson mt5FillExact "$mt5_fill_exact" \
+    --argjson mt5FillWithinReviewedDrift "$mt5_fill_within_reviewed_drift" \
     --argjson fillPriceDeltas "$fill_price_deltas" \
     --argjson mt5Trades "$mt5_trades" '
     {
@@ -478,7 +518,8 @@ jq -n \
             liveInitialProtectionMatchesCanonicalIntent: true,
             liveAdjustedProtectionMatchesCapturedBrokerFill: true,
             mt5SimulationUsesSameCanonicalIntent: true,
-            liveFillAndAdjustedProtectionMatchMt5Simulation: $mt5FillExact
+            liveFillAndAdjustedProtectionMatchMt5SimulationExact: $mt5FillExact,
+            liveFillAndAdjustedProtectionWithinReviewedDrift: $mt5FillWithinReviewedDrift
         },
         fillPriceDeltas: $fillPriceDeltas,
         liveEntry: $liveEntries[0],
@@ -489,8 +530,8 @@ jq -n \
         mt5SimTrades: $mt5Trades,
         limitations: [
             (if $lifecycle == "single" then
-                "The operator flatten fill occurs after the bounded strategy replay window and " +
-                "is reconciled by the live result, not replayed as a strategy decision."
+                "Single lifecycle now requires the strategy-owned close to be captured and replayed; " +
+                "operator flatten is only an emergency cleanup path and is not accepted as parity evidence."
              elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_global_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak" then
                 "The live blocked re-entry capture includes one strategy-owned close and a " +
                 "pre-transport " + $blockedReason + " rejection for the next entry; " +

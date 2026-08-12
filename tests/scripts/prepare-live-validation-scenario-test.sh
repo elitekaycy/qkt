@@ -728,7 +728,10 @@ grep -F 'liveInitialProtectionMatchesCanonicalIntent: true' "$comparison_script"
 grep -F 'liveAdjustedProtectionMatchesCapturedBrokerFill: true' "$comparison_script" >/dev/null
 grep -F 'mt5SimulationUsesSameCanonicalIntent: true' "$comparison_script" >/dev/null
 grep -F 'fillPriceDeltas: $fillPriceDeltas' "$comparison_script" >/dev/null
-grep -F 'liveFillAndAdjustedProtectionMatchMt5Simulation: $mt5FillExact' "$comparison_script" >/dev/null
+grep -F 'liveFillAndAdjustedProtectionMatchMt5SimulationExact: $mt5FillExact' "$comparison_script" >/dev/null
+grep -F 'liveFillAndAdjustedProtectionWithinReviewedDrift: $mt5FillWithinReviewedDrift' "$comparison_script" >/dev/null
+grep -F 'live fill price differs from MT5 simulation beyond reviewed execution drift' "$comparison_script" >/dev/null
+grep -F 'Single lifecycle now requires the strategy-owned close to be captured and replayed' "$comparison_script" >/dev/null
 grep -F 'expected_entries="$(jq -er' "$comparison_script" >/dev/null
 grep -F 'expected_exits="$(jq -er' "$comparison_script" >/dev/null
 grep -F 'expected_lifecycle_events=$((expected_entries + expected_exits))' "$comparison_script" >/dev/null
