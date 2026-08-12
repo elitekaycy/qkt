@@ -2865,6 +2865,23 @@ bash tests/scripts/prepare-higher-timeframe-warmup-test.sh
 ./gradlew installDist -Pkotlin.compiler.execution.strategy=daemon
 ```
 
+Additional generated/backtest/live-paper parity verification:
+
+```bash
+./gradlew test --tests com.qkt.dsl.compile.HigherTimeframeWarmupParityTest -Pkotlin.compiler.execution.strategy=daemon
+```
+
+The targeted parity test passed all nine retained warmup cases from
+`src/test/kotlin/com/qkt/dsl/compile/HigherTimeframeWarmupParityTest.kt`:
+
+- `warmup_15m_one_hour`, `warmup_15m_one_day`, `warmup_15m_two_days`.
+- `warmup_1h_one_hour`, `warmup_1h_one_day`, `warmup_1h_two_days`.
+- `warmup_4h_four_hours`, `warmup_4h_one_day`, `warmup_4h_two_days`.
+
+For each case the test compiles an explicit DSL stream warmup, verifies the compiled
+`PerStreamWarmable` count/window, verifies `bars * 4` generated warmup ticks, then compares
+backtest and live-paper snapshots after the same warmup stream is seeded.
+
 Retained live evidence:
 
 - Scenario:
@@ -2908,8 +2925,8 @@ Live result summary:
 Scope and remaining work:
 
 - This seals fast live gateway closed-bar availability/alignment for M15/H1/H4 warmup ranges.
-- It does not replace full daemon strategy execution, order-path proof, or replay/backtest comparison
-  for higher-timeframe strategies.
-- Remaining higher-timeframe promotion blockers are: generated/backtest parity for the same matrix,
-  at least one daemon strategy using these higher-TF bars, and retained live-vs-backtest comparison
-  for that strategy path.
+- Generated/backtest/live-paper parity for the same M15/H1/H4 warmup matrix is covered by
+  `HigherTimeframeWarmupParityTest`.
+- Remaining higher-timeframe promotion blockers are: at least one daemon strategy using these
+  higher-TF bars, full order-path proof for that strategy, and retained live-vs-backtest comparison
+  for the daemon strategy path.
