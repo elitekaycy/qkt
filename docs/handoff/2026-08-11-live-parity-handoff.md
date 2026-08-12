@@ -30,9 +30,12 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 144`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 147`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `docs(docs): seal loss-streak reentry live evidence`
+  - `feat(scripts): add loss-streak reentry live lifecycle`
+  - `docs(docs): seal cooldown reentry live evidence`
   - `feat(scripts): add cooldown reentry live lifecycle`
   - `test(risk): cover portfolio book exposure recovery`
   - `docs(docs): seal margin floor recovery status`
@@ -677,6 +680,53 @@ Important implementation note:
   had already elapsed and correctly opened instead of rejecting. The reviewed lifecycle therefore
   uses a 90-second cooldown so the next 1m signal proves the blocked state before recovery.
 
+### Active-Symbol XAUUSD Loss-Streak Halt Live/Replay Extension
+
+Fresh retained evidence now exists for the first real order-bearing loss-streak halt blocked
+re-entry slice:
+
+- clean proving worktree:
+  `/var/tmp/qkt-live-head-5cdfe826-20260812T035920Z`
+- scenario:
+  `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z`
+- live result:
+  `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z/evidence/result.json`
+- successful replay comparison:
+  `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z-replay/result.json`
+
+What this clean pass proved on Wednesday, August 12, 2026:
+
+- `prepare-scenario.sh --symbol XAUUSD --lifecycle reentry_blocked_loss_streak` emitted a clean,
+  credential-free scenario at `qktCommit c8c95ff40bfe11dfc631241443aaf574c858fe6e` with
+  `qktDirty:false`;
+- demo2 was checked immediately before arming and was healthy, current, flat, tradeable, and at
+  balance/equity `99996.94` with leverage `1000`;
+- the generated strategy left trade count open with `TRADES.today < 2`, while risk configured
+  per-strategy `loss_streak_halt: "1"` and `loss_streak_halt_scope: persistent`, so the second
+  entry attempt could only be blocked by the loss-streak gate;
+- the live run opened one real `0.01`-lot XAUUSDm BUY under magic `938503` at broker position ticket
+  `3074012747`, then closed it strategy-owned by SELL;
+- the close realized `-1.29`, arming `LossStreakHalt[validation_loss_streak_live_market_bracket]`;
+- the next qualifying BUY signal was rejected before transport with
+  `risk rejected ... halted: LossStreakHalt[validation_loss_streak_live_market_bracket]: 1 consecutive losses, max 1`;
+- retained transport evidence shows `orderPosts:1` and `closePosts:1`, proving the blocked second
+  signal did not reach the gateway;
+- retained live evidence was non-vacuous: `ticks:119`, `warmupTicks:80`, `candles:13`, `fills:2`,
+  `gatewayExchanges:315`, and `linkedPlacements:1`;
+- retained audit evidence included `acceptedEvents:2`, `filledEvents:2`, and `riskRejections:1`;
+- final venue reconciliation returned `finalPositions:0` and `finalOrders:0`; balance delta
+  `-1.29` matched owned deal net `-1.29`;
+- replay passed with `fullTickOrderJournalsByteExact:true`,
+  `barsOrdersTimestampNormalizedExact:true`, `liveInitialProtectionMatchesCanonicalIntent:true`,
+  `liveAdjustedProtectionMatchesCapturedBrokerFill:true`, `mt5SimulationUsesSameCanonicalIntent:true`,
+  and `liveFillAndAdjustedProtectionMatchMt5Simulation:true`.
+
+Important limitation:
+
+- this seals the real order-bearing loss-streak halt block after a real losing trade. It does not
+  seal a later live loss-streak reset after a winning trade; keep that exact reset lifecycle open
+  unless a deterministic retained fixture is added for it.
+
 ### Sustained Read-Only Load And Restart Certification
 
 Fresh passing evidence now exists for the localhost MT5 read-only sustained load/restart slice:
@@ -1096,10 +1146,14 @@ downstream.
 
 As of Wednesday, August 12, 2026:
 
-- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 143`, tracked
-  worktree clean after the current portfolio book-exposure recovery commit; two pre-existing
-  untracked Kimi/audit docs remain.
+- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 147`, tracked
+  worktree clean after the loss-streak live evidence handoff commit; two pre-existing untracked
+  Kimi/audit docs remain.
 - Current continuation commits now on the branch:
+  - `docs(docs): seal loss-streak reentry live evidence`
+  - `feat(scripts): add loss-streak reentry live lifecycle`
+  - `docs(docs): seal cooldown reentry live evidence`
+  - `feat(scripts): add cooldown reentry live lifecycle`
   - `test(risk): cover portfolio book exposure recovery`
   - `docs(docs): seal margin floor recovery status`
   - `test(risk): cover global daily halt reentry reset`
@@ -1156,6 +1210,11 @@ As of Wednesday, August 12, 2026:
   `/var/tmp/qkt-validation/xau-cooldown-recovery-reentry-90s-20260812T042800Z/evidence/result.json`
   and
   `/var/tmp/qkt-validation/xau-cooldown-recovery-reentry-90s-20260812T042800Z-replay/result.json`.
+- `bash tests/scripts/prepare-live-validation-scenario-test.sh`: passed again on Wednesday, August
+  12, 2026 after adding generated live market-bracket runner and replay-comparator support for
+  `reentry_blocked_loss_streak`. The retained armed live run and replay comparison then passed at
+  `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z/evidence/result.json` and
+  `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z-replay/result.json`.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed again on Wednesday, August 12, 2026 after adding explicit generated-DSL strategy daily-loss
   recovery coverage: first live-paper/replay order lifecycle trips a DAILY strategy halt, same-day
@@ -1279,8 +1338,10 @@ Current live-gateway inventory:
   - login source: [demo2.txt](</home/dickson/Desktop/personal/demo2.txt:1>)
   - verified login: `476434211`
   - verified server: `Exness-MT5Trial9`
-  - verified state on Tuesday, August 11, 2026: healthy, MT5 connected, balance `100000.00`,
-    trading allowed
+  - verified state on Wednesday, August 12, 2026 before the loss-streak run: healthy, MT5
+    connected, flat, trading allowed, leverage `1000`, balance/equity `99996.94`
+  - verified state after the loss-streak run by retained reconciliation: final positions `0`, final
+    orders `0`, balance delta `-1.29` matched owned deal net `-1.29`
 
 - API key is intentionally not persisted in repo docs; retrieve it locally from container inspect if
   needed.
@@ -2256,6 +2317,11 @@ Current interpretation:
   - restarting a gateway is still a valid recovery step when the process is unhealthy, stuck, or
     returning invalid startup ticks, but the current EURUSD/GBPUSD evidence says restart alone does
     not fix broker/feed sparsity and must not be used to bypass QKT's stale-data gate;
+  - answer to the restart question: if staleness is caused by a gateway/terminal session wedge,
+    restarting that one flat account's gateway can fix it and is a useful diagnostic. If the
+    broker's newest `symbol_info_tick` is genuinely old or the market/feed is sparse, restart will
+    not create fresher ticks. The retained primary-gateway restart evidence supports the second
+    case for the observed EURUSD/GBPUSD stale gaps;
   - a QKT fix is appropriate only in the harness/diagnostic/scenario-selection layer unless later
     evidence proves the gateway has fresher MT5 ticks that it is failing to expose.
 - No downstream `qkt-forge`, bot1, strategy-promotion, or image-publish rollout should start from
@@ -2390,7 +2456,9 @@ Concrete next work:
 
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
   recovered retained-live variants, especially live stale-market-data gate recovery, live same-book
-  exposure limits, retained live loss-streak reset, and retained live next-day reset behavior;
+  exposure limits, retained live loss-streak reset after a winning lifecycle, and retained live
+  next-day reset behavior. The real order-bearing loss-streak halt block after a losing trade is now
+  sealed by `/var/tmp/qkt-validation/xau-loss-streak-reentry-20260812T044701Z/evidence/result.json`;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
   decisions and live protection adjustment, but deterministic backtest fill prices can drift from
   real broker fills because live execution latency is real;
