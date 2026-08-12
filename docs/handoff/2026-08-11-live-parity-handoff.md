@@ -1833,8 +1833,16 @@ QKT Insights verification and local validation image:
 - Re-verified in the current dirty qkt-insights worktree on Tuesday, August 11, 2026:
   `PATH=/home/dickson/.local/share/mise/installs/node/22.22.1/bin:$PATH pnpm build:all && PATH=/home/dickson/.local/share/mise/installs/node/22.22.1/bin:$PATH pnpm test`
   again reported `196` tests passing across `19` files.
+- Re-verified again on Wednesday, August 12, 2026 in
+  `/home/dickson/Desktop/personal/qkt-insights` from branch `fix/live-state-attribution`:
+  `PATH=/home/dickson/.local/share/mise/installs/node/22.22.1/bin:$PATH pnpm build:all && PATH=/home/dickson/.local/share/mise/installs/node/22.22.1/bin:$PATH pnpm test`
+  reported `196` tests passing across `19` files.
 - Rebuilt local validation image:
   `qkt-insights:validation-scoped-deals-20260811`
+- Rebuilt a stricter no-cache local-only validation image on Wednesday, August 12, 2026:
+  `qkt-insights:validation-live-state-attribution-20260812`
+- Current local-only validation image ID:
+  `sha256:1e3549c09f0a1d98cccc02a108e280d8ae0bcf4dcd8b53ea95563a3858fa63fc`
 - Local tags now pointing at the same image ID `sha256:624b45faf009a96caf30766cc8dd75f329498934fb3978068d87f47be32f1f2e`:
   - `qkt-insights:latest`
   - `qkt-insights:0.0.0`
@@ -1848,6 +1856,19 @@ QKT Insights verification and local validation image:
     `fill.accounted`, `bot.close`, and `broker.deal`;
   - SQLite retained one local deal for `local_live`;
   - foreign and unattributed shared-account deal backfill was dropped.
+- Container-boundary smoke against
+  `qkt-insights:validation-live-state-attribution-20260812` passed on Wednesday,
+  August 12, 2026:
+  `/var/tmp/qkt-insights-image-smoke-phAoqg`
+- Smoke proof for the August 12 image:
+  - `/healthz` returned `ok=true` in `run` mode;
+  - `/ingest` accepted `decision.rule_evaluated`, `decision.order_linked`, `order.submit`,
+    `order.filled`, `bot.close`, and two `state.positions` snapshots;
+  - SQLite folded order `o1` to `FILLED`;
+  - SQLite preserved strategy `s1` ownership for ticket `t1` after a sibling null-attribution
+    position poll;
+  - `ingest_observations` recorded zero `gap` or `regression` rows for the producer-local
+    sequence pattern.
 
 QKT proving runner state:
 
@@ -1874,6 +1895,52 @@ QKT proving runner state:
     interrupted before broker mutation because it was too slow for this iteration.
 
 Live shared-account attempts after the image/smoke fix:
+
+- Demo2 gateway `http://127.0.0.1:5002`, output
+  `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-live`:
+  - passed on Wednesday, August 12, 2026 with local QKT image
+    `qkt:live-validation-41b89070` and local Insights image
+    `qkt-insights:validation-live-state-attribution-20260812`;
+  - QKT commit/image version under proof:
+    `41b8907001c9e00d8cf9dcb2308a174236e114be`;
+  - Insights image under proof:
+    `sha256:1e3549c09f0a1d98cccc02a108e280d8ae0bcf4dcd8b53ea95563a3858fa63fc`;
+  - base round-trip result:
+    `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-live/base-roundtrip/evidence/result.json`;
+  - wrapper result:
+    `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-live/evidence/result.json`;
+  - two unrestricted QKT containers ran concurrently against the same demo2 hedging account;
+  - account login `476434211`, server `Exness-MT5Trial9`, expected starting balance
+    `99999.52`, leverage `1000`;
+  - EURUSD strategy `sidem2eur0812025553_market_bracket`, magic `938201`, opened real
+    strategy-owned ticket `3073826254`, side `SELL`, then closed strategy-owned;
+  - GBPUSD strategy `sidem2gbp0812025553_market_bracket`, magic `938202`, opened real
+    strategy-owned ticket `3073826242`, side `BUY`, then closed strategy-owned;
+  - both cases retained exact `1m` and `5m` stream-candle/evaluation evidence;
+  - both cases retained indicator entry and indicator exit traces;
+  - each case retained `2` rule decisions, `2` decision/order links, `2` accepted orders,
+    `2` filled orders, `2` accounted fills, and `0` rejected orders;
+  - each case retained exactly `1` order POST, `1` protection POST, `1` close POST, and
+    `3` total mutating gateway requests;
+  - aggregate final account state was flat with `0` positions and `0` pending orders;
+  - aggregate balance delta was `-0.15`, matching owned deal net `-0.15`;
+  - Insights retained both daemon instances, exactly two filled lifecycle rows per strategy,
+    exactly one `IN` and one `OUT` deal per strategy, final flat `positions_current`, no
+    cross-owner causal leakage, and zero `gap`/`regression` observations;
+  - replay comparison passed for the EURUSD live capture:
+    `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-eurusd-replay/result.json`;
+  - replay comparison passed for the GBPUSD live capture:
+    `/var/tmp/qkt-validation/shared-account-insights-demo2-0812025553-gbpusd-replay/result.json`;
+  - both replay comparisons ran exactly `full-ticks-paper`, `full-ticks-mt5`, and
+    `bars-paper`;
+  - both replay comparisons proved exact candle/evaluation counts, two approved orders and
+    fills, zero rejections, final-flat replay state, byte-identical full-tick paper/MT5 order
+    journals, timestamp-normalized bars-paper order parity, exact indicator entry, exact
+    indicator exit quantity/close, exact live canonical entry intent, and live-vs-MT5 fill,
+    protection, and PnL parity after numeric normalization.
+- This seals the current two-symbol shared-account QKT Insights live order-bearing slice. It
+  does not close same-symbol shared-account serialization, every order family, higher-TF
+  warmup coverage, broader generated strategy matrices, or the longer demo burn-in.
 
 - Primary gateway `http://127.0.0.1:5001`, output
   `/var/tmp/qkt-validation/shared-account-insights-live-20260811T214632Z`:
