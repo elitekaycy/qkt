@@ -1099,6 +1099,13 @@ As of Wednesday, August 12, 2026:
   recovery coverage, elapsed cooldown-after-loss re-entry recovery coverage, and loss-streak reset
   coverage across ticks, bars, tick-resolved bars, and live-paper. No JVM heap or worker restrictions
   were used.
+- `bash tests/scripts/prepare-live-validation-scenario-test.sh`: passed on Wednesday, August 12,
+  2026 after adding generated live market-bracket runner and replay-comparator support for
+  `reentry_cooldown_recovered`. The first armed attempt with a 30-second cooldown proved that value
+  was too short for a 1m-bar re-entry signal, so the reviewed lifecycle now uses a 90-second
+  cooldown. This is preparer/runner/comparator coverage only; retained armed live evidence for
+  cooldown-after-loss recovery remains open until a real localhost MT5 run and replay comparison
+  pass.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed again on Wednesday, August 12, 2026 after adding explicit generated-DSL strategy daily-loss
   recovery coverage: first live-paper/replay order lifecycle trips a DAILY strategy halt, same-day
@@ -2297,6 +2304,12 @@ Existing partial coverage:
   open/flat cycles, retains `owned-tickets.jsonl`, requires the retained history to show one `IN`
   and one `OUT` deal for each ticket, and requires audit/transport counts for two entries and two
   closes;
+- `prepare-scenario.sh`, `run-market-bracket.sh`, and `compare-golden-replay.sh` now support a
+  `reentry_cooldown_recovered` lifecycle. The generated strategy leaves trade count open with
+  `TRADES.today < 3`, configures per-strategy `cooldown_after_loss: "90000"`, requires one
+  pre-transport `CooldownAfterLoss` rejection after the first live close, waits for the cooldown
+  window to elapse, then requires a second strategy-owned open/flat cycle. Static shell regression
+  is sealed; retained armed live evidence for this lifecycle remains open;
 - clean live evidence now proves the allowed XAUUSD re-entry path end-to-end through the real local
   MT5 gateway, real broker fills, golden capture, full-tick replay, plain-bar replay, and MT5-sim
   replay. See `Active-Symbol XAUUSD Re-Entry Live/Replay Extension` above;

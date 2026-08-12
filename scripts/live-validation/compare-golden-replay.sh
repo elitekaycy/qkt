@@ -116,7 +116,7 @@ jq -e '
     (($lifecycle == "single" and .flattenVerified == true) or
      ($lifecycle == "reentry" and .strategyOwnedLifecycle == true) or
      (($lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or
-       $lifecycle == "reentry_operator_halt_recovered") and
+       $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered") and
       .strategyOwnedLifecycle == true and
       .blockedReentry.preTransport == true and .blockedReentry.rejections >= $blockedEntries)) and
     .finalPositions == 0 and
@@ -146,7 +146,7 @@ if [ "$lifecycle" = "reentry_blocked_operator_halt" ]; then
     replay_expected_lifecycle_events=$((expected_lifecycle_events + expected_blocked_entries))
 fi
 comparison_entries="$expected_entries"
-if [ "$lifecycle" = "reentry_operator_halt_recovered" ]; then
+if [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ]; then
     comparison_entries=1
 fi
 stop_distance="$(jq -er '.armedScenario.stopDistance' "$expected")"
@@ -487,7 +487,7 @@ jq -n \
             (if $lifecycle == "single" then
                 "The operator flatten fill occurs after the bounded strategy replay window and " +
                 "is reconciled by the live result, not replayed as a strategy decision."
-             elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" then
+             elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" then
                 "The live blocked re-entry capture includes one strategy-owned close and a " +
                 "pre-transport " + $blockedReason + " rejection for the next entry; " +
                 "replay comparison checks the filled entry intent/protection and byte-identical " +
@@ -500,6 +500,10 @@ jq -n \
                     "takes the second entry at the blocked signal, while live takes the recovered " +
                     "entry only after resume. The comparator therefore checks the pre-halt entry " +
                     "against live and retains the recovered live entry in liveEntries."
+                 elif $lifecycle == "reentry_cooldown_recovered" then
+                    " Cooldown-after-loss is a live pacing-state gate. The comparator checks the " +
+                    "first filled entry against replay and retains the recovered live entry in " +
+                    "liveEntries after the cooldown window elapses."
                  else "" end)
              else
                 "The live re-entry capture includes strategy-owned close fills; replay comparison " +

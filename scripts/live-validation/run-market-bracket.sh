@@ -69,6 +69,7 @@ expected_entries="$(jq -r '.armedScenario.maximumEntries // 1' "$scenario/expect
 expected_exits="$(jq -r '.armedScenario.maximumExits // 1' "$scenario/expected.json")"
 expected_blocked_entries="$(jq -r '.armedScenario.maximumBlockedEntries // 0' "$scenario/expected.json")"
 expected_blocked_reason="$(jq -r '.armedScenario.expectedBlockedReason // ""' "$scenario/expected.json")"
+cooldown_after_loss_ms="$(jq -r '.armedScenario.cooldownAfterLossMs // 0' "$scenario/expected.json")"
 grep -F 'SIZING 0.01' "$armed_strategy" >/dev/null || fail "armed strategy is not fixed at 0.01 lots"
 case "$lifecycle" in
     single)
@@ -110,6 +111,20 @@ case "$lifecycle" in
             fail "operator-halt recovery lifecycle must expect two filled entries, two closes, and one blocked entry"
         [ "$expected_blocked_reason" = "halted: operator" ] ||
             fail "operator-halt recovery lifecycle must retain the halted: operator rejection reason"
+        ;;
+    reentry_cooldown_recovered)
+        grep -F 'TRADES.today < 3' "$armed_strategy" >/dev/null ||
+            fail "cooldown recovery strategy does not attempt the reviewed recovered entry"
+        grep -F 'max_trades_per_day: 3' "$config" >/dev/null ||
+            fail "cooldown recovery scenario should leave trade count open for the recovered entry"
+        grep -F 'cooldown_after_loss: "90000"' "$config" >/dev/null ||
+            fail "cooldown recovery scenario does not configure the reviewed cooldown"
+        [ "$expected_entries" -eq 2 ] && [ "$expected_exits" -eq 2 ] && [ "$expected_blocked_entries" -eq 1 ] ||
+            fail "cooldown recovery lifecycle must expect two filled entries, two closes, and one blocked entry"
+        [ "$expected_blocked_reason" = "CooldownAfterLoss" ] ||
+            fail "cooldown recovery lifecycle must retain the CooldownAfterLoss rejection reason"
+        [ "$cooldown_after_loss_ms" -eq 90000 ] ||
+            fail "cooldown recovery lifecycle must retain the reviewed 90000ms cooldown"
         ;;
     *) fail "unsupported armed lifecycle: $lifecycle" ;;
 esac
@@ -544,6 +559,22 @@ wait_for_blocked_reentry() {
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-blocked-reentry.json"
 }
 
+wait_for_cooldown_recovery_window() {
+    [ "$cooldown_after_loss_ms" -gt 0 ] || fail "cooldown recovery lifecycle has no cooldown duration"
+    local sleep_seconds=$(((cooldown_after_loss_ms + 999) / 1000 + 5))
+    jq -n \
+        --argjson cooldownAfterLossMs "$cooldown_after_loss_ms" \
+        --argjson sleepSeconds "$sleep_seconds" \
+        '{cooldownAfterLossMs:$cooldownAfterLossMs,sleepSeconds:$sleepSeconds,status:"waiting"}' \
+        > "$evidence/cooldown-recovery-wait.json"
+    sleep "$sleep_seconds"
+    jq -n \
+        --argjson cooldownAfterLossMs "$cooldown_after_loss_ms" \
+        --argjson sleepSeconds "$sleep_seconds" \
+        '{cooldownAfterLossMs:$cooldownAfterLossMs,sleepSeconds:$sleepSeconds,status:"elapsed"}' \
+        > "$evidence/cooldown-recovery-wait.json"
+}
+
 acquire_live_lock
 verify_cli_git_sha
 
@@ -622,7 +653,7 @@ if [ "$lifecycle" = "reentry" ]; then
     gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
     jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
         fail "re-entry lifecycle did not end flat"
-elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ]; then
+elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ]; then
     wait_for_open_cycle 1
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-open.json"
     wait_for_flat_cycle 1
@@ -642,13 +673,17 @@ elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentr
         "$cli" resume "$strategy_name" --state-dir "$scenario/state" --json > "$evidence/operator-resume-before-recovered-reentry.json"
         jq -e '.state == "resumed"' "$evidence/operator-resume-before-recovered-reentry.json" >/dev/null ||
             fail "operator resume did not lift the re-entry halt"
+    elif [ "$lifecycle" = "reentry_cooldown_recovered" ]; then
+        wait_for_cooldown_recovery_window
+    fi
+    if [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ]; then
         wait_for_open_cycle 2
         "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-2-open.json"
         wait_for_flat_cycle 2
         "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-2-flat.json"
         gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
         jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
-            fail "operator-halt recovery lifecycle did not end flat after resumed re-entry"
+            fail "recovered re-entry lifecycle did not end flat after the recovered entry"
     fi
 else
     wait_for_open_cycle 1
@@ -859,7 +894,7 @@ jq -n \
           },
           bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance},
           flattenVerified:(if $lifecycle == "single" then true else false end),
-          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered"),
+          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered"),
           finalPositions:0,
           finalOrders:0,
           balanceDelta:$balanceDelta,
