@@ -30,9 +30,13 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 149`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 153`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `docs(docs): seal daily halt reset live evidence`
+  - `feat(scripts): add daily halt reset lifecycle`
+  - `docs(docs): seal max-trades reset live evidence`
+  - `feat(scripts): add max-trades reset lifecycle`
   - `fix(scripts): bound market history reconciliation`
   - `test(dsl): cover pending reentry guard`
   - `docs(docs): seal loss-streak reentry live evidence`
@@ -2669,3 +2673,82 @@ Replay result summary:
 - MT5 simulation used the same canonical intent.
 - Live fill and adjusted protection matched MT5 simulation exactly for the entry:
   live SELL fill `4395.484`, simulated fill `4395.48400000`, delta `0`.
+
+## 2026-08-12 Update: Daily Halt Next-Day Retained-State Harness
+
+Added and sealed a second retained-state live lifecycle,
+`reentry_daily_halt_next_day_recovered`, to prove a previous-day DAILY risk halt is not restored as
+a current-day live blocker.
+
+What changed:
+
+- `scripts/live-validation/prepare-scenario.sh` can now emit
+  `--lifecycle reentry_daily_halt_next_day_recovered`.
+- The lifecycle seeds
+  `state/state/<scenario>_market_bracket/risk-state.json` with:
+  - `halted:true`;
+  - `haltReason:"DailyLoss"`;
+  - `haltScope:"DAILY"`;
+  - prior UTC `haltEpochDay`;
+  - a matching prior-day strategy halt for the armed strategy.
+- The generated strategy still attempts two entries with `TRADES.today < 2`, while risk config keeps
+  `max_trades_per_day: 1`.
+- Expected live behavior is: the previous-day DAILY halt is ignored on restore, the first current-day
+  real MT5 entry is allowed, the strategy-owned close returns the account flat, and the second
+  same-day entry is rejected pre-transport by `MaxTradesPerDay`.
+- `scripts/live-validation/run-market-bracket.sh` now verifies both supported seeded-state contracts:
+  `previous-day-max-trades` and `previous-day-daily-halt`.
+- `scripts/live-validation/compare-golden-replay.sh` accepts the new lifecycle as a replayable
+  blocked re-entry variant.
+- `tests/scripts/prepare-live-validation-scenario-test.sh` covers generation, parser acceptance,
+  seed JSON shape, checksum inclusion, and runner `--verify-only`.
+
+Verification already run:
+
+```bash
+bash -n scripts/live-validation/prepare-scenario.sh
+bash -n scripts/live-validation/run-market-bracket.sh
+bash -n scripts/live-validation/compare-golden-replay.sh
+bash tests/scripts/prepare-live-validation-scenario-test.sh
+./gradlew installDist -Pkotlin.compiler.execution.strategy=daemon
+```
+
+Retained live/replay evidence:
+
+- Live scenario:
+  `/var/tmp/qkt-validation/xau-daily-halt-reset-reentry-20260812T053231Z/evidence/result.json`
+- Replay comparison:
+  `/var/tmp/qkt-validation/xau-daily-halt-reset-reentry-20260812T053231Z-replay/result.json`
+
+Live result summary:
+
+- `status:"passed"`, `qktDirty:false`, `magic:938515`, demo2 account `476434211`.
+- Seed verification:
+  `/var/tmp/qkt-validation/xau-daily-halt-reset-reentry-20260812T053231Z/evidence/seeded-risk-state-verification.json`.
+- Seeded state:
+  `state/state/xau_daily_halt_reset_market_bracket/risk-state.json`, kind
+  `previous-day-daily-halt`, epoch day `20676`, with `halted:true`,
+  `haltReason:"DailyLoss"`, `haltScope:"DAILY"`, and matching strategy halt.
+- Lifecycle: one real XAUUSD strategy-owned entry and one strategy-owned close, then one same-day
+  `MaxTradesPerDay` rejection before MT5 transport.
+- `blockedReentry:{expected:1, reason:"MaxTradesPerDay", rejections:1, preTransport:true}`.
+- Final account ownership: `finalPositions:0`, `finalOrders:0`.
+- Transport counts: `orderPosts:1`, `closePosts:1`.
+- Audit counts: `acceptedEvents:2`, `filledEvents:2`, `riskRejections:1`.
+- Venue reconciliation: `balanceDelta:"0.18"` and `dealNet:"0.18"`.
+- Golden capture: `ticks:239`, `warmupTicks:80`, `candles:13`, `fills:2`,
+  `linkedPlacements:1`, SHA-256
+  `5b61d4dce1f6bab99940d856bf9051a8b9e1bf4ec34f2a7f439569774828e3d6`.
+- Stale-data count during this run: `staleEvents:0`, `recoveredStaleEvents:0`.
+
+Replay result summary:
+
+- `status:"passed"`, lifecycle `reentry_daily_halt_next_day_recovered`.
+- Full-tick order journals were byte-exact.
+- Bar replay order journals were timestamp-normalized exact.
+- Live initial protection matched canonical intent.
+- Live adjusted protection matched captured broker fill.
+- MT5 simulation used the same canonical intent.
+- Live-vs-MT5-sim entry fill drift is retained as expected venue latency/model difference:
+  live SELL fill `4393.303`, simulated fill `4393.58000000`, delta
+  `-0.27700000000004366`.
