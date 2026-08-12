@@ -137,6 +137,54 @@ class GeneratedReentryParityTest {
         assertThat(result.backtest.positions).isEmpty()
     }
 
+    @Test
+    fun `winning lifecycle resets loss streak before later reentry across replay modes`(
+        @TempDir tempDir: Path,
+    ) {
+        val strategyPath = writeLossStreakResetStrategy(tempDir, "reentry_loss_streak_reset")
+
+        val result =
+            GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                path = strategyPath,
+                candlesBySymbol =
+                    mapOf(
+                        "BACKTEST:X" to
+                            listOf(
+                                candle("100", 0),
+                                candle("101", ONE_MINUTE_MS),
+                                candle("90", 2 * ONE_MINUTE_MS),
+                                candle("91", 3 * ONE_MINUTE_MS),
+                                candle("120", 4 * ONE_MINUTE_MS),
+                                candle("121", 5 * ONE_MINUTE_MS),
+                                candle("140", 6 * ONE_MINUTE_MS),
+                                candle("141", 7 * ONE_MINUTE_MS),
+                                candle("150", 8 * ONE_MINUTE_MS),
+                                candle("151", 9 * ONE_MINUTE_MS),
+                                candle("130", 10 * ONE_MINUTE_MS),
+                                candle("131", 11 * ONE_MINUTE_MS),
+                                candle("160", 12 * ONE_MINUTE_MS),
+                                candle("161", 13 * ONE_MINUTE_MS),
+                                candle("170", 14 * ONE_MINUTE_MS),
+                                candle("171", 15 * ONE_MINUTE_MS),
+                            ),
+                    ),
+                window = TimeWindow.ONE_MINUTE,
+                closeOnlyTicks = true,
+                expectedTradeCount = 8,
+                startingBalance = STARTING_BALANCE,
+                strategyRiskLimits = StrategyRiskLimits(lossStreakHalt = 2),
+            )
+
+        assertThat(result.backtest).isEqualTo(result.live)
+        assertThat(result.backtest.trades.map { it.side })
+            .containsExactly("BUY", "SELL", "BUY", "SELL", "BUY", "SELL", "BUY", "SELL")
+        assertThat(result.backtest.trades.map { it.price })
+            .containsExactly("101", "91", "121", "141", "151", "131", "161", "171")
+        assertThat(result.backtest.rejections).isEmpty()
+        assertThat(result.backtest.halts).isEmpty()
+        assertThat(result.backtest.positions).isEmpty()
+    }
+
     @TestFactory
     fun `risk gates block reentry without blocking the first complete lifecycle across replay modes`(
         @TempDir tempDir: Path,
@@ -295,6 +343,45 @@ class GeneratedReentryParityTest {
               THEN BUY x SIZING 1
 
               WHEN x.close = 80 AND POSITION.x != 0
+              THEN CLOSE x
+            """.trimIndent(),
+        )
+        return strategyPath
+    }
+
+    private fun writeLossStreakResetStrategy(
+        tempDir: Path,
+        id: String,
+    ): Path {
+        val strategyPath = tempDir.resolve("$id.qkt")
+        Files.writeString(
+            strategyPath,
+            """
+            STRATEGY $id VERSION 1
+            SYMBOLS x = BACKTEST:X EVERY 1m
+            RULES
+              WHEN x.close = 100 AND POSITION.x = 0
+              THEN BUY x SIZING 1
+
+              WHEN x.close = 90 AND POSITION.x != 0
+              THEN CLOSE x
+
+              WHEN x.close = 120 AND POSITION.x = 0
+              THEN BUY x SIZING 1
+
+              WHEN x.close = 140 AND POSITION.x != 0
+              THEN CLOSE x
+
+              WHEN x.close = 150 AND POSITION.x = 0
+              THEN BUY x SIZING 1
+
+              WHEN x.close = 130 AND POSITION.x != 0
+              THEN CLOSE x
+
+              WHEN x.close = 160 AND POSITION.x = 0
+              THEN BUY x SIZING 1
+
+              WHEN x.close = 170 AND POSITION.x != 0
               THEN CLOSE x
             """.trimIndent(),
         )

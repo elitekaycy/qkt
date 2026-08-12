@@ -1076,8 +1076,9 @@ As of Wednesday, August 12, 2026:
   coverage. No JVM heap or worker restrictions were used.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed on Wednesday, August 12, 2026 after adding explicit UTC next-day max-trades re-entry
-  recovery coverage and elapsed cooldown-after-loss re-entry recovery coverage across ticks, bars,
-  tick-resolved bars, and live-paper. No JVM heap or worker restrictions were used.
+  recovery coverage, elapsed cooldown-after-loss re-entry recovery coverage, and loss-streak reset
+  coverage across ticks, bars, tick-resolved bars, and live-paper. No JVM heap or worker restrictions
+  were used.
 - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon`: passed on Tuesday, August 11, 2026
   after narrowing the `TickResolvedParityTest` comparison to ignore only replay-input counters that
   intentionally differ between full-tick replay and `--bars --tick-fills`:
@@ -2207,6 +2208,11 @@ Existing partial coverage:
 - JVM parity coverage now proves `CooldownAfterLoss` elapsed-duration recovery for re-entry: a
   same-day qualifying re-entry is rejected while cooldown remains active, a later qualifying signal
   after the configured duration is allowed, and the recovered position closes flat across tick, bar,
+  tick-resolved-bar, and live-paper modes in
+  `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
+- JVM parity coverage now proves loss-streak reset behavior for re-entry: a loss increments the
+  streak, a later winning lifecycle resets it, a subsequent loss does not falsely trip
+  `LossStreakHalt(maxLosses=2)`, and the following re-entry opens and closes flat across tick, bar,
   tick-resolved-bar, and live-paper modes in
   `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
 - focused market-data gate coverage now proves the stale-data re-entry contract at the same
