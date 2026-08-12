@@ -2930,3 +2930,103 @@ Scope and remaining work:
 - Remaining higher-timeframe promotion blockers are: at least one daemon strategy using these
   higher-TF bars, full order-path proof for that strategy, and retained live-vs-backtest comparison
   for the daemon strategy path.
+
+## 2026-08-12 Update: Higher-Timeframe Daemon Order-Path Proof
+
+Added and sealed a real demo daemon scenario proving that a higher-timeframe warmed stream can
+participate in the live entry decision and still replay against the captured golden bundle.
+
+What changed:
+
+- `scripts/live-validation/prepare-scenario.sh` now accepts
+  `--secondary-timeframe 5m|15m|1h|4h` for the armed market-bracket strategy.
+- The armed strategy keeps `asset1` on `1m` for fast evaluation/exit but can put `asset5` on the
+  selected secondary timeframe. This lets live validation prove higher-timeframe indicator use
+  without waiting for a natural H1/H4 close.
+- The generated entry log and score now retain `secondary_fast`/`secondary_slow` values rather than
+  assuming every secondary stream is `5m`.
+- `expected.json` now records `primaryTimeframe`, `secondaryTimeframe`, and the exact armed stream
+  matrix.
+- `scripts/live-validation/run-market-bracket.sh` now reads armed history-readiness timeframes from
+  `expected.json` instead of hard-coding `1m`/`5m`, and writes `armedTimeframes` to
+  `evidence/result.json`.
+- `tests/scripts/prepare-live-validation-scenario-test.sh` covers the default `5m` path, a `15m`
+  higher-timeframe path, and smoke-verified `1h`/`4h` generation and runner verification.
+
+Verification already run:
+
+```bash
+bash -n scripts/live-validation/prepare-scenario.sh
+bash -n scripts/live-validation/run-market-bracket.sh
+bash tests/scripts/prepare-live-validation-scenario-test.sh
+./gradlew installDist -Pkotlin.compiler.execution.strategy=daemon
+```
+
+Additional smoke verification:
+
+```bash
+scripts/live-validation/prepare-scenario.sh ... --secondary-timeframe 1h
+build/install/qkt/bin/qkt parse <generated-strategy>
+scripts/live-validation/run-market-bracket.sh --verify-only ...
+
+scripts/live-validation/prepare-scenario.sh ... --secondary-timeframe 4h
+build/install/qkt/bin/qkt parse <generated-strategy>
+scripts/live-validation/run-market-bracket.sh --verify-only ...
+```
+
+Retained live/replay evidence:
+
+- Single lifecycle live probe, useful as order-path evidence but not replay-complete because the close
+  is an operator kill/flatten rather than a DSL-owned close:
+  `/var/tmp/qkt-validation/xau-htf15-bracket-20260812T061608Z/evidence/result.json`
+- Replayable strategy-owned higher-timeframe lifecycle:
+  `/var/tmp/qkt-validation/xau-htf15-reentry-blocked-20260812T061946Z/evidence/result.json`
+- Golden replay comparison:
+  `/var/tmp/qkt-validation/xau-htf15-reentry-blocked-20260812T061946Z-replay/result.json`
+
+Live result summary for `xau_htf15_reentry_blocked_market_bracket`:
+
+- `status:"passed"`, `qktDirty:false`, QKT commit
+  `00c0e084e7573f77e5e5a2b49b81c5b48e544d3b`.
+- QKT CLI: `qkt 0.47.1 (00c0e084) built 2026-08-12T06:15:56.119478601Z`.
+- Gateway: demo2 localhost gateway, version `0.3.4`, account `476434211`,
+  server `Exness-MT5Trial9`.
+- Strategy streams: `asset1` on `1m`, `asset5` on `15m`; retained
+  `armedTimeframes:["15m","1m"]`.
+- Indicators in the live entry condition:
+  `ema(1m,3)`, `ema(1m,5)`, `ema(15m,3)`, `ema(15m,5)`.
+- History readiness checked both `15m` and `1m` on attempt `1`.
+- Live log retained the actual higher-timeframe decision values before order submission:
+  `secondary_fast=4389.59802083`, `secondary_slow=4391.43454403`.
+- Lifecycle: one real XAUUSD strategy-owned SELL entry, one strategy-owned BUY close, then one same-day
+  `MaxTradesPerDay` rejection before MT5 transport.
+- `blockedReentry:{expected:1, reason:"MaxTradesPerDay", rejections:1, preTransport:true}`.
+- Final account ownership: `finalPositions:0`, `finalOrders:0`.
+- Transport counts: `orderPosts:1`, `closePosts:1`.
+- Audit counts: `acceptedEvents:2`, `filledEvents:2`, `riskRejections:1`.
+- Venue reconciliation: `balanceDelta:"1.61"` and `dealNet:"1.61"`.
+- Golden capture: `ticks:211`, `warmupTicks:80`, `candles:13`, `fills:2`,
+  `linkedPlacements:1`, SHA-256
+  `ca006ece79a25786d4e8a7ec44decf1633c97ad2146bbbc71ba95aad8ff518b6`.
+- Stale-data count during this run: `staleEvents:0`, `recoveredStaleEvents:0`.
+- Venue account snapshot note: Exness reported leverage changed from `1000` to `500` during/after the
+  run; the runner retained this as `leverage.changed:true`. The account still ended flat and tradeable.
+
+Replay result summary:
+
+- `status:"passed"`, lifecycle `reentry_blocked_max_trades`.
+- Full-tick order journals were byte-exact.
+- Bar replay order journals were timestamp-normalized exact.
+- Live initial protection matched canonical intent.
+- Live adjusted protection matched captured broker fill.
+- MT5 simulation used the same canonical intent.
+- Live-vs-MT5-sim entry fill drift is retained as expected venue latency/model difference:
+  live SELL fill `4389.867`, simulated fill `4389.71300000`, delta
+  `0.1540000000004511`.
+
+Remaining higher-timeframe work:
+
+- M15 daemon/order/replay is now sealed.
+- H1/H4 are generation-verified and warmup/bar availability is sealed, but they still do not have a
+  real daemon order-path run. The harness can now prepare those without waiting for natural closes by
+  using a `1m` primary stream and a warmed `1h`/`4h` secondary stream.
