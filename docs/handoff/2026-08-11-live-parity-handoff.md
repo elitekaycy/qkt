@@ -30,13 +30,16 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: worktree has local edits, `ahead 117`
-- Latest commits:
-  - `f0ca7d5b fix(scripts): support operator halt recovery validation`
-  - `2be78628 docs(docs): record operator halt reentry proof`
-  - `9712afb3 fix(scripts): compare operator halt reentry replay`
-  - `13dbb027 fix(scripts): support operator halt reentry validation`
-  - `dac4df0d docs(docs): record blocked reentry proof`
+- Current status at handoff update: tracked worktree clean, branch `ahead 140`; two pre-existing
+  untracked Kimi/audit docs remain outside this handoff.
+- Latest committed work:
+  - `test(risk): cover daily halt reentry reset`
+  - `cd723ab5 test(risk): cover loss streak reentry reset`
+  - `cdbf5c38 test(risk): cover cooldown reentry recovery`
+  - `298fb1a3 test(risk): cover next-day reentry reset`
+  - `322b2e60 test(risk): cover margin floor reentry`
+  - `cd07f20f test(risk): cover book exposure reentry`
+  - `fff3536a test(marketdata): cover stale reentry gate`
 
 ## Authoritative Specs And Plans
 
@@ -1041,10 +1044,10 @@ downstream.
 
 As of Wednesday, August 12, 2026:
 
-- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 132` after the
-  current continuation's scoped commits, with no remaining tracked dirty source files outside this
-  handoff update.
+- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 140`, tracked
+  worktree clean; two pre-existing untracked Kimi/audit docs remain.
 - Current continuation commits now on the branch:
+  - `test(risk): cover daily halt reentry reset`
   - `5a041d4a test(dsl): cover higher timeframe warmups`
   - `5d3eb7ae docs(docs): record higher timeframe parity proof`
   - `0e7817fa feat(scripts): add restart and stateful validation`
@@ -1079,6 +1082,18 @@ As of Wednesday, August 12, 2026:
   recovery coverage, elapsed cooldown-after-loss re-entry recovery coverage, and loss-streak reset
   coverage across ticks, bars, tick-resolved bars, and live-paper. No JVM heap or worker restrictions
   were used.
+- `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed again on Wednesday, August 12, 2026 after adding explicit generated-DSL strategy daily-loss
+  recovery coverage: first live-paper/replay order lifecycle trips a DAILY strategy halt, same-day
+  re-entry is rejected with the retained halt reason, and next-UTC-day re-entry opens and closes
+  identically across tick, bar, tick-resolved-bar, and live-paper modes. No JVM heap or worker
+  restrictions were used.
+- `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed again on Wednesday, August 12, 2026 after adding the sibling generated-DSL strategy
+  daily-drawdown recovery proof with `dailyDdBasis = EQUITY`: an open equity drawdown trips a DAILY
+  strategy halt, same-day re-entry is rejected with the retained halt reason, and next-UTC-day
+  re-entry opens and closes identically across tick, bar, tick-resolved-bar, and live-paper modes. No
+  JVM heap or worker restrictions were used.
 - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon`: passed on Tuesday, August 11, 2026
   after narrowing the `TickResolvedParityTest` comparison to ignore only replay-input counters that
   intentionally differ between full-tick replay and `--bars --tick-fills`:
@@ -2215,6 +2230,16 @@ Existing partial coverage:
   `LossStreakHalt(maxLosses=2)`, and the following re-entry opens and closes flat across tick, bar,
   tick-resolved-bar, and live-paper modes in
   `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
+- JVM parity coverage now proves DAILY-scoped strategy daily-loss recovery for generated DSL
+  strategies: a first open/close loss trips `MaxStrategyDailyLoss`, a same-day qualifying BUY is
+  rejected with `halted: strategy daily loss`, and a qualifying signal after the UTC day boundary
+  opens and closes a second position across tick, bar, tick-resolved-bar, and live-paper modes in
+  `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
+- JVM parity coverage now proves DAILY-scoped strategy daily-drawdown recovery for generated DSL
+  strategies: an open intraday equity drawdown trips `MaxStrategyDailyDrawdown`, a same-day
+  qualifying BUY is rejected with `halted: strategy daily drawdown`, and a qualifying signal after
+  the UTC day boundary opens and closes a second position across tick, bar, tick-resolved-bar, and
+  live-paper modes in `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
 - focused market-data gate coverage now proves the stale-data re-entry contract at the same
   pre-trade rule used by live sessions: the first entry is allowed on fresh data, a later same-side
   re-entry is rejected while the symbol is stale, protective exits remain allowed, and a fresh tick
@@ -2265,9 +2290,9 @@ Existing partial coverage:
 Concrete next work:
 
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
-  recovered variants, especially strategy/global risk halt, live stale-market-data gate, daily
-  loss/drawdown, margin floor, live same-book exposure limits, retained live cooldown/loss-streak
-  reset, and retained live next-day reset behavior;
+  recovered variants, especially global daily-loss/drawdown recovery, live stale-market-data gate
+  recovery, margin floor, live same-book exposure limits, retained live cooldown/loss-streak reset,
+  and retained live next-day reset behavior;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
   decisions and live protection adjustment, but deterministic backtest fill prices can drift from
   real broker fills because live execution latency is real;
