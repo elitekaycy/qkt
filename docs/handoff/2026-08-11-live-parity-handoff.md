@@ -2833,3 +2833,83 @@ Replay result summary:
 - Live-vs-MT5-sim entry fill drift is retained as expected venue latency/model difference:
   live SELL fill `4385.776`, simulated fill `4385.85500000`, delta
   `-0.07899999999972351`.
+
+## 2026-08-12 Update: Higher-Timeframe Live Warmup Bot-Bars Probe
+
+Added and sealed a financially read-only M15/H1/H4 live warmup probe so higher-timeframe bar
+availability can be checked quickly without waiting for natural 4h daemon closes.
+
+What changed:
+
+- Added `scripts/live-validation/prepare-higher-timeframe-warmup.sh`.
+- Added `scripts/live-validation/run-higher-timeframe-warmup.sh`.
+- Added `tests/scripts/prepare-higher-timeframe-warmup-test.sh`.
+- The runner uses `qkt bot bars` against a localhost MT5 gateway and refuses remote gateway URLs.
+- Credentials stay execution-time only through `QKT_BROKER_API_KEY`; retained artifacts are scanned to
+  prove the broker key was not persisted.
+- The runner verifies the demo account allowlist before and after the probe, and rejects any open
+  positions, pending orders, or venue history deals during the run.
+- The reviewed warmup matrix is fixed in `expected.json` and in runner validation:
+  - `15m`: 4 bars for one hour, 96 bars for one day, 192 bars for two days.
+  - `1h`: 1 bar for one hour, 24 bars for one day, 48 bars for two days.
+  - `4h`: 1 bar for four hours, 6 bars for one day, 12 bars for two days.
+- Each retained bar set is validated for exact count, closed-bar status, timeframe alignment, positive
+  OHLC, sorted unique timestamps, and pseudo warmup tick count of `bars * 4`.
+- A harness bug found during live proof was fixed in `f742a852`: `qktDirty:false` is now treated as
+  data instead of a failing `jq -e` status.
+
+Verification already run:
+
+```bash
+bash tests/scripts/prepare-higher-timeframe-warmup-test.sh
+./gradlew installDist -Pkotlin.compiler.execution.strategy=daemon
+```
+
+Retained live evidence:
+
+- Scenario:
+  `/var/tmp/qkt-validation/htf-warmup-xau-20260812T060527Z`
+- Result:
+  `/var/tmp/qkt-validation/htf-warmup-xau-20260812T060527Z/evidence/result.json`
+- Checksums:
+  `/var/tmp/qkt-validation/htf-warmup-xau-20260812T060527Z/SHA256SUMS`
+  and
+  `/var/tmp/qkt-validation/htf-warmup-xau-20260812T060527Z/RUN-SHA256SUMS`
+
+Live result summary:
+
+- `status:"passed"`, `qktDirty:false`, QKT commit
+  `f742a852d88feec6195ac91cde75d7fa6bc57236`.
+- QKT CLI: `qkt 0.47.1 (f742a852) built 2026-08-12T06:05:15.292363337Z`.
+- Gateway: demo2 localhost gateway, version `0.3.4`, account `476434211`,
+  server `Exness-MT5Trial9`.
+- Symbol: `EXNESS:XAUUSD`.
+- Coverage:
+  `timeframes:["15m","1h","4h"]`,
+  `closedBars:true`,
+  `alignedBars:true`,
+  `uniqueBars:true`,
+  `accountUnchanged:true`,
+  `venueDealsDuringRun:0`.
+- Final account stayed flat: balance/equity `99999.0`, margin `0.0`.
+- Final QKT account ownership: `finalPositions:0`, `finalOrders:0`.
+- Venue history during run: `[]`.
+- Retained probes:
+  - `15m` one-hour: 4 bars, 16 pseudo warmup ticks.
+  - `15m` one-day: 96 bars, 384 pseudo warmup ticks.
+  - `15m` two-days: 192 bars, 768 pseudo warmup ticks.
+  - `1h` one-hour: 1 bar, 4 pseudo warmup ticks.
+  - `1h` one-day: 24 bars, 96 pseudo warmup ticks.
+  - `1h` two-days: 48 bars, 192 pseudo warmup ticks.
+  - `4h` four-hours: 1 bar, 4 pseudo warmup ticks.
+  - `4h` one-day: 6 bars, 24 pseudo warmup ticks.
+  - `4h` two-days: 12 bars, 48 pseudo warmup ticks.
+
+Scope and remaining work:
+
+- This seals fast live gateway closed-bar availability/alignment for M15/H1/H4 warmup ranges.
+- It does not replace full daemon strategy execution, order-path proof, or replay/backtest comparison
+  for higher-timeframe strategies.
+- Remaining higher-timeframe promotion blockers are: generated/backtest parity for the same matrix,
+  at least one daemon strategy using these higher-TF bars, and retained live-vs-backtest comparison
+  for that strategy path.
