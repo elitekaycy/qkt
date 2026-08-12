@@ -69,6 +69,7 @@ python3 "$script_dir/verify-paper-soak-attestation.py" "$soak_attestation" \
     --expected-git-sha "$testing_sha" \
     --expected-image-repository "ghcr.io/${repo%%/*}/qkt"
 soak_image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["image"])' "$soak_attestation")"
+attestation_type="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("attestationType", "paper-soak"))' "$soak_attestation")"
 
 pr_url="$($gh_bin pr list \
     --repo "$repo" \
@@ -94,7 +95,7 @@ if [ -z "$pr_url" ]; then
         '' \
         "- testing integration: $integration_url" \
         '- Windows packaging and installer validation is dispatched for the testing head' \
-        "- exact-image paper soak: $soak_url" \
+        "- exact-image $attestation_type evidence: $soak_url" \
         "- soaked image: \`$soak_image\`" \
         '' \
         '## Documentation' \
