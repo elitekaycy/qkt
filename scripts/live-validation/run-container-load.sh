@@ -85,7 +85,7 @@ docker image inspect "$image" | jq -e '
          startswith("_JAVA_OPTIONS=") or startswith("GRADLE_OPTS=")) | not
     )
 ' >/dev/null || fail "Docker image config restricts or overrides the JVM"
-image_version="$(docker run --rm --entrypoint qkt "$image" --version)"
+image_version="$(docker run --rm --entrypoint /bin/sh "$image" -lc 'qkt --version')"
 [[ "$image_version" == *"($qkt_short)"* ]] || fail "Docker image is not built from $qkt_short"
 
 mkdir -m 700 -p "$output/evidence" "$output/cases/a" "$output/cases/b"
@@ -327,6 +327,27 @@ wait_ready() {
     fail "container ${case_ids[$index]} daemon did not become ready"
 }
 
+sample_healthy_status() {
+    local state_dir="$1"
+    local failure_path="$2"
+    local status=""
+    local attempt
+    for attempt in 1 2 3; do
+        if status="$("$cli" daemon status --state-dir "$state_dir" --json 2>/dev/null)" &&
+            jq -e '
+                .status == "ok" and .strategies == 1 and
+                .perStrategy[0].running == true and .perStrategy[0].halted == false and
+                .perStrategy[0].droppedTicks == 0
+            ' <<<"$status" >/dev/null; then
+            printf '%s' "$status"
+            return 0
+        fi
+        printf '%s\n' "${status:-}" > "$failure_path"
+        sleep 1
+    done
+    return 1
+}
+
 for index in 0 1; do
     start_daemon "$index" 1
 done
@@ -418,12 +439,9 @@ while true; do
     if [ "$elapsed_seconds" -ge "$next_sample_second" ]; then
         for index in 0 1; do
             case_id="${case_ids[$index]}"
-            status="$("$cli" daemon status --state-dir "$output/cases/$case_id/state" --json)"
-            jq -e '
-                .status == "ok" and .strategies == 1 and
-                .perStrategy[0].running == true and .perStrategy[0].halted == false and
-                .perStrategy[0].droppedTicks == 0
-            ' <<<"$status" >/dev/null || fail "$case_id health sample was not ready and unhalted"
+            failure_status_path="$output/cases/$case_id/evidence/status-sample-failed-${generations[$index]}-${elapsed_seconds}.json"
+            status="$(sample_healthy_status "$output/cases/$case_id/state" "$failure_status_path")" ||
+                fail "$case_id health sample was not ready and unhalted (last sample: $failure_status_path)"
             jq -c --argjson second "$elapsed_seconds" --argjson generation "${generations[$index]}" \
                 '. + {sampleSecond:$second,generation:$generation}' <<<"$status" \
                 >> "$output/cases/$case_id/evidence/health.jsonl"

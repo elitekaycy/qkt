@@ -7,31 +7,53 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import org.junit.jupiter.api.DynamicNode
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.io.TempDir
+import org.slf4j.LoggerFactory
 
 class GeneratedIndicatorStrategyTest {
     @TestFactory
     fun `every indicator drives a generated strategy through ticks and bars`(
         @TempDir tempDir: Path,
-    ): List<DynamicTest> {
+    ): List<DynamicNode> {
         val candles = mapOf("BACKTEST:A" to candles("BACKTEST:A", 100), "BACKTEST:B" to candles("BACKTEST:B", 200))
         return IndicatorRegistry
             .names()
             .sorted()
             .map { name ->
                 DynamicTest.dynamicTest(name) {
-                    val path = tempDir.resolve("${name.lowercase()}.qkt")
-                    Files.writeString(path, strategySource(name))
+                    withQuietParityLogs {
+                        val path = tempDir.resolve("${name.lowercase()}.qkt")
+                        Files.writeString(path, strategySource(name))
 
-                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                        path = path,
-                        candlesBySymbol = candles,
-                        window = TimeWindow.ONE_HOUR,
-                    )
+                        GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                            path = path,
+                            candlesBySymbol = candles,
+                            window = TimeWindow.ONE_HOUR,
+                        )
+                    }
                 }
             }
+    }
+
+    private fun <T> withQuietParityLogs(block: () -> T): T {
+        val loggers =
+            listOf(
+                "com.qkt.app.TradingPipeline",
+                "com.qkt.app.OrderManager",
+                "com.qkt.app.LiveSession",
+                "com.qkt.app.PerStreamWarmupCoordinator",
+                "qkt.trade",
+            ).map { LoggerFactory.getLogger(it) as ch.qos.logback.classic.Logger }
+        val previousLevels = loggers.associateWith { it.level }
+        loggers.forEach { it.level = ch.qos.logback.classic.Level.WARN }
+        return try {
+            block()
+        } finally {
+            previousLevels.forEach { (logger, level) -> logger.level = level }
+        }
     }
 
     private fun strategySource(name: String): String =
