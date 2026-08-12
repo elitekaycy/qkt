@@ -32,9 +32,11 @@ testing branch, not downstream deployment.
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 181`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 182`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
+- Promotion PR: https://github.com/elitekaycy/qkt/pull/979
 - Latest committed work:
+  - `docs(docs): record parity pr status`
   - `test(parity): quiet reentry parity logs`
   - `docs(docs): record closeout gate status`
   - `docs(docs): record strict case sanity proof`
@@ -4021,3 +4023,21 @@ Remaining after this branch closeout:
    to `qkt-forge` on `sshbot2`, rerun the selected strategies there, then run portfolio backtests
    from the promoted/proven runtime.
 4. Only after `qkt-forge` forward-test is clean, update bot1 `qkt-quantlive`.
+
+## 2026-08-12 Update: PR Opened To Dev
+
+PR opened at `2026-08-12T11:54:06Z`:
+
+- PR: https://github.com/elitekaycy/qkt/pull/979
+- Title: `test(parity): seal exhaustive live parity`
+- Base: `dev`
+- Head: `test/exhaustive-live-parity`
+- Draft: no
+- Initial merge state: `BLOCKED` because required checks were still in progress at creation time.
+- Initial checks in progress:
+  - `check / build`
+  - `windows-ci / build-windows`
+  - `GitGuardian Security Checks`
+
+Next gate is to watch PR 979 checks to completion, fix any CI-only failure on this branch, and then
+merge to `dev` when the PR is green and review requirements are satisfied.
