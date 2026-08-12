@@ -83,7 +83,8 @@ if [ -e "$output" ]; then fail "output already exists: $output"; fi
 bash "$prepare" --output "$output" --id "$suite_id" --gateway-url "$gateway_url" \
     --expected-login "$expected_login" --expected-server "$expected_server" \
     --expected-balance "$expected_balance" --expected-leverage "$expected_leverage" \
-    --magic-base "$magic_base" --cli "$cli" >/dev/null
+    --magic-base "$magic_base" --ema-fast "$ema_fast" --ema-slow "$ema_slow" \
+    --cli "$cli" >/dev/null
 
 mapfile -t cases < <(find "$output/cases" -mindepth 1 -maxdepth 1 -type d | sort)
 [ "${#cases[@]}" -eq 4 ] || fail "generated suite did not contain four cases"
