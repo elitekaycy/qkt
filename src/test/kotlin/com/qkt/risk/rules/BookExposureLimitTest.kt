@@ -26,7 +26,15 @@ class BookExposureLimitTest {
                 config = BookRiskConfig(limits = BookLimits(maxGrossExposure = BigDecimal("3"))),
                 capital = BigDecimal("10000"),
             )
-        c.onSample(
+        sampleExposure(c, gross)
+        return c
+    }
+
+    private fun sampleExposure(
+        controller: BookRiskController,
+        gross: String,
+    ) {
+        controller.onSample(
             BookSnapshot(
                 timestampMs = 1L,
                 bookEquity = BigDecimal("10000"),
@@ -34,7 +42,6 @@ class BookExposureLimitTest {
                 perStrategyPnl = emptyMap(),
             ),
         )
-        return c
     }
 
     private fun buy(qty: String) =
@@ -58,6 +65,17 @@ class BookExposureLimitTest {
         timeInForce = TimeInForce.GTC,
         timestamp = 1L,
     )
+
+    private fun closeBuyTicket(qty: String) =
+        OrderRequest.Market(
+            id = "close-1",
+            symbol = "X",
+            side = Side.SELL,
+            quantity = BigDecimal(qty),
+            timeInForce = TimeInForce.GTC,
+            timestamp = 1L,
+            closesTicket = "ticket-1",
+        )
 
     @Test
     fun `rejects a risk-increasing order that breaches the book gross cap`() {
@@ -83,5 +101,27 @@ class BookExposureLimitTest {
 
         assertThat(decision).isInstanceOf(Decision.Reject::class.java)
         assertThat((decision as Decision.Reject).reason).contains("book gross")
+    }
+
+    @Test
+    fun `blocks reentry while sibling book exposure consumes headroom and recovers after the sample clears`() {
+        val controller =
+            BookRiskController(
+                config = BookRiskConfig(limits = BookLimits(maxGrossExposure = BigDecimal("1"))),
+                capital = BigDecimal("1000"),
+            )
+        sampleExposure(controller, "0")
+        val rule = BookExposureLimit(controller, prices, NoopInstrumentRegistry)
+
+        assertThat(rule.evaluate(buy("10"), positions)).isEqualTo(Decision.Approve)
+
+        sampleExposure(controller, "500")
+        val blockedReentry = rule.evaluate(buy("10"), positions)
+        assertThat(blockedReentry).isInstanceOf(Decision.Reject::class.java)
+        assertThat((blockedReentry as Decision.Reject).reason).contains("book gross exposure")
+        assertThat(rule.evaluate(closeBuyTicket("10"), positions)).isEqualTo(Decision.Approve)
+
+        sampleExposure(controller, "0")
+        assertThat(rule.evaluate(buy("10"), positions)).isEqualTo(Decision.Approve)
     }
 }

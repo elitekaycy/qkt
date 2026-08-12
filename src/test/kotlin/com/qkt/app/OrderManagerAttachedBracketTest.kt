@@ -9,6 +9,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.NumLit
+import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
@@ -201,6 +202,93 @@ class OrderManagerAttachedBracketTest {
         val shipped = broker.submits.single()
         assertThat(shipped).isInstanceOf(OrderRequest.Bracket::class.java)
         assertThat(shipped.id).isEqualTo("stk-tier0-entry")
+    }
+
+    @Test
+    fun `cancelling a partially filled residual leaves venue-attached protection intact`() {
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        om.submit(armedTrailBracket())
+        val attached = broker.submits.single() as OrderRequest.Bracket
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = attached.id,
+                brokerOrderId = "position-1",
+                symbol = attached.symbol,
+                side = attached.side,
+                price = Money.of("100"),
+                quantity = Money.of("0.4"),
+                cumulativeFilled = Money.of("0.4"),
+            ),
+        )
+
+        om.cancel(attached.id)
+
+        assertThat(broker.cancels).containsExactly(attached.id)
+        assertThat(om.getOrder(attached.id)?.cumulativeFilledQuantity).isEqualByComparingTo("0.4")
+        assertThat((attached.stopLoss as StopLossSpec.ArmedTrail).trailDistance).isEqualByComparingTo("5")
+        assertThat(attached.takeProfit).isEqualByComparingTo("120")
+        assertThat(broker.modifyPositions).isEmpty()
+    }
+
+    @Test
+    fun `relative attached bracket modifies protection from the exact fill`() {
+        data class Case(
+            val side: Side,
+            val fill: String,
+            val expectedSl: String,
+            val expectedTp: String,
+        )
+
+        listOf(
+            Case(Side.BUY, fill = "105", expectedSl = "95", expectedTp = "125"),
+            Case(Side.SELL, fill = "95", expectedSl = "105", expectedTp = "75"),
+        ).forEach { case ->
+            val clock = FixedClock(0L)
+            val bus = newBus(clock)
+            val broker = FakeBroker(bus, clock, attachCaps)
+            val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+            val entryId = "${case.side.name.lowercase()}-entry"
+            val entry =
+                OrderRequest.Market(
+                    id = entryId,
+                    symbol = "X",
+                    side = case.side,
+                    quantity = Money.of("1"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                )
+            val bracket =
+                OrderRequest.Bracket(
+                    id = "${case.side.name.lowercase()}-bracket",
+                    symbol = "X",
+                    side = case.side,
+                    quantity = Money.of("1"),
+                    entry = entry,
+                    takeProfit = Money.of(if (case.side == Side.BUY) "120" else "80"),
+                    stopLoss = StopLossSpec.Fixed(Money.of(if (case.side == Side.BUY) "90" else "110")),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                    takeProfitAst = ChildBy(NumLit(Money.of("20"))),
+                    stopLossAst = ChildBy(NumLit(Money.of("10"))),
+                )
+
+            om.submit(bracket)
+            val shipped = broker.submits.single() as OrderRequest.Bracket
+            assertThat(shipped.takeProfit).isEqualByComparingTo(bracket.takeProfit)
+            assertThat((shipped.stopLoss as StopLossSpec.Fixed).price)
+                .isEqualByComparingTo((bracket.stopLoss as StopLossSpec.Fixed).price)
+
+            broker.emitFill(shipped, price = Money.of(case.fill))
+
+            val modification = broker.modifyPositions.single()
+            assertThat(modification.ticket).isEqualTo(entryId)
+            assertThat(modification.sl).isEqualByComparingTo(case.expectedSl)
+            assertThat(modification.tp).isEqualByComparingTo(case.expectedTp)
+        }
     }
 
     @Test

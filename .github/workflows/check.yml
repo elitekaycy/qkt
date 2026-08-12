@@ -1,7 +1,7 @@
 name: check
 
 # Fast essentials — compile + ktlint + unit tests — on every PR into dev and
-# every push to dev. This is the only CI a feature-branch PR runs. The heavier
+# every push to dev or testing. This is the only CI a feature-branch PR runs. The heavier
 # black-box suite is integration.yml, which gates testing and main.
 #
 # On a push to dev (i.e. a merged PR), a green build auto-promotes dev to
@@ -16,7 +16,7 @@ name: check
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, testing]
   pull_request:
     branches: [dev]
 

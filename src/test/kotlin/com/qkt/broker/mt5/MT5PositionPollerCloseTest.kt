@@ -8,6 +8,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.ExitReason
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.positions.PositionTracker
 import java.math.BigDecimal
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -82,7 +83,7 @@ class MT5PositionPollerCloseTest {
         server.enqueue(MockResponse().setBody(positionJson(7001L, "0.04", "90", "110")))
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":22,"entry":1,"price":"95","volume":"0.06","commission":"-0.30"}]""",
+                """[{"ticket":22,"position_id":7001,"entry":1,"price":"95","volume":"0.06","commission":"-0.30"}]""",
             ),
         )
         val meta = mapOf(7001L to ClosedPositionMeta("entry-1", "alpha"))
@@ -108,19 +109,43 @@ class MT5PositionPollerCloseTest {
     }
 
     @Test
+    fun `same-ticket volume increase invokes entry reconciliation without a close fill`() {
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.04", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.07", "90", "110")))
+        val increases = mutableListOf<Pair<MT5Position, MT5Position>>()
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionIncreased = { previous, latest -> increases += previous to latest },
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(increases).hasSize(1)
+        assertThat(increases.single().first.volume).isEqualByComparingTo("0.04")
+        assertThat(increases.single().second.volume).isEqualByComparingTo("0.07")
+        assertThat(fills).isEmpty()
+    }
+
+    @Test
     fun `repeated partial closes use only each newly observed closing deal for price`() {
         server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
         server.enqueue(MockResponse().setBody(positionJson(7001L, "0.07", "90", "110")))
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":22,"entry":1,"price":"95","volume":"0.03","commission":"-0.15"}]""",
+                """[{"ticket":22,"position_id":7001,"entry":1,"price":"95","volume":"0.03","commission":"-0.15"}]""",
             ),
         )
         server.enqueue(MockResponse().setBody(positionJson(7001L, "0.04", "90", "110")))
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":22,"entry":1,"price":"95","volume":"0.03","commission":"-0.15"},
-                    {"ticket":23,"entry":1,"price":"97","volume":"0.03","commission":"-0.15"}]""",
+                """[{"ticket":22,"position_id":7001,"entry":1,"price":"95","volume":"0.03","commission":"-0.15"},
+                    {"ticket":23,"position_id":7001,"entry":1,"price":"97","volume":"0.03","commission":"-0.15"}]""",
             ),
         )
         val poller =
@@ -281,20 +306,26 @@ class MT5PositionPollerCloseTest {
     }
 
     @Test
-    fun `venue-side close is priced from the closing deal, not the engine's last tick`() {
+    fun `foreign account deals cannot affect reconstructed close fill price costs or pnl`() {
         server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(7001L, 0, "1.1000")))))
         server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
         // The venue's SL filled at 1.0950 — two partial out-deals volume-weight to it.
-        // Commission and swap are reported "added to profit" (negative = charge).
+        // The gateway response also contains an account-wide foreign close whose price,
+        // volume, and costs would overwhelm the target position if trusted unfiltered.
         server.enqueue(
             MockResponse().setBody(
-                """[{"ticket":1,"entry":0,"price":"1.1000","volume":"0.10","commission":"-0.70"},
-                    {"ticket":2,"entry":1,"price":"1.0940","volume":"0.05","commission":"-0.35","swap":"-0.55","reason":4},
-                    {"ticket":3,"entry":1,"price":"1.0960","volume":"0.05","commission":"-0.35","swap":"-0.55","reason":4}]""",
+                """[{"ticket":1,"position_id":7001,"entry":0,"price":"1.1000","volume":"0.10","commission":"-0.70"},
+                    {"ticket":91,"position_id":8002,"entry":0,"price":"1.3500","volume":"50","commission":"-1000"},
+                    {"ticket":92,"position_id":8002,"entry":1,"price":"1.0000","volume":"50","commission":"-1000","swap":"-500","reason":5},
+                    {"ticket":2,"position_id":7001,"entry":1,"price":"1.0940","volume":"0.05","commission":"-0.35","swap":"-0.55","reason":4},
+                    {"ticket":3,"position_id":7001,"entry":1,"price":"1.0960","volume":"0.05","commission":"-0.35","swap":"-0.55","reason":4}]""",
             ),
         )
 
         val priceTracker = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) }
+        val positions = PositionTracker().apply { reset("TEST-MT5:XAUUSD", BigDecimal("0.10"), BigDecimal("1.1000")) }
+        var realized = BigDecimal.ZERO
+        bus.subscribe<BrokerEvent.OrderFilled> { realized = realized.add(positions.applyFill(it)) }
         val poller =
             MT5PositionPoller(
                 client = client,
@@ -314,6 +345,8 @@ class MT5PositionPollerCloseTest {
         assertThat(fills.single().exitReason).isEqualTo(ExitReason.STOP)
         // Costs sum over all the position's deals: 0.70 + 0.35 + 0.35 commission + 1.10 swap.
         assertThat(fills.single().venueCosts).isEqualByComparingTo("2.50")
+        assertThat(realized).isEqualByComparingTo("-0.00050000")
+        assertThat(positions.positionFor("TEST-MT5:XAUUSD")).isNull()
     }
 
     @Test
@@ -402,6 +435,54 @@ class MT5PositionPollerCloseTest {
         assertThat(e.price).isEqualByComparingTo("2040.00")
         // type=1 (SELL) → close side is BUY
         assertThat(e.side).isEqualTo(Side.BUY)
+    }
+
+    @Test
+    fun `runtime position rejected by local correlation does not emit a sibling close`() {
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(8888L, 0, "2050.00")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionOpened = { false },
+                closedTicketMeta = { null },
+            )
+
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).isEmpty()
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `runtime position publishes when placement metadata arrives after the open poll`() {
+        server.enqueue(MockResponse().setBody(positionsJson(listOf(Triple(8888L, 0, "2050.00")))))
+        server.enqueue(MockResponse().setBody(positionsJson(emptyList())))
+        server.enqueue(MockResponse().setBody("[]"))
+        var meta: ClosedPositionMeta? = null
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionOpened = { false },
+                closedTicketMeta = { meta },
+            )
+
+        poller.tick()
+        meta = ClosedPositionMeta("dsl-owner--1", "owner")
+        poller.tick()
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().clientOrderId).isEqualTo("dsl-owner--1")
+        assertThat(fills.single().strategyId).isEqualTo("owner")
     }
 
     @Test

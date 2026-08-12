@@ -33,6 +33,15 @@ class DEMATest {
     }
 
     @Test
+    fun `matches a hand calculated period two ramp`() {
+        val d = DEMA(2)
+        listOf("1", "2", "3", "4", "5").forEach { d.update(Money.of(it)) }
+
+        // EMA1=4.5 and EMA2=4, so DEMA=2*4.5-4=5.
+        assertThat(d.value()).isEqualByComparingTo(Money.of("5"))
+    }
+
+    @Test
     fun `rejects non-positive period`() {
         assertThatThrownBy { DEMA(0) }.isInstanceOf(IllegalArgumentException::class.java)
     }

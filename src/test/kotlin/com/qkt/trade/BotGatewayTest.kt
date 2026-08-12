@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test
 class BotGatewayTest {
     private lateinit var server: HttpServer
     private lateinit var gateway: BotGateway
+    private lateinit var profile: MT5BrokerProfile
+    private lateinit var client: MT5Client
     private val responses = mutableMapOf<String, Pair<Int, String>>()
     private val requests = mutableListOf<Pair<String, String>>()
 
@@ -37,7 +39,7 @@ class BotGatewayTest {
         }
         server.start()
         val url = "http://127.0.0.1:${server.address.port}"
-        val profile =
+        profile =
             MT5BrokerProfile(
                 name = "exness",
                 gatewayUrl = url,
@@ -46,7 +48,7 @@ class BotGatewayTest {
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
             )
-        val client =
+        client =
             MT5Client(
                 gatewayUrl = url,
                 serverTimeZone = MT5ServerTimeZone.UTC,
@@ -104,6 +106,20 @@ class BotGatewayTest {
         val result = gateway.place(CompiledBotOrder(market(), null, null))
         assertThat(result.ok).isFalse
         assertThat(result.error).contains("No money")
+    }
+
+    @Test
+    fun `configured account mismatch fails before an order can reach the venue`() {
+        responses["/account"] =
+            200 to
+            """{"login":42,"server":"Exness-Demo","trade_mode":0,"balance":10000,"equity":10000,"currency":"USD","leverage":500,"margin_mode":2}"""
+        responses["/order"] =
+            200 to """{"result":{"retcode":10009,"order":123,"deal":456,"price":2650.5,"comment":"done"}}"""
+
+        assertThatThrownBy {
+            BotGateway(profile.copy(expectedAccountLogin = 99L), client)
+        }.hasMessageContaining("account login mismatch")
+        assertThat(requests.map { it.first }).containsExactly("GET /account")
     }
 
     @Test

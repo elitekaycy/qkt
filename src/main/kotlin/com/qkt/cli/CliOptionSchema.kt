@@ -220,7 +220,8 @@ internal object CliOptionSchemas {
                 ),
             "golden" to
                 CliOptionSchema(
-                    values = setOf("session", "state-dir", "out"),
+                    values = setOf("session", "state-dir", "bundle", "out"),
+                    flags = setOf("read-only"),
                 ),
             "soak" to
                 CliOptionSchema(

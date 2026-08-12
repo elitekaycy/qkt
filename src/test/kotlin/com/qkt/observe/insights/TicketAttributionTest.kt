@@ -23,13 +23,21 @@ class TicketAttributionTest {
     }
 
     @Test
-    fun `retainAll drops tickets the broker no longer reports`() {
+    fun `retainAll keeps vanished tickets through the close-deal grace`() {
         val map = TicketAttribution()
         map.record("1", "a")
         map.record("2", "b")
         map.retainAll(setOf("2"))
-        assertThat(map.ownerOf("1")).isNull()
+        assertThat(map.ownerOf("1")).isEqualTo("a")
         assertThat(map.ownerOf("2")).isEqualTo("b")
+    }
+
+    @Test
+    fun `retainAll eventually drops tickets that stay absent`() {
+        val map = TicketAttribution()
+        map.record("1", "a")
+        repeat(301) { map.retainAll(emptySet()) }
+        assertThat(map.ownerOf("1")).isNull()
     }
 
     @Test

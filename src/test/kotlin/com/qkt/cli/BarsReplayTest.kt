@@ -7,6 +7,7 @@ import com.qkt.marketdata.BinaryTickWriter
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.candleToTicks
+import com.qkt.marketdata.store.BinaryBarStore
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -143,6 +144,73 @@ class BarsReplayTest {
             }
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
         assertThat(out.toString()).contains("\"trades\":")
+    }
+
+    @Test
+    fun `bars replay flushes a completed final bar at the requested boundary`(
+        @TempDir dir: Path,
+    ) {
+        val dataRoot = dir.resolve("data")
+        val day = LocalDate.parse("2026-08-10")
+        val start = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val bars =
+            (0 until 6).map { index ->
+                val price = Money.of("1.${15540 + index}")
+                Candle(
+                    symbol = "BACKTEST:EURUSD",
+                    open = price,
+                    high = price,
+                    low = price,
+                    close = price,
+                    volume = Money.of("1"),
+                    startTime = start + index * 60_000L,
+                    endTime = start + (index + 1) * 60_000L,
+                )
+            }
+        BinaryBarStore(dataRoot).writeDay("BACKTEST", "EURUSD", TimeWindow.ONE_MINUTE, day, bars)
+        val strategy = dir.resolve("final-bar.qkt")
+        Files.writeString(
+            strategy,
+            """
+            STRATEGY final_bar VERSION 1
+            SYMBOLS
+                eur = BACKTEST:EURUSD EVERY 1m WARMUP 5 BARS
+            RULES
+                WHEN eur.close > 0 AND POSITION.eur = 0 AND TRADES.today = 0
+                THEN BUY eur SIZING 0.01
+            """.trimIndent(),
+        )
+        val out = ByteArrayOutputStream()
+        val original = System.out
+        val code =
+            try {
+                System.setOut(PrintStream(out))
+                BacktestCommand(
+                    Args(
+                        arrayOf(
+                            "backtest",
+                            strategy.toString(),
+                            "--from",
+                            Instant.ofEpochMilli(start + 5 * 60_000L).toString(),
+                            "--to",
+                            Instant.ofEpochMilli(start + 6 * 60_000L).toString(),
+                            "--data-root",
+                            dataRoot.toString(),
+                            "--no-fetch",
+                            "--allow-incomplete",
+                            "--bars",
+                            "--bar-tf",
+                            "1m",
+                            "--json",
+                        ),
+                    ),
+                ).run()
+            } finally {
+                System.setOut(original)
+            }
+
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out.toString()).contains("\"trades\":1")
     }
 
     @Test
