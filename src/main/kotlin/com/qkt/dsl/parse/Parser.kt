@@ -715,7 +715,8 @@ class Parser(
                     },
                 )
             }
-            TokenKind.MAX, TokenKind.MIN, TokenKind.MEAN, TokenKind.SUM -> parseAggregate()
+            TokenKind.MAX, TokenKind.MIN -> parseAggregateOrFunction()
+            TokenKind.MEAN, TokenKind.SUM -> parseAggregate()
             TokenKind.CASE -> parseCaseWhen()
             TokenKind.ACCOUNT -> {
                 advance()
@@ -831,11 +832,9 @@ class Parser(
                     NowAccessor(NowField.EPOCH_MS)
                 }
             }
-            // TokenKind.LOG is included here because `log` is also a reserved action
-            // keyword (`LOG "message"` in THEN). In expression position, `log(` must
-            // bind to the math function — the action parser is only reached from action
-            // position, so this overlap is unambiguous.
-            TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE, TokenKind.LOG -> {
+            // LOG and FLOOR are also reserved action/order keywords. In expression
+            // position their parenthesized forms bind to registered math functions.
+            TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE, TokenKind.LOG, TokenKind.FLOOR -> {
                 if ((inStackLayerAt || inOtoChildPrice) && t.kind == TokenKind.IDENT && t.lexeme == "entry") {
                     advance()
                     return StackEntryRef
@@ -975,6 +974,23 @@ class Parser(
         expect(TokenKind.SINCE, "expected SINCE after aggregate")
         val window = parseWindow()
         return Aggregate(fn, series, window)
+    }
+
+    private fun parseAggregateOrFunction(): ExprAst {
+        val fnTok = advance()
+        expect(TokenKind.LPAREN, "expected '(' after ${fnTok.lexeme}")
+        val args = mutableListOf(parseExpr())
+        while (match(TokenKind.COMMA)) args.add(parseExpr())
+        expect(TokenKind.RPAREN, "expected ')' after arguments")
+
+        if (match(TokenKind.SINCE)) {
+            if (args.size != 1) {
+                errors += ParseError(fnTok.line, fnTok.col, "${fnTok.lexeme} aggregate expects exactly one series")
+            }
+            val fn = if (fnTok.kind == TokenKind.MAX) AggFn.MAX else AggFn.MIN
+            return Aggregate(fn, args.first(), parseWindow())
+        }
+        return FuncCall(fnTok.lexeme.uppercase(), args)
     }
 
     private fun parseWindow(): Window {

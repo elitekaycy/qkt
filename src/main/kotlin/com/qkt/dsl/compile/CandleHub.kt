@@ -40,11 +40,23 @@ class CandleHub {
     // Per-tick [feed] reads only the slots for the tick's symbol via this index instead of walking the
     // whole `slots` map and comparing qktSymbol on each. Derived from `slots`; rebuilt on
     // register/unregister (rare) and read on the hot path, so it is published through @Volatile.
+    // Longer windows close first at a shared boundary. A faster-stream rule can therefore read the
+    // newly closed slower candle, independent of ConcurrentHashMap or registration order.
     @Volatile
     private var slotsByQktSymbol: Map<String, List<Slot>> = emptyMap()
 
+    @Volatile
+    private var orderedSlots: List<Slot> = emptyList()
+
     private fun rebuildSymbolIndex() {
-        slotsByQktSymbol = slots.entries.groupBy({ it.key.qktSymbol }, { it.value })
+        val sorted =
+            slots.values.sortedWith(
+                compareBy<Slot> { it.key.qktSymbol }
+                    .thenByDescending { TimeWindow.parse(it.key.timeframe).durationMs }
+                    .thenBy { it.key.timeframe },
+            )
+        orderedSlots = sorted
+        slotsByQktSymbol = sorted.groupBy { it.key.qktSymbol }
     }
 
     private data class OwnedSyncListener(
@@ -136,7 +148,7 @@ class CandleHub {
      * so a quiet symbol's last bar still closes and fires its rules.
      */
     fun flushClosed(nowMs: Long) {
-        for ((_, slot) in slots) slot.aggregator.flushClosed(nowMs)
+        for (slot in orderedSlots) slot.aggregator.flushClosed(nowMs)
         sweepSyncTimeouts(nowMs)
     }
 

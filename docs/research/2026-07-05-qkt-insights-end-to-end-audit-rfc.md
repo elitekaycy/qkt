@@ -15,7 +15,9 @@ Completed in the current worktree:
 
 - Phase 0: qkt-insights README reflects `state`, `deal`, `log`, and retired `snapshot` behavior.
 - Phase 0: collector rejects batch/envelope `instanceId` mismatches.
-- Phase 0: collector records durable ingest observations for sequence gaps, regressions, and duplicate ids.
+- Phase 0: collector records durable duplicate-id ingest observations. Filtered,
+  re-entrant EventBus sequences are producer-local ordering tie-breakers and are
+  not reported as delivery gaps or regressions.
 - Phase 0: qkt emits `insights.health` snapshots with sink `sent`, `failed`, `dropped`, `queued`, and journal backlog counters; qkt-insights stores and shows the latest counters on Health.
 - Phase 0: global risk halt/resume payloads omit blank strategy ids instead of serializing `strategyId: ""`.
 - Phase 1: existing signal, order-submit, partial-fill, balances, and reconciliation translations preserve more source fields.

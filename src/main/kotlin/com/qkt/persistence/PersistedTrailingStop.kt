@@ -6,11 +6,12 @@ import java.math.BigDecimal
 /**
  * On-disk shape of an engine-managed dynamic stop so it survives a restart.
  *
- * [armed] and [hwm] carry armed-trail progress. [stepIndex] is the next stepped-stop
- * milestone, [elapsedIntervals] is the time-tightening cursor, and [stopLevel] is the
- * last monotonic level. Defaulted ratchet fields keep armed-trail journals backward
- * compatible. [request] carries static configuration and [brokerOrderId] preserves
- * the engine-held leg's accepted id.
+ * [hwm] carries the last favorable price observed by a basic or armed trail; it cannot represent
+ * favorable prices that arrived while the engine was offline. [armed] carries armed-trail progress,
+ * [stepIndex] is the next stepped-stop milestone, [elapsedIntervals] is the time-tightening cursor,
+ * and [stopLevel] is the last monotonic level. Defaulted ratchet fields keep armed-trail journals
+ * backward compatible. [request] carries static configuration and [brokerOrderId] preserves the
+ * engine-held leg's accepted id.
  */
 data class PersistedTrailingStop(
     val clientOrderId: String,

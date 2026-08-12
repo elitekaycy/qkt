@@ -158,6 +158,27 @@ class MarketDataGateTest {
         assertThat(rule.evaluate(entry, positions)).isEqualTo(Decision.Approve)
     }
 
+    @Test
+    fun `stale data blocks reentry but not exits and recovery reopens the gate`() {
+        val clock = TickingClock(1L)
+        val gate = MarketDataGate(clock, minStaleAgeMs = 1_000L)
+        val rule = MarketDataHealthRule(gate)
+        val flatPositions = PositionTracker()
+        val firstEntry = marketOrder("first-entry", Side.BUY)
+        val secondEntry = marketOrder("second-entry", Side.BUY)
+        val protectiveExit = marketOrder("protective-exit", Side.SELL, closesTicket = "open-ticket")
+
+        gate.observe(tick("100", clock.t))
+        assertThat(rule.evaluate(firstEntry, flatPositions)).isEqualTo(Decision.Approve)
+
+        clock.t += 2_000L
+        assertThat(rule.evaluate(secondEntry, flatPositions)).isInstanceOf(Decision.Reject::class.java)
+        assertThat(rule.evaluate(protectiveExit, flatPositions)).isEqualTo(Decision.Approve)
+
+        gate.observe(tick("100", clock.t))
+        assertThat(rule.evaluate(secondEntry, flatPositions)).isEqualTo(Decision.Approve)
+    }
+
     private fun marketOrder(
         id: String,
         side: Side,

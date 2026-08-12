@@ -6,6 +6,7 @@ import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.events.CandleEvent
 import com.qkt.events.TickEvent
+import com.qkt.events.WarmupTickEvent
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
@@ -37,6 +38,18 @@ class CandleAggregatorTest {
         assertThat(emitted.map { it.startTime }).containsExactly(0L, 60_000L)
         assertThat(emitted.first().high).isEqualByComparingTo("100")
         assertThat(agg.droppedLateTicks).isEqualTo(1)
+    }
+
+    @Test
+    fun `synthetic warmup reordering does not report live tick loss`() {
+        val agg = aggregator()
+        bus.publish(WarmupTickEvent(Tick("X", Money.of("100"), 61_000L)))
+        bus.publish(WarmupTickEvent(Tick("X", Money.of("99"), 1_000L)))
+
+        assertThat(agg.droppedLateTicks).isZero()
+
+        publishTick("X", Money.of("98"), 2_000L)
+        assertThat(agg.droppedLateTicks).isEqualTo(1L)
     }
 
     private fun publishTick(

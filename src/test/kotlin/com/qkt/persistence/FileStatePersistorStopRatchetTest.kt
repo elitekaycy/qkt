@@ -5,6 +5,7 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
+import com.qkt.execution.TrailMode
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -83,5 +84,39 @@ class FileStatePersistorStopRatchetTest {
         assertThat(loaded[1].request).isEqualTo(time)
         assertThat(loaded[1].elapsedIntervals).isEqualTo(3L)
         assertThat(loaded[1].stopLevel).isEqualByComparingTo("70")
+    }
+
+    @Test
+    fun `basic trailing high-water state round trips through the restart journal`() {
+        val trailing =
+            OrderRequest.TrailingStop(
+                id = "trail",
+                symbol = "X",
+                side = Side.SELL,
+                quantity = Money.of("1"),
+                trailAmount = Money.of("5"),
+                trailMode = TrailMode.ABSOLUTE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 10L,
+                strategyId = "alpha",
+            )
+        FileStatePersistor(tempDir).saveTrailingStops(
+            "alpha",
+            listOf(
+                PersistedTrailingStop(
+                    clientOrderId = trailing.id,
+                    brokerOrderId = trailing.id,
+                    strategyId = "alpha",
+                    request = trailing,
+                    armed = false,
+                    hwm = Money.of("123.45"),
+                ),
+            ),
+        )
+
+        val loaded = FileStatePersistor(tempDir).loadTrailingStops("alpha").single()
+
+        assertThat(loaded.request).isEqualTo(trailing)
+        assertThat(loaded.hwm).isEqualByComparingTo("123.45")
     }
 }

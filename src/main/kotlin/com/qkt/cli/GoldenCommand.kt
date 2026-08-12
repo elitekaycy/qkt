@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
+import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -18,6 +19,7 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,15 +33,33 @@ class GoldenCommand(
     fun run(): Int =
         when (val action = args.positional(0)) {
             "capture" -> capture()
+            "materialize" -> materialize()
             else -> {
-                System.err.println("qkt: unknown golden action '${action ?: ""}' (expected: capture)")
+                System.err.println("qkt: unknown golden action '${action ?: ""}' (expected: capture or materialize)")
                 printUsage()
                 ExitCodes.ARG_ERROR
             }
         }
 
+    private fun materialize(): Int =
+        try {
+            val bundle = Path.of(args.requireOption("bundle"))
+            val output = Path.of(args.requireOption("out"))
+            val summary = GoldenReplayDataMaterializer(bundle, output, clock).materialize()
+            println(
+                "qkt golden materialize: wrote ${output.toAbsolutePath().normalize()} " +
+                    "(${summary.liveTicks} live ticks, ${summary.warmupTicks} warmup ticks, " +
+                    "${summary.candles} candles)",
+            )
+            ExitCodes.SUCCESS
+        } catch (error: Exception) {
+            System.err.println("qkt: golden materialize failed: ${error.message}")
+            ExitCodes.USER_ERROR
+        }
+
     private fun capture(): Int {
         val session = args.requireOption("session").trim()
+        val readOnly = args.flag("read-only")
         if (session.isEmpty()) throw ArgError("--session must not be blank")
         val stateDir = StateDir.resolve(args.option("state-dir"))
         val safeSession = sanitize(session)
@@ -53,14 +73,24 @@ class GoldenCommand(
         return try {
             val audit = scanAudit(auditFiles)
             require(audit.tickCount > 0L) { "session has no captured inbound ticks" }
-            require(audit.fillCount > 0L) { "session has no captured fills" }
+            if (readOnly) {
+                require(audit.fillCount == 0L) { "read-only session contains ${audit.fillCount} fill event(s)" }
+            } else {
+                require(audit.fillCount > 0L) { "session has no captured fills" }
+            }
             assertNoDrops(auditDir, "audit", audit.firstTimestampMs, audit.lastTimestampMs)
             val transportRoot = stateDir.stateRoot.resolve("mt5-transport-journal")
             val transportFiles = jsonlFilesRecursive(transportRoot)
             val transport = scanTransport(transportFiles, audit)
             require(transport.exchangeCount > 0L) { "session window has no captured MT5 gateway exchanges" }
-            require(transport.linkedPlacements > 0L) {
-                "session has no MT5 order exchange linked to a filled audit order"
+            if (readOnly) {
+                require(transport.mutationCount == 0L) {
+                    "read-only session contains ${transport.mutationCount} mutating gateway exchange(s)"
+                }
+            } else {
+                require(transport.linkedPlacements > 0L) {
+                    "session has no MT5 order exchange linked to a filled audit order"
+                }
             }
             assertNoDrops(transportRoot, "transport", audit.firstTimestampMs, audit.lastTimestampMs)
 
@@ -78,6 +108,7 @@ class GoldenCommand(
                 transportFiles = transportFiles,
                 transport = transport,
                 createdAt = createdAt,
+                readOnly = readOnly,
             )
             println("qkt golden capture: wrote ${output.toAbsolutePath().normalize()}")
             ExitCodes.SUCCESS
@@ -97,6 +128,7 @@ class GoldenCommand(
         transportFiles: List<Path>,
         transport: TransportSummary,
         createdAt: Instant,
+        readOnly: Boolean,
     ) {
         val absolute = output.toAbsolutePath().normalize()
         absolute.parent?.let(Files::createDirectories)
@@ -134,7 +166,7 @@ class GoldenCommand(
                 putText(
                     zip,
                     "manifest.json",
-                    renderManifest(session, audit, transport, createdAt, entries),
+                    renderManifest(session, audit, transport, createdAt, entries, readOnly),
                 )
             }
             try {
@@ -151,8 +183,13 @@ class GoldenCommand(
         var first = Long.MAX_VALUE
         var last = Long.MIN_VALUE
         var ticks = 0L
+        var warmupTicks = 0L
+        var candles = 0L
+        var streamCandles = 0L
+        var strategyCandleEvaluations = 0L
         var fills = 0L
         val filledOrderIds = mutableSetOf<String>()
+        val filledBrokerOrderIds = mutableSetOf<String>()
         for (file in files) {
             Files.newBufferedReader(file, StandardCharsets.UTF_8).use { reader ->
                 var lineNumber = 0L
@@ -165,7 +202,32 @@ class GoldenCommand(
                     first = minOf(first, timestamp)
                     last = maxOf(last, timestamp)
                     when (record["eventType"]?.jsonPrimitive?.contentOrNull) {
-                        "com.qkt.events.TickEvent" -> ticks += 1L
+                        "com.qkt.events.TickEvent" -> {
+                            requireStructuredTick(record, file, lineNumber)
+                            ticks += 1L
+                        }
+                        "com.qkt.events.WarmupTickEvent" -> {
+                            requireStructuredTick(record, file, lineNumber)
+                            warmupTicks += 1L
+                        }
+                        "com.qkt.events.CandleEvent" -> {
+                            requireStructuredCandle(record, file, lineNumber)
+                            candles += 1L
+                        }
+                        "com.qkt.events.StreamCandleEvent" -> {
+                            requireText(record, "broker", file, lineNumber)
+                            requireText(record, "timeframe", file, lineNumber)
+                            requireStructuredCandle(record, file, lineNumber)
+                            streamCandles += 1L
+                        }
+                        "com.qkt.events.StrategyCandleEvaluatedEvent" -> {
+                            requireText(record, "strategyId", file, lineNumber)
+                            requireText(record, "alias", file, lineNumber)
+                            requireText(record, "broker", file, lineNumber)
+                            requireText(record, "timeframe", file, lineNumber)
+                            requireStructuredCandle(record, file, lineNumber)
+                            strategyCandleEvaluations += 1L
+                        }
                         "com.qkt.events.BrokerEvent.OrderFilled",
                         "com.qkt.events.BrokerEvent.OrderPartiallyFilled",
                         -> {
@@ -175,14 +237,96 @@ class GoldenCommand(
                                 ?.contentOrNull
                                 ?.takeIf(String::isNotBlank)
                                 ?.let(filledOrderIds::add)
+                            (record["fill"] as? JsonObject)
+                                ?.get("brokerOrderId")
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?.takeIf(String::isNotBlank)
+                                ?.let(filledBrokerOrderIds::add)
                         }
                     }
                 }
             }
         }
         require(first != Long.MAX_VALUE) { "engine audit journal is empty" }
-        return AuditSummary(first, last, ticks, fills, filledOrderIds)
+        return AuditSummary(
+            first,
+            last,
+            ticks,
+            warmupTicks,
+            candles,
+            streamCandles,
+            strategyCandleEvaluations,
+            fills,
+            filledOrderIds,
+            filledBrokerOrderIds,
+        )
     }
+
+    private fun requireStructuredTick(
+        record: JsonObject,
+        file: Path,
+        lineNumber: Long,
+    ) {
+        requireText(record, "symbol", file, lineNumber)
+        val tick =
+            record["tick"] as? JsonObject
+                ?: throw IllegalArgumentException("missing structured tick at $file:$lineNumber")
+        requireLong(tick, "timestampMs", file, lineNumber)
+        requireDecimal(tick, "price", file, lineNumber)
+    }
+
+    private fun requireStructuredCandle(
+        record: JsonObject,
+        file: Path,
+        lineNumber: Long,
+    ) {
+        requireText(record, "symbol", file, lineNumber)
+        val candle =
+            record["candle"] as? JsonObject
+                ?: throw IllegalArgumentException("missing structured candle at $file:$lineNumber")
+        requireLong(candle, "startTimeMs", file, lineNumber)
+        requireLong(candle, "endTimeMs", file, lineNumber)
+        for (field in listOf("open", "high", "low", "close", "volume")) {
+            requireDecimal(candle, field, file, lineNumber)
+        }
+    }
+
+    private fun requireText(
+        record: JsonObject,
+        field: String,
+        file: Path,
+        lineNumber: Long,
+    ): String =
+        record[field]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.takeIf(String::isNotBlank)
+            ?: throw IllegalArgumentException("missing $field at $file:$lineNumber")
+
+    private fun requireLong(
+        record: JsonObject,
+        field: String,
+        file: Path,
+        lineNumber: Long,
+    ): Long =
+        record[field]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.toLongOrNull()
+            ?: throw IllegalArgumentException("missing numeric $field at $file:$lineNumber")
+
+    private fun requireDecimal(
+        record: JsonObject,
+        field: String,
+        file: Path,
+        lineNumber: Long,
+    ): BigDecimal =
+        record[field]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.let { runCatching { BigDecimal(it) }.getOrNull() }
+            ?: throw IllegalArgumentException("missing decimal $field at $file:$lineNumber")
 
     private fun scanTransport(
         files: List<Path>,
@@ -190,6 +334,7 @@ class GoldenCommand(
     ): TransportSummary {
         var exchanges = 0L
         var linkedPlacements = 0L
+        var mutations = 0L
         for (file in files) {
             Files.newBufferedReader(file, StandardCharsets.UTF_8).use { reader ->
                 var lineNumber = 0L
@@ -201,18 +346,35 @@ class GoldenCommand(
                     if (timestamp(record, file, lineNumber) !in audit.firstTimestampMs..audit.lastTimestampMs) continue
                     exchanges += 1L
                     val endpoint = record["path"]?.jsonPrimitive?.contentOrNull?.substringBefore('?')
+                    if (endpoint in MUTATING_ENDPOINTS) mutations += 1L
                     val idempotencyKey = record["idempotencyKey"]?.jsonPrimitive?.contentOrNull
+                    val engineOrderId = record["engineOrderId"]?.jsonPrimitive?.contentOrNull
+                    val brokerOrderId = responseBrokerOrderId(record)
+                    val responseCode = record["responseCode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
                     if (
                         record["method"]?.jsonPrimitive?.contentOrNull == "POST" &&
                         endpoint == "/order" &&
-                        idempotencyKey in audit.filledOrderIds
+                        responseCode != null &&
+                        responseCode in 200..299 &&
+                        (
+                            engineOrderId in audit.filledOrderIds ||
+                                idempotencyKey in audit.filledOrderIds ||
+                                brokerOrderId in audit.filledBrokerOrderIds
+                        )
                     ) {
                         linkedPlacements += 1L
                     }
                 }
             }
         }
-        return TransportSummary(exchanges, linkedPlacements)
+        return TransportSummary(exchanges, linkedPlacements, mutations)
+    }
+
+    private fun responseBrokerOrderId(record: JsonObject): String? {
+        val raw = record["responseBody"]?.jsonPrimitive?.contentOrNull ?: return null
+        val response = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return null
+        val result = response["result"] as? JsonObject ?: return null
+        return result["order"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
     }
 
     private fun addJsonl(
@@ -250,21 +412,29 @@ class GoldenCommand(
         transport: TransportSummary,
         createdAt: Instant,
         entries: List<EntryEvidence>,
+        readOnly: Boolean,
     ): String =
         buildString {
             append("{\n")
-            append("  \"schemaVersion\": 1,\n")
+            append("  \"schemaVersion\": 2,\n")
             append("  \"kind\": \"MT5_GOLDEN_CAPTURE\",\n")
+            append("  \"captureMode\": \"").append(if (readOnly) "READ_ONLY" else "TRADING").append("\",\n")
             append("  \"session\": ").append(json(session)).append(",\n")
             append("  \"createdAtUtc\": ").append(json(createdAt.toString())).append(",\n")
-            append("  \"qktVersion\": ").append(json(BuildInfo.VERSION)).append(",\n")
-            append("  \"gitSha\": ").append(json(BuildInfo.GIT_SHA)).append(",\n")
+            append("  \"captureQktVersion\": ").append(json(BuildInfo.VERSION)).append(",\n")
+            append("  \"captureGitSha\": ").append(json(BuildInfo.GIT_SHA)).append(",\n")
+            append("  \"captureBuildTimestamp\": ").append(json(BuildInfo.BUILD_TIMESTAMP)).append(",\n")
             append("  \"window\": {\"fromMs\": ").append(audit.firstTimestampMs)
             append(", \"toMs\": ").append(audit.lastTimestampMs).append("},\n")
             append("  \"counts\": {\"ticks\": ").append(audit.tickCount)
+            append(", \"warmupTicks\": ").append(audit.warmupTickCount)
+            append(", \"candles\": ").append(audit.candleCount)
+            append(", \"streamCandles\": ").append(audit.streamCandleCount)
+            append(", \"strategyCandleEvaluations\": ").append(audit.strategyCandleEvaluationCount)
             append(", \"fills\": ").append(audit.fillCount)
             append(", \"gatewayExchanges\": ").append(transport.exchangeCount)
-            append(", \"linkedPlacements\": ").append(transport.linkedPlacements).append("},\n")
+            append(", \"linkedPlacements\": ").append(transport.linkedPlacements)
+            append(", \"mutations\": ").append(transport.mutationCount).append("},\n")
             append("  \"entries\": [\n")
             entries.sortedBy { it.name }.forEachIndexed { index, evidence ->
                 append("    {\"path\": ").append(json(evidence.name))
@@ -377,20 +547,29 @@ class GoldenCommand(
     }
 
     private fun printUsage() {
-        System.err.println("usage: qkt golden capture --session <strategy> [--state-dir <dir>] [--out <zip>]")
+        System.err.println(
+            "usage: qkt golden capture --session <strategy> [--state-dir <dir>] [--out <zip>] [--read-only]",
+        )
+        System.err.println("       qkt golden materialize --bundle <zip> --out <data-root>")
     }
 
     private data class AuditSummary(
         val firstTimestampMs: Long,
         val lastTimestampMs: Long,
         val tickCount: Long,
+        val warmupTickCount: Long,
+        val candleCount: Long,
+        val streamCandleCount: Long,
+        val strategyCandleEvaluationCount: Long,
         val fillCount: Long,
         val filledOrderIds: Set<String>,
+        val filledBrokerOrderIds: Set<String>,
     )
 
     private data class TransportSummary(
         val exchangeCount: Long,
         val linkedPlacements: Long,
+        val mutationCount: Long,
     )
 
     private data class EntryEvidence(
@@ -398,4 +577,9 @@ class GoldenCommand(
         val records: Long,
         val sha256: String,
     )
+
+    private companion object {
+        val MUTATING_ENDPOINTS =
+            setOf("/order", "/close_position", "/position_close_partial", "/modify_sl_tp", "/cancel_order")
+    }
 }

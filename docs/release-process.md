@@ -29,7 +29,8 @@ differs from `VERSION`: both release and Docker workflows run
 Changes reach a release through the protected branch flow:
 
 1. Merge reviewed feature branches into `dev`.
-2. Let the green `check.yml` run fast-forward `dev` to `testing`.
+2. Let the green `check.yml` merge the exact `dev` commit into `testing` while
+   preserving prior testing promotion history.
 3. Wait for `integration.yml` and the `:edge` image on the exact `testing` SHA.
 4. Resolve the edge image to its immutable `ghcr.io/.../qkt@sha256:...` digest and
    run that digest against the demo MT5 canary for at least 48 continuous hours or

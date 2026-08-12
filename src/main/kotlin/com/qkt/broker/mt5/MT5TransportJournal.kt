@@ -74,6 +74,7 @@ class MT5TransportJournal(
         error: String?,
         durationMs: Long,
         idempotencyKey: String?,
+        engineOrderId: String? = null,
     ) {
         if (!running.get()) return
         val timestampMs = clock.now()
@@ -87,6 +88,7 @@ class MT5TransportJournal(
                 append(",\"method\":").append(json(method))
                 append(",\"path\":").append(json(path))
                 idempotencyKey?.let { append(",\"idempotencyKey\":").append(json(it)) }
+                engineOrderId?.let { append(",\"engineOrderId\":").append(json(it)) }
                 requestBody?.let { append(",\"requestBody\":").append(json(it)) }
                 responseCode?.let { append(",\"responseCode\":").append(it) }
                 responseBody?.let { append(",\"responseBody\":").append(json(it)) }

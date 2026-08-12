@@ -52,6 +52,57 @@ class CompositeBroker(
 
     override fun accountEquity(): java.math.BigDecimal? = accountEquityBroker?.accountEquity()
 
+    override fun accountState(): BrokerAccountState? {
+        val states =
+            allLeaves()
+                .distinct()
+                .mapNotNull { leaf ->
+                    runCatching { leaf.accountState() }.getOrElse {
+                        log.warn("CompositeBroker.accountState: leaf {} failed: {}", leaf.name, it.message)
+                        throw IllegalStateException(
+                            "CompositeBroker.accountState: leaf ${leaf.name} failed: ${it.message}",
+                            it,
+                        )
+                    }
+                }
+        return states.singleOrNull()
+    }
+
+    override fun deals(
+        from: Long,
+        to: Long,
+    ): List<BrokerDeal> {
+        val merged = mutableListOf<BrokerDeal>()
+        for (leaf in allLeaves().distinct()) {
+            val leafDeals =
+                runCatching { leaf.deals(from, to) }.getOrElse {
+                    log.warn("CompositeBroker.deals: leaf {} failed: {}", leaf.name, it.message)
+                    throw IllegalStateException(
+                        "CompositeBroker.deals: leaf ${leaf.name} failed: ${it.message}",
+                        it,
+                    )
+                }
+            merged.addAll(leafDeals)
+        }
+        return merged
+    }
+
+    override fun pendingOrders(): List<BrokerPendingOrder> {
+        val merged = mutableListOf<BrokerPendingOrder>()
+        for (leaf in allLeaves().distinct()) {
+            val leafOrders =
+                runCatching { leaf.pendingOrders() }.getOrElse {
+                    log.warn("CompositeBroker.pendingOrders: leaf {} failed: {}", leaf.name, it.message)
+                    throw IllegalStateException(
+                        "CompositeBroker.pendingOrders: leaf ${leaf.name} failed: ${it.message}",
+                        it,
+                    )
+                }
+            merged.addAll(leafOrders)
+        }
+        return merged
+    }
+
     override val supportsMarginLevel: Boolean get() = marginLevelBroker != null
 
     override fun marginLevel(): java.math.BigDecimal? = marginLevelBroker?.marginLevel()

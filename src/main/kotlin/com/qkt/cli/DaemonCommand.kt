@@ -346,6 +346,13 @@ class DaemonCommand(
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
                     insightsEvents = cfg.insights.events,
+                    insightsDeployedIds = {
+                        registryRef
+                            .get()
+                            ?.list()
+                            ?.map { it.ast.name }
+                            .orEmpty()
+                    },
                     insightsStatePollMs = cfg.insights.statePollMs,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                 ),
@@ -396,6 +403,13 @@ class DaemonCommand(
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
                     insightsEvents = cfg.insights.events,
+                    insightsDeployedIds = {
+                        registryRef
+                            .get()
+                            ?.list()
+                            ?.map { it.ast.name }
+                            .orEmpty()
+                    },
                     insightsStatePollMs = cfg.insights.statePollMs,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                 )

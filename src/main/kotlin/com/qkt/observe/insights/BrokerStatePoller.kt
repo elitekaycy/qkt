@@ -13,7 +13,8 @@ import org.slf4j.LoggerFactory
  *
  * e.g. one cycle for EXNESS emits one "state.account", one "state.positions" (full
  * replace), one "state.orders" (full replace), and — when the DEAL family is enabled —
- * one "broker.deal" per deal booked since the previous cycle.
+ * one "broker.deal" per locally-attributed deal booked since the previous cycle. Pollers
+ * without deployed strategy ids keep account-level behavior and emit all deals.
  */
 class BrokerStatePoller(
     private val brokers: List<Broker>,
@@ -143,11 +144,14 @@ class BrokerStatePoller(
 
         if (emitDeals) {
             var newest = lastDealTs.getOrPut(broker) { now - backfillDays * DAY_MS }
-            for (d in broker.deals(newest + 1, now)) {
+            val from = newest + 1
+            for (d in broker.deals(from, now).filter { it.ts in from..now }) {
                 val strategyId =
                     attribution.ownerOf(d.positionTicket ?: d.dealTicket)
                         ?: attribution.fromComment(d.comment, deployed)
-                sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
+                if (deployed.isEmpty() || strategyId in deployed) {
+                    sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
+                }
                 if (d.ts > newest) newest = d.ts
             }
             lastDealTs[broker] = newest

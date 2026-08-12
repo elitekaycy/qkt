@@ -112,6 +112,7 @@ class MT5Client(
                 error = error,
                 durationMs = (monotonicNanos() - startedNs) / 1_000_000L,
                 idempotencyKey = request.header("Idempotency-Key"),
+                engineOrderId = request.tag(TransportCorrelation::class.java)?.engineOrderId,
             )
         }.onFailure { captureError ->
             log.error("MT5 transport capture failed without affecting request: {}", captureError.message)
@@ -146,6 +147,7 @@ class MT5Client(
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
                 .header("Idempotency-Key", req.clientOrderId)
+                .tag(TransportCorrelation::class.java, TransportCorrelation(req.engineOrderId))
                 .post(body)
                 .build()
         // POST /order is NOT retried: duplicate placement is worse than a surfaced failure.
@@ -185,6 +187,7 @@ class MT5Client(
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
                 .header("Idempotency-Key", req.clientOrderId)
+                .tag(TransportCorrelation::class.java, TransportCorrelation(req.engineOrderId))
                 .post(body)
                 .build()
         http.newCall(request).enqueue(
@@ -548,6 +551,8 @@ class MT5Client(
     /**
      * All venue deals for [positionTicket] in the requested UTC range. The query is padded
      * by one day at each edge, matching [getClosingDeal], so entry-side costs are included.
+     * The response is filtered locally because gateways may ignore the wire-level position
+     * filter and return account-wide history.
      */
     fun getPositionDeals(
         positionTicket: Long,
@@ -559,7 +564,9 @@ class MT5Client(
         val url = "$gatewayUrl/history_deals_get?from_date=$from&to_date=$to&position=$positionTicket"
         val raw = getWithRetry(url) ?: return null
         val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
-        return arr.map { parseDeal(it.jsonObject) }
+        return arr
+            .map { parseDeal(it.jsonObject) }
+            .filter { it.positionTicket == positionTicket }
     }
 
     /**
@@ -959,4 +966,8 @@ class MT5Client(
         /** Padding either side of the deal search window — venue clock skew is hours, not days. */
         private const val DEAL_WINDOW_PAD_MS: Long = 24L * 3600_000L
     }
+
+    private data class TransportCorrelation(
+        val engineOrderId: String,
+    )
 }
