@@ -71,6 +71,31 @@ done
 [ -x "$cli" ] || fail "QKT CLI is not executable: $cli"
 [ -f "$catalog" ] || fail "capability catalog is missing: $catalog"
 
+refresh_case_balance() {
+    local scenario="$1" account_json balance
+    [ -n "${QKT_BROKER_API_KEY:-}" ] || fail "QKT_BROKER_API_KEY is required for live account refresh"
+    account_json="$(printf 'header = \"Authorization: Bearer %s\"\n' "$QKT_BROKER_API_KEY" |
+        curl --silent --show-error --fail --config - "$gateway_url/account")" ||
+        fail "could not refresh the live account snapshot before case $(basename "$scenario")"
+    jq -e --argjson login "$expected_login" --arg server "$expected_server" --argjson leverage "$expected_leverage" '
+        .login == $login and .server == $server and .trade_mode == 0 and
+        .currency == "USD" and .leverage == $leverage and .trade_allowed == true and
+        .trade_expert == true
+    ' <<<"$account_json" >/dev/null || fail "live account identity changed before case $(basename "$scenario")"
+    balance="$(jq -er '.balance | tostring' <<<"$account_json")"
+    jq --arg balance "$balance" '.account.startingBalance = $balance' \
+        "$scenario/expected.json" > "$scenario/.expected.json.tmp"
+    mv "$scenario/.expected.json.tmp" "$scenario/expected.json"
+    sed -E -i \
+        -e "s/^starting_balance: \"[^\"]*\"/starting_balance: \"$balance\"/" \
+        -e "s/^  capital: \"[^\"]*\"/  capital: \"$balance\"/" \
+        "$scenario/qkt.config.yaml"
+    (
+        cd "$scenario"
+        find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+    )
+}
+
 if ! $verify_only; then
     [ "$arm" = "I_UNDERSTAND_DEMO_ORDER_0.01" ] ||
         fail "--run-live requires --arm I_UNDERSTAND_DEMO_ORDER_0.01"
@@ -89,6 +114,9 @@ bash "$prepare" --output "$output" --id "$suite_id" --gateway-url "$gateway_url"
 mapfile -t cases < <(find "$output/cases" -mindepth 1 -maxdepth 1 -type d | sort)
 [ "${#cases[@]}" -eq 4 ] || fail "generated suite did not contain four cases"
 for scenario in "${cases[@]}"; do
+    if ! $verify_only; then
+        refresh_case_balance "$scenario"
+    fi
     bash "$readonly_runner" --scenario "$scenario" --cli "$cli" --verify-only >/dev/null
     if ! $verify_only; then
         bash "$readonly_runner" --scenario "$scenario" --cli "$cli" >/dev/null
