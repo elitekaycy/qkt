@@ -1,5 +1,143 @@
 # Live Parity And Promotion Handoff
 
+## Latest Update - 2026-08-12 20:27 UTC
+
+This is the current source of truth after the qkt `testing` deployment and the residual bot2
+stale-gate investigation.
+
+- qkt warmup/shared-market-source fix:
+  - PR 981 merged to `dev` and auto-promoted to `testing`.
+  - `ghcr.io/elitekaycy/qkt:edge` resolves to qkt testing revision
+    `68d1c9ac61092dc83b9d276ce6eae3b91a4b71aa`.
+  - Local live proof already confirmed multiple MT5 prefixes sharing the same account/gateway,
+    warmup ticks and bars, real demo orders, fills, closes, final flat state, and replay through
+    full-ticks-paper, bars-paper, and full-ticks-mt5.
+- mt5-gateway shared-polling fix:
+  - Gateway PR 80 promoted `v0.3.10` to `main`.
+  - Release `v0.3.10` exists and the Docker workflow passed.
+  - bot2 `/root/forward-stack` was updated to `elitekaycy/mt5-gateway-api:0.3.10`.
+- bot2 deployment status before the broker snapshot fix below:
+  - qkt, mt5-gateway, and qkt-insights were running after recreate.
+  - Endpoint probes eventually passed after startup: ready connected, no pending orders, no open
+    positions.
+  - The stack was not sealed: qkt still logged recurring stale/healthy transitions under the
+    25-strategy forward set, and gateway queue depth still spiked during steady-state polling.
+  - Root cause narrowed further: market-data warmup/tick sharing was fixed, but broker state reads
+    still amplified across sibling profiles because each profile had its own `MT5ReadCache` and
+    magic-specific `/orders?magic=...` and `/get_positions?magic=...` URLs could not coalesce.
+- New qkt fix in progress:
+  - Branch: `fix/mt5-shared-broker-snapshots`, branched from `origin/dev`.
+  - `DaemonCommand` now shares one `MT5ReadCache` per MT5 gateway URL/API-key identity instead of
+    one cache per profile.
+  - `MT5Client.getPositions(magic)` and `getPendingOrders(magic)` use cached unfiltered snapshots
+    when a read cache is present, then filter by magic locally. Uncached clients keep the old
+    magic-specific endpoint behavior.
+  - Regression tests now cover sibling `MT5Client` instances sharing cached position and pending
+    order snapshots while preserving per-magic isolation.
+  - Verification completed without JVM heap caps, `--no-daemon`, or worker caps:
+    - `./gradlew test --tests com.qkt.broker.mt5.MT5ClientTest --tests com.qkt.broker.mt5.MT5ReadCacheTest -Pkotlin.compiler.execution.strategy=daemon`
+      passed.
+    - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon` passed in 6m39s before the
+      final sibling-test naming/setup tightening; the scoped MT5 rerun above passed after that
+      tightening.
+- Still required before claiming done:
+  - Commit/push `fix/mt5-shared-broker-snapshots`, open PR to `dev`, merge after checks.
+  - Promote qkt `dev -> testing`, wait for the edge image built from the new testing revision.
+  - Redeploy bot2 qkt edge, then monitor gateway queue depth and qkt stale/healthy transitions.
+  - Seal only after the forward stack runs cleanly with shared warmup, shared tick feed, shared
+    broker snapshots, no order/position leftovers, and no recurring stale gate pattern.
+- Paper-soak attestation for qkt `main`:
+  - qkt-forge can keep using `qkt:edge` from `testing` before main.
+  - qkt `main` still requires paper-soak attestation for the exact testing image digest.
+  - The attestation must satisfy `scripts/verify-paper-soak-attestation.py`: schema version 1,
+    exact `testingSha`, pinned image digest, demo account mode, status `pass`, valid UTC start/end,
+    at least 48 continuous hours or five trading days, positive health samples, and zero
+    unreconciled positions, zero unknown-outcome placements, and zero dropped ticks.
+  - Required artifacts are health, journal, and reconciliation records with SHA-256 hashes.
+  - After the attestation exists, run `paper-soak.yml` on `testing`, then promote qkt
+    `testing -> main`.
+
+## Latest Update - 2026-08-12 20:10 UTC
+
+This section is the current source of truth for the shared MT5 market-source/warmup fix,
+gateway shared-polling fix, and bot2 qkt-forge forward stack.
+
+- qkt source:
+  - Branch/PR: `fix/mt5-shared-market-source`, qkt PR 981.
+  - Commit containing the warmup duplicate-request coalescing and config hardening:
+    `46a9c9aa fix(marketdata): coalesce shared mt5 bar warmups`.
+  - PR 981 merged to `dev` as merge commit `85d28c5ba3f434f8a98d1b99ff90cd43c2d1d717`.
+  - Auto-promotion to `testing` succeeded at
+    `68d1c9ac61092dc83b9d276ce6eae3b91a4b71aa`.
+  - qkt `testing` checks passed: `check`, `integration`, and `docker`.
+  - Published `ghcr.io/elitekaycy/qkt:edge` resolves to qkt revision
+    `68d1c9ac61092dc83b9d276ce6eae3b91a4b71aa`.
+  - qkt is not promoted to `main` yet. The remaining main gate is paper-soak
+    attestation for the exact testing image digest.
+- qkt local/live proof already completed before merge:
+  - Multi-prefix, multi-symbol local MT5 run showed two sibling broker prefixes sharing one
+    gateway/account, warming ticks and bars, placing real 0.01-lot bracket entries, receiving
+    broker accepts/fills, closing, ending flat, and replaying through full-ticks-paper,
+    bars-paper, and full-ticks-mt5 modes with zero rejections.
+  - Same-symbol sibling run showed canonical upstream warmup loads plus sibling cache hits and
+    one MT5 tick-feed thread for the shared account path.
+- mt5-gateway source:
+  - PR 78 merged to `dev` as `31447e0010c188f99bc5ae6871d45ce18ab2130f`
+    (`perf(gateway): verify connection on ttl and cache symbol select`).
+  - Release-flow fix PR 77 merged to `dev` as
+    `02181f18597cbc3a38901c383d7c4476ac7dfc0e`.
+  - Version bump PR 79 merged to `dev` as
+    `116d6f478cfe3ba710130b8c8dc30094eac86738`.
+  - Promotion PR 80 merged to `main`; gateway `main` is now
+    `687fa0e64139f98811c92f64abcdfc29324e9a89`.
+  - Release `v0.3.10` exists and Docker workflow `31634025571` passed: image build, Trivy scan,
+    and push all succeeded.
+- bot2 `/root/forward-stack` deployment:
+  - Config backups were created as `.env.bak.20260812T200058Z` and
+    `docker-compose.yml.bak.20260812T200058Z`.
+  - `.env` now sets `QKT_IMAGE_TAG=edge`.
+  - `docker-compose.yml` now uses `elitekaycy/mt5-gateway-api:0.3.10`.
+  - Running images after recreate:
+    - qkt: `ghcr.io/elitekaycy/qkt:edge`, revision
+      `68d1c9ac61092dc83b9d276ce6eae3b91a4b71aa`;
+    - mt5-gateway: `elitekaycy/mt5-gateway-api:0.3.10`, revision
+      `687fa0e64139f98811c92f64abcdfc29324e9a89`;
+    - qkt-insights: `ghcr.io/elitekaycy/qkt-insights:latest`, revision
+      `b27d8e54f831a2c945ad854dba2883eee67982ba`.
+  - Compose status after recreate: gateway running/healthy, qkt running, qkt-insights
+    running/healthy.
+  - qkt startup proof on bot2:
+    - all three strategy files auto-deployed: `forward_bench`, `forward_bench_2`,
+      `forward_bench_3`;
+    - logs show `daemon ready`;
+    - logs show canonical `EXNESS_S0:*` historical bar loads plus sibling
+      `historical bar cache hit` entries for repeated warmup windows;
+    - logs show one unique tick-feed thread in the sampled window:
+      `mt5-tick-feed--268570781`;
+    - all MT5 state-recovery lines sampled showed `0 open positions`.
+  - Account/order/position verification after settle:
+    - `/health/ready` returned `ok=true`, `mt5_status=connected`;
+    - `/orders` returned `ok=true`, `orders=[]`, `total=0`;
+    - `/positions_total` returned `ok=true`, `total=0`;
+    - `/get_positions` returned `ok=true`, `data=[]`.
+  - Startup pressure observed:
+    - immediate post-start API probes timed out at 20s while the 25-strategy warmup/poll burst was
+      active, but the delayed steady-state probe passed.
+    - qkt logged a short stale-gate burst for AUDUSD profiles around 20:05:02-20:05:03 UTC and all
+      affected profiles logged `healthy again` by 20:05:04 UTC.
+    - A later 3-minute summary showed gateway queue samples with max depth 10 and
+      `gateway_errors_3m=0`; keep monitoring because queue depth is improved from the temporary
+      image baseline but not proven as a months-long soak.
+- Paper-soak attestation requirement for qkt `main`:
+  - Run the exact `testing`/`edge` qkt image digest against the demo MT5 canary.
+  - Required by `scripts/verify-paper-soak-attestation.py`: schema version 1, exact
+    `testingSha`, pinned image digest, demo account mode, status `pass`, valid UTC start/end
+    times, at least 48 continuous hours or five trading days, positive health samples, and
+    zero unreconciled positions, zero unknown-outcome placements, and zero dropped ticks.
+  - Required artifact records: health, journal, and reconciliation files with SHA-256 hashes.
+  - After the attestation exists, run `paper-soak.yml` on `testing`; only then promote qkt
+    `testing -> main`.
+
 ## Correction - Current Status As Of 2026-08-12 17:47 UTC
 
 The qkt shared-market-source and mt5-gateway timeout work is not fully done, not merged to
