@@ -1817,9 +1817,19 @@ This is the source-of-truth order for the next stage as of Wednesday, August 12,
    - final account flat, zero pending orders;
    - retained QKT Insights state scoped by strategy/book, not account-wide bleed-through;
    - replay comparisons passed for both retained live captures.
-4. If any real bug is found in the remaining matrix, apply the fix to source, add focused regression coverage, rebuild, rerun
-   the failed slice, and update this handoff with both the failure evidence and the fixed evidence.
-7. Add explicit re-entry coverage before promotion:
+4. Higher-timeframe fast JVM parity is now covered for `15m`, `1h`, and `4h` explicit warmup
+   counts:
+   - [HigherTimeframeWarmupParityTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/dsl/compile/HigherTimeframeWarmupParityTest.kt)
+     covers `15m` one hour/day/two days, `1h` one hour/day/two days, and `4h` four
+     hours/day/two days;
+   - each case asserts the selected `WarmupSpec.Bars`, production `candleToTicks` expansion
+     count of `bars * 4`, all warmup ticks before live time, and live-vs-backtest parity;
+   - [GeneratedTimeframeParityTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt)
+     and the validation capability catalog now include `4h`.
+5. If any real bug is found in the remaining matrix, apply the fix to source, add focused
+   regression coverage, rebuild, rerun the failed slice, and update this handoff with both the
+   failure evidence and the fixed evidence.
+6. Add explicit re-entry coverage before promotion:
    - allowed re-entry after a completed position when the indicator/DSL condition becomes true
      again;
    - blocked re-entry while an operator halt, risk halt, daily-loss, drawdown, margin, exposure, or
@@ -1827,12 +1837,20 @@ This is the source-of-truth order for the next stage as of Wednesday, August 12,
    - recovery behavior after an intentionally lifted halt/gate;
    - retained live and replay evidence proving the exact reason each attempted re-entry was allowed
      or rejected.
-8. Add later higher-timeframe coverage without slowing the current fast live loop:
-   - M15, H1, and H4 warmup accuracy;
-   - warmup ranges such as one hour, four hours, one day, and two days where applicable;
+7. Add later retained live higher-timeframe evidence without slowing the current fast live loop:
+   - live startup evidence for M15, H1, and H4 warmup accuracy;
+   - retained warmup/bar artifacts for one-hour, four-hour, one-day, and two-day style ranges where
+     applicable;
    - live-vs-backtest parity for those higher-timeframe bars using retained warmup/bar evidence;
    - speed/latency evidence so higher-timeframe validation does not accidentally slow normal QKT
      strategy startup or indicator resolution.
+
+Higher-timeframe fast JVM verification on Wednesday, August 12, 2026:
+
+- `./gradlew test --tests 'com.qkt.dsl.compile.HigherTimeframeWarmupParityTest' --tests 'com.qkt.dsl.compile.GeneratedTimeframeParityTest' -Pkotlin.compiler.execution.strategy=daemon`
+  exited green.
+- This is not yet a real live MT5 retained H4/M15/H1 startup proof; it closes the deterministic
+  fast parity/test gap and leaves the live retained-artifact gate explicit.
 
 ### Current In-Progress Evidence From This Continuation
 
