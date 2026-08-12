@@ -336,7 +336,7 @@
       "source": "TimeWindow.parse equivalence partitions",
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
       "evidenceProfile": "generated-timeframes",
-      "capabilities": ["1s", "5s", "1m", "2m", "5m", "15m", "1h", "1d", "invalid-5ms"]
+      "capabilities": ["1s", "5s", "1m", "2m", "5m", "15m", "1h", "4h", "1d", "invalid-5ms"]
     },
     "runtimeScenarios": {
       "source": "validation design",

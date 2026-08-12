@@ -59,7 +59,7 @@ class GeneratedTimeframeParityTest {
     private companion object {
         const val SYMBOL = "BACKTEST:X"
         const val INVALID_SPEC = "invalid-5ms"
-        val VALID_SPECS = listOf("1s", "5s", "1m", "2m", "5m", "15m", "1h", "1d")
+        val VALID_SPECS = listOf("1s", "5s", "1m", "2m", "5m", "15m", "1h", "4h", "1d")
 
         fun catalogTimeframes(): List<String> {
             val resource =
