@@ -129,7 +129,11 @@ jq -e '.qktDirty == false and .credentialsStored == false' "$scenario_json" >/de
 
 strategy_id="$(jq -er '.strategy' "$live_result")"
 expected_entries="$(jq -er '.expectedLifecycle.entries // 1' "$live_result")"
+expected_exits="$(jq -er '.expectedLifecycle.exits // 1' "$live_result")"
+expected_lifecycle_events=$((expected_entries + expected_exits))
 lifecycle="$(jq -er '.lifecycle // "single"' "$live_result")"
+stop_distance="$(jq -er '.armedScenario.stopDistance' "$expected")"
+take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$expected")"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
 source_sha="$(sha256sum "$bundle" | awk '{print $1}')"
 [ "$source_sha" = "$(jq -er '.golden.sha256' "$live_result")" ] || fail "golden bundle hash does not match live result"
@@ -195,8 +199,8 @@ run_replay() {
     require_file "$report/result.json"
     require_file "$report/trades.csv"
     require_file "$report/orders.jsonl"
-    jq -e --argjson expectedEntries "$expected_entries" '.global.tradeCount == $expectedEntries' "$report/result.json" >/dev/null ||
-        fail "$name did not produce $expected_entries trade(s)"
+    jq -e --argjson expectedEvents "$expected_lifecycle_events" '.global.tradeCount == $expectedEvents' "$report/result.json" >/dev/null ||
+        fail "$name did not produce $expected_lifecycle_events trade event(s)"
 }
 
 run_replay full-ticks-paper paper
@@ -205,8 +209,8 @@ run_replay full-ticks-mt5 mt5-sim
 
 trades_json() {
     local csv="$1"
-    [ "$(awk 'END { print NR }' "$csv")" -eq "$((expected_entries + 1))" ] ||
-        fail "expected $expected_entries trade row(s) in $csv"
+    [ "$(awk 'END { print NR }' "$csv")" -eq "$((expected_lifecycle_events + 1))" ] ||
+        fail "expected $expected_lifecycle_events trade row(s) in $csv"
     jq -Rn '
         [inputs] as $lines |
         ($lines[0] | split(",")) as $header |
@@ -234,6 +238,8 @@ trades_json() {
 mkdir -m 700 "$output/comparison"
 for mode in full-ticks-paper bars-paper full-ticks-mt5; do
     trades_json "$output/reports/$mode/trades.csv" >"$output/comparison/$mode-trades.json"
+    jq '[.[] | select(.positionEffect | startswith("OPEN_"))]' \
+        "$output/comparison/$mode-trades.json" >"$output/comparison/$mode-entry-trades.json"
 done
 
 canonicalize_report_orders() {
@@ -330,13 +336,35 @@ jq -n \
     ]
 ' --argjson expectedEntries "$expected_entries" >"$output/comparison/live-entries.json"
 
-paper_trades="$(jq -c '.' "$output/comparison/full-ticks-paper-trades.json")"
-mt5_trades="$(jq -c '.' "$output/comparison/full-ticks-mt5-trades.json")"
+paper_trades="$(jq -c '.' "$output/comparison/full-ticks-paper-entry-trades.json")"
+mt5_trades="$(jq -c '.' "$output/comparison/full-ticks-mt5-entry-trades.json")"
 live_entries="$(jq -c '.' "$output/comparison/live-entries.json")"
 jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
     --argjson paper "$paper_trades" --argjson mt5 "$mt5_trades" --argjson live "$live_entries" \
-    --argjson expectedEntries "$expected_entries" '
+    --argjson expectedEntries "$expected_entries" \
+    --argjson stopDistance "$stop_distance" \
+    --argjson takeProfitDistance "$take_profit_distance" '
     def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
+    def adjusted_protection_matches_fill($entry):
+        if $entry.fill.side == "BUY" then
+            near($entry.protection.stopLossPrice; ($entry.fill.price | tonumber) - $stopDistance) and
+            near($entry.protection.takeProfitPrice; ($entry.fill.price | tonumber) + $takeProfitDistance)
+        elif $entry.fill.side == "SELL" then
+            near($entry.protection.stopLossPrice; ($entry.fill.price | tonumber) + $stopDistance) and
+            near($entry.protection.takeProfitPrice; ($entry.fill.price | tonumber) - $takeProfitDistance)
+        else
+            false
+        end;
+    def sim_protection_matches_fill($entry):
+        if $entry.side == "BUY" then
+            near($entry.stopLossPrice; ($entry.price | tonumber) - $stopDistance) and
+            near($entry.takeProfitPrice; ($entry.price | tonumber) + $takeProfitDistance)
+        elif $entry.side == "SELL" then
+            near($entry.stopLossPrice; ($entry.price | tonumber) + $stopDistance) and
+            near($entry.takeProfitPrice; ($entry.price | tonumber) - $takeProfitDistance)
+        else
+            false
+        end;
     ($paper | length) == $expectedEntries and
     ($mt5 | length) == $expectedEntries and
     ($live | length) == $expectedEntries and
@@ -350,12 +378,27 @@ jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
         near($mt5[$i].quantity; $live[$i].fill.quantity) and
         near($intents[0][$i].stopLoss.price; $live[$i].request.stopLossPrice) and
         near($intents[0][$i].takeProfit; $live[$i].request.takeProfitPrice) and
-        near($mt5[$i].price; $live[$i].fill.price) and
-        near($mt5[$i].stopLossPrice; $live[$i].protection.stopLossPrice) and
-        near($mt5[$i].takeProfitPrice; $live[$i].protection.takeProfitPrice)
+        adjusted_protection_matches_fill($live[$i]) and
+        sim_protection_matches_fill($mt5[$i])
     )
 ' >/dev/null || fail "captured live order, fill, or protection differs from replay"
 
+mt5_fill_exact="$(jq -n --argjson mt5 "$mt5_trades" --argjson live "$live_entries" --argjson expectedEntries "$expected_entries" '
+    def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
+    all(range(0; $expectedEntries); . as $i | near($mt5[$i].price; $live[$i].fill.price))
+')"
+fill_price_deltas="$(jq -cn --argjson mt5 "$mt5_trades" --argjson live "$live_entries" --argjson expectedEntries "$expected_entries" '
+    [
+        range(0; $expectedEntries) as $i |
+        {
+            index: $i,
+            side: $live[$i].fill.side,
+            liveFillPrice: $live[$i].fill.price,
+            mt5SimFillPrice: $mt5[$i].price,
+            delta: ((($live[$i].fill.price | tonumber) - ($mt5[$i].price | tonumber)) | tostring)
+        }
+    ]
+')"
 replay_git_sha="$(jq -er '.evidence.gitSha' "$output/reports/full-ticks-mt5/result.json")"
 for mode in full-ticks-paper bars-paper; do
     [ "$(jq -er '.evidence.gitSha' "$output/reports/$mode/result.json")" = "$replay_git_sha" ] ||
@@ -378,6 +421,8 @@ jq -n \
     --argjson expectedEntries "$expected_entries" \
     --argjson liveEntries "$live_entries" \
     --argjson paperTrades "$paper_trades" \
+    --argjson mt5FillExact "$mt5_fill_exact" \
+    --argjson fillPriceDeltas "$fill_price_deltas" \
     --argjson mt5Trades "$mt5_trades" '
     {
         schema: "qkt-live-golden-replay-comparison-v1",
@@ -403,8 +448,11 @@ jq -n \
             fullTickOrderJournalsByteExact: true,
             barsOrdersTimestampNormalizedExact: true,
             liveInitialProtectionMatchesCanonicalIntent: true,
-            liveFillAndAdjustedProtectionMatchMt5Simulation: true
+            liveAdjustedProtectionMatchesCapturedBrokerFill: true,
+            mt5SimulationUsesSameCanonicalIntent: true,
+            liveFillAndAdjustedProtectionMatchMt5Simulation: $mt5FillExact
         },
+        fillPriceDeltas: $fillPriceDeltas,
         liveEntry: $liveEntries[0],
         liveEntries: $liveEntries,
         paperTrade: $paperTrades[0],
@@ -420,6 +468,11 @@ jq -n \
                 "checks entry intent, fill, and adjusted protection parity for each entry and relies " +
                 "on the live result for per-ticket final-flat reconciliation."
              end
+            ),
+            (
+                "MT5 simulator replay uses the captured tick stream and deterministic spread model; " +
+                "real broker fills may differ by live execution latency. Order intent and protection " +
+                "adjustment are checked exactly, and fill drift is retained in fillPriceDeltas."
             ),
             (
                 "Tick-resolved bars are unsupported for mixed-timeframe strategies because " +

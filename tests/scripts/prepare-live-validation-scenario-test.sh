@@ -344,11 +344,19 @@ comparison_script="$repo_root/scripts/live-validation/compare-golden-replay.sh"
 bash -n "$comparison_script"
 bash "$comparison_script" --help | grep -F 'full-tick and plain-bar replay evidence' >/dev/null
 grep -F 'liveInitialProtectionMatchesCanonicalIntent: true' "$comparison_script" >/dev/null
+grep -F 'liveAdjustedProtectionMatchesCapturedBrokerFill: true' "$comparison_script" >/dev/null
+grep -F 'mt5SimulationUsesSameCanonicalIntent: true' "$comparison_script" >/dev/null
+grep -F 'fillPriceDeltas: $fillPriceDeltas' "$comparison_script" >/dev/null
+grep -F 'liveFillAndAdjustedProtectionMatchMt5Simulation: $mt5FillExact' "$comparison_script" >/dev/null
 grep -F 'expected_entries="$(jq -er' "$comparison_script" >/dev/null
+grep -F 'expected_exits="$(jq -er' "$comparison_script" >/dev/null
+grep -F 'expected_lifecycle_events=$((expected_entries + expected_exits))' "$comparison_script" >/dev/null
 grep -F 'lifecycle="$(jq -er' "$comparison_script" >/dev/null
-grep -F '.global.tradeCount == $expectedEntries' "$comparison_script" >/dev/null
+grep -F '.global.tradeCount == $expectedEvents' "$comparison_script" >/dev/null
 grep -F 'trades_json() {' "$comparison_script" >/dev/null
-grep -F 'full-ticks-paper-trades.json' "$comparison_script" >/dev/null
+grep -F '$mode-trades.json' "$comparison_script" >/dev/null
+grep -F '$mode-entry-trades.json' "$comparison_script" >/dev/null
+grep -F 'select(.positionEffect | startswith("OPEN_"))' "$comparison_script" >/dev/null
 grep -F 'live-entries.json' "$comparison_script" >/dev/null
 grep -F 'liveEntries: $liveEntries' "$comparison_script" >/dev/null
 grep -F 'paperTrades: $paperTrades' "$comparison_script" >/dev/null
