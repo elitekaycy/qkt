@@ -1611,7 +1611,7 @@ What the live MT5 side already proved in the shared-account reruns:
   contains exactly two `FILLED` rows for `shared_account_insights_a_market_bracket` and exactly two
   `FILLED` rows for `shared_account_insights_b_market_bracket`.
 
-What remains the real failing condition after the local harness fixes:
+Historical failing condition after the local harness fixes:
 
 - the collector image `qkt-insights:validation-9a694c22` still attributes shared-account deal rows
   incorrectly across instances and strategies;
@@ -1627,14 +1627,35 @@ What remains the real failing condition after the local harness fixes:
 - retained manual ingest observations:
   [manual-ingest-observations.json](/var/tmp/qkt-validation/shared-account-insights-live-20260811T202957Z/evidence/manual-ingest-observations.json)
   shows duplicate observations still being recorded during the shared-account slice;
-- this means the local harness is now strong enough to expose the remaining defect, but the
-  remaining defect is not yet fixed in this repo's live validation flow.
+- this means the local harness was strong enough to expose the remaining defect. This evidence is
+  superseded by the later demo2 proof below, which used the newer local QKT image and
+  `qkt-insights:validation-live-state-attribution-20260812`.
+
+QKT-side hardening added on Wednesday, August 12, 2026:
+
+- [BrokerStatePoller.kt](/home/dickson/Desktop/personal/qkt/src/main/kotlin/com/qkt/observe/insights/BrokerStatePoller.kt)
+  now preserves account-level deal backfill when no deployed strategy ids are known, but strategy-scoped
+  daemons only emit `broker.deal` envelopes whose resolved owner is one of that daemon's deployed ids;
+- this prevents shared-account sibling daemons from sending null-owned or foreign deal backfill into
+  their own Insights instances before the collector sees the data;
+- focused regression:
+  [BrokerStatePollerTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/observe/insights/BrokerStatePollerTest.kt)
+  includes `deployed strategy poller emits only locally attributed broker deals`;
+- verification:
+  `./gradlew test --tests com.qkt.observe.insights.BrokerStatePollerTest -Pkotlin.compiler.execution.strategy=daemon`
+  and
+  `./gradlew test --tests com.qkt.observe.insights.TicketAttributionTest -Pkotlin.compiler.execution.strategy=daemon`
+  both passed at `2026-08-12T06:48:53Z`.
 
 Practical consequence for the next person:
 
 - treat the shared-account wrapper itself as locally hardened enough to continue with;
-- treat the remaining blocker in this slice as collector-side shared-account attribution correctness,
-  not a runner-only false negative;
+- treat shared-account deal attribution as a two-sided contract: QKT must only emit locally attributed
+  strategy-scoped deal rows, and QKT Insights must continue to fold/drop shared-account state without
+  account-wide bleed-through;
+- after this QKT hardening, the next proof step is rebuilding the QKT validation image from the current
+  commit and rerunning the shared-account Insights wrapper against
+  `qkt-insights:validation-live-state-attribution-20260812`;
 - refresh the primary-account starting balance from the gateway immediately before each new prepared
   scenario; after the hardening cycle above, the live primary account balance had moved to
   `99995.99` before the most recent rerun.
@@ -2017,7 +2038,16 @@ This is the source-of-truth order for the next stage as of Wednesday, August 12,
    - local no-cache validation image
      `qkt-insights:validation-live-state-attribution-20260812` passed the collector smoke;
    - qkt-insights source changes still require explicit user approval before commit.
-3. Shared-account QKT Insights live round trip is sealed on demo2:
+3. QKT shared-account deal emission has been hardened locally:
+   - strategy-scoped daemons no longer emit null-owned or sibling-owned `broker.deal` backfill when
+     `deployedIds` is non-empty;
+   - account-level pollers with no deployed ids retain the old emit-all behavior;
+   - focused tests passed:
+     `./gradlew test --tests com.qkt.observe.insights.BrokerStatePollerTest -Pkotlin.compiler.execution.strategy=daemon`
+     and
+     `./gradlew test --tests com.qkt.observe.insights.TicketAttributionTest -Pkotlin.compiler.execution.strategy=daemon`.
+4. Shared-account QKT Insights live round trip is sealed on demo2 for the previous validation image
+   pair and must be rerun after the current QKT emission hardening is rebuilt:
    - two real temporary QKT strategies;
    - real risk config and bracket config;
    - live ticks, M1 bars, M5 bars, warmup evidence, rule decisions, order links, fills, accounting,
@@ -2025,7 +2055,7 @@ This is the source-of-truth order for the next stage as of Wednesday, August 12,
    - final account flat, zero pending orders;
    - retained QKT Insights state scoped by strategy/book, not account-wide bleed-through;
    - replay comparisons passed for both retained live captures.
-4. Higher-timeframe fast JVM parity is now covered for `15m`, `1h`, and `4h` explicit warmup
+5. Higher-timeframe fast JVM parity is now covered for `15m`, `1h`, and `4h` explicit warmup
    counts:
    - [HigherTimeframeWarmupParityTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/dsl/compile/HigherTimeframeWarmupParityTest.kt)
      covers `15m` one hour/day/two days, `1h` one hour/day/two days, and `4h` four
@@ -2034,10 +2064,10 @@ This is the source-of-truth order for the next stage as of Wednesday, August 12,
      count of `bars * 4`, all warmup ticks before live time, and live-vs-backtest parity;
    - [GeneratedTimeframeParityTest.kt](/home/dickson/Desktop/personal/qkt/src/test/kotlin/com/qkt/dsl/compile/GeneratedTimeframeParityTest.kt)
      and the validation capability catalog now include `4h`.
-5. If any real bug is found in the remaining matrix, apply the fix to source, add focused
+6. If any real bug is found in the remaining matrix, apply the fix to source, add focused
    regression coverage, rebuild, rerun the failed slice, and update this handoff with both the
    failure evidence and the fixed evidence.
-6. Add explicit re-entry coverage before promotion:
+7. Add explicit re-entry coverage before promotion:
    - allowed re-entry after a completed position when the indicator/DSL condition becomes true
      again;
    - blocked re-entry while an operator halt, risk halt, daily-loss, drawdown, margin, exposure, or
