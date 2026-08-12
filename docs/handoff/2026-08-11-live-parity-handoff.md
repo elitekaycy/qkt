@@ -3500,3 +3500,65 @@ Next step:
 
 - Run the script regressions for the updated reviewed tuple, commit the harness update, rebuild the
   validation image again, and rerun the same XAUUSD shared-account Insights proof.
+
+## 2026-08-12 Update: Delayed OUT Deal Attribution Race
+
+Rebuilt and reran after `fix(scripts): widen gold drift envelope`:
+
+- QKT commit under proof: `c02c5536`.
+- Docker validation image:
+  `qkt:live-validation-c02c5536`, image id
+  `sha256:4ee081c803851ae97a69db5d2342d2f3042d39fe8839b6aef5f6732eb90e657f`.
+- Host/image version:
+  `qkt 0.47.1 (c02c5536) built 2026-08-12T09:39:37.292174199Z`.
+- Clean proving worktree:
+  `/var/tmp/qkt-live-proof-c02c5536-20260812T093956Z`.
+- Prepared scenarios:
+  `/var/tmp/qkt-validation/shared-account-insights-c02c5536-0812094018-prepare/xau_a` and
+  `/var/tmp/qkt-validation/shared-account-insights-c02c5536-0812094018-prepare/xau_b`.
+- Armed output:
+  `/var/tmp/qkt-validation/shared-account-insights-c02c5536-0812094018-live`.
+
+The base shared-account live round trip passed again:
+
+- Base result:
+  `/var/tmp/qkt-validation/shared-account-insights-c02c5536-0812094018-live/base-roundtrip/evidence/result.json`.
+- The run opened and closed two real same-account XAUUSD demo positions, retained warmup/tick/bar
+  evidence, retained M1/M5 stream/evaluation evidence, and returned demo2 to flat.
+
+The wrapper still failed on QKT Insights deal completeness:
+
+- Failure:
+  `collector did not retain exactly one entry and one exit deal for sc02xaua0812094018_market_bracket`.
+- During/after the run, the collector DB retained only IN deals for both instances.
+
+Root cause now identified as a QKT race:
+
+- MT5 can report the position as gone before `/history_deals_get` exposes the OUT deal.
+- `BrokerStatePoller` previously called `TicketAttribution.retainAll(openTickets)` every cycle.
+- If the poller saw no open ticket before the OUT deal appeared, it pruned the ticket owner.
+- Later, the OUT deal arrived with an empty venue comment, so the strategy-scoped poller could not
+  attribute it and filtered it out.
+
+Source fix applied locally:
+
+- [TicketAttribution.kt](/home/dickson/Desktop/personal/qkt/src/main/kotlin/com/qkt/observe/insights/TicketAttribution.kt)
+  now keeps vanished ticket owners for a bounded 300 poll-cycle grace window, resetting the grace
+  whenever a ticket is seen live again.
+- This preserves attribution for delayed empty-comment OUT deals while still bounding the map in
+  long-running daemons.
+
+Verification after the source fix:
+
+```bash
+./gradlew test --tests com.qkt.observe.insights.TicketAttributionTest --tests com.qkt.observe.insights.BrokerStatePollerTest -Pkotlin.compiler.execution.strategy=daemon
+git diff --check
+```
+
+Both passed.
+
+Next step:
+
+- Commit the source fix, rebuild/repackage the validation image from the new commit, rerun the same
+  XAUUSD shared-account Insights proof, and confirm the collector now retains both IN and OUT deals
+  per instance.

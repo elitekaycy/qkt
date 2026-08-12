@@ -388,7 +388,7 @@ class BrokerStatePollerTest {
     }
 
     @Test
-    fun `attribution map is pruned to the broker's live tickets each cycle`() {
+    fun `attribution map keeps vanished tickets briefly then prunes them`() {
         val now = 1_700_000_000_000L
         val broker = FakeBroker()
         broker.tickets = listOf(ticket("KEEP"))
@@ -404,6 +404,9 @@ class BrokerStatePollerTest {
                 clock = { now },
             )
         poller.pollOnce()
+        assertThat(attribution.ownerOf("KEEP")).isEqualTo("a")
+        assertThat(attribution.ownerOf("GONE")).isEqualTo("b")
+        repeat(301) { poller.pollOnce() }
         assertThat(attribution.ownerOf("KEEP")).isEqualTo("a")
         assertThat(attribution.ownerOf("GONE")).isNull()
     }
@@ -433,8 +436,45 @@ class BrokerStatePollerTest {
         val all = collectBodies("deal-FAKE-77")
         val dealEntry = all.substringAfter("deal-FAKE-77").substringBefore("}}")
         assertThat(dealEntry).contains(""""strategyId":"hedge_straddle"""")
-        // Pruned after the fetch: the closed ticket no longer occupies the map.
-        assertThat(attribution.ownerOf("T9")).isNull()
+        // Retained briefly after the fetch: MT5 may expose related close/cost rows late.
+        assertThat(attribution.ownerOf("T9")).isEqualTo("hedge_straddle")
+    }
+
+    @Test
+    fun `delayed close deal keeps the vanished ticket owner`() {
+        var now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.tickets = listOf(ticket("T9", comment = "dsl-hedge_straddle"))
+        broker.allDeals = listOf(deal("open", ts = now - 500L, positionTicket = "T9", comment = "dsl-hedge_straddle"))
+        val attribution = TicketAttribution()
+        attribution.record("T9", "hedge_straddle")
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = attribution,
+                deployedIds = { listOf("hedge_straddle") },
+                backfillDays = 1L,
+                clock = { now },
+            )
+
+        poller.pollOnce()
+        collectBodies("deal-FAKE-open")
+
+        now += 1_000L
+        broker.tickets = emptyList()
+        broker.allDeals = broker.allDeals
+        poller.pollOnce()
+        assertThat(attribution.ownerOf("T9")).isEqualTo("hedge_straddle")
+
+        now += 1_000L
+        broker.allDeals =
+            broker.allDeals + deal("close", ts = now - 500L, positionTicket = "T9", comment = "")
+        poller.pollOnce()
+
+        val all = collectBodies("deal-FAKE-close")
+        val closeEntry = all.substringAfter("deal-FAKE-close").substringBefore("}}")
+        assertThat(closeEntry).contains(""""strategyId":"hedge_straddle"""")
     }
 
     @Test
