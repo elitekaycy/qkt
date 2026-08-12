@@ -30,9 +30,11 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 176`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 178`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `fix(scripts): bound golden replay execution drift`
+  - `docs(docs): record strict atr sanity proof`
   - `docs(docs): record strict rsi sanity proof`
   - `docs(docs): record strict ema sanity proof`
   - `fix(scripts): require strategy-owned single close`
@@ -3851,4 +3853,92 @@ Generated final-sanity matrix status:
 - `ema_cross` on EURUSD: sealed strict live-plus-replay.
 - `rsi_reversion` on GBPUSD: sealed strict live-plus-replay.
 - `atr_channel` on EURUSD: sealed strict live-plus-replay.
-- `case_math` on GBPUSD: still open.
+- `case_math` on GBPUSD: sealed strict live-plus-replay with bounded one-point live-vs-sim fill
+  drift.
+
+## 2026-08-12 Update: Final-Sanity CASE/Math Gate Sealed
+
+First CASE/math attempt:
+
+- Scenario:
+  `/var/tmp/qkt-validation/final-sanity-clean-630224f7-case-gbpusd-0812104017`.
+- Result: pre-trade failure only.
+- Failure:
+  `gateway tick did not become fresh enough after daemon startup`.
+- Evidence showed `GBPUSDm` tick age reached about `39310ms` after daemon startup.
+- No strategy was deployed, no order was placed, and the account remained flat with zero pending
+  orders.
+
+Strict final-sanity CASE/math GBPUSD retry:
+
+- Clean proving worktree:
+  `/var/tmp/qkt-final-sanity-630224f7-20260812T104015Z`.
+- Live scenario:
+  `/var/tmp/qkt-validation/final-sanity-clean-630224f7-case-gbpusd-0812104802`.
+- Live result:
+  `/var/tmp/qkt-validation/final-sanity-clean-630224f7-case-gbpusd-0812104802/evidence/result.json`.
+- Replay result with bounded drift comparator:
+  `/var/tmp/qkt-validation/final-sanity-clean-630224f7-case-gbpusd-0812104802-replay-bounded/result.json`.
+
+What the strict CASE/math GBPUSD proof sealed:
+
+- QKT commit under live proof: `630224f7c1e656d736b8be27524c8076aa68609d`.
+- `qktDirty:false`.
+- Strategy: `fs6302_case_0812104802_market_bracket`.
+- Lifecycle: `single`, `strategyOwnedLifecycle:true`, `flattenVerified:false`.
+- Timeframes: `1m` and `5m`.
+- DSL/math surface covered in the live/replay loop: `round_to`, `lag`, `highest`, `lowest`, `CASE`,
+  and `abs`.
+- Live path: one real `0.01`-lot entry and one strategy-owned close on demo2 through the local
+  MT5 gateway.
+- Audit: two accepted events, two filled events, zero risk rejections.
+- Transport: one `/order` post and one `/close_position` post.
+- Golden capture: `ticks:33`, `warmupTicks:80`, `candles:12`, `fills:2`, `linkedPlacements:1`.
+- Operational market-data result on the passing retry: `staleEvents:0`, `recoveredStaleEvents:0`.
+- Final account state: flat, zero pending orders.
+- Reconciliation: `balanceDelta:-0.08`, `dealNet:-0.08`.
+- Replay comparison status: `passed`.
+- Replay parity flags:
+  - `fullTickOrderJournalsByteExact:true`;
+  - `barsOrdersTimestampNormalizedExact:true`;
+  - `liveInitialProtectionMatchesCanonicalIntent:true`;
+  - `liveAdjustedProtectionMatchesCapturedBrokerFill:true`;
+  - `mt5SimulationUsesSameCanonicalIntent:true`;
+  - `liveFillAndAdjustedProtectionMatchMt5SimulationExact:false`;
+  - `liveFillAndAdjustedProtectionWithinReviewedDrift:true`.
+- Live-vs-MT5-sim fill drift was one GBPUSD point:
+  - live SELL fill `1.35156`;
+  - MT5-sim SELL fill `1.35157000`;
+  - delta `-0.00001`, about `-1` point;
+  - reviewed bound `80` points / `0.00080000`.
+
+Comparator hardening committed after this finding:
+
+- `b912c16b fix(scripts): bound golden replay execution drift`.
+- [compare-golden-replay.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/compare-golden-replay.sh)
+  now fails if live-vs-MT5-sim fill drift exceeds the reviewed per-symbol bound.
+- The result now exposes exact fill equality separately from bounded drift acceptance:
+  `liveFillAndAdjustedProtectionMatchMt5SimulationExact` and
+  `liveFillAndAdjustedProtectionWithinReviewedDrift`.
+- The stale limitation text that still mentioned operator flatten for `single` lifecycle was removed;
+  single lifecycle parity now explicitly requires strategy-owned close capture and replay.
+- Verification:
+
+```bash
+bash -n scripts/live-validation/compare-golden-replay.sh
+bash tests/scripts/prepare-live-validation-scenario-test.sh
+bash scripts/live-validation/compare-golden-replay.sh --scenario /var/tmp/qkt-validation/final-sanity-clean-630224f7-case-gbpusd-0812104802 --out /var/tmp/qkt-validation/final-sanity-clean-630224f7-case-gbpusd-0812104802-replay-bounded --cli /home/dickson/Desktop/personal/qkt/build/install/qkt/bin/qkt
+git diff --check
+```
+
+Generated final-sanity matrix is now sealed:
+
+- `ema_cross` on EURUSD: strict live-plus-replay sealed.
+- `rsi_reversion` on GBPUSD: strict live-plus-replay sealed.
+- `atr_channel` on EURUSD: strict live-plus-replay sealed.
+- `case_math` on GBPUSD: strict live-plus-replay sealed.
+
+This closes the quick final generated strategy sanity matrix. It does not by itself close the whole
+go-live program: higher-timeframe warmup validation, retained-risk sanity review, full pre-push
+checks, PR to `dev`, promotion, and downstream `qkt-forge`/`qkt-insights` rollout are still separate
+gates.
