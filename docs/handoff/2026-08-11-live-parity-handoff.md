@@ -72,8 +72,20 @@ stale-gate investigation.
     files, no MT5 transport `.dropped` files, gateway queue depth stable, and no recurring
     stale/healthy gate pattern.
 - Still required before claiming done:
-  - Push this handoff audit note to PR 982, wait for PR checks, then merge to `dev`.
-  - Promote qkt `dev -> testing`, wait for the edge image built from the new testing revision.
+  - PR 982 merged to `dev` as `66c6f3a584ec9666dfdcf18cd852b55c64047e4e`; `dev` check passed
+    and auto-promoted to `testing` as `6db1456cdbd9860e4837e8eaba0573bee1fd5362`.
+  - Testing `check` and `integration` workflows passed for `6db1456cdbd9860e4837e8eaba0573bee1fd5362`.
+  - Testing `docker` workflow failed twice before compiling qkt code because the Docker build's
+    Gradle wrapper download failed against the Gradle/GitHub distribution endpoint:
+    attempt 1 `Unexpected end of file from server`, attempt 2 HTTP 503. This blocks `qkt:edge`
+    from receiving the broker snapshot fix.
+  - Follow-up branch `fix/docker-gradle-wrapper-retry` adds a bounded retry around the existing
+    Dockerfile `./gradlew --no-daemon installDist` step. This is CI/download hardening, not a JVM
+    heap or worker restriction.
+  - Local validation for that branch built `qkt:ci-retry-local` successfully and reported
+    `qkt 0.47.1 (66c6f3a584ec9666dfdcf18cd852b55c64047e4e)`.
+  - Merge that CI fix to `dev`, promote qkt `dev -> testing`, then wait for the edge image built
+    from the new testing revision.
   - Redeploy bot2 qkt edge, then monitor gateway queue depth and qkt stale/healthy transitions.
   - Seal only after the forward stack runs cleanly with shared warmup, shared tick feed, shared
     broker snapshots, no order/position leftovers, and no recurring stale gate pattern.
