@@ -30,9 +30,10 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 174`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 175`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `docs(docs): record strict ema sanity proof`
   - `fix(scripts): require strategy-owned single close`
   - `test(scripts): align generated wave assertions`
   - `fix(scripts): bound live replay execution drift`
@@ -3757,8 +3758,51 @@ What the strict EMA/EURUSD proof sealed:
 
 Next generated final-sanity items still open:
 
-- run the same strict live-plus-replay proof for `rsi_reversion` on GBPUSD;
 - run the same strict live-plus-replay proof for `atr_channel`;
 - run the same strict live-plus-replay proof for `case_math`;
 - then decide whether the final generated sanity matrix is enough to move into PR/promotion, or
   whether the higher-timeframe and retained-risk slices must be rerun first.
+
+## 2026-08-12 Update: Final-Sanity RSI Gate Sealed
+
+Strict final-sanity RSI/GBPUSD proof after the single-close harness fix:
+
+- Clean proving worktree:
+  `/var/tmp/qkt-final-sanity-8998ad2f-20260812T103032Z`.
+- Live scenario:
+  `/var/tmp/qkt-validation/final-sanity-clean-8998ad2f-rsi-gbpusd-0812103034`.
+- Live result:
+  `/var/tmp/qkt-validation/final-sanity-clean-8998ad2f-rsi-gbpusd-0812103034/evidence/result.json`.
+- Replay result:
+  `/var/tmp/qkt-validation/final-sanity-clean-8998ad2f-rsi-gbpusd-0812103034-replay/result.json`.
+
+What the strict RSI/GBPUSD proof sealed:
+
+- QKT commit under proof: `8998ad2f253d818c6478e2d89f8912a35e4ff224`.
+- `qktDirty:false`.
+- Strategy: `fs8998_rsi_0812103034_market_bracket`.
+- Lifecycle: `single`, `strategyOwnedLifecycle:true`, `flattenVerified:false`.
+- Timeframes: `1m` and `5m`.
+- Live path: one real `0.01`-lot entry and one strategy-owned close on demo2 through the local
+  MT5 gateway.
+- Audit: two accepted events, two filled events, zero risk rejections.
+- Transport: one `/order` post and one `/close_position` post.
+- Golden capture: `ticks:55`, `warmupTicks:80`, `candles:12`, `fills:2`, `linkedPlacements:1`.
+- Operational market-data result: `staleEvents:0`, `recoveredStaleEvents:0`.
+- Final account state: flat, zero pending orders.
+- Reconciliation: `balanceDelta:-0.13`, `dealNet:-0.13`.
+- Replay comparison status: `passed`.
+- Replay parity flags:
+  - `fullTickOrderJournalsByteExact:true`;
+  - `barsOrdersTimestampNormalizedExact:true`;
+  - `liveInitialProtectionMatchesCanonicalIntent:true`;
+  - `liveAdjustedProtectionMatchesCapturedBrokerFill:true`;
+  - `mt5SimulationUsesSameCanonicalIntent:true`;
+  - `liveFillAndAdjustedProtectionMatchMt5Simulation:true`.
+
+Generated final-sanity matrix status:
+
+- `ema_cross` on EURUSD: sealed strict live-plus-replay.
+- `rsi_reversion` on GBPUSD: sealed strict live-plus-replay.
+- `atr_channel`: still open.
+- `case_math`: still open.
