@@ -798,7 +798,7 @@ The currently generated deterministic cases are:
 - `global-drawdown`
 - `loss-streak`
 
-Fresh retained localhost MT5 passing evidence now also exists for the controlled
+Fresh retained localhost MT5 passing evidence also exists for the original controlled
 `margin-floor` fixture:
 
 - aggregate result:
@@ -821,27 +821,44 @@ A prepared controlled fixture for that now-proven slice exists in the branch:
   and
   [run-margin-floor-fixture-test.sh](/home/dickson/Desktop/personal/qkt/tests/scripts/run-margin-floor-fixture-test.sh)
 
-What the prepared fixture defines:
+The current hardened fixture now defines:
 
 - an opener role that owns exactly one bounded `0.01`-lot live EURUSD demo position;
 - a probe role whose runtime config must materialize
-  `margin_floor_pct = ceil(observed_margin_level_pct) + 1`;
+  `margin_floor_pct = ceil(observed_margin_level_pct) + 1000`;
 - a required probe-side zero-transport `MarginFloor` rejection chain after live
   exposure exists; and
-- a final full-account return to zero positions and zero pending orders.
+- a headroom-recovery phase where the same running probe opens after the opener is
+  flattened, then returns the full account to zero positions and zero pending orders.
 
-What the new runner now proved on Tuesday, August 11, 2026:
+What the current runner proved on Wednesday, August 12, 2026:
 
-- the opener role created exactly one real bounded live position on the localhost
-  MT5 demo account;
-- the live probe role rejected one fixed `0.01`-lot intent by `MarginFloor`
-  before MT5 transport using a floor derived from the observed venue
-  `margin_level`;
-- the probe path retained one causal
-  `RuleDecisionEvent -> DecisionOrderLinkedEvent -> RiskRejectedEvent` chain
-  with zero `OrderEvent`, zero fills, and zero mutating gateway requests; and
-- the opener flatten path returned the full account to zero positions and zero
-  pending orders with deal-net to balance-delta reconciliation.
+- clean proving worktree:
+  `/var/tmp/qkt-margin-floor-recovery-clean-20260812T014711Z`
+- final aggregate result:
+  `/var/tmp/qkt-validation/margin-floor-recovery-clean-20260812T023300Z-live/evidence/result.json`
+- source fixture:
+  `/var/tmp/qkt-validation/margin-floor-recovery-clean-20260812T023200Z-suite/suite.json`
+- exact runner commit: `82adabd8`
+- exact image: `qkt:live-validation-82adabd8`
+- the opener first hit a real stale-market-data rejection, retried on the next clean even-minute
+  bar, and then created one real bounded live position on localhost MT5;
+- dynamic probe floor was `8696238`, derived from observed venue `margin_level`;
+- the probe rejected `ORD-0` by `MarginFloor` before MT5 transport with one retained causal
+  `RuleDecisionEvent -> DecisionOrderLinkedEvent -> RiskRejectedEvent` chain, zero `OrderEvent`,
+  zero fills, and zero mutating gateway requests before recovery;
+- the opener flatten restored margin headroom;
+- the same running probe then opened recovered ticket `3073781855`, flattened it, and retained one
+  successful recovered `/order` plus one successful recovered `/close_position`;
+- final account was flat with zero pending orders; post-run primary account snapshot was
+  balance/equity `99995.28`, margin `0`, positions `0`, orders `0`;
+- the runner verified Docker resource restrictions absent and no JVM override variables; and
+- harness fixes found during this proof were applied to the branch:
+  `333b551e`, `e290ea56`, and `2f270a09`.
+
+Do not use the older `ceil(observed_margin_level_pct) + 1` fixture formula. A live attempt showed
+that ordinary small equity drift can move venue `margin_level` above that floor before probe
+evaluation. The buffered `+1000` formula is the current validated harness contract.
 
 Fresh retained passing evidence now exists for this stateful matrix:
 
@@ -2020,6 +2037,9 @@ Current interpretation:
     ticks that the endpoint is failing to expose;
   - a controlled primary-gateway restart did not remove the stale gaps, so the current evidence does
     not support treating this as a wedged gateway process;
+  - restarting a gateway is still a valid recovery step when the process is unhealthy, stuck, or
+    returning invalid startup ticks, but the current EURUSD/GBPUSD evidence says restart alone does
+    not fix broker/feed sparsity and must not be used to bypass QKT's stale-data gate;
   - a QKT fix is appropriate only in the harness/diagnostic/scenario-selection layer unless later
     evidence proves the gateway has fresher MT5 ticks that it is failing to expose.
 - No downstream `qkt-forge`, bot1, strategy-promotion, or image-publish rollout should start from
