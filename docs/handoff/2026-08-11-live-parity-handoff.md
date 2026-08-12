@@ -30,13 +30,13 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: worktree has local edits, `ahead 115`
+- Current status at handoff update: worktree has local edits, `ahead 117`
 - Latest commits:
+  - `f0ca7d5b fix(scripts): support operator halt recovery validation`
+  - `2be78628 docs(docs): record operator halt reentry proof`
   - `9712afb3 fix(scripts): compare operator halt reentry replay`
   - `13dbb027 fix(scripts): support operator halt reentry validation`
   - `dac4df0d docs(docs): record blocked reentry proof`
-  - `01161803 fix(scripts): support blocked reentry validation`
-  - `1cc9b2ca test(strategy): cover gated reentry parity`
 
 ## Authoritative Specs And Plans
 
@@ -572,6 +572,56 @@ Important replay caveat:
   latency differs from deterministic replay. The retained entry drift was live
   `4390.338000000001` vs mt5-sim `4389.99200000`, delta `0.3460000000004584`.
 
+### Active-Symbol XAUUSD Operator-Halt Recovery Live/Replay Extension
+
+Fresh retained evidence now exists for the first real order-bearing operator-halt recovery slice:
+
+- clean proving worktree:
+  `/var/tmp/qkt-operator-recovery-reentry-clean-20260812T012403Z`
+- scenario:
+  `/var/tmp/qkt-validation/xau-operator-recovery-reentry-clean-20260812T012825Z`
+- live result:
+  `/var/tmp/qkt-validation/xau-operator-recovery-reentry-clean-20260812T012825Z/evidence/result.json`
+- successful replay comparison:
+  `/var/tmp/qkt-validation/xau-operator-recovery-reentry-clean-20260812T012825Z-replay/result.json`
+
+What this clean pass proved on Wednesday, August 12, 2026:
+
+- `prepare-scenario.sh --symbol XAUUSD --lifecycle reentry_operator_halt_recovered` emitted a
+  clean, credential-free scenario at `qktCommit f0ca7d5b23e434e2f59a2e215e30ca971a43f2e6` with
+  `qktDirty:false`;
+- the generated strategy intentionally allowed two entries through the DSL with `TRADES.today < 2`,
+  while risk left `max_trades_per_day:2` open so the operator gate, not a trade counter, controlled
+  the middle block;
+- the live run opened and closed one real `0.01`-lot XAUUSDm position under magic `917138`;
+- the runner issued `qkt halt` through the daemon control plane, and the next qualifying BUY signal
+  was rejected before transport with exact reason `halted: operator`;
+- the runner then issued `qkt resume`, a later qualifying SELL signal opened a second real
+  `0.01`-lot XAUUSDm position, and the strategy closed that second position through QKT;
+- retained transport evidence shows `orderPosts:2` and `closePosts:2`, proving the blocked signal
+  did not reach the gateway and the resumed signal did;
+- retained live evidence was non-vacuous: `ticks:461`, `warmupTicks:80`, `candles:15`, `fills:4`,
+  `gatewayExchanges:601`, `linkedPlacements:2`, and `mutations:6`;
+- retained audit evidence included `acceptedEvents:4`, `filledEvents:4`, and `riskRejections:1`;
+- final venue reconciliation returned `finalPositions:0` and `finalOrders:0`; balance delta
+  `-0.97` matched owned deal net `-0.97`;
+- final primary gateway state after the run was flat: balance/equity `99995.70`, margin `0`,
+  positions `0`, orders `0`.
+
+Important replay caveat:
+
+- replay passed with `fullTickOrderJournalsByteExact:true`,
+  `barsOrdersTimestampNormalizedExact:true`, `liveInitialProtectionMatchesCanonicalIntent:true`,
+  `liveAdjustedProtectionMatchesCapturedBrokerFill:true`, and
+  `mt5SimulationUsesSameCanonicalIntent:true`;
+- `comparisonEntries:1` is intentional for this slice. Operator halt/resume are external
+  control-plane events, so unhalted replay takes the second entry at the blocked signal, while live
+  takes the recovered entry only after resume. The comparator checks the pre-halt live entry exactly
+  and retains the recovered live entry in `liveEntries`;
+- `liveFillAndAdjustedProtectionMatchMt5Simulation:false` is expected because real broker fill
+  latency differs from deterministic replay. The retained compared-entry drift was live
+  `4389.4400000000005` vs mt5-sim `4389.43300000`, delta `0.007000000000516593`.
+
 ### Sustained Read-Only Load And Restart Certification
 
 Fresh passing evidence now exists for the localhost MT5 read-only sustained load/restart slice:
@@ -1055,6 +1105,15 @@ As of Wednesday, August 12, 2026:
 - `scripts/live-validation/compare-golden-replay.sh`: passed for the clean XAUUSD operator-halt
   blocked re-entry capture at
   `/var/tmp/qkt-validation/xau-operator-halt-reentry-clean-20260812T010840Z-replay2/result.json`.
+- `./gradlew installDist -Pkotlin.compiler.execution.strategy=daemon`: passed in clean proving
+  worktree `/var/tmp/qkt-operator-recovery-reentry-clean-20260812T012403Z` at `f0ca7d5b` on
+  Wednesday, August 12, 2026. No JVM heap or container resource caps were set.
+- `tests/scripts/prepare-live-validation-scenario-test.sh`: passed in the same clean proving
+  worktree after adding the `reentry_operator_halt_recovered` scenario, live runner contract, and
+  replay comparator contract.
+- `scripts/live-validation/compare-golden-replay.sh`: passed for the clean XAUUSD operator-halt
+  recovery capture at
+  `/var/tmp/qkt-validation/xau-operator-recovery-reentry-clean-20260812T012825Z-replay/result.json`.
 
 The repo-health checks are green on the current `HEAD`. The remaining blockers are no longer local
 build instability; they are the still-open exhaustive live-validation matrix and the required demo
@@ -1988,7 +2047,8 @@ close. Keep the semantics split:
   - gross/net exposure limits;
   - stale-market-data health gate;
 - recovery: where the gate is intentionally recoverable, prove the re-entry remains blocked before the
-  lift/reset and is allowed only after the lift/reset or next valid UTC day boundary.
+  lift/reset and is allowed only after the lift/reset or next valid UTC day boundary. Operator halt
+  recovery is now proven; the remaining recovery gaps are risk/state/time-bound gates.
 
 Existing partial coverage:
 
@@ -2020,6 +2080,12 @@ Existing partial coverage:
   retained exact order-journal parity while explicitly documenting that unhalted replay keeps the
   extra entry that the live operator halt suppressed. See
   `Active-Symbol XAUUSD Operator-Halt Re-Entry Live/Replay Extension` above;
+- clean live evidence now proves one operator-halt recovery XAUUSD re-entry path end-to-end through
+  the real local MT5 gateway: the second qualifying signal was rejected pre-transport while halted,
+  `qkt resume` lifted the gate, the next qualifying signal opened and closed a second real position,
+  the account finished flat, and replay retained exact order-journal parity while explicitly
+  documenting that halt/resume are external control-plane events. See
+  `Active-Symbol XAUUSD Operator-Halt Recovery Live/Replay Extension` above;
 - static and stateful live rejection runners already prove several pre-transport and restored-state
   risk blocks, but they are rejection-only and do not prove an order-bearing re-entry lifecycle;
 - margin-floor live evidence exists separately, but it needs to be folded into the re-entry matrix as a
