@@ -30,9 +30,10 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 141`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 142`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `docs(docs): seal margin floor recovery status`
   - `test(risk): cover global daily halt reentry reset`
   - `test(risk): cover daily halt reentry reset`
   - `cd723ab5 test(risk): cover loss streak reentry reset`
@@ -1045,10 +1046,11 @@ downstream.
 
 As of Wednesday, August 12, 2026:
 
-- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 141`, tracked
-  worktree clean after the current global daily-halt reset commit; two pre-existing untracked
-  Kimi/audit docs remain.
+- `git status --short --branch`: branch `test/exhaustive-live-parity`, `ahead 142`, tracked
+  worktree clean after the current margin-floor handoff correction; two pre-existing untracked Kimi/audit
+  docs remain.
 - Current continuation commits now on the branch:
+  - `docs(docs): seal margin floor recovery status`
   - `test(risk): cover global daily halt reentry reset`
   - `test(risk): cover daily halt reentry reset`
   - `5a041d4a test(dsl): cover higher timeframe warmups`
@@ -1080,6 +1082,9 @@ As of Wednesday, August 12, 2026:
 - `./gradlew test --tests 'com.qkt.risk.rules.MarginFloorTest' -Pkotlin.compiler.execution.strategy=daemon && bash tests/scripts/prepare-margin-floor-fixture-test.sh && bash tests/scripts/run-margin-floor-fixture-test.sh`:
   passed on Wednesday, August 12, 2026 after adding explicit margin-floor re-entry recovery
   coverage. No JVM heap or worker restrictions were used.
+- `bash tests/scripts/run-margin-floor-fixture-test.sh`: passed again on Wednesday, August 12, 2026
+  while correcting the handoff to treat the retained live margin-floor recovery fixture as sealed
+  rather than open. No JVM heap or worker restrictions were used.
 - `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed on Wednesday, August 12, 2026 after adding explicit UTC next-day max-trades re-entry
   recovery coverage, elapsed cooldown-after-loss re-entry recovery coverage, and loss-streak reset
@@ -2297,16 +2302,17 @@ Existing partial coverage:
   `Active-Symbol XAUUSD Operator-Halt Recovery Live/Replay Extension` above;
 - static and stateful live rejection runners already prove several pre-transport and restored-state
   risk blocks, but they are rejection-only and do not prove an order-bearing re-entry lifecycle;
-- margin-floor live evidence exists separately and the rule-level re-entry/recovery contract is now
-  pinned; the remaining margin-floor expansion is retained real-demo evidence shaped specifically as a
-  re-entry matrix case.
+- margin-floor retained-live recovery is sealed by the controlled two-role fixture above: opener
+  creates bounded live exposure, probe rejects pre-transport by `MarginFloor`, opener flatten
+  restores headroom, the same running probe opens and flattens after recovery, and the account ends
+  flat with zero pending orders;
 
 Concrete next work:
 
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
-  recovered retained-live variants, especially live stale-market-data gate recovery, margin floor,
-  live same-book exposure limits, retained live cooldown/loss-streak reset, and retained live
-  next-day reset behavior;
+  recovered retained-live variants, especially live stale-market-data gate recovery, live same-book
+  exposure limits, retained live cooldown/loss-streak reset, and retained live next-day reset
+  behavior;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
   decisions and live protection adjustment, but deterministic backtest fill prices can drift from
   real broker fills because live execution latency is real;
