@@ -176,6 +176,13 @@ class LiveSession(
     private val insightsStatePollMs: Long = 10_000L,
     /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
     private val insightsDealBackfillDays: Long = 30L,
+    /**
+     * Market-data quality gate thresholds (the `market_data:` config block). The default
+     * preserves the gate's historical hard-coded thresholds; the daemon passes
+     * [com.qkt.cli.Config.marketData].
+     */
+    private val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
+        com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
     /** Opt-in bounded hot-path timing; disabled leaves the tick loop without nano-time reads. */
     private val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
     /**
@@ -1097,6 +1104,10 @@ class LiveSession(
         val marketDataGate =
             com.qkt.marketdata.MarketDataGate(
                 clock = clock,
+                staleAgeMultiple = marketDataGateConfig.staleAgeMultiple,
+                minStaleAgeMs = marketDataGateConfig.minStaleAgeMs,
+                outlierSigma = marketDataGateConfig.outlierSigma,
+                maxClockSkewMs = marketDataGateConfig.maxClockSkewMs,
                 onUnhealthy = { symbol, reason ->
                     if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
                         for ((strategyId, _) in strategies) {
