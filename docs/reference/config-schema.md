@@ -413,6 +413,17 @@ authorities' official XLSX tables. The RBA and RBNZ URLs are the defaults. Use a
 local artifact when an authority rejects server-side HTTP traffic; qkt records its SHA-256 and
 fails live ingestion when the artifact is malformed or more than seven calendar days stale.
 
+## `market_data`
+
+Thresholds for the live market-data quality gate (`MarketDataGate`) every daemon live session builds. Defaults are the gate's historical hard-coded values, so an absent block changes nothing.
+
+| Key | Type | Default | Used by | Notes |
+|---|---|---|---|---|
+| `market_data.stale_age_multiple` | double | `5.0` | live sessions | Staleness threshold as a multiple of the symbol's smoothed inter-tick gap. |
+| `market_data.min_stale_age_ms` | long | `10000` | live sessions | Floor for the staleness threshold. |
+| `market_data.outlier_sigma` | double | `6.0` | live sessions | Standard deviations from the short-window mean beyond which a tick is rejected. |
+| `market_data.max_clock_skew_ms` | long | `60000` | live sessions | Tolerance between broker tick timestamps and the local clock before new orders are suppressed. |
+
 ## `notify`
 
 Notification channels are keyed by channel type. Telegram is built in.

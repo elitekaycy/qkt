@@ -89,6 +89,12 @@ data class Config(
     val insights: com.qkt.observe.insights.InsightsConfig = com.qkt.observe.insights.InsightsConfig.DISABLED,
     /** Book-risk controls for a portfolio (limits, de-risk, allocation); null disables the layer. */
     val bookRisk: com.qkt.risk.book.BookRiskConfig? = null,
+    /**
+     * Live market-data quality gate thresholds (the `market_data:` block), consumed by
+     * [com.qkt.marketdata.MarketDataGate] in every live session. Defaults preserve the
+     * gate's historical hard-coded thresholds.
+     */
+    val marketData: com.qkt.marketdata.MarketDataGateConfig = com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
 ) {
     val runtimeMode: RuntimeMode
         get() = RuntimeMode.fromConfig(runtime["mode"])
@@ -331,6 +337,9 @@ data class Config(
                     com.qkt.observe.insights.InsightsConfig
                         .parse(map["insights"]),
                 bookRisk = parseBookRisk(map["book_risk"]),
+                marketData =
+                    com.qkt.marketdata.MarketDataGateConfig
+                        .parse(map["market_data"]),
             )
         }
 

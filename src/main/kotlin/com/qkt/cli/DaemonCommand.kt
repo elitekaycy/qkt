@@ -355,6 +355,7 @@ class DaemonCommand(
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
+                    marketDataGateConfig = cfg.marketData,
                 ),
             )
         registryRef.set(registry)
@@ -412,6 +413,7 @@ class DaemonCommand(
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
+                    marketDataGateConfig = cfg.marketData,
                 )
         val plane =
             ControlPlane(

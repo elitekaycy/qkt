@@ -163,6 +163,9 @@ class StrategyHandle(
         private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
         private val insightsStatePollMs: Long = 10_000L,
         private val insightsDealBackfillDays: Long = 30L,
+        /** Market-data gate thresholds (the `market_data:` config block) passed to every session. */
+        private val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
+            com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
     ) : Factory {
         private fun literalPayload(expr: ExprAst): Any =
             when (expr) {
@@ -367,6 +370,7 @@ class StrategyHandle(
                     insightsStrategyMetadata = mapOf(ast.name to metadata),
                     insightsStatePollMs = insightsStatePollMs,
                     insightsDealBackfillDays = insightsDealBackfillDays,
+                    marketDataGateConfig = marketDataGateConfig,
                 ).start()
 
             val server =
