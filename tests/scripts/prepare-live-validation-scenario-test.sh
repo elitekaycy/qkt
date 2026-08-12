@@ -278,6 +278,36 @@ jq -e '
 "$cli" parse "$cooldown_recovered_reentry_armed" >/dev/null
 (cd "$cooldown_recovered_reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
 
+loss_streak_reentry_out="$tmp/loss-streak-reentry-scenario"
+bash "$script" \
+    --output "$loss_streak_reentry_out" \
+    --id validation_loss_streak_reentry \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917013 \
+    --symbol XAUUSD \
+    --lifecycle reentry_blocked_loss_streak >/dev/null
+loss_streak_reentry_armed="$loss_streak_reentry_out/strategies/armed/validation_loss_streak_reentry_market_bracket.qkt"
+[ "$(grep -Fc 'TRADES.today < 2' "$loss_streak_reentry_armed")" -eq 2 ]
+[ "$(grep -Fc 'TRADES.today = 0' "$loss_streak_reentry_armed")" -eq 0 ]
+grep -F 'max_trades_per_day: 2' "$loss_streak_reentry_out/qkt.config.yaml" >/dev/null
+grep -F 'loss_streak_halt: "1"' "$loss_streak_reentry_out/qkt.config.yaml" >/dev/null
+grep -F 'loss_streak_halt_scope: persistent' "$loss_streak_reentry_out/qkt.config.yaml" >/dev/null
+jq -e '
+    .safety.maximumTradesPerDay == 2 and
+    .armedScenario.lifecycle == "reentry_blocked_loss_streak" and
+    .armedScenario.maximumEntries == 1 and
+    .armedScenario.maximumExits == 1 and
+    .armedScenario.maximumBlockedEntries == 1 and
+    .armedScenario.expectedBlockedReason == "LossStreakHalt" and
+    (.armedScenario.closeWhen | contains("second entry intentionally blocked by LossStreakHalt"))
+' "$loss_streak_reentry_out/expected.json" >/dev/null
+"$cli" parse "$loss_streak_reentry_armed" >/dev/null
+(cd "$loss_streak_reentry_out" && sha256sum --check SHA256SUMS >/dev/null)
+
 if bash "$script" \
     --output "$tmp/unsupported-symbol" \
     --id validation_jpy \
@@ -363,6 +393,10 @@ bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
     --scenario "$cooldown_recovered_reentry_out" \
     --cli "$cli" \
     --verify-only >/dev/null
+bash "$repo_root/scripts/live-validation/run-market-bracket.sh" \
+    --scenario "$loss_streak_reentry_out" \
+    --cli "$cli" \
+    --verify-only >/dev/null
 bash "$repo_root/scripts/live-validation/run-market-bracket.sh" --help | grep -F '/var/tmp/qkt-validation/LIVE-LOCK-<server>-<login>' >/dev/null
 if rg --quiet '\$cli" status .*--json' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner passes unsupported --json to qkt status' >&2
@@ -386,12 +420,13 @@ grep -F 'reentry_blocked_max_trades' "$repo_root/scripts/live-validation/run-mar
 grep -F 'reentry_blocked_operator_halt' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_operator_halt_recovered' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'reentry_cooldown_recovered' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'reentry_blocked_loss_streak' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'wait_for_cooldown_recovery_window() {' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F '"$cli" halt "$strategy_name" --state-dir "$scenario/state" --json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F '"$cli" resume "$strategy_name" --state-dir "$scenario/state" --json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'operator-halt-before-blocked-reentry.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'operator-resume-before-recovered-reentry.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak")' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'blockedReentry:{' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'preTransport:($expectedBlockedEntries == 0 or ($orderPosts|tonumber) == $expectedEntries)' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'positionTickets:($tickets | map(.ticket))' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
@@ -512,9 +547,11 @@ grep -F '$lifecycle == "reentry_blocked_max_trades"' "$comparison_script" >/dev/
 grep -F '$lifecycle == "reentry_blocked_operator_halt"' "$comparison_script" >/dev/null
 grep -F '$lifecycle == "reentry_operator_halt_recovered"' "$comparison_script" >/dev/null
 grep -F '$lifecycle == "reentry_cooldown_recovered"' "$comparison_script" >/dev/null
+grep -F '$lifecycle == "reentry_blocked_loss_streak"' "$comparison_script" >/dev/null
 grep -F 'comparisonEntries: $comparisonEntries' "$comparison_script" >/dev/null
 grep -F 'retains the recovered live entry in liveEntries' "$comparison_script" >/dev/null
 grep -F 'Cooldown-after-loss is a live pacing-state gate' "$comparison_script" >/dev/null
+grep -F 'Loss-streak halt is a live pacing-state halt' "$comparison_script" >/dev/null
 grep -F 'pre-transport " + $blockedReason + " rejection' "$comparison_script" >/dev/null
 grep -F '.blockedReentry.preTransport == true' "$comparison_script" >/dev/null
 grep -F 'expectedEntries: $expectedEntries' "$comparison_script" >/dev/null

@@ -126,6 +126,18 @@ case "$lifecycle" in
         [ "$cooldown_after_loss_ms" -eq 90000 ] ||
             fail "cooldown recovery lifecycle must retain the reviewed 90000ms cooldown"
         ;;
+    reentry_blocked_loss_streak)
+        grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null ||
+            fail "loss-streak re-entry strategy does not attempt the reviewed second entry"
+        grep -F 'max_trades_per_day: 2' "$config" >/dev/null ||
+            fail "loss-streak scenario should leave max trades open for the loss-streak gate"
+        grep -F 'loss_streak_halt: "1"' "$config" >/dev/null ||
+            fail "loss-streak scenario does not configure the reviewed halt threshold"
+        [ "$expected_entries" -eq 1 ] && [ "$expected_exits" -eq 1 ] && [ "$expected_blocked_entries" -eq 1 ] ||
+            fail "loss-streak lifecycle must expect one filled entry, one close, and one blocked entry"
+        [ "$expected_blocked_reason" = "LossStreakHalt" ] ||
+            fail "loss-streak lifecycle must retain the LossStreakHalt rejection reason"
+        ;;
     *) fail "unsupported armed lifecycle: $lifecycle" ;;
 esac
 grep -F "STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance" "$armed_strategy" >/dev/null ||
@@ -653,7 +665,7 @@ if [ "$lifecycle" = "reentry" ]; then
     gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
     jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
         fail "re-entry lifecycle did not end flat"
-elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ]; then
+elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ] || [ "$lifecycle" = "reentry_blocked_loss_streak" ]; then
     wait_for_open_cycle 1
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-open.json"
     wait_for_flat_cycle 1
@@ -894,7 +906,7 @@ jq -n \
           },
           bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance},
           flattenVerified:(if $lifecycle == "single" then true else false end),
-          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered"),
+          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak"),
           finalPositions:0,
           finalOrders:0,
           balanceDelta:$balanceDelta,

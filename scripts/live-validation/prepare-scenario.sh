@@ -9,12 +9,12 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered]
+  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
-  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered]
+  [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
 
 Creates a sanitized, isolated Exness-demo validation scenario. The gateway URL must
 be an explicit 127.0.0.1 HTTP endpoint. Credentials are never accepted as arguments;
@@ -176,7 +176,20 @@ case "$lifecycle" in
       cooldown_after_loss_after_consecutive: 1'
         close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; second entry blocked by cooldown after first losing close then allowed after cooldown"
         ;;
-    *) fail "--lifecycle must be one of: single, reentry, reentry_blocked_max_trades, reentry_blocked_operator_halt, reentry_operator_halt_recovered, reentry_cooldown_recovered" ;;
+    reentry_blocked_loss_streak)
+        max_trades_per_day=2
+        entry_trade_guard="TRADES.today < 2"
+        close_trade_guard="TRADES.today >= 1"
+        maximum_entries=1
+        maximum_exits=1
+        maximum_blocked_entries=1
+        expected_blocked_reason="LossStreakHalt"
+        max_round_trips_10m=3
+        per_strategy_extra='      loss_streak_halt: "1"
+      loss_streak_halt_scope: persistent'
+        close_when="position!=0 and tradesToday>=1 and holdingDurationSeconds>=1; second entry intentionally blocked by LossStreakHalt after the first losing close"
+        ;;
+    *) fail "--lifecycle must be one of: single, reentry, reentry_blocked_max_trades, reentry_blocked_operator_halt, reentry_operator_halt_recovered, reentry_cooldown_recovered, reentry_blocked_loss_streak" ;;
 esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
