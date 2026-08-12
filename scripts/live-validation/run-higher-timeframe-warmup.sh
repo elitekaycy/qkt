@@ -182,7 +182,7 @@ jq -e --slurpfile initial "$evidence/gateway-account-initial.json" '
 
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 qkt_commit="$(jq -er '.qktCommit' "$scenario/scenario.json")"
-qkt_dirty="$(jq -er '.qktDirty' "$scenario/scenario.json")"
+qkt_dirty="$(jq -r '.qktDirty' "$scenario/scenario.json")"
 qkt_version="$("$cli" --version)"
 gateway_version="$(jq -r '.version' "$evidence/gateway-health.json")"
 jq -n \

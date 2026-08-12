@@ -99,6 +99,7 @@ grep -F 'expected probes do not match the reviewed M15/H1/H4 matrix' "$tmp/tampe
 grep -F 'venueDealsDuringRun:0' "$runner" >/dev/null
 grep -F 'daemon control artifacts were created during a read-only bot-bars probe' "$runner" >/dev/null
 grep -F 'broker credential was persisted in retained artifacts' "$runner" >/dev/null
+grep -F 'qkt_dirty="$(jq -r' "$runner" >/dev/null
 grep -F 'warmupPseudoTicks:($bars * 4)' "$runner" >/dev/null
 grep -F '15m:4","15m:96","15m:192' "$runner" >/dev/null
 grep -F '1h:1","1h:24","1h:48' "$runner" >/dev/null
