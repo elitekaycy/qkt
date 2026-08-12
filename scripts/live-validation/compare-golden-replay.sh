@@ -118,6 +118,7 @@ jq -e '
      (($lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or
        $lifecycle == "reentry_max_trades_next_day_recovered" or
        $lifecycle == "reentry_daily_halt_next_day_recovered" or
+       $lifecycle == "reentry_global_daily_halt_next_day_recovered" or
        $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or
        $lifecycle == "reentry_blocked_loss_streak") and
       .strategyOwnedLifecycle == true and
@@ -490,7 +491,7 @@ jq -n \
             (if $lifecycle == "single" then
                 "The operator flatten fill occurs after the bounded strategy replay window and " +
                 "is reconciled by the live result, not replayed as a strategy decision."
-             elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak" then
+             elif $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_daily_halt_next_day_recovered" or $lifecycle == "reentry_global_daily_halt_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak" then
                 "The live blocked re-entry capture includes one strategy-owned close and a " +
                 "pre-transport " + $blockedReason + " rejection for the next entry; " +
                 "replay comparison checks the filled entry intent/protection and byte-identical " +
@@ -504,6 +505,10 @@ jq -n \
                     "the second same-day MaxTradesPerDay rejection as the expected live end state."
                  elif $lifecycle == "reentry_daily_halt_next_day_recovered" then
                     " The live scenario boots with a previous-day DAILY risk halt seed. The " +
+                    "comparator checks that the first current-day entry matches replay and retains " +
+                    "the second same-day MaxTradesPerDay rejection as the expected live end state."
+                 elif $lifecycle == "reentry_global_daily_halt_next_day_recovered" then
+                    " The live scenario boots with a previous-day global DAILY risk halt seed. The " +
                     "comparator checks that the first current-day entry matches replay and retains " +
                     "the second same-day MaxTradesPerDay rejection as the expected live end state."
                  elif $lifecycle == "reentry_operator_halt_recovered" then
