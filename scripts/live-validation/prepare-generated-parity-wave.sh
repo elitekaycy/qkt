@@ -9,6 +9,7 @@ usage() {
 Usage: prepare-generated-parity-wave.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic-base N [--cli PATH]
+  [--ema-fast N --ema-slow N]
 
 Prepares a first generated order-bearing live/replay parity wave using four
 bounded 0.01-lot scenarios built for the existing read-only, live, and replay
@@ -31,6 +32,8 @@ expected_balance=""
 expected_leverage=""
 magic_base=""
 cli="$repo_root/build/install/qkt/bin/qkt"
+ema_fast=3
+ema_slow=5
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -43,6 +46,8 @@ while [ "$#" -gt 0 ]; do
         --expected-leverage) expected_leverage="${2:-}"; shift 2 ;;
         --magic-base) magic_base="${2:-}"; shift 2 ;;
         --cli) cli="${2:-}"; shift 2 ;;
+        --ema-fast) ema_fast="${2:-}"; shift 2 ;;
+        --ema-slow) ema_slow="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -89,6 +94,7 @@ for index in 0 1 2 3; do
         --expected-balance "$expected_balance" \
         --expected-leverage "$expected_leverage" \
         --magic "$magic" \
+        --ema-fast "$ema_fast" --ema-slow "$ema_slow" \
         --symbol "$symbol" \
         --variant "$variant" \
         >/dev/null
