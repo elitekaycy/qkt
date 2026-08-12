@@ -1,5 +1,61 @@
 # Live Parity And Promotion Handoff
 
+## Latest Update - 2026-08-12 21:51 UTC
+
+This is the current source of truth after the broker snapshot fix, CI Docker retry hardening, and
+bot2 redeploy.
+
+- qkt broker snapshot fix:
+  - qkt PR 982 merged to `dev` as `66c6f3a584ec9666dfdcf18cd852b55c64047e4e`.
+  - PR 982 fixed sibling MT5 profiles sharing one gateway/account but still issuing amplified
+    broker state reads. `DaemonCommand` now shares one `MT5ReadCache` per gateway URL/API-key
+    identity, and cached `MT5Client` position/order reads fetch one unfiltered snapshot then filter
+    by magic locally.
+  - Focused MT5 cache/client tests passed, and the full local test suite passed before promotion.
+- qkt Docker publication fix:
+  - qkt PR 983 merged to `dev` as `de9b2cde3c69cec04dceaeeab277e91fee3687ae`.
+  - This adds a bounded retry around the existing Dockerfile Gradle wrapper build step after
+    testing Docker failed twice on external Gradle/GitHub distribution download EOF/503 errors.
+    It is CI/download hardening only; no qkt runtime behavior changed.
+  - Local validation built `qkt:ci-retry-local` and reported
+    `qkt 0.47.1 (66c6f3a584ec9666dfdcf18cd852b55c64047e4e)`.
+- qkt testing/edge:
+  - `dev` promoted to `testing` as `bd21e706262318dabbbbe5b2b23b732f85903fd2`.
+  - Testing workflows for `bd21e706262318dabbbbe5b2b23b732f85903fd2` passed: `check`,
+    `integration`, and `docker`.
+  - `ghcr.io/elitekaycy/qkt:edge` now resolves to digest
+    `sha256:0de49e66bf0d42de50048816da12921b44773d54e2f5b1785e48769c79b970a2`.
+  - Image smoke/version: `qkt 0.47.1 (bd21e706262318dabbbbe5b2b23b732f85903fd2)`.
+- bot2 `/root/forward-stack` deployment:
+  - Pulled and recreated qkt only; gateway remained on `elitekaycy/mt5-gateway-api:0.3.10`.
+  - Running qkt image digest is
+    `sha256:0de49e66bf0d42de50048816da12921b44773d54e2f5b1785e48769c79b970a2`.
+  - Running qkt version is `qkt 0.47.1 (bd21e706262318dabbbbe5b2b23b732f85903fd2)`.
+  - Gateway readiness probe passed with the configured token.
+  - `qkt daemon status --state-dir /var/lib/qkt --json` after restart reported `status=ok`,
+    25 strategies, all running, none halted, all `droppedTicks=0`, and all inbound queues drained
+    to 0 on the later sample.
+  - Recent gateway queue-depth sample after restart: 23 samples, max depth 3, average depth 1.48.
+  - No audit or transport `.dropped` files were found under `/root/forward-stack/state`.
+  - Latency tracking is not enabled on bot2 right now; `qkt status --latency` reports
+    `disabled - set QKT_LATENCY_TRACKING=1` for each strategy. Enable this before using latency
+    p95/p99/max as soak evidence.
+- Current residual operational issue:
+  - The stale shared-polling pattern has not reappeared in the latest post-restart filtered logs.
+  - One metals strategy (`forward_bench_2:s2`) logged `CLOCK-SKEWED` for XAUUSD/XAGUSD because
+    broker tick time was roughly 45 minutes behind local clock. qkt correctly suppresses new orders
+    for that strategy/symbol while the gate is active. This is not the broker snapshot fix, but it
+    prevents claiming the full forward set is order-ready for metals until the broker feed/session
+    timestamp issue clears or the strategy universe is adjusted.
+- Still required before claiming this stage fully sealed:
+  - Continue monitoring bot2 after warmup settles for recurring stale/healthy transitions, gateway
+    queue growth, dropped ticks, audit/transport drops, and unexpected order/position residue.
+  - Decide whether to enable `QKT_LATENCY_TRACKING=1` on the forward stack for measured p95/p99/max
+    tick-processing evidence.
+  - Resolve or explicitly exclude the XAU/XAG clock-skew-gated strategy before treating all 25
+    strategies as live-order-ready.
+  - qkt `main` is still gated by paper-soak attestation for the exact testing image digest.
+
 ## Latest Update - 2026-08-12 20:27 UTC
 
 This is the current source of truth after the qkt `testing` deployment and the residual bot2
