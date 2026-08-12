@@ -43,7 +43,7 @@ Each row lists the symptom, the source file the live behavior lives in, and whet
 | 6 | **Market-order fill price** | `priceProvider.lastPrice(symbol)` — the last tracked tick (`PaperBroker.fillMarket`) | MT5 fills at venue ask/bid at submit time, with `deviation` slack | **closed in MT5_SIM** |
 | 7 | **Contract size** | reads `contractSize` from `InstrumentRegistry`; both backtest and live multiply through it | MT5 sizes positions as `lot × contract_size` (XAUUSD = 100 oz/lot) | **closed in Phase 30** |
 | 8 | **`tradeStopsLevel`** | mt5-sim (opt-in `enforceStopsLevel`) validates pending trigger/limit distance from current price AND bracket exits from entry | rejected pre-placement in `MT5Broker`: entry distance from current price, SL/TP distance from entry, freeze-level on modifies (#638) | both halves aligned in #658; freeze-level live-only (see residuals) |
-| 9 | **OCO atomicity** | both legs always coupled in memory | emulated via comment-tag prefix + position poller; cancel-on-fill has a few-ms window between the fill event and the sibling-cancel request | divergent edge case |
+| 9 | **OCO atomicity** | both legs always coupled in memory | client-emulated independent tickets; cancel-on-fill has a poll/network window, and a detected second fill is closed immediately by its owned position ticket with a critical alert | divergent edge case with compensation |
 | 10 | **Pending-order persistence** | always in memory of the running backtest | persists to the broker's order book; daemon restart re-reads via `MT5StateRecovery` | divergent edge case |
 | 11 | **Latency** | instantaneous tick → fill | gateway HTTP round-trip + venue execution latency | divergent |
 | 12 | **Retcode handling** | no concept | MT5-specific retcodes (`10009`, `10015`, `10015` price, etc.) translated to `OrderRejected` reasons | divergent |
@@ -102,12 +102,22 @@ Historical note kept for context: before Phase 30, backtest PnL was off by a fac
 `MT5BrokerSimulator` now models deterministic volume and price quantization, bid/ask fills,
 contract-size PnL, stop-distance rejection, and configurable latency/rejection stress. The
 authentic golden replay covers one market order. `qkt golden capture` now turns retained
-demo sessions into checksummed tick/fill/order/gateway bundles, but a captured bundle is evidence,
-not automatically a new verifier assertion. Promote representative captures into regression tests
+demo sessions into checksummed tick/fill/order/gateway bundles, and `qkt golden materialize`
+verifies and converts their structured ticks and candles into the normal replay stores. A captured
+bundle is evidence, not automatically a new verifier assertion. The retained live-validation
+scenarios can be checked offline with `scripts/live-validation/compare-golden-replay.sh`; it compares
+full-tick, plain-bar, and tick-resolved report bundles with the linked live request and fill. Promote
+representative captures into regression tests
 for pending/OCO orders, partial fills, rejected requests, and volatile-period latency. Those
 residuals must not be inferred from the single exact fill. `qkt backtest --chaos` applies the
 seeded stress preset; it does not claim to reproduce every gateway HTTP or venue-retcode sequence.
 Operational proof for a second MT5 profile remains tracked by #44.
+
+Strict read-only captures use the same comparator in a separate mode. Their engine
+journal records source-timeframe warmup ticks and exact DSL stream candles, allowing
+the materializer to retain M1 and M5 bar stores without mixing synthetic warmup
+streams. The comparator requires exact live/full-tick/plain-bar warmup and indicator
+traces plus flat accounting; it makes no order/fill claim.
 
 ## 2026-06-10 audit addendum — divergences this catalog was missing
 

@@ -44,6 +44,20 @@ class KeltnerChannelsTest {
     }
 
     @Test
+    fun `matches hand calculated ema and atr bands`() {
+        val k = KeltnerChannels(2, BigDecimal(2))
+        k.update(candle("11", "9", "10"))
+        k.update(candle("13", "10", "12"))
+        k.update(candle("14", "11", "13"))
+
+        // EMA(2)=12 1/3 and ATR(2)=3, so the two-ATR bands are +/-6.
+        val bands = k.bands()!!
+        assertThat(bands.upper).isEqualByComparingTo(Money.of("18.33333333"))
+        assertThat(bands.middle).isEqualByComparingTo(Money.of("12.33333333"))
+        assertThat(bands.lower).isEqualByComparingTo(Money.of("6.33333333"))
+    }
+
+    @Test
     fun `rejects non-positive period`() {
         assertThatThrownBy { KeltnerChannels(0, BigDecimal(2)) }.isInstanceOf(IllegalArgumentException::class.java)
     }

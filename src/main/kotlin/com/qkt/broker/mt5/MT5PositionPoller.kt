@@ -31,7 +31,13 @@ class MT5PositionPoller(
      * pending order id and emit the matching [com.qkt.events.BrokerEvent.OrderFilled].
      * Default `null` keeps existing test fixtures backward-compatible.
      */
-    private val onPositionOpened: ((MT5Position) -> Unit)? = null,
+    private val onPositionOpened: ((MT5Position) -> Boolean)? = null,
+    /**
+     * Invoked when an existing position's venue volume increases. Entry orders can fill in
+     * multiple slices while retaining one ticket; the broker uses this hook to advance the
+     * order's cumulative fill without waiting for a new position ticket.
+     */
+    private val onPositionIncreased: ((MT5Position, MT5Position) -> Unit)? = null,
     /**
      * Resolves a closed position ticket to the qkt-side (clientOrderId, strategyId)
      * pair so the synthesized [BrokerEvent.OrderFilled] flows through the per-strategy
@@ -97,6 +103,9 @@ class MT5PositionPoller(
      * memory hygiene — far longer than any plausible snapshot hiccup.
      */
     private val closedTickets: MutableMap<Long, Long> = ConcurrentHashMap()
+
+    /** Runtime-opened tickets rejected by this broker instance's local correlation. */
+    private val foreignRuntimeTickets: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     private val observedClosingDeals: MutableMap<Long, MutableSet<Long>> = mutableMapOf()
 
     fun start() {
@@ -180,6 +189,7 @@ class MT5PositionPoller(
             val previous = lastSnapshot[ticket] ?: continue
             val latest = current[ticket] ?: continue
             if (previous.sl.compareTo(latest.sl) != 0 || previous.tp.compareTo(latest.tp) != 0) {
+                if (isForeignWithoutOwner(ticket)) continue
                 val event =
                     BrokerEvent.PositionProtectionChanged(
                         broker = profile.name,
@@ -206,6 +216,7 @@ class MT5PositionPoller(
                 }
             }
             if (latest.volume < previous.volume) {
+                if (isForeignWithoutOwner(ticket)) continue
                 when (engineCloseState?.invoke(ticket) ?: EngineCloseState.NONE) {
                     EngineCloseState.PENDING -> {
                         current[ticket] = previous
@@ -221,6 +232,8 @@ class MT5PositionPoller(
                             positionClosed = false,
                         )
                 }
+            } else if (latest.volume > previous.volume) {
+                onPositionIncreased?.invoke(previous, latest)
             }
         }
         val closed = lastSnapshot.keys - current.keys
@@ -237,17 +250,23 @@ class MT5PositionPoller(
                 EngineCloseState.NONE -> closedTickets[ticket] = now
             }
             val p = lastSnapshot[ticket] ?: continue
-            publishClose(p, p.volume, ticket, now, positionClosed = true)
+            if (!isForeignWithoutOwner(ticket)) {
+                publishClose(p, p.volume, ticket, now, positionClosed = true)
+            }
+            foreignRuntimeTickets.remove(ticket)
             observedClosingDeals.remove(ticket)
             onPositionClosed?.invoke(ticket)
         }
         val opened = current.keys - lastSnapshot.keys
         for (ticket in opened) {
             val p = current[ticket] ?: continue
-            onPositionOpened?.invoke(p)
+            if (onPositionOpened?.invoke(p) == false) foreignRuntimeTickets.add(ticket)
         }
         lastSnapshot = current
     }
+
+    private fun isForeignWithoutOwner(ticket: Long): Boolean =
+        ticket in foreignRuntimeTickets && closedTicketMeta?.invoke(ticket) == null
 
     private fun publishClose(
         position: MT5Position,

@@ -13,8 +13,12 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackDirection
 import com.qkt.events.BrokerEvent
+import com.qkt.events.DecisionOrderLinkedEvent
+import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
+import com.qkt.events.RiskRejectedEvent
+import com.qkt.events.RuleDecisionEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.TradeEvent
@@ -24,6 +28,7 @@ import com.qkt.execution.ExpiryAction
 import com.qkt.execution.Immediate
 import com.qkt.execution.LayerSpec
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.OrderRequestEvidence
 import com.qkt.execution.ScaleOutLeg
 import com.qkt.execution.StackPlan
 import com.qkt.execution.StopLossSpec
@@ -31,6 +36,8 @@ import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
+import com.qkt.marketdata.Candle
+import com.qkt.positions.Position
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 import java.time.Instant
@@ -38,6 +45,69 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class InsightsTranslateTest {
+    @Test
+    fun `rule decision preserves condition fingerprints and evaluated candle`() {
+        val candle =
+            Candle(
+                symbol = "EXNESS:EURUSD",
+                open = BigDecimal("1.1000"),
+                high = BigDecimal("1.1020"),
+                low = BigDecimal("1.0990"),
+                close = BigDecimal("1.1010"),
+                volume = BigDecimal.ZERO,
+                startTime = 1_718_000_000_000L,
+                endTime = 1_718_000_060_000L,
+                bid = BigDecimal("1.1009"),
+                ask = BigDecimal("1.1011"),
+            )
+        val env =
+            InsightsTranslate.fromRuleDecision(
+                RuleDecisionEvent(
+                    strategyId = "alpha",
+                    decisionId = "alpha:entry:1718000060000:abc",
+                    ruleId = "entry#0",
+                    strategyFingerprint = "strategy-sha",
+                    ruleFingerprint = "rule-sha",
+                    conditionFingerprint = "condition-sha",
+                    conditionResult = true,
+                    alias = "eur1",
+                    broker = "exness",
+                    timeframe = "1m",
+                    signalCount = 1,
+                    candle = candle,
+                    timestamp = candle.endTime,
+                    sequenceId = 16L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("decision.rule_evaluated")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.payload)
+            .containsEntry("decisionId", "alpha:entry:1718000060000:abc")
+            .containsEntry("ruleId", "entry#0")
+            .containsEntry("conditionFingerprint", "condition-sha")
+            .containsEntry("conditionResult", true)
+            .containsEntry("signalCount", 1)
+        assertThat(env.payload["candle"])
+            .isEqualTo(
+                mapOf(
+                    "symbol" to "EXNESS:EURUSD",
+                    "startTimeMs" to 1_718_000_000_000L,
+                    "endTimeMs" to 1_718_000_060_000L,
+                    "open" to BigDecimal("1.1000"),
+                    "high" to BigDecimal("1.1020"),
+                    "low" to BigDecimal("1.0990"),
+                    "close" to BigDecimal("1.1010"),
+                    "volume" to BigDecimal.ZERO,
+                    "bid" to BigDecimal("1.1009"),
+                    "ask" to BigDecimal("1.1011"),
+                ),
+            )
+        assertThat(env.toJson("qkt-prod"))
+            .contains("\"type\":\"decision.rule_evaluated\"")
+            .contains("\"endTimeMs\":1718000060000")
+    }
+
     @Test
     fun `trade event maps to the contract trade payload`() {
         val e =
@@ -53,13 +123,55 @@ class InsightsTranslateTest {
                     ),
                 timestamp = 1718000000001L,
                 sequenceId = 42L,
+                strategyId = "latch",
             )
         val env = InsightsTranslate.fromTrade(e)
         assertThat(env.type).isEqualTo("trade")
+        assertThat(env.strategyId).isEqualTo("latch")
         assertThat(env.seq).isEqualTo(42L)
-        assertThat(env.id).isEqualTo("e42")
+        assertThat(env.id).isEqualTo("event-trade-latch-1718000000001-42")
         assertThat(env.payload["orderId"]).isEqualTo("o1")
         assertThat(env.payload["side"]).isEqualTo("BUY")
+    }
+
+    @Test
+    fun `event ids do not collide across strategy sessions sharing a bus sequence`() {
+        val first =
+            InsightsTranslate.fromTrade(
+                TradeEvent(
+                    trade =
+                        Trade(
+                            orderId = "o1",
+                            symbol = "XAUUSD",
+                            price = BigDecimal("2350.5"),
+                            quantity = BigDecimal("0.1"),
+                            side = Side.BUY,
+                            timestamp = 1718000000000L,
+                        ),
+                    timestamp = 1718000000001L,
+                    sequenceId = 42L,
+                    strategyId = "first",
+                ),
+            )
+        val second =
+            InsightsTranslate.fromTrade(
+                TradeEvent(
+                    trade =
+                        Trade(
+                            orderId = "o2",
+                            symbol = "XAUUSD",
+                            price = BigDecimal("2350.5"),
+                            quantity = BigDecimal("0.1"),
+                            side = Side.BUY,
+                            timestamp = 1718000000000L,
+                        ),
+                    timestamp = 1718000000001L,
+                    sequenceId = 42L,
+                    strategyId = "second",
+                ),
+            )
+
+        assertThat(first.id).isNotEqualTo(second.id)
     }
 
     @Test
@@ -538,6 +650,151 @@ class InsightsTranslateTest {
     }
 
     @Test
+    fun `submit signal approved order and risk rejection share canonical order evidence`() {
+        val request =
+            OrderRequest.StopLimit(
+                id = "stop-limit",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.25"),
+                stopPrice = BigDecimal("2355.00"),
+                limitPrice = BigDecimal("2355.50"),
+                timeInForce = TimeInForce.GTD,
+                timestamp = 1_718_000_000_000L,
+                strategyId = "latch",
+                expiresAt = 1_718_000_060_000L,
+            )
+        val expected = OrderRequestEvidence.payload(request)
+        val signal =
+            InsightsTranslate.fromSignal(
+                SignalEvent(Signal.Submit(request), strategyId = "latch", timestamp = 1L, sequenceId = 10L),
+            )!!
+        val approved = InsightsTranslate.fromOrderSubmit(OrderEvent(request, timestamp = 2L, sequenceId = 11L))
+        val rejected =
+            InsightsTranslate.fromRiskRejected(
+                RiskRejectedEvent(request, reason = "max-notional", timestamp = 3L, sequenceId = 12L),
+            )
+
+        assertThat(signal.payload["order"]).isEqualTo(expected)
+        assertThat(signal.payload).containsEntry("orderSchemaVersion", OrderRequestEvidence.SCHEMA_VERSION)
+        assertThat(approved.payload)
+            .containsAllEntriesOf(expected)
+            .containsEntry("orderSchemaVersion", OrderRequestEvidence.SCHEMA_VERSION)
+        assertThat(rejected.payload["order"]).isEqualTo(expected)
+        assertThat(rejected.payload).containsEntry("orderSchemaVersion", OrderRequestEvidence.SCHEMA_VERSION)
+        assertThat(rejected.payload).containsEntry("reason", "max-notional")
+    }
+
+    @Test
+    fun `decision order link preserves rule signal and order correlation`() {
+        val env =
+            InsightsTranslate.fromDecisionOrderLinked(
+                DecisionOrderLinkedEvent(
+                    strategyId = "alpha",
+                    decisionId = "alpha:gold:1718000000000:abc",
+                    ruleId = "gold#0",
+                    signalIndex = 2,
+                    orderId = "o-42",
+                    timestamp = 1_718_000_000_010L,
+                    sequenceId = 17L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("decision.order_linked")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.seq).isEqualTo(17L)
+        assertThat(env.payload)
+            .containsEntry("decisionId", "alpha:gold:1718000000000:abc")
+            .containsEntry("ruleId", "gold#0")
+            .containsEntry("signalIndex", 2)
+            .containsEntry("orderId", "o-42")
+    }
+
+    @Test
+    fun `accounted fill exposes costs realized pnl positions and fill correlation`() {
+        val before =
+            Position(
+                symbol = "EXNESS:XAUUSD",
+                quantity = BigDecimal("0.10"),
+                avgEntryPrice = BigDecimal("2350.00"),
+                openedAt = 1_717_999_000_000L,
+            )
+        val after = before.copy(quantity = BigDecimal("0.04"))
+        val env =
+            InsightsTranslate.fromFillAccounted(
+                FillAccountedEvent(
+                    orderId = "o-close",
+                    strategyId = "alpha",
+                    symbol = "EXNESS:XAUUSD",
+                    fillSliceId = "o-close:91",
+                    sourceFillSequenceId = 91L,
+                    cumulativeFilled = BigDecimal("0.06"),
+                    modeledCommissionAccount = BigDecimal("0.10"),
+                    venueCostsAccount = BigDecimal("0.20"),
+                    totalCostsAccount = BigDecimal("0.30"),
+                    accountNativeRealized = BigDecimal("12.00"),
+                    strategyNativeRealized = BigDecimal("7.20"),
+                    nativeCurrency = "USD",
+                    grossAccountRealized = BigDecimal("12.00"),
+                    grossStrategyAccountRealized = BigDecimal("7.20"),
+                    accountCurrency = "USD",
+                    netAccountRealized = BigDecimal("11.70"),
+                    netStrategyAccountRealized = BigDecimal("6.90"),
+                    conversionRate = BigDecimal.ONE,
+                    conversionTimestampMs = 1_718_000_000_000L,
+                    conversionSource = "identity",
+                    contractSize = BigDecimal("100"),
+                    accountPositionBefore = before,
+                    accountPositionAfter = after,
+                    strategyPositionBefore = before,
+                    strategyPositionAfter = after,
+                    reducedExposure = true,
+                    partial = true,
+                    timestamp = 1_718_000_000_100L,
+                    sequenceId = 92L,
+                ),
+            )
+
+        assertThat(env.type).isEqualTo("fill.accounted")
+        assertThat(env.strategyId).isEqualTo("alpha")
+        assertThat(env.payload)
+            .containsEntry("orderId", "o-close")
+            .containsEntry("fillSliceId", "o-close:91")
+            .containsEntry("sourceFillSequenceId", 91L)
+            .containsEntry("cumulativeFilled", BigDecimal("0.06"))
+            .containsEntry("modeledCommissionAccount", BigDecimal("0.10"))
+            .containsEntry("venueCostsAccount", BigDecimal("0.20"))
+            .containsEntry("totalCostsAccount", BigDecimal("0.30"))
+            .containsEntry("grossAccountRealized", BigDecimal("12.00"))
+            .containsEntry("netAccountRealized", BigDecimal("11.70"))
+            .containsEntry("netStrategyAccountRealized", BigDecimal("6.90"))
+            .containsEntry("reducedExposure", true)
+            .containsEntry("partial", true)
+        assertThat(env.payload["accountPositionBefore"])
+            .isEqualTo(
+                mapOf(
+                    "symbol" to "EXNESS:XAUUSD",
+                    "quantity" to BigDecimal("0.10"),
+                    "avgEntryPrice" to BigDecimal("2350.00"),
+                    "openedAtMs" to 1_717_999_000_000L,
+                ),
+            )
+        assertThat(env.payload["strategyPositionAfter"])
+            .isEqualTo(
+                mapOf(
+                    "symbol" to "EXNESS:XAUUSD",
+                    "quantity" to BigDecimal("0.04"),
+                    "avgEntryPrice" to BigDecimal("2350.00"),
+                    "openedAtMs" to 1_717_999_000_000L,
+                ),
+            )
+        assertThat(env.toJson("qkt-prod"))
+            .contains("\"sourceFillSequenceId\":91")
+            .contains("\"totalCostsAccount\":0.30")
+            .contains("\"accountPositionBefore\":{")
+    }
+
+    @Test
     fun `suppressed signal preserves reason and target`() {
         val env =
             InsightsTranslate.fromSignalSuppressed(
@@ -585,6 +842,8 @@ class InsightsTranslateTest {
             )
 
         val env = InsightsTranslate.fromOrderSubmit(OrderEvent(bracket, timestamp = 1L, sequenceId = 12L))
+        assertThat(env.payload).containsEntry("orderId", "entry")
+        assertThat(env.payload).containsEntry("planOrderId", "br1")
         assertThat(env.payload).containsEntry("orderType", "Bracket")
         assertThat(env.payload).containsEntry("timeInForce", "GTC")
         assertThat(env.payload).containsEntry("strategyId", "latch")
@@ -687,6 +946,36 @@ class InsightsTranslateTest {
                     TimeInForce.GTC,
                     1L,
                     "latch",
+                ),
+                OrderRequest.SteppedStop(
+                    id = "stepped",
+                    symbol = "XAUUSD",
+                    side = Side.SELL,
+                    quantity = BigDecimal("0.10"),
+                    entryPrice = BigDecimal("2350"),
+                    initialDistance = BigDecimal("10"),
+                    steps =
+                        listOf(
+                            StopLossSpec.Step(BigDecimal("12"), BigDecimal.ZERO),
+                            StopLossSpec.Step(BigDecimal("20"), BigDecimal("5")),
+                        ),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
+                ),
+                OrderRequest.TimeTighteningStop(
+                    id = "time-tightening",
+                    symbol = "XAUUSD",
+                    side = Side.SELL,
+                    quantity = BigDecimal("0.10"),
+                    entryPrice = BigDecimal("2350"),
+                    initialDistance = BigDecimal("10"),
+                    tightenBy = BigDecimal("2"),
+                    intervalMs = 5_000L,
+                    floorDistance = BigDecimal("4"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 1L,
+                    strategyId = "latch",
                 ),
                 OrderRequest.TrailingStopLimit(
                     "tsl",
@@ -814,6 +1103,8 @@ class InsightsTranslateTest {
                 "IfTouched",
                 "TrailingStop",
                 "ArmedTrailingStop",
+                "SteppedStop",
+                "TimeTighteningStop",
                 "TrailingStopLimit",
                 "StandaloneOCO",
                 "OTO",
@@ -840,6 +1131,12 @@ class InsightsTranslateTest {
         assertThat(
             byType.getValue("ArmedTrailingStop"),
         ).containsEntry("entryPrice", BigDecimal("2350")).containsEntry("mfeThreshold", BigDecimal("12"))
+        assertThat(byType.getValue("SteppedStop"))
+            .containsEntry("initialDistance", BigDecimal("10"))
+        assertThat(byType.getValue("SteppedStop")["steps"]).isInstanceOf(List::class.java)
+        assertThat(byType.getValue("TimeTighteningStop"))
+            .containsEntry("intervalMs", 5_000L)
+            .containsEntry("floorDistance", BigDecimal("4"))
         assertThat(
             byType.getValue("TrailingStopLimit"),
         ).containsEntry("trailMode", "PERCENT").containsEntry("limitOffset", BigDecimal("0.2"))

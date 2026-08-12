@@ -118,7 +118,7 @@ Pyramiding — one signal becomes N price-triggered entries.
 
 - Number: `100`, `1.5`, `0.001`
 - Boolean: `TRUE`, `FALSE`
-- String (in `LOG` field positions only): `'BUY'`, `"BUY"`
+- String: `'BUY'`, `"BUY"`; supports exact, case-sensitive equality and inequality
 
 ### Stream fields
 
@@ -132,7 +132,7 @@ Pyramiding — one signal becomes N price-triggered entries.
 ### Operators
 
 - Arithmetic: `+ - * / %`
-- Comparison: `< <= > >= = !=`
+- Comparison: numeric `< <= > >= = !=`; strings support `=` and `!=`
 - Boolean: `AND OR NOT`
 - Null test: `<expr> IS NULL`, `<expr> IS NOT NULL` — binds at comparison precedence; always yields a boolean
 - Crosses: `<a> CROSSES ABOVE <b>`, `CROSSES BELOW`

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 
 class CandleHubTest {
     private val key1m = HubKey("BYBIT", "BTCUSDT", "1m")
+    private val key5m = HubKey("BYBIT", "BTCUSDT", "5m")
     private val key1h = HubKey("BYBIT", "BTCUSDT", "1h")
     private val keyEth1m = HubKey("BYBIT", "ETHUSDT", "1m")
 
@@ -78,6 +79,36 @@ class CandleHubTest {
         // 1m closes ~89 candles in this span; 1h closes ~1 candle (the 0..3_600_000 boundary at the 60min tick).
         assertThat(hub.historySize(key1m)).isGreaterThan(60)
         assertThat(hub.historySize(key1h)).isLessThanOrEqualTo(2)
+    }
+
+    @Test
+    fun `shared-boundary feed closes slower timeframe before faster timeframe`() {
+        val hub = CandleHub()
+        val closed = mutableListOf<String>()
+        hub.register(key1m, retention = 10, strategyId = "test")
+        hub.register(key5m, retention = 10, strategyId = "test")
+        hub.onClosed(key1m, "test") { closed.add("1m") }
+        hub.onClosed(key5m, "test") { closed.add("5m") }
+
+        hub.feed(tick("BYBIT:BTCUSDT", 0L))
+        hub.feed(tick("BYBIT:BTCUSDT", 300_000L))
+
+        assertThat(closed).containsExactly("5m", "1m")
+    }
+
+    @Test
+    fun `shared-boundary flush order does not depend on registration order`() {
+        val hub = CandleHub()
+        val closed = mutableListOf<String>()
+        hub.register(key5m, retention = 10, strategyId = "test")
+        hub.register(key1m, retention = 10, strategyId = "test")
+        hub.onClosed(key1m, "test") { closed.add("1m") }
+        hub.onClosed(key5m, "test") { closed.add("5m") }
+
+        hub.feed(tick("BYBIT:BTCUSDT", 0L))
+        hub.flushClosed(300_000L)
+
+        assertThat(closed).containsExactly("5m", "1m")
     }
 
     @Test

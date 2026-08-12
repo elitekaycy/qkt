@@ -41,6 +41,23 @@ class ADXTest {
     }
 
     @Test
+    fun `matches hand calculated directional lines`() {
+        val adx = ADX(2)
+        listOf(
+            candle(10, 8, 9),
+            candle(12, 9, 11),
+            candle(13, 10, 12),
+            candle(15, 11, 14),
+        ).forEach(adx::update)
+
+        // Smoothed +DM=1.75, -DM=0, TR=3.5. DX is 100 on both seed bars.
+        val lines = adx.lines()!!
+        assertThat(lines.plusDi).isEqualByComparingTo(Money.of("50"))
+        assertThat(lines.minusDi).isEqualByComparingTo(Money.ZERO)
+        assertThat(lines.adx).isEqualByComparingTo(Money.of("100"))
+    }
+
+    @Test
     fun `rejects non-positive period`() {
         assertThatThrownBy { ADX(0) }.isInstanceOf(IllegalArgumentException::class.java)
     }

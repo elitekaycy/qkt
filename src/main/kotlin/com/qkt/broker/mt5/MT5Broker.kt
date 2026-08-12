@@ -122,12 +122,10 @@ private fun nativeStopTrigger(request: OrderRequest): NativeStopTrigger? =
  * number, and capability restrictions. See [MT5DefaultProfiles] for shipped templates
  * (Exness, ICMarkets, FTMO, Pepperstone) and [MT5BrokerProfileLoader] for YAML config.
  *
- * Phase 26b note: market/bracket orders publish `OrderFilled` synchronously after
- * successful placement (the venue fills immediately). Pending shapes (Stop, Limit,
- * StopLimit, TrailingStop, StandaloneOCO) publish `OrderAccepted` and rely on the
- * position poller for eventual fill detection. End-to-end pending-order lifecycle
- * (fill detection via position deltas, OCO sibling cancel-on-fill via ticket
- * correlation) is Phase 26c.
+ * Market/bracket orders publish `OrderFilled` synchronously after successful placement
+ * (the venue fills immediately). Pending Stop/Limit entries publish `OrderAccepted` and
+ * rely on the position poller for eventual fill detection. MT5 has no venue-atomic OCO;
+ * [com.qkt.app.OrderManager] places and links its pending legs separately.
  */
 class MT5Broker(
     val profile: MT5BrokerProfile,
@@ -202,6 +200,7 @@ class MT5Broker(
             bus,
             clock,
             onPositionOpened = ::onPendingPositionOpened,
+            onPositionIncreased = ::onPositionIncreased,
             closedTicketMeta = ::lookupClosedTicketMeta,
             onPositionClosed = ::removeClosedTicketMeta,
             isExpectedProtectionChange = ::isExpectedProtectionChange,
@@ -262,6 +261,10 @@ class MT5Broker(
     private val earlyPositionByTicket: MutableMap<Long, MT5Position> = ConcurrentHashMap()
     private val pendingTransitionLock = Any()
 
+    /** Entry orders whose first venue response filled only part of the requested quantity. */
+    private val partialEntryByPositionTicket: MutableMap<Long, PartialEntryState> = ConcurrentHashMap()
+    private val partialPositionByResidualTicket: MutableMap<Long, Long> = ConcurrentHashMap()
+
     /**
      * Open positions opened by this qkt session, keyed by MT5 ticket. Lets
      * [MT5PositionPoller] resolve a closed ticket back to (clientOrderId, strategyId)
@@ -311,6 +314,17 @@ class MT5Broker(
         val orderId: String,
         val strategyId: String,
         val protection: PositionProtection? = null,
+    )
+
+    private data class PartialEntryState(
+        val meta: PendingMeta,
+        val residualTicket: Long,
+        val positionTicket: Long,
+        val symbol: String,
+        val side: Side,
+        val requestedQuantity: BigDecimal,
+        val cumulativeFilled: BigDecimal,
+        val averageFillPrice: BigDecimal,
     )
 
     @Volatile
@@ -1043,6 +1057,8 @@ class MT5Broker(
      * the single-consumer loop, and the ticket maps it mutates are concurrent. A bad retcode
      * becomes [BrokerEvent.OrderRejected]; success becomes [BrokerEvent.OrderAccepted] plus, for
      * an instant-fill market, [BrokerEvent.OrderFilled].
+     * A venue partial instead emits [BrokerEvent.OrderPartiallyFilled] and retains the residual
+     * ticket for position-poller reconciliation.
      */
     private fun handlePlacementResult(
         request: OrderRequest,
@@ -1078,9 +1094,17 @@ class MT5Broker(
         val isInstantFill =
             request is OrderRequest.Market ||
                 (request is OrderRequest.Bracket && request.entry is OrderRequest.Market)
-        if (isInstantFill &&
-            resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL &&
-            resp.result.volume?.signum() != 1
+        val isPartialEntry = isInstantFill && resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
+        val partialQuantity = resp.result.volume
+        if (
+            isPartialEntry &&
+            (
+                partialQuantity == null ||
+                    partialQuantity.signum() != 1 ||
+                    partialQuantity >= placement.volume ||
+                    resp.result.order == 0L ||
+                    resp.result.deal == 0L
+            )
         ) {
             executeUnknownResolution {
                 resolveUnknownOutcome(
@@ -1088,7 +1112,19 @@ class MT5Broker(
                     placement,
                     placementStartedAtMs,
                     protection,
-                    "partial fill response omitted actual volume",
+                    "partial fill response cannot identify a positive residual order",
+                )
+            }
+            return
+        }
+        if (isPartialEntry) {
+            executeUnknownResolution {
+                resolvePartialPlacement(
+                    request = request,
+                    placement = placement,
+                    placementStartedAtMs = placementStartedAtMs,
+                    protection = protection,
+                    response = resp,
                 )
             }
             return
@@ -1161,6 +1197,136 @@ class MT5Broker(
                     }
         return venueCostLedger.book(positionTicket, deals, positionClosed, now)
     }
+
+    /**
+     * MqlTradeResult separates order and deal tickets and exposes no position ticket. Resolve
+     * the exact deal through venue history, whose `position_id` is the authoritative key used by
+     * `/get_positions`; never infer that the residual order ticket owns the same numeric id.
+     */
+    private fun resolvePartialPlacement(
+        request: OrderRequest,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
+        protection: PositionProtection?,
+        response: MT5OrderResponse,
+    ) {
+        for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
+            val deals =
+                client.getDeals(
+                    fromUtcMs = placementStartedAtMs - UNKNOWN_CORRELATION_WINDOW_MS,
+                    toUtcMs = maxOf(clock.now(), placementStartedAtMs) + UNKNOWN_CORRELATION_WINDOW_MS,
+                )
+            val openingDeal =
+                deals
+                    ?.singleOrNull {
+                        it.ticket == response.result.deal &&
+                            it.entry == 0 &&
+                            it.positionTicket > 0L &&
+                            (it.orderTicket == 0L || it.orderTicket == response.result.order) &&
+                            it.magic == profile.magic &&
+                            it.symbol == placement.symbol &&
+                            it.type == (if (request.side == Side.BUY) 0 else 1)
+                    }
+            if (openingDeal != null) {
+                publishInitialPartialEntry(
+                    request,
+                    placement,
+                    placementStartedAtMs,
+                    protection,
+                    response,
+                    openingDeal,
+                )
+                return
+            }
+            if (attempt < UNKNOWN_RESOLVE_ATTEMPTS) {
+                try {
+                    Thread.sleep(unknownResolveBackoffMs * attempt)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
+            }
+        }
+        log.error(
+            "MT5Broker {} partial entry {} cannot resolve deal {} to a position ticket; " +
+                "retaining UNKNOWN outcome and retrying without assuming order-ticket identity",
+            profile.name,
+            request.id,
+            response.result.deal,
+        )
+        publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
+        scheduleUnknownResolution {
+            resolvePartialPlacement(request, placement, placementStartedAtMs, protection, response)
+        }
+    }
+
+    private fun publishInitialPartialEntry(
+        request: OrderRequest,
+        placement: MT5OrderRequest,
+        placementStartedAtMs: Long,
+        protection: PositionProtection?,
+        response: MT5OrderResponse,
+        openingDeal: MT5Deal,
+    ) {
+        val residualTicket = response.result.order
+        val positionTicket = openingDeal.positionTicket
+        val filledQuantity = requireNotNull(response.result.volume)
+        val meta = PendingMeta(request.id, request.strategyId, protection)
+        val earlyPosition =
+            registerPartialEntry(
+                PartialEntryState(
+                    meta = meta,
+                    residualTicket = residualTicket,
+                    positionTicket = positionTicket,
+                    symbol = request.symbol,
+                    side = request.side,
+                    requestedQuantity = placement.volume,
+                    cumulativeFilled = filledQuantity,
+                    averageFillPrice = response.result.price,
+                ),
+                openedAtMs = openingDeal.timeMs.takeIf { it > 0L } ?: placementStartedAtMs,
+            )
+        bus.publish(
+            BrokerEvent.OrderAccepted(
+                clientOrderId = request.id,
+                brokerOrderId = residualTicket.toString(),
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = request.id,
+                brokerOrderId = positionTicket.toString(),
+                symbol = request.symbol,
+                side = request.side,
+                price = response.result.price,
+                quantity = filledQuantity,
+                cumulativeFilled = filledQuantity,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        earlyPosition?.let(::reconcilePartialEntry)
+        if (partialPositionByResidualTicket.containsKey(residualTicket)) {
+            pendingPoller.seedTrackedTickets(setOf(residualTicket))
+        }
+    }
+
+    private fun registerPartialEntry(
+        state: PartialEntryState,
+        openedAtMs: Long,
+    ): MT5Position? =
+        synchronized(pendingTransitionLock) {
+            pendingTickets[state.meta.orderId] = state.residualTicket
+            pendingByTicket[state.residualTicket] = state.meta
+            partialEntryByPositionTicket[state.positionTicket] = state
+            partialPositionByResidualTicket[state.residualTicket] = state.positionTicket
+            positionMetaByTicket[state.positionTicket] = state.meta
+            positionSymbolByTicket[state.positionTicket] = state.symbol
+            positionOpenedAtByTicket[state.positionTicket] = openedAtMs
+            earlyPositionByTicket.remove(state.positionTicket)
+        }
 
     private fun bookVenueCloseCosts(
         positionTicket: Long,
@@ -1717,8 +1883,9 @@ class MT5Broker(
             )
         val pending = snapshot.pendingOrders
         val positions = snapshot.positions
+        val recoveredPartialIds = recoverPartialEntries(orders, pending, positions)
         val resolvedOrders =
-            orders.map { order ->
+            orders.filterNot { it.id in recoveredPartialIds }.map { order ->
                 if (order.brokerOrderId != null) return@map order
                 val pendingMatch =
                     pending.firstOrNull {
@@ -1789,6 +1956,97 @@ class MT5Broker(
         }
     }
 
+    private fun recoverPartialEntries(
+        orders: List<com.qkt.execution.ManagedOrder>,
+        pending: List<MT5PendingOrder>,
+        positions: List<MT5Position>,
+    ): Set<String> {
+        val recovered = mutableSetOf<String>()
+        for (order in orders) {
+            val pendingMatches =
+                pending.filter {
+                    it.clientOrderId == order.id || matchesComment(it.comment, order.id)
+                }
+            val positionMatches =
+                positions.filter {
+                    it.clientOrderId == order.id || matchesComment(it.comment, order.id)
+                }
+            if (pendingMatches.size > 1 || positionMatches.size != 1) continue
+            val position = positionMatches.single()
+            val requestedQuantity = order.request.quantity
+            if (position.volume.signum() <= 0 || position.volume >= requestedQuantity) continue
+
+            val meta =
+                PendingMeta(
+                    order.id,
+                    order.request.strategyId,
+                    protectionFor(order.request),
+                )
+            positionMetaByTicket[position.ticket] = meta
+            positionSymbolByTicket[position.ticket] = order.request.symbol
+            positionOpenedAtByTicket[position.ticket] = position.openTime
+            val partialEvent =
+                BrokerEvent.OrderPartiallyFilled(
+                    clientOrderId = order.id,
+                    brokerOrderId = position.ticket.toString(),
+                    symbol = order.request.symbol,
+                    side = order.request.side,
+                    price = position.priceOpen,
+                    quantity = position.volume,
+                    cumulativeFilled = position.volume,
+                    strategyId = order.request.strategyId,
+                    timestamp = clock.now(),
+                )
+            val residual = pendingMatches.singleOrNull()
+            bus.publish(
+                BrokerEvent.OrderAccepted(
+                    clientOrderId = order.id,
+                    brokerOrderId = (residual?.ticket ?: position.ticket).toString(),
+                    strategyId = order.request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+            if (residual != null) {
+                registerPartialEntry(
+                    PartialEntryState(
+                        meta = meta,
+                        residualTicket = residual.ticket,
+                        positionTicket = position.ticket,
+                        symbol = order.request.symbol,
+                        side = order.request.side,
+                        requestedQuantity = requestedQuantity,
+                        cumulativeFilled = position.volume,
+                        averageFillPrice = position.priceOpen,
+                    ),
+                    openedAtMs = position.openTime,
+                )
+                bus.publish(partialEvent)
+                pendingPoller.seedTrackedTickets(setOf(residual.ticket))
+                log.info(
+                    "MT5Broker {} recovery: restored partial entry {} residual={} position={} cumulative={}",
+                    profile.name,
+                    order.id,
+                    residual.ticket,
+                    position.ticket,
+                    position.volume,
+                )
+            } else {
+                bus.publish(partialEvent)
+                bus.publish(
+                    BrokerEvent.OrderCancelled(
+                        clientOrderId = order.id,
+                        brokerOrderId = position.ticket.toString(),
+                        reason = "residual absent during partial-entry recovery",
+                        strategyId = order.request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+            }
+            recovered += order.id
+        }
+        return recovered
+    }
+
     override fun cancel(orderId: String) {
         val ticket = pendingTickets[orderId] ?: return
         val meta = pendingByTicket[ticket] ?: return
@@ -1823,6 +2081,7 @@ class MT5Broker(
                     } else {
                         pendingByTicket.remove(ticket)
                         pendingTickets.remove(orderId)
+                        removePartialEntryByResidualTicket(ticket)
                         true
                     }
                 }
@@ -2009,9 +2268,11 @@ class MT5Broker(
      *
      * If the ticket isn't in [pendingByTicket], the position is external (manual user
      * trade or another qkt instance with the same magic) — ignore it; reconciliation
-     * is a separate concern.
+     * is a separate concern. A ticket in [partialEntryByPositionTicket] remains working until its
+     * cumulative position volume reaches the requested quantity or the residual disappears.
      */
-    private fun onPendingPositionOpened(position: MT5Position) {
+    private fun onPendingPositionOpened(position: MT5Position): Boolean {
+        if (reconcilePartialEntry(position)) return true
         val meta =
             synchronized(pendingTransitionLock) {
                 pendingByTicket.remove(position.ticket)
@@ -2026,7 +2287,7 @@ class MT5Broker(
             // Already tracked? The Fix A cross-check in onPendingDisappeared may have
             // synthesized this fill on a prior pending-poller tick; the position-poller
             // is now seeing the same ticket in its opened-delta. Silent — already done.
-            if (positionMetaByTicket.containsKey(position.ticket)) return
+            if (positionMetaByTicket.containsKey(position.ticket)) return true
             log.warn(
                 "MT5Broker {} saw new position ticket={} symbol={} side={} magic={} with no qkt-side " +
                     "pending meta yet; deferring attribution while awaiting a possible asynchronous " +
@@ -2037,9 +2298,85 @@ class MT5Broker(
                 if (position.type == 0) "BUY" else "SELL",
                 profile.magic,
             )
-            return
+            return false
         }
         publishPendingPositionOpened(position, meta)
+        return true
+    }
+
+    private fun onPositionIncreased(
+        previous: MT5Position,
+        latest: MT5Position,
+    ) {
+        if (latest.volume <= previous.volume) return
+        reconcilePartialEntry(latest)
+    }
+
+    /**
+     * Advances a partially filled entry from the position poller's cumulative venue volume.
+     * Returns true when [position] belongs to a partial entry, including a duplicate snapshot.
+     */
+    private fun reconcilePartialEntry(position: MT5Position): Boolean {
+        var event: BrokerEvent? = null
+        synchronized(pendingTransitionLock) {
+            val state = partialEntryByPositionTicket[position.ticket] ?: return false
+            val venueCumulative = position.volume.min(state.requestedQuantity)
+            if (venueCumulative <= state.cumulativeFilled) return true
+
+            val sliceQuantity = venueCumulative - state.cumulativeFilled
+            val slicePrice = incrementalEntryPrice(state, venueCumulative, position.priceOpen, sliceQuantity)
+            positionOpenedAtByTicket[position.ticket] = position.openTime
+            if (venueCumulative >= state.requestedQuantity) {
+                partialEntryByPositionTicket.remove(position.ticket)
+                partialPositionByResidualTicket.remove(state.residualTicket, position.ticket)
+                pendingByTicket.remove(state.residualTicket, state.meta)
+                pendingTickets.remove(state.meta.orderId, state.residualTicket)
+                recentlyFilledTickets[state.residualTicket] = clock.now()
+                event =
+                    BrokerEvent.OrderFilled(
+                        clientOrderId = state.meta.orderId,
+                        brokerOrderId = position.ticket.toString(),
+                        symbol = state.symbol,
+                        side = state.side,
+                        price = slicePrice,
+                        quantity = sliceQuantity,
+                        strategyId = state.meta.strategyId,
+                        timestamp = clock.now(),
+                    )
+            } else {
+                partialEntryByPositionTicket[position.ticket] =
+                    state.copy(
+                        cumulativeFilled = venueCumulative,
+                        averageFillPrice = position.priceOpen,
+                    )
+                event =
+                    BrokerEvent.OrderPartiallyFilled(
+                        clientOrderId = state.meta.orderId,
+                        brokerOrderId = position.ticket.toString(),
+                        symbol = state.symbol,
+                        side = state.side,
+                        price = slicePrice,
+                        quantity = sliceQuantity,
+                        cumulativeFilled = venueCumulative,
+                        strategyId = state.meta.strategyId,
+                        timestamp = clock.now(),
+                    )
+            }
+        }
+        event?.let(bus::publish)
+        return true
+    }
+
+    private fun incrementalEntryPrice(
+        state: PartialEntryState,
+        venueCumulative: BigDecimal,
+        venueAveragePrice: BigDecimal,
+        sliceQuantity: BigDecimal,
+    ): BigDecimal {
+        val venueNotional = venueAveragePrice.multiply(venueCumulative)
+        val priorNotional = state.averageFillPrice.multiply(state.cumulativeFilled)
+        val slicePrice = venueNotional.subtract(priorNotional).divide(sliceQuantity, com.qkt.common.Money.CONTEXT)
+        return slicePrice.takeIf { it.signum() > 0 } ?: venueAveragePrice
     }
 
     private fun registerPendingTicket(
@@ -2102,6 +2439,7 @@ class MT5Broker(
     }
 
     private fun removeClosedTicketMeta(ticket: Long) {
+        partialEntryByPositionTicket[ticket]?.let { cancel(it.meta.orderId) }
         earlyPositionByTicket.remove(ticket)
         positionMetaByTicket.remove(ticket)
         positionSymbolByTicket.remove(ticket)
@@ -2191,9 +2529,29 @@ class MT5Broker(
                 )
                 return false
             }
-        val asPosition = positionsNow.firstOrNull { it.ticket == ticket }
+        val partialPositionTicket = partialPositionByResidualTicket[ticket]
+        val asPosition =
+            positionsNow.firstOrNull {
+                it.ticket == (partialPositionTicket ?: ticket)
+            }
         if (asPosition != null) {
+            if (partialPositionByResidualTicket.containsKey(ticket)) {
+                reconcilePartialEntry(asPosition)
+                cancelPartialEntryResidual(
+                    ticket,
+                    "residual disappeared from venue after partial fill",
+                )
+                return true
+            }
             onPendingPositionOpened(asPosition)
+            return true
+        }
+
+        if (partialPositionByResidualTicket.containsKey(ticket)) {
+            cancelPartialEntryResidual(
+                ticket,
+                "residual disappeared from venue after partial fill",
+            )
             return true
         }
 
@@ -2212,6 +2570,34 @@ class MT5Broker(
             ),
         )
         return true
+    }
+
+    private fun cancelPartialEntryResidual(
+        ticket: Long,
+        reason: String,
+    ) {
+        val state =
+            synchronized(pendingTransitionLock) {
+                val positionTicket = partialPositionByResidualTicket.remove(ticket) ?: return
+                val current = partialEntryByPositionTicket.remove(positionTicket) ?: return
+                pendingByTicket.remove(ticket, current.meta)
+                pendingTickets.remove(current.meta.orderId, ticket)
+                current
+            }
+        bus.publish(
+            BrokerEvent.OrderCancelled(
+                clientOrderId = state.meta.orderId,
+                brokerOrderId = ticket.toString(),
+                reason = reason,
+                strategyId = state.meta.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+    }
+
+    private fun removePartialEntryByResidualTicket(residualTicket: Long) {
+        val positionTicket = partialPositionByResidualTicket.remove(residualTicket) ?: return
+        partialEntryByPositionTicket.remove(positionTicket)
     }
 
     /**

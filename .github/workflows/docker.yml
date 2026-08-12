@@ -120,8 +120,8 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      # Edge image (`:edge`) — the runtime built from the `testing` branch, which is
-      # auto-fast-forwarded from `dev` and has passed the integration CI. Lets downstream
+      # Edge image (`:edge`) — the runtime built from the `testing` branch, which receives
+      # merge-commit promotions from `dev` and has passed the integration CI. Lets downstream
       # automation consume integration-tested capabilities without waiting for the manual
       # promotion to `main`. Mutable tag, rebuilt on every testing push; not on tags or main.
       - name: build and push edge image

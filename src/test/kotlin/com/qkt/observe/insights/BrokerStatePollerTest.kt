@@ -52,6 +52,7 @@ class BrokerStatePollerTest {
         var tickets: List<BrokerPositionTicket> = emptyList()
         var allDeals: List<BrokerDeal> = emptyList()
         var pending: List<BrokerPendingOrder> = emptyList()
+        var ignoreDealRange: Boolean = false
 
         override fun accountState(): BrokerAccountState? {
             accountReads.incrementAndGet()
@@ -65,7 +66,7 @@ class BrokerStatePollerTest {
         override fun deals(
             from: Long,
             to: Long,
-        ): List<BrokerDeal> = allDeals.filter { it.ts in from..to }
+        ): List<BrokerDeal> = if (ignoreDealRange) allDeals else allDeals.filter { it.ts in from..to }
     }
 
     private fun deal(
@@ -179,6 +180,30 @@ class BrokerStatePollerTest {
         // Already shipped in the first cycle; the cursor advanced past them.
         assertThat(second).doesNotContain("deal-FAKE-1")
         assertThat(second).doesNotContain("deal-FAKE-2")
+    }
+
+    @Test
+    fun `poller rejects stale deals returned outside the requested millisecond range`() {
+        var now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.ignoreDealRange = true
+        broker.allDeals = listOf(deal("1", ts = now - 1_000L))
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+
+        poller.pollOnce()
+        assertThat(collectBodies("deal-FAKE-1")).contains("deal-FAKE-1")
+        now += 1_000L
+        poller.pollOnce()
+
+        assertThat(collectBodies("posn-FAKE-1700000001000")).doesNotContain("deal-FAKE-1")
     }
 
     @Test
@@ -300,7 +325,70 @@ class BrokerStatePollerTest {
     }
 
     @Test
-    fun `attribution map is pruned to the broker's live tickets each cycle`() {
+    fun `deployed strategy poller emits only locally attributed broker deals`() {
+        val now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.allDeals =
+            listOf(
+                deal("local-ticket", ts = now - 4_000L, positionTicket = "P_LOCAL", comment = "[tp 4332.689]"),
+                deal("local-comment", ts = now - 3_000L, comment = "dsl-local_strat"),
+                deal("foreign-ticket", ts = now - 2_000L, positionTicket = "P_FOREIGN", comment = "[tp 4332.689]"),
+                deal("unknown", ts = now - 1_000L, comment = null),
+            )
+        val attribution = TicketAttribution()
+        attribution.record("P_LOCAL", "local_strat")
+        attribution.record("P_FOREIGN", "foreign_strat")
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = attribution,
+                deployedIds = { listOf("local_strat") },
+                backfillDays = 1L,
+                clock = { now },
+            )
+
+        poller.pollOnce()
+
+        val all = collectBodies("deal-FAKE-local-ticket", "deal-FAKE-local-comment")
+        assertThat(all)
+            .contains("deal-FAKE-local-ticket")
+            .contains("deal-FAKE-local-comment")
+            .doesNotContain("deal-FAKE-foreign-ticket")
+            .doesNotContain("deal-FAKE-unknown")
+    }
+
+    @Test
+    fun `truncated comment shared by daemon siblings stays unattributed without a ticket owner`() {
+        val now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.tickets = listOf(ticket("T1", comment = "dsl-run_20260810_common_pref"))
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = {
+                    listOf(
+                        "run_20260810_common_prefix_bars_readonly",
+                        "run_20260810_common_prefix_market_bracket",
+                    )
+                },
+                clock = { now },
+            )
+
+        poller.pollOnce()
+
+        val all = collectBodies("posn-FAKE-1700000000000")
+        val position = all.substringAfter(""""ticket":"T1"""").substringBefore("}")
+        assertThat(position)
+            .doesNotContain("strategyId")
+            .doesNotContain("bars_readonly")
+            .doesNotContain("market_bracket")
+    }
+
+    @Test
+    fun `attribution map keeps vanished tickets briefly then prunes them`() {
         val now = 1_700_000_000_000L
         val broker = FakeBroker()
         broker.tickets = listOf(ticket("KEEP"))
@@ -316,6 +404,9 @@ class BrokerStatePollerTest {
                 clock = { now },
             )
         poller.pollOnce()
+        assertThat(attribution.ownerOf("KEEP")).isEqualTo("a")
+        assertThat(attribution.ownerOf("GONE")).isEqualTo("b")
+        repeat(301) { poller.pollOnce() }
         assertThat(attribution.ownerOf("KEEP")).isEqualTo("a")
         assertThat(attribution.ownerOf("GONE")).isNull()
     }
@@ -345,8 +436,45 @@ class BrokerStatePollerTest {
         val all = collectBodies("deal-FAKE-77")
         val dealEntry = all.substringAfter("deal-FAKE-77").substringBefore("}}")
         assertThat(dealEntry).contains(""""strategyId":"hedge_straddle"""")
-        // Pruned after the fetch: the closed ticket no longer occupies the map.
-        assertThat(attribution.ownerOf("T9")).isNull()
+        // Retained briefly after the fetch: MT5 may expose related close/cost rows late.
+        assertThat(attribution.ownerOf("T9")).isEqualTo("hedge_straddle")
+    }
+
+    @Test
+    fun `delayed close deal keeps the vanished ticket owner`() {
+        var now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.tickets = listOf(ticket("T9", comment = "dsl-hedge_straddle"))
+        broker.allDeals = listOf(deal("open", ts = now - 500L, positionTicket = "T9", comment = "dsl-hedge_straddle"))
+        val attribution = TicketAttribution()
+        attribution.record("T9", "hedge_straddle")
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = attribution,
+                deployedIds = { listOf("hedge_straddle") },
+                backfillDays = 1L,
+                clock = { now },
+            )
+
+        poller.pollOnce()
+        collectBodies("deal-FAKE-open")
+
+        now += 1_000L
+        broker.tickets = emptyList()
+        broker.allDeals = broker.allDeals
+        poller.pollOnce()
+        assertThat(attribution.ownerOf("T9")).isEqualTo("hedge_straddle")
+
+        now += 1_000L
+        broker.allDeals =
+            broker.allDeals + deal("close", ts = now - 500L, positionTicket = "T9", comment = "")
+        poller.pollOnce()
+
+        val all = collectBodies("deal-FAKE-close")
+        val closeEntry = all.substringAfter("deal-FAKE-close").substringBefore("}}")
+        assertThat(closeEntry).contains(""""strategyId":"hedge_straddle"""")
     }
 
     @Test

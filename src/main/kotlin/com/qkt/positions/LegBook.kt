@@ -36,6 +36,9 @@ class LegBook(
 
     fun close(legId: String): PositionLeg? = legs.remove(legId)
 
+    /** Return the leg with [legId], or `null` when this book does not own it. */
+    fun leg(legId: String): PositionLeg? = legs[legId]
+
     fun all(): List<PositionLeg> = legs.values.toList()
 
     fun primary(): PositionLeg? = legs.values.firstOrNull { it.role == LegRole.PRIMARY }

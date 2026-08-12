@@ -24,6 +24,15 @@ class TEMATest {
     }
 
     @Test
+    fun `matches a hand calculated period two ramp`() {
+        val t = TEMA(2)
+        listOf("1", "2", "3", "4").forEach { t.update(Money.of(it)) }
+
+        // EMA1=3.5, EMA2=3, EMA3=2.5, so TEMA=3*3.5-3*3+2.5=4.
+        assertThat(t.value()).isEqualByComparingTo(Money.of("4"))
+    }
+
+    @Test
     fun `rejects non-positive period`() {
         assertThatThrownBy { TEMA(0) }.isInstanceOf(IllegalArgumentException::class.java)
     }

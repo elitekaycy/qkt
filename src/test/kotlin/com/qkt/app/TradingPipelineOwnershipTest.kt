@@ -15,6 +15,7 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
+import com.qkt.positions.LegRole
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
@@ -89,5 +90,71 @@ class TradingPipelineOwnershipTest {
         assertThat(pnl.realizedTotal()).isEqualByComparingTo(BigDecimal.ZERO)
         assertThat(riskState.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo(BigDecimal.ZERO)
         assertThat(trades).isEmpty()
+    }
+
+    @Test
+    fun `partial execution remains accounted and independently owned after residual cancel`() {
+        val clock = FixedClock(time = 0L)
+        val sequencer = MonotonicSequenceGenerator()
+        val prices = MarketPriceTracker()
+        val positions = PositionTracker()
+        val pnl = PnLCalculator(positions, prices)
+        val strategyPositions = StrategyPositionTracker()
+        val strategyPnl = StrategyPnL(strategyPositions, prices)
+        val bus = EventBus(clock, sequencer)
+        val riskState = RiskState(pnl, strategyPnl, clock, bus)
+        TradingPipeline(
+            clock = clock,
+            ids = SequentialIdGenerator(),
+            sequencer = sequencer,
+            priceTracker = prices,
+            positions = positions,
+            pnl = pnl,
+            strategyPositions = strategyPositions,
+            strategyPnL = strategyPnl,
+            bus = bus,
+            broker = PaperBroker(bus, clock, prices),
+            engine = Engine(bus, prices),
+            strategies = emptyList(),
+            riskEngine = RiskEngine(rules = emptyList(), positions = positions),
+            riskState = riskState,
+            mode = Mode.BACKTEST,
+            calendar = TradingCalendar.crypto(),
+            source = NullMarketSource,
+            candleWindow = TimeWindow.ONE_MINUTE,
+        )
+        val trades = mutableListOf<TradeEvent>()
+        bus.subscribe<TradeEvent> { trades.add(it) }
+        strategyPositions.registerIndependentOpen("alpha", "entry", "independent-leg")
+
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = "entry",
+                brokerOrderId = "position-9",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                price = BigDecimal("2400"),
+                quantity = BigDecimal("0.04"),
+                cumulativeFilled = BigDecimal("0.04"),
+                strategyId = "alpha",
+                timestamp = 1_000L,
+            ),
+        )
+        bus.publish(
+            BrokerEvent.OrderCancelled(
+                clientOrderId = "entry",
+                brokerOrderId = "residual-10",
+                reason = "unfilled residual cancelled",
+                strategyId = "alpha",
+                timestamp = 2_000L,
+            ),
+        )
+
+        assertThat(positions.positionFor("XAUUSD")?.quantity).isEqualByComparingTo("0.04")
+        val leg = strategyPositions.legBookFor("alpha", "XAUUSD")!!.all().single()
+        assertThat(leg.role).isEqualTo(LegRole.INDEPENDENT)
+        assertThat(leg.quantity).isEqualByComparingTo("0.04")
+        assertThat(leg.brokerTicket).isEqualTo("position-9")
+        assertThat(trades.single().trade.quantity).isEqualByComparingTo("0.04")
     }
 }

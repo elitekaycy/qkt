@@ -13,21 +13,45 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class TicketAttribution {
     private val owners = ConcurrentHashMap<String, String>()
+    private val missingCycles = ConcurrentHashMap<String, Int>()
 
     /** Remember that [ticket] belongs to [strategyId]; blanks and nulls are ignored. */
     fun record(
         ticket: String?,
         strategyId: String?,
     ) {
-        if (!ticket.isNullOrBlank() && !strategyId.isNullOrBlank()) owners[ticket] = strategyId
+        if (!ticket.isNullOrBlank() && !strategyId.isNullOrBlank()) {
+            owners[ticket] = strategyId
+            missingCycles.remove(ticket)
+        }
     }
 
     /** The strategy that owns [ticket], or null when this daemon never attributed it. */
     fun ownerOf(ticket: String): String? = owners[ticket]
 
-    /** Drop tickets the broker no longer reports — keeps the map bounded by open positions. */
+    /**
+     * Keep live tickets fresh and retire vanished tickets after a bounded grace window.
+     *
+     * MT5 can report a just-closed position as gone before its OUT deal appears in
+     * history. Close deals often have empty or venue-generated comments, so deleting
+     * owner attribution on the first missing-position cycle loses the only reliable
+     * strategy id. The grace is cycle-based to avoid wall-clock coupling in tests and
+     * keeps the map bounded for long-running daemons.
+     */
     fun retainAll(liveTickets: Set<String>) {
-        owners.keys.retainAll(liveTickets)
+        for (ticket in owners.keys) {
+            if (ticket in liveTickets) {
+                missingCycles.remove(ticket)
+                continue
+            }
+            val missing = (missingCycles[ticket] ?: 0) + 1
+            if (missing > RETAIN_MISSING_CYCLES) {
+                owners.remove(ticket)
+                missingCycles.remove(ticket)
+            } else {
+                missingCycles[ticket] = missing
+            }
+        }
     }
 
     /**
@@ -45,5 +69,9 @@ class TicketAttribution {
         if (c.isBlank()) return null
         val hits = deployedIds.filter { it.startsWith(c) || c.startsWith(it) }
         return hits.singleOrNull()
+    }
+
+    private companion object {
+        const val RETAIN_MISSING_CYCLES = 300
     }
 }

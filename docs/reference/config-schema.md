@@ -468,7 +468,7 @@ Book-risk controls apply to portfolio/book evaluation and portfolio daemon flows
 | `book_risk.de_risk.ladder[].drawdown` | decimal | required per rung | Drawdown threshold as fraction. |
 | `book_risk.de_risk.ladder[].factor` | decimal | required per rung | Exposure scale factor at that drawdown rung. |
 | `book_risk.de_risk.ladder[].cooldown_bars` | int | unset | Bars to hold a rung after recovery. |
-| `book_risk.allocation.method` | `FIXED`, `INVERSE_VOL`, `ERC` | `FIXED` | Portfolio allocation method. |
+| `book_risk.allocation.method` | `FIXED`, `INVERSE_VOL`, `ERC`, `REGIME_WEIGHTED` | `FIXED` | Portfolio allocation method. Regime portfolio DSL selects `REGIME_WEIGHTED` automatically. |
 | `book_risk.allocation.target_vol` | decimal | unset | Target volatility for allocation. |
 | `book_risk.allocation.rebalance_every_bars` | int | `0` | Rebalance cadence. |
 | `book_risk.allocation.max_leverage` | decimal | `4` | Allocation leverage cap. |

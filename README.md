@@ -176,7 +176,7 @@ Pre-1.0 and under active development. Breaking changes can land in minor release
 - **Backtest replay engine** with full reporting: equity curves, Sharpe, Calmar, profit factor, win/loss stats.
 - **Parameter sweep harness** — sequential or fixed-pool parallel execution with ranked summaries.
 - **Backtest HTML report** — self-contained `report.html` with SVG equity + drawdown charts, Monte Carlo fan, drawdown-period table, per-trade risk.
-- **MT5 broker (multi-profile)** — per-broker `mt5-gateway` services; built-in defaults for Exness, ICMarkets, FTMO, Pepperstone; Market + Bracket + native pending-order family (entries, OCO, trailing).
+- **MT5 broker (multi-profile)** — per-broker `mt5-gateway` services; built-in defaults for Exness, ICMarkets, FTMO, Pepperstone; Market + Bracket + native pending entries, with client-managed OCO and trailing behavior.
 - **Bybit Spot + Linear (USDT)** live trading with reconciliation, rate limiting, connection resilience.
 - **TradingView live vendor** (anonymous, free-tier) for paper trading.
 - **Multi-source market data** — one strategy can pull different streams from different vendors at once.

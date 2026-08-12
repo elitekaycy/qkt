@@ -38,6 +38,23 @@ class ParserExprFuncCallTest {
     }
 
     @Test
+    fun `floor keyword routes to FuncCall in expression position`() {
+        val e = expr("floor(3.8)") as FuncCall
+        assertThat(e.name).isEqualTo("FLOOR")
+    }
+
+    @Test
+    fun `min and max with multiple arguments route to FuncCall`() {
+        val min = expr("min(3, 1, 2)") as FuncCall
+        val max = expr("MAX(3, 1, 2)") as FuncCall
+
+        assertThat(min.name).isEqualTo("MIN")
+        assertThat(min.args).hasSize(3)
+        assertThat(max.name).isEqualTo("MAX")
+        assertThat(max.args).hasSize(3)
+    }
+
+    @Test
     fun `exp routes to FuncCall`() {
         val e = expr("exp(1)") as FuncCall
         assertThat(e.name).isEqualTo("EXP")

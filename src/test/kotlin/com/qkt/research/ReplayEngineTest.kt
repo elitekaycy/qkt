@@ -43,6 +43,10 @@ class ReplayEngineTest {
         assertThat(result.global.tradeCount).isGreaterThan(0)
         assertThat(result.global.equityCurve).isNotEmpty()
         assertThat(result.cadence).isEqualTo(SampleCadence.CANDLE_CLOSE)
+        assertThat(result.causality?.approvedOrders).hasSize(2)
+        assertThat(result.causality?.accountedFills).hasSize(2)
+        assertThat(result.causality?.ruleDecisions).isEmpty()
+        assertThat(result.causality?.decisionOrderLinks).isEmpty()
     }
 
     @Test

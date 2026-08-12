@@ -78,6 +78,24 @@ class CliOptionSchemaTest {
                     "state",
                     "--out",
                     "capture.zip",
+                    "--read-only",
+                ),
+            )
+
+        assertThatCode { validate(args) }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `golden schema accepts replay materialization paths`() {
+        val args =
+            Args(
+                arrayOf(
+                    "golden",
+                    "materialize",
+                    "--bundle",
+                    "capture.zip",
+                    "--out",
+                    "replay-data",
                 ),
             )
 

@@ -123,6 +123,41 @@ class IndicatorRegistryTest {
     }
 
     @Test
+    fun `macd aliases expose their corresponding lines`() {
+        val expected = mapOf("MACD" to "1", "MACD_SIGNAL" to "1", "MACD_HIST" to "0")
+        for ((name, value) in expected) {
+            @Suppress("UNCHECKED_CAST")
+            val ind =
+                IndicatorRegistry.create(
+                    name,
+                    listOf(java.math.BigDecimal("2"), java.math.BigDecimal("3"), java.math.BigDecimal("2")),
+                ) as com.qkt.indicators.Indicator<java.math.BigDecimal>
+            listOf("2", "4", "6", "8", "10").forEach { ind.update(java.math.BigDecimal(it)) }
+            assertThat(ind.value()).withFailMessage("$name mapped to the wrong line").isEqualByComparingTo(value)
+        }
+    }
+
+    @Test
+    fun `bollinger aliases expose their corresponding lines`() {
+        val expected =
+            mapOf(
+                "BOLLINGER_UPPER" to "20",
+                "BOLLINGER_MIDDLE" to "15",
+                "BOLLINGER_LOWER" to "10",
+            )
+        for ((name, value) in expected) {
+            @Suppress("UNCHECKED_CAST")
+            val ind =
+                IndicatorRegistry.create(
+                    name,
+                    listOf(java.math.BigDecimal("2"), java.math.BigDecimal("1")),
+                ) as com.qkt.indicators.Indicator<java.math.BigDecimal>
+            listOf("10", "20").forEach { ind.update(java.math.BigDecimal(it)) }
+            assertThat(ind.value()).withFailMessage("$name mapped to the wrong line").isEqualByComparingTo(value)
+        }
+    }
+
+    @Test
     fun `HIGHEST excludes the current bar so a breakout close can exceed it`() {
         @Suppress("UNCHECKED_CAST")
         val ind =

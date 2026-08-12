@@ -1,6 +1,7 @@
 package com.qkt.trade
 
 import com.qkt.broker.mt5.MT5AccountInfo
+import com.qkt.broker.mt5.MT5AccountVerifier
 import com.qkt.broker.mt5.MT5BrokerProfile
 import com.qkt.broker.mt5.MT5BrokerProfileLoader
 import com.qkt.broker.mt5.MT5Client
@@ -31,6 +32,12 @@ class BotGateway(
     val profile: MT5BrokerProfile,
     private val client: MT5Client,
 ) {
+    init {
+        if (profile.hasExpectedAccount) {
+            MT5AccountVerifier.fetchAndVerify(profile, client)
+        }
+    }
+
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol)
 

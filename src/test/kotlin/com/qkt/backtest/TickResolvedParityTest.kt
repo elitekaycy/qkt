@@ -123,7 +123,15 @@ class TickResolvedParityTest {
         val reportLine = json.lineSequence().map(String::trim).single { it.startsWith("{") }
         val root = Json.parseToJsonElement(reportLine).jsonObject
         val evidence = root.getValue("evidence").jsonObject
-        return JsonObject(root + ("evidence" to JsonObject(evidence - "command")))
+        val inputSummary =
+            root["inputSummary"]?.jsonObject?.let { summary ->
+                JsonObject(summary - setOf("attemptedFeedTicks", "liveTicks"))
+            }
+        return JsonObject(
+            root +
+                ("evidence" to JsonObject(evidence - "command")) +
+                (if (inputSummary != null) mapOf("inputSummary" to inputSummary) else emptyMap()),
+        )
     }
 
     private fun seedRealEurUsdDay(dataRoot: Path) {

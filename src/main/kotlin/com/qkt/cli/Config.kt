@@ -557,10 +557,16 @@ data class Config(
             val allocation =
                 (m["allocation"] as? Map<String, Any?>)?.let { al ->
                     val method =
-                        when ((al["method"] as? String)?.uppercase()) {
+                        when ((al["method"] as? String)?.trim()?.uppercase()) {
+                            null, "", "FIXED" -> com.qkt.risk.book.AllocationMethod.FIXED
                             "INVERSE_VOL" -> com.qkt.risk.book.AllocationMethod.INVERSE_VOL
                             "ERC" -> com.qkt.risk.book.AllocationMethod.ERC
-                            else -> com.qkt.risk.book.AllocationMethod.FIXED
+                            "REGIME_WEIGHTED" -> com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED
+                            else ->
+                                error(
+                                    "unknown book_risk.allocation.method '${al["method"]}' " +
+                                        "(valid: FIXED, INVERSE_VOL, ERC, REGIME_WEIGHTED)",
+                                )
                         }
                     com.qkt.risk.book.Allocation(
                         method = method,
