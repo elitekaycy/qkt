@@ -1074,6 +1074,10 @@ As of Wednesday, August 12, 2026:
 - `./gradlew test --tests 'com.qkt.risk.rules.MarginFloorTest' -Pkotlin.compiler.execution.strategy=daemon && bash tests/scripts/prepare-margin-floor-fixture-test.sh && bash tests/scripts/run-margin-floor-fixture-test.sh`:
   passed on Wednesday, August 12, 2026 after adding explicit margin-floor re-entry recovery
   coverage. No JVM heap or worker restrictions were used.
+- `./gradlew test --tests 'com.qkt.parity.GeneratedReentryParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
+  passed on Wednesday, August 12, 2026 after adding explicit UTC next-day max-trades re-entry
+  recovery coverage across ticks, bars, tick-resolved bars, and live-paper. No JVM heap or worker
+  restrictions were used.
 - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon`: passed on Tuesday, August 11, 2026
   after narrowing the `TickResolvedParityTest` comparison to ignore only replay-input counters that
   intentionally differ between full-tick replay and `--bars --tick-fills`:
@@ -2184,7 +2188,8 @@ close. Keep the semantics split:
   - stale-market-data health gate;
 - recovery: where the gate is intentionally recoverable, prove the re-entry remains blocked before the
   lift/reset and is allowed only after the lift/reset or next valid UTC day boundary. Operator halt
-  recovery is now proven; the remaining recovery gaps are risk/state/time-bound gates.
+  recovery is now proven, and UTC next-day reset is now proven locally; the remaining recovery gaps
+  are retained live/state-time-bound gates.
 
 Existing partial coverage:
 
@@ -2194,6 +2199,10 @@ Existing partial coverage:
   cooldown after loss, loss streak halt, strategy daily loss, strategy drawdown, strategy daily
   drawdown, global daily loss, global drawdown, and global daily drawdown across tick, bars,
   tick-resolved bars, and live-paper in
+  `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
+- JVM parity coverage now proves `MaxTradesPerDay` UTC reset behavior for re-entry: a same-day
+  qualifying re-entry is rejected, a later qualifying signal after the UTC day boundary is allowed,
+  and the second position closes flat across tick, bar, tick-resolved-bar, and live-paper modes in
   `src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt`;
 - focused market-data gate coverage now proves the stale-data re-entry contract at the same
   pre-trade rule used by live sessions: the first entry is allowed on fresh data, a later same-side
@@ -2247,7 +2256,7 @@ Concrete next work:
 - extend the existing risk rejection/stateful/margin runners into re-entry-specific blocked and
   recovered variants, especially strategy/global risk halt, live stale-market-data gate, daily
   loss/drawdown, margin floor, live same-book exposure limits, cooldown/loss-streak reset, and
-  next-day reset behavior;
+  retained live next-day reset behavior;
 - decide whether production needs a broker-fill-oracle replay mode. Current replay proves exact order
   decisions and live protection adjustment, but deterministic backtest fill prices can drift from
   real broker fills because live execution latency is real;

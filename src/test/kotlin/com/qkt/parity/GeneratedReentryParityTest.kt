@@ -1,6 +1,8 @@
 package com.qkt.parity
 
+import com.qkt.candles.TimeWindow
 import com.qkt.dsl.compile.GeneratedStrategyReplay
+import com.qkt.marketdata.Candle
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
@@ -44,6 +46,49 @@ class GeneratedReentryParityTest {
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
         assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "90", "106", "90")
         assertThat(result.backtest.rejections).isEmpty()
+        assertThat(result.backtest.halts).isEmpty()
+        assertThat(result.backtest.positions).isEmpty()
+    }
+
+    @Test
+    fun `max trades reentry gate resets at UTC day boundary across replay modes`(
+        @TempDir tempDir: Path,
+    ) {
+        val strategyPath = writeExactReentryStrategy(tempDir, "reentry_max_trades_next_day")
+
+        val result =
+            GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                path = strategyPath,
+                candlesBySymbol =
+                    mapOf(
+                        "BACKTEST:X" to
+                            listOf(
+                                candle("100", DAY_MS - 10 * ONE_MINUTE_MS),
+                                candle("101", DAY_MS - 9 * ONE_MINUTE_MS),
+                                candle("90", DAY_MS - 8 * ONE_MINUTE_MS),
+                                candle("91", DAY_MS - 7 * ONE_MINUTE_MS),
+                                candle("110", DAY_MS - 6 * ONE_MINUTE_MS),
+                                candle("111", DAY_MS - 5 * ONE_MINUTE_MS),
+                                candle("120", DAY_MS + ONE_MINUTE_MS),
+                                candle("121", DAY_MS + 2 * ONE_MINUTE_MS),
+                                candle("80", DAY_MS + 3 * ONE_MINUTE_MS),
+                                candle("81", DAY_MS + 4 * ONE_MINUTE_MS),
+                            ),
+                    ),
+                window = TimeWindow.ONE_MINUTE,
+                closeOnlyTicks = true,
+                expectedTradeCount = 4,
+                expectedRejectionCount = 1,
+                startingBalance = STARTING_BALANCE,
+                strategyRiskLimits = StrategyRiskLimits(maxTradesPerDay = 1),
+            )
+
+        assertThat(result.backtest).isEqualTo(result.live)
+        assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
+        assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "81")
+        assertThat(result.backtest.rejections.single().reason).contains("MaxTradesPerDay")
+        assertThat(result.backtest.rejections.single().timestamp).isLessThan(DAY_MS)
+        assertThat(result.backtest.trades[2].timestamp).isGreaterThanOrEqualTo(DAY_MS)
         assertThat(result.backtest.halts).isEmpty()
         assertThat(result.backtest.positions).isEmpty()
     }
@@ -182,10 +227,57 @@ class GeneratedReentryParityTest {
         return strategyPath
     }
 
+    private fun writeExactReentryStrategy(
+        tempDir: Path,
+        id: String,
+    ): Path {
+        val strategyPath = tempDir.resolve("$id.qkt")
+        Files.writeString(
+            strategyPath,
+            """
+            STRATEGY $id VERSION 1
+            SYMBOLS x = BACKTEST:X EVERY 1m
+            RULES
+              WHEN x.close = 100 AND POSITION.x = 0
+              THEN BUY x SIZING 1
+
+              WHEN x.close = 90 AND POSITION.x != 0
+              THEN CLOSE x
+
+              WHEN x.close = 110 AND POSITION.x = 0
+              THEN BUY x SIZING 1
+
+              WHEN x.close = 120 AND POSITION.x = 0
+              THEN BUY x SIZING 1
+
+              WHEN x.close = 80 AND POSITION.x != 0
+              THEN CLOSE x
+            """.trimIndent(),
+        )
+        return strategyPath
+    }
+
+    private fun candle(
+        close: String,
+        startTime: Long,
+    ): Candle =
+        Candle(
+            symbol = "BACKTEST:X",
+            open = BigDecimal(close),
+            high = BigDecimal(close),
+            low = BigDecimal(close),
+            close = BigDecimal(close),
+            volume = BigDecimal.ONE,
+            startTime = startTime,
+            endTime = startTime + ONE_MINUTE_MS,
+        )
+
     private companion object {
         val STARTING_BALANCE: BigDecimal = BigDecimal("1000")
         val REENTRY_PRICES: List<String> = listOf("100", "101", "102", "90", "90", "105", "106", "90")
         const val TEN_MINUTES_MS: Long = 10 * 60 * 1000L
         const val NO_HALT_EXPECTED: String = "__none__"
+        const val ONE_MINUTE_MS: Long = 60_000L
+        const val DAY_MS: Long = 86_400_000L
     }
 }
