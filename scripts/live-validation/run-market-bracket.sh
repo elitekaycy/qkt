@@ -72,6 +72,9 @@ expected_exits="$(jq -r '.armedScenario.maximumExits // 1' "$scenario/expected.j
 expected_blocked_entries="$(jq -r '.armedScenario.maximumBlockedEntries // 0' "$scenario/expected.json")"
 expected_blocked_reason="$(jq -r '.armedScenario.expectedBlockedReason // ""' "$scenario/expected.json")"
 cooldown_after_loss_ms="$(jq -r '.armedScenario.cooldownAfterLossMs // 0' "$scenario/expected.json")"
+seeded_risk_state_kind="$(jq -r '.armedScenario.seededRiskState.kind // ""' "$scenario/expected.json")"
+seeded_risk_state_path="$(jq -r '.armedScenario.seededRiskState.path // ""' "$scenario/expected.json")"
+seeded_risk_state_entry_ms="$(jq -r '.armedScenario.seededRiskState.entryFillMs // 0' "$scenario/expected.json")"
 grep -F 'SIZING 0.01' "$armed_strategy" >/dev/null || fail "armed strategy is not fixed at 0.01 lots"
 case "$lifecycle" in
     single)
@@ -93,6 +96,18 @@ case "$lifecycle" in
             fail "blocked re-entry lifecycle must expect one filled entry, one close, and one blocked entry"
         [ "$expected_blocked_reason" = "MaxTradesPerDay" ] ||
             fail "blocked re-entry lifecycle must retain the MaxTradesPerDay rejection reason"
+        ;;
+    reentry_max_trades_next_day_recovered)
+        grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null ||
+            fail "max-trades next-day scenario does not attempt the reviewed same-day second entry"
+        grep -F 'max_trades_per_day: 1' "$config" >/dev/null ||
+            fail "max-trades next-day scenario does not cap current-day live entries at one"
+        [ "$expected_entries" -eq 1 ] && [ "$expected_exits" -eq 1 ] && [ "$expected_blocked_entries" -eq 1 ] ||
+            fail "max-trades next-day lifecycle must expect one filled entry, one close, and one blocked same-day entry"
+        [ "$expected_blocked_reason" = "MaxTradesPerDay" ] ||
+            fail "max-trades next-day lifecycle must retain the MaxTradesPerDay rejection reason"
+        [ "$seeded_risk_state_kind" = "previous-day-max-trades" ] ||
+            fail "max-trades next-day lifecycle must declare the previous-day risk-state seed"
         ;;
     reentry_blocked_operator_halt)
         grep -F 'TRADES.today < 2' "$armed_strategy" >/dev/null ||
@@ -589,6 +604,46 @@ wait_for_cooldown_recovery_window() {
         > "$evidence/cooldown-recovery-wait.json"
 }
 
+verify_seeded_risk_state() {
+    [ -z "$seeded_risk_state_kind" ] && return
+    [ "$seeded_risk_state_kind" = "previous-day-max-trades" ] ||
+        fail "unsupported seeded risk-state kind: $seeded_risk_state_kind"
+    [ -n "$seeded_risk_state_path" ] || fail "seeded risk-state path is missing"
+    case "$seeded_risk_state_path" in
+        /*|*..*) fail "seeded risk-state path must be scenario-relative: $seeded_risk_state_path" ;;
+    esac
+    local seed_file="$scenario/$seeded_risk_state_path"
+    [ -f "$seed_file" ] || fail "seeded risk-state file is missing: $seed_file"
+    local current_epoch_day prior_epoch_day current_day_start_ms prior_day_start_ms
+    current_epoch_day="$(($(date -u +%s) / 86400))"
+    prior_epoch_day="$((current_epoch_day - 1))"
+    current_day_start_ms="$((current_epoch_day * 86400000))"
+    prior_day_start_ms="$((prior_epoch_day * 86400000))"
+    jq -e \
+        --arg strategy "$strategy_name" \
+        --argjson priorEpochDay "$prior_epoch_day" \
+        --argjson priorDayStartMs "$prior_day_start_ms" \
+        --argjson currentDayStartMs "$current_day_start_ms" \
+        --argjson expectedEntryMs "$seeded_risk_state_entry_ms" '
+            .version == 1 and
+            .strategyId == $strategy and
+            .epochDay == $priorEpochDay and
+            .halted == false and
+            .haltReason == null and
+            .pacerEntryFillsByStrategy[$strategy] == [$expectedEntryMs] and
+            ($expectedEntryMs >= $priorDayStartMs and $expectedEntryMs < $currentDayStartMs)
+        ' "$seed_file" >/dev/null || fail "seeded risk-state does not prove a previous-day max-trades entry"
+    cp "$seed_file" "$evidence/seeded-risk-state.json"
+    jq -n \
+        --arg kind "$seeded_risk_state_kind" \
+        --arg path "$seeded_risk_state_path" \
+        --arg strategy "$strategy_name" \
+        --argjson epochDay "$prior_epoch_day" \
+        --argjson entryFillMs "$seeded_risk_state_entry_ms" \
+        '{kind:$kind,path:$path,strategy:$strategy,epochDay:$epochDay,entryFillMs:$entryFillMs,status:"verified"}' \
+        > "$evidence/seeded-risk-state-verification.json"
+}
+
 capture_history_snapshot() {
     local attempt="$1"
     timeout --foreground "${history_attempt_timeout_seconds}s" \
@@ -639,6 +694,7 @@ jq -e '.ok == true and (.orders | length) == 0' "$evidence/orders-magic-initial.
 
 wait_for_startup_window
 wait_for_history_ready
+verify_seeded_risk_state
 
 QKT_STATE_DIR="$scenario/state" "$cli" daemon start \
     --config "$config" \
@@ -674,7 +730,7 @@ if [ "$lifecycle" = "reentry" ]; then
     gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-final.json"
     jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-final.json" >/dev/null ||
         fail "re-entry lifecycle did not end flat"
-elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ] || [ "$lifecycle" = "reentry_blocked_loss_streak" ]; then
+elif [ "$lifecycle" = "reentry_blocked_max_trades" ] || [ "$lifecycle" = "reentry_max_trades_next_day_recovered" ] || [ "$lifecycle" = "reentry_blocked_operator_halt" ] || [ "$lifecycle" = "reentry_operator_halt_recovered" ] || [ "$lifecycle" = "reentry_cooldown_recovered" ] || [ "$lifecycle" = "reentry_blocked_loss_streak" ]; then
     wait_for_open_cycle 1
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-cycle-1-open.json"
     wait_for_flat_cycle 1
@@ -894,7 +950,10 @@ jq -n \
     --arg staleEvents "$stale_events" \
     --arg recoveryEvents "$recovery_events" \
     --arg stopDistance "$stop_distance" \
-    --arg takeProfitDistance "$take_profit_distance" '
+    --arg takeProfitDistance "$take_profit_distance" \
+    --arg seededRiskStateKind "$seeded_risk_state_kind" \
+    --arg seededRiskStatePath "$seeded_risk_state_path" \
+    --arg seededRiskStateEntryMs "$seeded_risk_state_entry_ms" '
         {
           schema:"qkt-live-validation-market-bracket-v1",
           status:"passed",
@@ -918,7 +977,8 @@ jq -n \
           },
           bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance},
           flattenVerified:(if $lifecycle == "single" then true else false end),
-          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak"),
+          strategyOwnedLifecycle:($lifecycle == "reentry" or $lifecycle == "reentry_blocked_max_trades" or $lifecycle == "reentry_max_trades_next_day_recovered" or $lifecycle == "reentry_blocked_operator_halt" or $lifecycle == "reentry_operator_halt_recovered" or $lifecycle == "reentry_cooldown_recovered" or $lifecycle == "reentry_blocked_loss_streak"),
+          seededRiskState:(if $seededRiskStateKind == "" then null else {kind:$seededRiskStateKind,path:$seededRiskStatePath,entryFillMs:($seededRiskStateEntryMs|tonumber)} end),
           finalPositions:0,
           finalOrders:0,
           balanceDelta:$balanceDelta,

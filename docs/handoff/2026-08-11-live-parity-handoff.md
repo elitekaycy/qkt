@@ -2597,3 +2597,46 @@ The branch contains real progress and real passing live evidence. It does not ye
 stated end condition for `main`. Another agent should treat this as a partially completed but
 well-instrumented validation program: preserve the existing evidence, finish the remaining matrix,
 run the mandatory burn-in, then handle strategy-book adaptation and promotion.
+
+## 2026-08-12 Update: Next-Day Max-Trades Retained-State Harness
+
+Added a new generated live lifecycle, `reentry_max_trades_next_day_recovered`, to prove the retained
+max-trades pacer reset path without waiting for UTC midnight during the live loop.
+
+What changed:
+
+- `scripts/live-validation/prepare-scenario.sh` can now emit
+  `--lifecycle reentry_max_trades_next_day_recovered`.
+- The lifecycle seeds
+  `state/state/<scenario>_market_bracket/risk-state.json` with one previous-UTC-day pacer entry fill
+  for the armed strategy.
+- The generated strategy still attempts two entries with `TRADES.today < 2`, while risk config keeps
+  `max_trades_per_day: 1`.
+- Expected live behavior is: first current-day real MT5 entry is allowed, the strategy-owned close
+  returns the account flat, and the second same-day entry is rejected pre-transport by
+  `MaxTradesPerDay`.
+- `scripts/live-validation/run-market-bracket.sh` now verifies the seeded risk-state file before
+  daemon start. It fails if the seed is missing, tied to the wrong strategy, outside the previous UTC
+  day, or not declared in `expected.json`.
+- Live results now retain `seededRiskState` metadata, and the runner copies the exact seed into
+  `evidence/seeded-risk-state.json` plus a verification summary.
+- `scripts/live-validation/compare-golden-replay.sh` now accepts this lifecycle as a replayable
+  blocked re-entry variant and documents the live/replay limitation.
+- `tests/scripts/prepare-live-validation-scenario-test.sh` covers generation, parser acceptance,
+  seed JSON shape, checksum inclusion, and runner `--verify-only`.
+
+Verification already run:
+
+```bash
+bash -n scripts/live-validation/prepare-scenario.sh
+bash -n scripts/live-validation/run-market-bracket.sh
+bash -n scripts/live-validation/compare-golden-replay.sh
+bash tests/scripts/prepare-live-validation-scenario-test.sh
+```
+
+Still not sealed:
+
+- The new lifecycle has not yet been armed against MT5 in this branch state.
+- Next step is a clean build, fresh scenario preparation on one localhost demo gateway, armed
+  `run-market-bracket.sh`, and `compare-golden-replay.sh` on the retained golden capture.
+- If the live run passes, add the evidence paths here and commit a docs sealing note.
