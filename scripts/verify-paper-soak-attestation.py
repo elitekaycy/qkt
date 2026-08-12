@@ -14,6 +14,7 @@ from pathlib import Path
 
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}")
 REQUIRED_ARTIFACTS = (
     "health",
     "journal",
@@ -67,6 +68,12 @@ def validate(
     attestation_type = require_string(document.get("attestationType"), "attestationType").lower()
     if attestation_type != "live-parity":
         fail("attestationType must be live-parity")
+    run_id = require_string(document.get("runId"), "runId")
+    if not RUN_ID_RE.fullmatch(run_id):
+        fail("runId must be a fresh opaque run identifier")
+    input_fingerprint = require_string(document.get("inputFingerprint"), "inputFingerprint")
+    if not re.fullmatch(r"[0-9a-f]{64}", input_fingerprint):
+        fail("inputFingerprint must be a lowercase SHA-256")
 
     git_sha = require_string(document.get("testingSha"), "testingSha")
     if not SHA_RE.fullmatch(git_sha):
@@ -116,13 +123,20 @@ def validate(
     for field in (
         "strategiesTested", "indicatorsTested", "mathScenariosTested",
         "dslScenariosTested", "orderTypesTested", "totalTicks", "totalBars",
-        "fills", "parityComparisons", "insightsEvents",
+        "fills", "parityComparisons", "insightsEvents", "warmupBars", "warmupTicks",
+        "barBoundaryTransitions",
     ):
         if require_int(parity.get(field), f"parity.{field}") <= 0:
             fail(f"parity.{field} must be positive")
     for field in ("parityMismatches", "unexplainedRejections", "unexplainedOrderOutcomes"):
         if require_int(parity.get(field), f"parity.{field}") != 0:
             fail(f"parity.{field} must be zero")
+    timeframes = parity.get("timeframesTested")
+    if not isinstance(timeframes, list) or not timeframes:
+        fail("parity.timeframesTested must be a non-empty list")
+    for timeframe in timeframes:
+        if not isinstance(timeframe, str) or not timeframe.strip():
+            fail("parity.timeframesTested entries must be non-blank strings")
 
     artifacts = document.get("artifacts")
     if not isinstance(artifacts, dict):

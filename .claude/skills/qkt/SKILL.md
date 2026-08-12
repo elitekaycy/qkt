@@ -526,6 +526,16 @@ ktlint is the enforced formatter for every `.kt` file (main and test). Ktlint-co
 
 ## 14. Living-document protocol
 
+### Live-parity attestation
+
+Changes affecting the live tick/bar-to-order path require a real demo parity run
+after the exact image reaches `testing`. Follow
+[`docs/contributing/live-parity-attestation.md`](../../docs/contributing/live-parity-attestation.md):
+retain causal indicator/DSL/risk/order/fill/Insights traces, replay the same window
+through backtest modes, and generate the six hashed artifacts consumed by
+`paper-soak.yml`. Generated captures are disposable evidence and never belong in
+source control. Documentation-only changes do not require a new live run.
+
 When this skill is wrong or incomplete:
 
 1. Edit it in the same PR as the code change that motivated the edit.
