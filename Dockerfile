@@ -4,7 +4,12 @@ WORKDIR /src
 COPY . .
 # .dockerignore excludes .git; published builds inject their immutable workflow SHA.
 ARG QKT_GIT_SHA=unknown
-RUN ./gradlew --no-daemon installDist -PqktGitSha="$QKT_GIT_SHA"
+RUN set -eux; \
+    for attempt in 1 2 3; do \
+        ./gradlew --no-daemon installDist -PqktGitSha="$QKT_GIT_SHA" && break; \
+        if [ "$attempt" = "3" ]; then exit 1; fi; \
+        sleep "$((attempt * 10))"; \
+    done
 # A minimal runtime image: only the JDK modules qkt actually loads. jdeps reports
 # java.base, java.logging, java.naming, java.xml, jdk.httpserver; jdk.crypto.ec (TLS
 # cipher suites for HTTPS) and jdk.unsupported (sun.misc.Unsafe, used by okio/kotlin)
