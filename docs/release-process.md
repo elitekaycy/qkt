@@ -33,8 +33,13 @@ Changes reach a release through the protected branch flow:
    preserving prior testing promotion history.
 3. Wait for `integration.yml` and the `:edge` image on the exact `testing` SHA.
 4. Resolve the edge image to its immutable `ghcr.io/.../qkt@sha256:...` digest and
-   run that digest against the demo MT5 canary for at least 48 continuous hours or
-   five trading days. Retain periodic `/health`, final `qkt reconcile --json`, and
+   validate it with one of the two evidence profiles below. A normal `paper-soak`
+   profile runs against the demo MT5 canary for at least 48 continuous hours or
+   five trading days. A finite `live-parity` profile may qualify the promotion
+   without that elapsed-time requirement, but it must exercise real demo strategy
+   runs across indicators, math, DSL, order types, ticks, bars, fills, and Insights,
+   and retain exact replay comparisons with zero unexplained mismatches or outcomes.
+   Both profiles retain periodic `/health`, final `qkt reconcile --json`, and
    `qkt golden capture` output with zero dropped records.
 5. On the trusted soak host, derive the attestation:
 
@@ -46,6 +51,17 @@ Changes reach a release through the protected branch flow:
      --reconciliation reconciliation.json --golden golden.zip \
      --out /var/lib/qkt/soak/attestation.json
    ```
+
+   For `live-parity`, the attestation additionally sets `attestationType` to
+   `live-parity`, includes a `parity` object with positive counts for
+   `strategiesTested`, `indicatorsTested`, `mathScenariosTested`,
+   `dslScenariosTested`, `orderTypesTested`, `totalTicks`, `totalBars`, `fills`,
+   `parityComparisons`, and `insightsEvents`, and zero values for
+   `parityMismatches`, `unexplainedRejections`, and `unexplainedOrderOutcomes`.
+   Its artifact set is six sibling files: `health`, `journal`,
+   `reconciliation`, `coverage`, `parity`, and `insights`; every file is hashed
+   in `artifactSha256`. The verifier requires at least ten minutes of recorded
+   run time and verifies every hash before promotion.
 
 6. Dispatch `paper-soak.yml` on the `testing` ref. It runs on the trusted
    `qkt-paper-soak` self-hosted runner, validates hashes and image revision, and
