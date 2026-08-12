@@ -3026,7 +3026,101 @@ Replay result summary:
 
 Remaining higher-timeframe work:
 
-- M15 daemon/order/replay is now sealed.
-- H1/H4 are generation-verified and warmup/bar availability is sealed, but they still do not have a
-  real daemon order-path run. The harness can now prepare those without waiting for natural closes by
-  using a `1m` primary stream and a warmed `1h`/`4h` secondary stream.
+- M15/H1/H4 daemon/order/replay are now sealed for the fast validation pattern:
+  `1m` primary execution stream plus warmed higher-timeframe secondary stream.
+- Longer natural-close H1/H4 daemon soaks can still be added later, but they are no longer blockers
+  for proving that warmed H1/H4 values can participate in the live order path and replay comparison.
+
+## 2026-08-12 Update: H1 And H4 Higher-Timeframe Daemon Evidence
+
+Extended the higher-timeframe daemon proof from M15 to H1 and H4 using the replayable
+`reentry_blocked_max_trades` lifecycle.
+
+Verification already run:
+
+```bash
+./gradlew installDist -Pkotlin.compiler.execution.strategy=daemon
+```
+
+Retained H1 live/replay evidence:
+
+- Live scenario:
+  `/var/tmp/qkt-validation/xau-htf1h-reentry-blocked-20260812T062749Z/evidence/result.json`
+- Golden replay comparison:
+  `/var/tmp/qkt-validation/xau-htf1h-reentry-blocked-20260812T062749Z-replay/result.json`
+
+H1 live result summary:
+
+- `status:"passed"`, `qktDirty:false`, QKT commit
+  `dbf9aa6ad2a8646779f050c9d549b313801b75ec`.
+- Strategy streams: `asset1` on `1m`, `asset5` on `1h`; retained
+  `armedTimeframes:["1h","1m"]`.
+- History readiness checked both `1h` and `1m` on attempt `1`.
+- Lifecycle: one real XAUUSD strategy-owned entry, one strategy-owned close, then one same-day
+  `MaxTradesPerDay` rejection before MT5 transport.
+- `blockedReentry:{expected:1, reason:"MaxTradesPerDay", rejections:1, preTransport:true}`.
+- Final account ownership: `finalPositions:0`, `finalOrders:0`.
+- Transport counts: `orderPosts:1`, `closePosts:1`.
+- Audit counts: `acceptedEvents:2`, `filledEvents:2`, `riskRejections:1`.
+- Venue reconciliation: `balanceDelta:"-0.28"` and `dealNet:"-0.28"`.
+- Golden capture: `ticks:174`, `warmupTicks:80`, `candles:13`, `fills:2`,
+  `linkedPlacements:1`, SHA-256
+  `c402081bb39d3fa16bdb6c46a358b0c64ad2c5bb7dd65720df24a881d024a09a`.
+- Stale-data count during this run: `staleEvents:0`, `recoveredStaleEvents:0`.
+
+H1 replay result summary:
+
+- `status:"passed"`, lifecycle `reentry_blocked_max_trades`.
+- Full-tick order journals were byte-exact.
+- Bar replay order journals were timestamp-normalized exact.
+- Live initial protection matched canonical intent.
+- Live adjusted protection matched captured broker fill.
+- MT5 simulation used the same canonical intent.
+- Live-vs-MT5-sim entry fill drift is retained as expected venue latency/model difference:
+  live BUY fill `4389.445000000001`, simulated fill `4389.49300000`, delta
+  `-0.047999999999774445`.
+
+Retained H4 live/replay evidence:
+
+- Live scenario:
+  `/var/tmp/qkt-validation/xau-htf4h-reentry-blocked-20260812T063543Z/evidence/result.json`
+- Golden replay comparison:
+  `/var/tmp/qkt-validation/xau-htf4h-reentry-blocked-20260812T063543Z-replay/result.json`
+
+H4 live result summary:
+
+- `status:"passed"`, `qktDirty:false`, QKT commit
+  `dbf9aa6ad2a8646779f050c9d549b313801b75ec`.
+- Strategy streams: `asset1` on `1m`, `asset5` on `4h`; retained
+  `armedTimeframes:["1m","4h"]`.
+- History readiness checked both `1m` and `4h` on attempt `1`.
+- Lifecycle: one real XAUUSD strategy-owned entry, one strategy-owned close, then one same-day
+  `MaxTradesPerDay` rejection before MT5 transport.
+- `blockedReentry:{expected:1, reason:"MaxTradesPerDay", rejections:1, preTransport:true}`.
+- Final account ownership: `finalPositions:0`, `finalOrders:0`.
+- Transport counts: `orderPosts:1`, `closePosts:1`.
+- Audit counts: `acceptedEvents:2`, `filledEvents:2`, `riskRejections:1`.
+- Venue reconciliation: `balanceDelta:"2.20"` and `dealNet:"2.20"`.
+- Golden capture: `ticks:297`, `warmupTicks:80`, `candles:13`, `fills:2`,
+  `linkedPlacements:1`, SHA-256
+  `71e012e7d725e4a45727514c2f8cbf68334fcc6c52c40f55562fc17b85e86a0d`.
+- Stale-data count during this run: `staleEvents:0`, `recoveredStaleEvents:0`.
+
+H4 replay result summary:
+
+- `status:"passed"`, lifecycle `reentry_blocked_max_trades`.
+- Full-tick order journals were byte-exact.
+- Bar replay order journals were timestamp-normalized exact.
+- Live initial protection matched canonical intent.
+- Live adjusted protection matched captured broker fill.
+- MT5 simulation used the same canonical intent.
+- Live-vs-MT5-sim entry fill drift is retained as expected venue latency/model difference:
+  live BUY fill `4390.374000000001`, simulated fill `4390.31200000`, delta
+  `0.06200000000080763`.
+
+Final demo2 snapshot after H4:
+
+- Account `476434211`, server `Exness-MT5Trial9`.
+- Balance/equity `100002.33`, margin `0.0`, leverage `500`.
+- `trade_allowed:true`, `trade_expert:true`.
+- Magic-scoped positions/orders for the H4 scenario were empty.
