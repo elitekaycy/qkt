@@ -21,8 +21,10 @@ the repo go-live policy, is:
    the portfolio backtests from the now-proven runtime. After that forward-test stack is clean,
    update bot1 `qkt-quantlive` with the proven `qkt` and `qkt-insights` changes.
 
-This branch is not ready for `main`, `qkt-forge`, or bot1 rollout yet because items 3 and 4 are
-still incomplete at full scope. The current work is live parity testing, not downstream deployment.
+This branch is ready for PR/promotion review after the final closeout commit. It is not ready for
+`main`, `qkt-forge`, or bot1 rollout until the PR to `dev` is merged and the normal
+`dev -> testing -> main` promotion path completes. The current work is closing the live parity
+testing branch, not downstream deployment.
 
 ## Current Branch State
 
@@ -30,9 +32,11 @@ still incomplete at full scope. The current work is live parity testing, not dow
 - Current branch: `test/exhaustive-live-parity`
 - Base branch: `origin/dev`
 - Merge-base with `origin/dev`: `b4c99599b0e6cd94a70d9cb654a15f6732602121`
-- Current status at handoff update: tracked worktree clean, branch `ahead 179`; two pre-existing
+- Current status at handoff update: tracked worktree clean, branch `ahead 181`; two pre-existing
   untracked Kimi/audit docs remain outside this handoff.
 - Latest committed work:
+  - `test(parity): quiet reentry parity logs`
+  - `docs(docs): record closeout gate status`
   - `docs(docs): record strict case sanity proof`
   - `fix(scripts): bound golden replay execution drift`
   - `docs(docs): record strict atr sanity proof`
@@ -3962,14 +3966,58 @@ bash tests/scripts/run-stateful-risk-containers-test.sh
 
 No JVM heap, CPU, worker, or Docker resource restrictions were used for this recheck.
 
-Remaining before the branch can be called done:
+## 2026-08-12 Update: Final Pre-Push Gates Green
 
-1. Run the required pre-push checks from this final state:
-   `./gradlew build`, `./gradlew test`, `git status`, `git log --oneline origin/dev..HEAD`, and
-   `rg -n 'TODO|FIXME|XXX' src/ || true`.
-2. Fix any issue those final checks expose, then rerun the affected checks.
-3. Open the PR from `test/exhaustive-live-parity` to `dev` with the retained evidence linked.
-4. After PR merge/promotion, apply the proven `qkt`, `qkt-insights`, images/tags, and related runtime
-   changes to `qkt-forge` on `sshbot2`, rerun the selected strategies there, then do portfolio
-   backtests from the promoted/proven runtime.
-5. Only after `qkt-forge` forward-test is clean, update bot1 `qkt-quantlive`.
+Final closeout checks from this branch passed after test-local log-budget hardening.
+
+What changed during closeout:
+
+- `GeneratedReentryParityTest` now runs its generated tick/bar/live-paper parity assertions with
+  quiet parity log levels for the known high-volume pipeline/order/session/trade loggers.
+- This is test-only noise control. It does not change production code, strategy behavior, broker
+  behavior, risk gates, order generation, fills, indicators, DSL mapping, replay, or the live path.
+- The first final `build` failure was only `:checkTestLogBudget` for generated reentry logs:
+  `1274` nonblank lines and `218654` bytes, over the `1000` line and `131072` byte budget.
+- The final build rerun passed the same behavioral suite plus the log-budget gate.
+
+Final checks run:
+
+```bash
+./gradlew test --tests com.qkt.parity.GeneratedReentryParityTest -Pkotlin.compiler.execution.strategy=daemon
+./gradlew checkTestLogBudget -Pkotlin.compiler.execution.strategy=daemon
+./gradlew ktlintTestSourceSetFormat -Pkotlin.compiler.execution.strategy=daemon
+./gradlew ktlintTestSourceSetCheck -Pkotlin.compiler.execution.strategy=daemon
+./gradlew build -Pkotlin.compiler.execution.strategy=daemon
+git diff --check
+rg -n 'TODO|FIXME|XXX' src/ || true
+git log --oneline origin/dev..HEAD | head -n 50
+git status --short --branch
+```
+
+Important constraint honored:
+
+- No JVM heap cap, worker cap, Docker cap, `--no-daemon`, or other resource restriction was used.
+- The only Gradle property used was the repo-recommended Kotlin compiler daemon strategy:
+  `-Pkotlin.compiler.execution.strategy=daemon`.
+
+Final closeout status:
+
+- Generated final-sanity live-plus-replay matrix: sealed.
+- Higher-timeframe warmup/daemon validation: sealed for M15, H1, and H4 through the fast validation
+  pattern.
+- Retained-risk restored-state matrix and controlled margin-floor fixture: sealed and rechecked.
+- Final full `build`: passed.
+- Final full `test`: passed as part of the successful `build`; it also passed in the earlier
+  explicit `checkTestLogBudget` run after the reentry log hardening.
+- Final `checkTestLogBudget`: passed.
+- Final ktlint checks: passed.
+- Final `TODO|FIXME|XXX` scan under `src/`: clean.
+
+Remaining after this branch closeout:
+
+1. Open the PR from `test/exhaustive-live-parity` to `dev` with the retained evidence linked.
+2. Merge/promote through `dev -> testing -> main` using the repo promotion rules.
+3. After promotion, apply the proven `qkt`, `qkt-insights`, images/tags, and related runtime changes
+   to `qkt-forge` on `sshbot2`, rerun the selected strategies there, then run portfolio backtests
+   from the promoted/proven runtime.
+4. Only after `qkt-forge` forward-test is clean, update bot1 `qkt-quantlive`.

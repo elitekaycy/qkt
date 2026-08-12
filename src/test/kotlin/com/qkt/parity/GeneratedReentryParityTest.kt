@@ -16,6 +16,7 @@ import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.io.TempDir
+import org.slf4j.LoggerFactory
 
 class GeneratedReentryParityTest {
     private data class GateCase(
@@ -35,12 +36,14 @@ class GeneratedReentryParityTest {
         val strategyPath = writeStrategy(tempDir, "reentry_allowed")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                closes = listOf("100", "101", "102", "90", "90", "105", "106", "90"),
-                expectedTradeCount = 4,
-                startingBalance = STARTING_BALANCE,
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    closes = listOf("100", "101", "102", "90", "90", "105", "106", "90"),
+                    expectedTradeCount = 4,
+                    startingBalance = STARTING_BALANCE,
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
@@ -57,12 +60,14 @@ class GeneratedReentryParityTest {
         val strategyPath = writePendingReentryStrategy(tempDir, "reentry_pending_guard")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                closes = listOf("100", "101", "102", "94", "110", "100", "101", "94", "110"),
-                expectedTradeCount = 4,
-                startingBalance = STARTING_BALANCE,
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    closes = listOf("100", "101", "102", "94", "110", "100", "101", "94", "110"),
+                    expectedTradeCount = 4,
+                    startingBalance = STARTING_BALANCE,
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
@@ -79,37 +84,47 @@ class GeneratedReentryParityTest {
         val strategyPath = writeTimedReentryStrategy(tempDir, "reentry_max_trades_next_day")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                candlesBySymbol =
-                    mapOf(
-                        "BACKTEST:X" to
-                            listOf(
-                                candle("100", DAY_MS - 10 * ONE_MINUTE_MS),
-                                candle("101", DAY_MS - 9 * ONE_MINUTE_MS),
-                                candle("90", DAY_MS - 8 * ONE_MINUTE_MS),
-                                candle("91", DAY_MS - 7 * ONE_MINUTE_MS),
-                                candle("110", DAY_MS - 6 * ONE_MINUTE_MS),
-                                candle("111", DAY_MS - 5 * ONE_MINUTE_MS),
-                                candle("120", DAY_MS + ONE_MINUTE_MS),
-                                candle("121", DAY_MS + 2 * ONE_MINUTE_MS),
-                                candle("80", DAY_MS + 3 * ONE_MINUTE_MS),
-                                candle("81", DAY_MS + 4 * ONE_MINUTE_MS),
-                            ),
-                    ),
-                window = TimeWindow.ONE_MINUTE,
-                closeOnlyTicks = true,
-                expectedTradeCount = 4,
-                expectedRejectionCount = 1,
-                startingBalance = STARTING_BALANCE,
-                strategyRiskLimits = StrategyRiskLimits(maxTradesPerDay = 1),
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    candlesBySymbol =
+                        mapOf(
+                            "BACKTEST:X" to
+                                listOf(
+                                    candle("100", DAY_MS - 10 * ONE_MINUTE_MS),
+                                    candle("101", DAY_MS - 9 * ONE_MINUTE_MS),
+                                    candle("90", DAY_MS - 8 * ONE_MINUTE_MS),
+                                    candle("91", DAY_MS - 7 * ONE_MINUTE_MS),
+                                    candle("110", DAY_MS - 6 * ONE_MINUTE_MS),
+                                    candle("111", DAY_MS - 5 * ONE_MINUTE_MS),
+                                    candle("120", DAY_MS + ONE_MINUTE_MS),
+                                    candle("121", DAY_MS + 2 * ONE_MINUTE_MS),
+                                    candle("80", DAY_MS + 3 * ONE_MINUTE_MS),
+                                    candle("81", DAY_MS + 4 * ONE_MINUTE_MS),
+                                ),
+                        ),
+                    window = TimeWindow.ONE_MINUTE,
+                    closeOnlyTicks = true,
+                    expectedTradeCount = 4,
+                    expectedRejectionCount = 1,
+                    startingBalance = STARTING_BALANCE,
+                    strategyRiskLimits = StrategyRiskLimits(maxTradesPerDay = 1),
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
         assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "81")
-        assertThat(result.backtest.rejections.single().reason).contains("MaxTradesPerDay")
-        assertThat(result.backtest.rejections.single().timestamp).isLessThan(DAY_MS)
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .reason,
+        ).contains("MaxTradesPerDay")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .timestamp,
+        ).isLessThan(DAY_MS)
         assertThat(result.backtest.trades[2].timestamp).isGreaterThanOrEqualTo(DAY_MS)
         assertThat(result.backtest.halts).isEmpty()
         assertThat(result.backtest.positions).isEmpty()
@@ -122,37 +137,47 @@ class GeneratedReentryParityTest {
         val strategyPath = writeTimedReentryStrategy(tempDir, "reentry_cooldown_recovered")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                candlesBySymbol =
-                    mapOf(
-                        "BACKTEST:X" to
-                            listOf(
-                                candle("100", 0),
-                                candle("101", ONE_MINUTE_MS),
-                                candle("90", 2 * ONE_MINUTE_MS),
-                                candle("91", 3 * ONE_MINUTE_MS),
-                                candle("110", 4 * ONE_MINUTE_MS),
-                                candle("111", 5 * ONE_MINUTE_MS),
-                                candle("120", 15 * ONE_MINUTE_MS),
-                                candle("121", 16 * ONE_MINUTE_MS),
-                                candle("80", 17 * ONE_MINUTE_MS),
-                                candle("81", 18 * ONE_MINUTE_MS),
-                            ),
-                    ),
-                window = TimeWindow.ONE_MINUTE,
-                closeOnlyTicks = true,
-                expectedTradeCount = 4,
-                expectedRejectionCount = 1,
-                startingBalance = STARTING_BALANCE,
-                strategyRiskLimits = StrategyRiskLimits(cooldownAfterLossMs = TEN_MINUTES_MS),
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    candlesBySymbol =
+                        mapOf(
+                            "BACKTEST:X" to
+                                listOf(
+                                    candle("100", 0),
+                                    candle("101", ONE_MINUTE_MS),
+                                    candle("90", 2 * ONE_MINUTE_MS),
+                                    candle("91", 3 * ONE_MINUTE_MS),
+                                    candle("110", 4 * ONE_MINUTE_MS),
+                                    candle("111", 5 * ONE_MINUTE_MS),
+                                    candle("120", 15 * ONE_MINUTE_MS),
+                                    candle("121", 16 * ONE_MINUTE_MS),
+                                    candle("80", 17 * ONE_MINUTE_MS),
+                                    candle("81", 18 * ONE_MINUTE_MS),
+                                ),
+                        ),
+                    window = TimeWindow.ONE_MINUTE,
+                    closeOnlyTicks = true,
+                    expectedTradeCount = 4,
+                    expectedRejectionCount = 1,
+                    startingBalance = STARTING_BALANCE,
+                    strategyRiskLimits = StrategyRiskLimits(cooldownAfterLossMs = TEN_MINUTES_MS),
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
         assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "81")
-        assertThat(result.backtest.rejections.single().reason).contains("CooldownAfterLoss")
-        assertThat(result.backtest.rejections.single().timestamp).isLessThan(result.backtest.trades[2].timestamp)
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .reason,
+        ).contains("CooldownAfterLoss")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .timestamp,
+        ).isLessThan(result.backtest.trades[2].timestamp)
         assertThat(result.backtest.trades[2].timestamp - result.backtest.trades[1].timestamp)
             .isGreaterThanOrEqualTo(TEN_MINUTES_MS)
         assertThat(result.backtest.halts).isEmpty()
@@ -166,36 +191,38 @@ class GeneratedReentryParityTest {
         val strategyPath = writeLossStreakResetStrategy(tempDir, "reentry_loss_streak_reset")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                candlesBySymbol =
-                    mapOf(
-                        "BACKTEST:X" to
-                            listOf(
-                                candle("100", 0),
-                                candle("101", ONE_MINUTE_MS),
-                                candle("90", 2 * ONE_MINUTE_MS),
-                                candle("91", 3 * ONE_MINUTE_MS),
-                                candle("120", 4 * ONE_MINUTE_MS),
-                                candle("121", 5 * ONE_MINUTE_MS),
-                                candle("140", 6 * ONE_MINUTE_MS),
-                                candle("141", 7 * ONE_MINUTE_MS),
-                                candle("150", 8 * ONE_MINUTE_MS),
-                                candle("151", 9 * ONE_MINUTE_MS),
-                                candle("130", 10 * ONE_MINUTE_MS),
-                                candle("131", 11 * ONE_MINUTE_MS),
-                                candle("160", 12 * ONE_MINUTE_MS),
-                                candle("161", 13 * ONE_MINUTE_MS),
-                                candle("170", 14 * ONE_MINUTE_MS),
-                                candle("171", 15 * ONE_MINUTE_MS),
-                            ),
-                    ),
-                window = TimeWindow.ONE_MINUTE,
-                closeOnlyTicks = true,
-                expectedTradeCount = 8,
-                startingBalance = STARTING_BALANCE,
-                strategyRiskLimits = StrategyRiskLimits(lossStreakHalt = 2),
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    candlesBySymbol =
+                        mapOf(
+                            "BACKTEST:X" to
+                                listOf(
+                                    candle("100", 0),
+                                    candle("101", ONE_MINUTE_MS),
+                                    candle("90", 2 * ONE_MINUTE_MS),
+                                    candle("91", 3 * ONE_MINUTE_MS),
+                                    candle("120", 4 * ONE_MINUTE_MS),
+                                    candle("121", 5 * ONE_MINUTE_MS),
+                                    candle("140", 6 * ONE_MINUTE_MS),
+                                    candle("141", 7 * ONE_MINUTE_MS),
+                                    candle("150", 8 * ONE_MINUTE_MS),
+                                    candle("151", 9 * ONE_MINUTE_MS),
+                                    candle("130", 10 * ONE_MINUTE_MS),
+                                    candle("131", 11 * ONE_MINUTE_MS),
+                                    candle("160", 12 * ONE_MINUTE_MS),
+                                    candle("161", 13 * ONE_MINUTE_MS),
+                                    candle("170", 14 * ONE_MINUTE_MS),
+                                    candle("171", 15 * ONE_MINUTE_MS),
+                                ),
+                        ),
+                    window = TimeWindow.ONE_MINUTE,
+                    closeOnlyTicks = true,
+                    expectedTradeCount = 8,
+                    startingBalance = STARTING_BALANCE,
+                    strategyRiskLimits = StrategyRiskLimits(lossStreakHalt = 2),
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side })
@@ -214,40 +241,58 @@ class GeneratedReentryParityTest {
         val strategyPath = writeDailyHaltResetStrategy(tempDir, "reentry_daily_loss_reset")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                candlesBySymbol =
-                    mapOf(
-                        "BACKTEST:X" to
-                            listOf(
-                                candle("100", DAY_MS - 10 * ONE_MINUTE_MS),
-                                candle("101", DAY_MS - 9 * ONE_MINUTE_MS),
-                                candle("90", DAY_MS - 8 * ONE_MINUTE_MS),
-                                candle("91", DAY_MS - 7 * ONE_MINUTE_MS),
-                                candle("110", DAY_MS - 6 * ONE_MINUTE_MS),
-                                candle("111", DAY_MS - 5 * ONE_MINUTE_MS),
-                                candle("120", DAY_MS + ONE_MINUTE_MS),
-                                candle("121", DAY_MS + 2 * ONE_MINUTE_MS),
-                                candle("140", DAY_MS + 3 * ONE_MINUTE_MS),
-                                candle("141", DAY_MS + 4 * ONE_MINUTE_MS),
-                            ),
-                    ),
-                window = TimeWindow.ONE_MINUTE,
-                closeOnlyTicks = true,
-                expectedTradeCount = 4,
-                expectedRejectionCount = 1,
-                expectedHaltCount = 1,
-                startingBalance = STARTING_BALANCE,
-                strategyRiskLimits = StrategyRiskLimits(maxDailyLoss = BigDecimal("5")),
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    candlesBySymbol =
+                        mapOf(
+                            "BACKTEST:X" to
+                                listOf(
+                                    candle("100", DAY_MS - 10 * ONE_MINUTE_MS),
+                                    candle("101", DAY_MS - 9 * ONE_MINUTE_MS),
+                                    candle("90", DAY_MS - 8 * ONE_MINUTE_MS),
+                                    candle("91", DAY_MS - 7 * ONE_MINUTE_MS),
+                                    candle("110", DAY_MS - 6 * ONE_MINUTE_MS),
+                                    candle("111", DAY_MS - 5 * ONE_MINUTE_MS),
+                                    candle("120", DAY_MS + ONE_MINUTE_MS),
+                                    candle("121", DAY_MS + 2 * ONE_MINUTE_MS),
+                                    candle("140", DAY_MS + 3 * ONE_MINUTE_MS),
+                                    candle("141", DAY_MS + 4 * ONE_MINUTE_MS),
+                                ),
+                        ),
+                    window = TimeWindow.ONE_MINUTE,
+                    closeOnlyTicks = true,
+                    expectedTradeCount = 4,
+                    expectedRejectionCount = 1,
+                    expectedHaltCount = 1,
+                    startingBalance = STARTING_BALANCE,
+                    strategyRiskLimits = StrategyRiskLimits(maxDailyLoss = BigDecimal("5")),
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
         assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "141")
-        assertThat(result.backtest.halts.single().reason).contains("strategy daily loss")
-        assertThat(result.backtest.halts.single().strategyId).isEqualTo("reentry_daily_loss_reset")
-        assertThat(result.backtest.rejections.single().reason).contains("strategy daily loss")
-        assertThat(result.backtest.rejections.single().timestamp).isLessThan(DAY_MS)
+        assertThat(
+            result.backtest.halts
+                .single()
+                .reason,
+        ).contains("strategy daily loss")
+        assertThat(
+            result.backtest.halts
+                .single()
+                .strategyId,
+        ).isEqualTo("reentry_daily_loss_reset")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .reason,
+        ).contains("strategy daily loss")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .timestamp,
+        ).isLessThan(DAY_MS)
         assertThat(result.backtest.trades[2].timestamp).isGreaterThanOrEqualTo(DAY_MS)
         assertThat(result.backtest.positions).isEmpty()
     }
@@ -259,41 +304,59 @@ class GeneratedReentryParityTest {
         val strategyPath = writeDailyHaltResetStrategy(tempDir, "reentry_daily_drawdown_reset")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                candlesBySymbol =
-                    mapOf(
-                        "BACKTEST:X" to
-                            listOf(
-                                candle("100", DAY_MS - 10 * ONE_MINUTE_MS),
-                                candle("101", DAY_MS - 9 * ONE_MINUTE_MS),
-                                candle("90", DAY_MS - 8 * ONE_MINUTE_MS),
-                                candle("91", DAY_MS - 7 * ONE_MINUTE_MS),
-                                candle("110", DAY_MS - 6 * ONE_MINUTE_MS),
-                                candle("111", DAY_MS - 5 * ONE_MINUTE_MS),
-                                candle("120", DAY_MS + ONE_MINUTE_MS),
-                                candle("121", DAY_MS + 2 * ONE_MINUTE_MS),
-                                candle("140", DAY_MS + 3 * ONE_MINUTE_MS),
-                                candle("141", DAY_MS + 4 * ONE_MINUTE_MS),
-                            ),
-                    ),
-                window = TimeWindow.ONE_MINUTE,
-                closeOnlyTicks = true,
-                expectedTradeCount = 4,
-                expectedRejectionCount = 1,
-                expectedHaltCount = 1,
-                startingBalance = STARTING_BALANCE,
-                strategyRiskLimits = StrategyRiskLimits(maxDailyDrawdownPct = BigDecimal("0.005")),
-                dailyDdBasis = DailyDrawdownBasis.EQUITY,
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    candlesBySymbol =
+                        mapOf(
+                            "BACKTEST:X" to
+                                listOf(
+                                    candle("100", DAY_MS - 10 * ONE_MINUTE_MS),
+                                    candle("101", DAY_MS - 9 * ONE_MINUTE_MS),
+                                    candle("90", DAY_MS - 8 * ONE_MINUTE_MS),
+                                    candle("91", DAY_MS - 7 * ONE_MINUTE_MS),
+                                    candle("110", DAY_MS - 6 * ONE_MINUTE_MS),
+                                    candle("111", DAY_MS - 5 * ONE_MINUTE_MS),
+                                    candle("120", DAY_MS + ONE_MINUTE_MS),
+                                    candle("121", DAY_MS + 2 * ONE_MINUTE_MS),
+                                    candle("140", DAY_MS + 3 * ONE_MINUTE_MS),
+                                    candle("141", DAY_MS + 4 * ONE_MINUTE_MS),
+                                ),
+                        ),
+                    window = TimeWindow.ONE_MINUTE,
+                    closeOnlyTicks = true,
+                    expectedTradeCount = 4,
+                    expectedRejectionCount = 1,
+                    expectedHaltCount = 1,
+                    startingBalance = STARTING_BALANCE,
+                    strategyRiskLimits = StrategyRiskLimits(maxDailyDrawdownPct = BigDecimal("0.005")),
+                    dailyDdBasis = DailyDrawdownBasis.EQUITY,
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
         assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "141")
-        assertThat(result.backtest.halts.single().reason).contains("strategy daily drawdown")
-        assertThat(result.backtest.halts.single().strategyId).isEqualTo("reentry_daily_drawdown_reset")
-        assertThat(result.backtest.rejections.single().reason).contains("strategy daily drawdown")
-        assertThat(result.backtest.rejections.single().timestamp).isLessThan(DAY_MS)
+        assertThat(
+            result.backtest.halts
+                .single()
+                .reason,
+        ).contains("strategy daily drawdown")
+        assertThat(
+            result.backtest.halts
+                .single()
+                .strategyId,
+        ).isEqualTo("reentry_daily_drawdown_reset")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .reason,
+        ).contains("strategy daily drawdown")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .timestamp,
+        ).isLessThan(DAY_MS)
         assertThat(result.backtest.trades[2].timestamp).isGreaterThanOrEqualTo(DAY_MS)
         assertThat(result.backtest.positions).isEmpty()
     }
@@ -305,25 +368,43 @@ class GeneratedReentryParityTest {
         val strategyPath = writeDailyHaltResetStrategy(tempDir, "reentry_global_daily_loss_reset")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                candlesBySymbol = dailyHaltResetCandles(),
-                window = TimeWindow.ONE_MINUTE,
-                closeOnlyTicks = true,
-                expectedTradeCount = 4,
-                expectedRejectionCount = 1,
-                expectedHaltCount = 1,
-                startingBalance = STARTING_BALANCE,
-                haltRules = { HaltRules.standard(maxDailyLoss = BigDecimal("5")) },
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    candlesBySymbol = dailyHaltResetCandles(),
+                    window = TimeWindow.ONE_MINUTE,
+                    closeOnlyTicks = true,
+                    expectedTradeCount = 4,
+                    expectedRejectionCount = 1,
+                    expectedHaltCount = 1,
+                    startingBalance = STARTING_BALANCE,
+                    haltRules = { HaltRules.standard(maxDailyLoss = BigDecimal("5")) },
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
         assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "141")
-        assertThat(result.backtest.halts.single().reason).contains("daily loss")
-        assertThat(result.backtest.halts.single().strategyId).isNull()
-        assertThat(result.backtest.rejections.single().reason).contains("daily loss")
-        assertThat(result.backtest.rejections.single().timestamp).isLessThan(DAY_MS)
+        assertThat(
+            result.backtest.halts
+                .single()
+                .reason,
+        ).contains("daily loss")
+        assertThat(
+            result.backtest.halts
+                .single()
+                .strategyId,
+        ).isNull()
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .reason,
+        ).contains("daily loss")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .timestamp,
+        ).isLessThan(DAY_MS)
         assertThat(result.backtest.trades[2].timestamp).isGreaterThanOrEqualTo(DAY_MS)
         assertThat(result.backtest.positions).isEmpty()
     }
@@ -335,32 +416,50 @@ class GeneratedReentryParityTest {
         val strategyPath = writeDailyHaltResetStrategy(tempDir, "reentry_global_daily_drawdown_reset")
 
         val result =
-            GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                path = strategyPath,
-                candlesBySymbol = dailyHaltResetCandles(),
-                window = TimeWindow.ONE_MINUTE,
-                closeOnlyTicks = true,
-                expectedTradeCount = 4,
-                expectedRejectionCount = 1,
-                expectedHaltCount = 1,
-                startingBalance = STARTING_BALANCE,
-                dailyDdBasis = DailyDrawdownBasis.EQUITY,
-                haltRules = {
-                    HaltRules.standard(
-                        maxDailyLoss = BigDecimal.ZERO,
-                        maxDailyDrawdownPct = BigDecimal("0.005"),
-                        startingBalance = STARTING_BALANCE,
-                    )
-                },
-            )
+            withQuietParityLogs {
+                GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                    path = strategyPath,
+                    candlesBySymbol = dailyHaltResetCandles(),
+                    window = TimeWindow.ONE_MINUTE,
+                    closeOnlyTicks = true,
+                    expectedTradeCount = 4,
+                    expectedRejectionCount = 1,
+                    expectedHaltCount = 1,
+                    startingBalance = STARTING_BALANCE,
+                    dailyDdBasis = DailyDrawdownBasis.EQUITY,
+                    haltRules = {
+                        HaltRules.standard(
+                            maxDailyLoss = BigDecimal.ZERO,
+                            maxDailyDrawdownPct = BigDecimal("0.005"),
+                            startingBalance = STARTING_BALANCE,
+                        )
+                    },
+                )
+            }
 
         assertThat(result.backtest).isEqualTo(result.live)
         assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
         assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "141")
-        assertThat(result.backtest.halts.single().reason).contains("daily drawdown")
-        assertThat(result.backtest.halts.single().strategyId).isNull()
-        assertThat(result.backtest.rejections.single().reason).contains("daily drawdown")
-        assertThat(result.backtest.rejections.single().timestamp).isLessThan(DAY_MS)
+        assertThat(
+            result.backtest.halts
+                .single()
+                .reason,
+        ).contains("daily drawdown")
+        assertThat(
+            result.backtest.halts
+                .single()
+                .strategyId,
+        ).isNull()
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .reason,
+        ).contains("daily drawdown")
+        assertThat(
+            result.backtest.rejections
+                .single()
+                .timestamp,
+        ).isLessThan(DAY_MS)
         assertThat(result.backtest.trades[2].timestamp).isGreaterThanOrEqualTo(DAY_MS)
         assertThat(result.backtest.positions).isEmpty()
     }
@@ -374,18 +473,20 @@ class GeneratedReentryParityTest {
                 val strategyPath = writeStrategy(tempDir, "reentry_${case.id}")
 
                 val result =
-                    GeneratedStrategyReplay.assertTickBarAndLiveParity(
-                        path = strategyPath,
-                        closes = REENTRY_PRICES,
-                        expectedTradeCount = 2,
-                        expectedRejectionCount = 2,
-                        expectedHaltCount = if (case.expectedHaltStrategyId == NO_HALT_EXPECTED) 0 else 1,
-                        startingBalance = STARTING_BALANCE,
-                        strategyRiskLimits = case.strategyRiskLimits,
-                        dailyDdBasis = case.dailyDdBasis,
-                        totalDdBasis = case.totalDdBasis,
-                        haltRules = case.haltRules,
-                    )
+                    withQuietParityLogs {
+                        GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                            path = strategyPath,
+                            closes = REENTRY_PRICES,
+                            expectedTradeCount = 2,
+                            expectedRejectionCount = 2,
+                            expectedHaltCount = if (case.expectedHaltStrategyId == NO_HALT_EXPECTED) 0 else 1,
+                            startingBalance = STARTING_BALANCE,
+                            strategyRiskLimits = case.strategyRiskLimits,
+                            dailyDdBasis = case.dailyDdBasis,
+                            totalDdBasis = case.totalDdBasis,
+                            haltRules = case.haltRules,
+                        )
+                    }
 
                 assertThat(result.backtest).isEqualTo(result.live)
                 assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL")
@@ -396,13 +497,26 @@ class GeneratedReentryParityTest {
                 }
                 assertThat(result.backtest.rejections.map { it.timestamp })
                     .allSatisfy { timestamp ->
-                        assertThat(timestamp).isGreaterThan(result.backtest.trades.last().timestamp)
+                        assertThat(timestamp)
+                            .isGreaterThan(
+                                result.backtest.trades
+                                    .last()
+                                    .timestamp,
+                            )
                     }
                 if (case.expectedHaltStrategyId == NO_HALT_EXPECTED) {
                     assertThat(result.backtest.halts).isEmpty()
                 } else {
-                    assertThat(result.backtest.halts.single().reason).contains(case.expectedReason)
-                    assertThat(result.backtest.halts.single().strategyId).isEqualTo(case.expectedHaltStrategyId)
+                    assertThat(
+                        result.backtest.halts
+                            .single()
+                            .reason,
+                    ).contains(case.expectedReason)
+                    assertThat(
+                        result.backtest.halts
+                            .single()
+                            .strategyId,
+                    ).isEqualTo(case.expectedHaltStrategyId)
                 }
                 assertThat(result.backtest.positions).isEmpty()
             }
@@ -477,6 +591,24 @@ class GeneratedReentryParityTest {
                 },
             ),
         )
+
+    private fun <T> withQuietParityLogs(block: () -> T): T {
+        val loggers =
+            listOf(
+                "com.qkt.app.TradingPipeline",
+                "com.qkt.app.OrderManager",
+                "com.qkt.app.LiveSession",
+                "com.qkt.app.PerStreamWarmupCoordinator",
+                "qkt.trade",
+            ).map { LoggerFactory.getLogger(it) as ch.qos.logback.classic.Logger }
+        val previousLevels = loggers.associateWith { it.level }
+        loggers.forEach { it.level = ch.qos.logback.classic.Level.WARN }
+        return try {
+            block()
+        } finally {
+            previousLevels.forEach { (logger, level) -> logger.level = level }
+        }
+    }
 
     private fun writeStrategy(
         tempDir: Path,
