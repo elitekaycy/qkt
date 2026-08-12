@@ -1071,6 +1071,9 @@ As of Wednesday, August 12, 2026:
 - `./gradlew test --tests 'com.qkt.risk.rules.BookExposureLimitTest' --tests 'com.qkt.parity.GeneratedBookLimitParityTest' -Pkotlin.compiler.execution.strategy=daemon`:
   passed on Wednesday, August 12, 2026 after adding explicit book-exposure re-entry recovery
   coverage. No JVM heap or worker restrictions were used.
+- `./gradlew test --tests 'com.qkt.risk.rules.MarginFloorTest' -Pkotlin.compiler.execution.strategy=daemon && bash tests/scripts/prepare-margin-floor-fixture-test.sh && bash tests/scripts/run-margin-floor-fixture-test.sh`:
+  passed on Wednesday, August 12, 2026 after adding explicit margin-floor re-entry recovery
+  coverage. No JVM heap or worker restrictions were used.
 - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon`: passed on Tuesday, August 11, 2026
   after narrowing the `TickResolvedParityTest` comparison to ignore only replay-input counters that
   intentionally differ between full-tick replay and `--bars --tick-fills`:
@@ -2202,6 +2205,10 @@ Existing partial coverage:
   re-entry is rejected while sibling book exposure consumes headroom, close-by-ticket remains
   allowed, and a fresh book-risk sample with cleared exposure reopens the gate. See
   `src/test/kotlin/com/qkt/risk/rules/BookExposureLimitTest.kt`;
+- focused margin-floor coverage now proves the margin-floor re-entry contract at the same pre-trade
+  rule used by live sessions: fresh margin headroom allows entry, collapsed margin blocks same-side
+  re-entry, risk-reducing exits remain allowed, and restored margin headroom reopens the gate. See
+  `src/test/kotlin/com/qkt/risk/rules/MarginFloorTest.kt`;
 - `prepare-scenario.sh` can now emit a static generated `--lifecycle reentry` scenario. The focused
   shell regression proves the generated armed strategy uses `TRADES.today < 2`, keeps the 0.01-lot
   cap, widens only the intended risk counters to two entries, and parses through the QKT CLI;
@@ -2231,8 +2238,9 @@ Existing partial coverage:
   `Active-Symbol XAUUSD Operator-Halt Recovery Live/Replay Extension` above;
 - static and stateful live rejection runners already prove several pre-transport and restored-state
   risk blocks, but they are rejection-only and do not prove an order-bearing re-entry lifecycle;
-- margin-floor live evidence exists separately, but it needs to be folded into the re-entry matrix as a
-  "blocked while live margin is consumed, allowed after flatten/headroom" case.
+- margin-floor live evidence exists separately and the rule-level re-entry/recovery contract is now
+  pinned; the remaining margin-floor expansion is retained real-demo evidence shaped specifically as a
+  re-entry matrix case.
 
 Concrete next work:
 
