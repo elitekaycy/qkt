@@ -26,7 +26,9 @@ stale-gate investigation.
     still amplified across sibling profiles because each profile had its own `MT5ReadCache` and
     magic-specific `/orders?magic=...` and `/get_positions?magic=...` URLs could not coalesce.
 - New qkt fix in progress:
-  - Branch: `fix/mt5-shared-broker-snapshots`, branched from `origin/dev`.
+  - Branch/PR: `fix/mt5-shared-broker-snapshots`, qkt PR 982, branched from `origin/dev`.
+  - Current branch commit after the ktlint fixture wrap:
+    `d70d0ed8 fix(broker): share mt5 snapshot reads across profiles`.
   - `DaemonCommand` now shares one `MT5ReadCache` per MT5 gateway URL/API-key identity instead of
     one cache per profile.
   - `MT5Client.getPositions(magic)` and `getPendingOrders(magic)` use cached unfiltered snapshots
@@ -40,8 +42,37 @@ stale-gate investigation.
     - `./gradlew test -Pkotlin.compiler.execution.strategy=daemon` passed in 6m39s before the
       final sibling-test naming/setup tightening; the scoped MT5 rerun above passed after that
       tightening.
+- Hot-path/shared-feed audit added after the user's queue/fanout concern:
+  - Upstream live tick buffering is non-blocking: `LiveTickFeed` uses bounded queue `offer`, sheds
+    oldest ticks on overflow, and exposes `droppedTicks`.
+  - Live engine inbound buffering is also non-blocking for ticks: `LiveSession` uses a bounded
+    `ArrayBlockingQueue`, sheds oldest feed ticks on saturation, prioritizes control/broker events
+    ahead of ticks, and exposes combined dropped tick counts through status.
+  - One slow strategy cannot stall the upstream MT5 poller because the feed reader posts into the
+    bounded tick queue. It can still delay later strategy evaluation inside the single deterministic
+    engine cycle; this is intentional for live/backtest parity and should be monitored with
+    `QKT_LATENCY_TRACKING=1` rather than hidden.
+  - Per-tick logging is not at info level. The engine has debug tick logging, malformed/outlier
+    tick logging is sampled, and regular submit/fill logs are order lifecycle events, not every tick.
+  - State persistence is off the tick path when `state.async=true`: writes go through
+    `AsyncStatePersistor` on one worker with queue/caller-runs counters. Synchronous persistence is
+    still available by config and must not be used for high-rate forward/live soak on contended disks.
+  - Engine audit and MT5 transport journals use bounded async writer queues with DSYNC on the worker
+    thread. If disk falls behind they preserve engine liveness and record dropped markers, but audit
+    completeness is no longer perfect; soak acceptance must require zero audit/transport drops.
+  - Order trigger scans are symbol-keyed (`OrderManager.liveBySymbol`), and DSL candle aggregation is
+    symbol-keyed (`CandleHub.slotsByQktSymbol`). DSL tick-fed indicators are keyed by tick symbol
+    inside each strategy. The event bus still invokes each `TickEvent` subscriber in deterministic
+    order, so 25-30 strategies is acceptable only with measured latency evidence.
+  - Focused verification passed:
+    `./gradlew test --tests com.qkt.marketdata.live.LiveTickFeedLoadTest --tests com.qkt.marketdata.live.LiveTickFeedTest --tests com.qkt.app.LiveSessionTest --tests com.qkt.persistence.AsyncStatePersistorTest --tests com.qkt.persistence.PersistorObservabilityTest --tests com.qkt.persistence.PersistenceHealthTest --tests com.qkt.observe.EngineAuditJournalTest -Pkotlin.compiler.execution.strategy=daemon`.
+  - Forward-stack soak metrics to capture after qkt edge receives this PR: `/latency` p95/p99/max
+    tick-processing, status `droppedTicks=0`, persistence `failedWrites=0`,
+    `consecutiveFailures=0`, `queueSize` not growing, `callerRunsTotal=0`, no audit `.dropped`
+    files, no MT5 transport `.dropped` files, gateway queue depth stable, and no recurring
+    stale/healthy gate pattern.
 - Still required before claiming done:
-  - Commit/push `fix/mt5-shared-broker-snapshots`, open PR to `dev`, merge after checks.
+  - Push this handoff audit note to PR 982, wait for PR checks, then merge to `dev`.
   - Promote qkt `dev -> testing`, wait for the edge image built from the new testing revision.
   - Redeploy bot2 qkt edge, then monitor gateway queue depth and qkt stale/healthy transitions.
   - Seal only after the forward stack runs cleanly with shared warmup, shared tick feed, shared
