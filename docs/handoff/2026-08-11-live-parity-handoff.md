@@ -3280,5 +3280,42 @@ Current consequence:
 - The next retry should reuse the prepared scenario pair only while the starting balance remains
   `100002.33`; otherwise prepare a fresh pair from the latest account snapshot.
 - Do not weaken the freshness gate. A passing live proof must show the same strict gate allows arming
-  under genuinely fresh EURUSD/GBPUSD ticks, then retain the full wrapper result and replay
+  under genuinely fresh reviewed strategy ticks, then retain the full wrapper result and replay
   comparisons.
+
+## 2026-08-12 Update: Shared-Account Runner Reviewed-Symbol Flexibility
+
+Added harness-only flexibility after the `74a77097` fixed-image attempts were blocked by EURUSD/GBPUSD
+feed freshness:
+
+- [run-container-round-trips.sh](/home/dickson/Desktop/personal/qkt/scripts/live-validation/run-container-round-trips.sh)
+  no longer hard-codes scenario A to `EXNESS:EURUSD` and scenario B to `EXNESS:GBPUSD`.
+- The runner now derives strategy symbol, venue symbol, expected contract size, stop distance, and
+  take-profit distance from each prepared scenario's `expected.json`.
+- The accepted live set remains explicit and reviewed:
+  `EXNESS:EURUSD/EURUSDm/100000`, `EXNESS:GBPUSD/GBPUSDm/100000`, and
+  `EXNESS:XAUUSD/XAUUSDm/100`.
+- The strict live gates are unchanged: clean repo, matching QKT image/commit, flat demo account,
+  localhost gateway, no JVM override env, no Docker resource caps, startup-window alignment, and
+  tick-freshness gate before arming.
+- The runner's indicator-entry log parser now accepts both the older `m5_fast/m5_slow` labels and
+  the current `secondary_fast/secondary_slow` labels emitted by prepared strategies.
+
+Verification:
+
+```bash
+bash tests/scripts/run-container-round-trips-test.sh
+bash tests/scripts/run-shared-account-insights-round-trips-test.sh
+git diff --check
+```
+
+All three passed.
+
+Next live retry:
+
+- Rebuild/repackage the QKT validation image from this new commit before claiming retained live
+  evidence.
+- Prefer a prepared pair using a fresher reviewed symbol such as `XAUUSD` if EURUSD/GBPUSD continue
+  to fail the strict pre-arm freshness gate.
+- Do not count the prior `74a77097` pre-arm attempts as an armed live proof; they remain valid safety
+  evidence only.

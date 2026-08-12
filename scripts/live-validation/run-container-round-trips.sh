@@ -13,8 +13,8 @@ Usage: run-container-round-trips.sh --scenario-a DIR --scenario-b DIR \
   --verify-only [--cli PATH]
 
 Runs two prepared, isolated 0.01-lot indicator round trips in unrestricted QKT
-containers against one MT5 demo gateway bound to 127.0.0.1. Scenario A must be
-EURUSD and scenario B GBPUSD. Live execution additionally requires both:
+containers against one MT5 demo gateway bound to 127.0.0.1. Live execution
+additionally requires both:
   --arm I_UNDERSTAND_TWO_CONCURRENT_DEMO_ORDERS_0.01
   QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY
 EOF
@@ -83,8 +83,8 @@ extract_indicator_entry_trace() {
                 if (pair[1] == "score") score = pair[2]
                 if (pair[1] == "m1_fast") m1fast = pair[2]
                 if (pair[1] == "m1_slow") m1slow = pair[2]
-                if (pair[1] == "m5_fast") m5fast = pair[2]
-                if (pair[1] == "m5_slow") m5slow = pair[2]
+                if (pair[1] == "m5_fast" || pair[1] == "secondary_fast") m5fast = pair[2]
+                if (pair[1] == "m5_slow" || pair[1] == "secondary_slow") m5slow = pair[2]
                 if (pair[1] == "close") closing = pair[2]
             }
             if ((side == "BUY" || side == "SELL") && numeric(score) &&
@@ -308,8 +308,11 @@ scenario_a="$(realpath "$scenario_a")"
 scenario_b="$(realpath "$scenario_b")"
 [ "$scenario_a" != "$scenario_b" ] || fail "scenario directories must be distinct"
 scenarios=("$scenario_a" "$scenario_b")
-expected_symbols=("EXNESS:EURUSD" "EXNESS:GBPUSD")
-venue_symbols=("EURUSDm" "GBPUSDm")
+expected_symbols=("" "")
+venue_symbols=("" "")
+stop_distances=("" "")
+take_profit_distances=("" "")
+expected_contract_sizes=("" "")
 configs=("" "")
 states=("" "")
 evidences=("" "")
@@ -336,14 +339,28 @@ for index in 0 1; do
 
     strategy_file="${armed[0]}"
     strategy="$(basename "$strategy_file" .qkt)"
-    expected_symbol="${expected_symbols[$index]}"
-    jq -e --arg strategy "$strategy" --arg symbol "$expected_symbol" '
+    expected_symbol="$(jq -er '.armedScenario.symbol' "$scenario/expected.json")"
+    venue_symbol="$(jq -er '.armedScenario.venueSymbol' "$scenario/expected.json")"
+    stop_distance="$(jq -er '.armedScenario.stopDistance' "$scenario/expected.json")"
+    take_profit_distance="$(jq -er '.armedScenario.takeProfitDistance' "$scenario/expected.json")"
+    expected_contract_size="$(jq -er '.armedScenario.expectedContractSize' "$scenario/expected.json")"
+    case "$expected_symbol:$venue_symbol:$expected_contract_size" in
+        EXNESS:EURUSD:EURUSDm:100000|EXNESS:GBPUSD:GBPUSDm:100000|EXNESS:XAUUSD:XAUUSDm:100) ;;
+        *) fail "scenario $index symbol contract is not in the reviewed live set" ;;
+    esac
+    jq -e \
+        --arg strategy "$strategy" \
+        --arg symbol "$expected_symbol" \
+        --arg venueSymbol "$venue_symbol" \
+        --arg stopDistance "$stop_distance" \
+        --arg takeProfitDistance "$take_profit_distance" '
         .schema == "qkt-live-validation-expected-v2" and
         .account.tradeMode == "demo" and .account.currency == "USD" and
         .safety.gatewayUrl == (.safety.gatewayUrl | select(startswith("http://127.0.0.1:"))) and
         .safety.maximumLots == "0.01" and .safety.maximumOpenPositions == 1 and
         .safety.maximumTradesPerDay == 1 and
         .armedScenario.strategy == $strategy and .armedScenario.symbol == $symbol and
+        .armedScenario.venueSymbol == $venueSymbol and
         (.armedScenario.streams | map(.timeframe) == ["1m", "5m"]) and
         all(.armedScenario.streams[]; .symbol == $symbol and .warmupBars == 10) and
         .armedScenario.quantityLots == "0.01" and
@@ -351,8 +368,8 @@ for index in 0 1; do
         .armedScenario.buyWhen == "score>=0" and .armedScenario.sellWhen == "score<0" and
         .armedScenario.exitTimeframe == "1m" and .armedScenario.minimumHoldingSeconds == 1 and
         .armedScenario.maximumEntryAnchorDriftPoints == 80 and
-        .armedScenario.stopDistance == "0.0030" and
-        .armedScenario.takeProfitDistance == "0.0060"
+        .armedScenario.stopDistance == $stopDistance and
+        .armedScenario.takeProfitDistance == $takeProfitDistance
     ' "$scenario/expected.json" >/dev/null || fail "scenario $index expected contract is not the bounded round trip"
     jq -e --arg gateway "$(jq -er '.safety.gatewayUrl' "$scenario/expected.json")" '
         .schema == "qkt-live-validation-scenario-v1" and
@@ -371,7 +388,7 @@ for index in 0 1; do
         fail "scenario $index does not contain one strategy close"
     [ "$(grep -Fc 'POSITION.asset1.holding_duration >= 1' "$strategy_file")" -eq 1 ] ||
         fail "scenario $index close is not next-M1 gated"
-    [ "$(grep -Fc 'STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060' "$strategy_file")" -eq 2 ] ||
+    [ "$(grep -Fc "STOP LOSS BY $stop_distance, TAKE PROFIT BY $take_profit_distance" "$strategy_file")" -eq 2 ] ||
         fail "scenario $index entry branches do not share the reviewed bracket"
     "$cli" parse "$strategy_file" >/dev/null
 
@@ -379,6 +396,11 @@ for index in 0 1; do
     states[$index]="$scenario/state"
     evidences[$index]="$scenario/evidence"
     expecteds[$index]="$scenario/expected.json"
+    expected_symbols[$index]="$expected_symbol"
+    venue_symbols[$index]="$venue_symbol"
+    stop_distances[$index]="$stop_distance"
+    take_profit_distances[$index]="$take_profit_distance"
+    expected_contract_sizes[$index]="$expected_contract_size"
     strategies[$index]="$strategy"
     strategy_files[$index]="$strategy_file"
     scenario_ids[$index]="$(jq -er '.scenarioId' "$scenario/scenario.json")"
@@ -491,11 +513,11 @@ for index in 0 1; do
     jq -e '.ok == true and (.orders | length) == 0' "$output/evidence/orders-magic-$index-initial.json" >/dev/null ||
         fail "scenario $index magic already owns an order"
     gateway_get "/symbol_info/${venue_symbols[$index]}" > "$output/evidence/symbol-$index.json"
-    jq -e --arg symbol "${venue_symbols[$index]}" '
+    jq -e --arg symbol "${venue_symbols[$index]}" --argjson contractSize "${expected_contract_sizes[$index]}" '
         .name == $symbol and .trade_mode == 4 and
-        .volume_min == 0.01 and .volume_step == 0.01 and .trade_contract_size == 100000 and
+        .volume_min == 0.01 and .volume_step == 0.01 and .trade_contract_size == $contractSize and
         .point > 0 and .digits > 0
-    ' "$output/evidence/symbol-$index.json" >/dev/null || fail "scenario $index venue metadata is not the reviewed FX contract"
+    ' "$output/evidence/symbol-$index.json" >/dev/null || fail "scenario $index venue metadata is not the reviewed symbol contract"
 done
 write_tick_freshness_gate "$output/evidence"
 for index in 0 1; do
@@ -654,8 +676,10 @@ while [ "$SECONDS" -lt "$deadline" ]; do
                 --arg symbol "${venue_symbols[$index]}" \
                 --argjson magic "${magics[$index]}" \
                 --arg point "$(jq -er '.point' "$output/evidence/symbol-$index.json")" \
+                --arg stopDistance "${stop_distances[$index]}" \
                 --argjson maximumEntryAnchorDriftPoints "$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "${expecteds[$index]}")" \
                 --arg strategyPrefix "dsl-${strategies[$index]}" '
+                    ($stopDistance | tonumber) as $stopDistanceNumber |
                     .ok == true and .data[0].symbol == $symbol and .data[0].magic == $magic and
                     .data[0].volume == 0.01 and .data[0].price_open > 0 and
                     .data[0].sl > 0 and .data[0].tp > 0 and
@@ -664,28 +688,32 @@ while [ "$SECONDS" -lt "$deadline" ]; do
                             .data[0].type == 0 and
                             .data[0].sl < .data[0].price_open and .data[0].tp > .data[0].price_open and
                             (.data[0].price_open - .data[0].sl) <=
-                                (0.0030 + (($point | tonumber) * $maximumEntryAnchorDriftPoints))
+                                ($stopDistanceNumber + (($point | tonumber) * $maximumEntryAnchorDriftPoints))
                         ) or
                         (
                             .data[0].type == 1 and
                             .data[0].tp < .data[0].price_open and .data[0].sl > .data[0].price_open and
                             (.data[0].sl - .data[0].price_open) <=
-                                (0.0030 + (($point | tonumber) * $maximumEntryAnchorDriftPoints))
+                                ($stopDistanceNumber + (($point | tonumber) * $maximumEntryAnchorDriftPoints))
                         )
                     ) and
                     (.data[0].comment as $comment | ($strategyPrefix | startswith($comment)))
                 ' "$latest" >/dev/null || fail "scenario $index venue position violates the bounded contract"
             if jq -e \
-                --arg point "$(jq -er '.point' "$output/evidence/symbol-$index.json")" '
+                --arg point "$(jq -er '.point' "$output/evidence/symbol-$index.json")" \
+                --arg stopDistance "${stop_distances[$index]}" \
+                --arg takeProfitDistance "${take_profit_distances[$index]}" '
+                    ($stopDistance | tonumber) as $stopDistanceNumber |
+                    ($takeProfitDistance | tonumber) as $takeProfitDistanceNumber |
                     (
                         .data[0].type == 0 and
-                        ((((.data[0].price_open - .data[0].sl) - 0.0030) | fabs) <= ($point | tonumber)) and
-                        ((((.data[0].tp - .data[0].price_open) - 0.0060) | fabs) <= ($point | tonumber))
+                        ((((.data[0].price_open - .data[0].sl) - $stopDistanceNumber) | fabs) <= ($point | tonumber)) and
+                        ((((.data[0].tp - .data[0].price_open) - $takeProfitDistanceNumber) | fabs) <= ($point | tonumber))
                     ) or
                     (
                         .data[0].type == 1 and
-                        ((((.data[0].sl - .data[0].price_open) - 0.0030) | fabs) <= ($point | tonumber)) and
-                        ((((.data[0].price_open - .data[0].tp) - 0.0060) | fabs) <= ($point | tonumber))
+                        ((((.data[0].sl - .data[0].price_open) - $stopDistanceNumber) | fabs) <= ($point | tonumber)) and
+                        ((((.data[0].price_open - .data[0].tp) - $takeProfitDistanceNumber) | fabs) <= ($point | tonumber))
                     )
                 ' "$latest" >/dev/null; then
                 protection_seen[$index]=true
@@ -848,7 +876,11 @@ for index in 0 1; do
     jq -e \
         --arg strategy "$strategy" \
         --arg symbol "${expected_symbols[$index]}" \
-        --arg side "$expected_wire_side" '
+        --arg side "$expected_wire_side" \
+        --arg stopDistance "${stop_distances[$index]}" \
+        --arg takeProfitDistance "${take_profit_distances[$index]}" '
+        ($stopDistance | tonumber) as $stopDistanceNumber |
+        ($takeProfitDistance | tonumber) as $takeProfitDistanceNumber |
         select(
             .eventType == "com.qkt.events.OrderEvent" and
             .strategyId == $strategy and .symbol == $symbol and
@@ -858,9 +890,9 @@ for index in 0 1; do
             .order.entry.orderType == "Market" and
             .order.entry.side == $side and .order.entry.qty == 0.01 and
             .order.stopLossAst.type == "By" and .order.stopLossAst.distance.type == "NumLit" and
-            .order.stopLossAst.distance.value == 0.0030 and
+            .order.stopLossAst.distance.value == $stopDistanceNumber and
             .order.takeProfitAst.type == "By" and .order.takeProfitAst.distance.type == "NumLit" and
-            .order.takeProfitAst.distance.value == 0.0060
+            .order.takeProfitAst.distance.value == $takeProfitDistanceNumber
         )
     ' "${audits[@]}" >/dev/null || fail "scenario $index lacks canonical bounded bracket order evidence"
     has_live_timeframe_evidence "$index" || fail "scenario $index lacks matched live M1/M5 stream and strategy evaluation evidence"
@@ -931,15 +963,17 @@ for index in 0 1; do
             -v target="${canonical_targets[0]}" \
             -v entry="${entry_prices[$index]}" \
             -v point="$point" \
+            -v stopDistance="${stop_distances[$index]}" \
+            -v takeProfitDistance="${take_profit_distances[$index]}" \
             -v maximumEntryAnchorDriftPoints="$maximum_entry_anchor_drift_points" '
             function abs(value) { return value < 0 ? -value : value }
             BEGIN {
                 if (side == "BUY") {
-                    stopAnchor = stop + 0.0030
-                    targetAnchor = target - 0.0060
+                    stopAnchor = stop + stopDistance
+                    targetAnchor = target - takeProfitDistance
                 } else {
-                    stopAnchor = stop - 0.0030
-                    targetAnchor = target + 0.0060
+                    stopAnchor = stop - stopDistance
+                    targetAnchor = target + takeProfitDistance
                 }
                 if (abs(stopAnchor - targetAnchor) > point) exit 1
                 driftPoints = (entry - stopAnchor) / point
@@ -992,19 +1026,23 @@ for index in 0 1; do
     jq -s -e \
         --arg entryPrice "${entry_prices[$index]}" \
         --arg point "$point" \
+        --arg stopDistance "${stop_distances[$index]}" \
+        --arg takeProfitDistance "${take_profit_distances[$index]}" \
         --argjson positionType "${position_types[$index]}" '
             [.[] | select(.method == "POST" and .path == "/modify_sl_tp") | (.requestBody | fromjson)] as $updates |
             ($entryPrice | tonumber) as $entry |
             ($point | tonumber) as $tolerance |
+            ($stopDistance | tonumber) as $stopDistanceNumber |
+            ($takeProfitDistance | tonumber) as $takeProfitDistanceNumber |
             $updates[0] as $update |
             ($updates | length) == 1 and
             (
                 if $positionType == 0 then
-                    (((($entry - $update.sl) - 0.0030) | fabs) <= $tolerance) and
-                    (((($update.tp - $entry) - 0.0060) | fabs) <= $tolerance)
+                    (((($entry - $update.sl) - $stopDistanceNumber) | fabs) <= $tolerance) and
+                    (((($update.tp - $entry) - $takeProfitDistanceNumber) | fabs) <= $tolerance)
                 else
-                    (((($update.sl - $entry) - 0.0030) | fabs) <= $tolerance) and
-                    (((($entry - $update.tp) - 0.0060) | fabs) <= $tolerance)
+                    (((($update.sl - $entry) - $stopDistanceNumber) | fabs) <= $tolerance) and
+                    (((($entry - $update.tp) - $takeProfitDistanceNumber) | fabs) <= $tolerance)
                 end
             )
         ' "${transports[@]}" >/dev/null ||
@@ -1043,6 +1081,8 @@ for index in 0 1; do
         --arg strategy "$strategy" \
         --arg symbol "${expected_symbols[$index]}" \
         --arg side "$side" \
+        --arg stopDistance "${stop_distances[$index]}" \
+        --arg takeProfitDistance "${take_profit_distances[$index]}" \
         --argjson magic "${magics[$index]}" \
         --argjson ticket "${tickets[$index]}" \
         --arg intentAnchor "$intent_anchor" \
@@ -1060,7 +1100,7 @@ for index in 0 1; do
           schema:"qkt-live-container-round-trip-case-v1",status:"passed",
           scenarioId:$scenarioId,strategy:$strategy,symbol:$symbol,side:$side,magic:$magic,
           positionTicket:$ticket,lots:"0.01",entryTimeMs:$entryTimeMs,exitTimeMs:$exitTimeMs,
-          bracket:{stopDistance:"0.0030",takeProfitDistance:"0.0060",maximumEntryAnchorDriftPoints:$maximumEntryAnchorDriftPoints,
+          bracket:{stopDistance:$stopDistance,takeProfitDistance:$takeProfitDistance,maximumEntryAnchorDriftPoints:$maximumEntryAnchorDriftPoints,
             intentAnchor:$intentAnchor,entryAnchorDriftPoints:$entryAnchorDriftPoints,symbolPointToleranceVerified:true},
           strategyOwnedClose:true,finalPositions:0,finalOrders:0,
           timeframeEvidence:{m1StreamAndEvaluation:true,m5StreamAndEvaluation:true},
@@ -1123,6 +1163,8 @@ jq -n \
     --argjson overlapEndMs "$earliest_exit_ms" \
     --arg balanceDelta "$balance_delta" \
     --arg dealNet "$deal_net" \
+    --arg symbolA "${expected_symbols[0]}" \
+    --arg symbolB "${expected_symbols[1]}" \
     --arg caseAManifestSha256 "$case_a_manifest_sha" \
     --arg caseBManifestSha256 "$case_b_manifest_sha" \
     --slurpfile caseA "${evidences[0]}/result.json" \
@@ -1130,7 +1172,7 @@ jq -n \
     {
       schema:"qkt-live-multi-container-round-trip-v1",status:"passed",finishedAt:$finishedAt,
       qktCommit:$qktCommit,hostVersion:$hostVersion,image:$image,imageVersion:$imageVersion,
-      gatewayVersion:$gatewayVersion,containers:2,symbols:["EXNESS:EURUSD","EXNESS:GBPUSD"],
+      gatewayVersion:$gatewayVersion,containers:2,symbols:[$symbolA,$symbolB],
       timeframes:["1m","5m"],maximumAggregateLots:"0.02",
       synchronizedDeployment:{startedAtMs:$deployStartedMs,launchSkewMs:$deployLaunchSkewMs,completionSkewMs:$deploySkewMs},
       overlap:{verified:true,startMs:$overlapStartMs,endMs:$overlapEndMs},

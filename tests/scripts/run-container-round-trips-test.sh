@@ -43,6 +43,15 @@ bash "$runner" \
     --verify-only > "$tmp/verified.out"
 grep -F 'verified ' "$tmp/verified.out" >/dev/null
 
+xau_case="$tmp/xau"
+prepare_case "$xau_case" validation_container_xau 436804390 917304 XAUUSD
+bash "$runner" \
+    --scenario-a "$case_a" \
+    --scenario-b "$xau_case" \
+    --cli "$cli" \
+    --verify-only > "$tmp/verified-xau.out"
+grep -F 'verified ' "$tmp/verified-xau.out" >/dev/null
+
 if bash "$runner" \
     --scenario-a "$case_a" \
     --scenario-b "$case_a" \
@@ -162,10 +171,13 @@ grep -F 'timeout_seconds=360' "$runner" >/dev/null
 grep -F 'must be in 330..600' "$runner" >/dev/null
 grep -F '.armedScenario.maximumEntryAnchorDriftPoints == 80' "$runner" >/dev/null
 grep -F 'entry drift exceeds the reviewed $maximum_entry_anchor_drift_points-point bound' "$runner" >/dev/null
-grep -F '(.data[0].price_open - .data[0].sl) - 0.0030' "$runner" >/dev/null
-grep -F '(.data[0].tp - .data[0].price_open) - 0.0060' "$runner" >/dev/null
-grep -F '(.data[0].sl - .data[0].price_open) - 0.0030' "$runner" >/dev/null
-grep -F '(.data[0].price_open - .data[0].tp) - 0.0060' "$runner" >/dev/null
+grep -F 'EXNESS:XAUUSD:XAUUSDm:100' "$runner" >/dev/null
+grep -F 'symbol contract is not in the reviewed live set' "$runner" >/dev/null
+grep -F 'expected_contract_sizes[$index]="$expected_contract_size"' "$runner" >/dev/null
+grep -F 'stop_distances[$index]="$stop_distance"' "$runner" >/dev/null
+grep -F 'take_profit_distances[$index]="$take_profit_distance"' "$runner" >/dev/null
+grep -F '$stopDistanceNumber + (($point | tonumber) * $maximumEntryAnchorDriftPoints)' "$runner" >/dev/null
+grep -F 'takeProfitDistance:$takeProfitDistance' "$runner" >/dev/null
 grep -F '<= ($point | tonumber)' "$runner" >/dev/null
 grep -F 'protection_seen=(false false)' "$runner" >/dev/null
 grep -F 'position-fill-anchored-protection.json' "$runner" >/dev/null
@@ -186,6 +198,8 @@ grep -F 'indicator-exit-trace.tsv' "$runner" >/dev/null
 grep -F '[ "$raw_entry_traces" -eq 1 ]' "$runner" >/dev/null
 grep -F '[ "$raw_exit_traces" -eq 1 ]' "$runner" >/dev/null
 grep -F 'side = score = m1fast = m1slow = m5fast = m5slow = closing' "$runner" >/dev/null
+grep -F 'secondary_fast' "$runner" >/dev/null
+grep -F 'secondary_slow' "$runner" >/dev/null
 grep -F 'indicator trace side differs from the venue position' "$runner" >/dev/null
 grep -F 'symbolPointToleranceVerified:true' "$runner" >/dev/null
 grep -F 'm5StreamAndEvaluation:true' "$runner" >/dev/null
