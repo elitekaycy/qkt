@@ -54,7 +54,7 @@ class GeneratedReentryParityTest {
     fun `max trades reentry gate resets at UTC day boundary across replay modes`(
         @TempDir tempDir: Path,
     ) {
-        val strategyPath = writeExactReentryStrategy(tempDir, "reentry_max_trades_next_day")
+        val strategyPath = writeTimedReentryStrategy(tempDir, "reentry_max_trades_next_day")
 
         val result =
             GeneratedStrategyReplay.assertTickBarAndLiveParity(
@@ -89,6 +89,50 @@ class GeneratedReentryParityTest {
         assertThat(result.backtest.rejections.single().reason).contains("MaxTradesPerDay")
         assertThat(result.backtest.rejections.single().timestamp).isLessThan(DAY_MS)
         assertThat(result.backtest.trades[2].timestamp).isGreaterThanOrEqualTo(DAY_MS)
+        assertThat(result.backtest.halts).isEmpty()
+        assertThat(result.backtest.positions).isEmpty()
+    }
+
+    @Test
+    fun `cooldown reentry gate recovers after elapsed duration across replay modes`(
+        @TempDir tempDir: Path,
+    ) {
+        val strategyPath = writeTimedReentryStrategy(tempDir, "reentry_cooldown_recovered")
+
+        val result =
+            GeneratedStrategyReplay.assertTickBarAndLiveParity(
+                path = strategyPath,
+                candlesBySymbol =
+                    mapOf(
+                        "BACKTEST:X" to
+                            listOf(
+                                candle("100", 0),
+                                candle("101", ONE_MINUTE_MS),
+                                candle("90", 2 * ONE_MINUTE_MS),
+                                candle("91", 3 * ONE_MINUTE_MS),
+                                candle("110", 4 * ONE_MINUTE_MS),
+                                candle("111", 5 * ONE_MINUTE_MS),
+                                candle("120", 15 * ONE_MINUTE_MS),
+                                candle("121", 16 * ONE_MINUTE_MS),
+                                candle("80", 17 * ONE_MINUTE_MS),
+                                candle("81", 18 * ONE_MINUTE_MS),
+                            ),
+                    ),
+                window = TimeWindow.ONE_MINUTE,
+                closeOnlyTicks = true,
+                expectedTradeCount = 4,
+                expectedRejectionCount = 1,
+                startingBalance = STARTING_BALANCE,
+                strategyRiskLimits = StrategyRiskLimits(cooldownAfterLossMs = TEN_MINUTES_MS),
+            )
+
+        assertThat(result.backtest).isEqualTo(result.live)
+        assertThat(result.backtest.trades.map { it.side }).containsExactly("BUY", "SELL", "BUY", "SELL")
+        assertThat(result.backtest.trades.map { it.price }).containsExactly("101", "91", "121", "81")
+        assertThat(result.backtest.rejections.single().reason).contains("CooldownAfterLoss")
+        assertThat(result.backtest.rejections.single().timestamp).isLessThan(result.backtest.trades[2].timestamp)
+        assertThat(result.backtest.trades[2].timestamp - result.backtest.trades[1].timestamp)
+            .isGreaterThanOrEqualTo(TEN_MINUTES_MS)
         assertThat(result.backtest.halts).isEmpty()
         assertThat(result.backtest.positions).isEmpty()
     }
@@ -227,7 +271,7 @@ class GeneratedReentryParityTest {
         return strategyPath
     }
 
-    private fun writeExactReentryStrategy(
+    private fun writeTimedReentryStrategy(
         tempDir: Path,
         id: String,
     ): Path {
