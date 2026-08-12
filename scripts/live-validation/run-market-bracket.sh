@@ -233,7 +233,7 @@ verify_cli_git_sha() {
     cli_git_sha="$(printf '%s\n' "$version_line" | sed -nE 's/.*\(([0-9a-f]{8,40})\).*/\1/p')"
     [ -n "$cli_git_sha" ] || fail "QKT CLI version line did not expose a git sha: $version_line"
     expected_short="${qkt_commit:0:8}"
-    [ "$cli_git_sha" = "$expected_short" ] ||
+    [ "$cli_git_sha" = "$expected_short" ] || [ "$cli_git_sha" = "$qkt_commit" ] ||
         fail "QKT CLI git sha $cli_git_sha does not match scenario qktCommit $qkt_commit; rebuild the CLI before arming"
 }
 
