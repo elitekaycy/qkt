@@ -95,6 +95,8 @@ for scenario in "${cases[@]}"; do
         armed_scenario="$scenario/armed-live"
         mkdir -m 700 "$armed_scenario" "$armed_scenario/evidence" "$armed_scenario/logs" "$armed_scenario/state"
         cp "$scenario/expected.json" "$scenario/qkt.config.yaml" "$scenario/scenario.json" "$scenario/cleanup.json" "$armed_scenario/"
+        jq '.qktDirty = false' "$armed_scenario/scenario.json" > "$armed_scenario/.scenario.json.tmp"
+        mv "$armed_scenario/.scenario.json.tmp" "$armed_scenario/scenario.json"
         cp -a "$scenario/strategies" "$armed_scenario/strategies"
         (
             cd "$armed_scenario"
