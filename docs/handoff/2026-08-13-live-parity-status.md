@@ -218,3 +218,93 @@ CCI, stochastic, Keltner, DI, and ADX. Evidence root:
 The broader notes matrix is therefore still incomplete: order-bearing coverage
 for limit/stop/cancel/partial-fill/risk-halt paths, higher-timeframe H1/H4
 boundary parity, and portfolio/book isolation remain to be executed and sealed.
+
+## Final Promotion Record (2026-08-13)
+
+The preceding sections are historical snapshots. The authoritative current
+release state is:
+
+- `dev` is `7c400906453cf6d75d3de10601cdbf285b3c7a90` and `testing` is
+  `c818c0b44d7d4cf7070edc0bc9b22dea12a98a37`. No dev commit is absent from
+  testing; the Windows promotion-gate fix and all preceding source/evidence
+  fixes are present in both.
+- Exact testing image:
+  `ghcr.io/elitekaycy/qkt@sha256:9d21d5ec9009c16da94ac376afc5af1fccc221360ab09aac0226e0e59109a664`,
+  revision `c818c0b44d7d4cf7070edc0bc9b22dea12a98a37`.
+- The exact-image armed EMA run passed against the single local Exness demo
+  account `436804390` via `127.0.0.1:5001`: real 0.01-lot entry and timed
+  close, two accepted/fill events, one order post and one close post, zero risk
+  rejections, and final flat positions/orders. One stale/recovery episode was
+  recorded and retained as feed evidence.
+- The exact-image read-only soak passed for 310 seconds with 31 health samples,
+  105 live ticks, 160 warmup ticks, 29 candles, 11 stream candles, zero dropped
+  ticks, zero venue deals, unchanged flat account, and latency tracking enabled
+  (tick-processing p99 3.73 ms, max 26.34 ms). M1 and M5 traces were observed.
+- Local attestation verification passed for the exact SHA/image. Trusted
+  paper-soak workflow `31738623043` passed and uploaded immutable evidence.
+- Promotion PR `#1006` passed build, integration, runtime-smoke, build-and-push,
+  Windows packaging/install, and GitGuardian checks, then merged to `main`.
+  Current main is `8ad1c109fc3231e1f0dab0e94e0b4d475a5b083a`.
+- Main post-merge docs, integration, and Docker runtime-image smoke workflows
+  passed (`31740355885`, `31740355930`, and `31740355830`).
+
+The local gateway required one restart after an MT5 IPC timeout and recovered to
+healthy/connected. This is an environment/session recovery observation, not a
+QKT code fix. Future soak reports must retain stale/recovery and restart
+evidence rather than relabeling the run as uninterrupted health.
+
+## Notes Matrix Follow-up Evidence (2026-08-13)
+
+The first re-entry/risk-gate slice of the previously unsealed matrix is now
+sealed against the exact `c818c0b4` image and the single local demo account:
+
+- `/var/tmp/qkt-validation/reentry-c818`: live `reentry` passed with two
+  EMA-driven entries and two timed exits, four accepted/fill events, two entry
+  posts, two closes, zero risk rejections, and final flat state. Its golden
+  replay passed at `/var/tmp/qkt-validation/reentry-c818-replay`.
+- `/var/tmp/qkt-validation/reentry-blocked-c818-2`: live
+  `reentry_blocked_max_trades` passed with one real entry/exit and one
+  `MaxTradesPerDay` rejection before transport. It produced one entry post, one
+  close, one risk rejection, and final flat state.
+- Both runs used generated EMA 3/5 M1 plus 5-minute streams, warmup ticks, real
+  MT5 fills, engine/transport journals, and final account reconciliation. Each
+  recorded stale-feed episodes that recovered before completion; these remain
+  gateway polling evidence and are not counted as continuously healthy.
+
+Remaining unsealed notes-matrix work is explicit: live pending limit/stop and
+stop-limit trigger fills, cancellation/partial-fill waves, the other re-entry
+and risk-halt recovery variants, portfolio/book isolation, and complete
+live-vs-backtest coverage for every registered DSL/indicator/math capability.
+
+## Pending Order Boundary Evidence (2026-08-13)
+
+The local QKT CLI was used against the single local Exness demo account with a
+unique magic and bounded `0.01`-lot intents. Resting BUY_LIMIT and BUY_STOP orders
+were accepted by MT5, observed through the venue orders endpoint, cancelled by
+their native tickets, and left zero pending orders, zero positions, and unchanged
+balance/equity. A BUY_STOP_LIMIT request initially exposed a real gateway defect:
+the gateway rejected the `stoplimit` field as unknown before reaching MT5.
+
+The gateway fix is isolated in `mt5-gateway` PR #81, merged into gateway `dev` as
+`17f5fe8f608b910fb1f486832e1c566ba74f060b` after test and Docker CI passed. The
+fix accepts both native stop-limit order types, validates the limit price, and
+forwards `stoplimit` into the MT5 trade request. Focused gateway tests pass (14),
+and the rebuilt local image accepted a valid BUY_STOP_LIMIT (`retcode 10009`),
+reported native type `6`, then cancelled it successfully. Final account state was
+flat with zero pending orders and unchanged balance `99992.61`.
+
+This proves placement and cancellation only. Stop-limit trigger-to-fill parity,
+partial-fill waves, released gateway image promotion, and QKT image refresh remain
+unsealed and must not be inferred from this evidence.
+
+### Limit Trigger Probe
+
+`/var/tmp/qkt-validation/pending-limit-trigger-c818-20260813T220239Z` placed a
+BUY_LIMIT at `1.15305` while the quoted ask was `1.15306`. MT5 accepted the
+pending order (`ticket 3085335993`), and the next poll observed the pending order
+gone and one open `0.01` position at the same price. QKT then closed it and
+reconciled the account to zero positions and zero pending orders. The gateway
+deal range filtered by magic `948500` contains the entry at `1.15305` and the
+exit at `1.15297`, with net demo PnL `-0.08` and zero commission/swap. This is
+live trigger evidence, but it is not yet a full QKT golden/replay parity bundle;
+the harness cleanup interruption and that replay comparison remain open work.
