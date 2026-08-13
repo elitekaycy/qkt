@@ -137,3 +137,41 @@ wave must be rerun from the resulting promoted image before attestation.
 The live lock is account-scoped. Keep the gateway on the demo account, arm only
 with the explicit local approval token, verify flatness before and after each
 run, and never treat a partial runner directory as evidence.
+
+## Main promotion and follow-up audit (2026-08-13)
+
+The hardened protection-ordering fix is now merged to `main` through promotion
+PR #1000 at merge commit `b478062bb63a483bc1d019cd1b2530c8938276d1`.
+Required build, integration, Docker/runtime-smoke, Windows packaging/install,
+GitGuardian, and exact-image paper-soak checks passed. Main post-merge
+integration run `31702307730` also passed.
+
+Exact testing SHA `3f1873873acd8d60e02ab45fe09ea30dcdc71537` evidence:
+
+- Armed EURUSD/GBPUSD live round trip plus full-ticks-paper, full-ticks-MT5,
+  and bars-paper replay: `/var/tmp/qkt-validation/insights-3f-live` and
+  `/var/tmp/qkt-validation/final-3f-replay-{a,b}`; both strategies opened and
+  closed real 0.01-lot demo positions and the account finished flat.
+- Insights causal round trip passed with two isolated instances, no sequence
+  gaps/regressions, and no cross-owner attribution leakage.
+- Restarted local-gateway read-only load soak passed at
+  `/var/tmp/qkt-validation/load-3f-122354-610042/evidence/result.json`: 650
+  seconds, two containers, four symbols, eight 1m/5m streams, controlled
+  restart, state restore, 0 dropped ticks, and zero gateway mutations.
+- Paper-soak workflow `31701168665` passed using the immutable QKT digest
+  `sha256:f69102f813e79831e79a41f51223c3aae4e1b70c07bd749e8edac7981e097f4c`.
+
+The follow-up four-case catalog was rerun after the gateway restart. Numeric,
+cross/multi-timeframe, session/history, and volume-negative cases emitted their
+expected traces and remained financially read-only, but the aggregate run again
+failed closed because the numeric case recorded one dropped tick during a feed
+disconnect. This is not promotion evidence and remains an open gateway/feed
+resilience gap. The numeric trace itself covered EMA, SMA, WMA, DEMA, TEMA, HMA,
+RSI, standard deviation/variance, z-score, regression, percentile rank, skew,
+efficiency ratio, lag, MACD, Bollinger, extrema, math functions, ATR, Williams R,
+CCI, stochastic, Keltner, DI, and ADX. Evidence root:
+`/var/tmp/qkt-validation/catalog-3f-125922-704966-live`.
+
+The broader notes matrix is therefore still incomplete: order-bearing coverage
+for limit/stop/cancel/partial-fill/risk-halt paths, higher-timeframe H1/H4
+boundary parity, and portfolio/book isolation remain to be executed and sealed.
