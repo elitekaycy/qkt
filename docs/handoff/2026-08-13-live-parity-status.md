@@ -252,3 +252,26 @@ The local gateway required one restart after an MT5 IPC timeout and recovered to
 healthy/connected. This is an environment/session recovery observation, not a
 QKT code fix. Future soak reports must retain stale/recovery and restart
 evidence rather than relabeling the run as uninterrupted health.
+
+## Notes Matrix Follow-up Evidence (2026-08-13)
+
+The first re-entry/risk-gate slice of the previously unsealed matrix is now
+sealed against the exact `c818c0b4` image and the single local demo account:
+
+- `/var/tmp/qkt-validation/reentry-c818`: live `reentry` passed with two
+  EMA-driven entries and two timed exits, four accepted/fill events, two entry
+  posts, two closes, zero risk rejections, and final flat state. Its golden
+  replay passed at `/var/tmp/qkt-validation/reentry-c818-replay`.
+- `/var/tmp/qkt-validation/reentry-blocked-c818-2`: live
+  `reentry_blocked_max_trades` passed with one real entry/exit and one
+  `MaxTradesPerDay` rejection before transport. It produced one entry post, one
+  close, one risk rejection, and final flat state.
+- Both runs used generated EMA 3/5 M1 plus 5-minute streams, warmup ticks, real
+  MT5 fills, engine/transport journals, and final account reconciliation. Each
+  recorded stale-feed episodes that recovered before completion; these remain
+  gateway polling evidence and are not counted as continuously healthy.
+
+Remaining unsealed notes-matrix work is explicit: live pending limit/stop and
+stop-limit trigger fills, cancellation/partial-fill waves, the other re-entry
+and risk-halt recovery variants, portfolio/book isolation, and complete
+live-vs-backtest coverage for every registered DSL/indicator/math capability.
