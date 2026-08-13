@@ -144,9 +144,11 @@ prepared_commit="$(jq -er '.qktCommit' "$suite/suite.json")"
 [ "$prepared_commit" = "$qkt_commit" ] || fail "suite was not prepared from current HEAD"
 qkt_short="${qkt_commit:0:8}"
 host_version="$("$cli" --version)"
-[[ "$host_version" == *"($qkt_short)"* ]] || fail "host CLI is not built from $qkt_short"
+    [[ "$host_version" == *"($qkt_commit)"* || "$host_version" == *"($qkt_short)"* ]] ||
+        fail "host CLI is not built from $qkt_short"
 image_version="$(docker run --rm --entrypoint qkt "$image" --version)"
-[[ "$image_version" == *"($qkt_short)"* ]] || fail "Docker image is not built from $qkt_short"
+    [[ "$image_version" == *"($qkt_commit)"* || "$image_version" == *"($qkt_short)"* ]] ||
+        fail "Docker image is not built from $qkt_short"
 if docker image inspect "$image" | jq -e '
     any(.[0].Config.Env[]?; test("^(JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS|GRADLE_OPTS)="))
 ' >/dev/null; then
