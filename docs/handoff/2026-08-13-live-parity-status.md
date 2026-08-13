@@ -64,6 +64,20 @@ completed a real two-strategy same-account run:
   older samples remain visible in `tick-freshness-gate.jsonl` rather than being
   hidden.
 
+## Higher-timeframe evidence
+
+The exact `f75a089d` local build completed the read-only higher-timeframe probe at
+`/var/tmp/qkt-validation/htf-f75-095216`. It passed closed, aligned, unique bar
+retrieval for M15, H1, and H4 using one-hour, one-day, and two-day warmup sizes;
+the account remained unchanged, with zero positions, orders, and venue deals.
+
+The four-container capability catalog was started at
+`/var/tmp/qkt-validation/catalog-f75-run`. All four daemons reached healthy
+running state with zero dropped ticks and produced per-case health, evaluation,
+volume-rejection, latency, and runtime-log evidence. Its aggregate `result.json`
+was not sealed after cleanup, so this catalog run is intentionally incomplete and
+must be rerun before it is used for attestation.
+
 ## Next execution
 
 1. Build/publish a QKT image for the hardened commit, or run the concurrent
