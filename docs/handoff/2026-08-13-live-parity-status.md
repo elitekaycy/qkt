@@ -64,6 +64,35 @@ completed a real two-strategy same-account run:
   older samples remain visible in `tick-freshness-gate.jsonl` rather than being
   hidden.
 
+## Higher-timeframe evidence
+
+The exact `f75a089d` local build completed the read-only higher-timeframe probe at
+`/var/tmp/qkt-validation/htf-f75-095216`. It passed closed, aligned, unique bar
+retrieval for M15, H1, and H4 using one-hour, one-day, and two-day warmup sizes;
+the account remained unchanged, with zero positions, orders, and venue deals.
+
+The four-container capability catalog was started at
+`/var/tmp/qkt-validation/catalog-f75-run`. All four daemons reached healthy
+running state with zero dropped ticks and produced per-case health, evaluation,
+volume-rejection, latency, and runtime-log evidence. Its aggregate `result.json`
+was not sealed after cleanup, so this catalog run is intentionally incomplete and
+must be rerun before it is used for attestation.
+
+## Exact testing-gate attempt
+
+Testing now points to `50f59fc06a8b5f9334800a00022cd0aebde05713`, and the published
+edge image was verified as `ghcr.io/elitekaycy/qkt@sha256:aee5fe526f50d47fb1203ad5e93b46a56fa294b81a858ff0ac1776d1fb0d22a5`
+with the matching OCI revision. A real two-symbol run against that image opened
+and closed both demo positions, but did not seal an aggregate result: the local
+gateway produced recovered stale-data windows and both live feeds later logged a
+reconnect wait. This run is retained as failed/incomplete evidence, not promoted
+into an attestation.
+
+The paper-soak workflow was dispatched on the exact testing SHA with a trusted
+runner. It failed closed because `/var/lib/qkt/soak/attestation.json` was absent.
+No attestation was fabricated. Main promotion remains blocked until a complete
+exact-SHA bundle is generated and placed at that runner path.
+
 ## Next execution
 
 1. Build/publish a QKT image for the hardened commit, or run the concurrent
