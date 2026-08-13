@@ -49,6 +49,7 @@ Changes reach a release through the protected branch flow:
      --started-at "$started_at" --completed-at "$completed_at" \
      --trading-days "$trading_days" --health health.jsonl \
      --reconciliation reconciliation.json --golden golden.zip \
+     --coverage coverage.json --parity parity.json --insights insights.json \
      --out /var/lib/qkt/soak/attestation.json
    ```
 
