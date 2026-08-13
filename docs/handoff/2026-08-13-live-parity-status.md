@@ -78,6 +78,21 @@ volume-rejection, latency, and runtime-log evidence. Its aggregate `result.json`
 was not sealed after cleanup, so this catalog run is intentionally incomplete and
 must be rerun before it is used for attestation.
 
+## Exact testing-gate attempt
+
+Testing now points to `50f59fc06a8b5f9334800a00022cd0aebde05713`, and the published
+edge image was verified as `ghcr.io/elitekaycy/qkt@sha256:aee5fe526f50d47fb1203ad5e93b46a56fa294b81a858ff0ac1776d1fb0d22a5`
+with the matching OCI revision. A real two-symbol run against that image opened
+and closed both demo positions, but did not seal an aggregate result: the local
+gateway produced recovered stale-data windows and both live feeds later logged a
+reconnect wait. This run is retained as failed/incomplete evidence, not promoted
+into an attestation.
+
+The paper-soak workflow was dispatched on the exact testing SHA with a trusted
+runner. It failed closed because `/var/lib/qkt/soak/attestation.json` was absent.
+No attestation was fabricated. Main promotion remains blocked until a complete
+exact-SHA bundle is generated and placed at that runner path.
+
 ## Next execution
 
 1. Build/publish a QKT image for the hardened commit, or run the concurrent
