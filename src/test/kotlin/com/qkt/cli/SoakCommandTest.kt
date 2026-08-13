@@ -211,7 +211,11 @@ class SoakCommandTest {
         }
     }
 
-    private fun writeParityEvidence(coverage: Path, parity: Path, insights: Path) {
+    private fun writeParityEvidence(
+        coverage: Path,
+        parity: Path,
+        insights: Path,
+    ) {
         Files.writeString(coverage, "{\"cases\":[{\"name\":\"alpha\"}]}")
         Files.writeString(
             parity,

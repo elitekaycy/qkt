@@ -163,33 +163,54 @@ class SoakCommand(
         }
     }
 
-    private fun inspectJsonArtifact(path: Path, label: String) {
+    private fun inspectJsonArtifact(
+        path: Path,
+        label: String,
+    ) {
         parseObject(Files.readString(path), path, 1L)
         require(Files.size(path) > 0L) { "$label evidence is empty" }
     }
 
     private fun inspectParity(path: Path): ParityEvidence {
         val root = parseObject(Files.readString(path), path, 1L)
+
         fun positive(name: String): Long {
-            val value = root[name]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
-                ?: throw IllegalArgumentException("parity evidence missing $name")
+            val value =
+                root[name]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                    ?: throw IllegalArgumentException("parity evidence missing $name")
             require(value > 0L) { "parity.$name must be positive" }
             return value
         }
+
         fun zero(name: String) {
-            val value = root[name]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
-                ?: throw IllegalArgumentException("parity evidence missing $name")
+            val value =
+                root[name]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                    ?: throw IllegalArgumentException("parity evidence missing $name")
             require(value == 0L) { "parity.$name must be zero" }
         }
-        val timeframes = root["timeframesTested"]?.jsonArray
-            ?.map { it.jsonPrimitive.content }
-            ?.filter { it.isNotBlank() }
-            ?: throw IllegalArgumentException("parity evidence missing timeframesTested")
+        val timeframes =
+            root["timeframesTested"]
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+                ?.filter { it.isNotBlank() }
+                ?: throw IllegalArgumentException("parity evidence missing timeframesTested")
         require(timeframes.isNotEmpty()) { "parity.timeframesTested must be non-empty" }
         val duration = positive("durationMinutes")
-        listOf("strategiesTested", "indicatorsTested", "mathScenariosTested", "dslScenariosTested",
-            "orderTypesTested", "totalTicks", "totalBars", "fills", "parityComparisons",
-            "insightsEvents", "warmupBars", "warmupTicks", "barBoundaryTransitions").forEach(::positive)
+        listOf(
+            "strategiesTested",
+            "indicatorsTested",
+            "mathScenariosTested",
+            "dslScenariosTested",
+            "orderTypesTested",
+            "totalTicks",
+            "totalBars",
+            "fills",
+            "parityComparisons",
+            "insightsEvents",
+            "warmupBars",
+            "warmupTicks",
+            "barBoundaryTransitions",
+        ).forEach(::positive)
         listOf("parityMismatches", "unexplainedRejections", "unexplainedOrderOutcomes").forEach(::zero)
         return ParityEvidence(duration, timeframes, root)
     }
@@ -403,7 +424,7 @@ class SoakCommand(
             "usage: qkt soak report <strategy> --testing-sha <sha> --image <repo@sha256> " +
                 "--started-at <instant> --completed-at <instant> --trading-days <n> " +
                 "--health <jsonl> --reconciliation <json> --golden <zip> " +
-                    "--coverage <json> --parity <json> --insights <json> --out <json>",
+                "--coverage <json> --parity <json> --insights <json> --out <json>",
         )
     }
 
