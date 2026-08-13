@@ -471,9 +471,14 @@ for index in 0 1 2 3; do
         awk 'END {print NR + 0}')"
     [ "$mutations" -eq 0 ] || fail "$case_id issued a mutating gateway request"
     magic="${magics[$index]}"
+    # Shared polling intentionally reads the account-wide snapshots once and
+    # applies the strategy magic filter in MT5Client. Older gateway/client
+    # combinations may also expose query-scoped reads, so retain evidence for
+    # either equivalent ownership path.
     jq -e --arg orders "/orders?magic=$magic" --arg positions "/get_positions?magic=$magic" '
-        select(.path == $orders or .path == $positions)
-    ' "${transports[@]}" >/dev/null || fail "$case_id retained no magic-scoped ownership reads"
+        select(.path == "/orders" or .path == "/get_positions" or
+            .path == $orders or .path == $positions)
+    ' "${transports[@]}" >/dev/null || fail "$case_id retained no ownership reads"
 
     warmups="$(jq -r 'select(.eventType == "com.qkt.events.WarmupTickEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
     ticks="$(jq -r 'select(.eventType == "com.qkt.events.TickEvent") | 1' "${audits[@]}" | awk 'END {print NR + 0}')"
