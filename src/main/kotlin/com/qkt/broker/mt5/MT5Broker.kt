@@ -2105,9 +2105,15 @@ class MT5Broker(
     ): SubmitAck {
         val t = ticket.toLongOrNull() ?: return positionModifyAck(ticket, false, "modifyPosition: bad ticket $ticket")
         positionModifyPreflightRejection(ticket, t, sl, tp)?.let { return it }
+        // Register before the venue request: the position poller can observe the
+        // accepted protection change before the synchronous response is returned.
+        expectedProtectionByTicket[t] = PositionProtection(sl, tp)
         val response =
             runCatching { client.modifyPosition(t, sl, tp) }
-                .getOrElse { ex -> return positionModifyAck(ticket, false, ex.message) }
+                .getOrElse { ex ->
+                    expectedProtectionByTicket.remove(t)
+                    return positionModifyAck(ticket, false, ex.message)
+                }
         return handlePositionModifyResult(ticket, t, sl, tp, response)
     }
 
@@ -2126,8 +2132,16 @@ class MT5Broker(
             onResult(it)
             return
         }
-        client.modifyPositionAsync(t, sl, tp) { response ->
-            onResult(handlePositionModifyResult(ticket, t, sl, tp, response))
+        // The poller runs independently of this callback, so publish the expected
+        // protection before sending the request to avoid a false out-of-band event.
+        expectedProtectionByTicket[t] = PositionProtection(sl, tp)
+        runCatching {
+            client.modifyPositionAsync(t, sl, tp) { response ->
+                onResult(handlePositionModifyResult(ticket, t, sl, tp, response))
+            }
+        }.onFailure { error ->
+            expectedProtectionByTicket.remove(t)
+            onResult(positionModifyAck(ticket, false, error.message))
         }
     }
 
@@ -2171,6 +2185,7 @@ class MT5Broker(
     ): SubmitAck {
         val ok = isOrderSuccessful(response.result.retcode)
         if (!ok) {
+            expectedProtectionByTicket.remove(t)
             log.warn(
                 "MT5Broker {} modifyPosition({}) rejected: {}",
                 profile.name,
@@ -2179,8 +2194,6 @@ class MT5Broker(
             )
         }
         if (ok) {
-            val change = PositionProtection(sl, tp)
-            expectedProtectionByTicket[t] = change
             positionMetaByTicket.computeIfPresent(t) { _, meta ->
                 val current = meta.protection
                 meta.copy(
