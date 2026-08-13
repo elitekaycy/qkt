@@ -634,9 +634,13 @@ for index in 0 1; do
         "${transports[@]}" | awk 'END {print NR + 0}')"
     [ "$gateway_mutations" -eq 0 ] || fail "$case_id issued a mutating gateway request"
     magic="${magics[$index]}"
+    # MT5Client may use account-wide shared snapshots and apply magic ownership
+    # locally when the shared read cache is active. Query-scoped reads remain a
+    # valid alternative for gateways that support them.
     jq -e --arg orders "/orders?magic=$magic" --arg positions "/get_positions?magic=$magic" '
-        select(.path == $orders or .path == $positions)
-    ' "${transports[@]}" >/dev/null || fail "$case_id retained no magic-scoped ownership reads"
+        select(.path == "/orders" or .path == "/get_positions" or
+            .path == $orders or .path == $positions)
+    ' "${transports[@]}" >/dev/null || fail "$case_id retained no ownership reads"
     foreign_magic_reads="$(jq -r --arg orders "/orders?magic=$magic" --arg positions "/get_positions?magic=$magic" '
         select((.path | test("^/(orders|get_positions)[?]magic=")) and .path != $orders and .path != $positions) | 1
     ' "${transports[@]}" | awk 'END {print NR + 0}')"
