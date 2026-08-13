@@ -95,6 +95,49 @@ exact-SHA bundle is generated and placed at that runner path.
 
 ## Next execution
 
+## Follow-up evidence (2026-08-13)
+
+The exact `3f1873873acd8d60e02ab45fe09ea30dcdc71537` build has now passed the
+following additional local checks against the single local Exness demo gateway
+(`127.0.0.1:5001`, account `436804390`):
+
+- The static generated four-case parity verifier passed for `ema-eurusd`,
+  `rsi-gbpusd`, `atr-eurusd`, and `case-gbpusd`. The generated catalog contains
+  59 indicator capabilities and 15 numeric functions. This is a preparer and
+  contract check; it is not a claim that every capability has already been
+  exercised with a real order.
+- `MT5BrokerIntegrationTest` and `MT5PositionPollerCloseTest` both passed in a
+  focused Gradle run. This covers the protection-registration race, pending and
+  partial fills, cancellation, ambiguous outcomes, recovery, and poller close
+  attribution regressions.
+- The isolated static risk matrix passed five causal rejection cases; the
+  stateful matrix passed four restored-state halt cases. Both remained flat and
+  produced zero transport mutations for rejected decisions.
+- The controlled margin-floor fixture passed. It observed a real 0.01-lot demo
+  opener, rejected the probe before transport while below the dynamic floor,
+  accepted the same probe after headroom recovered, and flattened the recovered
+  position. The account was flat after cleanup.
+- The exact-build higher-timeframe warmup probe passed M15, H1, and H4 one-hour,
+  one-day, and two-day requests with aligned unique closed bars and no account
+  mutations.
+
+The follow-up harness change `fix(scripts): accept full qkt image revisions`
+(`9c8f13e0`) is merged to `dev` as PR #1002. Dev CI for the current docs head
+`865ef81e770dd47182f1b92a85ab363b5932ce32` is green. `testing` and `main` still
+point at the prior promoted code (`3f187387...` and `b478062b...` respectively);
+any promotion of a newer SHA requires a newly built exact image and regenerated
+exact-SHA evidence.
+
+### Remaining notes-matrix gaps
+
+The following are deliberately still open and must not be represented as
+attested: explicit live limit/stop-limit/stop-order fills, cancellation and
+partial-fill waves, timed exits and re-entry across every strategy family,
+cross-book portfolio attribution/isolation, and a complete live-vs-backtest
+comparison for every DSL/indicator/math capability. The catalog's prior live
+run also recorded a dropped tick during a gateway disconnect; this is retained
+as a feed-resilience observation to classify and rerun, not hidden as a pass.
+
 ## Exact testing-SHA follow-up (2026-08-13)
 
 The exact testing image was refreshed at `11d5793e4f0ff56a2f1da10918b7e539a17d4ef7`
