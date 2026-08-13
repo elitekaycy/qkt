@@ -4476,3 +4476,59 @@ PR opened at `2026-08-12T11:54:06Z`:
 
 Next gate is to watch PR 979 checks to completion, fix any CI-only failure on this branch, and then
 merge to `dev` when the PR is green and review requirements are satisfied.
+
+## 2026-08-13 Update: Current Local Evidence And Promotion Gate
+
+The current promotion head is `dev` `9965178a65a58c284599a66dfbc7cbd0858d7d75`; the normal
+workflow is still running its required check before promoting to `testing`. The promoted testing
+head before this last validator-only merge was `b915769054d53d4424e613a220f5fed4e5cb0f6a`.
+`main` remains `443a42fe55d27f0d0a55f620280f8c90df191ba7` and has not been bypassed or force-merged.
+
+Local real-demo evidence was run against the single localhost gateway account `436804390` on
+`Exness-MT5Trial9`; credentials were never retained. The gateway is `elitekaycy/mt5-gateway-api:0.3.10`
+and remained healthy/connected after the runs.
+
+Sealed evidence paths:
+
+- Read-only catalog: `/var/tmp/qkt-validation/readonly-catalog-live-701234bb-0310c` reached the
+  full four-container window with zero dropped ticks, but its first finalizer exposed an ownership
+  assertion that did not understand shared account-wide polling. PR #991 corrected that assertion.
+- Higher timeframe: `/var/tmp/qkt-validation/higher-tf-73b0b790c/evidence/result.json` passed M15,
+  H1, and H4 closed/aligned bars for one-hour, one-day, and two-day warmup windows; account stayed
+  flat and unchanged.
+- Stateful risk: `/var/tmp/qkt-validation/stateful-risk-live-73b0b790c/evidence/result.json` passed
+  global daily loss, strategy daily loss, global drawdown, and loss streak in four parallel cases.
+  Each produced live bars/rule decisions, a restored-state halt, one causal risk rejection, zero
+  order/fill/mutation events, and unchanged venue state. Margin-floor is covered by the previously
+  sealed controlled fixture, not this flat-account matrix.
+- Real order/fill/close: `/var/tmp/qkt-validation/market-bracket-73b0b790f/evidence/result.json`
+  passed one real 0.01-lot bracket entry and QKT-owned close on QKT `73b0b790`, gateway `0.3.10`.
+  It recorded two accepted/two filled audit events, one order POST, one close POST, two fills,
+  recorded deal net `-0.09`, and final flatness.
+- Insights attribution: `/var/tmp/qkt-validation/insights-73b0b790h/evidence/result.json` passed
+  collector outage/replay with 342 pending envelopes drained, M1/M5 warmup/evaluation, two causal
+  decisions, two accepted/two filled events, one correctly attributed open ticket, strategy-owned
+  close, balance reconciliation, zero duplicate attempts, zero dropped telemetry, and final flatness.
+- Sustained two-container load/restart: `/var/tmp/qkt-validation/container-load-73b0b790-0330b`
+  ran the 620-second unrestricted load/restart window. Its retained transport journals show only
+  account-wide GET `/account`, `/get_positions`, and `/orders` reads and no gateway mutations. PR
+  #992 corrected the same validator assumption about magic-scoped query URLs; the runtime shared
+  cache behavior is intentional and filters ownership locally.
+
+The earlier four-container catalog run also observed a real shared-feed disconnect with one dropped
+tick under concurrent polling. The gateway recovered and later higher-TF, risk, order, Insights,
+and sustained-load runs completed, but this remains an operational signal to monitor; no production
+feed behavior was changed without a focused regression. The validator fixes in PRs #991 and #992 are
+validation-only and do not alter QKT order or market-data runtime semantics.
+
+Promotion status: dev/testing CI and Docker/integration checks are green for the prior testing head,
+but `scripts/prepare-main-promotion.sh` correctly refuses promotion because no successful paper-soak
+attestation exists for the current testing SHA. The required attestation must be a current exact-image
+`live-parity` document with six hashed artifacts (`health`, `journal`, `reconciliation`, `coverage`,
+`parity`, `insights`), zero dropped ticks, positive warmup/tick/bar/fill/parity/Insights counts, and
+zero unexplained outcomes. No artifact has been fabricated from local evidence. Do not merge `testing`
+to `main` until that exact gate passes.
+
+Post-main work remains: update qkt/qkt-insights images and tags on qkt-forge/sshbot2, rerun selected
+strategies and portfolio backtests against the promoted runtime, monitor forward-test behavior, and
+only then update bot1 qkt-quantlive.
