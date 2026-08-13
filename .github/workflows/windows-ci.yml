@@ -8,13 +8,6 @@ name: windows-ci
 
 on:
   pull_request:
-    paths:
-      - 'build.gradle.kts'
-      - 'gradle/**'
-      - 'src/main/**'
-      - 'editor/**'
-      - 'scripts/install.ps1'
-      - '.github/workflows/windows-ci.yml'
   workflow_dispatch:
 
 jobs:
