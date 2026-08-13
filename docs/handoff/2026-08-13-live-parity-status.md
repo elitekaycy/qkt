@@ -296,3 +296,15 @@ flat with zero pending orders and unchanged balance `99992.61`.
 This proves placement and cancellation only. Stop-limit trigger-to-fill parity,
 partial-fill waves, released gateway image promotion, and QKT image refresh remain
 unsealed and must not be inferred from this evidence.
+
+### Limit Trigger Probe
+
+`/var/tmp/qkt-validation/pending-limit-trigger-c818-20260813T220239Z` placed a
+BUY_LIMIT at `1.15305` while the quoted ask was `1.15306`. MT5 accepted the
+pending order (`ticket 3085335993`), and the next poll observed the pending order
+gone and one open `0.01` position at the same price. QKT then closed it and
+reconciled the account to zero positions and zero pending orders. The gateway
+deal range filtered by magic `948500` contains the entry at `1.15305` and the
+exit at `1.15297`, with net demo PnL `-0.08` and zero commission/swap. This is
+live trigger evidence, but it is not yet a full QKT golden/replay parity bundle;
+the harness cleanup interruption and that replay comparison remain open work.
