@@ -21,6 +21,9 @@ class SoakCommandTest {
         val health = tmp.resolve("health.jsonl")
         val reconciliation = tmp.resolve("reconciliation.json")
         val golden = tmp.resolve("golden.zip")
+        val coverage = tmp.resolve("coverage.json")
+        val parity = tmp.resolve("parity.json")
+        val insights = tmp.resolve("insights.json")
         val output = tmp.resolve("evidence/attestation.json")
         Files.writeString(
             health,
@@ -29,8 +32,9 @@ class SoakCommandTest {
         )
         Files.writeString(reconciliation, """{"clean":true}""")
         writeGolden(golden)
+        writeParityEvidence(coverage, parity, insights)
 
-        val code = SoakCommand(args(health, reconciliation, golden, output)).run()
+        val code = SoakCommand(args(health, reconciliation, golden, coverage, parity, insights, output)).run()
 
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
         val report = Json.parseToJsonElement(Files.readString(output)).jsonObject
@@ -41,6 +45,9 @@ class SoakCommandTest {
         assertThat(output.resolveSibling("paper-soak-health.jsonl")).exists()
         assertThat(output.resolveSibling("paper-soak-golden.zip")).exists()
         assertThat(output.resolveSibling("paper-soak-reconciliation.json")).exists()
+        assertThat(output.resolveSibling("paper-soak-coverage.json")).exists()
+        assertThat(output.resolveSibling("paper-soak-parity.json")).exists()
+        assertThat(output.resolveSibling("paper-soak-insights.json")).exists()
     }
 
     @Test
@@ -50,6 +57,9 @@ class SoakCommandTest {
         val health = tmp.resolve("health.jsonl")
         val reconciliation = tmp.resolve("reconciliation.json")
         val golden = tmp.resolve("golden.zip")
+        val coverage = tmp.resolve("coverage.json")
+        val parity = tmp.resolve("parity.json")
+        val insights = tmp.resolve("insights.json")
         val output = tmp.resolve("attestation.json")
         Files.writeString(
             health,
@@ -58,8 +68,9 @@ class SoakCommandTest {
         )
         Files.writeString(reconciliation, """{"clean":true}""")
         writeGolden(golden)
+        writeParityEvidence(coverage, parity, insights)
 
-        val code = SoakCommand(args(health, reconciliation, golden, output)).run()
+        val code = SoakCommand(args(health, reconciliation, golden, coverage, parity, insights, output)).run()
 
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(output).doesNotExist()
@@ -72,6 +83,9 @@ class SoakCommandTest {
         val health = tmp.resolve("health.jsonl")
         val reconciliation = tmp.resolve("reconciliation.json")
         val golden = tmp.resolve("golden.zip")
+        val coverage = tmp.resolve("coverage.json")
+        val parity = tmp.resolve("parity.json")
+        val insights = tmp.resolve("insights.json")
         val output = tmp.resolve("attestation.json")
         Files.writeString(
             health,
@@ -85,8 +99,9 @@ class SoakCommandTest {
                 |
             """.trimMargin(),
         )
+        writeParityEvidence(coverage, parity, insights)
 
-        val code = SoakCommand(args(health, reconciliation, golden, output)).run()
+        val code = SoakCommand(args(health, reconciliation, golden, coverage, parity, insights, output)).run()
 
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(output).doesNotExist()
@@ -99,6 +114,9 @@ class SoakCommandTest {
         val health = tmp.resolve("health.jsonl")
         val reconciliation = tmp.resolve("reconciliation.json")
         val golden = tmp.resolve("golden.zip")
+        val coverage = tmp.resolve("coverage.json")
+        val parity = tmp.resolve("parity.json")
+        val insights = tmp.resolve("insights.json")
         val output = tmp.resolve("attestation.json")
         Files.writeString(
             health,
@@ -112,8 +130,9 @@ class SoakCommandTest {
                 |
             """.trimMargin(),
         )
+        writeParityEvidence(coverage, parity, insights)
 
-        val code = SoakCommand(args(health, reconciliation, golden, output)).run()
+        val code = SoakCommand(args(health, reconciliation, golden, coverage, parity, insights, output)).run()
 
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(output).doesNotExist()
@@ -123,6 +142,9 @@ class SoakCommandTest {
         health: Path,
         reconciliation: Path,
         golden: Path,
+        coverage: Path,
+        parity: Path,
+        insights: Path,
         output: Path,
     ) = Args(
         arrayOf(
@@ -145,6 +167,12 @@ class SoakCommandTest {
             reconciliation.toString(),
             "--golden",
             golden.toString(),
+            "--coverage",
+            coverage.toString(),
+            "--parity",
+            parity.toString(),
+            "--insights",
+            insights.toString(),
             "--out",
             output.toString(),
         ),
@@ -181,6 +209,15 @@ class SoakCommandTest {
                 zip.closeEntry()
             }
         }
+    }
+
+    private fun writeParityEvidence(coverage: Path, parity: Path, insights: Path) {
+        Files.writeString(coverage, "{\"cases\":[{\"name\":\"alpha\"}]}")
+        Files.writeString(
+            parity,
+            """{"durationMinutes":20,"strategiesTested":1,"indicatorsTested":1,"mathScenariosTested":1,"dslScenariosTested":1,"orderTypesTested":1,"totalTicks":2,"totalBars":1,"fills":1,"parityComparisons":1,"insightsEvents":1,"warmupBars":1,"warmupTicks":1,"barBoundaryTransitions":1,"timeframesTested":["1m"],"parityMismatches":0,"unexplainedRejections":0,"unexplainedOrderOutcomes":0}""",
+        )
+        Files.writeString(insights, "{\"events\":1}")
     }
 
     private fun sha256(value: String): String =
