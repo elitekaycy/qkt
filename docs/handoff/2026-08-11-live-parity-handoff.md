@@ -1,5 +1,38 @@
 # Live Parity And Promotion Handoff
 
+## Latest Update - 2026-08-13 00:55 UTC
+
+This is the current source of truth after the generated live parity wave and promotion of the
+parity-runner fixes.
+
+- qkt PRs 986-988 are merged to `dev`; the final dev head is
+  `8801b88143e1f0faef4755683a6d931be90c7d9c`.
+- Dev CI run `31655230764` passed. The unrestricted local command
+  `./gradlew build -Pkotlin.compiler.execution.strategy=daemon` also passed in 12m32s,
+  including the full JUnit suite, generated indicator/math/DSL tests, MT5 integration tests,
+  portfolio/risk tests, Insights tests, script tests, and ktlint. No JVM heap cap, `--no-daemon`,
+  or worker restriction was used.
+- Automatic dev-to-testing promotion completed successfully. Testing head is
+  `d59f3782a74851176ad26eb2566d47540e569cc3`; testing `check`, `integration`, and `docker`
+  workflows all passed (`31655574786`, `31655574767`, `31655574796`).
+- Fresh local demo wave (localhost Docker gateway only) completed at
+  `/var/tmp/qkt-validation/parity-live-e2cbe9a2-20260813T000000Z` using QKT commit
+  `e2cbe9a2eab7630447028a2fb4c8b26825317ce4`. Four cases ran with real bounded 0.01-lot demo
+  orders and cleanup: `ema-eurusd`, `rsi-gbpusd`, `atr-eurusd`, and `case-gbpusd`.
+  Each case passed warmup, M1/M5 tick and bar capture, gateway transport/audit capture, live
+  execution, and isolated armed replay. Replay parity was exact for full tick/order journals and
+  timestamp-normalized bars/orders; live protection and MT5 simulation comparisons all passed
+  with zero reported mismatches. The account ended flat; no dropped ticks were observed.
+- The wave is strong case-level evidence, but it is not an exhaustive live execution of every
+  one of the 59 indicators, 15 numeric functions, all DSL/order shapes, higher timeframes,
+  portfolio/book attribution, risk/halts/re-entry matrix, or Insights live collector path.
+  Those remain explicit work before claiming the notes.txt objective is fully sealed.
+- Main is intentionally not promoted. `scripts/verify-paper-soak-attestation.py` still requires
+  a trusted-runner six-artifact `live-parity` bundle (`health`, `journal`, `reconciliation`,
+  `coverage`, `parity`, `insights`) tied to the exact current testing SHA and pinned image digest.
+  The generated wave does not contain that attestation bundle, and Insights was disabled in its
+  generated strategy config; no evidence will be fabricated.
+
 ## Latest Update - 2026-08-12 21:51 UTC
 
 This is the current source of truth after the broker snapshot fix, CI Docker retry hardening, and
