@@ -54,12 +54,18 @@ class SoakCommand(
             val healthSource = Path.of(required("health"))
             val reconciliationSource = Path.of(required("reconciliation"))
             val goldenSource = Path.of(required("golden"))
+            val coverageSource = Path.of(required("coverage"))
+            val paritySource = Path.of(required("parity"))
+            val insightsSource = Path.of(required("insights"))
             val output = Path.of(required("out")).toAbsolutePath().normalize()
             require(Files.isRegularFile(healthSource)) { "health evidence not found: $healthSource" }
             require(Files.isRegularFile(reconciliationSource)) {
                 "reconciliation evidence not found: $reconciliationSource"
             }
             require(Files.isRegularFile(goldenSource)) { "golden evidence not found: $goldenSource" }
+            require(Files.isRegularFile(coverageSource)) { "coverage evidence not found: $coverageSource" }
+            require(Files.isRegularFile(paritySource)) { "parity evidence not found: $paritySource" }
+            require(Files.isRegularFile(insightsSource)) { "Insights evidence not found: $insightsSource" }
 
             val health = inspectHealth(healthSource, strategy)
             require(health.droppedTicks == 0L) {
@@ -70,14 +76,23 @@ class SoakCommand(
             require(golden.unknownOutcomePlacements == 0L) {
                 "golden evidence reports ${golden.unknownOutcomePlacements} unknown-outcome placement(s)"
             }
+            val parity = inspectParity(paritySource)
+            inspectJsonArtifact(coverageSource, "coverage")
+            inspectJsonArtifact(insightsSource, "Insights")
 
             output.parent?.let(Files::createDirectories)
             val healthArtifact = output.resolveSibling("paper-soak-health.jsonl")
             val journalArtifact = output.resolveSibling("paper-soak-golden.zip")
             val reconciliationArtifact = output.resolveSibling("paper-soak-reconciliation.json")
+            val coverageArtifact = output.resolveSibling("paper-soak-coverage.json")
+            val parityArtifact = output.resolveSibling("paper-soak-parity.json")
+            val insightsArtifact = output.resolveSibling("paper-soak-insights.json")
             copyArtifact(healthSource, healthArtifact)
             copyArtifact(goldenSource, journalArtifact)
             copyArtifact(reconciliationSource, reconciliationArtifact)
+            copyArtifact(coverageSource, coverageArtifact)
+            copyArtifact(paritySource, parityArtifact)
+            copyArtifact(insightsSource, insightsArtifact)
             val report =
                 render(
                     strategy = strategy,
@@ -87,9 +102,13 @@ class SoakCommand(
                     completedAt = completedAt,
                     tradingDays = tradingDays,
                     healthSamples = health.samples,
+                    parity = parity,
                     healthArtifact = healthArtifact,
                     journalArtifact = journalArtifact,
                     reconciliationArtifact = reconciliationArtifact,
+                    coverageArtifact = coverageArtifact,
+                    parityArtifact = parityArtifact,
+                    insightsArtifact = insightsArtifact,
                 )
             writeAtomic(output, report)
             println("qkt soak report: wrote $output")
@@ -142,6 +161,58 @@ class SoakCommand(
         require(root["clean"]?.jsonPrimitive?.booleanOrNull == true) {
             "final engine-to-venue reconciliation is not clean"
         }
+    }
+
+    private fun inspectJsonArtifact(
+        path: Path,
+        label: String,
+    ) {
+        parseObject(Files.readString(path), path, 1L)
+        require(Files.size(path) > 0L) { "$label evidence is empty" }
+    }
+
+    private fun inspectParity(path: Path): ParityEvidence {
+        val root = parseObject(Files.readString(path), path, 1L)
+
+        fun positive(name: String): Long {
+            val value =
+                root[name]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                    ?: throw IllegalArgumentException("parity evidence missing $name")
+            require(value > 0L) { "parity.$name must be positive" }
+            return value
+        }
+
+        fun zero(name: String) {
+            val value =
+                root[name]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                    ?: throw IllegalArgumentException("parity evidence missing $name")
+            require(value == 0L) { "parity.$name must be zero" }
+        }
+        val timeframes =
+            root["timeframesTested"]
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+                ?.filter { it.isNotBlank() }
+                ?: throw IllegalArgumentException("parity evidence missing timeframesTested")
+        require(timeframes.isNotEmpty()) { "parity.timeframesTested must be non-empty" }
+        val duration = positive("durationMinutes")
+        listOf(
+            "strategiesTested",
+            "indicatorsTested",
+            "mathScenariosTested",
+            "dslScenariosTested",
+            "orderTypesTested",
+            "totalTicks",
+            "totalBars",
+            "fills",
+            "parityComparisons",
+            "insightsEvents",
+            "warmupBars",
+            "warmupTicks",
+            "barBoundaryTransitions",
+        ).forEach(::positive)
+        listOf("parityMismatches", "unexplainedRejections", "unexplainedOrderOutcomes").forEach(::zero)
+        return ParityEvidence(duration, timeframes, root)
     }
 
     private fun inspectGolden(
@@ -226,9 +297,13 @@ class SoakCommand(
         completedAt: Instant,
         tradingDays: Int,
         healthSamples: Long,
+        parity: ParityEvidence,
         healthArtifact: Path,
         journalArtifact: Path,
         reconciliationArtifact: Path,
+        coverageArtifact: Path,
+        parityArtifact: Path,
+        insightsArtifact: Path,
     ): String =
         buildString {
             append("{\n")
@@ -246,14 +321,21 @@ class SoakCommand(
             append("\"unknownOutcomePlacements\":0,")
             append("\"droppedTicks\":0,")
             append("\"healthSamples\":").append(healthSamples).append("},\n")
+            append("  \"parity\": ").append(parity.root.toString()).append(",\n")
             append("  \"artifacts\": {")
             append("\"health\":").append(json(healthArtifact.fileName.toString())).append(',')
             append("\"journal\":").append(json(journalArtifact.fileName.toString())).append(',')
-            append("\"reconciliation\":").append(json(reconciliationArtifact.fileName.toString())).append("},\n")
+            append("\"reconciliation\":").append(json(reconciliationArtifact.fileName.toString())).append(',')
+            append("\"coverage\":").append(json(coverageArtifact.fileName.toString())).append(',')
+            append("\"parity\":").append(json(parityArtifact.fileName.toString())).append(',')
+            append("\"insights\":").append(json(insightsArtifact.fileName.toString())).append("},\n")
             append("  \"artifactSha256\": {")
             append("\"health\":").append(json(sha256(healthArtifact))).append(',')
             append("\"journal\":").append(json(sha256(journalArtifact))).append(',')
-            append("\"reconciliation\":").append(json(sha256(reconciliationArtifact))).append("}\n")
+            append("\"reconciliation\":").append(json(sha256(reconciliationArtifact))).append(',')
+            append("\"coverage\":").append(json(sha256(coverageArtifact))).append(',')
+            append("\"parity\":").append(json(sha256(parityArtifact))).append(',')
+            append("\"insights\":").append(json(sha256(insightsArtifact))).append("}\n")
             append("}\n")
         }
 
@@ -341,7 +423,8 @@ class SoakCommand(
         System.err.println(
             "usage: qkt soak report <strategy> --testing-sha <sha> --image <repo@sha256> " +
                 "--started-at <instant> --completed-at <instant> --trading-days <n> " +
-                "--health <jsonl> --reconciliation <json> --golden <zip> --out <json>",
+                "--health <jsonl> --reconciliation <json> --golden <zip> " +
+                "--coverage <json> --parity <json> --insights <json> --out <json>",
         )
     }
 
@@ -352,6 +435,12 @@ class SoakCommand(
 
     private data class GoldenEvidence(
         val unknownOutcomePlacements: Long,
+    )
+
+    private data class ParityEvidence(
+        val durationMinutes: Long,
+        val timeframes: List<String>,
+        val root: kotlinx.serialization.json.JsonObject,
     )
 
     companion object {
