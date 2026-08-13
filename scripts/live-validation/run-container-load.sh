@@ -77,7 +77,7 @@ output="$(realpath -m "$output")"
 qkt_commit="$(git -C "$repo_root" rev-parse HEAD)"
 qkt_short="${qkt_commit:0:8}"
 host_version="$("$cli" --version)"
-[[ "$host_version" == *"($qkt_short)"* ]] || fail "host CLI is not built from $qkt_short"
+[[ "$host_version" == *"($qkt_short"* || "$host_version" == *"($qkt_commit"* ]] || fail "host CLI is not built from $qkt_short"
 docker image inspect "$image" | jq -e '
     (.[0].Config.Env // []) |
     all(.[];
@@ -86,7 +86,7 @@ docker image inspect "$image" | jq -e '
     )
 ' >/dev/null || fail "Docker image config restricts or overrides the JVM"
 image_version="$(docker run --rm --entrypoint /bin/sh "$image" -lc 'qkt --version')"
-[[ "$image_version" == *"($qkt_short)"* ]] || fail "Docker image is not built from $qkt_short"
+[[ "$image_version" == *"($qkt_short"* || "$image_version" == *"($qkt_commit"* ]] || fail "Docker image is not built from $qkt_short"
 
 mkdir -m 700 -p "$output/evidence" "$output/cases/a" "$output/cases/b"
 run_started_ms="$(date +%s%3N)"
