@@ -467,9 +467,9 @@ done
 
 qkt_short="${qkt_commit:0:8}"
 host_version="$("$cli" --version)"
-[[ "$host_version" == *"($qkt_short)"* ]] || fail "host CLI is not built from $qkt_short"
+[[ "$host_version" == *"($qkt_short)"* || "$host_version" == *"($qkt_commit"* ]] || fail "host CLI is not built from $qkt_commit"
 image_version="$(docker run --rm --entrypoint qkt "$image" --version)"
-[[ "$image_version" == *"($qkt_short)"* ]] || fail "Docker image is not built from $qkt_short"
+[[ "$image_version" == *"($qkt_short)"* || "$image_version" == *"($qkt_commit"* ]] || fail "Docker image is not built from $qkt_commit"
 
 mkdir -m 700 -p "$output/evidence"
 gateway_url="${gateways[0]}"
