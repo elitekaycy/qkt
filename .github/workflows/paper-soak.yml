@@ -39,7 +39,7 @@ jobs:
           evidence_dir="$RUNNER_TEMP/paper-soak-attestation"
           install -d -m 0700 "$evidence_dir"
           source_dir="$(dirname "$ATTESTATION_PATH")"
-          for field in health journal reconciliation; do
+          for field in health journal reconciliation coverage parity insights; do
             artifact="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"][sys.argv[2]])' "$ATTESTATION_PATH" "$field")"
             install -m 0600 "$source_dir/$artifact" "$evidence_dir/$artifact"
           done
@@ -47,6 +47,17 @@ jobs:
           python3 scripts/verify-paper-soak-attestation.py "$evidence_dir/paper-soak-attestation.json" \
             --expected-git-sha "$GITHUB_SHA" \
             --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY"
+          run_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["runId"])' "$evidence_dir/paper-soak-attestation.json")"
+          used_ids="/var/lib/qkt/soak/used-run-ids"
+          install -d -m 0700 "$(dirname "$used_ids")"
+          touch "$used_ids"
+          exec 9>"$used_ids.lock"
+          flock -x 9
+          if grep -F -x -- "$run_id" "$used_ids" >/dev/null; then
+            echo "runId has already been attested: $run_id" >&2
+            exit 1
+          fi
+          printf '%s\n' "$run_id" >> "$used_ids"
       - name: Upload promotion evidence
         uses: actions/upload-artifact@v4
         with:

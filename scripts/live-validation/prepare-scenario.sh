@@ -9,6 +9,8 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
+  [--ema-fast N --ema-slow N] \
+  [--qkt-commit SHA] \
   [--secondary-timeframe 5m|15m|1h|4h] \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
@@ -43,6 +45,9 @@ magic=""
 symbol="EURUSD"
 variant="ema_cross"
 secondary_timeframe="5m"
+ema_fast=3
+ema_slow=5
+qkt_commit_override=""
 lifecycle="single"
 runtime_account_identity=false
 per_strategy_extra=""
@@ -65,6 +70,9 @@ while [ "$#" -gt 0 ]; do
         --symbol) symbol="${2:-}"; shift 2 ;;
         --variant) variant="${2:-}"; shift 2 ;;
         --secondary-timeframe) secondary_timeframe="${2:-}"; shift 2 ;;
+        --ema-fast) ema_fast="${2:-}"; shift 2 ;;
+        --ema-slow) ema_slow="${2:-}"; shift 2 ;;
+        --qkt-commit) qkt_commit_override="${2:-}"; shift 2 ;;
         --lifecycle) lifecycle="${2:-}"; shift 2 ;;
         --runtime-account-identity) runtime_account_identity=true; shift ;;
         --help|-h) usage; exit 0 ;;
@@ -120,6 +128,10 @@ case "$secondary_timeframe" in
     5m|15m|1h|4h) ;;
     *) fail "--secondary-timeframe must be one of: 5m, 15m, 1h, 4h" ;;
 esac
+[[ "$ema_fast" =~ ^[1-9][0-9]*$ ]] || fail "--ema-fast must be a positive integer"
+[[ "$ema_slow" =~ ^[1-9][0-9]*$ ]] || fail "--ema-slow must be a positive integer"
+[ "$ema_fast" -lt "$ema_slow" ] || fail "--ema-fast must be less than --ema-slow"
+[ "$ema_slow" -le 1000 ] || fail "--ema-slow must be at most 1000"
 case "$lifecycle" in
     single)
         max_trades_per_day=1
@@ -243,6 +255,10 @@ case "$lifecycle" in
 esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+if [ -n "$qkt_commit_override" ]; then
+    [[ "$qkt_commit_override" =~ ^[0-9a-f]{8,40}$ ]] || fail "--qkt-commit must be an 8- to 40-character lowercase SHA"
+    git_sha="$qkt_commit_override"
+fi
 if [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]; then
     git_dirty=true
 else
@@ -455,7 +471,7 @@ EOF
 
 case "$variant" in
     ema_cross)
-        armed_indicators_json="$(jq -nc --arg secondary "$secondary_timeframe" '["ema(1m,3)","ema(1m,5)","ema(" + $secondary + ",3)","ema(" + $secondary + ",5)"]')"
+        armed_indicators_json="$(jq -nc --arg secondary "$secondary_timeframe" --arg fast "$ema_fast" --arg slow "$ema_slow" '["ema(1m," + $fast + ")","ema(1m," + $slow + ")","ema(" + $secondary + "," + $fast + ")","ema(" + $secondary + "," + $slow + ")"]')"
         armed_score='(m1_fast-m1_slow)+(secondary_fast-secondary_slow)'
         armed_buy_when='score>=0'
         armed_sell_when='score<0'
@@ -513,6 +529,15 @@ LET m1_fast = round_to(asset1.close, 0.0001),
 EOF
         ;;
 esac
+
+if [ "$variant" = "ema_cross" ]; then
+    sed -i \
+        -e "s/ema(asset1.close, 3)/ema(asset1.close, $ema_fast)/g" \
+        -e "s/ema(asset1.close, 5)/ema(asset1.close, $ema_slow)/g" \
+        -e "s/ema(asset5.close, 3)/ema(asset5.close, $ema_fast)/g" \
+        -e "s/ema(asset5.close, 5)/ema(asset5.close, $ema_slow)/g" \
+        "$output/strategies/armed/${scenario_id}_market_bracket.qkt"
+fi
 
 cat >> "$output/strategies/armed/${scenario_id}_market_bracket.qkt" <<EOF
 
@@ -574,6 +599,8 @@ $account_identity_metadata
   "armedScenario": {
     "strategy": "${scenario_id}_market_bracket",
     "variant": "$variant",
+    "emaFast": $ema_fast,
+    "emaSlow": $ema_slow,
     "lifecycle": "$lifecycle",
     "symbol": "EXNESS:$symbol",
     "venueSymbol": "${symbol}m",

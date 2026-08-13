@@ -226,10 +226,20 @@ class MT5Client(
      * pollers synthesize a close for every open position (#359).
      */
     fun getPositions(magic: Int? = null): List<MT5Position>? {
-        val url = if (magic != null) "$gatewayUrl/get_positions?magic=$magic" else "$gatewayUrl/get_positions"
+        val filterLocally = magic != null && readCache != null
+        val url =
+            when {
+                filterLocally -> "$gatewayUrl/get_positions"
+                magic != null -> "$gatewayUrl/get_positions?magic=$magic"
+                else -> "$gatewayUrl/get_positions"
+            }
         val raw = getWithRetry(url) ?: return null
-        val arr = unwrapMT5Data(json.parseToJsonElement(raw)).jsonArray
-        return arr.map { parsePosition(it.jsonObject) }
+        val positions = parsePositions(raw)
+        return if (filterLocally) {
+            positions.filter { it.magic == magic }
+        } else {
+            positions
+        }
     }
 
     /**
@@ -238,8 +248,28 @@ class MT5Client(
      * `/orders`) — callers must treat that as "unknown", never as "all cancelled".
      */
     fun getPendingOrders(magic: Int? = null): List<MT5PendingOrder>? {
-        val url = if (magic != null) "$gatewayUrl/orders?magic=$magic" else "$gatewayUrl/orders"
+        val filterLocally = magic != null && readCache != null
+        val url =
+            when {
+                filterLocally -> "$gatewayUrl/orders"
+                magic != null -> "$gatewayUrl/orders?magic=$magic"
+                else -> "$gatewayUrl/orders"
+            }
         val raw = getWithRetry(url) ?: return null
+        val orders = parsePendingOrders(raw)
+        return if (filterLocally) {
+            orders.filter { it.magic == magic }
+        } else {
+            orders
+        }
+    }
+
+    private fun parsePositions(raw: String): List<MT5Position> {
+        val arr = unwrapMT5Data(json.parseToJsonElement(raw)).jsonArray
+        return arr.map { parsePosition(it.jsonObject) }
+    }
+
+    private fun parsePendingOrders(raw: String): List<MT5PendingOrder> {
         // The gateway's /orders shape varies by version: some return a bare
         // array, others wrap it as {"orders": [...], "total": N}. Accept both.
         val arr =

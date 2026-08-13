@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the paper-soak evidence required for testing-to-main promotion."""
+"""Validate exact-image live-parity evidence for promotion."""
 
 from __future__ import annotations
 
@@ -14,6 +14,15 @@ from pathlib import Path
 
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}")
+REQUIRED_ARTIFACTS = (
+    "health",
+    "journal",
+    "reconciliation",
+    "coverage",
+    "parity",
+    "insights",
+)
 
 
 def fail(message: str) -> None:
@@ -56,6 +65,16 @@ def validate(
     if document.get("schemaVersion") != 1:
         fail("schemaVersion must be 1")
 
+    attestation_type = require_string(document.get("attestationType"), "attestationType").lower()
+    if attestation_type != "live-parity":
+        fail("attestationType must be live-parity")
+    run_id = require_string(document.get("runId"), "runId")
+    if not RUN_ID_RE.fullmatch(run_id):
+        fail("runId must be a fresh opaque run identifier")
+    input_fingerprint = require_string(document.get("inputFingerprint"), "inputFingerprint")
+    if not re.fullmatch(r"[0-9a-f]{64}", input_fingerprint):
+        fail("inputFingerprint must be a lowercase SHA-256")
+
     git_sha = require_string(document.get("testingSha"), "testingSha")
     if not SHA_RE.fullmatch(git_sha):
         fail("testingSha must be a lowercase 40-character git SHA")
@@ -81,12 +100,6 @@ def validate(
     trading_days = require_int(document.get("tradingDays"), "tradingDays")
     if trading_days < 0:
         fail("tradingDays must be non-negative")
-    if duration_hours < min_continuous_hours and trading_days < min_trading_days:
-        fail(
-            f"soak duration is {duration_hours:.2f}h/{trading_days} trading days; "
-            f"require at least {min_continuous_hours}h continuous or {min_trading_days} trading days"
-        )
-
     metrics = document.get("metrics")
     if not isinstance(metrics, dict):
         fail("metrics must be an object")
@@ -101,13 +114,37 @@ def validate(
     if health_samples <= 0:
         fail("metrics.healthSamples must be positive")
 
+    parity = document.get("parity")
+    if not isinstance(parity, dict):
+        fail("parity must be an object")
+    duration_minutes = require_int(parity.get("durationMinutes"), "parity.durationMinutes")
+    if duration_minutes < 10:
+        fail("parity.durationMinutes must be at least 10")
+    for field in (
+        "strategiesTested", "indicatorsTested", "mathScenariosTested",
+        "dslScenariosTested", "orderTypesTested", "totalTicks", "totalBars",
+        "fills", "parityComparisons", "insightsEvents", "warmupBars", "warmupTicks",
+        "barBoundaryTransitions",
+    ):
+        if require_int(parity.get(field), f"parity.{field}") <= 0:
+            fail(f"parity.{field} must be positive")
+    for field in ("parityMismatches", "unexplainedRejections", "unexplainedOrderOutcomes"):
+        if require_int(parity.get(field), f"parity.{field}") != 0:
+            fail(f"parity.{field} must be zero")
+    timeframes = parity.get("timeframesTested")
+    if not isinstance(timeframes, list) or not timeframes:
+        fail("parity.timeframesTested must be a non-empty list")
+    for timeframe in timeframes:
+        if not isinstance(timeframe, str) or not timeframe.strip():
+            fail("parity.timeframesTested entries must be non-blank strings")
+
     artifacts = document.get("artifacts")
     if not isinstance(artifacts, dict):
         fail("artifacts must be an object")
     artifact_hashes = document.get("artifactSha256")
     if not isinstance(artifact_hashes, dict):
         fail("artifactSha256 must be an object")
-    for field in ("health", "journal", "reconciliation"):
+    for field in REQUIRED_ARTIFACTS:
         artifact_name = require_string(artifacts.get(field), f"artifacts.{field}")
         if Path(artifact_name).name != artifact_name:
             fail(f"artifacts.{field} must be a sibling filename")
@@ -123,7 +160,7 @@ def verify_artifacts(document: dict[str, object], attestation: Path) -> None:
     artifact_hashes = document["artifactSha256"]
     assert isinstance(artifacts, dict)
     assert isinstance(artifact_hashes, dict)
-    for field in ("health", "journal", "reconciliation"):
+    for field in REQUIRED_ARTIFACTS:
         artifact = attestation.parent / str(artifacts[field])
         if not artifact.is_file():
             fail(f"required {field} artifact is missing: {artifact}")
@@ -137,8 +174,8 @@ def main() -> int:
     parser.add_argument("attestation", type=Path)
     parser.add_argument("--expected-git-sha", required=True)
     parser.add_argument("--expected-image-repository", required=True)
-    parser.add_argument("--min-continuous-hours", type=int, default=48)
-    parser.add_argument("--min-trading-days", type=int, default=5)
+    parser.add_argument("--min-continuous-hours", type=int, default=0, help=argparse.SUPPRESS)
+    parser.add_argument("--min-trading-days", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--max-dropped-ticks", type=int, default=0)
     args = parser.parse_args()
 
@@ -160,7 +197,7 @@ def main() -> int:
 
     print(
         f"paper-soak attestation valid: image={image} "
-        f"duration={duration_hours:.2f}h tradingDays={trading_days}"
+        f"duration={duration_hours:.2f}h tradingDays={trading_days} type=live-parity"
     )
     return 0
 

@@ -232,6 +232,11 @@ class DaemonCommand(
                         com.qkt.common.SystemClock(),
                     )
             }
+        val mt5ReadCaches =
+            mt5Profiles
+                .map { profile -> profile.gatewayUrl to profile.apiKey }
+                .distinct()
+                .associateWith { MT5ReadCache(SHARED_MT5_READ_TTL_MS) }
         val mt5Factories: Map<String, com.qkt.app.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
@@ -243,7 +248,7 @@ class DaemonCommand(
                         httpTimeoutMs = profile.httpTimeoutMs,
                         retryAttempts = profile.retryAttempts,
                         apiKey = profile.apiKey,
-                        readCache = MT5ReadCache(SHARED_MT5_READ_TTL_MS),
+                        readCache = mt5ReadCaches.getValue(profile.gatewayUrl to profile.apiKey),
                         transportJournal = mt5TransportJournals.getValue(key),
                     )
                 key to
@@ -355,6 +360,7 @@ class DaemonCommand(
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
+                    marketDataGateConfig = cfg.marketData,
                 ),
             )
         registryRef.set(registry)
@@ -412,6 +418,7 @@ class DaemonCommand(
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
+                    marketDataGateConfig = cfg.marketData,
                 )
         val plane =
             ControlPlane(

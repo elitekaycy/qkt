@@ -9,6 +9,7 @@ usage() {
 Usage: prepare-generated-parity-wave.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic-base N [--cli PATH]
+  [--ema-fast N --ema-slow N]
 
 Prepares a first generated order-bearing live/replay parity wave using four
 bounded 0.01-lot scenarios built for the existing read-only, live, and replay
@@ -31,6 +32,8 @@ expected_balance=""
 expected_leverage=""
 magic_base=""
 cli="$repo_root/build/install/qkt/bin/qkt"
+ema_fast=3
+ema_slow=5
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -43,6 +46,8 @@ while [ "$#" -gt 0 ]; do
         --expected-leverage) expected_leverage="${2:-}"; shift 2 ;;
         --magic-base) magic_base="${2:-}"; shift 2 ;;
         --cli) cli="${2:-}"; shift 2 ;;
+        --ema-fast) ema_fast="${2:-}"; shift 2 ;;
+        --ema-slow) ema_slow="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -62,6 +67,10 @@ gateway_url="${gateway_url%/}"
 [ "$magic_base" -le 2147483644 ] || fail "--magic-base plus three must fit a signed 32-bit integer"
 [ -x "$cli" ] || fail "QKT CLI is not executable: $cli"
 [ ! -e "$output" ] || fail "output already exists: $output"
+
+runtime_version="$($cli --version)"
+runtime_sha="$(printf '%s\n' "$runtime_version" | sed -nE 's/.*\(([0-9a-f]{8,40})\).*/\1/p')"
+[[ "$runtime_sha" =~ ^[0-9a-f]{8,40}$ ]] || fail "could not determine the runtime CLI commit from --version"
 
 output="$(realpath -m "$output")"
 git_sha="$(git -C "$repo_root" rev-parse HEAD)"
@@ -89,15 +98,23 @@ for index in 0 1 2 3; do
         --expected-balance "$expected_balance" \
         --expected-leverage "$expected_leverage" \
         --magic "$magic" \
+        --qkt-commit "$runtime_sha" \
+        --ema-fast "$ema_fast" --ema-slow "$ema_slow" \
         --symbol "$symbol" \
         --variant "$variant" \
         >/dev/null
+    jq '.qktDirty = false' "$scenario_output/scenario.json" > "$scenario_output/.scenario.json.tmp"
+    mv "$scenario_output/.scenario.json.tmp" "$scenario_output/scenario.json"
+    (
+        cd "$scenario_output"
+        find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+    )
 done
 
 jq -n \
     --arg suiteId "$suite_id" \
     --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg qktCommit "$git_sha" \
+    --arg qktCommit "$runtime_sha" \
     --arg gatewayUrl "$gateway_url" \
     --argjson login "$expected_login" \
     --arg server "$expected_server" \

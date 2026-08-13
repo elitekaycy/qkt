@@ -100,6 +100,9 @@ class PortfolioDeployer(
     private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     private val insightsStatePollMs: Long = 10_000L,
     private val insightsDealBackfillDays: Long = 30L,
+    /** Market-data gate thresholds (the `market_data:` config block) passed to every child session. */
+    private val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
+        com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
 ) {
     /**
      * Deploy a compiled portfolio and start its supervisor. Throws if any child
@@ -524,6 +527,7 @@ class PortfolioDeployer(
                 insightsDeployedIds = insightsDeployedIds,
                 insightsStatePollMs = insightsStatePollMs,
                 insightsDealBackfillDays = insightsDealBackfillDays,
+                marketDataGateConfig = marketDataGateConfig,
                 insightsStrategyMetadata =
                     mapOf(
                         compiledChild.strategyId to

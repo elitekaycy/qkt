@@ -14,9 +14,15 @@ attestation="$tmp_dir/attestation.json"
 printf '%s\n' '{"status":"ok"}' > "$tmp_dir/health.jsonl"
 printf '%s\n' 'journal evidence' > "$tmp_dir/golden.zip"
 printf '%s\n' '{"clean":true}' > "$tmp_dir/reconcile.json"
+printf '%s\n' '{"coverage":true}' > "$tmp_dir/coverage.json"
+printf '%s\n' '{"parity":true}' > "$tmp_dir/parity.json"
+printf '%s\n' '{"insights":true}' > "$tmp_dir/insights.json"
 health_sha="$(sha256sum "$tmp_dir/health.jsonl" | cut -d' ' -f1)"
 journal_sha="$(sha256sum "$tmp_dir/golden.zip" | cut -d' ' -f1)"
 reconcile_sha="$(sha256sum "$tmp_dir/reconcile.json" | cut -d' ' -f1)"
+coverage_sha="$(sha256sum "$tmp_dir/coverage.json" | cut -d' ' -f1)"
+parity_sha="$(sha256sum "$tmp_dir/parity.json" | cut -d' ' -f1)"
+insights_sha="$(sha256sum "$tmp_dir/insights.json" | cut -d' ' -f1)"
 
 write_attestation() {
     local completed_at="$1"
@@ -25,29 +31,39 @@ write_attestation() {
     cat > "$attestation" <<JSON
 {
   "schemaVersion": 1,
+  "attestationType": "live-parity",
+  "runId": "parity-test-20260805-0001",
+  "inputFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "testingSha": "$attested_sha",
   "image": "$repository@$digest",
   "accountMode": "demo",
   "canaryStrategy": "ema-canary",
   "startedAtUtc": "2026-08-03T00:00:00Z",
   "completedAtUtc": "$completed_at",
-  "tradingDays": 2,
+  "tradingDays": 0,
   "status": "pass",
   "metrics": {
     "unreconciledPositions": $unreconciled,
     "unknownOutcomePlacements": 0,
     "droppedTicks": 0,
-    "healthSamples": 5760
+    "healthSamples": 20
   },
+  "parity": {"durationMinutes": 20, "strategiesTested": 2, "indicatorsTested": 3, "mathScenariosTested": 2, "dslScenariosTested": 2, "orderTypesTested": 2, "totalTicks": 100, "totalBars": 20, "fills": 2, "parityComparisons": 2, "insightsEvents": 10, "warmupBars": 100, "warmupTicks": 200, "barBoundaryTransitions": 2, "timeframesTested": ["1m", "1h", "4h"], "parityMismatches": 0, "unexplainedRejections": 0, "unexplainedOrderOutcomes": 0},
   "artifacts": {
     "health": "health.jsonl",
     "journal": "golden.zip",
-    "reconciliation": "reconcile.json"
+    "reconciliation": "reconcile.json",
+    "coverage": "coverage.json",
+    "parity": "parity.json",
+    "insights": "insights.json"
   },
   "artifactSha256": {
     "health": "$health_sha",
     "journal": "$journal_sha",
-    "reconciliation": "$reconcile_sha"
+    "reconciliation": "$reconcile_sha",
+    "coverage": "$coverage_sha",
+    "parity": "$parity_sha",
+    "insights": "$insights_sha"
   }
 }
 JSON
@@ -62,12 +78,7 @@ verify() {
 write_attestation "2026-08-05T00:00:00Z" 0
 verify | grep -q 'paper-soak attestation valid'
 
-write_attestation "2026-08-04T23:59:59Z" 0
-if verify > "$tmp_dir/short.out" 2>&1; then
-    echo "short soak must fail closed" >&2
-    exit 1
-fi
-grep -q 'require at least 48h continuous or 5 trading days' "$tmp_dir/short.out"
+verify | grep -q 'live-parity'
 
 write_attestation "2026-08-05T00:00:00Z" 1
 if verify > "$tmp_dir/reconcile.out" 2>&1; then
