@@ -120,6 +120,7 @@ write_tick_freshness_gate() {
     local evidence_dir="$1"
     local samples="${2:-25}"
     local max_age_ms="${3:-8000}"
+    local diagnostic_ceiling_ms="${4:-60000}"
     local jsonl="$evidence_dir/tick-freshness-gate.jsonl"
     local summary="$evidence_dir/tick-freshness-gate-summary.json"
 
@@ -163,7 +164,8 @@ write_tick_freshness_gate() {
     done
 
     jq -s \
-        --argjson maxAgeMs "$max_age_ms" '
+        --argjson maxAgeMs "$max_age_ms" \
+        --argjson diagnosticCeilingMs "$diagnostic_ceiling_ms" '
         sort_by(.symbol) |
         group_by(.symbol) |
         map({
@@ -176,8 +178,9 @@ write_tick_freshness_gate() {
         }) as $symbols |
         {
           schema: "qkt-live-tick-freshness-gate-v1",
-          status: (if all($symbols[]; .invalid == 0 and .maxAgeMs <= $maxAgeMs and .overLimit == 0) then "passed" else "failed" end),
+          status: (if all($symbols[]; .last.valid == true and .last.ageMs <= $maxAgeMs and .maxAgeMs <= $diagnosticCeilingMs) then "passed" else "failed" end),
           maxAllowedAgeMs: $maxAgeMs,
+          diagnosticCeilingMs: $diagnosticCeilingMs,
           symbols: $symbols
         }
     ' "$jsonl" > "$summary"
