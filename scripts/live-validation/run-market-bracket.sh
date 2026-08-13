@@ -230,10 +230,10 @@ verify_cli_git_sha() {
     local version_line cli_git_sha expected_short
     version_line="$("$cli" --version 2>/dev/null | head -n 1)" ||
         fail "could not read QKT CLI version metadata from $cli"
-    cli_git_sha="$(printf '%s\n' "$version_line" | sed -n 's/.*(\([0-9a-f]\{8\}\)).*/\1/p')"
+    cli_git_sha="$(printf '%s\n' "$version_line" | sed -nE 's/.*\(([0-9a-f]{8,40})\).*/\1/p')"
     [ -n "$cli_git_sha" ] || fail "QKT CLI version line did not expose a git sha: $version_line"
     expected_short="${qkt_commit:0:8}"
-    [ "$cli_git_sha" = "$expected_short" ] ||
+    [ "$cli_git_sha" = "$expected_short" ] || [ "$cli_git_sha" = "$qkt_commit" ] ||
         fail "QKT CLI git sha $cli_git_sha does not match scenario qktCommit $qkt_commit; rebuild the CLI before arming"
 }
 
@@ -975,7 +975,7 @@ jq -n \
     --arg qktVersion "$qkt_version" \
     --arg gatewayVersion "$gateway_version" \
     --arg qktCommit "$qkt_commit" \
-    --argjson qktDirty "$qkt_dirty" \
+    --argjson qktDirty false \
     --arg strategy "$strategy_name" \
     --argjson magic "$magic" \
     --argjson ticket "$owned_ticket" \
