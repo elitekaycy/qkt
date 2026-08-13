@@ -66,6 +66,29 @@ completed a real two-strategy same-account run:
 
 ## Next execution
 
+## Exact testing-SHA follow-up (2026-08-13)
+
+The exact testing image was refreshed at `11d5793e4f0ff56a2f1da10918b7e539a17d4ef7`
+(`ghcr.io/elitekaycy/qkt@sha256:c285abfb6ddc6748467285d450770936d9c199bd839d038c94858288a125bc08`).
+The four-container read-only catalog ran locally against the demo gateway for the
+required 330-second window. Numeric/candle, cross-symbol/multi-timeframe,
+session/history, and volume-negative cases all emitted their expected traces and
+the account stayed flat. The run failed closed because the cross-symbol case
+reported one dropped tick after a gateway disconnect/recovery; no catalog result
+was sealed and it is not promotion evidence. The metric includes late pipeline
+ticks as well as ingress shedding, so this remains an explicit stress observation
+to rerun and classify, not a fabricated zero.
+
+A fresh exact-SHA two-container armed wave then placed and closed real 0.01-lot
+EURUSD/GBPUSD demo positions and reconciled the account, but the runner failed
+closed on a false runtime error: the MT5 position poller observed the expected
+fill-anchored SL/TP normalization before the asynchronous broker callback had
+registered the protection change. This exposed a real ordering race. The fix is
+on the current feature branch: register expected protection before both sync and
+async venue requests and remove it on request failure. Focused
+`MT5BrokerIntegrationTest` and `MT5PositionPollerCloseTest` suites pass; the live
+wave must be rerun from the resulting promoted image before attestation.
+
 1. Build/publish a QKT image for the hardened commit, or run the concurrent
    runner from a clean checkout at that exact commit.
 2. Prepare two equal-baseline scenarios and run the armed shared-account
