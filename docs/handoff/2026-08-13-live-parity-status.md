@@ -41,6 +41,29 @@ different starting balances. Fresh equal-baseline scenarios were prepared; the
 collector health and causal contract probe passed. The armed concurrent run must
 be regenerated against the hardened branch/image before it can be called a pass.
 
+## Concurrent Insights evidence
+
+The follow-up harness fix was merged to `dev` as PR #996. The exact local build
+and matching container image for commit `f75a089df5626087e0db7631de431f0c1c540cd9`
+completed a real two-strategy same-account run:
+
+- Evidence root: `/var/tmp/qkt-validation/insights-f75-live-full`.
+- MT5 demo account: `436804390` / `Exness-MT5Trial9`; gateway `0.3.10`.
+- EURUSD and GBPUSD deployed concurrently with magic `919600` and `919601`.
+- Distinct real MT5 tickets: `3081426457` and `3081426434`.
+- Each strategy produced two fills/two deal legs, strategy-owned close, and zero
+  final positions/orders.
+- The base round-trip passed ownership, M1/M5 stream/evaluation, indicator
+  traces, bracket protection, audit and transport checks.
+- Insights result passed: two retained instances, isolated strategy attribution,
+  no cross-owner causal leakage, no sequence gaps/regressions, and both books
+  flat. SQLite retained 20 strategy events plus 8 account-state events per
+  instance.
+- The freshness evidence records the quiet-market behavior. The final quote was
+  fresh and all samples stayed below the 60-second diagnostic ceiling; occasional
+  older samples remain visible in `tick-freshness-gate.jsonl` rather than being
+  hidden.
+
 ## Next execution
 
 1. Build/publish a QKT image for the hardened commit, or run the concurrent
