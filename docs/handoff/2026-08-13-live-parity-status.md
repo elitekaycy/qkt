@@ -218,3 +218,37 @@ CCI, stochastic, Keltner, DI, and ADX. Evidence root:
 The broader notes matrix is therefore still incomplete: order-bearing coverage
 for limit/stop/cancel/partial-fill/risk-halt paths, higher-timeframe H1/H4
 boundary parity, and portfolio/book isolation remain to be executed and sealed.
+
+## Final Promotion Record (2026-08-13)
+
+The preceding sections are historical snapshots. The authoritative current
+release state is:
+
+- `dev` is `7c400906453cf6d75d3de10601cdbf285b3c7a90` and `testing` is
+  `c818c0b44d7d4cf7070edc0bc9b22dea12a98a37`. No dev commit is absent from
+  testing; the Windows promotion-gate fix and all preceding source/evidence
+  fixes are present in both.
+- Exact testing image:
+  `ghcr.io/elitekaycy/qkt@sha256:9d21d5ec9009c16da94ac376afc5af1fccc221360ab09aac0226e0e59109a664`,
+  revision `c818c0b44d7d4cf7070edc0bc9b22dea12a98a37`.
+- The exact-image armed EMA run passed against the single local Exness demo
+  account `436804390` via `127.0.0.1:5001`: real 0.01-lot entry and timed
+  close, two accepted/fill events, one order post and one close post, zero risk
+  rejections, and final flat positions/orders. One stale/recovery episode was
+  recorded and retained as feed evidence.
+- The exact-image read-only soak passed for 310 seconds with 31 health samples,
+  105 live ticks, 160 warmup ticks, 29 candles, 11 stream candles, zero dropped
+  ticks, zero venue deals, unchanged flat account, and latency tracking enabled
+  (tick-processing p99 3.73 ms, max 26.34 ms). M1 and M5 traces were observed.
+- Local attestation verification passed for the exact SHA/image. Trusted
+  paper-soak workflow `31738623043` passed and uploaded immutable evidence.
+- Promotion PR `#1006` passed build, integration, runtime-smoke, build-and-push,
+  Windows packaging/install, and GitGuardian checks, then merged to `main`.
+  Current main is `8ad1c109fc3231e1f0dab0e94e0b4d475a5b083a`.
+- Main post-merge docs, integration, and Docker runtime-image smoke workflows
+  passed (`31740355885`, `31740355930`, and `31740355830`).
+
+The local gateway required one restart after an MT5 IPC timeout and recovered to
+healthy/connected. This is an environment/session recovery observation, not a
+QKT code fix. Future soak reports must retain stale/recovery and restart
+evidence rather than relabeling the run as uninterrupted health.
