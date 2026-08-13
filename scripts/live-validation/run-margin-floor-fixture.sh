@@ -169,8 +169,8 @@ qkt_commit="$(git -C "$repo_root" rev-parse HEAD)"
     fail "fixture was not prepared from current HEAD"
 jq -e '.qktDirty == false' "$fixture/suite.json" >/dev/null || fail "fixture was prepared from a dirty checkout"
 qkt_short="${qkt_commit:0:8}"
-[[ "$($cli --version)" == *"($qkt_short)"* ]] || fail "host CLI is not built from $qkt_short"
-[[ "$(docker run --rm --entrypoint qkt "$image" --version)" == *"($qkt_short)"* ]] ||
+[[ "$($cli --version)" == *"($qkt_short"* || "$($cli --version)" == *"($qkt_commit"* ]] || fail "host CLI is not built from $qkt_short"
+[[ "$(docker run --rm --entrypoint qkt "$image" --version)" == *"($qkt_short"* || "$(docker run --rm --entrypoint qkt "$image" --version)" == *"($qkt_commit"* ]] ||
     fail "Docker image is not built from $qkt_short"
 if docker image inspect "$image" | jq -e '
     any(.[0].Config.Env[]?; test("^(JAVA_OPTS|JAVA_TOOL_OPTIONS|JDK_JAVA_OPTIONS|_JAVA_OPTIONS|GRADLE_OPTS|KOTLIN_DAEMON_JVM_OPTIONS)="))
