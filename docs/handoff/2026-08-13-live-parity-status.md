@@ -95,6 +95,49 @@ exact-SHA bundle is generated and placed at that runner path.
 
 ## Next execution
 
+## Follow-up evidence (2026-08-13)
+
+The exact `3f1873873acd8d60e02ab45fe09ea30dcdc71537` build has now passed the
+following additional local checks against the single local Exness demo gateway
+(`127.0.0.1:5001`, account `436804390`):
+
+- The static generated four-case parity verifier passed for `ema-eurusd`,
+  `rsi-gbpusd`, `atr-eurusd`, and `case-gbpusd`. The generated catalog contains
+  59 indicator capabilities and 15 numeric functions. This is a preparer and
+  contract check; it is not a claim that every capability has already been
+  exercised with a real order.
+- `MT5BrokerIntegrationTest` and `MT5PositionPollerCloseTest` both passed in a
+  focused Gradle run. This covers the protection-registration race, pending and
+  partial fills, cancellation, ambiguous outcomes, recovery, and poller close
+  attribution regressions.
+- The isolated static risk matrix passed five causal rejection cases; the
+  stateful matrix passed four restored-state halt cases. Both remained flat and
+  produced zero transport mutations for rejected decisions.
+- The controlled margin-floor fixture passed. It observed a real 0.01-lot demo
+  opener, rejected the probe before transport while below the dynamic floor,
+  accepted the same probe after headroom recovered, and flattened the recovered
+  position. The account was flat after cleanup.
+- The exact-build higher-timeframe warmup probe passed M15, H1, and H4 one-hour,
+  one-day, and two-day requests with aligned unique closed bars and no account
+  mutations.
+
+The follow-up harness change `fix(scripts): accept full qkt image revisions`
+(`9c8f13e0`) is merged to `dev` as PR #1002. Dev CI for the current docs head
+`865ef81e770dd47182f1b92a85ab363b5932ce32` is green. `testing` and `main` still
+point at the prior promoted code (`3f187387...` and `b478062b...` respectively);
+any promotion of a newer SHA requires a newly built exact image and regenerated
+exact-SHA evidence.
+
+### Remaining notes-matrix gaps
+
+The following are deliberately still open and must not be represented as
+attested: explicit live limit/stop-limit/stop-order fills, cancellation and
+partial-fill waves, timed exits and re-entry across every strategy family,
+cross-book portfolio attribution/isolation, and a complete live-vs-backtest
+comparison for every DSL/indicator/math capability. The catalog's prior live
+run also recorded a dropped tick during a gateway disconnect; this is retained
+as a feed-resilience observation to classify and rerun, not hidden as a pass.
+
 ## Exact testing-SHA follow-up (2026-08-13)
 
 The exact testing image was refreshed at `11d5793e4f0ff56a2f1da10918b7e539a17d4ef7`
@@ -137,3 +180,41 @@ wave must be rerun from the resulting promoted image before attestation.
 The live lock is account-scoped. Keep the gateway on the demo account, arm only
 with the explicit local approval token, verify flatness before and after each
 run, and never treat a partial runner directory as evidence.
+
+## Main promotion and follow-up audit (2026-08-13)
+
+The hardened protection-ordering fix is now merged to `main` through promotion
+PR #1000 at merge commit `b478062bb63a483bc1d019cd1b2530c8938276d1`.
+Required build, integration, Docker/runtime-smoke, Windows packaging/install,
+GitGuardian, and exact-image paper-soak checks passed. Main post-merge
+integration run `31702307730` also passed.
+
+Exact testing SHA `3f1873873acd8d60e02ab45fe09ea30dcdc71537` evidence:
+
+- Armed EURUSD/GBPUSD live round trip plus full-ticks-paper, full-ticks-MT5,
+  and bars-paper replay: `/var/tmp/qkt-validation/insights-3f-live` and
+  `/var/tmp/qkt-validation/final-3f-replay-{a,b}`; both strategies opened and
+  closed real 0.01-lot demo positions and the account finished flat.
+- Insights causal round trip passed with two isolated instances, no sequence
+  gaps/regressions, and no cross-owner attribution leakage.
+- Restarted local-gateway read-only load soak passed at
+  `/var/tmp/qkt-validation/load-3f-122354-610042/evidence/result.json`: 650
+  seconds, two containers, four symbols, eight 1m/5m streams, controlled
+  restart, state restore, 0 dropped ticks, and zero gateway mutations.
+- Paper-soak workflow `31701168665` passed using the immutable QKT digest
+  `sha256:f69102f813e79831e79a41f51223c3aae4e1b70c07bd749e8edac7981e097f4c`.
+
+The follow-up four-case catalog was rerun after the gateway restart. Numeric,
+cross/multi-timeframe, session/history, and volume-negative cases emitted their
+expected traces and remained financially read-only, but the aggregate run again
+failed closed because the numeric case recorded one dropped tick during a feed
+disconnect. This is not promotion evidence and remains an open gateway/feed
+resilience gap. The numeric trace itself covered EMA, SMA, WMA, DEMA, TEMA, HMA,
+RSI, standard deviation/variance, z-score, regression, percentile rank, skew,
+efficiency ratio, lag, MACD, Bollinger, extrema, math functions, ATR, Williams R,
+CCI, stochastic, Keltner, DI, and ADX. Evidence root:
+`/var/tmp/qkt-validation/catalog-3f-125922-704966-live`.
+
+The broader notes matrix is therefore still incomplete: order-bearing coverage
+for limit/stop/cancel/partial-fill/risk-halt paths, higher-timeframe H1/H4
+boundary parity, and portfolio/book isolation remain to be executed and sealed.
