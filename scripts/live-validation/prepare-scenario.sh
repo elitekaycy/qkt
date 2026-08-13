@@ -10,6 +10,7 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
   [--ema-fast N --ema-slow N] \
+  [--qkt-commit SHA] \
   [--secondary-timeframe 5m|15m|1h|4h] \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
@@ -46,6 +47,7 @@ variant="ema_cross"
 secondary_timeframe="5m"
 ema_fast=3
 ema_slow=5
+qkt_commit_override=""
 lifecycle="single"
 runtime_account_identity=false
 per_strategy_extra=""
@@ -70,6 +72,7 @@ while [ "$#" -gt 0 ]; do
         --secondary-timeframe) secondary_timeframe="${2:-}"; shift 2 ;;
         --ema-fast) ema_fast="${2:-}"; shift 2 ;;
         --ema-slow) ema_slow="${2:-}"; shift 2 ;;
+        --qkt-commit) qkt_commit_override="${2:-}"; shift 2 ;;
         --lifecycle) lifecycle="${2:-}"; shift 2 ;;
         --runtime-account-identity) runtime_account_identity=true; shift ;;
         --help|-h) usage; exit 0 ;;
@@ -252,6 +255,10 @@ case "$lifecycle" in
 esac
 
 git_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+if [ -n "$qkt_commit_override" ]; then
+    [[ "$qkt_commit_override" =~ ^[0-9a-f]{8,40}$ ]] || fail "--qkt-commit must be an 8- to 40-character lowercase SHA"
+    git_sha="$qkt_commit_override"
+fi
 if [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]; then
     git_dirty=true
 else
