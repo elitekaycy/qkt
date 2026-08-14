@@ -121,7 +121,9 @@ qkt_commit="$(git -C "$repo_root" rev-parse HEAD)"
 jq -e '.qktDirty == false' "$scenario/scenario.json" >/dev/null ||
     fail "scenario must be freshly prepared from a clean checkout"
 qkt_short="${qkt_commit:0:8}"
-[[ "$("$cli" --version)" == *"($qkt_short)"* ]] || fail "QKT CLI is not built from $qkt_short"
+cli_version="$($cli --version)"
+[[ "$cli_version" == *"($qkt_short"* || "$cli_version" == *"($qkt_commit"* ]] ||
+    fail "QKT CLI is not built from $qkt_short"
 [ -z "$(find "$scenario/evidence" -mindepth 1 -maxdepth 1 -print -quit)" ] ||
     fail "evidence directory is not empty; prepare a fresh scenario"
 case "$(jq -r '.gatewayUrl' "$scenario/scenario.json")" in
