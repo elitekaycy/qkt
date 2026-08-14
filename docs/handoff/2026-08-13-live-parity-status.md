@@ -635,3 +635,39 @@ This is stronger exact-image parity evidence, but it is not the trusted
 paper-soak attestation required by `prepare-main-promotion.sh`. The retained
 attestation still references an older testing SHA, so promotion to `main`
 remains blocked until a fresh d55 attestation is generated and verified.
+
+## Exact d55 Catalog, Risk, and Insights Follow-up (2026-08-14)
+
+The exact d55 image also passed the four-case read-only capability catalog at
+`/var/tmp/qkt-validation/catalog-d55-live/evidence/result.json`. Numeric/candle
+functions, cross-symbol and multi-timeframe streams, session/history, and the
+volume-capability rejection all produced warmup ticks, live ticks, constructed
+bars, joined evaluations, and zero gateway mutations. The catalog retained
+`0` dropped ticks and no unrecovered stale episodes; the final demo account was
+flat.
+
+The five-case pre-transport risk matrix passed in isolation at
+`/var/tmp/qkt-validation/riskreject-d55-retry/evidence/result.json`, covering
+max quantity, max notional, price collar, measured usage, and operator halt.
+The four-case restored-state risk matrix passed in isolation at
+`/var/tmp/qkt-validation/stateful-d55-retry/evidence/result.json`, covering
+global and strategy daily loss, global drawdown, and loss streak. Each case
+retained the halt/decision/link/rejection chain with zero broker mutations and
+the account remained flat.
+
+The exact d55 QKT Insights attribution run passed at
+`/var/tmp/qkt-validation/insights-d55-scenario/evidence/result.json` using
+Insights image ID `sha256:edb358273ce82074923e86f2267f588fb031ff88ec3a13c86fdc1ee1bfb2d3c0`.
+It recorded M1/M5 warmup and live evaluation, 341 queued outage envelopes with
+complete replay drain, two owner-attributed decisions/orders/fills/trades, no
+drops, no duplicate attempts, balanced entry/exit accounting, and zero final
+positions or pending orders.
+
+An intentional nine-daemon concurrent probe (the two risk matrices launched
+together) failed before deployment because the local gateway's Waitress queue
+rose and all live tick feeds disconnected, causing control-plane deploy
+timeouts. Re-running each matrix alone passed. This is retained as an
+operational capacity finding: the current single local MT5 gateway is not yet
+proven for that aggregate polling fan-out, even though isolated QKT behavior is
+correct. It must be addressed or bounded before claiming unrestricted
+multi-container production capacity.
