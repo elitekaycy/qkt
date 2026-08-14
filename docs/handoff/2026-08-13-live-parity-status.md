@@ -599,3 +599,18 @@ recovered a probe position after the opener was flattened. The runner did not
 finish its final journal/result sealing phase, so these captures remain unsealed
 and are not promotion evidence. The account was explicitly verified flat after
 cleanup. A sealed margin-floor result is still required.
+
+## Sealed Exact-Testing Margin-Floor Fixture (2026-08-14)
+
+The corrected runner passed against testing revision `ba1809217ad8f6c9db494054d8f0641a48a6704c` and immutable image
+`ghcr.io/elitekaycy/qkt@sha256:35c82798dab413fe39dde48ff2dc81f8c62fd5f5e40c2a028d564887fdce6636`.
+Evidence is retained at
+`/var/tmp/qkt-validation/margin-ba1809-live/evidence/result.json`.
+
+The fixture opened one bounded `0.01` EURUSD position with the opener role,
+derived the floor from observed live margin level, rejected the probe before any
+mutating gateway request, then allowed and filled the probe after opener flattening
+and headroom recovery. Both strategy-owned positions were flattened; venue history
+and account balance reconciled, with zero final positions and pending orders.
+The aggregate result reports `marginFloorPassed: true` and
+`productionReadiness: false` (the latter remains intentionally conservative).
