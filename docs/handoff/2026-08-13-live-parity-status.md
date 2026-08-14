@@ -309,6 +309,50 @@ exit at `1.15297`, with net demo PnL `-0.08` and zero commission/swap. This is
 live trigger evidence, but it is not yet a full QKT golden/replay parity bundle;
 the harness cleanup interruption and that replay comparison remain open work.
 
+## Current Exact-SHA Promotion and Four-Case Wave (2026-08-13)
+
+The authoritative current release state supersedes older snapshots above:
+
+- `testing` SHA `e271822d4895cf16a662338c1f38090f77965485` was promoted through
+  PR `#1010` and merged to `main` at `f275065947c9b967b85843ba1c12a8e16f90d587`.
+- The exact testing runtime image was
+  `ghcr.io/elitekaycy/qkt@sha256:1dbef063538c29e37a880e1544c3a07aad66d57c369d9377f86bbad1ca54ac23`,
+  whose OCI revision is the exact testing SHA. Main post-merge Docker, integration,
+  and docs workflows were dispatched on the merge commit.
+- Fresh exact-image live evidence was generated at
+  `/var/tmp/qkt-validation/exact-testing-e271822d-20260814-rerun2`. The local
+  gateway was `127.0.0.1:5001`, MT5 demo login `436804390`, and the account was
+  flat before and after the wave. The first attempted run was interrupted by an
+  external probe and is invalid evidence; only `rerun2` is sealed.
+- The four generated cases were EMA EURUSD, RSI GBPUSD, ATR EURUSD, and case-math
+  GBPUSD. All read-only cases passed warmup, live ticks, M1/M5 bars, stale recovery,
+  zero dropped ticks, journals, and flat reconciliation. ATR and case-math each
+  produced a real 0.01-lot market entry and strategy-owned close; both had two live
+  fills and passed `full-ticks-paper`, `full-ticks-mt5`, and `bars-paper` replay.
+  Current result files identify QKT commit `e271822d` and `status: passed`.
+- A fresh six-artifact live-parity attestation was generated and locally verified,
+  then trusted workflow `31754382341` passed. The attestation is retained on the
+  trusted runner at `/var/lib/qkt/soak/attestation.json`; generated artifacts are
+  disposable and are not committed to source.
+
+This wave is promotion evidence, not completion of the full notes matrix. Still
+unsealed are stop/stop-limit trigger-to-fill golden replay, cancellation races and
+partial fills, every re-entry and halt/cooldown recovery variant, H1/H4 live
+boundary parity, portfolio/book isolation, QKT Insights attribution for this exact
+wave, and exhaustive live-vs-backtest coverage for every registered indicator,
+numeric function, DSL construct, order type, and strategy template/deployment mode.
+
+## Higher-Timeframe Warmup Probe (2026-08-14)
+
+The read-only exact-image probe at
+`/var/tmp/qkt-validation/htf-e271822d-1786665912` passed against the same local
+gateway and demo account. It exercised nine closed-bar warmup requests: M15 at
+1-hour/1-day/2-day windows, H1 at 1-hour/1-day/2-day windows, and H4 at
+4-hour/1-day/2-day windows. All bars were aligned, unique, and closed; the
+account remained unchanged with zero positions, pending orders, and venue deals.
+The probe is warmup/bar-ingest evidence only; it does not seal higher-timeframe
+strategy signal or live-vs-backtest order parity.
+
 ## Parallel Static Risk-Rejection Matrix (2026-08-14)
 
 The exact promoted image `ghcr.io/elitekaycy/qkt:edge` (QKT commit
