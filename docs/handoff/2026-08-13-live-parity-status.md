@@ -323,3 +323,17 @@ venue-state change while the five containers launched and deployed in parallel.
 The result deliberately reports only `preTransportStaticRejectionsPassed` as
 true. Stateful daily-loss, drawdown, loss-streak, and margin-floor fixtures
 remain unpassed and are not inferred from this matrix.
+
+## Stateful Risk-Halt Matrix (2026-08-14)
+
+The exact promoted image also passed the four-container stateful matrix at
+`/var/tmp/qkt-validation/stateful-risk-e271822d-20260814-run`. Persisted
+strategy-daily-loss, global-daily-loss, global-drawdown, and loss-streak state
+each tripped on live bars/ticks and produced the required causal halt and risk
+rejection before broker transport. The run required zero mutating gateway
+requests, zero order events, zero fills, and unchanged flat venue state.
+
+The result reports `dailyLossPassed`, `drawdownPassed`, and `lossStreakPassed`
+as true while `marginFloorPassed` remains false. Margin-floor requires an
+owned live exposure and deterministic venue margin; it is still an explicit
+unsealed fixture rather than an inferred pass.
