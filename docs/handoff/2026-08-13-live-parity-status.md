@@ -352,3 +352,32 @@ gateway and demo account. It exercised nine closed-bar warmup requests: M15 at
 account remained unchanged with zero positions, pending orders, and venue deals.
 The probe is warmup/bar-ingest evidence only; it does not seal higher-timeframe
 strategy signal or live-vs-backtest order parity.
+
+## Parallel Static Risk-Rejection Matrix (2026-08-14)
+
+The exact promoted image `ghcr.io/elitekaycy/qkt:edge` (QKT commit
+`e271822d4895cf16a662338c1f38090f77965485`) passed the five-container local
+demo matrix at
+`/var/tmp/qkt-validation/risk-rejection-e271822d-20260814-run`. Maximum
+quantity, maximum notional, far-price collar, measured-usage, and operator-halt
+cases each produced a causal risk rejection before broker transport. The run
+verified zero mutating gateway requests, zero order events, zero fills, and no
+venue-state change while the five containers launched and deployed in parallel.
+
+The result deliberately reports only `preTransportStaticRejectionsPassed` as
+true. Stateful daily-loss, drawdown, loss-streak, and margin-floor fixtures
+remain unpassed and are not inferred from this matrix.
+
+## Stateful Risk-Halt Matrix (2026-08-14)
+
+The exact promoted image also passed the four-container stateful matrix at
+`/var/tmp/qkt-validation/stateful-risk-e271822d-20260814-run`. Persisted
+strategy-daily-loss, global-daily-loss, global-drawdown, and loss-streak state
+each tripped on live bars/ticks and produced the required causal halt and risk
+rejection before broker transport. The run required zero mutating gateway
+requests, zero order events, zero fills, and unchanged flat venue state.
+
+The result reports `dailyLossPassed`, `drawdownPassed`, and `lossStreakPassed`
+as true while `marginFloorPassed` remains false. Margin-floor requires an
+owned live exposure and deterministic venue margin; it is still an explicit
+unsealed fixture rather than an inferred pass.
