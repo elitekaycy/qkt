@@ -721,3 +721,9 @@ that is a remaining book-level analytics gap, not evidence of account-wide trade
 bleed. The 22 historical `gateway.unreachable` events are dated August 12, before
 the 0.3.10 rollout; the current post-rollout sample had no gateway transport
 errors.
+
+Bot2 preflight was rerun against the promoted QKT image for all three deployed
+portfolio files (`forward_bench.qkt`, `forward_bench_2.qkt`, and
+`forward_bench_3.qkt`); each passed broker identity, symbol metadata, and data-field
+checks. This is deployment/configuration proof only, not a substitute for the
+missing live order-bearing proof of every book.
