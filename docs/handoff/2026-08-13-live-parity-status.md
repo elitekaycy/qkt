@@ -614,3 +614,24 @@ and headroom recovery. Both strategy-owned positions were flattened; venue histo
 and account balance reconciled, with zero final positions and pending orders.
 The aggregate result reports `marginFloorPassed: true` and
 `productionReadiness: false` (the latter remains intentionally conservative).
+
+## Exact Testing-SHA Parity Wave (2026-08-14)
+
+The four-case parity suite completed against the exact testing revision
+`d55f8f51d70831006615132cf86a36938b3a46f3` and image digest
+`sha256:083052c7ce1467b01fe604b4634ce2ed33d081f1d3e4f33e71801295ee74402d`.
+Evidence is retained at `/var/tmp/qkt-validation/parity-d55-live`.
+
+ATR/EURUSD, case-math/GBPUSD, EMA/EURUSD, and RSI/GBPUSD each passed the
+read-only warmup/tick/bar observation, armed live demo bracket, and golden
+replay comparison. The armed cases submitted real 0.01-lot demo orders and
+sealed strategy-owned fills/closes; every replay result passed the full-tick,
+bar, normalized-order, and MT5-fill comparisons. The final gateway query was
+flat: zero positions and zero pending orders. The account balance moved from
+`99990.52` to `99990.09` from the real demo fills; this is recorded rather than
+treated as a parity failure.
+
+This is stronger exact-image parity evidence, but it is not the trusted
+paper-soak attestation required by `prepare-main-promotion.sh`. The retained
+attestation still references an older testing SHA, so promotion to `main`
+remains blocked until a fresh d55 attestation is generated and verified.
