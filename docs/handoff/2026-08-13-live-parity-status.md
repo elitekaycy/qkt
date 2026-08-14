@@ -589,3 +589,13 @@ torn reads or failed writes. Command:
 
 These are regression/unit results and do not substitute for the still-open
 localhost MT5 stop-limit trigger/fill and live partial-fill evidence.
+
+## Margin-Floor Rerun Status (2026-08-14)
+
+A clean exact-`daf5b463` localhost fixture was exercised with the single Exness
+demo account. It opened a real `0.01` EURUSD position, derived the dynamic floor
+from the live margin level, rejected the probe before broker transport, and
+recovered a probe position after the opener was flattened. The runner did not
+finish its final journal/result sealing phase, so these captures remain unsealed
+and are not promotion evidence. The account was explicitly verified flat after
+cleanup. A sealed margin-floor result is still required.
