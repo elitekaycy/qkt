@@ -449,3 +449,40 @@ the real venue for 180 seconds. The market remained below the trigger, so no
 deal or position occurred; QKT cancelled ticket `3086032248` and the account
 finished unchanged and flat. This seals the resting-order/cancel boundary only;
 the trigger-to-fill path is still unsealed.
+
+## Exact Testing-Image Four-Case Parity Wave (2026-08-14)
+
+The corrected generated wave was run against testing revision
+`47e64f9372a32e611c0680e99123763e743848e4`, image
+`ghcr.io/elitekaycy/qkt@sha256:d27dd965850866ea1ac4374b86c77a6fa3ccb9bb2551846c4631b8150662258b`,
+and local gateway `0.3.9` on demo account `436804390` /
+`Exness-MT5Trial9`. Evidence root:
+`/var/tmp/qkt-validation/parity-47e6-retry-gb2`.
+
+All four read-only cases passed with 310-second captures, exact symbol routing,
+warmup/live tick and M1/M5 candle journals, golden captures, zero fills, zero
+dropped ticks, zero queue depth, and unchanged flat account state:
+
+- `atr-eurusd`: 156 live ticks, 160 warmup ticks, 2/2 stale episodes recovered.
+- `ema-eurusd`: 159 live ticks, 160 warmup ticks, 2/2 stale episodes recovered.
+- `case-gbpusd`: 263 live ticks, 160 warmup ticks, 2/2 stale episodes recovered;
+  warmup and audit symbols are `EXNESS:GBPUSD`.
+- `rsi-gbpusd`: 259 live ticks, 160 warmup ticks, 1/1 stale episode recovered;
+  warmup and audit symbols are `EXNESS:GBPUSD`.
+
+Each armed case then passed with one real strategy-owned entry and one strategy-
+owned exit, two accepted and filled events, zero final positions/orders, and
+golden replay comparison passed:
+
+- `atr-eurusd/armed-live`: ticket `3086526183`, balance/deal delta `+0.04`.
+- `ema-eurusd/armed-live`: ticket `3086540418`, balance/deal delta `-0.11`.
+- `rsi-gbpusd/armed-live`: ticket `3086556383`, balance/deal delta `-0.22`.
+
+Replay results are under each `armed-live/replay/result.json` and all report
+`status: passed` with the same testing SHA. The final gateway account snapshot
+was flat with zero margin. This wave proves the corrected four-case warmup,
+tick/bar, indicator, DSL order path, fill accounting, stale recovery, and
+golden replay on the exact image. It does not replace the remaining notes matrix
+for stop-limit trigger fills, cancellation/partial-fill races, risk/margin
+fixtures, portfolios/books, full indicator/math/DSL catalog, or Insights
+attribution.
