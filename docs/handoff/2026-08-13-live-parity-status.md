@@ -740,6 +740,11 @@ workspace-native SQLite binding: `store.liveState.test.ts`,
 7.2 seconds. The initial Node 24 run's 21 failures were an ABI-127/137 native
 module mismatch and did not reproduce after the supported-toolchain rebuild.
 
+A second current bot2 sample (five minutes ending after the focused test run) had
+11 stale events, 11 recoveries, zero unrecovered symbols, and zero gateway log
+errors or disconnects. The behavior remains a fail-closed quote-freshness signal,
+not evidence of dropped or torn market data.
+
 Existing shared-account Insights evidence at
 `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-live/evidence/result.json`
 does prove two simultaneous live strategy owners can each complete two fills and
