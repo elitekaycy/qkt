@@ -671,3 +671,18 @@ operational capacity finding: the current single local MT5 gateway is not yet
 proven for that aggregate polling fan-out, even though isolated QKT behavior is
 correct. It must be addressed or bounded before claiming unrestricted
 multi-container production capacity.
+
+## d55 Attestation Dispatch (2026-08-14)
+
+A fresh six-artifact d55 attestation was generated from the sealed evidence and
+passed `scripts/verify-paper-soak-attestation.py` locally. It pins QKT image
+`ghcr.io/elitekaycy/qkt@sha256:083052c7ce1467b01fe604b4634ce2ed33d081f1d3e4f33e71801295ee74402d`
+and run ID `lived55-20260814-122530`; the local bundle is retained outside the
+source tree at `/var/tmp/qkt-validation/attest-d55-final`.
+
+Trusted workflow dispatch `31800477867` targets testing SHA
+`d55f8f51d70831006615132cf86a36938b3a46f3`. It is currently queued because the
+only repository runner labelled `qkt-paper-soak` (`local-qkt-paper-soak`) is
+offline. Local verifier success is not substituted for the trusted workflow;
+promotion to `main` remains blocked until this run executes successfully and
+publishes `paper-soak-attestation`.
