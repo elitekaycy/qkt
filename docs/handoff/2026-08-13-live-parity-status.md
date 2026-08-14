@@ -780,3 +780,23 @@ Deployment audit: bot2 remains on QKT `ghcr.io/elitekaycy/qkt:sha-f73f404`, gate
 gateway `0.3.7`, healthy Insights. Neither has been changed to the unpromoted
 portfolio-telemetry build. Do not update either host, Forge, or the main promotion
 PR until the exact-image attestation is sealed and `testing -> main` succeeds.
+
+## Forge image and portfolio backtest verification (2026-08-14)
+
+`origin/main` is still `f73f404a5f0884fd6bb5d8a9853169a52a815810`; the only delta on
+`origin/dev` is PR #1024 (`6c959515`), so the portfolio telemetry fix is not in main
+yet. The earlier warmup/shared-feed/gateway fixes are in main through `f73f404a`.
+
+On bot2, Forge is using the testing `:edge` image, resolved and label-verified as
+`ghcr.io/elitekaycy/qkt@sha256:ae23f6732890a20a39d40467ba3c33019426998932ec3d89d65853b7fc258cb9`
+with OCI revision `6caae6618f62b478d9a04702b622869a43c452ca`. Active Forge containers
+were confirmed to use that image for portfolio backtests, including
+`promoted_book_50.qkt` (paper bars) and `promoted_book_115.qkt` (MT5-sim).
+
+The completed `promoted_book_50` rerun retained a report bundle at
+`/root/projects/qkt-forge/run/research/promoted_book_50/backtest-20260814T223657Z-b26932f2-2023-01-01_to_2024-12-31/report/`.
+Its manifest records QKT revision `6caae661`, QKT `0.47.1`, 730 fills, zero
+rejections, and global total PnL `12666.15700000`. The `promoted_book_115` rerun was
+still running when recorded. Because the image changed, rerunning portfolio
+backtests is the correct certification step even though PR #1024 only adds live
+portfolio Insights telemetry and does not change the numerical backtest engine.
