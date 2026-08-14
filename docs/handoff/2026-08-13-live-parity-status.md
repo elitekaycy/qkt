@@ -486,3 +486,23 @@ golden replay on the exact image. It does not replace the remaining notes matrix
 for stop-limit trigger fills, cancellation/partial-fill races, risk/margin
 fixtures, portfolios/books, full indicator/math/DSL catalog, or Insights
 attribution.
+
+## Exact Testing-Image Read-Only Catalog (2026-08-14)
+
+The four-container catalog was rerun against the same testing image and local
+gateway at `/var/tmp/qkt-validation/catalog-47e6-final-live/evidence/result.json`.
+It passed with revision `47e64f9372a32e611c0680e99123763e743848e4`, image digest
+`sha256:d27dd965850866ea1ac4374b86c77a6fa3ccb9bb2551846c4631b8150662258b`,
+360 seconds, four parallel containers, five parallel tick symbols, 500 ms tick
+polling, and no JVM or Docker resource restrictions.
+
+The catalog covered numeric/candle indicators and math, cross-symbol M1/M5
+mapping, session/history/stateful functions, and the volume-capability negative
+case. All four cases passed their warmup bars, readiness vectors, live ticks,
+constructed bars, joined evaluations, and financially read-only assertions.
+Aggregate counts were zero gateway mutations, order events, fills, and venue
+deals; account state stayed unchanged. The run recorded 7 stale episodes and
+recovered all 7, with zero in-window disconnect warnings, zero unexpected
+errors, and no dropped-tick failure. The earlier catalog dropped-tick result is
+therefore superseded for this exact image, while the gateway stale/recovery
+events remain an operational observation.
