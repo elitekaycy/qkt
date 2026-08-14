@@ -554,3 +554,22 @@ image above before another promotion. Earlier Insights evidence generated from a
 different image is historical and cannot attest this revision. The notes matrix
 also remains open for stop-limit trigger/fill replay, cancellation and partial-fill
 races, margin-floor, portfolio/book isolation, and exhaustive capability coverage.
+
+## Corrected Exact-Testing Insights Attestation (2026-08-14)
+
+The corrected verifier passed against QKT testing revision `daf5b463` and the
+immutable QKT image
+`ghcr.io/elitekaycy/qkt@sha256:e7eb41cfe6300b7ec599b83db7c642e1aa66b7a18ef8f506d0e59abacbf15b6c`.
+Evidence is retained at
+`/var/tmp/qkt-validation/insights-daf5-prep2/evidence/result.json`.
+
+The run recorded M1/M5 warmup, live ticks, matched evaluations, a real bounded
+entry and strategy-owned exit, and final flat reconciliation. Insights retained
+two rule decisions, two decision-to-order links, two submitted/accepted/filled
+orders, two trades, two accounted fills, zero rejected events, zero dropped
+envelopes, and a maximum duplicate-attempt count of one. An intentional collector
+outage queued 338 envelopes and restart replay drained them completely. The final
+state had zero pending orders and zero positions.
+
+This seals the Insights verifier fix for `daf5b463`; it does not close the other
+notes-matrix gaps listed above.
