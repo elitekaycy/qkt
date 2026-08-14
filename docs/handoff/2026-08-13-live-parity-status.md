@@ -614,3 +614,40 @@ and headroom recovery. Both strategy-owned positions were flattened; venue histo
 and account balance reconciled, with zero final positions and pending orders.
 The aggregate result reports `marginFloorPassed: true` and
 `productionReadiness: false` (the latter remains intentionally conservative).
+
+## Exact d55 Live Matrix and Insights (2026-08-14)
+
+All evidence below uses testing revision `d55f8f51d70831006615132cf86a36938b3a46f3`
+and QKT image
+`ghcr.io/elitekaycy/qkt@sha256:083052c7ce1467b01fe604b4634ce2ed33d081f1d3e4f33e71801295ee74402d`.
+Generated evidence is disposable and retained outside the source tree.
+
+- Four-case ATR, case-math, EMA, and RSI parity wave passed read-only warmup,
+  live demo bracket, and full-tick/bar/MT5 replay comparisons at
+  `/var/tmp/qkt-validation/parity-d55-live`. The account finished flat.
+- Four-case catalog passed at
+  `/var/tmp/qkt-validation/catalog-d55-live/evidence/result.json`, covering
+  numeric/candle, cross-symbol and multi-timeframe, session/history, and volume
+  capability rejection with zero mutations and zero dropped ticks.
+- Five-case pre-transport risk rejection passed in isolation at
+  `/var/tmp/qkt-validation/riskreject-d55-retry/evidence/result.json`.
+- Four-case restored-state risk matrix passed in isolation at
+  `/var/tmp/qkt-validation/stateful-d55-retry/evidence/result.json`.
+- QKT Insights attribution passed at
+  `/var/tmp/qkt-validation/insights-d55-scenario/evidence/result.json`: 341
+  outage-queued envelopes replayed completely; two decisions/orders/fills were
+  attributed to the owning strategy; no drops or duplicate attempts; final flat.
+
+The intentional nine-daemon aggregate probe failed because the local gateway's
+Waitress queue saturated and live tick feeds disconnected, causing deploy
+timeouts. Each matrix passed when run alone. This is an explicit gateway
+capacity limit, not a claimed production-scale pass, and needs a gateway/load
+fix or an enforced concurrency bound before unrestricted multi-container use.
+
+## d55 Attestation Dispatch
+
+A six-artifact d55 attestation passed the local verifier and is retained at
+`/var/tmp/qkt-validation/attest-d55-final`. Trusted workflow `31800477867` was
+dispatched against testing d55, but its sole `qkt-paper-soak` runner is offline,
+so it remains queued. Local verification cannot substitute for the trusted
+workflow; main promotion remains blocked until the runner executes successfully.
