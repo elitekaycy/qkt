@@ -433,3 +433,11 @@ The probe did not trigger a stop-limit into a fill, and therefore does not claim
 stop-limit trigger-to-fill or live-vs-backtest parity. A separate exact-image
 strategy run must still capture the trigger, fill, cancellation races/partial
 fills, and golden replay before this order boundary can be promoted to `main`.
+
+The temporary deployed-strategy probe at
+`/var/tmp/qkt-validation/strategy-stop-limit-native-d60ff76f-20260814` also
+confirmed warmup, DSL compilation, and live deployment. Its first stop-limit
+decision occurred during a measured stale-feed episode, so QKT rejected it
+before broker transport; the feed recovered and the account remained flat with
+no pending order. This is evidence that stale-order suppression is fail-closed,
+not evidence of uninterrupted feed health or a native stop-limit fill.
