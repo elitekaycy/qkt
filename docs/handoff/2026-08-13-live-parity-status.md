@@ -727,3 +727,11 @@ portfolio files (`forward_bench.qkt`, `forward_bench_2.qkt`, and
 `forward_bench_3.qkt`); each passed broker identity, symbol metadata, and data-field
 checks. This is deployment/configuration proof only, not a substitute for the
 missing live order-bearing proof of every book.
+
+Existing shared-account Insights evidence at
+`/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-live/evidence/result.json`
+does prove two simultaneous live strategy owners can each complete two fills and
+return flat on one account: the collector retained both instances, its causal
+contract probe passed, and cross-owner causal leakage was false. This closes the
+strategy-owner isolation case, but it does not create portfolio aggregate rows for
+the three bot2 books.
