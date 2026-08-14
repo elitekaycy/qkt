@@ -535,3 +535,22 @@ recovered all 7, with zero in-window disconnect warnings, zero unexpected
 errors, and no dropped-tick failure. The earlier catalog dropped-tick result is
 therefore superseded for this exact image, while the gateway stale/recovery
 events remain an operational observation.
+
+## Current Promotion Reconciliation (2026-08-14)
+
+The remote refs were refreshed after the historical sections above were written.
+The currently authoritative release refs are:
+
+- `dev`: `f8d91366f413331a8d208c2c4cb73aa2c7262555`, including PR #1019,
+  `fix(scripts): normalize empty insights duplicate output`.
+- `testing`: `daf5b4639c53d3244672207d710db78f38c91e3c`, promoted from that
+  `dev` revision. Its exact QKT image is
+  `ghcr.io/elitekaycy/qkt@sha256:e7eb41cfe6300b7ec599b83db7c642e1aa66b7a18ef8f506d0e59abacbf15b6c`.
+- `main`: `f275065947c9b967b85843ba1c12a8e16f90d587`, the last completed
+  testing-to-main promotion. It does not yet contain PR #1019.
+
+The corrected Insights verifier must be rerun against the immutable `testing`
+image above before another promotion. Earlier Insights evidence generated from a
+different image is historical and cannot attest this revision. The notes matrix
+also remains open for stop-limit trigger/fill replay, cancellation and partial-fill
+races, margin-floor, portfolio/book isolation, and exhaustive capability coverage.
