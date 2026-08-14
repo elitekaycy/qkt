@@ -752,3 +752,31 @@ return flat on one account: the collector retained both instances, its causal
 contract probe passed, and cross-owner causal leakage was false. This closes the
 strategy-owner isolation case, but it does not create portfolio aggregate rows for
 the three bot2 books.
+
+## Portfolio telemetry change and current promotion gate (2026-08-14)
+
+PR #1024 merged to `dev` as `6c959515373f445f777133c98e32ed61c16507cd` and was
+promoted to `testing` as `6caae6618f62b478d9a04702b622869a43c452ca`. The change adds
+`portfolio.configured`, `portfolio.allocation.updated`, and
+`portfolio.equity.updated` Insights envelopes from `PortfolioDeployer`, preserving
+book identity and child PnL attribution while reducing risk-sampler PnL reads to one
+snapshot per child. Local translator and portfolio backtest/live parity tests pass;
+Linux, Windows, and GitGuardian checks for PR #1024 pass. Testing Docker,
+integration, runtime-smoke, and build workflows also pass. The testing edge image
+digest is `sha256:ae23f6732890a20a39d40467ba3c33019426998932ec3d89d65853b7fc258cb9`.
+
+A fresh exact-testing-image demo wave was attempted with a new run ID and flat
+account. The first attempt was discarded after a gateway transport EOF/reset during
+the live observation; subsequent attempts reached scenario preparation but could
+not start a sustained live tick window because the local Exness FX market was closed
+(Friday 22:34 UTC). Gateway `0.3.10` remained connected for account calls but had no
+fresh EURUSD quote and the tick feed disconnected. No new attestation was generated
+or reused. The older `4ec` attestation is intentionally not valid for testing SHA
+`6caae661`; promotion to `main` remains gated on a fresh exact-image live run when
+quotes resume.
+
+Deployment audit: bot2 remains on QKT `ghcr.io/elitekaycy/qkt:sha-f73f404`, gateway
+`0.3.10`, healthy Insights; bot1 remains on QKT `ghcr.io/elitekaycy/qkt:v0.47.1`,
+gateway `0.3.7`, healthy Insights. Neither has been changed to the unpromoted
+portfolio-telemetry build. Do not update either host, Forge, or the main promotion
+PR until the exact-image attestation is sealed and `testing -> main` succeeds.
