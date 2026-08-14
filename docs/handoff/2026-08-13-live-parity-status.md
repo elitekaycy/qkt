@@ -734,6 +734,12 @@ and `PortfolioDeployerBacktestParityTest`. The suite exercised stale recovery,
 Insights lifecycle delivery, identical per-child backtest/live trades, and live
 portfolio book-risk rejection/allocation parity.
 
+Insights source verification also passed under Node 22.22.1 after rebuilding the
+workspace-native SQLite binding: `store.liveState.test.ts`,
+`store.dealAttribution.test.ts`, and `collector.test.ts` passed, 32 tests total in
+7.2 seconds. The initial Node 24 run's 21 failures were an ABI-127/137 native
+module mismatch and did not reproduce after the supported-toolchain rebuild.
+
 Existing shared-account Insights evidence at
 `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-live/evidence/result.json`
 does prove two simultaneous live strategy owners can each complete two fills and
