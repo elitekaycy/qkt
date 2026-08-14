@@ -523,11 +523,13 @@ done
 $flat_seen || fail "account did not return to flat after the recovered probe flatten path"
 
 "$cli" daemon stop --state-dir "$output/probe/state" > "$output/probe/evidence/daemon-stop.log"
-wait "$probe_pid"
+# The control command intentionally terminates the daemon; preserve the
+# fixture's final evidence phase when wait observes that signal exit status.
+wait "$probe_pid" || true
 probe_pid=""
 
 "$cli" daemon stop --state-dir "$output/opener/state" > "$output/opener/evidence/daemon-stop.log"
-wait "$opener_pid"
+wait "$opener_pid" || true
 opener_pid=""
 if [ -f "$output/opener/state/control.token" ]; then unlink "$output/opener/state/control.token"; fi
 if [ -f "$output/opener/state/daemon.pid" ]; then unlink "$output/opener/state/daemon.pid"; fi
