@@ -443,8 +443,8 @@ cat > "$output/strategies/readonly/${scenario_id}_bars_readonly.qkt" <<EOF
 STRATEGY ${scenario_id}_bars_readonly VERSION 1
 
 SYMBOLS
-    eur1 = EXNESS:EURUSD EVERY 1m WARMUP 20 BARS,
-    eur5 = EXNESS:EURUSD EVERY 5m WARMUP 20 BARS
+    eur1 = EXNESS:$symbol EVERY 1m WARMUP 20 BARS,
+    eur5 = EXNESS:$symbol EVERY 5m WARMUP 20 BARS
 
 LET eur1_ema = ema(eur1.close, 3),
     eur1_rsi = rsi(eur1.close, 5),

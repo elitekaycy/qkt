@@ -308,3 +308,346 @@ deal range filtered by magic `948500` contains the entry at `1.15305` and the
 exit at `1.15297`, with net demo PnL `-0.08` and zero commission/swap. This is
 live trigger evidence, but it is not yet a full QKT golden/replay parity bundle;
 the harness cleanup interruption and that replay comparison remain open work.
+
+## Current Exact-SHA Promotion and Four-Case Wave (2026-08-13)
+
+The authoritative current release state supersedes older snapshots above:
+
+- `testing` SHA `e271822d4895cf16a662338c1f38090f77965485` was promoted through
+  PR `#1010` and merged to `main` at `f275065947c9b967b85843ba1c12a8e16f90d587`.
+- The exact testing runtime image was
+  `ghcr.io/elitekaycy/qkt@sha256:1dbef063538c29e37a880e1544c3a07aad66d57c369d9377f86bbad1ca54ac23`,
+  whose OCI revision is the exact testing SHA. Main post-merge Docker, integration,
+  and docs workflows were dispatched on the merge commit.
+- Fresh exact-image live evidence was generated at
+  `/var/tmp/qkt-validation/exact-testing-e271822d-20260814-rerun2`. The local
+  gateway was `127.0.0.1:5001`, MT5 demo login `436804390`, and the account was
+  flat before and after the wave. The first attempted run was interrupted by an
+  external probe and is invalid evidence; only `rerun2` is sealed.
+- The four generated cases were EMA EURUSD, RSI GBPUSD, ATR EURUSD, and case-math
+  GBPUSD. All read-only cases passed warmup, live ticks, M1/M5 bars, stale recovery,
+  zero dropped ticks, journals, and flat reconciliation. ATR and case-math each
+  produced a real 0.01-lot market entry and strategy-owned close; both had two live
+  fills and passed `full-ticks-paper`, `full-ticks-mt5`, and `bars-paper` replay.
+  Current result files identify QKT commit `e271822d` and `status: passed`.
+- A fresh six-artifact live-parity attestation was generated and locally verified,
+  then trusted workflow `31754382341` passed. The attestation is retained on the
+  trusted runner at `/var/lib/qkt/soak/attestation.json`; generated artifacts are
+  disposable and are not committed to source.
+
+This wave is promotion evidence, not completion of the full notes matrix. Still
+unsealed are stop/stop-limit trigger-to-fill golden replay, cancellation races and
+partial fills, every re-entry and halt/cooldown recovery variant, H1/H4 live
+boundary parity, portfolio/book isolation, QKT Insights attribution for this exact
+wave, and exhaustive live-vs-backtest coverage for every registered indicator,
+numeric function, DSL construct, order type, and strategy template/deployment mode.
+
+## Higher-Timeframe Warmup Probe (2026-08-14)
+
+The read-only exact-image probe at
+`/var/tmp/qkt-validation/htf-e271822d-1786665912` passed against the same local
+gateway and demo account. It exercised nine closed-bar warmup requests: M15 at
+1-hour/1-day/2-day windows, H1 at 1-hour/1-day/2-day windows, and H4 at
+4-hour/1-day/2-day windows. All bars were aligned, unique, and closed; the
+account remained unchanged with zero positions, pending orders, and venue deals.
+The probe is warmup/bar-ingest evidence only; it does not seal higher-timeframe
+strategy signal or live-vs-backtest order parity.
+
+## Parallel Static Risk-Rejection Matrix (2026-08-14)
+
+The exact promoted image `ghcr.io/elitekaycy/qkt:edge` (QKT commit
+`e271822d4895cf16a662338c1f38090f77965485`) passed the five-container local
+demo matrix at
+`/var/tmp/qkt-validation/risk-rejection-e271822d-20260814-run`. Maximum
+quantity, maximum notional, far-price collar, measured-usage, and operator-halt
+cases each produced a causal risk rejection before broker transport. The run
+verified zero mutating gateway requests, zero order events, zero fills, and no
+venue-state change while the five containers launched and deployed in parallel.
+
+The result deliberately reports only `preTransportStaticRejectionsPassed` as
+true. Stateful daily-loss, drawdown, loss-streak, and margin-floor fixtures
+remain unpassed and are not inferred from this matrix.
+
+## Stateful Risk-Halt Matrix (2026-08-14)
+
+The exact promoted image also passed the four-container stateful matrix at
+`/var/tmp/qkt-validation/stateful-risk-e271822d-20260814-run`. Persisted
+strategy-daily-loss, global-daily-loss, global-drawdown, and loss-streak state
+each tripped on live bars/ticks and produced the required causal halt and risk
+rejection before broker transport. The run required zero mutating gateway
+requests, zero order events, zero fills, and unchanged flat venue state.
+
+The result reports `dailyLossPassed`, `drawdownPassed`, and `lossStreakPassed`
+as true while `marginFloorPassed` remains false. Margin-floor requires an
+owned live exposure and deterministic venue margin; it is still an explicit
+unsealed fixture rather than an inferred pass.
+
+## Exact-Image Insights Attribution (2026-08-14)
+
+The fixed exact testing image `8d5b0cdde48e956db155793106e4dcf74bb1418c`
+(OCI digest `sha256:3e7787c0751c862b0d8f6a039c042aa86515b09c4af5dfe142d6ad7333047bb9`)
+passed the local demo attribution runner at
+`/var/tmp/qkt-validation/insights-8d5b0cdd-20260814-final3`. The bundle covers
+an M1/M5 read-only sibling and one bounded `0.01`-lot armed strategy. It
+recorded warmups, live ticks, matched M1/M5 evaluations, a real entry and
+strategy-owned exit, and final flat reconciliation.
+
+Insights attribution sealed with two rule decisions, two decision-to-order
+links, two submitted/accepted/filled orders, two trades, two accounted fills,
+zero rejected events, zero dropped envelopes, and no duplicate event IDs. An
+intentional collector outage queued 330 envelopes; restart replay drained the
+journal. The open MT5 position was observed with the owning strategy before
+the strategy close. Final pending orders and positions were zero.
+
+This is exact-wave Insights and causal round-trip evidence, not exhaustive
+coverage of every portfolio, deployment mode, indicator, DSL construct, or
+order boundary in `notes.txt`.
+
+## Order-Gateway Restart Evidence (2026-08-14)
+
+The exact testing image `8d5b0cdde48e956db155793106e4dcf74bb1418c` passed the
+order-bearing gateway restart runner at
+`/var/tmp/qkt-validation/order-restart-8d5b0cdd-20260814-runtime/evidence/result.json`.
+The bounded `0.01`-lot owner strategy opened a real EURUSD position, the local
+MT5 gateway container was restarted while the position was open, and the same
+strategy closed the persisted venue ticket after reconnect. The bundle records
+two accepted/fill-accounted orders, six stale events with six recoveries, zero
+dropped ticks, final flat state, zero pending orders, and deal-net equality with
+the account balance delta (`0.02`). This seals restart/reconnect ownership and
+accounting for this exact wave; it does not seal every order type or every replay
+mode.
+
+## Native Stop-Limit Boundary Evidence (2026-08-14)
+
+QKT commit `d60ff76f` changes the MT5 protocol capability set to advertise native
+`STOP_LIMIT` after the gateway support landed in mt5-gateway. Focused protocol,
+translator, and broker integration tests passed, and the change merged into
+`dev` as `a82a94d4` through PR #1015. A localhost QKT CLI probe using that build
+placed a bounded `BUY_STOP_LIMIT` (`retcode 10009`, ticket `3086018968`), showed
+the working order through the MT5 orders endpoint, and cancelled it through
+`qkt bot cancel`; the final account was unchanged and flat. The retained probe
+artifacts are at
+`/var/tmp/qkt-validation/qkt-stop-limit-native-d60ff76f-20260814`.
+
+The probe did not trigger a stop-limit into a fill, and therefore does not claim
+stop-limit trigger-to-fill or live-vs-backtest parity. A separate exact-image
+strategy run must still capture the trigger, fill, cancellation races/partial
+fills, and golden replay before this order boundary can be promoted to `main`.
+
+The temporary deployed-strategy probe at
+`/var/tmp/qkt-validation/strategy-stop-limit-native-d60ff76f-20260814` also
+confirmed warmup, DSL compilation, and live deployment. Its first stop-limit
+decision occurred during a measured stale-feed episode, so QKT rejected it
+before broker transport; the feed recovered and the account remained flat with
+no pending order. This is evidence that stale-order suppression is fail-closed,
+not evidence of uninterrupted feed health or a native stop-limit fill.
+
+A separate QKT CLI trigger observation at
+`/var/tmp/qkt-validation/qkt-stop-limit-trigger-d60ff76f-20260814` placed a
+native `BUY_STOP_LIMIT` at `1.15392` with `1.15382` stop-limit price and polled
+the real venue for 180 seconds. The market remained below the trigger, so no
+deal or position occurred; QKT cancelled ticket `3086032248` and the account
+finished unchanged and flat. This seals the resting-order/cancel boundary only;
+the trigger-to-fill path is still unsealed.
+
+## Exact Testing-Image Four-Case Parity Wave (2026-08-14)
+
+The corrected generated wave was run against testing revision
+`47e64f9372a32e611c0680e99123763e743848e4`, image
+`ghcr.io/elitekaycy/qkt@sha256:d27dd965850866ea1ac4374b86c77a6fa3ccb9bb2551846c4631b8150662258b`,
+and local gateway `0.3.9` on demo account `436804390` /
+`Exness-MT5Trial9`. Evidence root:
+`/var/tmp/qkt-validation/parity-47e6-retry-gb2`.
+
+All four read-only cases passed with 310-second captures, exact symbol routing,
+warmup/live tick and M1/M5 candle journals, golden captures, zero fills, zero
+dropped ticks, zero queue depth, and unchanged flat account state:
+
+- `atr-eurusd`: 156 live ticks, 160 warmup ticks, 2/2 stale episodes recovered.
+- `ema-eurusd`: 159 live ticks, 160 warmup ticks, 2/2 stale episodes recovered.
+- `case-gbpusd`: 263 live ticks, 160 warmup ticks, 2/2 stale episodes recovered;
+  warmup and audit symbols are `EXNESS:GBPUSD`.
+- `rsi-gbpusd`: 259 live ticks, 160 warmup ticks, 1/1 stale episode recovered;
+  warmup and audit symbols are `EXNESS:GBPUSD`.
+
+Each armed case then passed with one real strategy-owned entry and one strategy-
+owned exit, two accepted and filled events, zero final positions/orders, and
+golden replay comparison passed:
+
+- `atr-eurusd/armed-live`: ticket `3086526183`, balance/deal delta `+0.04`.
+- `ema-eurusd/armed-live`: ticket `3086540418`, balance/deal delta `-0.11`.
+- `rsi-gbpusd/armed-live`: ticket `3086556383`, balance/deal delta `-0.22`.
+
+Replay results are under each `armed-live/replay/result.json` and all report
+`status: passed` with the same testing SHA. The final gateway account snapshot
+was flat with zero margin. This wave proves the corrected four-case warmup,
+tick/bar, indicator, DSL order path, fill accounting, stale recovery, and
+golden replay on the exact image. It does not replace the remaining notes matrix
+for stop-limit trigger fills, cancellation/partial-fill races, risk/margin
+fixtures, portfolios/books, full indicator/math/DSL catalog, or Insights
+attribution.
+
+## Insights Verifier Follow-Up (2026-08-14)
+
+The exact-image Insights run at
+`/var/tmp/qkt-validation/insights-47e6-wave/cases/atr-eurusd` completed the
+collector contract probe, read-only sibling, outage/restart replay, real entry,
+strategy-owned exit, and ticket/deal attribution checks. It was not sealed
+because the verifier wrote an empty `duplicate-event-ids.json` when SQLite
+returned no duplicate rows; the subsequent integer comparison treated the empty
+string as an error. This is a test-harness defect, not a trading-runtime or
+collector finding. The partial run is explicitly not promotion evidence.
+
+PR #1019 (`fix(scripts): normalize empty insights duplicate output`) normalizes
+that empty query result to `[]`. Linux CI is green and Windows CI is pending;
+the exact-image Insights run must be rerun after the fix is in the promoted
+testing image before Insights attestation is claimed.
+
+## Exact Testing-Image Higher-Timeframe Warmup (2026-08-14)
+
+Clean testing-worktree probes passed for both `EXNESS:EURUSD` and
+`EXNESS:GBPUSD` at `/var/tmp/qkt-validation/htf-47e6-clean-EURUSD/evidence/result.json`
+and `/var/tmp/qkt-validation/htf-47e6-clean-GBPUSD/evidence/result.json`.
+Both report testing SHA `47e64f9372a32e611c0680e99123763e743848e4`,
+`qktDirty: false`, nine probes, and zero final positions/orders. Every M15/H1/H4
+one-hour, one-day, and two-day request returned closed, aligned, unique bars.
+
+The attempted XAUUSD probe was not sealed: the local demo gateway returned no
+reviewed closed M15 one-hour bar set. This is classified as symbol/data
+availability, not a QKT warmup pass or code failure; XAUUSD remains unproven.
+
+## Exact Testing-Image Read-Only Catalog (2026-08-14)
+
+The four-container catalog was rerun against the same testing image and local
+gateway at `/var/tmp/qkt-validation/catalog-47e6-final-live/evidence/result.json`.
+It passed with revision `47e64f9372a32e611c0680e99123763e743848e4`, image digest
+`sha256:d27dd965850866ea1ac4374b86c77a6fa3ccb9bb2551846c4631b8150662258b`,
+360 seconds, four parallel containers, five parallel tick symbols, 500 ms tick
+polling, and no JVM or Docker resource restrictions.
+
+The catalog covered numeric/candle indicators and math, cross-symbol M1/M5
+mapping, session/history/stateful functions, and the volume-capability negative
+case. All four cases passed their warmup bars, readiness vectors, live ticks,
+constructed bars, joined evaluations, and financially read-only assertions.
+Aggregate counts were zero gateway mutations, order events, fills, and venue
+deals; account state stayed unchanged. The run recorded 7 stale episodes and
+recovered all 7, with zero in-window disconnect warnings, zero unexpected
+errors, and no dropped-tick failure. The earlier catalog dropped-tick result is
+therefore superseded for this exact image, while the gateway stale/recovery
+events remain an operational observation.
+
+## Current Promotion Reconciliation (2026-08-14)
+
+The remote refs were refreshed after the historical sections above were written.
+The currently authoritative release refs are:
+
+- `dev`: `f8d91366f413331a8d208c2c4cb73aa2c7262555`, including PR #1019,
+  `fix(scripts): normalize empty insights duplicate output`.
+- `testing`: `daf5b4639c53d3244672207d710db78f38c91e3c`, promoted from that
+  `dev` revision. Its exact QKT image is
+  `ghcr.io/elitekaycy/qkt@sha256:e7eb41cfe6300b7ec599b83db7c642e1aa66b7a18ef8f506d0e59abacbf15b6c`.
+- `main`: `f275065947c9b967b85843ba1c12a8e16f90d587`, the last completed
+  testing-to-main promotion. It does not yet contain PR #1019.
+
+The corrected Insights verifier must be rerun against the immutable `testing`
+image above before another promotion. Earlier Insights evidence generated from a
+different image is historical and cannot attest this revision. The notes matrix
+also remains open for stop-limit trigger/fill replay, cancellation and partial-fill
+races, margin-floor, portfolio/book isolation, and exhaustive capability coverage.
+
+## Corrected Exact-Testing Insights Attestation (2026-08-14)
+
+The corrected verifier passed against QKT testing revision `daf5b463` and the
+immutable QKT image
+`ghcr.io/elitekaycy/qkt@sha256:e7eb41cfe6300b7ec599b83db7c642e1aa66b7a18ef8f506d0e59abacbf15b6c`.
+Evidence is retained at
+`/var/tmp/qkt-validation/insights-daf5-prep2/evidence/result.json`.
+
+The run recorded M1/M5 warmup, live ticks, matched evaluations, a real bounded
+entry and strategy-owned exit, and final flat reconciliation. Insights retained
+two rule decisions, two decision-to-order links, two submitted/accepted/filled
+orders, two trades, two accounted fills, zero rejected events, zero dropped
+envelopes, and a maximum duplicate-attempt count of one. An intentional collector
+outage queued 338 envelopes and restart replay drained them completely. The final
+state had zero pending orders and zero positions.
+
+This seals the Insights verifier fix for `daf5b463`; it does not close the other
+notes-matrix gaps listed above.
+
+## Focused Order and Persistence Regression (2026-08-14)
+
+On the current checkout, the focused JUnit suite passed for MT5 simulator order
+boundaries, stop-limit activation/fill, partial-fill slicing, cancellation races,
+DSL stop-limit compilation/rendering, and concurrent state-file reads/writes.
+`StateFileWriterTest.concurrent reads while writing never see a torn file` passed;
+the run emitted expected slow-write warnings on the contended filesystem but no
+torn reads or failed writes. Command:
+`./gradlew test --tests 'com.qkt.trade.BotActionCompilerTest' --tests
+'com.qkt.trade.BotDslRendererTest' --tests
+'com.qkt.persistence.StateFileWriterTest' --tests
+'com.qkt.broker.MT5BrokerSimulator*'`.
+
+These are regression/unit results and do not substitute for the still-open
+localhost MT5 stop-limit trigger/fill and live partial-fill evidence.
+
+## Margin-Floor Rerun Status (2026-08-14)
+
+A clean exact-`daf5b463` localhost fixture was exercised with the single Exness
+demo account. It opened a real `0.01` EURUSD position, derived the dynamic floor
+from the live margin level, rejected the probe before broker transport, and
+recovered a probe position after the opener was flattened. The runner did not
+finish its final journal/result sealing phase, so these captures remain unsealed
+and are not promotion evidence. The account was explicitly verified flat after
+cleanup. A sealed margin-floor result is still required.
+
+## Sealed Exact-Testing Margin-Floor Fixture (2026-08-14)
+
+The corrected runner passed against testing revision `ba1809217ad8f6c9db494054d8f0641a48a6704c` and immutable image
+`ghcr.io/elitekaycy/qkt@sha256:35c82798dab413fe39dde48ff2dc81f8c62fd5f5e40c2a028d564887fdce6636`.
+Evidence is retained at
+`/var/tmp/qkt-validation/margin-ba1809-live/evidence/result.json`.
+
+The fixture opened one bounded `0.01` EURUSD position with the opener role,
+derived the floor from observed live margin level, rejected the probe before any
+mutating gateway request, then allowed and filled the probe after opener flattening
+and headroom recovery. Both strategy-owned positions were flattened; venue history
+and account balance reconciled, with zero final positions and pending orders.
+The aggregate result reports `marginFloorPassed: true` and
+`productionReadiness: false` (the latter remains intentionally conservative).
+
+## Exact d55 Live Matrix and Insights (2026-08-14)
+
+All evidence below uses testing revision `d55f8f51d70831006615132cf86a36938b3a46f3`
+and QKT image
+`ghcr.io/elitekaycy/qkt@sha256:083052c7ce1467b01fe604b4634ce2ed33d081f1d3e4f33e71801295ee74402d`.
+Generated evidence is disposable and retained outside the source tree.
+
+- Four-case ATR, case-math, EMA, and RSI parity wave passed read-only warmup,
+  live demo bracket, and full-tick/bar/MT5 replay comparisons at
+  `/var/tmp/qkt-validation/parity-d55-live`. The account finished flat.
+- Four-case catalog passed at
+  `/var/tmp/qkt-validation/catalog-d55-live/evidence/result.json`, covering
+  numeric/candle, cross-symbol and multi-timeframe, session/history, and volume
+  capability rejection with zero mutations and zero dropped ticks.
+- Five-case pre-transport risk rejection passed in isolation at
+  `/var/tmp/qkt-validation/riskreject-d55-retry/evidence/result.json`.
+- Four-case restored-state risk matrix passed in isolation at
+  `/var/tmp/qkt-validation/stateful-d55-retry/evidence/result.json`.
+- QKT Insights attribution passed at
+  `/var/tmp/qkt-validation/insights-d55-scenario/evidence/result.json`: 341
+  outage-queued envelopes replayed completely; two decisions/orders/fills were
+  attributed to the owning strategy; no drops or duplicate attempts; final flat.
+
+The intentional nine-daemon aggregate probe failed because the local gateway's
+Waitress queue saturated and live tick feeds disconnected, causing deploy
+timeouts. Each matrix passed when run alone. This is an explicit gateway
+capacity limit, not a claimed production-scale pass, and needs a gateway/load
+fix or an enforced concurrency bound before unrestricted multi-container use.
+
+## d55 Attestation Dispatch
+
+A six-artifact d55 attestation passed the local verifier and is retained at
+`/var/tmp/qkt-validation/attest-d55-final`. Trusted workflow `31800477867` was
+dispatched against testing d55, but its sole `qkt-paper-soak` runner is offline,
+so it remains queued. Local verification cannot substitute for the trusted
+workflow; main promotion remains blocked until the runner executes successfully.

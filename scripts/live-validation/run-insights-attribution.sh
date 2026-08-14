@@ -121,7 +121,9 @@ qkt_commit="$(git -C "$repo_root" rev-parse HEAD)"
 jq -e '.qktDirty == false' "$scenario/scenario.json" >/dev/null ||
     fail "scenario must be freshly prepared from a clean checkout"
 qkt_short="${qkt_commit:0:8}"
-[[ "$("$cli" --version)" == *"($qkt_short)"* ]] || fail "QKT CLI is not built from $qkt_short"
+cli_version="$($cli --version)"
+[[ "$cli_version" == *"($qkt_short"* || "$cli_version" == *"($qkt_commit"* ]] ||
+    fail "QKT CLI is not built from $qkt_short"
 [ -z "$(find "$scenario/evidence" -mindepth 1 -maxdepth 1 -print -quit)" ] ||
     fail "evidence directory is not empty; prepare a fresh scenario"
 case "$(jq -r '.gatewayUrl' "$scenario/scenario.json")" in
@@ -468,6 +470,7 @@ sqlite3 -json "$db" "select order_id,strategy_id,state,broker_order_id from orde
 sqlite3 -json "$db" "select strategy_id,entry,count(*) count,printf('%.2f',sum(profit+coalesce(commission,0)+coalesce(swap,0)+coalesce(fee,0))) net from deals where instance_id='$instance' and position_ticket='$owned_ticket' group by strategy_id,entry order by entry;" > "$evidence/insights-deals-by-strategy.json"
 sqlite3 -json "$db" "select kind,count(*) count from ingest_observations where instance_id='$instance' group by kind order by kind;" > "$evidence/ingest-observations.json"
 sqlite3 -json "$db" "select event_id,count(*) count from ingest_observations where instance_id='$instance' and kind='duplicate' group by event_id order by count desc,event_id limit 20;" > "$evidence/duplicate-event-ids.json"
+[ -s "$evidence/duplicate-event-ids.json" ] || printf '[]\n' > "$evidence/duplicate-event-ids.json"
 qkt_export_armed_rule_decisions "$db" "$instance" "$armed_name" "$evidence/insights-rule-decisions.json"
 
 for type_and_count in \
