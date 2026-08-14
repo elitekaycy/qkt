@@ -728,6 +728,12 @@ portfolio files (`forward_bench.qkt`, `forward_bench_2.qkt`, and
 checks. This is deployment/configuration proof only, not a substitute for the
 missing live order-bearing proof of every book.
 
+Focused source verification on the promoted code passed in 36 seconds:
+`MarketDataGateTest`, `LiveSessionInsightsTest`, `PortfolioBacktestLiveParityTest`,
+and `PortfolioDeployerBacktestParityTest`. The suite exercised stale recovery,
+Insights lifecycle delivery, identical per-child backtest/live trades, and live
+portfolio book-risk rejection/allocation parity.
+
 Existing shared-account Insights evidence at
 `/var/tmp/qkt-validation/shared-account-insights-961dd705-0812095001-live/evidence/result.json`
 does prove two simultaneous live strategy owners can each complete two fills and
