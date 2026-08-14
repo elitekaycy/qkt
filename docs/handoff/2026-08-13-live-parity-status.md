@@ -800,3 +800,13 @@ rejections, and global total PnL `12666.15700000`. The `promoted_book_115` rerun
 still running when recorded. Because the image changed, rerunning portfolio
 backtests is the correct certification step even though PR #1024 only adds live
 portfolio Insights telemetry and does not change the numerical backtest engine.
+
+## Live validation pause (2026-08-14 22:42 UTC)
+
+Live validation is intentionally paused until the FX demo market reopens Monday.
+The protected promotion check was run with `GITHUB_REPOSITORY=elitekaycy/qkt` and
+correctly refused promotion: `no successful paper-soak run exists for current
+testing 6caae6618f62b478d9a04702b622869a43c452ca`. No bypass PR was created and no
+attestation was fabricated. Main therefore remains at `f73f404a`; the next action
+is the fresh exact-image demo wave and paper-soak workflow, followed by the normal
+testing-to-main promotion and host rollouts.
