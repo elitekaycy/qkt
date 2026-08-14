@@ -213,6 +213,7 @@ class PortfolioDeployer(
                     bookController,
                     portfolioGate,
                     sampleOnEvaluate = bookWindow == null,
+                    portfolioInsights = insightsSink,
                 )
             if (riskAggregator != null) bookFillBuffer?.bind(riskAggregator)
             val supervisor =
@@ -232,6 +233,24 @@ class PortfolioDeployer(
                     gate = portfolioGate,
                 )
             supervisor.start()
+
+            // Book telemetry is enqueued asynchronously; no network work runs on a child engine.
+            insightsSink?.offer(
+                com.qkt.observe.insights.InsightsTranslate.portfolioConfigured(
+                    portfolioName,
+                    clock.now(),
+                    bookCapital,
+                ),
+            )
+            if (allocations.isNotEmpty()) {
+                insightsSink?.offer(
+                    com.qkt.observe.insights.InsightsTranslate.portfolioAllocationUpdated(
+                        portfolioName,
+                        clock.now(),
+                        allocations.mapKeys { (alias, _) -> "$portfolioName:$alias" },
+                    ),
+                )
+            }
 
             val portfolioLog = stateDir.logFile(portfolioName)
             Files.createDirectories(portfolioLog.parent)
@@ -264,6 +283,7 @@ class PortfolioDeployer(
         bookController: com.qkt.risk.book.BookRiskController?,
         portfolioGate: PortfolioGate,
         sampleOnEvaluate: Boolean,
+        portfolioInsights: com.qkt.observe.insights.InsightsSink?,
     ): PortfolioRiskAggregator? {
         val capital = compiled.ast.capital
         val controllerCapital = bookRiskConfig?.capital ?: capital
@@ -347,15 +367,34 @@ class PortfolioDeployer(
                     childPairs.flatMap { (child, wrapper) ->
                         wrapper.handle.live.bookLegs(child.strategyId)
                     }
-                val perStrategyPnl =
+                val pnlSnapshots =
                     childPairs.associate { (child, wrapper) ->
-                        val pnl = wrapper.handle.live.pnlSnapshot(child.strategyId)
-                        child.strategyId to pnl.realized.add(pnl.unrealized)
+                        child.strategyId to wrapper.handle.live.pnlSnapshot(child.strategyId)
+                    }
+                val perStrategyPnl =
+                    pnlSnapshots.mapValues { (_, pnl) -> pnl.realized.add(pnl.unrealized) }
+                val realized =
+                    pnlSnapshots.values.fold(java.math.BigDecimal.ZERO) { total, pnl ->
+                        total.add(pnl.realized)
+                    }
+                val unrealized =
+                    pnlSnapshots.values.fold(java.math.BigDecimal.ZERO) { total, pnl ->
+                        total.add(pnl.unrealized)
                     }
                 val equity =
                     riskCapital.add(
                         perStrategyPnl.values.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add),
                     )
+                portfolioInsights?.offer(
+                    com.qkt.observe.insights.InsightsTranslate.portfolioEquityUpdated(
+                        portfolioName,
+                        timestamp,
+                        equity,
+                        realized,
+                        unrealized,
+                        perStrategyPnl,
+                    ),
+                )
                 val regimeWeights =
                     portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
                         aliasToStrategyId[alias] ?: alias

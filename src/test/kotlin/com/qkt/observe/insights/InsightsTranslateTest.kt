@@ -295,6 +295,39 @@ class InsightsTranslateTest {
     }
 
     @Test
+    fun `portfolio telemetry preserves book identity and aggregated values`() {
+        val configured =
+            InsightsTranslate.portfolioConfigured(
+                "book",
+                1000L,
+                BigDecimal("10000"),
+            )
+        val allocation =
+            InsightsTranslate.portfolioAllocationUpdated(
+                "book",
+                1001L,
+                mapOf("book:a" to BigDecimal("6000"), "book:b" to BigDecimal("4000")),
+            )
+        val equity =
+            InsightsTranslate.portfolioEquityUpdated(
+                "book",
+                1002L,
+                BigDecimal("10025"),
+                BigDecimal("20"),
+                BigDecimal("5"),
+                mapOf("book:a" to BigDecimal("15"), "book:b" to BigDecimal("10")),
+            )
+
+        assertThat(configured.type).isEqualTo("portfolio.configured")
+        assertThat(configured.strategyId).isNull()
+        assertThat(configured.toJson("qkt-prod")).contains("\"capital\":10000")
+        assertThat(allocation.toJson("qkt-prod")).contains("\"book:a\":6000")
+        assertThat(equity.toJson("qkt-prod"))
+            .contains("\"equity\":10025")
+            .contains("\"perStrategy\"")
+    }
+
+    @Test
     fun `order filled renders to valid contract json with numeric prices`() {
         val e =
             BrokerEvent.OrderFilled(
