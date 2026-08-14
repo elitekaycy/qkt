@@ -709,6 +709,62 @@ object InsightsTranslate {
                 ),
         )
 
+    /** Announces a deployed portfolio book so Insights can retain book-level metadata. */
+    fun portfolioConfigured(
+        portfolioId: String,
+        ts: Long,
+        capital: BigDecimal?,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "portfolio-configured-$portfolioId-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "portfolio.configured",
+            payload = mapOf("portfolioId" to portfolioId, "capital" to capital, "ts" to ts),
+        )
+
+    /** Records the current child allocation weights for a portfolio book. */
+    fun portfolioAllocationUpdated(
+        portfolioId: String,
+        ts: Long,
+        allocations: Map<String, BigDecimal>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "portfolio-allocation-$portfolioId-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "portfolio.allocation.updated",
+            payload = mapOf("portfolioId" to portfolioId, "allocations" to allocations, "ts" to ts),
+        )
+
+    /** Records an aggregated realized/unrealized equity sample for a portfolio book. */
+    fun portfolioEquityUpdated(
+        portfolioId: String,
+        ts: Long,
+        equity: BigDecimal,
+        realized: BigDecimal,
+        unrealized: BigDecimal,
+        perStrategy: Map<String, BigDecimal>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "portfolio-equity-$portfolioId-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "portfolio.equity.updated",
+            payload =
+                mapOf(
+                    "portfolioId" to portfolioId,
+                    "equity" to equity,
+                    "realized" to realized,
+                    "unrealized" to unrealized,
+                    "perStrategy" to perStrategy,
+                    "ts" to ts,
+                ),
+        )
+
     private fun envelope(
         seq: Long,
         ts: Long,
