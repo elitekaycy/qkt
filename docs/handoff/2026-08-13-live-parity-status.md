@@ -573,3 +573,19 @@ state had zero pending orders and zero positions.
 
 This seals the Insights verifier fix for `daf5b463`; it does not close the other
 notes-matrix gaps listed above.
+
+## Focused Order and Persistence Regression (2026-08-14)
+
+On the current checkout, the focused JUnit suite passed for MT5 simulator order
+boundaries, stop-limit activation/fill, partial-fill slicing, cancellation races,
+DSL stop-limit compilation/rendering, and concurrent state-file reads/writes.
+`StateFileWriterTest.concurrent reads while writing never see a torn file` passed;
+the run emitted expected slow-write warnings on the contended filesystem but no
+torn reads or failed writes. Command:
+`./gradlew test --tests 'com.qkt.trade.BotActionCompilerTest' --tests
+'com.qkt.trade.BotDslRendererTest' --tests
+'com.qkt.persistence.StateFileWriterTest' --tests
+'com.qkt.broker.MT5BrokerSimulator*'`.
+
+These are regression/unit results and do not substitute for the still-open
+localhost MT5 stop-limit trigger/fill and live partial-fill evidence.
