@@ -308,3 +308,18 @@ deal range filtered by magic `948500` contains the entry at `1.15305` and the
 exit at `1.15297`, with net demo PnL `-0.08` and zero commission/swap. This is
 live trigger evidence, but it is not yet a full QKT golden/replay parity bundle;
 the harness cleanup interruption and that replay comparison remain open work.
+
+## Parallel Static Risk-Rejection Matrix (2026-08-14)
+
+The exact promoted image `ghcr.io/elitekaycy/qkt:edge` (QKT commit
+`e271822d4895cf16a662338c1f38090f77965485`) passed the five-container local
+demo matrix at
+`/var/tmp/qkt-validation/risk-rejection-e271822d-20260814-run`. Maximum
+quantity, maximum notional, far-price collar, measured-usage, and operator-halt
+cases each produced a causal risk rejection before broker transport. The run
+verified zero mutating gateway requests, zero order events, zero fills, and no
+venue-state change while the five containers launched and deployed in parallel.
+
+The result deliberately reports only `preTransportStaticRejectionsPassed` as
+true. Stateful daily-loss, drawdown, loss-streak, and margin-floor fixtures
+remain unpassed and are not inferred from this matrix.
