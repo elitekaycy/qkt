@@ -651,3 +651,63 @@ A six-artifact d55 attestation passed the local verifier and is retained at
 dispatched against testing d55, but its sole `qkt-paper-soak` runner is offline,
 so it remains queued. Local verification cannot substitute for the trusted
 workflow; main promotion remains blocked until the runner executes successfully.
+
+## Main Promotion and Post-Merge Runtime (2026-08-14)
+
+The exact testing revision `4ec9a9aa5d1a40f07d9dafa0ad3fd4bbacb6318e` passed the
+trusted paper-soak workflow `31807997155` with image
+`ghcr.io/elitekaycy/qkt@sha256:00d21e346e31206e28e88233bc144cdaf8a166c566390132afda8ad8df656d74`.
+Promotion PR #1023 merged to `main` as `f73f404a5f0884fd6bb5d8a9853169a52a815810`.
+Post-merge integration, Docker publishing, and docs workflows all passed.
+
+Fresh exact-4ec evidence is retained outside the source tree:
+
+- Four-case live/replay parity: `/var/tmp/qkt-validation/parity-4ec-live`.
+- Fresh Insights attribution: `/var/tmp/qkt-validation/insights-4ec-fresh2`, with
+  warmup M1/M5, 332 outage-pending envelopes fully replayed, two causal decisions,
+  two fills, zero drops, and a flat account.
+- Fresh catalog after gateway upgrade:
+  `/var/tmp/qkt-validation/catalog-4ec-live-run3/evidence/result.json`.
+  All four read-only containers passed warmup, indicators/math vectors, M1/M5
+  bars, cross-symbol routing, volume-capability rejection, and zero venue deals.
+
+The first exact-4ec catalog attempt failed for the correct reason: local gateway
+`0.3.9` returned historical EURUSD bars ending at 14:16 while live ticks were at
+14:31+, so QKT rejected warmup on a time-base mismatch. Restarting alone did not
+refresh the stale history; replacing the local test gateway with released
+`0.3.10` did. The failed and passing captures remain distinct evidence.
+
+The persistent `sshbot2` forward stack was updated to immutable QKT image
+`ghcr.io/elitekaycy/qkt:sha-f73f404` and verified with QKT revision
+`f73f404a5f0884fd6bb5d8a9853169a52a815810`, healthy gateway `0.3.10`, healthy
+Insights, 22 recovered strategies, zero dropped ticks, and zero inbound queue
+depth. Its existing account and state volume were preserved. A restart logged one
+persisted-state reconciliation for a strategy whose broker position was already
+absent; no venue position or order was created by the rollout.
+
+A fresh post-upgrade ATR live read-only run also passed at
+`/var/tmp/qkt-validation/gateway0310-atr/evidence/result.json`: gateway `0.3.10`,
+QKT `4ec9a9aa`, 160 warmup ticks, 259 live ticks, M1/M5 candles and evaluations,
+464 audit events, zero dropped ticks, zero queue depth, and unchanged account,
+positions, orders, and venue deals. Two short stale/recovery events were captured
+and recovered; they did not produce orders or corrupt the audit.
+
+The requested Kimi strategy-book archive named in `notes.txt` is not present in the
+workspace or on bot2, so the three/four-book qkt-quant-live integration and its
+per-book Insights separation remain unproven and are not claimed complete. Bot2's
+forward stack also continues to emit intermittent stale-data suppression/recovery
+events despite a healthy gateway; this remains an operational follow-up rather than
+a completed months-long stability claim.
+
+A bot2 log sample covering the 15 minutes ending 2026-08-14T15:04Z contained 75
+stale-gate events and 75 matching recoveries, with zero unrecovered symbols at the
+end of the sample. Recovery completed in roughly two seconds for the captured
+batch. Gateway logs contained no disconnect, timeout, or polling error in the same
+window. This confirms the gate is failing closed and recovering, but does not prove
+continuous quote freshness or long-duration capacity under the full forward load.
+
+The standalone `qkt-quant-live` deployment defaults were then aligned with the
+verified runtime: PR #7 (`d184503`) pinned QKT `sha-f73f404` and gateway `0.3.10` in
+the example environment, Compose default, and deploy workflow. It merged to that
+repository's `main` as `ae9e3a8e5e80a61635cca61c1211b2ef76964fe3` at 15:07Z; its
+Compose configuration check and GitGuardian check passed.
