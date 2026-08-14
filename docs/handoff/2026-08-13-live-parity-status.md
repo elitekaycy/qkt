@@ -487,6 +487,22 @@ for stop-limit trigger fills, cancellation/partial-fill races, risk/margin
 fixtures, portfolios/books, full indicator/math/DSL catalog, or Insights
 attribution.
 
+## Insights Verifier Follow-Up (2026-08-14)
+
+The exact-image Insights run at
+`/var/tmp/qkt-validation/insights-47e6-wave/cases/atr-eurusd` completed the
+collector contract probe, read-only sibling, outage/restart replay, real entry,
+strategy-owned exit, and ticket/deal attribution checks. It was not sealed
+because the verifier wrote an empty `duplicate-event-ids.json` when SQLite
+returned no duplicate rows; the subsequent integer comparison treated the empty
+string as an error. This is a test-harness defect, not a trading-runtime or
+collector finding. The partial run is explicitly not promotion evidence.
+
+PR #1019 (`fix(scripts): normalize empty insights duplicate output`) normalizes
+that empty query result to `[]`. Linux CI is green and Windows CI is pending;
+the exact-image Insights run must be rerun after the fix is in the promoted
+testing image before Insights attestation is claimed.
+
 ## Exact Testing-Image Higher-Timeframe Warmup (2026-08-14)
 
 Clean testing-worktree probes passed for both `EXNESS:EURUSD` and
