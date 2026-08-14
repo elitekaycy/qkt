@@ -12,11 +12,11 @@ object MT5Protocol {
     /**
      * Order types every MT5 venue understands at the protocol layer.
      *
-     * STOP and LIMIT map to order types accepted by the deployed gateway. STOP_LIMIT
-     * and TRAILING_STOP deliberately remain absent: the gateway neither accepts the
-     * stop-limit type nor applies the translator's trailing-distance field, so the
-     * engine must emulate those shapes. Brokers can subtract supported capabilities
-     * via [MT5BrokerProfile.capabilityRestrictions] for venue-specific restrictions.
+     * STOP, LIMIT, and STOP_LIMIT map to order types accepted by the deployed gateway.
+     * TRAILING_STOP remains absent because the gateway does not apply the translator's
+     * trailing-distance field, so the engine must emulate that shape. Brokers can
+     * subtract supported capabilities via [MT5BrokerProfile.capabilityRestrictions]
+     * for venue-specific restrictions.
      *
      * OCO deliberately remains absent: MT5 has no server-side OCO group, so qkt places
      * independent pending legs and cancels the sibling after observing a fill. Advertising
@@ -28,6 +28,7 @@ object MT5Protocol {
             OrderTypeCapability.BRACKET,
             OrderTypeCapability.STOP,
             OrderTypeCapability.LIMIT,
+            OrderTypeCapability.STOP_LIMIT,
             OrderTypeCapability.MODIFY,
             OrderTypeCapability.MULTI_POSITION_PER_SYMBOL,
             OrderTypeCapability.POSITION_MODIFY,
