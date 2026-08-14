@@ -711,3 +711,13 @@ verified runtime: PR #7 (`d184503`) pinned QKT `sha-f73f404` and gateway `0.3.10
 the example environment, Compose default, and deploy workflow. It merged to that
 repository's `main` as `ae9e3a8e5e80a61635cca61c1211b2ef76964fe3` at 15:07Z; its
 Compose configuration check and GitGuardian check passed.
+
+The bot2 Insights database was also inspected read-only: one instance
+`forward-bench`, 40 distinct strategy identities, and 20,485 retained events. The
+three running portfolio namespaces (`forward_bench`, `forward_bench_2`, and
+`forward_bench_3`) are present as separate strategy IDs, so strategy-level
+attribution is separated. No portfolio aggregate rows are currently populated;
+that is a remaining book-level analytics gap, not evidence of account-wide trade
+bleed. The 22 historical `gateway.unreachable` events are dated August 12, before
+the 0.3.10 rollout; the current post-rollout sample had no gateway transport
+errors.
