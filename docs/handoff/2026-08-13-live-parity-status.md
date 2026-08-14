@@ -441,3 +441,11 @@ decision occurred during a measured stale-feed episode, so QKT rejected it
 before broker transport; the feed recovered and the account remained flat with
 no pending order. This is evidence that stale-order suppression is fail-closed,
 not evidence of uninterrupted feed health or a native stop-limit fill.
+
+A separate QKT CLI trigger observation at
+`/var/tmp/qkt-validation/qkt-stop-limit-trigger-d60ff76f-20260814` placed a
+native `BUY_STOP_LIMIT` at `1.15392` with `1.15382` stop-limit price and polled
+the real venue for 180 seconds. The market remained below the trigger, so no
+deal or position occurred; QKT cancelled ticket `3086032248` and the account
+finished unchanged and flat. This seals the resting-order/cancel boundary only;
+the trigger-to-fill path is still unsealed.
